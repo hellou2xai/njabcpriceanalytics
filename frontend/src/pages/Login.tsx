@@ -36,7 +36,7 @@ export default function Login() {
       if (mode === 'signup') {
         const res = await signup(email.trim(), password, fullName.trim() || undefined);
         if (res.activationRequired) {
-          setInfo('Account created. Check your email for an activation link, then sign in.');
+          setInfo('Check your email for an activation link to activate your account, then sign in. If you already signed up, we have re-sent the link.');
           setMode('signin');
           setPassword('');
         }

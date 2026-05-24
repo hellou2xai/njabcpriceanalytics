@@ -52,3 +52,11 @@ def list_feedback(user: dict = Depends(require_admin)):
             "SELECT * FROM feedback ORDER BY created_at DESC, id DESC"
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+@router.delete("/{feedback_id}")
+def delete_feedback(feedback_id: int, user: dict = Depends(require_admin)):
+    """Remove a feedback entry once handled. Admin-only."""
+    with get_pg() as con:
+        con.execute("DELETE FROM feedback WHERE id = %s", (feedback_id,))
+    return {"status": "deleted"}

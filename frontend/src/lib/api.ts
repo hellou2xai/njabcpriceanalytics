@@ -201,7 +201,8 @@ export interface FeedbackItem {
 export const feedback = {
   submit: (data: { message: string; kind?: string; page?: string; user_agent?: string }) =>
     request<{ status: string }>('/api/feedback', { method: 'POST', body: JSON.stringify(data) }),
-  list: () => request<FeedbackItem[]>('/api/feedback'),   // admin-only
+  list: () => request<FeedbackItem[]>('/api/feedback'),                       // admin-only
+  remove: (id: number) => request<{ status: string }>(`/api/feedback/${id}`, { method: 'DELETE' }),
 };
 
 // ---- Admin ----
@@ -209,9 +210,24 @@ export interface AdminStats {
   counts: Record<string, number>;
   feedback_by_kind: { kind: string; n: number }[];
 }
+export interface AdminUser {
+  id: number;
+  email: string;
+  full_name: string | null;
+  activated: number;
+  created_at: string;
+  orders: number;
+  stores: number;
+  is_admin: boolean;
+}
 
 export const admin = {
   stats: () => request<AdminStats>('/api/admin/stats'),
+  users: () => request<AdminUser[]>('/api/admin/users'),
+  activateUser: (id: number) => request<{ status: string }>(`/api/admin/users/${id}/activate`, { method: 'POST' }),
+  deactivateUser: (id: number) => request<{ status: string }>(`/api/admin/users/${id}/deactivate`, { method: 'POST' }),
+  deleteUser: (id: number) => request<{ status: string }>(`/api/admin/users/${id}`, { method: 'DELETE' }),
+  reloadPricing: () => request<{ status: string; counts: Record<string, number> }>('/api/admin/reload-pricing', { method: 'POST' }),
 };
 
 export interface TimeSensitiveDeal {

@@ -216,21 +216,35 @@ def signup(req: SignupRequest):
     full_name = (req.full_name or "").strip() or None
     # When email is enabled, the account starts unactivated and must verify via
     # the emailed link. When email is off, auto-activate so nobody is locked out.
-    activated = 0 if mailer.MAIL_ENABLED else 1
+    # Admins are never gated by email verification (so a mail problem can't lock
+    # the owner out). Everyone else needs to verify when email is enabled.
+    activated = 1 if (_is_admin(email) or not mailer.MAIL_ENABLED) else 0
+    resend_token = None
     with get_pg() as con:
-        if con.execute("SELECT 1 FROM users WHERE email = %s", (email,)).fetchone():
-            raise HTTPException(status_code=409, detail="An account with that email already exists")
-        cur = con.execute(
-            "INSERT INTO users (email, password_hash, full_name, activated) VALUES (%s, %s, %s, %s) RETURNING id",
-            (email, hash_password(req.password), full_name, activated),
-        )
-        user_id = cur.fetchone()["id"]
-        _claim_orphan_data(con, user_id)
-        if mailer.MAIL_ENABLED:
-            activate_token = _new_email_token(con, user_id, "activate", 48)
+        existing = con.execute("SELECT id, activated FROM users WHERE email = %s", (email,)).fetchone()
+        if existing:
+            if mailer.MAIL_ENABLED and not existing["activated"]:
+                # Account exists but was never activated: resend the activation
+                # link rather than a confusing "already exists" error.
+                resend_token = _new_email_token(con, existing["id"], "activate", 48)
+            else:
+                raise HTTPException(status_code=409,
+                                    detail="An account with that email already exists. Please sign in.")
         else:
-            session_token = _new_token(con, user_id)
+            cur = con.execute(
+                "INSERT INTO users (email, password_hash, full_name, activated) VALUES (%s, %s, %s, %s) RETURNING id",
+                (email, hash_password(req.password), full_name, activated),
+            )
+            user_id = cur.fetchone()["id"]
+            _claim_orphan_data(con, user_id)
+            if mailer.MAIL_ENABLED:
+                activate_token = _new_email_token(con, user_id, "activate", 48)
+            else:
+                session_token = _new_token(con, user_id)
 
+    if resend_token is not None:
+        mailer.send_activation(email, resend_token, full_name)
+        return {"status": "activation_required", "email": email}
     if mailer.MAIL_ENABLED:
         mailer.send_activation(email, activate_token, full_name)
         return {"status": "activation_required", "email": email}
@@ -249,7 +263,7 @@ def login(req: LoginRequest):
         ).fetchone()
         if not row or not verify_password(req.password, row["password_hash"]):
             raise HTTPException(status_code=401, detail="Incorrect email or password")
-        if mailer.MAIL_ENABLED and not row["activated"]:
+        if mailer.MAIL_ENABLED and not row["activated"] and not _is_admin(row["email"]):
             raise HTTPException(status_code=403,
                                 detail="Please verify your email to activate your account. Check your inbox for the activation link.")
         token = _new_token(con, row["id"])

@@ -1,0 +1,197 @@
+{
+  "body": [
+    {
+      "avg_change_pct": 0.05,
+      "decreases": 7.0,
+      "edition": "2026-05",
+      "increases": 30.0,
+      "items": 1325,
+      "product_type": "Beer"
+    },
+    {
+      "avg_change_pct": 0.0,
+      "decreases": 0.0,
+      "edition": "2026-05",
+      "increases": 0.0,
+      "items": 32,
+      "product_type": "Cider"
+    },
+    {
+      "avg_change_pct": 9.51,
+      "decreases": 0.0,
+      "edition": "2026-05",
+      "increases": 96.0,
+      "items": 116,
+      "product_type": "Hemp"
+    },
+    {
+      "avg_change_pct": 0.1,
+      "decreases": 3.0,
+      "edition": "2026-05",
+      "increases": 5.0,
+      "items": 1011,
+      "product_type": "Sparkling"
+    },
+    {
+      "avg_change_pct": 0.04,
+      "decreases": 16.0,
+      "edition": "2026-05",
+      "increases": 45.0,
+      "items": 7744,
+      "product_type": "Spirits"
+    },
+    {
+      "avg_change_pct": 0.0,
+      "decreases": 0.0,
+      "edition": "2026-05",
+      "increases": 0.0,
+      "items": 62,
+      "product_type": "Vermouth"
+    },
+    {
+      "avg_change_pct": 0.07,
+      "decreases": 58.0,
+      "edition": "2026-05",
+      "increases": 70.0,
+      "items": 10095,
+      "product_type": "Wine"
+    },
+    {
+      "avg_change_pct": 0.04,
+      "decreases": 3.0,
+      "edition": "2026-06",
+      "increases": 16.0,
+      "items": 2796,
+      "product_type": "Beer"
+    },
+    {
+      "avg_change_pct": 0.0,
+      "decreases": 0.0,
+      "edition": "2026-06",
+      "increases": 0.0,
+      "items": 132,
+      "product_type": "Cider"
+    },
+    {
+      "avg_change_pct": 0.0,
+      "decreases": 0.0,
+      "edition": "2026-06",
+      "increases": 0.0,
+      "items": 1,
+      "product_type": "Combo"
+    },
+    {
+      "avg_change_pct": 0.0,
+      "decreases": 0.0,
+      "edition": "2026-06",
+      "increases": 0.0,
+      "items": 92,
+      "product_type": "FAB"
+    },
+    {
+      "avg_change_pct": 0.0,
+      "decreases": 0.0,
+      "edition": "2026-06",
+      "increases": 0.0,
+      "items": 114,
+      "product_type": "Hemp"
+    },
+    {
+      "avg_change_pct": 0.0,
+      "decreases": 0.0,
+      "edition": "2026-06",
+      "increases": 0.0,
+      "items": 1,
+      "product_type": "Malt"
+    },
+    {
+      "avg_change_pct": -0.01,
+      "decreases": 1.0,
+      "edition": "2026-06",
+      "increases": 20.0,
+      "items": 1056,
+      "product_type": "RTD"
+    },
+    {
+      "avg_change_pct": 0.0,
+      "decreases": 0.0,
+      "edition": "2026-06",
+      "increases": 0.0,
+      "items": 16,
+      "product_type": "Seasonal"
+    },
+    {
+      "avg_change_pct": -0.09,
+      "decreases": 1.0,
+      "edition": "2026-06",
+      "increases": 0.0,
+      "items": 33,
+      "product_type": "Seltzer"
+    },
+    {
+      "avg_change_pct": -0.22,
+      "decreases": 8.0,
+      "edition": "2026-06",
+      "increases": 9.0,
+      "items": 984,
+      "product_type": "Sparkling"
+    },
+    {
+      "avg_change_pct": -0.18,
+      "decreases": 168.0,
+      "edition": "2026-06",
+      "increases": 60.0,
+      "items": 14794,
+      "product_type": "Spirits"
+    },
+    {
+      "avg_change_pct": 0.0,
+      "decreases": 0.0,
+      "edition": "2026-06",
+      "increases": 0.0,
+      "items": 116,
+      "product_type": "THC"
+    },
+    {
+      "avg_change_pct": 5.23,
+      "decreases": 0.0,
+      "edition": "2026-06",
+      "increases": 59.0,
+      "items": 116,
+      "product_type": "THCB"
+    },
+    {
+      "avg_change_pct": 0.0,
+      "decreases": 0.0,
+      "edition": "2026-06",
+      "increases": 0.0,
+      "items": 17,
+      "product_type": "Tea"
+    },
+    {
+      "avg_change_pct": -0.18,
+      "decreases": 2.0,
+      "edition": "2026-06",
+      "increases": 0.0,
+      "items": 62,
+      "product_type": "Vermouth"
+    },
+    {
+      "avg_change_pct": 0.35,
+      "decreases": 155.0,
+      "edition": "2026-06",
+      "increases": 136.0,
+      "items": 19726,
+      "product_type": "Wine"
+    }
+  ],
+  "date_sensitive": false,
+  "name": "analytics_category_trends",
+  "request": {
+    "auth": false,
+    "method": "GET",
+    "params": null,
+    "path": "/api/analytics/category-trends"
+  },
+  "status": 200
+}

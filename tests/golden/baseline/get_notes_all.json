@@ -1,0 +1,43 @@
+{
+  "body": [
+    {
+      "created_at": "<volatile>",
+      "id": "<volatile>",
+      "note": "golden snapshot note",
+      "order_id": "<volatile>",
+      "product_name": "13 CELSIUS P GRIG 22",
+      "source": "product",
+      "title": "13 CELSIUS P GRIG 22",
+      "wholesaler": "allied"
+    },
+    {
+      "created_at": "<volatile>",
+      "id": "<volatile>",
+      "note": "golden",
+      "order_id": "<volatile>",
+      "product_name": "13 CELSIUS P GRIG 22",
+      "source": "watchlist",
+      "title": "13 CELSIUS P GRIG 22",
+      "wholesaler": "allied"
+    },
+    {
+      "created_at": "<volatile>",
+      "id": "<volatile>",
+      "note": "golden order note",
+      "order_id": "<volatile>",
+      "product_name": null,
+      "source": "order",
+      "title": "Golden Order",
+      "wholesaler": null
+    }
+  ],
+  "date_sensitive": false,
+  "name": "get_notes_all",
+  "request": {
+    "auth": true,
+    "method": "GET",
+    "params": null,
+    "path": "/api/notes/all"
+  },
+  "status": 200
+}

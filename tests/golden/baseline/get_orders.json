@@ -1,0 +1,26 @@
+{
+  "body": [
+    {
+      "created_at": "<volatile>",
+      "distributor": "allied",
+      "division": null,
+      "id": "<volatile>",
+      "name": "Golden Order",
+      "notes": "golden order note",
+      "sales_rep_id": "<volatile>",
+      "status": "draft",
+      "total": 8045.16,
+      "updated_at": "<volatile>",
+      "user_id": "<volatile>"
+    }
+  ],
+  "date_sensitive": false,
+  "name": "get_orders",
+  "request": {
+    "auth": true,
+    "method": "GET",
+    "params": null,
+    "path": "/api/orders"
+  },
+  "status": 200
+}

@@ -1,0 +1,16 @@
+{
+  "body": {
+    "_non_json_text": "Internal Server Error"
+  },
+  "date_sensitive": false,
+  "name": "intelligence_buy_signals",
+  "request": {
+    "auth": false,
+    "method": "GET",
+    "params": {
+      "limit": 1000
+    },
+    "path": "/api/intelligence/buy-signals"
+  },
+  "status": 500
+}

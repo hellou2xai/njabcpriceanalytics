@@ -1,0 +1,22 @@
+{
+  "body": [
+    {
+      "distributor": "allied",
+      "division": "Golden Division",
+      "email": "<volatile>",
+      "id": "<volatile>",
+      "name": "Golden Rep",
+      "phone": "555-0100",
+      "user_id": "<volatile>"
+    }
+  ],
+  "date_sensitive": false,
+  "name": "get_sales_reps",
+  "request": {
+    "auth": true,
+    "method": "GET",
+    "params": null,
+    "path": "/api/sales-reps"
+  },
+  "status": 200
+}

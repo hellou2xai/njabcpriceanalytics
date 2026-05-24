@@ -1,0 +1,18 @@
+# Keep the image small and free of local-only data. Pricing comes from Postgres
+# on Render, so none of the Parquet / source data is needed in the image.
+.git
+.gitignore
+.env
+.env.example
+*.md
+parquet_output/
+Data/
+nj_abc_parser/
+user_data/
+tests/
+scripts/
+**/__pycache__/
+**/*.pyc
+frontend/node_modules/
+frontend/dist/
+.claude/

@@ -1,0 +1,26 @@
+{
+  "body": {
+    "grade": "F",
+    "metrics": {
+      "category_diversity": 25,
+      "clearance_urgency": 60,
+      "discount_capture": 25,
+      "price_timing": 50
+    },
+    "order_id": "<volatile>",
+    "recommendations": [
+      "Consider adding more discounted items to capture available savings",
+      "Diversify across more product categories"
+    ],
+    "score": 38
+  },
+  "date_sensitive": false,
+  "name": "get_order_scorecard",
+  "request": {
+    "auth": true,
+    "method": "GET",
+    "params": null,
+    "path": "/api/intelligence/order-scorecard/35"
+  },
+  "status": 200
+}

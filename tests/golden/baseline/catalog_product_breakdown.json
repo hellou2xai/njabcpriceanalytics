@@ -1,0 +1,105 @@
+{
+  "body": {
+    "editions": [
+      {
+        "best_case_price": 42.0,
+        "best_discount_per_case": 8.0,
+        "best_rip_per_case": 0.0,
+        "discount_tiers": [
+          {
+            "amount": 2.25,
+            "qty": 1,
+            "unit": "Cases"
+          },
+          {
+            "amount": 8.0,
+            "qty": 2,
+            "unit": "Cases"
+          }
+        ],
+        "edition": "2026-04",
+        "effective_case_price": 42.0,
+        "frontline_case_price": 50.0,
+        "frontline_unit_price": 4.17,
+        "has_discount": true,
+        "has_rip": false,
+        "rip_code": null,
+        "rip_tiers": [],
+        "total_save_per_case": 8.0,
+        "unit_volume": "700ML",
+        "upc": "80686011651",
+        "vintage": null
+      },
+      {
+        "best_case_price": 42.0,
+        "best_discount_per_case": 8.0,
+        "best_rip_per_case": 0.0,
+        "discount_tiers": [
+          {
+            "amount": 2.25,
+            "qty": 1,
+            "unit": "Cases"
+          },
+          {
+            "amount": 8.0,
+            "qty": 2,
+            "unit": "Cases"
+          }
+        ],
+        "edition": "2026-05",
+        "effective_case_price": 42.0,
+        "frontline_case_price": 50.0,
+        "frontline_unit_price": 4.17,
+        "has_discount": true,
+        "has_rip": false,
+        "rip_code": null,
+        "rip_tiers": [],
+        "total_save_per_case": 8.0,
+        "unit_volume": "700ML",
+        "upc": "80686011651",
+        "vintage": null
+      },
+      {
+        "best_case_price": 42.0,
+        "best_discount_per_case": 8.0,
+        "best_rip_per_case": 0.0,
+        "discount_tiers": [
+          {
+            "amount": 2.25,
+            "qty": 1,
+            "unit": "Cases"
+          },
+          {
+            "amount": 8.0,
+            "qty": 2,
+            "unit": "Cases"
+          }
+        ],
+        "edition": "2026-06",
+        "effective_case_price": 42.0,
+        "frontline_case_price": 50.0,
+        "frontline_unit_price": 4.17,
+        "has_discount": true,
+        "has_rip": false,
+        "rip_code": null,
+        "rip_tiers": [],
+        "total_save_per_case": 8.0,
+        "unit_volume": "700ML",
+        "upc": "80686011651",
+        "vintage": null
+      }
+    ]
+  },
+  "date_sensitive": false,
+  "name": "catalog_product_breakdown",
+  "request": {
+    "auth": false,
+    "method": "GET",
+    "params": {
+      "unit_volume": "700ML",
+      "upc": "80686011651"
+    },
+    "path": "/api/catalog/product-breakdown/allied/-196 LEMON TALL"
+  },
+  "status": 200
+}

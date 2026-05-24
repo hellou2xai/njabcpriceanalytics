@@ -1,0 +1,37 @@
+# Render Blueprint: one managed Postgres + one Docker web service that serves
+# the API and the built React frontend from the same origin.
+# https://render.com/docs/blueprint-spec
+#
+# Pricing data is loaded into Postgres locally (scripts/ingest_to_postgres.py)
+# and materialised into a local DuckDB cache at boot. User data lives in the
+# same Postgres. See the migration runbook for the monthly cycle.
+
+databases:
+  - name: njabc-db
+    databaseName: celr
+    user: celr
+    plan: free            # 1 GB; note: free Postgres is removed after 90 days
+
+services:
+  - type: web
+    name: njabc-price-analytics
+    runtime: docker
+    plan: free            # spins down when idle; first hit after idle is a cold start
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: njabc-db
+          property: connectionString
+      - key: PRICING_SOURCE
+        value: postgres
+      # Secrets: set these in the Render dashboard (sync:false keeps them out of
+      # the repo). All optional; the related feature is disabled if unset.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false
+      - key: SERPAPI_API_KEY
+        sync: false

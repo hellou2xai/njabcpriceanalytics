@@ -1,0 +1,226 @@
+import { Fragment } from 'react';
+import { Link } from 'react-router-dom';
+import FavoriteButton from './FavoriteButton';
+import AddToOrderButton from './AddToOrderButton';
+import { RowMenuButton } from './ContextMenu';
+import { distributorName } from '../lib/distributors';
+import type { Product, CatalogTier } from '../lib/api';
+
+// ---- shared cart state (localStorage) ----
+export type CartQty = { cases: number; units: number };
+export type CartState = Record<string, CartQty>;
+export function loadCart(): CartState {
+  try { return JSON.parse(localStorage.getItem('lpb_current_cart') ?? '{}'); } catch { return {}; }
+}
+export function saveCart(c: CartState) { localStorage.setItem('lpb_current_cart', JSON.stringify(c)); }
+
+export function shortUnit(u?: string | null): string {
+  if (!u) return 'cs';
+  const s = u.toLowerCase();
+  if (s.startsWith('case') || s === 'c') return 'cs';
+  if (s.startsWith('bottle') || s.startsWith('btl') || s === 'b') return 'btl';
+  return u;
+}
+function fmt(v: number | null | undefined, prefix = '$'): string {
+  return v == null ? '-' : `${prefix}${v.toFixed(2)}`;
+}
+
+function QtyStepper({ label, value, onChange }: { label: string; value: number; onChange: (n: number) => void }) {
+  const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+  return (
+    <div className="qty-stepper" onClick={stop}>
+      <span style={{ fontSize: 10, color: 'var(--text-muted)', width: 26, flexShrink: 0 }}>{label}</span>
+      <button type="button" disabled={value <= 0} onClick={() => onChange(Math.max(0, value - 1))}>-</button>
+      <input
+        type="number" min={0} value={value === 0 ? '' : value} placeholder="0"
+        onClick={stop} onMouseDown={stop} onKeyDown={stop}
+        onChange={e => {
+          const v = e.target.value.replace(/[^0-9]/g, '');
+          onChange(v === '' ? 0 : Math.max(0, parseInt(v, 10)));
+        }}
+        onFocus={e => e.target.select()}
+      />
+      <button type="button" onClick={() => onChange(value + 1)}>+</button>
+    </div>
+  );
+}
+
+type SortKey = 'product_name' | 'frontline_case_price' | 'effective_case_price';
+
+interface Props {
+  items: Product[];
+  open: (productName: string, wholesaler: string, compareWith?: unknown, opts?: { upc?: string; unitVolume?: string }) => void;
+  cart: CartState;
+  updateQty: (key: string, field: 'cases' | 'units', value: number) => void;
+  // Optional sortable headers (server- or client-side, controlled by the parent).
+  sortControls?: { sort: string; order: 'asc' | 'desc'; onSort: (col: SortKey) => void };
+  // When provided and it returns a URL, show a "🎁 In combo" link under the product.
+  comboLink?: (item: Product) => string | null;
+}
+
+/**
+ * The shared product catalog table: a parent row per product plus expandable
+ * DISC/RIP tier sub-rows ("Buy N = $X", save/case, price-after, ROI). Used by
+ * the Catalog screen and the Order Analysis screen so they render identically.
+ */
+export default function CatalogTable({ items, open, cart, updateQty, sortControls, comboLink }: Props) {
+  const sortIcon = (col: string) =>
+    sortControls && sortControls.sort === col ? (sortControls.order === 'asc' ? ' ▲' : ' ▼') : '';
+  const headSort = (col: SortKey) => sortControls
+    ? { className: 'sortable', onClick: () => sortControls.onSort(col) }
+    : {};
+  const rightHeadSort = (col: SortKey) => sortControls
+    ? { className: 'right sortable', onClick: () => sortControls.onSort(col) }
+    : { className: 'right' };
+
+  return (
+    <div className="catalog-table-wrap">
+      <table className="catalog-table">
+        <thead>
+          <tr>
+            <th style={{ width: 56 }}></th>
+            <th {...headSort('product_name')}>Product{sortIcon('product_name')}</th>
+            <th>Distributor</th>
+            <th>Type</th>
+            <th>Size</th>
+            <th {...rightHeadSort('frontline_case_price')}>Case / Btl{sortIcon('frontline_case_price')}</th>
+            <th>Tier</th>
+            <th className="right">Save (cs / btl)</th>
+            <th {...rightHeadSort('effective_case_price')}>Effective (cs / btl){sortIcon('effective_case_price')}</th>
+            <th className="right">ROI / GP%</th>
+            <th>Better Price</th>
+            <th>Qty</th>
+            <th>Order</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item: Product, rowIdx: number) => {
+            const cartKey = `${item.product_name}|${item.wholesaler}`;
+            const reactKey = `${cartKey}|${item.upc}|${rowIdx}`;
+            const qty = cart[cartKey] ?? { cases: 0, units: 0 };
+            const tiers: CatalogTier[] = item.tiers ?? [];
+            const hasTiers = tiers.length > 0;
+            return (
+              <Fragment key={reactKey}>
+                <tr className="catalog-row-main"
+                    data-ctx=""
+                    data-ctx-product={item.product_name}
+                    data-ctx-wholesaler={item.wholesaler}
+                    data-ctx-upc={item.upc}
+                    data-ctx-volume={item.unit_volume}
+                    onClick={() => open(item.product_name, item.wholesaler, undefined, { upc: item.upc, unitVolume: item.unit_volume })}>
+                  <td onClick={e => e.stopPropagation()}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                      <FavoriteButton productName={item.product_name} wholesaler={item.wholesaler}
+                        upc={item.upc} unitVolume={item.unit_volume} />
+                      <RowMenuButton product={{ product_name: item.product_name, wholesaler: item.wholesaler, upc: item.upc, unit_volume: item.unit_volume }} />
+                    </span>
+                  </td>
+                  <td>
+                    <div style={{ fontWeight: 600 }}>{item.product_name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{item.upc}</div>
+                    {comboLink && (() => {
+                      const url = comboLink(item);
+                      return url
+                        ? <Link to={url} className="combo-link-badge" onClick={e => e.stopPropagation()} title="This product is part of a combo bundle — view details">🎁 In combo</Link>
+                        : null;
+                    })()}
+                  </td>
+                  <td><span className="cell-distributor-badge">{distributorName(item.wholesaler)}</span></td>
+                  <td>{item.product_type}</td>
+                  <td>{item.unit_volume}</td>
+                  <td className="right" style={{ fontWeight: 600 }}>
+                    ${item.frontline_case_price.toFixed(2)}
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>${item.frontline_unit_price.toFixed(2)}/btl</div>
+                  </td>
+                  <td>
+                    {hasTiers
+                      ? <span className="text-muted" style={{ fontSize: 11 }}>{tiers.length} tier{tiers.length !== 1 ? 's' : ''} below</span>
+                      : <span className="text-muted">&mdash;</span>}
+                  </td>
+                  <td className="right"><span className="text-muted">&mdash;</span></td>
+                  <td className="right" style={{ fontWeight: 600 }}>
+                    ${item.effective_case_price.toFixed(2)}
+                    {(() => {
+                      const uq = Number(item.unit_qty);
+                      return uq > 0
+                        ? <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>${(item.effective_case_price / uq).toFixed(2)}/btl</div>
+                        : null;
+                    })()}
+                  </td>
+                  <td className="right">
+                    {item.has_discount || item.has_rip
+                      ? <span className="text-green">{item.discount_pct?.toFixed(1)}%</span>
+                      : <span className="text-muted">&mdash;</span>}
+                  </td>
+                  <td>
+                    {item.better_month && (
+                      <span className="better-price-badge"
+                        data-variant={item.better_month === 'This Month' ? 'this' : item.better_month === 'Next Month' ? 'next' : 'same'}
+                        title={item.next_case_price != null
+                          ? `This: $${(item.effective_case_price ?? item.frontline_case_price).toFixed(2)} · Next: $${(item.next_effective_case_price ?? item.next_case_price).toFixed(2)}`
+                          : 'No next-month data'}>
+                        {item.better_month}
+                      </span>
+                    )}
+                  </td>
+                  <td onClick={e => e.stopPropagation()}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      <QtyStepper label="Btl" value={qty.units} onChange={v => updateQty(cartKey, 'units', v)} />
+                      <QtyStepper label="Case" value={qty.cases} onChange={v => updateQty(cartKey, 'cases', v)} />
+                    </div>
+                  </td>
+                  <td onClick={e => e.stopPropagation()}>
+                    <AddToOrderButton productName={item.product_name} wholesaler={item.wholesaler}
+                      upc={item.upc} unitVolume={item.unit_volume}
+                      qtyCases={qty.cases} qtyUnits={qty.units} />
+                  </td>
+                </tr>
+
+                {tiers.map((t, idx) => {
+                  const tierMet = (t.unit.toLowerCase().startsWith('case') || t.unit.toLowerCase() === 'c')
+                    ? qty.cases >= t.qty : qty.units >= t.qty;
+                  return (
+                    <tr key={`${reactKey}_${idx}`} className="catalog-row-sub" data-tier-met={tierMet}>
+                      <td></td>
+                      <td colSpan={5} style={{ paddingLeft: 24 }}>
+                        <span className={`source-badge source-${t.source}`}>{t.source === 'discount' ? 'DISC' : 'RIP'}</span>
+                        {t.description && <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>{t.description}</span>}
+                      </td>
+                      <td>
+                        <span className={`rip-tier-badge ${t.source === 'discount' ? 'rip-tier-curr' : 'rip-tier-next'}`}>
+                          Buy {t.qty} {shortUnit(t.unit)} = <strong>${t.amount.toFixed(2)}</strong>
+                        </span>
+                      </td>
+                      <td className="right">
+                        <span className="text-green font-bold">{fmt(t.save_per_case)}</span>
+                        {t.save_per_bottle != null && (
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{fmt(t.save_per_bottle)}/btl</div>
+                        )}
+                      </td>
+                      <td className="right font-bold">
+                        {fmt(t.price_after)}
+                        {t.btl_price_after != null && (
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>{fmt(t.btl_price_after)}/btl</div>
+                        )}
+                      </td>
+                      <td className="right">
+                        <span className={t.roi_pct >= 10 ? 'text-green font-bold' : t.roi_pct >= 5 ? 'text-yellow' : ''}>
+                          {t.roi_pct.toFixed(1)}%
+                        </span>
+                      </td>
+                      <td colSpan={3}></td>
+                    </tr>
+                  );
+                })}
+              </Fragment>
+            );
+          })}
+          {items.length === 0 && (
+            <tr><td colSpan={13} className="empty">No products</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}

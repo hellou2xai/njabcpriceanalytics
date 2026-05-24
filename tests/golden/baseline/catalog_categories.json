@@ -1,0 +1,85 @@
+{
+  "body": [
+    {
+      "count": 61861,
+      "product_type": "Wine"
+    },
+    {
+      "count": 45170,
+      "product_type": "Spirits"
+    },
+    {
+      "count": 8473,
+      "product_type": "Beer"
+    },
+    {
+      "count": 3242,
+      "product_type": "RTD"
+    },
+    {
+      "count": 3102,
+      "product_type": "Sparkling"
+    },
+    {
+      "count": 721,
+      "product_type": "Non-Alc"
+    },
+    {
+      "count": 391,
+      "product_type": "Cider"
+    },
+    {
+      "count": 338,
+      "product_type": "Hemp"
+    },
+    {
+      "count": 328,
+      "product_type": "THC"
+    },
+    {
+      "count": 278,
+      "product_type": "FAB"
+    },
+    {
+      "count": 186,
+      "product_type": "Vermouth"
+    },
+    {
+      "count": 138,
+      "product_type": "THCB"
+    },
+    {
+      "count": 100,
+      "product_type": "Seltzer"
+    },
+    {
+      "count": 51,
+      "product_type": "Seasonal"
+    },
+    {
+      "count": 51,
+      "product_type": "Tea"
+    },
+    {
+      "count": 40,
+      "product_type": "Intoxicating Hemp Beverage"
+    },
+    {
+      "count": 36,
+      "product_type": "Malt"
+    },
+    {
+      "count": 14,
+      "product_type": "Combo"
+    }
+  ],
+  "date_sensitive": false,
+  "name": "catalog_categories",
+  "request": {
+    "auth": false,
+    "method": "GET",
+    "params": null,
+    "path": "/api/catalog/categories"
+  },
+  "status": 200
+}

@@ -1,0 +1,12 @@
+{
+  "body": [],
+  "date_sensitive": false,
+  "name": "get_alerts",
+  "request": {
+    "auth": true,
+    "method": "GET",
+    "params": null,
+    "path": "/api/alerts"
+  },
+  "status": 200
+}

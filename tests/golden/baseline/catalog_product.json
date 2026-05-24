@@ -1,0 +1,76 @@
+{
+  "body": {
+    "discount_tiers": [
+      {
+        "amount_per_case": 2.25,
+        "price_after": 47.75,
+        "quantity": "1 Cases",
+        "roi_pct": 4.5,
+        "tier": 1
+      },
+      {
+        "amount_per_case": 8.0,
+        "price_after": 42.0,
+        "quantity": "2 Cases",
+        "roi_pct": 16.0,
+        "tier": 2
+      }
+    ],
+    "product": {
+      "abv_proof": "11.0",
+      "best_case_price": 42.0,
+      "best_unit_price": 3.5,
+      "brand": "-196 LEMON",
+      "brand_reg_no": "767237",
+      "closeout_permit": null,
+      "combo_code": "203041",
+      "discount_1_amt": 2.25,
+      "discount_1_qty": "1 Cases",
+      "discount_2_amt": 8.0,
+      "discount_2_qty": "2 Cases",
+      "discount_3_amt": null,
+      "discount_3_qty": null,
+      "discount_4_amt": null,
+      "discount_4_qty": null,
+      "discount_5_amt": null,
+      "discount_5_qty": null,
+      "discount_pct": 16.0,
+      "edition": "2026-05",
+      "effective_case_price": 42.0,
+      "from_date": "2026-05-01T00:00:00",
+      "frontline_case_price": 50.0,
+      "frontline_unit_price": 4.17,
+      "has_closeout": false,
+      "has_discount": true,
+      "has_rip": false,
+      "month": 5,
+      "product_name": "-196 LEMON TALL",
+      "product_type": "Spirits",
+      "rip_code": "0",
+      "rip_savings": 0.0,
+      "split_case_surcharge": 1.1,
+      "to_date": "2026-05-31T00:00:00",
+      "total_savings_per_case": 8.0,
+      "unit_qty": "12",
+      "unit_type": "Can",
+      "unit_volume": "700ML",
+      "upc": "80686011651",
+      "vintage": null,
+      "wholesaler": "allied",
+      "year": 2026
+    },
+    "rip_tiers": []
+  },
+  "date_sensitive": false,
+  "name": "catalog_product",
+  "request": {
+    "auth": false,
+    "method": "GET",
+    "params": {
+      "unit_volume": "700ML",
+      "upc": "80686011651"
+    },
+    "path": "/api/catalog/product/allied/-196 LEMON TALL"
+  },
+  "status": 200
+}

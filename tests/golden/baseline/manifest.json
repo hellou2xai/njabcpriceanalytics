@@ -1,0 +1,440 @@
+{
+  "base_url": "http://127.0.0.1:8000",
+  "count": 43,
+  "entries": [
+    {
+      "auth": false,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "health",
+      "params": null,
+      "path": "/api/health",
+      "status": 200
+    },
+    {
+      "auth": false,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "analytics_dashboard",
+      "params": null,
+      "path": "/api/analytics/dashboard",
+      "status": 200
+    },
+    {
+      "auth": false,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "analytics_price_movers",
+      "params": {
+        "limit": 100
+      },
+      "path": "/api/analytics/price-movers",
+      "status": 200
+    },
+    {
+      "auth": false,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "analytics_lifecycle",
+      "params": {
+        "limit": 1000
+      },
+      "path": "/api/analytics/lifecycle",
+      "status": 200
+    },
+    {
+      "auth": false,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "analytics_cross_source",
+      "params": {
+        "limit": 1000
+      },
+      "path": "/api/analytics/cross-source",
+      "status": 200
+    },
+    {
+      "auth": false,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "analytics_category_trends",
+      "params": null,
+      "path": "/api/analytics/category-trends",
+      "status": 200
+    },
+    {
+      "auth": false,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "catalog_search_q",
+      "params": {
+        "limit": 1000,
+        "q": "glenlivet"
+      },
+      "path": "/api/catalog/search",
+      "status": 200
+    },
+    {
+      "auth": false,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "catalog_facets",
+      "params": null,
+      "path": "/api/catalog/facets",
+      "status": 200
+    },
+    {
+      "auth": false,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "catalog_editions",
+      "params": null,
+      "path": "/api/catalog/editions",
+      "status": 200
+    },
+    {
+      "auth": false,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "catalog_categories",
+      "params": null,
+      "path": "/api/catalog/categories",
+      "status": 200
+    },
+    {
+      "auth": false,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "catalog_cross_distributor",
+      "params": {
+        "limit": 50000
+      },
+      "path": "/api/catalog/cross-distributor",
+      "status": 200
+    },
+    {
+      "auth": false,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "catalog_cross_distributor_combined",
+      "params": {
+        "limit": 50000
+      },
+      "path": "/api/catalog/cross-distributor-combined",
+      "status": 200
+    },
+    {
+      "auth": false,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "catalog_qa_anomalies",
+      "params": {
+        "limit": 25
+      },
+      "path": "/api/catalog/qa/anomalies",
+      "status": 200
+    },
+    {
+      "auth": false,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "catalog_distributor_exclusive",
+      "params": {
+        "compared_to": "fedway",
+        "distributor": "allied",
+        "limit": 50000
+      },
+      "path": "/api/catalog/distributor-exclusive",
+      "status": 200
+    },
+    {
+      "auth": false,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "deals_discounts",
+      "params": {
+        "limit": 1000
+      },
+      "path": "/api/deals/discounts",
+      "status": 200
+    },
+    {
+      "auth": false,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "deals_clearance",
+      "params": {
+        "limit": 1000
+      },
+      "path": "/api/deals/clearance",
+      "status": 200
+    },
+    {
+      "auth": false,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "deals_combo_index",
+      "params": null,
+      "path": "/api/deals/combo-index",
+      "status": 200
+    },
+    {
+      "auth": false,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "deals_combos",
+      "params": {
+        "limit": 100000
+      },
+      "path": "/api/deals/combos",
+      "status": 200
+    },
+    {
+      "auth": false,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "deals_rips",
+      "params": {
+        "limit": 1000
+      },
+      "path": "/api/deals/rips",
+      "status": 200
+    },
+    {
+      "auth": false,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "deals_rip_products",
+      "params": {
+        "limit": 1000
+      },
+      "path": "/api/deals/rip-products",
+      "status": 200
+    },
+    {
+      "auth": false,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "intelligence_buy_signals",
+      "params": {
+        "limit": 1000
+      },
+      "path": "/api/intelligence/buy-signals",
+      "status": 500
+    },
+    {
+      "auth": false,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "intelligence_buy_sheet",
+      "params": null,
+      "path": "/api/intelligence/buy-sheet",
+      "status": 200
+    },
+    {
+      "auth": false,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "qa_scan",
+      "params": null,
+      "path": "/api/qa/scan",
+      "status": 200
+    },
+    {
+      "auth": false,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "qa_summary",
+      "params": null,
+      "path": "/api/qa/summary",
+      "status": 200
+    },
+    {
+      "auth": false,
+      "date_sensitive": true,
+      "method": "GET",
+      "name": "deals_time_sensitive",
+      "params": {
+        "limit": 20000
+      },
+      "path": "/api/deals/time-sensitive",
+      "status": 200
+    },
+    {
+      "auth": false,
+      "date_sensitive": true,
+      "method": "GET",
+      "name": "deals_time_sensitive_past",
+      "params": {
+        "include_past": "true",
+        "limit": 20000
+      },
+      "path": "/api/deals/time-sensitive",
+      "status": 200
+    },
+    {
+      "auth": false,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "catalog_product",
+      "params": {
+        "unit_volume": "700ML",
+        "upc": "80686011651"
+      },
+      "path": "/api/catalog/product/allied/-196 LEMON TALL",
+      "status": 200
+    },
+    {
+      "auth": false,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "catalog_product_breakdown",
+      "params": {
+        "unit_volume": "700ML",
+        "upc": "80686011651"
+      },
+      "path": "/api/catalog/product-breakdown/allied/-196 LEMON TALL",
+      "status": 200
+    },
+    {
+      "auth": false,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "catalog_price_history",
+      "params": {
+        "unit_volume": "700ML",
+        "upc": "80686011651"
+      },
+      "path": "/api/catalog/price-history/allied/-196 LEMON TALL",
+      "status": 200
+    },
+    {
+      "auth": true,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "auth_me",
+      "params": null,
+      "path": "/api/auth/me",
+      "status": 200
+    },
+    {
+      "auth": true,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "get_divisions",
+      "params": null,
+      "path": "/api/divisions",
+      "status": 200
+    },
+    {
+      "auth": true,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "get_sales_reps",
+      "params": null,
+      "path": "/api/sales-reps",
+      "status": 200
+    },
+    {
+      "auth": true,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "get_orders",
+      "params": null,
+      "path": "/api/orders",
+      "status": 200
+    },
+    {
+      "auth": true,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "get_orders_draft",
+      "params": {
+        "status": "draft"
+      },
+      "path": "/api/orders",
+      "status": 200
+    },
+    {
+      "auth": true,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "get_orders_plan",
+      "params": null,
+      "path": "/api/orders/plan",
+      "status": 200
+    },
+    {
+      "auth": true,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "get_order_detail",
+      "params": null,
+      "path": "/api/orders/35",
+      "status": 200
+    },
+    {
+      "auth": true,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "get_order_scorecard",
+      "params": null,
+      "path": "/api/intelligence/order-scorecard/35",
+      "status": 200
+    },
+    {
+      "auth": true,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "get_watchlist",
+      "params": null,
+      "path": "/api/watchlist",
+      "status": 200
+    },
+    {
+      "auth": true,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "get_notes_all",
+      "params": null,
+      "path": "/api/notes/all",
+      "status": 200
+    },
+    {
+      "auth": true,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "get_missed_opportunities",
+      "params": null,
+      "path": "/api/intelligence/missed-opportunities",
+      "status": 200
+    },
+    {
+      "auth": true,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "get_alerts",
+      "params": null,
+      "path": "/api/alerts",
+      "status": 200
+    },
+    {
+      "auth": true,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "get_alerts_unread",
+      "params": null,
+      "path": "/api/alerts/unread-count",
+      "status": 200
+    },
+    {
+      "auth": true,
+      "date_sensitive": false,
+      "method": "GET",
+      "name": "get_stores",
+      "params": null,
+      "path": "/api/stores",
+      "status": 200
+    }
+  ]
+}

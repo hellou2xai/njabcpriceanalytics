@@ -1,0 +1,12 @@
+{
+  "body": [],
+  "date_sensitive": false,
+  "name": "get_stores",
+  "request": {
+    "auth": true,
+    "method": "GET",
+    "params": null,
+    "path": "/api/stores"
+  },
+  "status": 200
+}

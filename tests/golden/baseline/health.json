@@ -1,0 +1,15 @@
+{
+  "body": {
+    "cpl_rows": 128401,
+    "status": "ok"
+  },
+  "date_sensitive": false,
+  "name": "health",
+  "request": {
+    "auth": false,
+    "method": "GET",
+    "params": null,
+    "path": "/api/health"
+  },
+  "status": 200
+}

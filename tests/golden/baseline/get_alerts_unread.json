@@ -1,0 +1,14 @@
+{
+  "body": {
+    "unread": 0
+  },
+  "date_sensitive": false,
+  "name": "get_alerts_unread",
+  "request": {
+    "auth": true,
+    "method": "GET",
+    "params": null,
+    "path": "/api/alerts/unread-count"
+  },
+  "status": 200
+}

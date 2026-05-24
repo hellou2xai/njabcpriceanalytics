@@ -1,0 +1,21 @@
+{
+  "body": {
+    "active_discounts": 16662.0,
+    "active_rips": 10489.0,
+    "avg_case_price": 378.24,
+    "clearance_items": 73.0,
+    "price_drops": 338.0,
+    "price_increases": 300.0,
+    "total_items": 41830,
+    "total_savings_pool": 633990.12
+  },
+  "date_sensitive": false,
+  "name": "analytics_dashboard",
+  "request": {
+    "auth": false,
+    "method": "GET",
+    "params": null,
+    "path": "/api/analytics/dashboard"
+  },
+  "status": 200
+}

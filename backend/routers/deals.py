@@ -1,0 +1,985 @@
+﻿"""
+Deals API â€” discounts, clearance, combos, RIPs.
+
+Covers: Â§7 Discount/Offer Views
+"""
+
+import math
+import re
+
+from fastapi import APIRouter, Query
+from typing import Optional
+
+from backend.db import get_duckdb, read_parquet
+from backend.rip_utils import is_bottle_unit, rip_per_case, rip_bundle_cost
+
+
+def _clean(rec: dict) -> dict:
+    """Replace NaN with None and Timestamps with isoformat strings."""
+    out = {}
+    for k, v in rec.items():
+        if isinstance(v, float) and math.isnan(v):
+            out[k] = None
+        elif hasattr(v, 'isoformat'):
+            out[k] = v.isoformat() if v is not None else None
+        else:
+            out[k] = v
+    return out
+
+router = APIRouter(prefix="/api/deals", tags=["deals"])
+
+
+@router.get("/discounts")
+def get_top_discounts(
+    wholesaler: Optional[str] = None,
+    edition: Optional[str] = None,
+    product_type: Optional[str] = None,
+    min_discount_pct: float = Query(0, ge=0),
+    sort: str = Query("total_savings_per_case", description="Sort by"),
+    limit: int = Query(50, ge=1, le=1000),
+    per_category: bool = Query(False, description="If true, return top `limit` per product category instead of overall"),
+):
+    """Discount ranker — §7.1.
+
+    Baselines on the *current* edition (second-latest = this month) and looks up
+    the *next* edition's effective price so each row can say whether it's cheaper
+    now or next month, plus the savings source (CPL discount / RIP / closeout).
+    """
+    with get_duckdb() as con:
+        src = read_parquet(con, "cpl_enriched")
+
+        # current (this month) + next edition per wholesaler.
+        eds_df = con.execute(f"SELECT DISTINCT wholesaler, edition FROM {src}").fetchdf()
+        curr_map, next_map = {}, {}
+        for ws, group in eds_df.groupby("wholesaler"):
+            se = sorted(group["edition"].tolist(), reverse=True)
+            next_map[ws] = se[0] if se else None
+            curr_map[ws] = se[1] if len(se) > 1 else (se[0] if se else None)
+
+        where = ["has_discount = true", "total_savings_per_case > 0"]
+        params = {}
+
+        if wholesaler:
+            where.append("wholesaler = $wholesaler")
+            params["wholesaler"] = wholesaler
+        if edition:
+            where.append("edition = $edition")
+            params["edition"] = edition
+        else:
+            conds = []
+            for i, (ws, ce) in enumerate(curr_map.items()):
+                if (wholesaler and ws != wholesaler) or not ce:
+                    continue
+                conds.append(f"(wholesaler = $ws{i} AND edition = $ce{i})")
+                params[f"ws{i}"], params[f"ce{i}"] = ws, ce
+            if not conds:
+                return []
+            where.append("(" + " OR ".join(conds) + ")")
+        if product_type:
+            where.append("product_type = $product_type")
+            params["product_type"] = product_type
+        if min_discount_pct > 0:
+            where.append("discount_pct >= $min_pct")
+            params["min_pct"] = min_discount_pct
+
+        allowed_sorts = {"total_savings_per_case", "discount_pct", "effective_case_price"}
+        sort_col = sort if sort in allowed_sorts else "total_savings_per_case"
+
+        w = " AND ".join(where)
+        cols = """wholesaler, edition, upc, product_name, product_type,
+                   unit_volume, unit_qty, frontline_case_price, frontline_unit_price,
+                   best_case_price, effective_case_price, discount_pct,
+                   total_savings_per_case, rip_savings, has_rip, has_discount,
+                   has_closeout, discount_1_qty, discount_1_amt"""
+        if per_category:
+            df = con.execute(f"""
+                WITH ranked AS (
+                    SELECT {cols},
+                           ROW_NUMBER() OVER (
+                               PARTITION BY product_type ORDER BY {sort_col} DESC
+                           ) AS _rn
+                    FROM {src}
+                    WHERE {w}
+                )
+                SELECT {cols} FROM ranked
+                WHERE _rn <= $limit
+                ORDER BY {sort_col} DESC
+            """, {**params, "limit": limit}).fetchdf()
+        else:
+            df = con.execute(f"""
+                SELECT {cols}
+                FROM {src}
+                WHERE {w}
+                ORDER BY {sort_col} DESC
+                LIMIT $limit
+            """, {**params, "limit": limit}).fetchdf()
+
+        records = [_clean(r) for r in df.to_dict(orient="records")]
+
+        # Next-month effective for the same SKU → "cheaper now or next?"
+        next_eds = sorted({v for v in next_map.values() if v})
+        upcs = sorted({str(r["upc"]) for r in records if r.get("upc")})
+        next_lookup = {}
+        if next_eds and upcs:
+            uph = ", ".join(f"$u{i}" for i in range(len(upcs)))
+            eph = ", ".join(f"$e{i}" for i in range(len(next_eds)))
+            np = {f"u{i}": u for i, u in enumerate(upcs)}
+            np.update({f"e{i}": e for i, e in enumerate(next_eds)})
+            ndf = con.execute(f"""
+                SELECT wholesaler, edition, upc, product_name, unit_volume,
+                       effective_case_price
+                FROM {src}
+                WHERE upc IN ({uph}) AND edition IN ({eph})
+            """, np).fetchdf()
+            for _, nr in ndf.iterrows():
+                key = (nr["wholesaler"], nr["edition"], str(nr["upc"]),
+                       nr.get("product_name") or "", nr.get("unit_volume") or "")
+                v = nr["effective_case_price"]
+                next_lookup[key] = None if (v is None or (isinstance(v, float) and math.isnan(v))) else float(v)
+
+        for r in records:
+            ws = r["wholesaler"]
+            ne_ed = next_map.get(ws)
+            ce = r.get("effective_case_price")
+            ne = next_lookup.get((ws, ne_ed, str(r.get("upc") or ""),
+                                  r.get("product_name") or "", r.get("unit_volume") or "")) if ne_ed else None
+            r["next_effective_case_price"] = ne
+            if ne is None or ce is None:
+                r["better_month"] = "This month"   # no next-month data → act now
+            elif ne < ce - 0.01:
+                r["better_month"] = "Next month"    # gets cheaper → wait
+            elif ne > ce + 0.01:
+                r["better_month"] = "This month"     # cheaper now → buy now
+            else:
+                r["better_month"] = "Same"
+            # Savings source: where the discount comes from.
+            src_parts = []
+            if r.get("has_discount"):
+                src_parts.append("CPL discount")
+            if r.get("has_rip"):
+                src_parts.append("RIP")
+            if r.get("has_closeout"):
+                src_parts.append("Closeout")
+            r["discount_source"] = src_parts
+
+        return records
+
+
+@router.get("/clearance")
+def get_clearance_items(
+    wholesaler: Optional[str] = None,
+    edition: Optional[str] = None,
+    limit: int = Query(50, ge=1, le=1000),
+):
+    """Clearance / closeout items â€” Â§7.2"""
+    with get_duckdb() as con:
+        src = read_parquet(con, "cpl_enriched")
+        where = ["has_closeout = true"]
+        params = {}
+
+        if wholesaler:
+            where.append("wholesaler = $wholesaler")
+            params["wholesaler"] = wholesaler
+        if edition:
+            where.append("edition = $edition")
+            params["edition"] = edition
+        else:
+            where.append(f"edition = (SELECT MAX(edition) FROM {src}" +
+                        (f" WHERE wholesaler = $wholesaler" if wholesaler else "") + ")")
+
+        w = " AND ".join(where)
+        df = con.execute(f"""
+            SELECT wholesaler, edition, product_name, product_type,
+                   unit_volume, frontline_case_price, best_case_price,
+                   effective_case_price, discount_pct, total_savings_per_case,
+                   closeout_permit
+            FROM {src}
+            WHERE {w}
+            ORDER BY discount_pct DESC
+            LIMIT $limit
+        """, {**params, "limit": limit}).fetchdf()
+        return df.to_dict(orient="records")
+
+
+@router.get("/combo-index")
+def get_combo_index():
+    """Index of products that belong to a combo bundle, keyed for the catalog
+    to flag/link them. Returns one entry per (wholesaler, upc, combo_code) for
+    the latest edition per wholesaler."""
+    with get_duckdb() as con:
+        src = read_parquet(con, "combo")
+        eds = con.execute(f"SELECT wholesaler, MAX(edition) AS ed FROM {src} GROUP BY wholesaler").fetchdf()
+        ed_map = dict(zip(eds["wholesaler"], eds["ed"]))
+        if not ed_map:
+            return {"items": []}
+        params, pairs = {}, []
+        for i, (w, e) in enumerate(ed_map.items()):
+            params[f"w{i}"], params[f"e{i}"] = w, e
+            pairs.append(f"(wholesaler = $w{i} AND edition = $e{i})")
+        df = con.execute(f"""
+            SELECT DISTINCT wholesaler, upc, combo_code, LTRIM(upc, '0') AS upc_norm
+            FROM {src}
+            WHERE ({' OR '.join(pairs)})
+              AND upc IS NOT NULL AND upc != '' AND upc != '0'
+        """, params).fetchdf()
+        items = [
+            {"wholesaler": r["wholesaler"], "upc": str(r["upc"]),
+             "upc_norm": str(r["upc_norm"]), "combo_code": str(r["combo_code"])}
+            for _, r in df.iterrows()
+        ]
+        return {"items": items}
+
+
+@router.get("/combos")
+def get_combos(
+    wholesaler: Optional[str] = None,
+    edition: Optional[str] = None,
+    q: str = "",
+    limit: int = Query(50, ge=1, le=100000),
+):
+    """Bundle/combo deals — ONE row per combo (components grouped). §7.3
+
+    The source has one row per bundle component (and sometimes duplicate
+    component rows), with combo_pack_price/total_savings constant per
+    combo_code. We collapse to a single row per combo and expose the deduped
+    component list so the UI shows one line per bundle.
+    """
+    with get_duckdb() as con:
+        src = read_parquet(con, "combo")
+        from datetime import date as _date
+        from collections import defaultdict
+        t = _date.today()
+        current_ym = f"{t.year:04d}-{t.month:02d}"
+
+        # Per-wholesaler current edition (latest <= this month, else newest) and
+        # the next edition after it — so we can show this-vs-next-month outlook.
+        ed_df = con.execute(f"SELECT DISTINCT wholesaler, edition FROM {src}").fetchdf()
+        by_ws = defaultdict(list)
+        for _, r in ed_df.iterrows():
+            by_ws[r["wholesaler"]].append(r["edition"])
+        cur_ed, nxt_ed = {}, {}
+        for ws, elist in by_ws.items():
+            elist = sorted(elist)
+            if edition:
+                curr = edition
+            else:
+                past = [e for e in elist if e <= current_ym]
+                curr = past[-1] if past else elist[-1]
+            after = [e for e in elist if e > curr]
+            cur_ed[ws] = curr
+            nxt_ed[ws] = after[0] if after else None
+
+        target_ws = [wholesaler] if wholesaler else list(by_ws.keys())
+        pairs = []
+        for ws in target_ws:
+            if ws not in cur_ed:
+                continue
+            pairs.append((ws, cur_ed[ws]))
+            if nxt_ed.get(ws):
+                pairs.append((ws, nxt_ed[ws]))
+        if not pairs:
+            return []
+
+        params, clauses = {}, []
+        for i, (ws, e) in enumerate(pairs):
+            params[f"w{i}"], params[f"e{i}"] = ws, e
+            clauses.append(f"(wholesaler = $w{i} AND edition = $e{i})")
+        df = con.execute(f"""
+            SELECT wholesaler, edition, combo_code, upc, product_name,
+                   combo_pack_price, qty_per_pack, frontline_price_each,
+                   combo_price_each, total_savings, comments, from_date, to_date
+            FROM {src}
+            WHERE {' OR '.join(clauses)}
+            ORDER BY total_savings DESC NULLS LAST
+        """, params).fetchdf()
+
+        def _f(v):
+            try:
+                fv = float(v)
+            except (TypeError, ValueError):
+                return None
+            return None if fv != fv else fv  # NaN
+
+        def _s(v):
+            if v is None or (isinstance(v, float) and v != v):
+                return None
+            s = str(v).strip()
+            return s if s and s.lower() != "nan" else None
+
+        # Group by (wholesaler, combo_code); split current vs next by edition.
+        combos = {}
+        for _, r in df.iterrows():
+            ws = r["wholesaler"]
+            code = _s(r.get("combo_code")) or ""
+            ed = r["edition"]
+            slot = "curr" if ed == cur_ed.get(ws) else ("next" if ed == nxt_ed.get(ws) else None)
+            if slot is None:
+                continue
+            g = combos.get((ws, code))
+            if g is None:
+                g = {"comments": None, "curr": None, "next": None,
+                     "comp_curr": [], "comp_next": [], "_sc": set(), "_sn": set()}
+                combos[(ws, code)] = g
+            if not g["comments"]:
+                g["comments"] = _s(r.get("comments"))
+            if g[slot] is None:
+                g[slot] = {"combo_pack_price": _f(r.get("combo_pack_price")),
+                           "total_savings": _f(r.get("total_savings")), "upc": _s(r.get("upc")),
+                           "from_date": _s(r.get("from_date")), "to_date": _s(r.get("to_date"))}
+            comp = {"product_name": _s(r.get("product_name")), "upc": _s(r.get("upc")),
+                    "qty_per_pack": _s(r.get("qty_per_pack")),
+                    "frontline_price_each": _f(r.get("frontline_price_each")),
+                    "combo_price_each": _f(r.get("combo_price_each"))}
+            sig = (comp["product_name"], comp["upc"], comp["qty_per_pack"],
+                   comp["frontline_price_each"], comp["combo_price_each"])
+            seen, bucket = (g["_sc"], g["comp_curr"]) if slot == "curr" else (g["_sn"], g["comp_next"])
+            if sig not in seen:
+                seen.add(sig)
+                bucket.append(comp)
+
+        ql = q.strip().lower()
+        items = []
+        for (ws, code), g in combos.items():
+            curr, nxt = g["curr"], g["next"]
+            base = curr or nxt
+            if base is None:
+                continue
+            comps = g["comp_curr"] if curr else g["comp_next"]
+            savings, combo_price = base["total_savings"], base["combo_pack_price"]
+            next_price = nxt["combo_pack_price"] if nxt else None
+            next_savings = nxt["total_savings"] if nxt else None
+            availability = "continues" if (curr and nxt) else ("ending" if curr else "new")
+            cs, ns = savings or 0, next_savings or 0
+            cp, npr = combo_price or 0, next_price or 0
+            if availability == "ending":
+                recommendation = "Buy now - ends this month"
+            elif availability == "new":
+                recommendation = "New next month"
+            elif ns > cs + 0.01:
+                recommendation = "Better deal next month"
+            elif ns < cs - 0.01:
+                recommendation = "Better deal now"
+            elif npr > cp + 0.01:
+                recommendation = "Price rises next month"
+            elif npr < cp - 0.01:
+                recommendation = "Price drops next month"
+            else:
+                recommendation = "Stable"
+            comments = g["comments"]
+            if ql:
+                hay = " ".join([comments or "", code] + [c["product_name"] or "" for c in comps]).lower()
+                if ql not in hay:
+                    continue
+            items.append({
+                "wholesaler": ws, "combo_code": code, "comments": comments,
+                "product_name": comments or f"Combo {code}", "upc": base.get("upc"),
+                "combo_pack_price": combo_price, "total_savings": savings,
+                "components": comps, "item_count": len(comps),
+                "next_combo_pack_price": next_price, "next_total_savings": next_savings,
+                "availability": availability, "recommendation": recommendation,
+                "valid_from": base.get("from_date"), "valid_through": base.get("to_date"),
+                "next_valid_from": nxt.get("from_date") if nxt else None,
+                "next_valid_through": nxt.get("to_date") if nxt else None,
+            })
+
+        items.sort(key=lambda x: x["total_savings"] or 0, reverse=True)
+        return items[:limit]
+
+
+@router.get("/time-sensitive")
+def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False, limit: int = Query(2000, ge=1, le=20000)):
+    """Deals whose validity window is a SPECIFIC range inside the month (start
+    is not the 1st or end is not the last day), still active (ends today or
+    later), with days-to-expire. These are the urgent, easy-to-miss deals."""
+    def _n(v):
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return None
+        return None if f != f else f
+
+    def _str(v):
+        if v is None or (isinstance(v, float) and v != v):
+            return None
+        s = str(v).strip()
+        return s or None
+
+    with get_duckdb() as con:
+        src = read_parquet(con, "cpl_enriched")
+        from datetime import date as _date
+        t = _date.today()
+        current_ym = f"{t.year:04d}-{t.month:02d}"
+        # Current edition AND the next edition per wholesaler, so dated deals
+        # for next month surface too (gives the buyer time to prep).
+        eds = con.execute(
+            f"""SELECT wholesaler,
+                       COALESCE(MAX(CASE WHEN edition <= $c THEN edition END), MAX(edition)) AS cur_ed,
+                       MIN(CASE WHEN edition > $c THEN edition END) AS next_ed
+                FROM {src} GROUP BY wholesaler""",
+            {"c": current_ym},
+        ).fetchdf()
+        conds, params, idx = [], {}, 0
+        for _, row in eds.iterrows():
+            ws = row["wholesaler"]
+            if wholesaler and ws != wholesaler:
+                continue
+            for ed in (row["cur_ed"], row["next_ed"]):
+                if ed is None or (isinstance(ed, float) and ed != ed):
+                    continue
+                conds.append(f"(wholesaler = $w{idx} AND edition = $e{idx})")
+                params[f"w{idx}"], params[f"e{idx}"] = ws, ed
+                idx += 1
+        if not conds:
+            return []
+
+        active_clause = "" if include_past else "AND CAST(to_date AS DATE) >= CURRENT_DATE"
+        rows = con.execute(f"""
+            SELECT wholesaler, product_name, product_type, unit_volume, unit_qty, upc, brand,
+                   CAST(from_date AS DATE) AS from_date, CAST(to_date AS DATE) AS to_date,
+                   date_diff('day', CURRENT_DATE, CAST(to_date AS DATE)) AS days_to_expire,
+                   frontline_case_price, effective_case_price, total_savings_per_case, discount_pct,
+                   rip_savings, has_rip, has_discount, has_closeout
+            FROM {src}
+            WHERE from_date IS NOT NULL AND to_date IS NOT NULL
+              AND NOT (EXTRACT(day FROM CAST(from_date AS DATE)) = 1
+                       AND CAST(to_date AS DATE) = (date_trunc('month', CAST(to_date AS DATE)) + INTERVAL 1 MONTH - INTERVAL 1 DAY))
+              {active_clause}
+              AND ({' OR '.join(conds)})
+            ORDER BY to_date ASC, total_savings_per_case DESC NULLS LAST
+            LIMIT {limit}
+        """, params).fetchdf()
+
+        out = []
+        for _, r in rows.iterrows():
+            kinds = []
+            if bool(r["has_closeout"]): kinds.append("Closeout")
+            if bool(r["has_rip"]): kinds.append("RIP")
+            if bool(r["has_discount"]): kinds.append("Discount")
+            dte = r["days_to_expire"]
+            out.append({
+                "wholesaler": r["wholesaler"],
+                "product_name": r["product_name"],
+                "product_type": _str(r["product_type"]),
+                "unit_volume": _str(r["unit_volume"]),
+                "unit_qty": _str(r["unit_qty"]),
+                "upc": _str(r["upc"]),
+                "brand": _str(r["brand"]),
+                "from_date": str(r["from_date"])[:10] if r["from_date"] is not None else None,
+                "to_date": str(r["to_date"])[:10] if r["to_date"] is not None else None,
+                "days_to_expire": int(dte) if dte == dte else None,  # drop NaN
+                "frontline_case_price": _n(r["frontline_case_price"]),
+                "effective_case_price": _n(r["effective_case_price"]),
+                "total_savings_per_case": _n(r["total_savings_per_case"]),
+                "discount_pct": _n(r["discount_pct"]),
+                "deal_kind": " / ".join(kinds) or "Special price",
+            })
+        return out
+
+
+@router.get("/rips")
+def get_active_rips(
+    wholesaler: Optional[str] = None,
+    edition: Optional[str] = None,
+    q: str = "",
+    limit: int = Query(50, ge=1, le=1000),
+):
+    """Active RIP promotions â€” Â§7.4"""
+    with get_duckdb() as con:
+        src = read_parquet(con, "rip")
+        where = ["1=1"]
+        params = {}
+
+        if wholesaler:
+            where.append("wholesaler = $wholesaler")
+            params["wholesaler"] = wholesaler
+        if edition:
+            where.append("edition = $edition")
+            params["edition"] = edition
+        if q:
+            where.append("UPPER(rip_description) LIKE UPPER($q)")
+            params["q"] = f"%{q}%"
+
+        w = " AND ".join(where)
+        df = con.execute(f"""
+            SELECT * FROM {src}
+            WHERE {w}
+            ORDER BY rip_amt_1 DESC NULLS LAST
+            LIMIT $limit
+        """, {**params, "limit": limit}).fetchdf()
+        return [_clean(r) for r in df.to_dict(orient="records")]
+
+
+_QTY_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*(.*)$")
+
+
+def _parse_disc_qty(s):
+    """Parse '1 Cases', '5.0', '10 bottle' -> (qty:int, unit_label:str)."""
+    if s is None:
+        return None, None
+    txt = str(s).strip()
+    if not txt:
+        return None, None
+    m = _QTY_RE.match(txt)
+    if not m:
+        return None, None
+    try:
+        qty = int(float(m.group(1)))
+    except (ValueError, TypeError):
+        return None, None
+    if qty <= 0:
+        return None, None
+    tail = (m.group(2) or "").lower().strip()
+    if tail.startswith("bottle") or tail in ("b", "btl", "bottles"):
+        unit = "Bottles"
+    else:
+        unit = "Cases"
+    return qty, unit
+
+
+def _extract_tiers(row):
+    """Build [{qty, unit, amt}] from discount_1..5 columns of a CPL row."""
+    import pandas as pd
+    tiers = []
+    for i in range(1, 6):
+        amt = row.get(f"discount_{i}_amt")
+        if amt is None or pd.isna(amt) or amt <= 0:
+            continue
+        qty, unit = _parse_disc_qty(row.get(f"discount_{i}_qty"))
+        if qty is None:
+            continue
+        tiers.append({"qty": qty, "unit": unit, "amt": float(amt)})
+    return tiers
+
+
+@router.get("/rip-products")
+def get_rip_products(
+    wholesaler: Optional[str] = None,
+    product_type: Optional[str] = None,
+    q: str = "",
+    rip_code: Optional[str] = None,
+    min_savings: Optional[float] = None,
+    min_gp: Optional[float] = None,
+    tier_unit: Optional[str] = None,   # 'case' | 'btl'
+    new_next: bool = False,
+    source: Optional[str] = None,
+    sort: str = Query("rip_save_per_case", description="Sort field"),
+    order: str = Query("desc", description="asc or desc"),
+    limit: int = Query(50, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+):
+    """Products with incentives â€” DISCOUNT tiers (CPL) and RIP tiers (RIP sheet, by rip_code+upc), curr+next side by side."""
+    import pandas as pd
+
+    with get_duckdb() as con:
+        src = read_parquet(con, "cpl_enriched")
+        rip_src = read_parquet(con, "rip")
+
+        # 1. Latest two editions per wholesaler
+        eds_df = con.execute(f"SELECT DISTINCT wholesaler, edition FROM {src}").fetchdf()
+        ed_map = {}
+        for ws, group in eds_df.groupby("wholesaler"):
+            sorted_eds = sorted(group["edition"].tolist(), reverse=True)
+            next_ed = sorted_eds[0]
+            curr_ed = sorted_eds[1] if len(sorted_eds) > 1 else None
+            ed_map[ws] = (curr_ed, next_ed)
+
+        if wholesaler and wholesaler not in ed_map:
+            return {"total": 0, "limit": limit, "offset": offset, "items": []}
+
+        target_pairs = []
+        for ws, (curr_ed, next_ed) in ed_map.items():
+            if wholesaler and ws != wholesaler:
+                continue
+            if curr_ed:
+                target_pairs.append((ws, curr_ed))
+            target_pairs.append((ws, next_ed))
+
+        if not target_pairs:
+            return {"total": 0, "limit": limit, "offset": offset, "items": []}
+
+        params = {}
+        for i, (ws, ed) in enumerate(target_pairs):
+            params[f"ws_{i}"] = ws
+            params[f"ed_{i}"] = ed
+        ed_filter_inner = " OR ".join(
+            f"(wholesaler = $ws_{i} AND edition = $ed_{i})"
+            for i in range(len(target_pairs))
+        )
+        ed_filter_outer = " OR ".join(
+            f"(c.wholesaler = $ws_{i} AND c.edition = $ed_{i})"
+            for i in range(len(target_pairs))
+        )
+
+        extra = []
+        if product_type:
+            extra.append("c.product_type = $product_type")
+            params["product_type"] = product_type
+        if q:
+            # Search matches product name OR RIP code.
+            extra.append("(UPPER(c.product_name) LIKE UPPER($q) OR CAST(c.rip_code AS VARCHAR) LIKE $q)")
+            params["q"] = f"%{q}%"
+        extra_sql = (" AND " + " AND ".join(extra)) if extra else ""
+
+        # Restrict to a specific RIP number (matches products carrying that
+        # rip_code in either targeted edition).
+        rip_key_filter = ""
+        if rip_code:
+            rip_key_filter = " AND CAST(rip_code AS VARCHAR) LIKE $rip_code"
+            params["rip_code"] = f"%{rip_code}%"
+
+        # 2. Products with any incentive (discount tier OR has_rip) in curr or next
+        products_df = con.execute(f"""
+            WITH incentive_keys AS (
+                SELECT DISTINCT wholesaler, upc
+                FROM {src}
+                WHERE ({ed_filter_inner})
+                  AND (has_rip = true
+                       OR discount_1_amt > 0 OR discount_2_amt > 0 OR discount_3_amt > 0
+                       OR discount_4_amt > 0 OR discount_5_amt > 0)
+                  {rip_key_filter}
+            )
+            SELECT c.wholesaler, c.edition, c.upc, c.product_name, c.product_type,
+                   c.unit_qty, c.unit_volume,
+                   c.frontline_case_price, c.frontline_unit_price,
+                   c.best_case_price,
+                   c.has_discount, c.discount_pct,
+                   c.rip_code,
+                   c.discount_1_qty, c.discount_1_amt,
+                   c.discount_2_qty, c.discount_2_amt,
+                   c.discount_3_qty, c.discount_3_amt,
+                   c.discount_4_qty, c.discount_4_amt,
+                   c.discount_5_qty, c.discount_5_amt
+            FROM {src} c
+            JOIN incentive_keys ik ON c.wholesaler = ik.wholesaler AND c.upc = ik.upc
+            WHERE ({ed_filter_outer}){extra_sql}
+        """, params).fetchdf()
+
+        if products_df.empty:
+            return {"total": 0, "limit": limit, "offset": offset, "items": []}
+
+        # 3. RIP sheet lookup: (rip_code, wholesaler, edition, upc) -> deduped tier list
+        rip_df = con.execute(f"""
+            SELECT rip_code, wholesaler, edition, upc,
+                   rip_unit_1, rip_qty_1, rip_amt_1,
+                   rip_unit_2, rip_qty_2, rip_amt_2,
+                   rip_unit_3, rip_qty_3, rip_amt_3,
+                   rip_unit_4, rip_qty_4, rip_amt_4
+            FROM {rip_src}
+        """).fetchdf()
+
+        def _norm_unit_key(u):
+            if u is None:
+                return ""
+            s = str(u).lower().strip()
+            if s in ("c", "case", "cases", "case(s)") or s.startswith("case"):
+                return "case"
+            if s in ("b", "btl", "bottle", "bottles") or s.startswith("btl") or s.startswith("bottle"):
+                return "btl"
+            return s
+
+        rip_lookup = {}
+        for _, r in rip_df.iterrows():
+            tiers_here = []
+            for i in range(1, 5):
+                unit = r.get(f"rip_unit_{i}")
+                qty = r.get(f"rip_qty_{i}")
+                amt = r.get(f"rip_amt_{i}")
+                if pd.notna(amt) and amt > 0 and pd.notna(qty) and qty > 0:
+                    tiers_here.append({
+                        "unit": unit if pd.notna(unit) else "Cases",
+                        "qty": int(qty),
+                        "amt": float(amt),
+                    })
+            if not tiers_here:
+                continue
+            key = (str(r["rip_code"]), r["wholesaler"], r["edition"], str(r.get("upc", "")))
+            rip_lookup.setdefault(key, []).extend(tiers_here)
+
+        # Dedupe each lookup entry by (norm_unit, qty, amt)
+        for k, tlist in rip_lookup.items():
+            seen = set()
+            deduped = []
+            for t in tlist:
+                sig = (_norm_unit_key(t["unit"]), t["qty"], t["amt"])
+                if sig in seen:
+                    continue
+                seen.add(sig)
+                deduped.append(t)
+            rip_lookup[k] = deduped
+
+        # 4. Index by (wholesaler, upc) -> {curr, next, meta}; prefer next-edition metadata
+        product_map = {}
+        for _, p in products_df.iterrows():
+            ws = p["wholesaler"]
+            curr_ed, next_ed = ed_map[ws]
+            if p["edition"] == curr_ed:
+                slot = "curr"
+            elif p["edition"] == next_ed:
+                slot = "next"
+            else:
+                continue
+
+            upc = str(p["upc"])
+            key = (ws, upc)
+            if key not in product_map:
+                product_map[key] = {
+                    "curr": None,
+                    "next": None,
+                    "meta": {
+                        "wholesaler": ws, "upc": upc,
+                        "product_name": p["product_name"],
+                        "product_type": p["product_type"],
+                        "unit_qty": p["unit_qty"],
+                        "unit_volume": p["unit_volume"],
+                        "curr_edition": curr_ed,
+                        "next_edition": next_ed,
+                    },
+                }
+
+            disc_tiers = [{**t, "source": "discount"} for t in _extract_tiers(p)]
+            rip_code = str(p["rip_code"]) if pd.notna(p["rip_code"]) else None
+            rip_tiers = []
+            if rip_code and rip_code not in ("None", "nan", "0"):
+                rk = (rip_code, ws, p["edition"], upc)
+                rip_tiers = [{**t, "source": "rip"} for t in rip_lookup.get(rk, [])]
+
+            product_map[key][slot] = {
+                "case_price": float(p["frontline_case_price"]) if pd.notna(p["frontline_case_price"]) else None,
+                "btl_price": float(p["frontline_unit_price"]) if pd.notna(p["frontline_unit_price"]) else None,
+                "has_discount": bool(p["has_discount"]) if pd.notna(p["has_discount"]) else False,
+                "discount_pct": float(p["discount_pct"]) if pd.notna(p["discount_pct"]) else 0.0,
+                "rip_code": rip_code,
+                "tiers": disc_tiers + rip_tiers,
+            }
+
+            if slot == "next":
+                meta = product_map[key]["meta"]
+                if pd.notna(p["product_name"]):
+                    meta["product_name"] = p["product_name"]
+                if pd.notna(p["product_type"]):
+                    meta["product_type"] = p["product_type"]
+                if pd.notna(p["unit_qty"]):
+                    meta["unit_qty"] = p["unit_qty"]
+                if pd.notna(p["unit_volume"]):
+                    meta["unit_volume"] = p["unit_volume"]
+
+        def _norm_unit(u):
+            if u is None:
+                return ""
+            s = str(u).lower().strip()
+            if s in ("c", "case", "cases") or s.startswith("case"):
+                return "case"
+            if s in ("b", "btl", "bottle", "bottles") or s.startswith("btl") or s.startswith("bottle"):
+                return "btl"
+            return s
+
+        def _real_code(*codes):
+            """First real (non-stub) RIP code, treating 0/None/blank as none."""
+            for c in codes:
+                if c is not None and str(c) not in ("0", "None", "nan", ""):
+                    return str(c)
+            return None
+
+        def _calc(case_price, btl_price, unit_qty, qty, amt, unit, source):
+            uq = 0
+            try:
+                if unit_qty is not None and not (isinstance(unit_qty, float) and math.isnan(unit_qty)):
+                    uq = int(unit_qty)
+            except (TypeError, ValueError):
+                uq = 0
+            if source == "discount":
+                # CPL discount amount is already per case; qty is the threshold.
+                save_per_case = round(amt, 2)
+            else:
+                # RIP rebate is a bundle total; per case = amt/qty, and a
+                # bottle-unit tier is per-bottle so ×pack (uq) to reach per case.
+                save_per_case = round(rip_per_case(amt, qty, unit, uq), 2)
+            effective = round(case_price - save_per_case, 2) if case_price else None
+            effective_btl = None
+            if btl_price and btl_price > 0:
+                effective_btl = round(btl_price - (save_per_case / uq if uq > 0 else 0), 2)
+            gp_pct = round((save_per_case / case_price) * 100, 2) if case_price and case_price > 0 else 0
+            return {
+                "rip_amt": amt,
+                "save_per_case": save_per_case,
+                "effective_case_price": max(effective, 0) if effective is not None else None,
+                "effective_btl_price": max(effective_btl, 0) if effective_btl is not None else None,
+                "gp_pct": gp_pct,
+            }
+
+        # 6. Emit one row per (product+upc, tier) â€” union of tier (unit, qty) across editions
+        items = []
+        for p in product_map.values():
+            curr = p["curr"]
+            nxt = p["next"]
+            meta = p["meta"]
+            ws = meta["wholesaler"]
+            curr_ed, next_ed = ed_map[ws]
+
+            curr_tiers = curr.get("tiers") if curr else []
+            next_tiers = nxt.get("tiers") if nxt else []
+
+            if not curr_tiers and not next_tiers:
+                continue
+
+            tier_pairs = {}
+            for t in (curr_tiers or []):
+                k = (t["source"], _norm_unit(t["unit"]), t["qty"])
+                tier_pairs.setdefault(k, {"curr": None, "next": None, "unit": t["unit"], "qty": t["qty"], "source": t["source"]})
+                tier_pairs[k]["curr"] = t
+            for t in (next_tiers or []):
+                k = (t["source"], _norm_unit(t["unit"]), t["qty"])
+                if k not in tier_pairs:
+                    tier_pairs[k] = {"curr": None, "next": None, "unit": t["unit"], "qty": t["qty"], "source": t["source"]}
+                tier_pairs[k]["next"] = t
+
+            # Stable order: discounts first, then RIPs; within each, by qty ascending
+            ordered = sorted(
+                tier_pairs.values(),
+                key=lambda x: (0 if x["source"] == "discount" else 1, x["qty"]),
+            )
+
+            for tp in ordered:
+                row = {
+                    "wholesaler": ws,
+                    "upc": meta["upc"],
+                    "product_name": meta["product_name"],
+                    "product_type": meta["product_type"],
+                    "unit_qty": meta["unit_qty"],
+                    "unit_volume": meta["unit_volume"],
+                    "curr_edition": curr_ed,
+                    "next_edition": next_ed,
+                    "source": tp["source"],
+                    "rip_unit": tp["unit"],
+                    "rip_qty": tp["qty"],
+                    "curr_case_price": (curr or {}).get("case_price"),
+                    "curr_btl_price": (curr or {}).get("btl_price"),
+                    "curr_has_discount": (curr or {}).get("has_discount", False),
+                    "curr_discount_pct": (curr or {}).get("discount_pct", 0.0),
+                    "curr_rip_code": (curr or {}).get("rip_code"),
+                    "next_case_price": (nxt or {}).get("case_price"),
+                    "next_btl_price": (nxt or {}).get("btl_price"),
+                    "next_has_discount": (nxt or {}).get("has_discount", False),
+                    "next_discount_pct": (nxt or {}).get("discount_pct", 0.0),
+                    "next_rip_code": (nxt or {}).get("rip_code"),
+                    # The real RIP number tied to this UPC's value (ignores the
+                    # '0' stub a product carries in a month its RIP lapses).
+                    "rip_number": _real_code((curr or {}).get("rip_code"), (nxt or {}).get("rip_code")),
+                }
+
+                if tp["curr"] and curr and curr.get("case_price") is not None:
+                    c = _calc(curr["case_price"], curr["btl_price"], meta["unit_qty"], tp["curr"]["qty"], tp["curr"]["amt"], tp["unit"], tp["source"])
+                    row["curr_rip_amt"] = c["rip_amt"]
+                    row["curr_save_per_case"] = c["save_per_case"]
+                    row["curr_effective_case_price"] = c["effective_case_price"]
+                    row["curr_effective_btl_price"] = c["effective_btl_price"]
+                    row["curr_gp_pct"] = c["gp_pct"]
+                else:
+                    row["curr_rip_amt"] = None
+                    row["curr_save_per_case"] = None
+                    row["curr_effective_case_price"] = None
+                    row["curr_effective_btl_price"] = None
+                    row["curr_gp_pct"] = None
+
+                if tp["next"] and nxt and nxt.get("case_price") is not None:
+                    n = _calc(nxt["case_price"], nxt["btl_price"], meta["unit_qty"], tp["next"]["qty"], tp["next"]["amt"], tp["unit"], tp["source"])
+                    row["next_rip_amt"] = n["rip_amt"]
+                    row["next_save_per_case"] = n["save_per_case"]
+                    row["next_effective_case_price"] = n["effective_case_price"]
+                    row["next_effective_btl_price"] = n["effective_btl_price"]
+                    row["next_gp_pct"] = n["gp_pct"]
+                else:
+                    row["next_rip_amt"] = None
+                    row["next_save_per_case"] = None
+                    row["next_effective_case_price"] = None
+                    row["next_effective_btl_price"] = None
+                    row["next_gp_pct"] = None
+
+                row["rip_save_per_case"] = max(row["curr_save_per_case"] or 0, row["next_save_per_case"] or 0)
+                row["has_discount"] = bool(row["curr_has_discount"] or row["next_has_discount"])
+                row["discount_pct"] = max(row["curr_discount_pct"] or 0, row["next_discount_pct"] or 0)
+
+                items.append(row)
+
+        if min_savings is not None:
+            items = [i for i in items if (i["rip_save_per_case"] or 0) >= min_savings]
+
+        if min_gp is not None:
+            items = [i for i in items if max(i.get("curr_gp_pct") or 0, i.get("next_gp_pct") or 0) >= min_gp]
+
+        if tier_unit in ("case", "btl"):
+            items = [i for i in items if _norm_unit(i.get("rip_unit")) == tier_unit]
+
+        if new_next:
+            items = [i for i in items
+                     if not (i.get("curr_save_per_case") or 0) and (i.get("next_save_per_case") or 0) > 0]
+
+        if source in ("discount", "rip"):
+            items = [i for i in items if i.get("source") == source]
+
+        sort_map = {
+            "rip_save_per_case": "rip_save_per_case",
+            "rip_amt": "next_rip_amt",
+            "rip_qty": "rip_qty",
+            "frontline_case_price": "next_case_price",
+            "effective_case_price": "next_effective_case_price",
+            "gp_pct": "next_gp_pct",
+            "discount_pct": "discount_pct",
+            "product_name": "product_name",
+            "curr_save_per_case": "curr_save_per_case",
+            "next_save_per_case": "next_save_per_case",
+            "curr_case_price": "curr_case_price",
+            "next_case_price": "next_case_price",
+            "curr_effective_case_price": "curr_effective_case_price",
+            "next_effective_case_price": "next_effective_case_price",
+        }
+        sort_key = sort_map.get(sort, "rip_save_per_case")
+        reverse = order.lower() != "asc"
+
+        # Keep every tier row of a product together (the catalog-style grouped
+        # view assumes adjacency). Order products by their best value for the
+        # chosen metric; a product's leading sort keys are identical across its
+        # rows, so they never scatter regardless of sort direction.
+        src_rank = {"discount": 0, "rip": 1}
+
+        def _row_metric(x):
+            if sort_key == "product_name":
+                return (x.get("product_name") or "").lower()
+            v = x.get(sort_key)
+            return v if v is not None else (float("-inf") if reverse else float("inf"))
+
+        group_best: dict = {}
+        for x in items:
+            g = (x["wholesaler"], str(x["upc"]), str(x.get("unit_volume") or ""))
+            m = _row_metric(x)
+            if g not in group_best:
+                group_best[g] = m
+            elif sort_key == "product_name":
+                group_best[g] = m  # same product name across its rows
+            else:
+                group_best[g] = max(group_best[g], m) if reverse else min(group_best[g], m)
+
+        numeric_sort = sort_key != "product_name"
+
+        def _key(x):
+            g = (x["wholesaler"], str(x["upc"]), str(x.get("unit_volume") or ""))
+            gm = group_best[g]
+            # Bake direction into the group metric so within-group order stays
+            # natural (discount first, then RIP tiers by ascending quantity).
+            lead = (-gm if reverse else gm) if numeric_sort else gm
+            return (lead, g[0], g[1], g[2], src_rank.get(x.get("source"), 2), x.get("rip_qty") or 0)
+
+        if numeric_sort:
+            items.sort(key=_key)
+        else:
+            items.sort(key=_key, reverse=reverse)
+
+        total = len(items)
+        page_items = items[offset:offset + limit]
+
+        return {
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "items": page_items,
+        }

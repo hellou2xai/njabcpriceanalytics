@@ -1,0 +1,24 @@
+{
+  "body": [
+    {
+      "created_at": "<volatile>",
+      "id": "<volatile>",
+      "notes": "golden",
+      "product_name": "13 CELSIUS P GRIG 22",
+      "target_price": 9.99,
+      "unit_volume": "750ML",
+      "upc": "81308004457",
+      "user_id": "<volatile>",
+      "wholesaler": "allied"
+    }
+  ],
+  "date_sensitive": false,
+  "name": "get_watchlist",
+  "request": {
+    "auth": true,
+    "method": "GET",
+    "params": null,
+    "path": "/api/watchlist"
+  },
+  "status": 200
+}

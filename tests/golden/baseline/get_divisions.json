@@ -1,0 +1,19 @@
+{
+  "body": [
+    {
+      "created_at": "<volatile>",
+      "id": "<volatile>",
+      "name": "Golden Division",
+      "user_id": "<volatile>"
+    }
+  ],
+  "date_sensitive": false,
+  "name": "get_divisions",
+  "request": {
+    "auth": true,
+    "method": "GET",
+    "params": null,
+    "path": "/api/divisions"
+  },
+  "status": 200
+}

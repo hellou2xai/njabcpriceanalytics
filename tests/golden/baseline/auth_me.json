@@ -1,0 +1,18 @@
+{
+  "body": {
+    "user": {
+      "email": "<volatile>",
+      "full_name": "Golden Snapshot",
+      "id": "<volatile>"
+    }
+  },
+  "date_sensitive": false,
+  "name": "auth_me",
+  "request": {
+    "auth": true,
+    "method": "GET",
+    "params": null,
+    "path": "/api/auth/me"
+  },
+  "status": 200
+}

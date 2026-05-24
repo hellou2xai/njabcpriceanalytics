@@ -1,0 +1,1341 @@
+{
+  "body": {
+    "checks": {
+      "ambiguous_upcs": {
+        "count_returned": 20,
+        "limit": 20,
+        "rows": [
+          {
+            "distinct_products": 34,
+            "products": "P060   ANGELS EN BBN BR | P067   ANGELS EN BBN BR | P068   ANGELS EN BBN BR | P150   ANGELS ENV BBN BR | P009   ANGELS EN BBN BR | P832   ANGELS EN BBN BR | P984   ANGELS EN BBN BR | P059   ANGELS EN BBN BR | P952   ANGELS EN BBN BR | P863   ANGELS EN BBN BR | P912   ANGELS EN BBN BR | P922   ANGELS EN BBN BR | P040   ANGELS EN BBN BR | P720   ANGELS EN BBN BR | P009   ANGELS EN BB BRL | P556   ANGELS EN BB BRL | P878  ANGELS EN BBN BRL | P904  ANGELS EN BBN BR | P008   ANGELS EN BBN BR | P438   ANGELS EN BB BRL | P549   ANGELS EN BB BRL | P706   ANGELS EN BB BRL | ANGELS ENVY BBN BRL | P211   ANGELS EN BB BRL | P246   ANGELS EN BBN BR | P936   ANGELS EN BBN BR | P045   ANGELS EN BBN BR | P055   ANGELS EN BBN BR | P012   ANGELS EN BBN BR | P209   ANGELS ENVBBN BR | P549   ANGELS EN BBN BR | P725  ANGELS EN BBN BRL | P880   ANGELS EN BBN BR | P862   ANGELS EN BBN BR",
+            "unit_volume": "750ML",
+            "upc": "80480986353",
+            "wholesaler": "allied"
+          },
+          {
+            "distinct_products": 34,
+            "products": "P191   ELIJAH CR BRL 94 | P009   ELIJAH CR BBRLP | P012   ELIJAH CR BRL 94 | P968   ELIJAH CR BBRLPF | P053   ELIJAH CR BBRLPF | P1001  ELIJAH CR BRL 94 | P195   ELIJAH CR BRL 94 | P728  ELIJAH CR BBRL PF | CHA ELIJAH CR BBRLPF | P017   ELIJAH CR BRL 94 | P1000  ELIJAH CR BRL 94 | P288   ELIJAH CR BBRLPF | P246   ELIJAH CR BBRLPF | P114   ELIJAH CR BRL 94 | P979  ELIJAH CR BRL 94 | P1005  ELIJAH CR BRL 94 | P191   ELIJAH CR BBRLPF | P716   ELIJAH CR BBRLP | P009   ELIJAH CR BBRLPF | P420   ELIJAH CR BRL 94 | P754   ELIJAH CR BRL 94 | P850   ELIJAH CR BRL 94 | P018   ELIJAH CR BRL 94 | P036   ELIJAH CR BBRLPF | P246   ELIJAH CR BRL 94 | P832   ELIJAH CR BBRLPF | P095   ELIJAH CR BRL 94 | P125   ELIJAH CR BBRLPF | P229   ELIJAH CR BBRLPF | P060   ELIJAH CR BBRLPF | P412   ELIJAH CR BRL 94 | P978   ELIJAH CR BBRLP | P209   ELIJAH CR BBRLPF | P891  ELIJAH CR BRL 94",
+            "unit_volume": "750ML",
+            "upc": "96749003860",
+            "wholesaler": "allied"
+          },
+          {
+            "distinct_products": 28,
+            "products": "P1004  RARE CHAR 410 | P150   RARE CHAR KYB-35 | P246   RARE CHAR RIO346 | P041   RARE CHAR PLT-53 | P041   RARE CHAR RIO360 | P832   RARE CHAR PLT-33 | P209   RARE CHAR PLT-40 | P288   RARE CHAR KYB-43 | P910   RARE CHAR RIO363 | P556   RARE CHAR KYB-38 | RARE C CH STV PLT059 | P726   RARE CHAR PLT-52 | P443   RARE CHAR PLT23 | P443   RARE CHAR 20L556 | P549   RARE CHAR PLT-49 | P726   RARE CHAR 20L531 | P832   RARE CHAR PLT-31 | P923   RARE CHAR 448 | P556   RARE CHAR 482 | P041   RARE CHAR PLT58 | P923   RARE CHAR 490 | P940   RARE CHAR PLT-50 | RARE C CH STV RIO347 | P1003  RARE CHAR 402 | P880   RARE CHAR 424 | P066   RARE CHAR KYB51 | P036   RARE CHAR 468 | P878  RARE C CH PLT056",
+            "unit_volume": "750ML",
+            "upc": "810137434247",
+            "wholesaler": "allied"
+          },
+          {
+            "distinct_products": 23,
+            "products": "P209   REDEMP HGHRYE BR | P402   REDEMP HGHRYE BR | P425   REDEMP HGHRYE BR | P956  REDEMP HGHRYE BRL | P814   REDEMP HGHRYE BR | P059   REDEMP HGHRYE BR | P443   REDEMP HGHRYE BR | P549   REDEMP HGHRYE BR | P229   REDEMP HGHRYE BR | P721   REDEMP HGHRYE BR | P928   REDEMP HGHRYE BR | P932   REDEMP HGHRYE BR | P556   REDEMP HGHRYE BR | P935   REDEMP HGHRYE BR | P963   REDEMP HGHRYE BR | P706   REDEMP HGHRYE BR | P910   REDEMP HGHRYE BR | P929   REDEMP HGHRYE BR | P955   REDEMP HGHRYE BR | P901   REDEMP HGHRYE BR | P936   REDEMP HGHRYE BR | P088   REDEMP HGHRYE BR | P912   REDEMP HGHRYE BR",
+            "unit_volume": "750ML",
+            "upc": "90790662",
+            "wholesaler": "allied"
+          },
+          {
+            "distinct_products": 18,
+            "products": "P053   KNB CR SB# 22546 | P556   KNB CR SB# 21183 | P858  KNB CR SB# 21421 | P012   KNB CR SB# 21009 | P041   KNB CR SB#15123C | P858  KNB CR SB# 21422 | P201   KNB CR SB# 21828 | P259  KNB CR SB# 22474 | P910   KNB CR SB#21401C | P201   KNB CR SB# 21827 | P549   KNB CR SB# 21362 | P922   KNB CR SB# 21372 | P832   KNB CR SB# 21371 | P949   KNB CR SB# 22123 | P412   KNB CR SB# 22145 | P910   KNB CR SB#22388 | P288   KNB CR SB# 22146 | P425   KNB CR SB# 21673",
+            "unit_volume": "750ML",
+            "upc": "80686010760",
+            "wholesaler": "allied"
+          },
+          {
+            "distinct_products": 18,
+            "products": "SCHLUMB PINOT BLANC | DROUHIN MEURSAULT PERRIERES | CAKEBREAD SAUVIGNON BLANC | DROUHIN GRANDS ECHEZEAUX GRAND CRU | PEDRONCELLI ROSE | CAKEBREAD CHARDONNAY | DOM DROUHIN CUVEE LAURENE | MARCHESI DI BAROLO CANNUBI | JARVIS CABERNET FRANC WOOD | JARVIS MERLOT | DROUHIN GEVREY CHAMBERTIN | LA POUSSIE SANCERRE BL | DROUHIN MUSIGNY GRAND CRU | JARVIS CHARD FINCH HOLLOW UNFILTERED | LADOUCETTE POUILLY FUME | M BREDIF VOUVRAY | JARVIS LAKE WILLIAM | MARCHESI DI BAROLO BARBERA RUVEI",
+            "unit_volume": "750ML",
+            "upc": "999999999993",
+            "wholesaler": "fedway"
+          },
+          {
+            "distinct_products": 17,
+            "products": "P209   MAKERS PS# 10789 | P911   MAKERS PS# 11426 | P832   MAKERS PS# 11249 | P720   MAKERS PS# 10813 | P840   MAKERS PS# 9787 | P857  MAKERS PS# 9791 | P114   MAKERS PS# 11225 | P983   MAKERS PS# 10897 | P826   MAKERS PS# 10808 | P830   MAKERS PS# 11535 | P137   MAKERS PS# 9225 | P701  MAKERS PS# 11316 | CHARR MAKERS P SEL6P | CHARR MAKERS PS#7934 | P911   MAKERS PS# 11438 | P085   MAKERS PS# 10321 | P150   MAKERS PS# 11030",
+            "unit_volume": "750ML",
+            "upc": "99399021",
+            "wholesaler": "allied"
+          },
+          {
+            "distinct_products": 16,
+            "products": "P008   PATRON REPO BRL | P743   PATRON REPO BRL | P047   PATRON REPO BARL | P201   PATRON REPO BAR2 | P773   PATRON REPO BAR2 | P039   PATRON REP BR | P773   PATRON REPO BRL | P895   PATRON REPO BRL | P993   PATRON REPO BRL | P150   PATRON REPO BRL | P826   PATRON REPO BRL | P243   PATRON REPO BAR2 | P743   PATRON REP1/2BRL | P992   PATRON REPO BRL | P413   PATRON REPO BRL | P046   PATRON REPO BARL",
+            "unit_volume": "750ML",
+            "upc": "721733003051",
+            "wholesaler": "allied"
+          },
+          {
+            "distinct_products": 16,
+            "products": "MOSELND CLEAR CAT RIES PINK | MOSELND CLR BK-PUR-SVR COMBO | MOSELND RED-WHT-CLR PK COMBO | MOSELND PINK CAT | MOSELND PINOT NOIR CAT | MOSELND RED CAT | MOSELND PATRIOTIC CAT COMBO | MOSELND SCUBA BLUE CAT | MOSELND YELLOW-PINK-PURP COMBO | MOSELND BLACK CAT | MOSELND BLACK/SCUBA BLUE COMBO | MOSELND ORANGE CAT | MOSELND SILVER/PURPL CAT COMBO | MOSELND BLUE CAT | MOSELND GREEN CAT | MOSELND WHITE CAT",
+            "unit_volume": "500ML",
+            "upc": "784255600085",
+            "wholesaler": "opici"
+          },
+          {
+            "distinct_products": 13,
+            "products": "P036   JACK DAN SGL B6P | JACK DAN SB SNIFTR6P | P829   JACK DAN SGL BRL | P708   JACK DAN SGL BRL | P936   JACK DAN SGL BP | JD SGL BP CHAR STA6P | JACK DAN SGL BL94 6P | P246   JACK DAN SGL BRL | P215   J DANIELS SB 6P | JACK DAN SB LUNAR 6P | P027  J DANIELS SB R-9 | P094   JACK DAN SGL BP | P406   JACK DAN SGL B6P",
+            "unit_volume": "750ML",
+            "upc": "82184087008",
+            "wholesaler": "allied"
+          },
+          {
+            "distinct_products": 12,
+            "products": "P932   25806 GARRB S 6P | P080   21974 GARRB S 6P | P549   25793 GARRB S 6P | P080   21654 GARRB S 6P | P726   27824 GARRB S 6P | P910   25927 GARRB S 6P | P068   22007 GARRB S 6P | P932   14922 GARRB S 6P | P932   20425 GARRB S 6P | P932   14920 GARRB S 6P | P932   14919 GARRB S 6P | P932   25796 GARRB S 6P",
+            "unit_volume": "750ML",
+            "upc": "851756002264",
+            "wholesaler": "allied"
+          },
+          {
+            "distinct_products": 12,
+            "products": "JORDAN CAB LIB 17 6P | JORDAN CAB 21 | JORDAN CAB LIB 16 6P | JORDAN CAB LIB 13 6P | JORDAN CAB LIB 08 6P | JORDAN CAB LIB 12 6P | JORDAN CAB LIB 14 6P | JORDAN CAB LIB 09 6P | JORDAN CAB LIB 10 6P | JORDAN CAB LIB 11 6P | JORDAN CAB LIB 18 6P | JORDAN CAB LIB 15 6P",
+            "unit_volume": "750ML",
+            "upc": "93445835",
+            "wholesaler": "allied"
+          },
+          {
+            "distinct_products": 10,
+            "products": "ANGEL'S ENVY SB240922 | ANGEL'S ENVY SB240877 | ANGEL'S ENVY SB240977 | ANGEL'S ENVY TAWNY TW-129 | ANGEL'S ENVY SB250106 | ANGEL'S ENVY SB240924 | ANGEL'S ENVY TAWNY TW-029 | ANGEL'S ENVY SB240856 | ANGEL'S ENVY SB240134 | ANGEL'S ENVY TAWNY TW-060",
+            "unit_volume": "750ML",
+            "upc": "80480986353",
+            "wholesaler": "fedway"
+          },
+          {
+            "distinct_products": 10,
+            "products": "JORDAN CAB LIB 2015 | JORDAN CAB LIB 2017 | JORDAN CAB LIB 2016 | JORDAN CAB LIB 2013 | JORDAN CAB LIB 2014 | JORDAN CAB LIB 2011 | JORDAN CAB LIB 2010 | JORDAN CAB LIB 2012 | JORDAN CAB LIB 2018 | JORDAN CAB LIB 2009",
+            "unit_volume": "3LIT",
+            "upc": "111722035",
+            "wholesaler": "allied"
+          },
+          {
+            "distinct_products": 9,
+            "products": "P150   PRONTO PG 23 | P150   PRONTO PG24#4 | P150   PRONTO PG24#3 | P150   PRONTO PG | P150   PRONTO PG 22 | P150   PRONTO PG24#2 | P150   PRONTO PG24 | P150   PRONTO PG 25 | P150   PRONTO PG24 #2.1",
+            "unit_volume": "1.5L",
+            "upc": "633913350544",
+            "wholesaler": "allied"
+          },
+          {
+            "distinct_products": 9,
+            "products": "P288   WH PIG 10YSB R6P | P832   WH PIG 10YSB R6P | P873   WH PIG 10YSB R6P | P033   WH PIG10Y#189883 | P125   WH PIG 10YSB R6P | P438   WH PIG 10YSB R6P | P832   WH PIG10Y#226010 | P089   WH PIG 10YSB R6P | P726   WH PIG10Y#189903",
+            "unit_volume": "750ML",
+            "upc": "851460002307",
+            "wholesaler": "allied"
+          },
+          {
+            "distinct_products": 9,
+            "products": "P022   PALADAR R-232025 | PALADAR REP R242056P | P193   PALADAR R24-1/08 | P556   PALADAR R232017A | P195   PALADAR R24-1/08 | P726   PALADAR R232017B | P262   PALADAR R24-2/03 | P845   PALADAR R-23201B | PALADAR REPO SG BR6P",
+            "unit_volume": "750ML",
+            "upc": "856146006976",
+            "wholesaler": "allied"
+          },
+          {
+            "distinct_products": 8,
+            "products": "P209   HEAVEN HILL7Y 6P | P155   HEAVEN HILL7Y 6P | P009   HEAVEN HILL7Y 6P | P229   HEAVEN HILL7Y 6P | P832   HEAVEN HILL7Y 6P | P012   HEAVEN HILL7Y 6P | P891  HEAVEN HILL7Y 6P | P016   HEAVEN HILL7Y 6P",
+            "unit_volume": "750ML",
+            "upc": "96749004942",
+            "wholesaler": "allied"
+          },
+          {
+            "distinct_products": 8,
+            "products": "P150   SAN SILV PG 24#2 | P150   SAN SILVANA PG 23 | P150   SAN SILVA PG 25 | P150   SAN SILVA PG 23#2 | P150   SAN SILVA PG 23#3 | P150   SAN SILVA PG 24 | P150   SAN SILVA PG 24#2 | P150   SAN SILVA PG 23#4",
+            "unit_volume": "750ML",
+            "upc": "633913620234",
+            "wholesaler": "allied"
+          },
+          {
+            "distinct_products": 8,
+            "products": "P150   TOSCA PROSECCO#8 | P150   TOSCA PROSECCO #9 | P150   TOSCA PROSECCO#2 | P150   TOSCA PROSECCO#7 | P150   TOSCA PROSECCO | P150   TOSCA PROSECCO#3 | P150   TOSCA PROSECCO#5 | P150   TOSCA PROSECCO#6",
+            "unit_volume": "750ML",
+            "upc": "727760501966",
+            "wholesaler": "allied"
+          }
+        ]
+      },
+      "effective_above_frontline": {
+        "count_returned": 0,
+        "limit": 20,
+        "rows": []
+      },
+      "multi_token_rip_codes": {
+        "count_returned": 20,
+        "limit": 20,
+        "rows": [
+          {
+            "product_name": "ABSOLUT OCEAN REFRESH VRTY 8PK CANS",
+            "rip_code": "10048 30002",
+            "unit_volume": "355ML",
+            "upc": "80432002858",
+            "wholesaler": "fedway"
+          },
+          {
+            "product_name": "ABSOLUT TABASCO",
+            "rip_code": "10043 30001",
+            "unit_volume": "750ML",
+            "upc": "835229011144",
+            "wholesaler": "fedway"
+          },
+          {
+            "product_name": "ABSOLUT VANILLA",
+            "rip_code": "10042 30001",
+            "unit_volume": "750ML",
+            "upc": "835229006300",
+            "wholesaler": "fedway"
+          },
+          {
+            "product_name": "BARCELO ANEJO",
+            "rip_code": "10505 80001",
+            "unit_volume": "750ML",
+            "upc": "856981000108",
+            "wholesaler": "fedway"
+          },
+          {
+            "product_name": "BARCELO BLANCO",
+            "rip_code": "10505 80002",
+            "unit_volume": "750ML",
+            "upc": "856981000320",
+            "wholesaler": "fedway"
+          },
+          {
+            "product_name": "BARCELO DORADO",
+            "rip_code": "10505 80002",
+            "unit_volume": "750ML",
+            "upc": "856981000016",
+            "wholesaler": "fedway"
+          },
+          {
+            "product_name": "BARCELO GRAN ANEJO",
+            "rip_code": "10505 80001",
+            "unit_volume": "750ML",
+            "upc": "856981000177",
+            "wholesaler": "fedway"
+          },
+          {
+            "product_name": "BARCELO IMPERIAL",
+            "rip_code": "10506 80003",
+            "unit_volume": "375ML",
+            "upc": "856981000436",
+            "wholesaler": "fedway"
+          },
+          {
+            "product_name": "BEEFEATER 24 LONDON DRY GIN",
+            "rip_code": "10116 30015",
+            "unit_volume": "1L",
+            "upc": "89540507590",
+            "wholesaler": "fedway"
+          },
+          {
+            "product_name": "BEEFEATER GIN",
+            "rip_code": "10115 30014",
+            "unit_volume": "1L",
+            "upc": "89540333489",
+            "wholesaler": "fedway"
+          },
+          {
+            "product_name": "BOLLA CHARDONNAY",
+            "rip_code": "20032 20513",
+            "unit_volume": "1.5L",
+            "upc": "83300095198",
+            "wholesaler": "fedway"
+          },
+          {
+            "product_name": "BOLLA PINOT GRIGIO",
+            "rip_code": "20032 20514",
+            "unit_volume": "750ML",
+            "upc": "80516650548",
+            "wholesaler": "fedway"
+          },
+          {
+            "product_name": "BOLLA SOAVE",
+            "rip_code": "20032 20514",
+            "unit_volume": "750ML",
+            "upc": "89744772336",
+            "wholesaler": "fedway"
+          },
+          {
+            "product_name": "BOLLA SOAVE",
+            "rip_code": "20032 20513",
+            "unit_volume": "1.5L",
+            "upc": "80516650920",
+            "wholesaler": "fedway"
+          },
+          {
+            "product_name": "BOTA BOX BRIGHTSIDE SQ (BIB)",
+            "rip_code": "20423 20556",
+            "unit_volume": "3L",
+            "upc": "82242018685",
+            "wholesaler": "fedway"
+          },
+          {
+            "product_name": "BUTTER BUBBLES",
+            "rip_code": "20157 20579",
+            "unit_volume": "750ML",
+            "upc": "853706002539",
+            "wholesaler": "fedway"
+          },
+          {
+            "product_name": "BUTTER CABERNET SAUVIGNON",
+            "rip_code": "20157 20579",
+            "unit_volume": "750ML",
+            "upc": "853706002522",
+            "wholesaler": "fedway"
+          },
+          {
+            "product_name": "BUTTER CHARDONNAY LIGHT",
+            "rip_code": "20157 20579",
+            "unit_volume": "750ML",
+            "upc": "853706002713",
+            "wholesaler": "fedway"
+          },
+          {
+            "product_name": "BUTTER PINOT NOIR",
+            "rip_code": "20157 20579",
+            "unit_volume": "750ML",
+            "upc": "853706002577",
+            "wholesaler": "fedway"
+          },
+          {
+            "product_name": "BUTTER SAUVIGNON BLANC",
+            "rip_code": "20157 20579",
+            "unit_volume": "750ML",
+            "upc": "853706002379",
+            "wholesaler": "fedway"
+          }
+        ]
+      },
+      "negative_effective": {
+        "count_returned": 0,
+        "limit": 20,
+        "rows": []
+      },
+      "per_bottle_outliers": {
+        "count_returned": 20,
+        "limit": 20,
+        "rows": [
+          {
+            "category_median_per_btl": 24.62,
+            "frontline_case_price": 95000.0,
+            "per_btl": 95000.0,
+            "product_name": "ROYAL SALUTE ART EDITION YEAR 2",
+            "product_type": "Spirits",
+            "unit_qty": "1.0",
+            "unit_volume": "700ML",
+            "upc": "80432001622",
+            "wholesaler": "fedway",
+            "x_median": 3858.46
+          },
+          {
+            "category_median_per_btl": 24.62,
+            "frontline_case_price": 71200.0,
+            "per_btl": 71200.0,
+            "product_name": "MACALLAN TALES II 1P",
+            "product_type": "Spirits",
+            "unit_qty": "1",
+            "unit_volume": "700ML",
+            "upc": "812066024315",
+            "wholesaler": "allied",
+            "x_median": 2891.81
+          },
+          {
+            "category_median_per_btl": 24.62,
+            "frontline_case_price": 71200.0,
+            "per_btl": 71200.0,
+            "product_name": "MACALLAN TALES OF THE MACALLAN II",
+            "product_type": "Spirits",
+            "unit_qty": "1.0",
+            "unit_volume": "700ML",
+            "upc": "812066024315",
+            "wholesaler": "fedway",
+            "x_median": 2891.81
+          },
+          {
+            "category_median_per_btl": 24.62,
+            "frontline_case_price": 70398.59,
+            "per_btl": 70398.59,
+            "product_name": "MACALLAN 72YR",
+            "product_type": "Spirits",
+            "unit_qty": "1.0",
+            "unit_volume": "750ML",
+            "upc": "812066022465",
+            "wholesaler": "fedway",
+            "x_median": 2859.26
+          },
+          {
+            "category_median_per_btl": 24.62,
+            "frontline_case_price": 70398.59,
+            "per_btl": 70398.59,
+            "product_name": "MACALLAN 72 LALIQ 1P",
+            "product_type": "Spirits",
+            "unit_qty": "1",
+            "unit_volume": "750ML",
+            "upc": "812066022465",
+            "wholesaler": "allied",
+            "x_median": 2859.26
+          },
+          {
+            "category_median_per_btl": 23.98,
+            "frontline_case_price": 67500.0,
+            "per_btl": 67500.0,
+            "product_name": "ARMAND BRG ROS WBOX1",
+            "product_type": "Sparkling",
+            "unit_qty": "1",
+            "unit_volume": "30LIT",
+            "upc": "813497005485",
+            "wholesaler": "allied",
+            "x_median": 2814.53
+          },
+          {
+            "category_median_per_btl": 24.62,
+            "frontline_case_price": 64740.0,
+            "per_btl": 64740.0,
+            "product_name": "MACALLAN ARTIST SIR PETER BLAKE",
+            "product_type": "Spirits",
+            "unit_qty": "1.0",
+            "unit_volume": "750ML",
+            "upc": "812066023929",
+            "wholesaler": "fedway",
+            "x_median": 2629.44
+          },
+          {
+            "category_median_per_btl": 24.62,
+            "frontline_case_price": 54000.0,
+            "per_btl": 54000.0,
+            "product_name": "BOWMORE 54Y ASTON 1P",
+            "product_type": "Spirits",
+            "unit_qty": "1",
+            "unit_volume": "750ML",
+            "upc": "5010496000786",
+            "wholesaler": "allied",
+            "x_median": 2193.23
+          },
+          {
+            "category_median_per_btl": 24.62,
+            "frontline_case_price": 49999.99,
+            "per_btl": 49999.99,
+            "product_name": "GLENFIDDICH 50YR 1P",
+            "product_type": "Spirits",
+            "unit_qty": "1",
+            "unit_volume": "750ML",
+            "upc": "103154417",
+            "wholesaler": "allied",
+            "x_median": 2030.77
+          },
+          {
+            "category_median_per_btl": 24.62,
+            "frontline_case_price": 47999.99,
+            "per_btl": 47999.99,
+            "product_name": "SUNTORY YAMAZ 55Y 1P",
+            "product_type": "Spirits",
+            "unit_qty": "1",
+            "unit_volume": "750ML",
+            "upc": "80686935148",
+            "wholesaler": "allied",
+            "x_median": 1949.54
+          },
+          {
+            "category_median_per_btl": 24.62,
+            "frontline_case_price": 47890.5,
+            "per_btl": 47890.5,
+            "product_name": "MACALL 1937 B1974 1P",
+            "product_type": "Spirits",
+            "unit_qty": "1",
+            "unit_volume": "750ML",
+            "upc": "812066025206",
+            "wholesaler": "allied",
+            "x_median": 1945.09
+          },
+          {
+            "category_median_per_btl": 24.62,
+            "frontline_case_price": 45639.0,
+            "per_btl": 45639.0,
+            "product_name": "MACAL 1940 CK1975 1P",
+            "product_type": "Spirits",
+            "unit_qty": "1",
+            "unit_volume": "750ML",
+            "upc": "812066021482",
+            "wholesaler": "allied",
+            "x_median": 1853.64
+          },
+          {
+            "category_median_per_btl": 23.98,
+            "frontline_case_price": 45000.0,
+            "per_btl": 45000.0,
+            "product_name": "ARMAND BRG GLD WBOX1",
+            "product_type": "Sparkling",
+            "unit_qty": "1",
+            "unit_volume": "30LIT",
+            "upc": "813497005119",
+            "wholesaler": "allied",
+            "x_median": 1876.36
+          },
+          {
+            "category_median_per_btl": 24.62,
+            "frontline_case_price": 45000.0,
+            "per_btl": 45000.0,
+            "product_name": "REMY LOUIS 13 RAR CK",
+            "product_type": "Spirits",
+            "unit_qty": "1",
+            "unit_volume": "700ML",
+            "upc": "87236004088",
+            "wholesaler": "allied",
+            "x_median": 1827.69
+          },
+          {
+            "category_median_per_btl": 24.62,
+            "frontline_case_price": 45000.0,
+            "per_btl": 45000.0,
+            "product_name": "BALVENIE 50YR 1P",
+            "product_type": "Spirits",
+            "unit_qty": "1",
+            "unit_volume": "700ML",
+            "upc": "83664875313",
+            "wholesaler": "allied",
+            "x_median": 1827.69
+          },
+          {
+            "category_median_per_btl": 24.62,
+            "frontline_case_price": 45000.0,
+            "per_btl": 45000.0,
+            "product_name": "REMY MARTIN LOUIS 13 RARE CASK",
+            "product_type": "Spirits",
+            "unit_qty": "1.0",
+            "unit_volume": "700ML",
+            "upc": "87236004088",
+            "wholesaler": "fedway",
+            "x_median": 1827.69
+          },
+          {
+            "category_median_per_btl": 24.62,
+            "frontline_case_price": 44600.0,
+            "per_btl": 44600.0,
+            "product_name": "MACALLAN RED 50YR",
+            "product_type": "Spirits",
+            "unit_qty": "1",
+            "unit_volume": "700ML",
+            "upc": "812066024346",
+            "wholesaler": "allied",
+            "x_median": 1811.44
+          },
+          {
+            "category_median_per_btl": 24.62,
+            "frontline_case_price": 44600.0,
+            "per_btl": 44600.0,
+            "product_name": "MACALLAN RED COLLECTION 50YR",
+            "product_type": "Spirits",
+            "unit_qty": "1.0",
+            "unit_volume": "700ML",
+            "upc": "812066024346",
+            "wholesaler": "fedway",
+            "x_median": 1811.44
+          },
+          {
+            "category_median_per_btl": 24.62,
+            "frontline_case_price": 44000.0,
+            "per_btl": 44000.0,
+            "product_name": "BOWMORE 1968 ASTON MARTIN 54YR ARC",
+            "product_type": "Spirits",
+            "unit_qty": "1.0",
+            "unit_volume": "700ML",
+            "upc": "501049600078",
+            "wholesaler": "fedway",
+            "x_median": 1787.08
+          },
+          {
+            "category_median_per_btl": 24.62,
+            "frontline_case_price": 42000.0,
+            "per_btl": 42000.0,
+            "product_name": "MAC F&R 1947 B1962",
+            "product_type": "Spirits",
+            "unit_qty": "1",
+            "unit_volume": "750ML",
+            "upc": "812066021888",
+            "wholesaler": "allied",
+            "x_median": 1705.84
+          }
+        ]
+      },
+      "price_jumps_gt_50pct": {
+        "count_returned": 20,
+        "limit": 20,
+        "rows": [
+          {
+            "curr_price": 12180.0,
+            "edition": "2026-05",
+            "pct_change": 6666.7,
+            "prev_edition": "2026-04",
+            "prev_price": 180.0,
+            "product_name": "TOKAJ CLASSIC TOKAJI PRELUDE",
+            "unit_qty": "6.0",
+            "unit_volume": "500ML",
+            "upc": "599791331203",
+            "wholesaler": "fedway"
+          },
+          {
+            "curr_price": 169.08,
+            "edition": "2026-05",
+            "pct_change": 369.7,
+            "prev_edition": "2026-04",
+            "prev_price": 36.0,
+            "product_name": "DIORA ROSE LA BELLE FETE",
+            "unit_qty": "12.0",
+            "unit_volume": "750ML",
+            "upc": "82242016100",
+            "wholesaler": "fedway"
+          },
+          {
+            "curr_price": 169.08,
+            "edition": "2026-06",
+            "pct_change": 369.7,
+            "prev_edition": "2026-05",
+            "prev_price": 36.0,
+            "product_name": "DIORA ROSE LA BELLE FETE",
+            "unit_qty": "12",
+            "unit_volume": "750ML",
+            "upc": "82242016100",
+            "wholesaler": "fedway"
+          },
+          {
+            "curr_price": 247.92,
+            "edition": "2026-06",
+            "pct_change": 313.2,
+            "prev_edition": "2026-06",
+            "prev_price": 60.0,
+            "product_name": "FEUDI SAN GREGORIO GRECO DI TUFO",
+            "unit_qty": "12",
+            "unit_volume": "750ML",
+            "upc": "86785371023",
+            "wholesaler": "fedway"
+          },
+          {
+            "curr_price": 247.92,
+            "edition": "2026-04",
+            "pct_change": 313.2,
+            "prev_edition": "2026-04",
+            "prev_price": 60.0,
+            "product_name": "FEUDI SAN GREGORIO GRECO DI TUFO",
+            "unit_qty": "12",
+            "unit_volume": "750ML",
+            "upc": "86785371023",
+            "wholesaler": "fedway"
+          },
+          {
+            "curr_price": 583.92,
+            "edition": "2026-04",
+            "pct_change": 305.5,
+            "prev_edition": "2026-04",
+            "prev_price": 144.0,
+            "product_name": "ELYSE ZINFANDEL MORISOLI VYD",
+            "unit_qty": "12",
+            "unit_volume": "750ML",
+            "upc": "859181001036",
+            "wholesaler": "fedway"
+          },
+          {
+            "curr_price": 217.08,
+            "edition": "2026-04",
+            "pct_change": 201.5,
+            "prev_edition": "2026-04",
+            "prev_price": 72.0,
+            "product_name": "FEUDI SAN GREGORIO FALANGHINA",
+            "unit_qty": "12",
+            "unit_volume": "750ML",
+            "upc": "86785371009",
+            "wholesaler": "fedway"
+          },
+          {
+            "curr_price": 217.08,
+            "edition": "2026-05",
+            "pct_change": 201.5,
+            "prev_edition": "2026-05",
+            "prev_price": 72.0,
+            "product_name": "FEUDI SAN GREGORIO FALANGHINA",
+            "unit_qty": "12.0",
+            "unit_volume": "750ML",
+            "upc": "86785371009",
+            "wholesaler": "fedway"
+          },
+          {
+            "curr_price": 1080.0,
+            "edition": "2026-06",
+            "pct_change": 200.0,
+            "prev_edition": "2026-06",
+            "prev_price": 360.0,
+            "product_name": "FREEMARK CAB SAUV SYCAMORE",
+            "unit_qty": "6",
+            "unit_volume": "750ML",
+            "upc": "15917026951",
+            "wholesaler": "fedway"
+          },
+          {
+            "curr_price": 1080.0,
+            "edition": "2026-06",
+            "pct_change": 200.0,
+            "prev_edition": "2026-06",
+            "prev_price": 360.0,
+            "product_name": "FREEMARK CAB SAUV BOSCHE",
+            "unit_qty": "6",
+            "unit_volume": "750ML",
+            "upc": "15917026944",
+            "wholesaler": "fedway"
+          },
+          {
+            "curr_price": 1080.0,
+            "edition": "2026-05",
+            "pct_change": 200.0,
+            "prev_edition": "2026-05",
+            "prev_price": 360.0,
+            "product_name": "FREEMARK CAB SAUV SYCAMORE",
+            "unit_qty": "6.0",
+            "unit_volume": "750ML",
+            "upc": "15917026951",
+            "wholesaler": "fedway"
+          },
+          {
+            "curr_price": 960.0,
+            "edition": "2026-05",
+            "pct_change": 166.7,
+            "prev_edition": "2026-05",
+            "prev_price": 360.0,
+            "product_name": "FREEMARK CAB SAUV BOSCHE",
+            "unit_qty": "6.0",
+            "unit_volume": "750ML",
+            "upc": "15917026944",
+            "wholesaler": "fedway"
+          },
+          {
+            "curr_price": 300.0,
+            "edition": "2026-04",
+            "pct_change": 150.0,
+            "prev_edition": "2026-04",
+            "prev_price": 120.0,
+            "product_name": "ELYSE ZINFANDEL KORTE RANCH",
+            "unit_qty": "12",
+            "unit_volume": "750ML",
+            "upc": "859181001043",
+            "wholesaler": "fedway"
+          },
+          {
+            "curr_price": 181.08,
+            "edition": "2026-04",
+            "pct_change": 147.8,
+            "prev_edition": "2026-04",
+            "prev_price": 73.08,
+            "product_name": "ANGELS INK ROSE",
+            "unit_qty": "12",
+            "unit_volume": "750ML",
+            "upc": "89636444310",
+            "wholesaler": "fedway"
+          },
+          {
+            "curr_price": 181.08,
+            "edition": "2026-05",
+            "pct_change": 147.8,
+            "prev_edition": "2026-05",
+            "prev_price": 73.08,
+            "product_name": "ANGELS INK ROSE",
+            "unit_qty": "12.0",
+            "unit_volume": "750ML",
+            "upc": "89636444310",
+            "wholesaler": "fedway"
+          },
+          {
+            "curr_price": 354.0,
+            "edition": "2026-06",
+            "pct_change": 145.8,
+            "prev_edition": "2026-05",
+            "prev_price": 144.0,
+            "product_name": "R HILL MERLOT",
+            "unit_qty": "12",
+            "unit_volume": "750ML",
+            "upc": "86891028927",
+            "wholesaler": "fedway"
+          },
+          {
+            "curr_price": 354.0,
+            "edition": "2026-04",
+            "pct_change": 145.8,
+            "prev_edition": "2026-04",
+            "prev_price": 144.0,
+            "product_name": "R HILL MERLOT",
+            "unit_qty": "12",
+            "unit_volume": "750ML",
+            "upc": "86891028927",
+            "wholesaler": "fedway"
+          },
+          {
+            "curr_price": 1080.0,
+            "edition": "2026-05",
+            "pct_change": 140.0,
+            "prev_edition": "2026-05",
+            "prev_price": 450.0,
+            "product_name": "LA JOTA CAB SAUV HOWELL MTN",
+            "unit_qty": "6.0",
+            "unit_volume": "750ML",
+            "upc": "857574001038",
+            "wholesaler": "fedway"
+          },
+          {
+            "curr_price": 1080.0,
+            "edition": "2026-06",
+            "pct_change": 140.0,
+            "prev_edition": "2026-06",
+            "prev_price": 450.0,
+            "product_name": "LA JOTA CAB SAUV HOWELL MTN",
+            "unit_qty": "6",
+            "unit_volume": "750ML",
+            "upc": "857574001038",
+            "wholesaler": "fedway"
+          },
+          {
+            "curr_price": 1020.0,
+            "edition": "2026-04",
+            "pct_change": 126.7,
+            "prev_edition": "2026-04",
+            "prev_price": 450.0,
+            "product_name": "LA JOTA CAB SAUV HOWELL MTN",
+            "unit_qty": "6",
+            "unit_volume": "750ML",
+            "upc": "857574001038",
+            "wholesaler": "fedway"
+          }
+        ]
+      },
+      "stub_plus_real_upc_dupes": {
+        "count_returned": 20,
+        "limit": 20,
+        "rows": [
+          {
+            "prices": "1080.0, 1494.0, 1614.0, 1380.0, 1950.0, 1554.0, 1600.0, 1900.0, 1440.0, 1500.0",
+            "product_name": "DOMINUS ESTATE NAPA",
+            "real_rows": 7,
+            "stub_rows": 5,
+            "unit_volume": "750ML",
+            "wholesaler": "fedway"
+          },
+          {
+            "prices": "750.0, 980.0, 1350.0, 1300.0, 896.0, 1125.0, 1200.0, 1050.0, 880.0",
+            "product_name": "JORDAN CABERNET SAUVIGNON",
+            "real_rows": 8,
+            "stub_rows": 4,
+            "unit_volume": "1.5L",
+            "wholesaler": "fedway"
+          },
+          {
+            "prices": "600.0, 660.0, 675.0, 500.0, 486.0, 560.0, 530.0, 690.0, 750.0",
+            "product_name": "JORDAN CABERNET SAUVIGNON-6PK",
+            "real_rows": 6,
+            "stub_rows": 5,
+            "unit_volume": "750ML",
+            "wholesaler": "fedway"
+          },
+          {
+            "prices": "2040.0, 1581.0, 1704.0, 2220.0, 1590.0",
+            "product_name": "HEITZ CABERNET SAUVIGNON MARTHA",
+            "real_rows": 5,
+            "stub_rows": 1,
+            "unit_volume": "1.5L",
+            "wholesaler": "fedway"
+          },
+          {
+            "prices": "1152.0, 930.0, 1356.0, 1046.0, 1056.0, 1008.0",
+            "product_name": "CH HOSANNA POMEROL",
+            "real_rows": 5,
+            "stub_rows": 1,
+            "unit_volume": "750ML",
+            "wholesaler": "fedway"
+          },
+          {
+            "prices": "1935.0, 1260.0, 1017.0, 952.0, 2748.0",
+            "product_name": "DOM PERIGNON P2 GIFT BOX",
+            "real_rows": 4,
+            "stub_rows": 2,
+            "unit_volume": "750ML",
+            "wholesaler": "fedway"
+          },
+          {
+            "prices": "4740.0, 2126.0, 2370.0, 2305.0, 1800.0",
+            "product_name": "PAUL HOBBS CAB SAUV BECK TO KALON",
+            "real_rows": 1,
+            "stub_rows": 5,
+            "unit_volume": "750ML",
+            "wholesaler": "fedway"
+          },
+          {
+            "prices": "560.0, 480.0, 588.0, 750.0",
+            "product_name": "JORDAN CABERNET SAUVIGNON",
+            "real_rows": 4,
+            "stub_rows": 1,
+            "unit_volume": "750ML",
+            "wholesaler": "fedway"
+          },
+          {
+            "prices": "1200.0, 1644.0, 2094.0, 1170.0",
+            "product_name": "L ROEDERER CRISTAL",
+            "real_rows": 4,
+            "stub_rows": 1,
+            "unit_volume": "750ML",
+            "wholesaler": "fedway"
+          },
+          {
+            "prices": "728.0, 570.0, 858.0, 588.0",
+            "product_name": "DROUHIN CHAMBOLLE-MUSIGNY",
+            "real_rows": 4,
+            "stub_rows": 1,
+            "unit_volume": "750ML",
+            "wholesaler": "fedway"
+          },
+          {
+            "prices": "1080.0, 2760.0, 1350.0",
+            "product_name": "PAUL HOBBS CAB SAUV BECK LAS PIEDRAS",
+            "real_rows": 2,
+            "stub_rows": 3,
+            "unit_volume": "750ML",
+            "wholesaler": "fedway"
+          },
+          {
+            "prices": "1188.0, 1476.0, 1375.0, 2378.04, 2350.0",
+            "product_name": "GAJA SPERSS (BAROLO)",
+            "real_rows": 2,
+            "stub_rows": 3,
+            "unit_volume": "750ML",
+            "wholesaler": "fedway"
+          },
+          {
+            "prices": "556.0, 390.0, 462.0, 300.0",
+            "product_name": "SANDEMAN VINTAGE PORT",
+            "real_rows": 3,
+            "stub_rows": 2,
+            "unit_volume": "750ML",
+            "wholesaler": "fedway"
+          },
+          {
+            "prices": "1080.0, 645.0, 750.0, 360.0, 720.0",
+            "product_name": "FREEMARK CAB SAUV SYCAMORE",
+            "real_rows": 4,
+            "stub_rows": 1,
+            "unit_volume": "750ML",
+            "wholesaler": "fedway"
+          },
+          {
+            "prices": "1134.0, 582.0, 336.0, 936.0",
+            "product_name": "FAUSTINO I GRAN RESERVA",
+            "real_rows": 2,
+            "stub_rows": 3,
+            "unit_volume": "750ML",
+            "wholesaler": "fedway"
+          },
+          {
+            "prices": "1500.0, 1407.0, 1767.0, 1719.0",
+            "product_name": "DOMINUS ESTATE NAPA",
+            "real_rows": 3,
+            "stub_rows": 2,
+            "unit_volume": "1.5L",
+            "wholesaler": "fedway"
+          },
+          {
+            "prices": "1302.0, 1080.0, 1260.0, 840.0",
+            "product_name": "M MURRIETA GR RS CAST YGAY ESPECIAL",
+            "real_rows": 2,
+            "stub_rows": 3,
+            "unit_volume": "750ML",
+            "wholesaler": "fedway"
+          },
+          {
+            "prices": "329.0, 1374.0, 340.0, 2520.0",
+            "product_name": "DOM PERIGNON P2",
+            "real_rows": 2,
+            "stub_rows": 3,
+            "unit_volume": "750ML",
+            "wholesaler": "fedway"
+          },
+          {
+            "prices": "2940.0, 3580.0, 1920.0, 3841.04, 3039.96",
+            "product_name": "GAJA SORI TILDIN (BARBARESCO)",
+            "real_rows": 2,
+            "stub_rows": 3,
+            "unit_volume": "750ML",
+            "wholesaler": "fedway"
+          },
+          {
+            "prices": "780.0, 800.0, 820.0, 410.0",
+            "product_name": "PAUL HOBBS CHARD EDWARD JAMES",
+            "real_rows": 1,
+            "stub_rows": 3,
+            "unit_volume": "750ML",
+            "wholesaler": "fedway"
+          }
+        ]
+      },
+      "unit_qty_changes": {
+        "count_returned": 20,
+        "limit": 20,
+        "rows": [
+          {
+            "distinct_qty": 2,
+            "history": "2026-05:12.0x@$588.0 | 2026-06:6.0x@$270.0 | 2026-06:12.0x@$588.0 | 2026-04:12.0x@$588.0 | 2026-05:6.0x@$270.0 | 2026-04:6.0x@$270.0",
+            "product_name": "ARROWOOD CAB SAUV KNIGHTS VALLEY",
+            "unit_volume": "750ML",
+            "upc": "9385202801",
+            "wholesaler": "fedway"
+          },
+          {
+            "distinct_qty": 2,
+            "history": "2026-04:6.0x@$208.0 | 2026-06:12.0x@$252.0 | 2026-06:6.0x@$208.0 | 2026-05:12.0x@$252.0 | 2026-05:6.0x@$208.0",
+            "product_name": "STOLLER P NOIR RESERVE",
+            "unit_volume": "750ML",
+            "upc": "850784003113",
+            "wholesaler": "opici"
+          },
+          {
+            "distinct_qty": 2,
+            "history": "2026-04:12.0x@$84.0 | 2026-05:12.0x@$84.0 | 2026-05:24.0x@$176.0 | 2026-06:24.0x@$176.0 | 2026-06:12.0x@$84.0",
+            "product_name": "BOUSQUET RES MALBEC MWO",
+            "unit_volume": "375ML",
+            "upc": "879716001010",
+            "wholesaler": "opici"
+          },
+          {
+            "distinct_qty": 2,
+            "history": "2026-06:6.0x@$114.0 | 2026-04:6.0x@$114.0 | 2026-05:12.0x@$228.0 | 2026-05:6.0x@$114.0 | 2026-04:12.0x@$228.0 | 2026-06:12.0x@$228.0",
+            "product_name": "COPAIN DAYBREAK WHITE BLEND",
+            "unit_volume": "750ML",
+            "upc": "851392008132",
+            "wholesaler": "fedway"
+          },
+          {
+            "distinct_qty": 2,
+            "history": "2026-06:12.0x@$134.3 | 2026-05:12.0x@$134.3 | 2026-04:6.0x@$67.15",
+            "product_name": "WESTERN SON RUBY RED GRPFRT VODKA",
+            "unit_volume": "750ML",
+            "upc": "856417003109",
+            "wholesaler": "fedway"
+          },
+          {
+            "distinct_qty": 2,
+            "history": "2026-04:6.0x@$106.02 | 2026-04:12.0x@$200.0 | 2026-06:12.0x@$200.0 | 2026-05:12.0x@$200.0 | 2026-06:6.0x@$106.02 | 2026-05:6.0x@$106.02",
+            "product_name": "DROUHIN MACON VILLAGES",
+            "unit_volume": "750ML",
+            "upc": "12086312014",
+            "wholesaler": "fedway"
+          },
+          {
+            "distinct_qty": 2,
+            "history": "2026-05:12.0x@$481.08 | 2026-04:6.0x@$240.54 | 2026-06:12.0x@$481.08 | 2026-05:6.0x@$240.54 | 2026-04:12.0x@$481.08 | 2026-06:6.0x@$240.54",
+            "product_name": "RUFFINO CHIANTI RIS DUCALE (GOLD)",
+            "unit_volume": "750ML",
+            "upc": "83085903220",
+            "wholesaler": "fedway"
+          },
+          {
+            "distinct_qty": 2,
+            "history": "2026-05:12.0x@$192.06 | 2026-05:6.0x@$96.0 | 2026-04:12.0x@$192.06 | 2026-06:6.0x@$96.0 | 2026-06:12.0x@$192.06 | 2026-04:6.0x@$96.0",
+            "product_name": "PASQUA PROSECCO ROSE ROMEO & JULIET",
+            "unit_volume": "750ML",
+            "upc": "736040002048",
+            "wholesaler": "fedway"
+          },
+          {
+            "distinct_qty": 2,
+            "history": "2026-04:6.0x@$198.54 | 2026-06:6.0x@$198.54 | 2026-05:12.0x@$421.08",
+            "product_name": "WOODINVILLE STRAIGHT BOURBON",
+            "unit_volume": "750ML",
+            "upc": "858349004100",
+            "wholesaler": "fedway"
+          },
+          {
+            "distinct_qty": 2,
+            "history": "2026-05:6.0x@$120.0 | 2026-06:12.0x@$260.04 | 2026-05:12.0x@$260.04 | 2026-04:6.0x@$120.0 | 2026-06:6.0x@$120.0 | 2026-04:12.0x@$260.04",
+            "product_name": "FREEMARK SAUVIGNON BLANC",
+            "unit_volume": "750ML",
+            "upc": "15917200818",
+            "wholesaler": "fedway"
+          },
+          {
+            "distinct_qty": 2,
+            "history": "2026-06:6.0x@$192.0 | 2026-05:6.0x@$192.0 | 2026-06:6.0x@$240.0 | 2026-05:6.0x@$240.0 | 2026-05:12.0x@$320.0 | 2026-04:6.0x@$240.0 | 2026-06:12.0x@$320.0 | 2026-04:12.0x@$320.0 | 2026-04:6.0x@$192.0",
+            "product_name": "CH TRONQUOY-LALANDE ST. ESTEPHE",
+            "unit_volume": "750ML",
+            "upc": "639737613837",
+            "wholesaler": "fedway"
+          },
+          {
+            "distinct_qty": 2,
+            "history": "2026-06:12.0x@$499.92 | 2026-05:6.0x@$271.98 | 2026-04:6.0x@$271.98 | 2026-05:12.0x@$499.92 | 2026-06:6.0x@$271.98 | 2026-04:12.0x@$499.92",
+            "product_name": "ROCHIOLI CHARDONNAY",
+            "unit_volume": "750ML",
+            "upc": "86891024523",
+            "wholesaler": "fedway"
+          },
+          {
+            "distinct_qty": 2,
+            "history": "2026-04:6.0x@$58.0 | 2026-05:1.0x@$58.0 | 2026-06:6.0x@$58.0",
+            "product_name": "SURFSIDE RASP TEA 4PK CANS",
+            "unit_volume": "12OZ",
+            "upc": "850050071273",
+            "wholesaler": "fedway"
+          },
+          {
+            "distinct_qty": 2,
+            "history": "2026-04:6.0x@$150.9 | 2026-05:12.0x@$301.8 | 2026-06:6.0x@$150.9",
+            "product_name": "BLACKWELL GOLD JAMAICAN RUM",
+            "unit_volume": "750ML",
+            "upc": "000000000000",
+            "wholesaler": "opici"
+          },
+          {
+            "distinct_qty": 2,
+            "history": "2026-04:6.0x@$4226.74 | 2026-06:6.0x@$2700.0 | 2026-04:3.0x@$2115.0 | 2026-05:6.0x@$2700.0 | 2026-06:3.0x@$2115.0 | 2026-06:6.0x@$4226.74 | 2026-05:6.0x@$4226.74 | 2026-05:3.0x@$2115.0 | 2026-04:6.0x@$2700.0",
+            "product_name": "GAJA SAN LORENZO (BARBARESCO)",
+            "unit_volume": "750ML",
+            "upc": "86891072173",
+            "wholesaler": "fedway"
+          },
+          {
+            "distinct_qty": 2,
+            "history": "2026-04:6.0x@$294.54 | 2026-05:6.0x@$294.54 | 2026-06:3.0x@$147.27",
+            "product_name": "HIGH WEST BOURBON",
+            "unit_volume": "1.75L",
+            "upc": "086003267190",
+            "wholesaler": "opici"
+          },
+          {
+            "distinct_qty": 2,
+            "history": "2026-05:240.0x@$2250.0 | 2026-05:96.0x@$880.0 | 2026-06:240.0x@$2250.0 | 2026-04:96.0x@$880.0 | 2026-06:96.0x@$880.0 | 2026-04:240.0x@$2250.0",
+            "product_name": "ANGELINE CHARD CALIF VCOMBO",
+            "unit_volume": "750ML",
+            "upc": "729722700271",
+            "wholesaler": "opici"
+          },
+          {
+            "distinct_qty": 2,
+            "history": "2026-06:6.0x@$91.98 | 2026-05:12.0x@$183.96 | 2026-04:6.0x@$91.98 | 2026-04:12.0x@$183.96 | 2026-06:12.0x@$183.96 | 2026-05:6.0x@$91.98",
+            "product_name": "FEDERALIST CHARD HAMILTON LABEL",
+            "unit_volume": "750ML",
+            "upc": "86891087412",
+            "wholesaler": "fedway"
+          },
+          {
+            "distinct_qty": 2,
+            "history": "2026-06:6.0x@$156.0 | 2026-04:12.0x@$312.0 | 2026-06:12.0x@$312.0 | 2026-04:6.0x@$156.0 | 2026-05:12.0x@$312.0 | 2026-05:6.0x@$156.0",
+            "product_name": "MASTROBERARDINO RADICI FIANO",
+            "unit_volume": "750ML",
+            "upc": "86785880136",
+            "wholesaler": "fedway"
+          },
+          {
+            "distinct_qty": 2,
+            "history": "2026-06:3.0x@$450.0 | 2026-05:3.0x@$450.0 | 2026-05:6.0x@$900.0 | 2026-04:6.0x@$900.0 | 2026-06:6.0x@$900.0 | 2026-04:3.0x@$450.0",
+            "product_name": "BELLE GLOS PINOT NOIR TAYLOR LANE",
+            "unit_volume": "1.5L",
+            "upc": "856622000224",
+            "wholesaler": "fedway"
+          }
+        ]
+      },
+      "vintage_format_anomalies": {
+        "count_returned": 20,
+        "limit": 20,
+        "rows": [
+          {
+            "edition": "2026-05",
+            "len": 1,
+            "product_name": "AIX PROVENCE ROSE 25",
+            "unit_volume": "750ML",
+            "upc": "85931000602",
+            "vintage": "5",
+            "wholesaler": "allied"
+          },
+          {
+            "edition": "2026-05",
+            "len": 1,
+            "product_name": "BAILEYS W/MUG 6PK",
+            "unit_volume": "750ML",
+            "upc": "86767705402",
+            "vintage": "0",
+            "wholesaler": "allied"
+          },
+          {
+            "edition": "2026-05",
+            "len": 1,
+            "product_name": "BOLLINGER RD 08 3P",
+            "unit_volume": "750ML",
+            "upc": "864576000198",
+            "vintage": "8",
+            "wholesaler": "allied"
+          },
+          {
+            "edition": "2026-05",
+            "len": 1,
+            "product_name": "BOLLINGER RD08 3PGIF",
+            "unit_volume": "750ML",
+            "upc": "864576000198",
+            "vintage": "8",
+            "wholesaler": "allied"
+          },
+          {
+            "edition": "2026-05",
+            "len": 1,
+            "product_name": "BORG VN S CHIAN CL09",
+            "unit_volume": "375ML",
+            "upc": "89419001990",
+            "vintage": "9",
+            "wholesaler": "allied"
+          },
+          {
+            "edition": "2026-05",
+            "len": 1,
+            "product_name": "C HEID BLNC MIL 063P",
+            "unit_volume": "750ML",
+            "upc": "667505000098",
+            "vintage": "6",
+            "wholesaler": "allied"
+          },
+          {
+            "edition": "2026-05",
+            "len": 1,
+            "product_name": "C HEID BLNC MIL 073P",
+            "unit_volume": "750ML",
+            "upc": "667505000098",
+            "vintage": "7",
+            "wholesaler": "allied"
+          },
+          {
+            "edition": "2026-05",
+            "len": 1,
+            "product_name": "CHAP LE MEAL BLN096P",
+            "unit_volume": "750ML",
+            "upc": "92567964",
+            "vintage": "9",
+            "wholesaler": "allied"
+          },
+          {
+            "edition": "2026-05",
+            "len": 1,
+            "product_name": "CHAP SYRAH BESC 07",
+            "unit_volume": "750ML",
+            "upc": "92568098",
+            "vintage": "7",
+            "wholesaler": "allied"
+          },
+          {
+            "edition": "2026-05",
+            "len": 1,
+            "product_name": "CLICQ LGD 08 3PK",
+            "unit_volume": "1.5L",
+            "upc": "81753813291",
+            "vintage": "8",
+            "wholesaler": "allied"
+          },
+          {
+            "edition": "2026-05",
+            "len": 1,
+            "product_name": "CLICQ LGD 08 3PK GB",
+            "unit_volume": "1.5L",
+            "upc": "81753813307",
+            "vintage": "8",
+            "wholesaler": "allied"
+          },
+          {
+            "edition": "2026-05",
+            "len": 1,
+            "product_name": "CLICQ LGD ROSE 06 6P",
+            "unit_volume": "750ML",
+            "upc": "81753826864",
+            "vintage": "6",
+            "wholesaler": "allied"
+          },
+          {
+            "edition": "2026-05",
+            "len": 1,
+            "product_name": "CLICQ LGD ROSE 08 3P",
+            "unit_volume": "1.5L",
+            "upc": "81753829797",
+            "vintage": "8",
+            "wholesaler": "allied"
+          },
+          {
+            "edition": "2026-05",
+            "len": 1,
+            "product_name": "DOM P BL JM BASQGB6P",
+            "unit_volume": "750ML",
+            "upc": "81753840365",
+            "vintage": "9",
+            "wholesaler": "allied"
+          },
+          {
+            "edition": "2026-05",
+            "len": 1,
+            "product_name": "DOM PER BL 08 1PK",
+            "unit_volume": "3LIT",
+            "upc": "0",
+            "vintage": "6",
+            "wholesaler": "allied"
+          },
+          {
+            "edition": "2026-05",
+            "len": 1,
+            "product_name": "DOM PER BL LUM08 3P",
+            "unit_volume": "1.5L",
+            "upc": "81753820725",
+            "vintage": "8",
+            "wholesaler": "allied"
+          },
+          {
+            "edition": "2026-05",
+            "len": 1,
+            "product_name": "DOM PER BL09 GIFT 6P",
+            "unit_volume": "750ML",
+            "upc": "81753832872",
+            "vintage": "9",
+            "wholesaler": "allied"
+          },
+          {
+            "edition": "2026-05",
+            "len": 1,
+            "product_name": "DOM PER P2 02 GB 3PK",
+            "unit_volume": "750ML",
+            "upc": "81753839284",
+            "vintage": "2",
+            "wholesaler": "allied"
+          },
+          {
+            "edition": "2026-05",
+            "len": 1,
+            "product_name": "DOM PER P2 03 6PK",
+            "unit_volume": "750ML",
+            "upc": "81753832384",
+            "vintage": "3",
+            "wholesaler": "allied"
+          },
+          {
+            "edition": "2026-05",
+            "len": 1,
+            "product_name": "DOM PER P2 04 3PK",
+            "unit_volume": "750ML",
+            "upc": "81753836511",
+            "vintage": "4",
+            "wholesaler": "allied"
+          }
+        ]
+      }
+    },
+    "edition_checked": "2026-05",
+    "totals": {
+      "ambiguous_upcs": 20,
+      "effective_above_frontline": 0,
+      "multi_token_rip_codes": 20,
+      "negative_effective": 0,
+      "per_bottle_outliers": 20,
+      "price_jumps_gt_50pct": 20,
+      "stub_plus_real_upc_dupes": 20,
+      "unit_qty_changes": 20,
+      "vintage_format_anomalies": 20
+    }
+  },
+  "date_sensitive": false,
+  "name": "catalog_qa_anomalies",
+  "request": {
+    "auth": false,
+    "method": "GET",
+    "params": {
+      "limit": 25
+    },
+    "path": "/api/catalog/qa/anomalies"
+  },
+  "status": 200
+}

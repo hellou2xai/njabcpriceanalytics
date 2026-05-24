@@ -1,0 +1,662 @@
+import { createContext, useContext, useState, useCallback } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Trash2 } from 'lucide-react';
+import { catalog, notes } from '../lib/api';
+import PriceChart from './PriceChart';
+import PriceBreakdown from './PriceBreakdown';
+import PriceWaterfall from './PriceWaterfall';
+import FavoriteButton from './FavoriteButton';
+import { distributorName } from '../lib/distributors';
+
+interface CompareSide {
+  productName: string;
+  wholesaler: string;
+  upc?: string;
+  unitVolume?: string;
+  unitQty?: string;
+  vintage?: string;
+}
+
+interface MonthCompare { curr: string; next: string }
+
+interface QuickViewCtx {
+  open: (
+    productName: string,
+    wholesaler: string,
+    compareWith?: CompareSide,
+    opts?: { upc?: string; unitVolume?: string; unitQty?: string; vintage?: string; months?: MonthCompare },
+  ) => void;
+  close: () => void;
+}
+
+const Ctx = createContext<QuickViewCtx>({ open: () => {}, close: () => {} });
+export const useProductQuickView = () => useContext(Ctx);
+
+export function ProductQuickViewProvider({ children }: { children: React.ReactNode }) {
+  const [target, setTarget] = useState<
+    { productName: string; wholesaler: string; upc?: string; unitVolume?: string; unitQty?: string; vintage?: string; months?: MonthCompare; compareWith?: CompareSide } | null
+  >(null);
+
+  const open = useCallback(
+    (
+      productName: string,
+      wholesaler: string,
+      compareWith?: CompareSide,
+      opts?: { upc?: string; unitVolume?: string; unitQty?: string; vintage?: string; months?: MonthCompare },
+    ) => setTarget({ productName, wholesaler, ...opts, compareWith }),
+    []
+  );
+  const close = useCallback(() => setTarget(null), []);
+
+  return (
+    <Ctx.Provider value={{ open, close }}>
+      {children}
+      {target && (
+        <QuickViewModal
+          productName={target.productName}
+          wholesaler={target.wholesaler}
+          upc={target.upc}
+          unitVolume={target.unitVolume}
+          unitQty={target.unitQty}
+          vintage={target.vintage}
+          months={target.months}
+          compareWith={target.compareWith}
+          onClose={close}
+        />
+      )}
+    </Ctx.Provider>
+  );
+}
+
+function QuickViewModal({
+  productName, wholesaler, upc, unitVolume, unitQty, vintage, months, compareWith, onClose,
+}: {
+  productName: string;
+  wholesaler: string;
+  upc?: string;
+  unitVolume?: string;
+  unitQty?: string;
+  vintage?: string;
+  months?: MonthCompare;
+  compareWith?: CompareSide;
+  onClose: () => void;
+}) {
+  const { data: detail } = useQuery({
+    queryKey: ['product-detail', wholesaler, productName, upc, unitVolume, unitQty, vintage, months?.curr],
+    queryFn: () => catalog.product(wholesaler, productName, { edition: months?.curr, upc, unit_volume: unitVolume, unit_qty: unitQty, vintage }),
+  });
+
+  // Next-month edition of the SAME SKU, for month-over-month breakdown.
+  const { data: detailNext } = useQuery({
+    enabled: !!months,
+    queryKey: ['product-detail', wholesaler, productName, upc, unitVolume, unitQty, vintage, months?.next],
+    queryFn: () => catalog.product(wholesaler, productName, { edition: months!.next, upc, unit_volume: unitVolume, unit_qty: unitQty, vintage }),
+  });
+
+  const { data: history } = useQuery({
+    queryKey: ['price-history', wholesaler, productName, upc, unitVolume, unitQty, vintage],
+    queryFn: () => catalog.priceHistory(wholesaler, productName, { upc, unit_volume: unitVolume, unit_qty: unitQty, vintage }),
+  });
+
+  const { data: breakdown } = useQuery({
+    queryKey: ['product-breakdown', wholesaler, productName, upc, unitVolume, unitQty, vintage],
+    queryFn: () => catalog.productBreakdown(wholesaler, productName, { upc, unit_volume: unitVolume, unit_qty: unitQty, vintage }),
+  });
+
+  // Optional second distributor for side-by-side comparison
+  const { data: detailB } = useQuery({
+    enabled: !!compareWith,
+    queryKey: ['product-detail', compareWith?.wholesaler, compareWith?.productName, compareWith?.upc, compareWith?.unitVolume, compareWith?.unitQty, compareWith?.vintage],
+    queryFn: () => catalog.product(compareWith!.wholesaler, compareWith!.productName, {
+      upc: compareWith!.upc, unit_volume: compareWith!.unitVolume, unit_qty: compareWith!.unitQty, vintage: compareWith!.vintage,
+    }),
+  });
+  const { data: breakdownB } = useQuery({
+    enabled: !!compareWith,
+    queryKey: ['product-breakdown', compareWith?.wholesaler, compareWith?.productName, compareWith?.upc, compareWith?.unitVolume, compareWith?.unitQty, compareWith?.vintage],
+    queryFn: () => catalog.productBreakdown(compareWith!.wholesaler, compareWith!.productName, {
+      upc: compareWith!.upc, unit_volume: compareWith!.unitVolume, unit_qty: compareWith!.unitQty, vintage: compareWith!.vintage,
+    }),
+  });
+  const { data: historyB } = useQuery({
+    enabled: !!compareWith,
+    queryKey: ['price-history', compareWith?.wholesaler, compareWith?.productName, compareWith?.upc, compareWith?.unitVolume, compareWith?.unitQty, compareWith?.vintage],
+    queryFn: () => catalog.priceHistory(compareWith!.wholesaler, compareWith!.productName, {
+      upc: compareWith!.upc, unit_volume: compareWith!.unitVolume, unit_qty: compareWith!.unitQty, vintage: compareWith!.vintage,
+    }),
+  });
+
+  const p = detail?.product;
+  const pB = detailB?.product;
+
+  // Sort state for the All Editions Breakdown table
+  const [bSort, setBSort] = useState<{ key: string; dir: 'asc' | 'desc' }>({ key: 'edition', dir: 'asc' });
+  const toggleSort = (key: string) =>
+    setBSort(s => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
+  const sortArrow = (key: string) => (bSort.key === key ? (bSort.dir === 'asc' ? ' ▲' : ' ▼') : '');
+
+  const monthLabel = (ym: string) => {
+    const [, m] = ym.split('-');
+    const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const idx = parseInt(m, 10) - 1;
+    return idx >= 0 && idx < 12 ? `${names[idx]} ${ym.split('-')[0]}` : ym;
+  };
+
+  const compactTier = (qty: number, unit: string, amt: number) => {
+    const u = unit.toLowerCase().startsWith('case') || unit.toLowerCase() === 'c' ? 'cs' : 'btl';
+    return `${qty}${u} = $${amt}`;
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()} onKeyDown={e => e.key === 'Escape' && onClose()}>
+        <button className="modal-close" onClick={onClose}>✕</button>
+
+        {!p ? <p>Loading...</p> : (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <FavoriteButton productName={productName} wholesaler={wholesaler} unitVolume={p.unit_volume} upc={p.upc} />
+              <h3 style={{ margin: 0 }}>{p.product_name}</h3>
+            </div>
+            <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+              {p.wholesaler} · {p.product_type} · {p.unit_volume} · {p.upc}
+              {vintage && <span className="tag tag-blue" style={{ marginLeft: 8, fontSize: 11 }}>Vintage {vintage}</span>}
+            </p>
+
+            {compareWith && pB ? (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: 12,
+                marginTop: 12,
+                marginBottom: 8,
+              }}>
+                {[{ side: p, ws: wholesaler, label: 'A' }, { side: pB, ws: compareWith.wholesaler, label: 'B' }].map(({ side, ws }) => {
+                  const cheaper = (p.effective_case_price ?? 0) === (pB.effective_case_price ?? 0)
+                    ? null
+                    : (side === p
+                        ? (p.effective_case_price! < pB.effective_case_price! ? 'cheaper' : null)
+                        : (pB.effective_case_price! < p.effective_case_price! ? 'cheaper' : null));
+                  return (
+                    <div key={ws} className="panel" style={{ padding: 12, borderColor: cheaper === 'cheaper' ? 'var(--green)' : undefined }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <strong>{distributorName(ws)}</strong>
+                        {cheaper === 'cheaper' && (
+                          <span className="tag tag-green" style={{ fontSize: 10 }}>CHEAPER</span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>
+                        {side.product_name}
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, fontSize: 13 }}>
+                        <div><strong>Case:</strong> ${side.frontline_case_price?.toFixed(2)}</div>
+                        {Number(side.unit_qty) > 1 && <div><strong>Btl:</strong> ${side.frontline_unit_price?.toFixed(2)}</div>}
+                        <div><strong>Best Disc:</strong> {side.has_discount ? <span className="text-green">${side.total_savings_per_case}/cs</span> : '—'}</div>
+                        <div>
+                          <strong>Effective:</strong>{' '}
+                          <span className="text-green font-bold">
+                            ${side.effective_case_price?.toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="detail-grid" style={{ marginTop: 12 }}>
+                <div><strong>Case Cost:</strong> ${p.frontline_case_price}{Number(p.unit_qty) > 1 ? <span className="text-muted" style={{ fontWeight: 400 }}> ({p.unit_qty} btl/cs)</span> : <span className="text-muted" style={{ fontWeight: 400 }}> (single unit)</span>}</div>
+                {Number(p.unit_qty) > 1 && <div><strong>Bottle Cost:</strong> ${p.frontline_unit_price}</div>}
+                <div><strong>Best Discount:</strong> {p.has_discount ? <span className="text-green">${p.total_savings_per_case}/case</span> : '—'}</div>
+                <div><strong>Effective:</strong> ${p.effective_case_price}{Number(p.unit_qty) > 1 ? <span className="text-muted" style={{ fontWeight: 400 }}> (${(p.effective_case_price / Number(p.unit_qty)).toFixed(2)}/btl)</span> : ''}</div>
+              </div>
+            )}
+
+            {p && (() => {
+              const side = (prod: typeof p, label: string, rips: typeof detail.rip_tiers, discs: typeof detail.discount_tiers) => ({
+                label,
+                list: prod.frontline_case_price ?? 0,
+                afterDiscount: prod.best_case_price || prod.frontline_case_price || 0,
+                effective: prod.effective_case_price ?? prod.frontline_case_price ?? 0,
+                pack: Number(prod.unit_qty) || 0,
+                ripTiers: rips ?? [],
+                discountTiers: discs ?? [],
+              });
+              // Month-over-month: this edition vs next edition of the same SKU.
+              const monthMode = !!months && !!detailNext?.product;
+              let sides;
+              if (monthMode && detailNext) {
+                sides = [
+                  side(p, `This month · ${monthLabel(months!.curr)}`, detail.rip_tiers, detail.discount_tiers),
+                  side(detailNext.product, `Next month · ${monthLabel(months!.next)}`, detailNext.rip_tiers, detailNext.discount_tiers),
+                ];
+              } else {
+                sides = [side(p, distributorName(wholesaler), detail.rip_tiers, detail.discount_tiers)];
+                if (compareWith && pB && detailB) sides.push(side(pB, distributorName(compareWith.wholesaler), detailB.rip_tiers, detailB.discount_tiers));
+              }
+              const hasStory = sides.some(s => s.list - s.effective > 0.01);
+              if (!hasStory && !compareWith && !monthMode) return null;
+              const wfColors = ['#6366f1', '#0ea5e9'];
+              const headerNote = monthMode ? 'this month vs next month — list → discount → RIP → you pay' : 'current edition — list → discount → RIP → you pay';
+              // Shared Y ceiling so paired waterfalls are visually comparable
+              // (List is the tallest bar in each). Round up to a tidy number.
+              const rawMax = Math.max(...sides.map(s => s.list), 0);
+              const wfMax = (() => {
+                const t = rawMax * 1.05;
+                if (t <= 0) return undefined;
+                const mag = Math.pow(10, Math.floor(Math.log10(t)));
+                return Math.ceil(t / (mag / 2)) * (mag / 2);
+              })();
+              return (
+                <>
+                  <h4>Price Breakdown <span className="text-muted" style={{ fontSize: 11, fontWeight: 400 }}>({headerNote})</span></h4>
+                  <div className={`pb-waterfalls ${sides.length > 1 ? 'pb-waterfalls-two' : ''}`}>
+                    {sides.map((s, i) => (
+                      <div key={s.label}>
+                        <div className="pb-wf-title" style={{ color: wfColors[i] }}>{s.label}</div>
+                        <PriceWaterfall list={s.list} afterDiscount={s.afterDiscount} effective={s.effective} yMax={wfMax} />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="pb-wf-legend">
+                    <span><i style={{ background: '#2e9e6e' }} /> Total (list / you pay)</span>
+                    <span><i style={{ background: '#e0695a' }} /> Reduction (discount / RIP)</span>
+                  </div>
+                  <PriceBreakdown sides={sides} />
+                </>
+              );
+            })()}
+
+            {(() => {
+              const sides = compareWith && detailB
+                ? [
+                    { tiers: detail.discount_tiers ?? [], label: distributorName(wholesaler), key: wholesaler },
+                    { tiers: detailB.discount_tiers ?? [], label: distributorName(compareWith.wholesaler), key: compareWith.wholesaler },
+                  ]
+                : [{ tiers: detail.discount_tiers ?? [], label: distributorName(wholesaler), key: wholesaler }];
+              const any = sides.some(s => s.tiers.length > 0);
+              if (!any) return null;
+              const maxTiers = Math.max(...sides.map(s => s.tiers.length), 0);
+              return (
+                <>
+                  <h4>Discount Tiers <span className="source-badge source-discount" style={{ marginLeft: 6 }}>Discount</span></h4>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table className="breakdown-table">
+                      <thead>
+                        <tr>
+                          <th>Distributor</th>
+                          {Array.from({ length: maxTiers }).map((_, i) => (
+                            <th key={i}>Tier {i + 1}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sides.map(s => (
+                          <tr key={s.key}>
+                            <td>
+                              <span className="cell-distributor-badge">{s.label}</span>
+                            </td>
+                            {Array.from({ length: maxTiers }).map((_, i) => {
+                              const t = s.tiers[i];
+                              if (!t) return <td key={i}><span className="text-muted">&mdash;</span></td>;
+                              return (
+                                <td key={i}>
+                                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{t.quantity}+</div>
+                                  <div className="text-green" style={{ fontWeight: 700 }}>-${t.amount_per_case}/cs</div>
+                                  <div style={{ fontSize: 11 }}>${t.price_after}/cs</div>
+                                  <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                                    ROI: <strong style={{ color: 'var(--green)' }}>{t.roi_pct}%</strong>
+                                  </div>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              );
+            })()}
+
+            {(() => {
+              const sides = compareWith && detailB
+                ? [
+                    { tiers: detail.rip_tiers ?? [], label: distributorName(wholesaler), key: wholesaler },
+                    { tiers: detailB.rip_tiers ?? [], label: distributorName(compareWith.wholesaler), key: compareWith.wholesaler },
+                  ]
+                : [{ tiers: detail.rip_tiers ?? [], label: distributorName(wholesaler), key: wholesaler }];
+              const any = sides.some(s => s.tiers.length > 0);
+              if (!any) return null;
+              const maxTiers = Math.max(...sides.map(s => s.tiers.length), 0);
+              return (
+                <>
+                  <h4>RIP Tiers <span className="source-badge source-rip" style={{ marginLeft: 6 }}>RIP</span></h4>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table className="breakdown-table">
+                      <thead>
+                        <tr>
+                          <th>Distributor</th>
+                          <th>Description</th>
+                          {Array.from({ length: maxTiers }).map((_, i) => (
+                            <th key={i}>Tier {i + 1}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sides.map(s => (
+                          <tr key={s.key}>
+                            <td style={{ verticalAlign: 'top' }}>
+                              <span className="cell-distributor-badge">{s.label}</span>
+                            </td>
+                            <td className="rip-desc-cell" title={s.tiers[0]?.description ?? ''}>
+                              {s.tiers[0]?.description ?? '—'}
+                            </td>
+                            {Array.from({ length: maxTiers }).map((_, i) => {
+                              const t = s.tiers[i];
+                              if (!t) return <td key={i} style={{ verticalAlign: 'top' }}><span className="text-muted">&mdash;</span></td>;
+                              return (
+                                <td key={i} style={{ verticalAlign: 'top', whiteSpace: 'nowrap' }}>
+                                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                    Buy {t.qty} {t.unit}
+                                  </div>
+                                  <div className="text-green" style={{ fontWeight: 700 }}>-${t.amount} bundle</div>
+                                  <div style={{ fontSize: 11 }}>-${t.per_case_savings}/cs &middot; ${t.price_after}/cs</div>
+                                  <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                                    Cost: ${t.bundle_cost} · ROI: <strong style={{ color: 'var(--green)' }}>{t.roi_pct}%</strong>
+                                  </div>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              );
+            })()}
+
+            {breakdown && breakdown.editions.length > 0 && (() => {
+              type RowWithWs = (typeof breakdown.editions[number]) & { _ws: string };
+              const rows: RowWithWs[] = breakdown.editions.map(e => ({ ...e, _ws: wholesaler }));
+              if (compareWith && breakdownB) {
+                rows.push(...breakdownB.editions.map(e => ({ ...e, _ws: compareWith.wholesaler })));
+              }
+              const sortVal = (e: RowWithWs): string | number => {
+                switch (bSort.key) {
+                  case 'vintage': return e.vintage ?? '';
+                  case 'distributor': return e._ws;
+                  case 'frontline_case_price': return e.frontline_case_price;
+                  case 'best_discount_per_case': return e.best_discount_per_case;
+                  case 'best_rip_per_case': return e.best_rip_per_case;
+                  case 'effective': return e.effective_case_price ?? e.frontline_case_price;
+                  case 'total_save_per_case': return e.total_save_per_case;
+                  default: return e.edition;
+                }
+              };
+              const dir = bSort.dir === 'asc' ? 1 : -1;
+              rows.sort((a, b) => {
+                const va = sortVal(a), vb = sortVal(b);
+                let c = typeof va === 'number' && typeof vb === 'number'
+                  ? va - vb
+                  : String(va).localeCompare(String(vb));
+                if (c === 0) c = a.edition.localeCompare(b.edition) || a._ws.localeCompare(b._ws) || String(a.vintage ?? '').localeCompare(String(b.vintage ?? ''));
+                return c * dir;
+              });
+              // Wine/sparkling reuse one UPC across vintages — surface it so a
+              // price difference between editions is read as a vintage change,
+              // not a real move.
+              const showVintage = rows.some(r => r.vintage);
+              return (
+              <>
+                <h4>All Editions Breakdown <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>(click a header to sort)</span></h4>
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="breakdown-table breakdown-sortable">
+                    <thead>
+                      <tr>
+                        <th onClick={() => toggleSort('edition')}>Edition{sortArrow('edition')}</th>
+                        {showVintage && <th onClick={() => toggleSort('vintage')}>Vintage{sortArrow('vintage')}</th>}
+                        {compareWith && <th onClick={() => toggleSort('distributor')}>Distributor{sortArrow('distributor')}</th>}
+                        <th className="right" onClick={() => toggleSort('frontline_case_price')}>Case Price{sortArrow('frontline_case_price')}</th>
+                        <th className="right" onClick={() => toggleSort('best_discount_per_case')}>Best Disc{sortArrow('best_discount_per_case')}</th>
+                        <th className="right" onClick={() => toggleSort('best_rip_per_case')}>RIP/Case{sortArrow('best_rip_per_case')}</th>
+                        <th className="right" onClick={() => toggleSort('effective')}>Effective{sortArrow('effective')}</th>
+                        <th className="right" onClick={() => toggleSort('total_save_per_case')}>Save/Case{sortArrow('total_save_per_case')}</th>
+                        <th>Discount Tiers</th>
+                        <th>RIP Tiers</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map(e => (
+                        <tr key={e.edition + '|' + e._ws + '|' + e.upc + '|' + (e.vintage ?? '')}>
+                          <td>{monthLabel(e.edition)}</td>
+                          {showVintage && <td>{e.vintage ?? '—'}</td>}
+                          {compareWith && (
+                            <td>
+                              <span className="cell-distributor-badge">{distributorName(e._ws)}</span>
+                            </td>
+                          )}
+                          <td className="right">${e.frontline_case_price.toFixed(2)}</td>
+                          <td className="right">
+                            {e.best_discount_per_case > 0
+                              ? <span className="text-green">${e.best_discount_per_case.toFixed(2)}</span>
+                              : <span className="text-muted">&mdash;</span>}
+                          </td>
+                          <td className="right">
+                            {e.best_rip_per_case > 0
+                              ? <span className="text-green">${e.best_rip_per_case.toFixed(2)}</span>
+                              : <span className="text-muted">&mdash;</span>}
+                          </td>
+                          <td className="right" style={{ fontWeight: 600 }}>
+                            ${(e.effective_case_price ?? e.frontline_case_price).toFixed(2)}
+                            {(() => {
+                              // Derive pack (btl/cs) from this edition's own list prices.
+                              const pack = e.frontline_unit_price && e.frontline_unit_price > 0
+                                ? e.frontline_case_price / e.frontline_unit_price : 0;
+                              const eff = e.effective_case_price ?? e.frontline_case_price;
+                              return pack > 1
+                                ? <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>${(eff / pack).toFixed(2)}/btl</div>
+                                : null;
+                            })()}
+                          </td>
+                          <td className="right">
+                            {e.total_save_per_case > 0
+                              ? <span className="text-green font-bold">${e.total_save_per_case.toFixed(2)}</span>
+                              : <span className="text-muted">&mdash;</span>}
+                          </td>
+                          <td>
+                            {e.discount_tiers.length === 0
+                              ? <span className="text-muted">&mdash;</span>
+                              : (
+                                <div className="catalog-tier-badges">
+                                  {e.discount_tiers.map((t, i) => (
+                                    <span key={i} className="source-badge source-discount">
+                                      {compactTier(t.qty, t.unit, t.amount)}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                          </td>
+                          <td>
+                            {e.rip_tiers.length === 0
+                              ? <span className="text-muted">&mdash;</span>
+                              : (
+                                <div className="catalog-tier-badges">
+                                  {e.rip_tiers.map((t, i) => (
+                                    <span key={i} className="source-badge source-rip">
+                                      {compactTier(t.qty, t.unit, t.amount)}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+              );
+            })()}
+
+            {history && history.history.length > 0 && (
+              <>
+                <h4>Price History{compareWith ? ' — Effective Cost Trend' : ''}</h4>
+                <PriceChart
+                  data={history.history}
+                  labelA={distributorName(wholesaler)}
+                  compare={compareWith && historyB
+                    ? { data: historyB.history, labelB: distributorName(compareWith.wholesaler) }
+                    : null}
+                />
+                {compareWith && historyB ? (() => {
+                  // Head-to-head: compare effective cost per edition.
+                  const labA = distributorName(wholesaler);
+                  const labB = distributorName(compareWith.wholesaler);
+                  const aBy = Object.fromEntries(history.history.map(p => [p.edition, p]));
+                  const bBy = Object.fromEntries(historyB.history.map(p => [p.edition, p]));
+                  const eds = Array.from(new Set([...Object.keys(aBy), ...Object.keys(bBy)])).sort();
+                  let aWins = 0, bWins = 0;
+                  for (const ed of eds) {
+                    const a = aBy[ed]?.effective_case_price, b = bBy[ed]?.effective_case_price;
+                    if (a == null || b == null) continue;
+                    if (a < b) aWins++; else if (b < a) bWins++;
+                  }
+                  const latestEd = eds[eds.length - 1];
+                  const la = aBy[latestEd]?.effective_case_price, lb = bBy[latestEd]?.effective_case_price;
+                  const gap = (la != null && lb != null) ? Math.abs(la - lb) : null;
+                  const cheaperNow = (la != null && lb != null) ? (la < lb ? labA : lb < la ? labB : 'Tie') : '—';
+                  return (
+                    <div className="price-story">
+                      <span className="price-stat">
+                        <span className="price-stat-label">Cheaper now</span>
+                        <span className="price-stat-val text-green">{cheaperNow}{gap && gap > 0 ? ` · $${gap.toFixed(2)}` : ''}</span>
+                      </span>
+                      <span className="price-stat">
+                        <span className="price-stat-label">{labA} cheaper</span>
+                        <span className="price-stat-val">{aWins} / {eds.length} mo</span>
+                      </span>
+                      <span className="price-stat">
+                        <span className="price-stat-label">{labB} cheaper</span>
+                        <span className="price-stat-val">{bWins} / {eds.length} mo</span>
+                      </span>
+                      <span className="price-stat">
+                        <span className="price-stat-label">{labA} now</span>
+                        <span className="price-stat-val">{la != null ? `$${la.toFixed(2)}` : '—'}</span>
+                      </span>
+                      <span className="price-stat">
+                        <span className="price-stat-label">{labB} now</span>
+                        <span className="price-stat-val">{lb != null ? `$${lb.toFixed(2)}` : '—'}</span>
+                      </span>
+                    </div>
+                  );
+                })() : (() => {
+                  const h = history.history;
+                  const best = h.reduce((a, b) => (b.effective_case_price < a.effective_case_price ? b : a), h[0]);
+                  const saver = h.reduce((a, b) => {
+                    const sa = a.frontline_case_price - a.effective_case_price;
+                    const sb = b.frontline_case_price - b.effective_case_price;
+                    return sb > sa ? b : a;
+                  }, h[0]);
+                  const maxSave = saver.frontline_case_price - saver.effective_case_price;
+                  const latest = h[h.length - 1];
+                  const ml = (ym: string) => monthLabel(ym).replace(/ \d{4}$/, '');
+                  // When every month has the same effective price / savings there is
+                  // no single "best" month — don't arbitrarily name one.
+                  const effs = h.map(p => p.effective_case_price);
+                  const effFlat = h.length > 1 && Math.max(...effs) - Math.min(...effs) < 0.01;
+                  const saves = h.map(p => p.frontline_case_price - p.effective_case_price);
+                  const saveFlat = h.length > 1 && Math.max(...saves) - Math.min(...saves) < 0.01;
+                  const trendTone = history.stats?.trend === 'rising' ? 'text-red'
+                    : history.stats?.trend === 'falling' ? 'text-green' : '';
+                  return (
+                    <div className="price-story">
+                      <span className="price-stat">
+                        <span className="price-stat-label">Trend</span>
+                        <span className={`price-stat-val ${trendTone}`}>{history.stats?.trend ?? '—'}</span>
+                      </span>
+                      <span className="price-stat">
+                        <span className="price-stat-label">Best month</span>
+                        <span className="price-stat-val text-green">
+                          {effFlat ? `Any · $${best.effective_case_price.toFixed(2)}` : `${ml(best.edition)} · $${best.effective_case_price.toFixed(2)}`}
+                        </span>
+                      </span>
+                      <span className="price-stat">
+                        <span className="price-stat-label">Biggest savings</span>
+                        <span className="price-stat-val text-green">{maxSave > 0 ? `$${maxSave.toFixed(2)}/cs ${saveFlat ? '(every month)' : `(${ml(saver.edition)})`}` : '—'}</span>
+                      </span>
+                      <span className="price-stat">
+                        <span className="price-stat-label">Now vs list</span>
+                        <span className="price-stat-val">
+                          ${latest.effective_case_price.toFixed(2)}
+                          {latest.effective_case_price < latest.frontline_case_price && (
+                            <span className="text-muted" style={{ textDecoration: 'line-through', marginLeft: 6, fontWeight: 400 }}>
+                              ${latest.frontline_case_price.toFixed(2)}
+                            </span>
+                          )}
+                        </span>
+                      </span>
+                      <span className="price-stat">
+                        <span className="price-stat-label">Range</span>
+                        <span className="price-stat-val">${history.stats?.min_price}–${history.stats?.max_price}</span>
+                      </span>
+                    </div>
+                  );
+                })()}
+              </>
+            )}
+
+            <ProductNotes wholesaler={wholesaler} productName={productName} />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ProductNotes({ wholesaler, productName }: { wholesaler: string; productName: string }) {
+  const qc = useQueryClient();
+  const [text, setText] = useState('');
+  const { data: list } = useQuery({
+    queryKey: ['notes', wholesaler, productName],
+    queryFn: () => notes.forProduct(wholesaler, productName),
+  });
+  const refresh = () => qc.invalidateQueries({ queryKey: ['notes'] }); // refreshes this + dashboard tile
+  const addMut = useMutation({
+    mutationFn: () => notes.add({ product_name: productName, wholesaler, note: text.trim() }),
+    onSuccess: () => { refresh(); setText(''); },
+  });
+  const removeMut = useMutation({
+    mutationFn: (id: number) => notes.remove(id),
+    onSuccess: refresh,
+  });
+  const items = list ?? [];
+  return (
+    <>
+      <h4>Notes</h4>
+      <div className="pv-notes">
+        {items.length === 0 && <p className="text-muted" style={{ fontSize: 12, margin: '2px 0 8px' }}>No notes yet for this product.</p>}
+        {items.map(n => (
+          <div key={n.id} className="pv-note">
+            <span>{n.note}</span>
+            <button className="btn-icon" title="Delete note" onClick={() => removeMut.mutate(n.id)}>
+              <Trash2 size={14} />
+            </button>
+          </div>
+        ))}
+        <div className="pv-note-add">
+          <textarea
+            value={text}
+            onChange={e => setText(e.target.value)}
+            placeholder="Add a note about this product..."
+            rows={2}
+          />
+          <button className="btn btn-sm" disabled={!text.trim() || addMut.isPending} onClick={() => addMut.mutate()}>
+            {addMut.isPending ? 'Saving...' : 'Add note'}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}

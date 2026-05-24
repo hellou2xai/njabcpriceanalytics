@@ -1,0 +1,56 @@
+{
+  "body": {
+    "history": [
+      {
+        "best_case_price": 42.0,
+        "discount_pct": 16.0,
+        "edition": "2026-04",
+        "effective_case_price": 42.0,
+        "frontline_case_price": 50.0,
+        "has_discount": true,
+        "has_rip": false,
+        "vintage": null
+      },
+      {
+        "best_case_price": 42.0,
+        "discount_pct": 16.0,
+        "edition": "2026-05",
+        "effective_case_price": 42.0,
+        "frontline_case_price": 50.0,
+        "has_discount": true,
+        "has_rip": false,
+        "vintage": null
+      },
+      {
+        "best_case_price": 42.0,
+        "discount_pct": 16.0,
+        "edition": "2026-06",
+        "effective_case_price": 42.0,
+        "frontline_case_price": 50.0,
+        "has_discount": true,
+        "has_rip": false,
+        "vintage": null
+      }
+    ],
+    "stats": {
+      "avg_price": 50.0,
+      "current_price": 50.0,
+      "editions_count": 3,
+      "max_price": 50.0,
+      "min_price": 50.0,
+      "trend": "stable"
+    }
+  },
+  "date_sensitive": false,
+  "name": "catalog_price_history",
+  "request": {
+    "auth": false,
+    "method": "GET",
+    "params": {
+      "unit_volume": "700ML",
+      "upc": "80686011651"
+    },
+    "path": "/api/catalog/price-history/allied/-196 LEMON TALL"
+  },
+  "status": 200
+}

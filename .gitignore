@@ -1,0 +1,15 @@
+.env
+__pycache__/
+*.pyc
+node_modules/
+dist/
+.vite/
+parquet_output/
+Data/
+user_data/
+*.db
+*.duckdb
+*.xlsx
+.claude/
+.DS_Store
+Thumbs.db

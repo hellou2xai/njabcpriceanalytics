@@ -1,0 +1,204 @@
+{
+  "body": {
+    "lines": [
+      {
+        "best_rip_save": "19.2",
+        "brand": "13 CELSIUS P GRIG",
+        "btl_cost": 11.09,
+        "case_cost": 133.08,
+        "category": "Wine",
+        "combo_code": null,
+        "created_at": "<volatile>",
+        "description": "13 CELSIUS P GRIG 22",
+        "has_rip": true,
+        "id": "<volatile>",
+        "is_closeout": false,
+        "notes": null,
+        "order_id": "<volatile>",
+        "pack": 12,
+        "product_name": "13 CELSIUS P GRIG 22",
+        "qty_cases": 5,
+        "qty_units": 0,
+        "retail_price": null,
+        "rip_tiers": [
+          {
+            "btl_price": null,
+            "case_price": "113.88",
+            "save_amount": "19.2",
+            "tier": "5cs",
+            "tier_cases": 5
+          }
+        ],
+        "selected_discount_tier": null,
+        "size": "750ML",
+        "unit_volume": "750ML",
+        "upc": "81308004457",
+        "wholesaler": "allied"
+      },
+      {
+        "best_rip_save": "228.0",
+        "brand": "THE PACT",
+        "btl_cost": 115.0,
+        "case_cost": 690.0,
+        "category": "Wine",
+        "combo_code": "1035770",
+        "created_at": "<volatile>",
+        "description": "THE PACT CAB NV 226P",
+        "has_rip": true,
+        "id": "<volatile>",
+        "is_closeout": false,
+        "notes": null,
+        "order_id": "<volatile>",
+        "pack": 6,
+        "product_name": "THE PACT CAB NV 226P",
+        "qty_cases": 2,
+        "qty_units": 0,
+        "retail_price": null,
+        "rip_tiers": [
+          {
+            "btl_price": null,
+            "case_price": "462.0",
+            "save_amount": "228.0",
+            "tier": "1cs",
+            "tier_cases": 1
+          }
+        ],
+        "selected_discount_tier": null,
+        "size": "750ML",
+        "unit_volume": null,
+        "upc": "93916714",
+        "wholesaler": "allied"
+      },
+      {
+        "best_rip_save": "350.0",
+        "brand": "QUINTESSA RB CB22",
+        "btl_cost": 259.98,
+        "case_cost": 1559.88,
+        "category": "Wine",
+        "combo_code": "1035770",
+        "created_at": "<volatile>",
+        "description": "QUINTESSA RB CB22 6P",
+        "has_rip": true,
+        "id": "<volatile>",
+        "is_closeout": false,
+        "notes": null,
+        "order_id": "<volatile>",
+        "pack": 6,
+        "product_name": "QUINTESSA RB CB22 6P",
+        "qty_cases": 2,
+        "qty_units": 0,
+        "retail_price": null,
+        "rip_tiers": [
+          {
+            "btl_price": null,
+            "case_price": "1209.88",
+            "save_amount": "350.0",
+            "tier": "1cs",
+            "tier_cases": 1
+          }
+        ],
+        "selected_discount_tier": null,
+        "size": "750ML",
+        "unit_volume": null,
+        "upc": "83085001025",
+        "wholesaler": "allied"
+      },
+      {
+        "best_rip_save": "228.0",
+        "brand": "THE PACT",
+        "btl_cost": 115.0,
+        "case_cost": 690.0,
+        "category": "Wine",
+        "combo_code": "1035770",
+        "created_at": "<volatile>",
+        "description": "THE PACT CAB NV 236P",
+        "has_rip": true,
+        "id": "<volatile>",
+        "is_closeout": false,
+        "notes": null,
+        "order_id": "<volatile>",
+        "pack": 6,
+        "product_name": "THE PACT CAB NV 236P",
+        "qty_cases": 2,
+        "qty_units": 0,
+        "retail_price": null,
+        "rip_tiers": [
+          {
+            "btl_price": null,
+            "case_price": "462.0",
+            "save_amount": "228.0",
+            "tier": "1cs",
+            "tier_cases": 1
+          }
+        ],
+        "selected_discount_tier": null,
+        "size": "750ML",
+        "unit_volume": null,
+        "upc": "93916714",
+        "wholesaler": "allied"
+      },
+      {
+        "best_rip_save": "150.0",
+        "brand": "FAVIA",
+        "btl_cost": 250.0,
+        "case_cost": 750.0,
+        "category": "Wine",
+        "combo_code": "1035770",
+        "created_at": "<volatile>",
+        "description": "FAVIA CAB OAKVL22 3P",
+        "has_rip": true,
+        "id": "<volatile>",
+        "is_closeout": false,
+        "notes": null,
+        "order_id": "<volatile>",
+        "pack": 3,
+        "product_name": "FAVIA CAB OAKVL22 3P",
+        "qty_cases": 2,
+        "qty_units": 0,
+        "retail_price": null,
+        "rip_tiers": [
+          {
+            "btl_price": null,
+            "case_price": "650.0",
+            "save_amount": "100.0",
+            "tier": "1cs",
+            "tier_cases": 1
+          },
+          {
+            "btl_price": null,
+            "case_price": "600.0",
+            "save_amount": "150.0",
+            "tier": "2cs",
+            "tier_cases": 2
+          }
+        ],
+        "selected_discount_tier": null,
+        "size": "750ML",
+        "unit_volume": null,
+        "upc": "107940014",
+        "wholesaler": "allied"
+      }
+    ],
+    "order": {
+      "created_at": "<volatile>",
+      "distributor": "allied",
+      "division": null,
+      "id": "<volatile>",
+      "name": "Golden Order",
+      "notes": "golden order note",
+      "sales_rep_id": "<volatile>",
+      "status": "draft",
+      "updated_at": "<volatile>",
+      "user_id": "<volatile>"
+    }
+  },
+  "date_sensitive": false,
+  "name": "get_order_detail",
+  "request": {
+    "auth": true,
+    "method": "GET",
+    "params": null,
+    "path": "/api/orders/35"
+  },
+  "status": 200
+}

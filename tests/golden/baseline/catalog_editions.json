@@ -1,0 +1,103 @@
+{
+  "body": [
+    {
+      "display_name": "Allied",
+      "edition": "2026-04",
+      "item_count": 16694,
+      "wholesaler": "allied"
+    },
+    {
+      "display_name": "Allied",
+      "edition": "2026-05",
+      "item_count": 15998,
+      "wholesaler": "allied"
+    },
+    {
+      "display_name": "Allied",
+      "edition": "2026-06",
+      "item_count": 16348,
+      "wholesaler": "allied"
+    },
+    {
+      "display_name": "Fedway",
+      "edition": "2026-04",
+      "item_count": 18809,
+      "wholesaler": "fedway"
+    },
+    {
+      "display_name": "Fedway",
+      "edition": "2026-05",
+      "item_count": 18971,
+      "wholesaler": "fedway"
+    },
+    {
+      "display_name": "Fedway",
+      "edition": "2026-06",
+      "item_count": 19042,
+      "wholesaler": "fedway"
+    },
+    {
+      "display_name": "Highgrade",
+      "edition": "2026-04",
+      "item_count": 2171,
+      "wholesaler": "high_grade"
+    },
+    {
+      "display_name": "Highgrade",
+      "edition": "2026-05",
+      "item_count": 2289,
+      "wholesaler": "high_grade"
+    },
+    {
+      "display_name": "Highgrade",
+      "edition": "2026-06",
+      "item_count": 2374,
+      "wholesaler": "high_grade"
+    },
+    {
+      "display_name": "Opici",
+      "edition": "2026-04",
+      "item_count": 3442,
+      "wholesaler": "opici"
+    },
+    {
+      "display_name": "Opici",
+      "edition": "2026-05",
+      "item_count": 3522,
+      "wholesaler": "opici"
+    },
+    {
+      "display_name": "Opici",
+      "edition": "2026-06",
+      "item_count": 3582,
+      "wholesaler": "opici"
+    },
+    {
+      "display_name": "Peerless",
+      "edition": "2026-04",
+      "item_count": 1675,
+      "wholesaler": "peerless"
+    },
+    {
+      "display_name": "Peerless",
+      "edition": "2026-05",
+      "item_count": 1705,
+      "wholesaler": "peerless"
+    },
+    {
+      "display_name": "Peerless",
+      "edition": "2026-06",
+      "item_count": 1779,
+      "wholesaler": "peerless"
+    }
+  ],
+  "date_sensitive": false,
+  "name": "catalog_editions",
+  "request": {
+    "auth": false,
+    "method": "GET",
+    "params": null,
+    "path": "/api/catalog/editions"
+  },
+  "status": 200
+}

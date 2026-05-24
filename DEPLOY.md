@@ -90,24 +90,49 @@ bootstrap can load pricing; without it, the schema is created but pricing pages
 stay empty until you ingest. Deploying and the monthly ingestion do not need any
 of this, only git and the Render database URL.
 
-## Monthly data cycle
+## Data ingestion (any month, past or future)
 
-Data is loaded once a month (next run: 17 June 2026). It is a full replace, so
-the database size stays bounded by what the Parquet holds.
+The pipeline is edition-aware and idempotent, so adding a future month and
+back-filling a past month are the *same* steps. The edition (YYYY-MM) and
+wholesaler are auto-detected from each file name, and each (wholesaler, edition)
+is written to its own Parquet partition
+(`parquet_output/cpl/wholesaler=allied/edition=2026-06/data.parquet`). So
+re-processing a month overwrites just that partition and never duplicates, and
+new months simply add new partitions next to the existing ones.
 
-1. Run the local Excel to Parquet pipeline (unchanged).
-2. Load Parquet into Postgres. Local target:
+Steps (next scheduled run: 17 June 2026):
+
+1. Put the month's Excel files in `Data/` (one per wholesaler). Keep older files
+   too if you want their editions retained. Editions and wholesalers are
+   detected automatically; `python run_etl.py --list` shows the recognised
+   wholesaler slugs and file-name patterns.
+2. Build the raw + derived Parquet:
+   ```
+   python run_etl.py --derive
+   ```
+   (`--wholesaler allied` for one distributor; `--derive-only` to just rebuild
+   the derived tables; `--dry-run` to parse without writing.)
+3. Load Parquet into Postgres. This is a FULL REPLACE, so Postgres always mirrors
+   exactly what is in `parquet_output`. Local target:
    ```
    python scripts/ingest_to_postgres.py
    ```
-   Render target (use the database's External URL, which includes
-   `sslmode=require`):
+   Render target (the database's External URL, which includes `sslmode=require`):
    ```
    python scripts/ingest_to_postgres.py --database-url "postgresql://celr:...@dpg-....render.com/celr?sslmode=require"
    ```
-3. Refresh the running app's cache so it picks up the new data:
-   - click Manual Deploy in Render (restart rebuilds the cache), or
-   - as a signed-in user, `POST /api/admin/reload-pricing`.
+4. Refresh the running app's cache so it picks up the new data:
+   - the "Reload pricing cache" button on the Admin page, or
+   - `POST /api/admin/reload-pricing` (admin), or
+   - a Manual Deploy in Render (a restart rebuilds the cache).
+
+Notes:
+- Past vs future is identical: drop the file, run the ETL, ingest, reload. The
+  app's current/next-edition logic just uses whichever editions are present.
+- Because ingest is a full replace, to remove an old edition delete its
+  partition folders under `parquet_output` (and the source Excel) before
+  ingesting. Otherwise editions accumulate, which is usually what you want.
+- `Data/` and `parquet_output/` are gitignored (local only), by design.
 
 ## Deploy to Render (Blueprint)
 

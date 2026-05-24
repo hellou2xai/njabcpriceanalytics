@@ -1,23 +1,98 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Trash2, RefreshCw, UserCheck, UserX } from 'lucide-react';
+import { Trash2, RefreshCw, UserCheck, UserX, X } from 'lucide-react';
 import { admin, feedback } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 
-const STAT_CARDS: [string, string][] = [
-  ['Users', 'users'],
-  ['Feedback', 'feedback'],
-  ['Orders', 'orders'],
-  ['Order lines', 'order_lines'],
-  ['Stores', 'stores'],
-  ['Notes', 'user_notes'],
-  ['Watchlist', 'watchlist'],
+// [label, counts-key, drill-down: 'scroll:<id>' | 'detail:<entity>']
+const STAT_CARDS: [string, string, string][] = [
+  ['Users', 'users', 'scroll:admin-users'],
+  ['Feedback', 'feedback', 'scroll:admin-feedback'],
+  ['Orders', 'orders', 'detail:orders'],
+  ['Order lines', 'order_lines', 'detail:order_lines'],
+  ['Stores', 'stores', 'detail:stores'],
+  ['Notes', 'user_notes', 'detail:user_notes'],
+  ['Watchlist', 'watchlist', 'detail:watchlist'],
 ];
 
-function fmtDate(d?: string | null): string {
-  if (!d) return '';
+function fmtDate(d?: unknown): string {
+  if (typeof d !== 'string' || !d) return '';
   const [date, time] = d.split(/[ T]/);
   return `${date} ${time ? time.slice(0, 5) : ''}`.trim();
+}
+
+function cell(v: unknown): string {
+  if (v == null) return '-';
+  return String(v);
+}
+
+function GenericTable({ rows }: { rows: Record<string, unknown>[] }) {
+  if (!rows || rows.length === 0) return <p className="text-muted">Nothing here yet.</p>;
+  const cols = Object.keys(rows[0]);
+  return (
+    <div className="table-container">
+      <table>
+        <thead><tr>{cols.map(c => <th key={c}>{c}</th>)}</tr></thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i}>
+              {cols.map(c => (
+                <td key={c} style={{ maxWidth: 360, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  {c.endsWith('created_at') || c.endsWith('updated_at') ? fmtDate(r[c]) : cell(r[c])}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function DetailModal({ entity, label, onClose }: { entity: string; label: string; onClose: () => void }) {
+  const { data, isLoading } = useQuery({ queryKey: ['admin-detail', entity], queryFn: () => admin.detail(entity) });
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <button className="modal-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        <h3 style={{ marginTop: 0 }}>{label} ({data?.length ?? 0})</h3>
+        {isLoading ? <p>Loading...</p> : <GenericTable rows={data ?? []} />}
+      </div>
+    </div>
+  );
+}
+
+function UserDetailModal({ id, onClose }: { id: number; onClose: () => void }) {
+  const { data, isLoading } = useQuery({ queryKey: ['admin-user', id], queryFn: () => admin.userDetail(id) });
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <button className="modal-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        {isLoading || !data ? <p>Loading...</p> : (
+          <>
+            <h3 style={{ marginTop: 0 }}>
+              {data.user.email}
+              {data.user.is_admin && <span className="tag tag-blue" style={{ marginLeft: 6, fontSize: 10 }}>ADMIN</span>}
+            </h3>
+            <p className="text-muted" style={{ marginTop: 0 }}>
+              {(data.user.full_name as string) || 'No name'} · {data.user.activated ? 'Active' : 'Pending'} ·
+              joined {fmtDate(data.user.created_at as string)}
+            </p>
+            <h4>Orders ({data.orders.length})</h4>
+            <GenericTable rows={data.orders} />
+            <h4>Stores ({data.stores.length})</h4>
+            <GenericTable rows={data.stores} />
+            <h4>Notes ({data.notes.length})</h4>
+            <GenericTable rows={data.notes} />
+            <h4>Watchlist ({data.watchlist.length})</h4>
+            <GenericTable rows={data.watchlist} />
+            <h4>Feedback ({data.feedback.length})</h4>
+            <GenericTable rows={data.feedback} />
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function Admin() {
@@ -25,6 +100,8 @@ export default function Admin() {
   const isAdmin = !!user?.is_admin;
   const qc = useQueryClient();
   const [reloadMsg, setReloadMsg] = useState('');
+  const [detail, setDetail] = useState<{ entity: string; label: string } | null>(null);
+  const [detailUser, setDetailUser] = useState<number | null>(null);
 
   const { data: stats } = useQuery({ queryKey: ['admin-stats'], queryFn: admin.stats, enabled: isAdmin });
   const { data: users } = useQuery({ queryKey: ['admin-users'], queryFn: admin.users, enabled: isAdmin });
@@ -46,6 +123,12 @@ export default function Admin() {
     onError: (e) => setReloadMsg(e instanceof Error ? e.message : 'Reload failed.'),
   });
 
+  const onCardClick = (key: string, label: string, drill: string) => {
+    const [kind, target] = drill.split(':');
+    if (kind === 'scroll') document.getElementById(target)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    else setDetail({ entity: target, label });
+  };
+
   if (!isAdmin) {
     return (
       <div className="page">
@@ -63,15 +146,16 @@ export default function Admin() {
     <div className="page">
       <div className="orders-header"><h2>Admin</h2></div>
       <p className="text-muted" style={{ marginTop: 0 }}>
-        Usage, users, and feedback. Admin access is by email allowlist (ADMIN_EMAILS).
+        Usage, users, and feedback. Click a card or a user to drill in.
       </p>
 
       <div className="rip-summary-cards">
-        {STAT_CARDS.map(([label, key]) => (
-          <div className="rip-summary-card" key={key}>
+        {STAT_CARDS.map(([label, key, drill]) => (
+          <button className="rip-summary-card admin-card" key={key} type="button"
+                  onClick={() => onCardClick(key, label, drill)}>
             <div className="rip-summary-value">{(counts[key] ?? 0).toLocaleString()}</div>
             <div className="rip-summary-label">{label}</div>
-          </div>
+          </button>
         ))}
       </div>
 
@@ -83,25 +167,21 @@ export default function Admin() {
         {reloadMsg && <span className="text-muted" style={{ fontSize: 13 }}>{reloadMsg}</span>}
       </div>
 
-      <h3 style={{ marginTop: 24 }}>Users ({userList.length})</h3>
+      <h3 id="admin-users" style={{ marginTop: 24 }}>Users ({userList.length})</h3>
       <div className="table-container">
         <table>
           <thead>
             <tr>
-              <th>Email</th>
-              <th>Name</th>
-              <th>Status</th>
-              <th className="right">Orders</th>
-              <th className="right">Stores</th>
-              <th>Joined</th>
-              <th>Actions</th>
+              <th>Email</th><th>Name</th><th>Status</th>
+              <th className="right">Orders</th><th className="right">Stores</th><th>Joined</th><th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {userList.map(u => (
               <tr key={u.id}>
                 <td style={{ whiteSpace: 'nowrap' }}>
-                  {u.email}{u.is_admin && <span className="tag tag-blue" style={{ marginLeft: 6, fontSize: 10 }}>ADMIN</span>}
+                  <button className="login-link-btn" onClick={() => setDetailUser(u.id)}>{u.email}</button>
+                  {u.is_admin && <span className="tag tag-blue" style={{ marginLeft: 6, fontSize: 10 }}>ADMIN</span>}
                 </td>
                 <td>{u.full_name ?? '-'}</td>
                 <td>
@@ -138,25 +218,16 @@ export default function Admin() {
                 </td>
               </tr>
             ))}
-            {users && userList.length === 0 && (
-              <tr><td colSpan={7} className="empty">No users.</td></tr>
-            )}
+            {users && userList.length === 0 && <tr><td colSpan={7} className="empty">No users.</td></tr>}
           </tbody>
         </table>
       </div>
 
-      <h3 style={{ marginTop: 24 }}>Feedback ({fbList.length})</h3>
+      <h3 id="admin-feedback" style={{ marginTop: 24 }}>Feedback ({fbList.length})</h3>
       <div className="table-container">
         <table>
           <thead>
-            <tr>
-              <th>When</th>
-              <th>Type</th>
-              <th>Message</th>
-              <th>From</th>
-              <th>Page</th>
-              <th></th>
-            </tr>
+            <tr><th>When</th><th>Type</th><th>Message</th><th>From</th><th>Page</th><th></th></tr>
           </thead>
           <tbody>
             {fbList.map(f => (
@@ -164,25 +235,23 @@ export default function Admin() {
                 <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(f.created_at)}</td>
                 <td>{f.kind ?? '-'}</td>
                 <td style={{ maxWidth: 460, whiteSpace: 'pre-wrap' }}>{f.message}</td>
-                <td style={{ whiteSpace: 'nowrap' }}>
-                  {f.user_email ?? (f.user_id ? `user ${f.user_id}` : 'anonymous')}
-                </td>
+                <td style={{ whiteSpace: 'nowrap' }}>{f.user_email ?? (f.user_id ? `user ${f.user_id}` : 'anonymous')}</td>
                 <td style={{ whiteSpace: 'nowrap' }}>{f.page ?? '-'}</td>
                 <td>
-                  <button className="btn-icon" title="Delete feedback"
-                          disabled={deleteFbMut.isPending}
+                  <button className="btn-icon" title="Delete feedback" disabled={deleteFbMut.isPending}
                           onClick={() => deleteFbMut.mutate(f.id)}>
                     <Trash2 size={15} />
                   </button>
                 </td>
               </tr>
             ))}
-            {fb && fbList.length === 0 && (
-              <tr><td colSpan={6} className="empty">No feedback yet.</td></tr>
-            )}
+            {fb && fbList.length === 0 && <tr><td colSpan={6} className="empty">No feedback yet.</td></tr>}
           </tbody>
         </table>
       </div>
+
+      {detail && <DetailModal entity={detail.entity} label={detail.label} onClose={() => setDetail(null)} />}
+      {detailUser != null && <UserDetailModal id={detailUser} onClose={() => setDetailUser(null)} />}
     </div>
   );
 }

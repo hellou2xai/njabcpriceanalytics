@@ -221,9 +221,20 @@ export interface AdminUser {
   is_admin: boolean;
 }
 
+export interface AdminUserDetail {
+  user: AdminUser & { activated: number };
+  orders: Record<string, unknown>[];
+  stores: Record<string, unknown>[];
+  notes: Record<string, unknown>[];
+  watchlist: Record<string, unknown>[];
+  feedback: Record<string, unknown>[];
+}
+
 export const admin = {
   stats: () => request<AdminStats>('/api/admin/stats'),
   users: () => request<AdminUser[]>('/api/admin/users'),
+  userDetail: (id: number) => request<AdminUserDetail>(`/api/admin/users/${id}`),
+  detail: (entity: string) => request<Record<string, unknown>[]>(`/api/admin/detail/${entity}`),
   activateUser: (id: number) => request<{ status: string }>(`/api/admin/users/${id}/activate`, { method: 'POST' }),
   deactivateUser: (id: number) => request<{ status: string }>(`/api/admin/users/${id}/deactivate`, { method: 'POST' }),
   deleteUser: (id: number) => request<{ status: string }>(`/api/admin/users/${id}`, { method: 'DELETE' }),

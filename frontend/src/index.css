@@ -1096,6 +1096,15 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
   padding: 14px 16px; text-align: center;
 }
+/* Clickable admin stat card (renders as a button). */
+.admin-card {
+  font: inherit; color: inherit; cursor: pointer; width: 100%;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.admin-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 2px 12px rgba(37, 99, 235, 0.15);
+}
 .rip-summary-value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .rip-summary-label { font-size: 11px; color: var(--text-muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
 

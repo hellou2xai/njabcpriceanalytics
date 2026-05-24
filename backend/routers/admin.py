@@ -49,6 +49,67 @@ def list_users(user: dict = Depends(require_admin)):
     return out
 
 
+@router.get("/users/{user_id}")
+def user_detail(user_id: int, user: dict = Depends(require_admin)):
+    """One user plus their orders, stores, notes, watchlist and feedback."""
+    with get_pg() as con:
+        u = con.execute(
+            "SELECT id, email, full_name, activated, created_at FROM users WHERE id = %s", (user_id,)
+        ).fetchone()
+        if not u:
+            raise HTTPException(status_code=404, detail="User not found")
+        orders_ = con.execute(
+            "SELECT id, name, status, distributor, created_at, updated_at FROM orders WHERE user_id = %s ORDER BY updated_at DESC",
+            (user_id,)).fetchall()
+        stores_ = con.execute(
+            "SELECT id, name, formatted_address, phone FROM stores WHERE user_id = %s ORDER BY name", (user_id,)).fetchall()
+        notes_ = con.execute(
+            "SELECT id, product_name, wholesaler, note, created_at FROM user_notes WHERE user_id = %s AND deleted = 0 ORDER BY created_at DESC",
+            (user_id,)).fetchall()
+        wl = con.execute(
+            "SELECT id, product_name, wholesaler, target_price FROM watchlist WHERE user_id = %s ORDER BY created_at DESC",
+            (user_id,)).fetchall()
+        fb = con.execute(
+            "SELECT id, kind, message, page, created_at FROM feedback WHERE user_id = %s ORDER BY created_at DESC",
+            (user_id,)).fetchall()
+    d = dict(u)
+    d["is_admin"] = _is_admin(d["email"])
+    return {
+        "user": d,
+        "orders": [dict(r) for r in orders_],
+        "stores": [dict(r) for r in stores_],
+        "notes": [dict(r) for r in notes_],
+        "watchlist": [dict(r) for r in wl],
+        "feedback": [dict(r) for r in fb],
+    }
+
+
+_DETAIL_QUERIES = {
+    "orders": "SELECT o.id, u.email AS user, o.name, o.distributor, o.status, o.created_at "
+              "FROM orders o LEFT JOIN users u ON u.id = o.user_id ORDER BY o.created_at DESC LIMIT 1000",
+    "order_lines": "SELECT ol.id, u.email AS user, ol.product_name, ol.wholesaler, ol.qty_cases, ol.qty_units "
+                   "FROM order_lines ol LEFT JOIN orders o ON o.id = ol.order_id LEFT JOIN users u ON u.id = o.user_id "
+                   "ORDER BY ol.id DESC LIMIT 1000",
+    "stores": "SELECT s.id, u.email AS user, s.name, s.formatted_address, s.phone "
+              "FROM stores s LEFT JOIN users u ON u.id = s.user_id ORDER BY s.name LIMIT 1000",
+    "user_notes": "SELECT n.id, u.email AS user, n.product_name, n.wholesaler, n.note, n.created_at "
+                  "FROM user_notes n LEFT JOIN users u ON u.id = n.user_id WHERE n.deleted = 0 ORDER BY n.created_at DESC LIMIT 1000",
+    "watchlist": "SELECT w.id, u.email AS user, w.product_name, w.wholesaler, w.target_price "
+                 "FROM watchlist w LEFT JOIN users u ON u.id = w.user_id ORDER BY w.created_at DESC LIMIT 1000",
+}
+
+
+@router.get("/detail/{entity}")
+def detail(entity: str, user: dict = Depends(require_admin)):
+    """Rows for a stat-card drill-down (joined to the owning user's email)."""
+    sql = _DETAIL_QUERIES.get(entity)
+    if not sql:
+        raise HTTPException(status_code=404, detail="Unknown entity")
+    with get_pg() as con:
+        rows = con.execute(sql).fetchall()
+    return [dict(r) for r in rows]
+
+
 @router.post("/users/{user_id}/activate")
 def activate_user(user_id: int, user: dict = Depends(require_admin)):
     with get_pg() as con:

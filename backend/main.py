@@ -16,9 +16,10 @@ import os
 import sys
 from pathlib import Path
 
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 
 # Add project root to path
@@ -109,7 +110,21 @@ def health():
         return {"status": "starting", "cpl_rows": None}
 
 
-# In production (Render), serve the built React frontend
+# In production (Render), serve the built React frontend with an SPA fallback:
+# client-side routes (e.g. /dashboard) and page refreshes return index.html
+# instead of a 404. API routes are registered above, so they take precedence.
 frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
+print(f"[startup] frontend dist {frontend_dist}: {'found' if frontend_dist.exists() else 'MISSING'}")
 if frontend_dist.exists():
-    app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
+    _assets = frontend_dist / "assets"
+    if _assets.exists():
+        app.mount("/assets", StaticFiles(directory=str(_assets)), name="assets")
+
+    @app.get("/{full_path:path}")
+    def serve_spa(full_path: str):
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not Found")
+        candidate = frontend_dist / full_path
+        if full_path and candidate.is_file():
+            return FileResponse(str(candidate))
+        return FileResponse(str(frontend_dist / "index.html"))

@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   LayoutDashboard, Package, ShoppingCart, Bell, Star, Menu, X, Combine,
   Sun, Moon, LogOut, BadgeDollarSign, ClipboardList, LayoutGrid,
-  PanelLeftClose, PanelLeftOpen, StickyNote, UserCog, Settings,
+  PanelLeftClose, PanelLeftOpen, StickyNote, UserCog, Settings, Shield,
 } from 'lucide-react';
 import { alerts as alertsApi, orders as ordersApi } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -50,7 +50,7 @@ function useIsMobile(breakpoint = 1024) {
 }
 
 export default function Layout() {
-  const { username, logout } = useAuth();
+  const { username, logout, user } = useAuth();
   const oa = useOrderAnalysis();
   const isMobile = useIsMobile();
 
@@ -174,6 +174,16 @@ export default function Layout() {
               ) : null}
             </Link>
           ))}
+          {user?.is_admin && (
+            <Link
+              to="/admin"
+              className={`nav-link ${location.pathname === '/admin' ? 'active' : ''}`}
+              title={sidebarCollapsed ? 'Admin' : undefined}
+            >
+              <Shield size={18} />
+              {!sidebarCollapsed && <span>Admin</span>}
+            </Link>
+          )}
         </nav>
         <div className="sidebar-footer">
           <Link

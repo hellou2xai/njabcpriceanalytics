@@ -11,6 +11,7 @@ Every per-user table is scoped by the ``user_id`` returned from
 """
 
 import hashlib
+import os
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -28,6 +29,17 @@ TOKEN_TTL_DAYS = 30
 
 # PBKDF2 cost. High enough to be slow for an attacker, cheap for one login.
 _PBKDF2_ITERATIONS = 200_000
+
+# Admin allowlist. Comma-separated emails in ADMIN_EMAILS; defaults to the owner.
+ADMIN_EMAILS = {
+    e.strip().lower()
+    for e in os.getenv("ADMIN_EMAILS", "sambit.tripathy@gmail.com").split(",")
+    if e.strip()
+}
+
+
+def _is_admin(email) -> bool:
+    return bool(email) and str(email).strip().lower() in ADMIN_EMAILS
 
 
 # ---- Password hashing ----
@@ -80,7 +92,8 @@ def _user_for_token(con, token: str) -> Optional[dict]:
             return None
     except (ValueError, TypeError):
         return None
-    return {"id": row["id"], "email": row["email"], "full_name": row["full_name"]}
+    return {"id": row["id"], "email": row["email"], "full_name": row["full_name"],
+            "is_admin": _is_admin(row["email"])}
 
 
 def _token_from_header(authorization: Optional[str]) -> Optional[str]:
@@ -115,6 +128,13 @@ def get_optional_user(authorization: Optional[str] = Header(None)) -> Optional[d
         return None
     with get_pg() as con:
         return _user_for_token(con, token)
+
+
+def require_admin(user: dict = Depends(get_current_user)) -> dict:
+    """Require an admin (email in ADMIN_EMAILS). 403 otherwise."""
+    if not user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
 
 
 # ---- Router ----
@@ -175,7 +195,8 @@ def signup(req: SignupRequest):
         user_id = cur.fetchone()["id"]
         _claim_orphan_data(con, user_id)
         token = _new_token(con, user_id)
-    return {"token": token, "user": {"id": user_id, "email": email, "full_name": req.full_name}}
+    return {"token": token, "user": {"id": user_id, "email": email, "full_name": req.full_name,
+                                     "is_admin": _is_admin(email)}}
 
 
 @router.post("/login")
@@ -189,7 +210,8 @@ def login(req: LoginRequest):
         if not row or not verify_password(req.password, row["password_hash"]):
             raise HTTPException(status_code=401, detail="Incorrect email or password")
         token = _new_token(con, row["id"])
-        user = {"id": row["id"], "email": row["email"], "full_name": row["full_name"]}
+        user = {"id": row["id"], "email": row["email"], "full_name": row["full_name"],
+                "is_admin": _is_admin(row["email"])}
     return {"token": token, "user": user}
 
 

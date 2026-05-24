@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { auth as authApi, TOKEN_KEY } from '../lib/api';
 import type { AuthUser } from '../lib/api';
@@ -39,6 +39,15 @@ function loadUser(): AuthUser | null {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
   const [user, setUser] = useState<AuthUser | null>(loadUser);
+
+  // Refresh the user from the server on load, so fields like is_admin (or a
+  // changed email) reflect without requiring a re-login. request() handles 401.
+  useEffect(() => {
+    if (!token) return;
+    authApi.me()
+      .then(res => { localStorage.setItem(USER_KEY, JSON.stringify(res.user)); setUser(res.user); })
+      .catch(() => { /* ignore transient errors; 401 is handled in request() */ });
+  }, [token]);
 
   const persist = (newToken: string, newUser: AuthUser) => {
     localStorage.setItem(TOKEN_KEY, newToken);

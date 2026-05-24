@@ -29,6 +29,7 @@ import Stores from './pages/Stores';
 import Profile from './pages/Profile';
 import Onboarding from './pages/Onboarding';
 import Configuration from './pages/Configuration';
+import Admin from './pages/Admin';
 import QA from './pages/QA';
 import OrderAnalysis from './pages/OrderAnalysis';
 import AdditionalPages from './pages/AdditionalPages';
@@ -85,6 +86,7 @@ function AuthenticatedApp() {
             <Route path="/sales-reps" element={<SalesReps />} />
             <Route path="/stores" element={<Stores />} />
             <Route path="/configuration" element={<Configuration />} />
+            <Route path="/admin" element={<Admin />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/qa" element={<QA />} />
             <Route path="/order-analysis" element={<OrderAnalysis />} />

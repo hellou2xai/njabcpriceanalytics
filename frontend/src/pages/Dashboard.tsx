@@ -8,6 +8,7 @@ import SortableTable from '../components/SortableTable';
 import WholesalerFilter from '../components/WholesalerFilter';
 import RowLimitSelect from '../components/RowLimitSelect';
 import { useProductQuickView } from '../components/ProductQuickView';
+import { useAuth } from '../contexts/AuthContext';
 import { DashboardTile, TileFilterBar } from '../components/DashboardTile';
 import SmartHeaderStrip from '../components/SmartHeaderStrip';
 import { useTableFilters } from '../hooks/useTableFilters';
@@ -39,6 +40,8 @@ function fmtDate(d?: string | null): string {
 export default function Dashboard() {
   const [wholesaler, setWholesaler] = useState('');
   const { open } = useProductQuickView();
+  const { user } = useAuth();
+  const isAdmin = !!user?.is_admin;
 
   const { data: kpis } = useQuery({
     queryKey: ['dashboard', wholesaler],
@@ -122,6 +125,7 @@ export default function Dashboard() {
   const { data: qaReport } = useQuery({
     queryKey: ['qa-anomalies'],
     queryFn: () => catalog.qaAnomalies({ limit_per_check: 50 }),
+    enabled: isAdmin,   // data-quality diagnostics are admin-only
   });
 
   const { data: timeSensitive } = useQuery({
@@ -188,7 +192,7 @@ export default function Dashboard() {
         <CrossDistTile data={crossOpiciCombined} label="OPICI Cheaper" accent="#0ea5e9" open={open} />
         <ExclusiveTile data={alliedExclusive} label="Allied Exclusive" open={open} />
         <ExclusiveTile data={fedwayExclusive} label="Fedway Exclusive" open={open} />
-        <QATile data={qaReport} />
+        {isAdmin && <QATile data={qaReport} />}
       </div>
     </div>
   );
@@ -767,7 +771,7 @@ function QATile({ data }: { data: any }) {
   const checks = (data?.checks ?? {}) as Record<string, { rows: any[] }>;
   return (
     <DashboardTile
-      title="QA — Data Quality Anomalies"
+      title="QA: Data Quality Anomalies"
       accent="#ef4444"
       count={totalFlagged}
       countLabel="flagged"

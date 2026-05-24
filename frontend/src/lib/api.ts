@@ -187,9 +187,31 @@ export const deals = {
 };
 
 // ---- Beta feedback ----
+export interface FeedbackItem {
+  id: number;
+  user_id: number | null;
+  user_email: string | null;
+  kind: string | null;
+  message: string;
+  page: string | null;
+  user_agent: string | null;
+  created_at: string;
+}
+
 export const feedback = {
   submit: (data: { message: string; kind?: string; page?: string; user_agent?: string }) =>
     request<{ status: string }>('/api/feedback', { method: 'POST', body: JSON.stringify(data) }),
+  list: () => request<FeedbackItem[]>('/api/feedback'),   // admin-only
+};
+
+// ---- Admin ----
+export interface AdminStats {
+  counts: Record<string, number>;
+  feedback_by_kind: { kind: string; n: number }[];
+}
+
+export const admin = {
+  stats: () => request<AdminStats>('/api/admin/stats'),
 };
 
 export interface TimeSensitiveDeal {
@@ -301,7 +323,7 @@ export const divisions = {
 };
 
 // ---- Auth ----
-export interface AuthUser { id: number; email: string; full_name?: string | null }
+export interface AuthUser { id: number; email: string; full_name?: string | null; is_admin?: boolean }
 export interface AuthResponse { token: string; user: AuthUser }
 
 export const auth = {

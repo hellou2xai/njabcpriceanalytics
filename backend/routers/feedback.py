@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from backend.pg import get_pg
-from backend.auth import get_optional_user, get_current_user
+from backend.auth import get_optional_user, require_admin
 
 router = APIRouter(prefix="/api/feedback", tags=["feedback"])
 
@@ -45,8 +45,8 @@ def submit_feedback(fb: FeedbackIn, user: Optional[dict] = Depends(get_optional_
 
 
 @router.get("")
-def list_feedback(user: dict = Depends(get_current_user)):
-    """All feedback, newest first. Auth-guarded; for collecting reports."""
+def list_feedback(user: dict = Depends(require_admin)):
+    """All feedback, newest first. Admin-only; for collecting reports."""
     with get_pg() as con:
         rows = con.execute(
             "SELECT * FROM feedback ORDER BY created_at DESC, id DESC"

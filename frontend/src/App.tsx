@@ -34,6 +34,9 @@ import QA from './pages/QA';
 import OrderAnalysis from './pages/OrderAnalysis';
 import AdditionalPages from './pages/AdditionalPages';
 import Login from './pages/Login';
+import Activate from './pages/Activate';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -53,7 +56,19 @@ function AuthenticatedApp() {
   const { isAuthenticated } = useAuth();
 
   if (!isAuthenticated) {
-    return <Login />;
+    // Public routes so emailed links (activation, password reset) work before
+    // the user is signed in. Everything else falls through to the login screen.
+    return (
+      <BrowserRouter>
+        <BetaBadge />
+        <Routes>
+          <Route path="/activate" element={<Activate />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="*" element={<Login />} />
+        </Routes>
+      </BrowserRouter>
+    );
   }
 
   return (

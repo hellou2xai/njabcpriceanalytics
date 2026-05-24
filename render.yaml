@@ -35,3 +35,12 @@ services:
         sync: false
       - key: SERPAPI_API_KEY
         sync: false
+      # Email (Resend). Leave RESEND_API_KEY blank to keep email off (signups
+      # auto-activate). Set it to turn on welcome/activation/reset emails AND
+      # enforce email verification before login.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: MAIL_FROM
+        sync: false           # e.g. "CELR <noreply@celr.ai>" (verified Resend domain)
+      - key: APP_BASE_URL
+        value: https://nj.celr.ai

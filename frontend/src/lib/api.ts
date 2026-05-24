@@ -325,10 +325,11 @@ export const divisions = {
 // ---- Auth ----
 export interface AuthUser { id: number; email: string; full_name?: string | null; is_admin?: boolean }
 export interface AuthResponse { token: string; user: AuthUser }
+export interface ActivationRequired { status: 'activation_required'; email: string }
 
 export const auth = {
   signup: (data: { email: string; password: string; full_name?: string }) =>
-    request<AuthResponse>('/api/auth/signup', { method: 'POST', body: JSON.stringify(data) }),
+    request<AuthResponse | ActivationRequired>('/api/auth/signup', { method: 'POST', body: JSON.stringify(data) }),
   login: (data: { email: string; password: string }) =>
     request<AuthResponse>('/api/auth/login', { method: 'POST', body: JSON.stringify(data) }),
   logout: () => request('/api/auth/logout', { method: 'POST' }),
@@ -337,6 +338,14 @@ export const auth = {
     request<{ user: AuthUser }>('/api/auth/profile', { method: 'PUT', body: JSON.stringify(data) }),
   changePassword: (data: { current_password: string; new_password: string }) =>
     request<{ status: string }>('/api/auth/change-password', { method: 'POST', body: JSON.stringify(data) }),
+  activate: (token: string) =>
+    request<AuthResponse>('/api/auth/activate', { method: 'POST', body: JSON.stringify({ token }) }),
+  resendActivation: (email: string) =>
+    request<{ status: string }>('/api/auth/resend-activation', { method: 'POST', body: JSON.stringify({ email }) }),
+  forgotPassword: (email: string) =>
+    request<{ status: string }>('/api/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
+  resetPassword: (token: string, new_password: string) =>
+    request<{ status: string }>('/api/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, new_password }) }),
 };
 
 // ---- Stores ----

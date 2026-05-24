@@ -16,13 +16,14 @@ import re
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, Body
 from pydantic import BaseModel, field_validator
 from typing import Optional
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 from backend.pg import get_pg
+from backend import mailer
 
 # Token lifetime. Owners stay signed in for 30 days, then re-authenticate.
 TOKEN_TTL_DAYS = 30
@@ -75,6 +76,33 @@ def _new_token(con, user_id: int) -> str:
         (token, user_id, expires.isoformat()),
     )
     return token
+
+
+def _new_email_token(con, user_id: int, purpose: str, ttl_hours: int) -> str:
+    token = secrets.token_urlsafe(32)
+    expires = datetime.now(timezone.utc) + timedelta(hours=ttl_hours)
+    con.execute(
+        "INSERT INTO email_tokens (token, user_id, purpose, expires_at) VALUES (%s, %s, %s, %s)",
+        (token, user_id, purpose, expires.isoformat()),
+    )
+    return token
+
+
+def _consume_email_token(con, token: str, purpose: str) -> Optional[int]:
+    """Return the user_id for a valid, unexpired token of this purpose, then
+    delete it (single use). None if invalid or expired."""
+    row = con.execute(
+        "SELECT user_id, expires_at FROM email_tokens WHERE token = %s AND purpose = %s",
+        (token, purpose),
+    ).fetchone()
+    if not row:
+        return None
+    try:
+        expired = datetime.fromisoformat(row["expires_at"]) < datetime.now(timezone.utc)
+    except (ValueError, TypeError):
+        expired = True
+    con.execute("DELETE FROM email_tokens WHERE token = %s", (token,))
+    return None if expired else row["user_id"]
 
 
 def _user_for_token(con, token: str) -> Optional[dict]:
@@ -185,18 +213,30 @@ def _claim_orphan_data(con, user_id: int):
 @router.post("/signup")
 def signup(req: SignupRequest):
     email = req.email.lower().strip()
+    full_name = (req.full_name or "").strip() or None
+    # When email is enabled, the account starts unactivated and must verify via
+    # the emailed link. When email is off, auto-activate so nobody is locked out.
+    activated = 0 if mailer.MAIL_ENABLED else 1
     with get_pg() as con:
         if con.execute("SELECT 1 FROM users WHERE email = %s", (email,)).fetchone():
             raise HTTPException(status_code=409, detail="An account with that email already exists")
         cur = con.execute(
-            "INSERT INTO users (email, password_hash, full_name) VALUES (%s, %s, %s) RETURNING id",
-            (email, hash_password(req.password), (req.full_name or "").strip() or None),
+            "INSERT INTO users (email, password_hash, full_name, activated) VALUES (%s, %s, %s, %s) RETURNING id",
+            (email, hash_password(req.password), full_name, activated),
         )
         user_id = cur.fetchone()["id"]
         _claim_orphan_data(con, user_id)
-        token = _new_token(con, user_id)
-    return {"token": token, "user": {"id": user_id, "email": email, "full_name": req.full_name,
-                                     "is_admin": _is_admin(email)}}
+        if mailer.MAIL_ENABLED:
+            activate_token = _new_email_token(con, user_id, "activate", 48)
+        else:
+            session_token = _new_token(con, user_id)
+
+    if mailer.MAIL_ENABLED:
+        mailer.send_activation(email, activate_token, full_name)
+        return {"status": "activation_required", "email": email}
+    mailer.send_welcome(email, full_name)  # no-op while email is disabled
+    return {"token": session_token, "user": {"id": user_id, "email": email, "full_name": full_name,
+                                             "is_admin": _is_admin(email)}}
 
 
 @router.post("/login")
@@ -204,11 +244,14 @@ def login(req: LoginRequest):
     email = req.email.lower().strip()
     with get_pg() as con:
         row = con.execute(
-            "SELECT id, email, password_hash, full_name FROM users WHERE email = %s",
+            "SELECT id, email, password_hash, full_name, activated FROM users WHERE email = %s",
             (email,),
         ).fetchone()
         if not row or not verify_password(req.password, row["password_hash"]):
             raise HTTPException(status_code=401, detail="Incorrect email or password")
+        if mailer.MAIL_ENABLED and not row["activated"]:
+            raise HTTPException(status_code=403,
+                                detail="Please verify your email to activate your account. Check your inbox for the activation link.")
         token = _new_token(con, row["id"])
         user = {"id": row["id"], "email": row["email"], "full_name": row["full_name"],
                 "is_admin": _is_admin(row["email"])}
@@ -292,3 +335,76 @@ def change_password(req: PasswordChange, user: dict = Depends(get_current_user))
             (hash_password(req.new_password), user["id"]),
         )
     return {"status": "password_changed"}
+
+
+# ---- Email verification + password reset ----
+
+class ResetPassword(BaseModel):
+    token: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def _min_len(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("New password must be at least 8 characters")
+        return v
+
+
+@router.post("/activate")
+def activate(token: str = Body(..., embed=True)):
+    """Verify an emailed activation token, mark the account active, and return a
+    session so the link logs the user in."""
+    with get_pg() as con:
+        user_id = _consume_email_token(con, token, "activate")
+        if not user_id:
+            raise HTTPException(status_code=400, detail="This activation link is invalid or has expired.")
+        con.execute("UPDATE users SET activated = 1 WHERE id = %s", (user_id,))
+        row = con.execute("SELECT id, email, full_name FROM users WHERE id = %s", (user_id,)).fetchone()
+        session = _new_token(con, user_id)
+    mailer.send_welcome(row["email"], row["full_name"])
+    return {"token": session, "user": {"id": row["id"], "email": row["email"],
+                                       "full_name": row["full_name"], "is_admin": _is_admin(row["email"])}}
+
+
+@router.post("/resend-activation")
+def resend_activation(email: str = Body(..., embed=True)):
+    """Resend the activation email. Always returns ok (never reveals whether the
+    address exists)."""
+    email = (email or "").lower().strip()
+    send = None
+    with get_pg() as con:
+        row = con.execute("SELECT id, full_name, activated FROM users WHERE email = %s", (email,)).fetchone()
+        if row and not row["activated"] and mailer.MAIL_ENABLED:
+            tok = _new_email_token(con, row["id"], "activate", 48)
+            send = (email, tok, row["full_name"])
+    if send:
+        mailer.send_activation(*send)
+    return {"status": "sent"}
+
+
+@router.post("/forgot-password")
+def forgot_password(email: str = Body(..., embed=True)):
+    """Email a password-reset link. Always returns ok (never reveals whether the
+    address exists)."""
+    email = (email or "").lower().strip()
+    send = None
+    with get_pg() as con:
+        row = con.execute("SELECT id, full_name FROM users WHERE email = %s", (email,)).fetchone()
+        if row:
+            tok = _new_email_token(con, row["id"], "reset", 1)  # 1-hour expiry
+            send = (email, tok, row["full_name"])
+    if send:
+        mailer.send_password_reset(*send)
+    return {"status": "sent"}
+
+
+@router.post("/reset-password")
+def reset_password(req: ResetPassword):
+    with get_pg() as con:
+        user_id = _consume_email_token(con, req.token, "reset")
+        if not user_id:
+            raise HTTPException(status_code=400, detail="This reset link is invalid or has expired.")
+        con.execute("UPDATE users SET password_hash = %s WHERE id = %s",
+                    (hash_password(req.new_password), user_id))
+    return {"status": "password_reset"}

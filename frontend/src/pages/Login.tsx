@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import type { FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function Login() {
@@ -9,6 +10,7 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [info, setInfo] = useState('');
   const [loading, setLoading] = useState(false);
   const firstFieldRef = useRef<HTMLInputElement>(null);
 
@@ -32,7 +34,12 @@ export default function Login() {
     setLoading(true);
     try {
       if (mode === 'signup') {
-        await signup(email.trim(), password, fullName.trim() || undefined);
+        const res = await signup(email.trim(), password, fullName.trim() || undefined);
+        if (res.activationRequired) {
+          setInfo('Account created. Check your email for an activation link, then sign in.');
+          setMode('signin');
+          setPassword('');
+        }
       } else {
         await login(email.trim(), password);
       }
@@ -55,6 +62,7 @@ export default function Login() {
 
         <form className="login-form" onSubmit={handleSubmit}>
           {error && <div className="login-error">{error}</div>}
+          {info && <div className="login-info">{info}</div>}
 
           {isSignup && (
             <label className="login-label">
@@ -101,6 +109,12 @@ export default function Login() {
               ? (isSignup ? 'Creating account...' : 'Signing in...')
               : (isSignup ? 'Create account' : 'Sign In')}
           </button>
+
+          {!isSignup && (
+            <p className="login-forgot">
+              <Link to="/forgot-password">Forgot password?</Link>
+            </p>
+          )}
         </form>
 
         <p className="login-switch">

@@ -85,6 +85,7 @@ def init_user_db():
             email text NOT NULL UNIQUE,
             password_hash text NOT NULL,
             full_name text,
+            activated integer DEFAULT 0,
             created_at text DEFAULT {NOW_UTC}
         )""",
         f"""CREATE TABLE IF NOT EXISTS auth_tokens (
@@ -210,6 +211,14 @@ def init_user_db():
             new_values text,
             created_at text DEFAULT {NOW_UTC}
         )""",
+        # Email verification + password-reset tokens (single-use, time-limited).
+        f"""CREATE TABLE IF NOT EXISTS email_tokens (
+            token text PRIMARY KEY,
+            user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            purpose text NOT NULL CHECK (purpose IN ('activate','reset')),
+            expires_at text NOT NULL,
+            created_at text DEFAULT {NOW_UTC}
+        )""",
         # Beta feedback: bug reports and improvement suggestions. The user only
         # types a message; user/page/agent are attached automatically. Feedback
         # is kept even if the user is later removed (ON DELETE SET NULL).
@@ -227,3 +236,13 @@ def init_user_db():
     with get_pg() as con:
         for s in stmts:
             con.execute(s)
+        # If 'activated' was just added to an existing users table, grandfather
+        # all current users as activated so the email-verification rollout never
+        # locks out people who signed up before it existed. Runs once.
+        has_col = con.execute(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'users' AND column_name = 'activated'"
+        ).fetchone()
+        if not has_col:
+            con.execute("ALTER TABLE users ADD COLUMN activated integer DEFAULT 0")
+            con.execute("UPDATE users SET activated = 1")

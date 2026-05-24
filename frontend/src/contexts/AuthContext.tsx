@@ -10,7 +10,8 @@ interface AuthContextType {
   user: AuthUser | null;
   username: string | null;
   login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string, fullName?: string) => Promise<void>;
+  signup: (email: string, password: string, fullName?: string) => Promise<{ activationRequired: boolean; email?: string }>;
+  activate: (token: string) => Promise<void>;
   updateUser: (user: AuthUser) => void;
   logout: () => void;
   isAuthenticated: boolean;
@@ -21,7 +22,8 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   username: null,
   login: async () => {},
-  signup: async () => {},
+  signup: async () => ({ activationRequired: false }),
+  activate: async () => {},
   updateUser: () => {},
   logout: () => {},
   isAuthenticated: false,
@@ -63,6 +65,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signup = async (email: string, password: string, fullName?: string) => {
     const res = await authApi.signup({ email, password, full_name: fullName });
+    if ('token' in res) {
+      persist(res.token, res.user);
+      return { activationRequired: false };
+    }
+    // Email verification is on: account created, awaiting activation.
+    return { activationRequired: true, email: res.email };
+  };
+
+  const activate = async (token: string) => {
+    const res = await authApi.activate(token);
     persist(res.token, res.user);
   };
 
@@ -83,7 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const username = user ? (user.full_name || user.email) : null;
 
   return (
-    <AuthContext.Provider value={{ token, user, username, login, signup, updateUser, logout, isAuthenticated: !!token }}>
+    <AuthContext.Provider value={{ token, user, username, login, signup, activate, updateUser, logout, isAuthenticated: !!token }}>
       {children}
     </AuthContext.Provider>
   );

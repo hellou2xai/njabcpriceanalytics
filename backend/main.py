@@ -130,4 +130,7 @@ if frontend_dist.exists():
         candidate = frontend_dist / full_path
         if full_path and candidate.is_file():
             return FileResponse(str(candidate))
-        return FileResponse(str(frontend_dist / "index.html"))
+        # index.html must never be cached, or browsers keep loading the previous
+        # build's JS after a deploy. The hashed assets it points to are immutable.
+        return FileResponse(str(frontend_dist / "index.html"),
+                            headers={"Cache-Control": "no-cache, no-store, must-revalidate"})

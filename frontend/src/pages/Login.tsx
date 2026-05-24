@@ -49,8 +49,8 @@ export default function Login() {
     <div className="login-page">
       <div className="login-card">
         <div className="login-brand">
-          <h1 className="login-title">CELR ABC List</h1>
-          <p className="login-subtitle">Liquor Price Book Intelligence Platform</p>
+          <h1 className="login-title">CELR Retail Pricing Intelligence</h1>
+          <p className="login-subtitle">NJ ABC wholesale price intelligence for liquor retailers</p>
         </div>
 
         <form className="login-form" onSubmit={handleSubmit}>

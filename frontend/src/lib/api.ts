@@ -186,6 +186,12 @@ export const deals = {
     request<TimeSensitiveDeal[]>(`/api/deals/time-sensitive${qs(params ?? {})}`),
 };
 
+// ---- Beta feedback ----
+export const feedback = {
+  submit: (data: { message: string; kind?: string; page?: string; user_agent?: string }) =>
+    request<{ status: string }>('/api/feedback', { method: 'POST', body: JSON.stringify(data) }),
+};
+
 export interface TimeSensitiveDeal {
   wholesaler: string;
   product_name: string;

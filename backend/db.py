@@ -210,6 +210,19 @@ def init_user_db():
             new_values text,
             created_at text DEFAULT {NOW_UTC}
         )""",
+        # Beta feedback: bug reports and improvement suggestions. The user only
+        # types a message; user/page/agent are attached automatically. Feedback
+        # is kept even if the user is later removed (ON DELETE SET NULL).
+        f"""CREATE TABLE IF NOT EXISTS feedback (
+            id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            user_id integer REFERENCES users(id) ON DELETE SET NULL,
+            user_email text,
+            kind text,
+            message text NOT NULL,
+            page text,
+            user_agent text,
+            created_at text DEFAULT {NOW_UTC}
+        )""",
     ]
     with get_pg() as con:
         for s in stmts:

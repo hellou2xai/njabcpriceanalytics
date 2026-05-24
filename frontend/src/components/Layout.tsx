@@ -138,7 +138,7 @@ export default function Layout() {
         ].filter(Boolean).join(' ')}
       >
         <div className="sidebar-header">
-          {!sidebarCollapsed && <h1 className="sidebar-title">CELR ABC List</h1>}
+          {!sidebarCollapsed && <h1 className="sidebar-title">CELR Retail Pricing Intelligence</h1>}
           <div style={{ display: 'flex', gap: 4 }}>
             <button className="theme-toggle" onClick={toggleTheme} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}

@@ -61,6 +61,18 @@ function ComboOrderAdder({ combo }: { combo: Combo }) {
       setTimeout(() => setFlash(null), 3500);
     },
   });
+  const createAndAddMut = useMutation({
+    mutationFn: async () => {
+      const created = await orders.create({ name: `${distributorName(combo.wholesaler)} order`, distributor: combo.wholesaler });
+      return orders.addCombo(created.id, { wholesaler: combo.wholesaler, combo_code: combo.combo_code });
+    },
+    onSuccess: (res) => {
+      setFlash(`Added ${res.added} item${res.added === 1 ? '' : 's'} to a new order`);
+      setOpen(false);
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      setTimeout(() => setFlash(null), 3500);
+    },
+  });
   if (flash) return <span className="add-order-flash">{flash}</span>;
   return (
     <div style={{ position: 'relative' }}>
@@ -69,14 +81,14 @@ function ComboOrderAdder({ combo }: { combo: Combo }) {
       </button>
       {open && (
         <div className="add-order-dropdown" style={{ right: 0, left: 'auto' }}>
-          {(draftOrders ?? []).length === 0 && (
-            <div style={{ padding: '8px 14px', fontSize: 12, color: 'var(--text-muted)' }}>No draft orders</div>
-          )}
           {(draftOrders ?? []).map(o => (
             <button key={o.id} className="add-order-item" disabled={addMut.isPending} onClick={() => addMut.mutate(o.id)}>
               {o.name}{o.division ? <span className="tag tag-blue" style={{ marginLeft: 4, fontSize: 10 }}>{o.division}</span> : null}
             </button>
           ))}
+          <button className="add-order-item" disabled={createAndAddMut.isPending} onClick={() => createAndAddMut.mutate()}>
+            + New order for {distributorName(combo.wholesaler)}
+          </button>
         </div>
       )}
     </div>

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import type { FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { auth as authApi } from '../lib/api';
 
 export default function Login() {
   const { login, signup } = useAuth();
@@ -10,9 +11,32 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [info, setInfo] = useState('');
   const [loading, setLoading] = useState(false);
+  // When set, the activation popup is shown for this email.
+  const [activationEmail, setActivationEmail] = useState<string | null>(null);
+  const [resendMsg, setResendMsg] = useState('');
+  const [resending, setResending] = useState(false);
   const firstFieldRef = useRef<HTMLInputElement>(null);
+
+  const openActivation = (forEmail: string) => {
+    setActivationEmail(forEmail);
+    setResendMsg('');
+    setError('');
+  };
+
+  const resendActivation = async () => {
+    if (!activationEmail) return;
+    setResending(true);
+    setResendMsg('');
+    try {
+      await authApi.resendActivation(activationEmail);
+      setResendMsg('Activation email re-sent. It can take a minute, and please check your spam folder.');
+    } catch {
+      setResendMsg('Could not resend right now. Please try again shortly.');
+    } finally {
+      setResending(false);
+    }
+  };
 
   useEffect(() => {
     firstFieldRef.current?.focus();
@@ -36,15 +60,21 @@ export default function Login() {
       if (mode === 'signup') {
         const res = await signup(email.trim(), password, fullName.trim() || undefined);
         if (res.activationRequired) {
-          setInfo('Check your email for an activation link to activate your account, then sign in. If you already signed up, we have re-sent the link.');
           setMode('signin');
           setPassword('');
+          openActivation(res.email ?? email.trim());   // show the activation popup
         }
       } else {
         await login(email.trim(), password);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
+      const msg = err instanceof Error ? err.message : 'Something went wrong. Please try again.';
+      // A not-yet-activated account: surface the activation popup instead of a raw error.
+      if (/verify your email|activate your account/i.test(msg)) {
+        openActivation(email.trim());
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -62,7 +92,6 @@ export default function Login() {
 
         <form className="login-form" onSubmit={handleSubmit}>
           {error && <div className="login-error">{error}</div>}
-          {info && <div className="login-info">{info}</div>}
 
           {isSignup && (
             <label className="login-label">
@@ -113,6 +142,13 @@ export default function Login() {
           {!isSignup && (
             <p className="login-forgot">
               <Link to="/forgot-password">Forgot password?</Link>
+              {' · '}
+              <button type="button" className="login-link-btn"
+                      onClick={() => email.trim()
+                        ? openActivation(email.trim())
+                        : setError('Enter your email above, then click "Resend activation email".')}>
+                Resend activation email
+              </button>
             </p>
           )}
         </form>
@@ -128,6 +164,30 @@ export default function Login() {
           </button>
         </p>
       </div>
+
+      {activationEmail && (
+        <div className="modal-overlay" onClick={() => setActivationEmail(null)}>
+          <div className="activation-card" onClick={e => e.stopPropagation()}>
+            <button className="modal-close" onClick={() => setActivationEmail(null)} aria-label="Close">✕</button>
+            <h3 style={{ marginTop: 0 }}>Activate your account</h3>
+            <p>
+              We sent an activation link to <strong>{activationEmail}</strong>. Click it to
+              activate your account, then sign in.
+            </p>
+            <p className="activation-spam">
+              Can't find it? Please check your <strong>spam or junk</strong> folder. It can take a
+              minute to arrive.
+            </p>
+            {resendMsg && <div className="login-info">{resendMsg}</div>}
+            <div className="activation-actions">
+              <button className="btn btn-secondary btn-sm" onClick={resendActivation} disabled={resending}>
+                {resending ? 'Resending...' : 'Resend activation email'}
+              </button>
+              <button className="btn btn-sm" onClick={() => setActivationEmail(null)}>Got it</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -103,13 +103,14 @@ def health():
     populated (first deploy, ingestion not yet run), so the service comes up
     healthy; the happy-path response is unchanged once pricing is loaded."""
     from backend.db import get_duckdb, read_parquet
+    from backend.mailer import MAIL_ENABLED
     try:
         with get_duckdb() as con:
             src = read_parquet(con, "cpl")
             count = con.execute(f"SELECT count(*) FROM {src}").fetchone()[0]
-        return {"status": "ok", "cpl_rows": count}
+        return {"status": "ok", "cpl_rows": count, "mail_enabled": MAIL_ENABLED}
     except Exception:
-        return {"status": "starting", "cpl_rows": None}
+        return {"status": "starting", "cpl_rows": None, "mail_enabled": MAIL_ENABLED}
 
 
 # In production (Render), serve the built React frontend with an SPA fallback:

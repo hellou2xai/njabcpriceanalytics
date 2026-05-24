@@ -23,6 +23,7 @@ export default function OrdersPage() {
   const [name, setName] = useState('');
   const [distributor, setDistributor] = useState('');
   const [repId, setRepId] = useState('');
+  const [createErr, setCreateErr] = useState('');
   const [view, setView] = useState<'list' | 'lines'>('list');
   const status = params.get('status') ?? '';
 
@@ -69,14 +70,26 @@ export default function OrdersPage() {
             <option value="">Sales rep (optional)</option>
             {repsForDist.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
-          <button className="btn" onClick={() => createMut.mutate()} disabled={!distributor || createMut.isPending}>
+          <button className="btn" disabled={createMut.isPending}
+                  onClick={() => {
+                    if (!distributor) { setCreateErr('Please select a distributor first.'); return; }
+                    setCreateErr('');
+                    createMut.mutate();
+                  }}>
             {createMut.isPending ? 'Creating...' : 'Create Order'}
           </button>
         </div>
       </div>
       <p className="page-sub" style={{ marginTop: -6 }}>
-        One open order per distributor and sales rep. Creating for a pair you already have open opens that order.
+        One open order per distributor and sales rep. Pick a distributor (sales rep is optional), then Create Order.
+        Creating for a pair you already have open opens that order.
       </p>
+      {createErr && <p className="login-error" style={{ marginTop: 0 }}>{createErr}</p>}
+      {createMut.isError && (
+        <p className="login-error" style={{ marginTop: 0 }}>
+          {createMut.error instanceof Error ? createMut.error.message : 'Could not create the order.'}
+        </p>
+      )}
 
       <div className="tab-bar">
         <button type="button" className={`tab ${view === 'list' ? 'active' : ''}`} onClick={() => setView('list')}>Orders</button>

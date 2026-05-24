@@ -1,8 +1,9 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation } from 'react-router-dom';
-import { Eye, Star, ShoppingCart, Copy, ClipboardList, MoreHorizontal, Globe } from 'lucide-react';
+import { Eye, Star, ShoppingCart, Copy, ClipboardList, MoreHorizontal, Globe, Plus } from 'lucide-react';
 import { watchlist, orders } from '../lib/api';
+import { distributorName } from '../lib/distributors';
 import { useProductQuickView } from './ProductQuickView';
 import { useWebPriceSearch } from './WebPriceSearch';
 import { useOrderAnalysis } from '../contexts/OrderAnalysisContext';
@@ -112,7 +113,23 @@ export function ContextMenuProvider({ children }: Props) {
       product_name: menu!.product_name, wholesaler: menu!.wholesaler,
       upc: menu!.upc, unit_volume: menu!.unit_volume,
     }),
-    onSuccess: () => setMenu(null),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['orders'] }); setMenu(null); },
+  });
+
+  // Create a new draft order for this product's distributor, then add the
+  // product to it. Lets the user start their first order from the catalog.
+  const createAndAdd = useMutation({
+    mutationFn: async () => {
+      const created = await orders.create({
+        name: `${distributorName(menu!.wholesaler)} order`,
+        distributor: menu!.wholesaler,
+      });
+      await orders.addLine(created.id, {
+        product_name: menu!.product_name, wholesaler: menu!.wholesaler,
+        upc: menu!.upc, unit_volume: menu!.unit_volume,
+      });
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['orders'] }); setMenu(null); },
   });
 
   const close = useCallback(() => { setMenu(null); setShowOrders(false); }, []);
@@ -190,12 +207,15 @@ export function ContextMenuProvider({ children }: Props) {
           </button>
           {showOrders && (
             <div className="ctx-submenu">
-              {(draftOrders ?? []).length === 0 && <div className="ctx-item ctx-disabled">No draft orders</div>}
               {(draftOrders ?? []).map(o => (
                 <button key={o.id} className="ctx-item" onClick={() => addToOrder.mutate(o.id)}>
                   {o.name} {o.division && <span className="tag tag-blue" style={{ marginLeft: 4 }}>{o.division}</span>}
                 </button>
               ))}
+              <button className="ctx-item" disabled={createAndAdd.isPending}
+                      onClick={() => createAndAdd.mutate()}>
+                <Plus size={14} /> New order for {distributorName(menu.wholesaler)}
+              </button>
             </div>
           )}
           <button className="ctx-item" onClick={() => { navigator.clipboard.writeText(menu.upc || menu.product_name); close(); }}>

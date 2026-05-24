@@ -780,6 +780,25 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
 .login-forgot { margin: 10px 0 0; text-align: center; font-size: 13px; }
 .login-forgot a { color: var(--accent); text-decoration: none; }
 .login-forgot a:hover { text-decoration: underline; }
+.login-link-btn {
+  background: none; border: none; color: var(--accent); cursor: pointer;
+  font-size: 13px; padding: 0; text-decoration: none;
+}
+.login-link-btn:hover { text-decoration: underline; }
+
+/* Activation popup */
+.activation-card {
+  position: relative;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 22px; width: 420px; max-width: 92vw;
+  box-shadow: 0 12px 36px rgba(15, 23, 42, 0.18);
+}
+.activation-card h3 { font-size: 17px; }
+.activation-card p { font-size: 14px; line-height: 1.5; color: var(--text); }
+.activation-spam { color: var(--text-muted); font-size: 13px; }
+.activation-actions {
+  display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;
+}
 .login-switch {
   margin-top: 18px; text-align: center; font-size: 13px; color: var(--text-muted);
 }

@@ -20,7 +20,7 @@ const NAV = [
   { path: '/orders', label: 'Orders', icon: ShoppingCart },
   { path: '/order-analysis', label: 'Order Analysis', icon: ClipboardList },
   { path: '/configuration', label: 'Configuration', icon: Settings },
-  { path: '/more', label: 'Addnl Pages', icon: LayoutGrid },
+  { path: '/more', label: 'Addnl Pages', icon: LayoutGrid, adminOnly: true },
   { path: '/alerts', label: 'Alerts', icon: Bell },
 ];
 
@@ -154,7 +154,7 @@ export default function Layout() {
           </div>
         </div>
         <nav className="sidebar-nav">
-          {NAV.map(({ path, label, icon: Icon }) => (
+          {NAV.filter(n => !('adminOnly' in n) || user?.is_admin).map(({ path, label, icon: Icon }) => (
             <Link
               key={path}
               to={path}

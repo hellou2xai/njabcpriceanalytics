@@ -70,6 +70,26 @@ Note: the local backend does not reliably hot-reload on this OneDrive path.
 Restart it after backend changes, and watch for a stale process holding port
 8000.
 
+## Working from another machine
+
+Code travels via git; only `.env`, your local Postgres, and the Parquet/Excel
+data are not in the repo. On a new PC: install PostgreSQL, clone the repo, then
+run the bootstrap, which detects a fresh machine (celr_dev not reachable yet),
+creates the `celr` role and `celr_dev` database, writes `.env`, builds the
+schema, and loads pricing from `parquet_output`:
+
+```
+python scripts/setup_local.py
+```
+
+It asks for the postgres superuser password once (only to create the role/db).
+Re-running is safe (idempotent). Use `--no-data` for schema only, or
+`--admin-url postgresql://postgres:PW@localhost:5432/postgres` to skip the
+prompt. Bring your `parquet_output` (or run the Excel pipeline first) so the
+bootstrap can load pricing; without it, the schema is created but pricing pages
+stay empty until you ingest. Deploying and the monthly ingestion do not need any
+of this, only git and the Render database URL.
+
 ## Monthly data cycle
 
 Data is loaded once a month (next run: 17 June 2026). It is a full replace, so

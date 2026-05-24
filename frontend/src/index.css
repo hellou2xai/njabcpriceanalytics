@@ -1146,6 +1146,9 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
 .page-with-filters.filters-collapsed {
   grid-template-columns: 40px 1fr;
 }
+/* Let the main column shrink so a wide table scrolls inside its own
+   overflow-x container instead of pushing content off the right edge. */
+.page-with-filters-main { min-width: 0; }
 .filter-sidebar {
   position: sticky;
   top: 12px;

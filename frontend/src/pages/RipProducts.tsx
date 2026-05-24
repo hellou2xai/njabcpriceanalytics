@@ -236,8 +236,8 @@ export default function RipProducts() {
   return (
     <FilterSidebar storageKey="rip-products" sections={filterSections} onReset={resetFilters}>
     <div className="page">
-      <h2>Products with RIP</h2>
-      <p className="text-muted" style={{ marginTop: -8, marginBottom: 12 }}>
+      <h2 style={{ marginBottom: 4 }}>Products with RIP</h2>
+      <p className="text-muted" style={{ marginTop: 0, marginBottom: 12 }}>
         Each tier shown with current month and next month side by side
         {headerEditions.curr && headerEditions.next
           ? ` (${shortMonth(headerEditions.curr)} vs ${shortMonth(headerEditions.next)})`

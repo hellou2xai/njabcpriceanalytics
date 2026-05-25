@@ -383,10 +383,17 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
 .alert-meta { display: flex; gap: 8px; font-size: 11px; color: var(--text-muted); }
 
 /* ---- Grouped alert digest (Alerts page) ---- */
+.alert-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+@media (max-width: 760px) { .alert-grid { grid-template-columns: 1fr; } }
 .alert-card {
   background: var(--surface); border: 1px solid var(--border);
   border-left: 4px solid var(--text-muted); border-radius: var(--radius);
-  padding: 12px 16px; margin-bottom: 10px; cursor: pointer;
+  padding: 12px 16px; cursor: pointer;
   transition: box-shadow 0.15s, border-color 0.15s;
 }
 .alert-card:hover { box-shadow: var(--shadow-card); }

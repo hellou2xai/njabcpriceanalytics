@@ -109,12 +109,12 @@ export default function AlertsPage() {
           <div className="section-label">Opportunities · don&apos;t miss these</div>
           {opps.length === 0
             ? <p className="text-muted" style={{ fontSize: 13 }}>Nothing time-sensitive right now.</p>
-            : opps.map(a => <AlertCard key={a.id} a={a} onRead={onRead} />)}
+            : <div className="alert-grid">{opps.map(a => <AlertCard key={a.id} a={a} onRead={onRead} />)}</div>}
 
           <div className="section-label" style={{ marginTop: 22 }}>Watch-outs · avoid a mistake</div>
           {risks.length === 0
             ? <p className="text-muted" style={{ fontSize: 13 }}>No issues found.</p>
-            : risks.map(a => <AlertCard key={a.id} a={a} onRead={onRead} />)}
+            : <div className="alert-grid">{risks.map(a => <AlertCard key={a.id} a={a} onRead={onRead} />)}</div>}
         </>
       )}
     </div>

@@ -3,7 +3,7 @@ import {
   BookOpen, Rocket, Store, LayoutDashboard, Package, Sparkles, Combine,
   BadgeDollarSign, Star, StickyNote, ShoppingCart, ClipboardList, Bell,
   Settings, UserCog, MousePointerClick, Globe, MessageCircle, BookMarked,
-  Shield, Lightbulb,
+  Shield, Lightbulb, ListTodo,
 } from 'lucide-react';
 import './HowToGuide.css';
 
@@ -21,6 +21,7 @@ const TOC: { id: string; label: string; sub?: boolean }[] = [
   { id: 'combos', label: 'Combos' },
   { id: 'ripproducts', label: 'RIP Products' },
   { id: 'favorites', label: 'Favorites (watchlist)' },
+  { id: 'todo', label: 'To-Do board' },
   { id: 'notes', label: 'Notes' },
   { id: 'orders', label: 'Orders' },
   { id: 'orderanalysis', label: 'Order Analysis' },
@@ -163,19 +164,30 @@ export default function HowToGuide() {
           </Section>
 
           <Section id="navigate" icon={<LayoutDashboard size={20} />} title="Finding your way around">
-            <p>The left menu is how you move between screens. From top to bottom:</p>
+            <p>The left menu is grouped into labelled sections of related screens:</p>
+            <h3>Overview</h3>
             <ul>
               <li><strong>Dashboard</strong> — your daily overview.</li>
+              <li><strong>Alerts</strong> — price and deal notifications (a red badge shows unread).</li>
+            </ul>
+            <h3>Find deals</h3>
+            <ul>
               <li><strong>Catalog</strong> — every product, searchable and filterable.</li>
               <li><strong>New Items</strong> — products that just appeared this month.</li>
               <li><strong>Combos</strong> — bundle deals.</li>
               <li><strong>RIP Products</strong> — products with rebate offers.</li>
+            </ul>
+            <h3>My work</h3>
+            <ul>
               <li><strong>Favorites</strong> — products you have starred (your watchlist).</li>
+              <li><strong>To-Do</strong> — your task board (right-click any product to add one).</li>
               <li><strong>Notes</strong> — every note you have written, in one place.</li>
-              <li><strong>Orders</strong> — your draft and submitted orders (a number badge shows drafts in progress).</li>
+              <li><strong>Orders</strong> — your draft and submitted orders (a badge shows drafts in progress).</li>
               <li><strong>Order Analysis</strong> — a scratchpad of products you are still thinking about.</li>
+            </ul>
+            <h3>Setup &amp; Help</h3>
+            <ul>
               <li><strong>Configuration</strong> — your stores, sales reps, and divisions.</li>
-              <li><strong>Alerts</strong> — price and deal notifications (a red badge shows unread alerts).</li>
               <li><strong>How To Guide</strong> — this page.</li>
             </ul>
             <p>At the top and bottom of the menu:</p>
@@ -309,6 +321,22 @@ export default function HowToGuide() {
             </ul>
           </Section>
 
+          <Section id="todo" icon={<ListTodo size={20} />} title="To-Do board">
+            <Path>To-Do in the left menu</Path>
+            <Shot src="/guide/14-todo.png" alt="The To-Do board: four weekly buckets of sticky-note cards you can drag between weeks." />
+            <p>A simple task board so a follow-up never slips. Add a to-do two ways:</p>
+            <ul>
+              <li><strong>Right-click any product</strong> anywhere and choose <strong>Add to To-Do</strong>. Enter what to do, a note, and a due date. The product and the page you were on are saved with it, so you have the context to decide later.</li>
+              <li><strong>New To-Do</strong> button at the top of the board (or the <strong>+</strong> on a week column) for a task not tied to a product.</li>
+            </ul>
+            <p>
+              The board has <strong>four weekly buckets</strong>: This week, Next week, In 2 weeks, and 3+ weeks /
+              Later. Cards look like sticky notes. <strong>Drag a card to another week to reschedule it</strong>.
+              On each card you can <strong>edit</strong> (pencil), <strong>mark done</strong>, or <strong>delete</strong>,
+              and click the product to open its details. Completed items collect in a Done list at the bottom.
+            </p>
+          </Section>
+
           <Section id="notes" icon={<StickyNote size={20} />} title="Notes">
             <Path>Notes in the left menu</Path>
             <Shot src="/guide/07-notes.png" alt="Notes: one feed of every note you have written, filterable by where it came from." />
@@ -354,14 +382,30 @@ export default function HowToGuide() {
 
           <Section id="alerts" icon={<Bell size={20} />} title="Alerts">
             <Path>Alerts in the left menu (red badge shows unread)</Path>
-            <Shot src="/guide/09-alerts.png" alt="Alerts: price and deal notifications with Generate and Mark All Read." />
-            <p>Notifications about things worth acting on. Click <strong>Generate</strong> to scan for new ones, and <strong>Mark All Read</strong> to clear the badge. Alert types include:</p>
+            <Shot src="/guide/09-alerts.png" alt="Alerts: a grouped digest split into Opportunities and Watch-outs, one tile per category." />
+            <p>
+              Alerts is an <strong>automatic digest</strong>. It builds itself (no buttons to press) and refreshes
+              overnight and whenever you open it. Everything is organised into one tile per category, split into
+              two groups so you can see at a glance what to chase and what to avoid:
+            </p>
+            <h3>Opportunities (don&apos;t miss)</h3>
             <ul>
+              <li><strong>Time-sensitive deals</strong> — ending within about a week.</li>
+              <li><strong>New RIP rebates</strong> and <strong>new combo bundles</strong> this month.</li>
+              <li><strong>Clearance / closeouts</strong> and <strong>price drops</strong>.</li>
               <li><strong>Target price hit</strong> — a favorite reached the price you set.</li>
-              <li><strong>Price drop</strong> / <strong>Price increase</strong> — a meaningful change.</li>
-              <li><strong>New clearance</strong> — a product went on closeout.</li>
-              <li><strong>New discount</strong> — a new offer appeared.</li>
             </ul>
+            <h3>Watch-outs (avoid a mistake)</h3>
+            <ul>
+              <li><strong>Order check</strong> — a line in your draft orders is a couple of cases short of a bigger rebate, or is cheaper at another distributor.</li>
+              <li><strong>Buy now</strong> (gets pricier next month) and <strong>cheaper next month</strong> (consider waiting).</li>
+              <li><strong>Lost discounts</strong> and <strong>price increases</strong>.</li>
+            </ul>
+            <p>
+              Each tile shows a count and the top items. <strong>Click a tile to jump to the screen with the
+              details</strong> (for example the RIP tile opens RIP Products). Use <strong>Mark all read</strong> to
+              clear the badge.
+            </p>
           </Section>
 
           <Section id="rightclick" icon={<MousePointerClick size={18} />} title="The right-click menu">
@@ -372,6 +416,7 @@ export default function HowToGuide() {
               <li><strong>Add to Order Analysis</strong> — set it aside on the scratchpad.</li>
               <li><strong>Add to Favorites</strong> — star it.</li>
               <li><strong>Add to Order</strong> — add it straight to a draft order, or start a new one.</li>
+              <li><strong>Add to To-Do</strong> — capture a task about this product (what to do, a note, a due date) on your To-Do board.</li>
               <li><strong>Copy Code</strong> — copy the barcode to your clipboard.</li>
             </ul>
           </Section>

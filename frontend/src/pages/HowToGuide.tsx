@@ -62,8 +62,10 @@ function Term({ name, children }: { name: string; children: ReactNode }) {
 function Shot({ src, alt }: { src: string; alt: string }) {
   return (
     <figure className="htg-shot">
-      <img src={src} alt={alt} loading="lazy" />
-      <figcaption>{alt}</figcaption>
+      <a href={src} target="_blank" rel="noreferrer" title="Open full size">
+        <img src={src} alt={alt} loading="lazy" />
+      </a>
+      <figcaption>{alt} <span style={{ opacity: 0.7 }}>(click to enlarge)</span></figcaption>
     </figure>
   );
 }

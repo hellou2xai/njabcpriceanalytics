@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { todos, type Todo } from '../lib/api';
 import { distributorName } from '../lib/distributors';
 import { useProductQuickView } from '../components/ProductQuickView';
-import { CheckCircle2, Trash2, RotateCcw, ListTodo, Plus, X } from 'lucide-react';
+import { CheckCircle2, Trash2, RotateCcw, ListTodo, Plus, X, Pencil } from 'lucide-react';
 import './Todo.css';
 
 // Pastel sticky-note colours, chosen by id so a note keeps its colour when moved.
@@ -62,6 +62,7 @@ export default function TodoPage() {
   const [dragId, setDragId] = useState<number | null>(null);
   const [overCol, setOverCol] = useState<number | null>(null);
   const [adding, setAdding] = useState<{ due?: string } | null>(null);
+  const [editing, setEditing] = useState<Todo | null>(null);
 
   const drop = (n: number) => {
     if (dragId != null) update.mutate({ id: dragId, d: { due_date: ymd(STARTS[n]) } });
@@ -90,6 +91,9 @@ export default function TodoPage() {
           <CheckCircle2 size={16} />
         </button>
         <span className="todo-title">{t.title}</span>
+        <button className="todo-icon-btn" title="Edit" onClick={() => setEditing(t)}>
+          <Pencil size={14} />
+        </button>
         <button className="todo-icon-btn danger" title="Delete" onClick={() => remove.mutate(t.id)}>
           <Trash2 size={14} />
         </button>
@@ -174,18 +178,22 @@ export default function TodoPage() {
         </>
       )}
 
-      {adding && <NewTodoDialog preset={adding} onClose={() => setAdding(null)} />}
+      {adding && <TodoFormDialog presetDue={adding.due} onClose={() => setAdding(null)} />}
+      {editing && <TodoFormDialog todo={editing} onClose={() => setEditing(null)} />}
     </div>
   );
 }
 
-function NewTodoDialog({ preset, onClose }: { preset: { due?: string }; onClose: () => void }) {
+function TodoFormDialog({ todo, presetDue, onClose }: { todo?: Todo; presetDue?: string; onClose: () => void }) {
   const qc = useQueryClient();
-  const [title, setTitle] = useState('');
-  const [note, setNote] = useState('');
-  const [due, setDue] = useState(preset.due ?? '');
+  const editing = !!todo;
+  const [title, setTitle] = useState(todo?.title ?? '');
+  const [note, setNote] = useState(todo?.note ?? '');
+  const [due, setDue] = useState(todo?.due_date ?? presetDue ?? '');
   const save = useMutation({
-    mutationFn: () => todos.create({ title: title.trim(), note: note.trim() || undefined, due_date: due || undefined, source_page: 'To-Do' }),
+    mutationFn: () => editing
+      ? todos.update(todo!.id, { title: title.trim(), note: note.trim(), due_date: due })
+      : todos.create({ title: title.trim(), note: note.trim() || undefined, due_date: due || undefined, source_page: 'To-Do' }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['todos'] }); onClose(); },
   });
   const field: React.CSSProperties = {
@@ -196,7 +204,7 @@ function NewTodoDialog({ preset, onClose }: { preset: { due?: string }; onClose:
     <div className="modal-overlay" onMouseDown={onClose}>
       <div className="modal" style={{ maxWidth: 460 }} onMouseDown={e => e.stopPropagation()}>
         <button className="modal-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
-        <h3 style={{ marginTop: 0 }}>New To-Do</h3>
+        <h3 style={{ marginTop: 0 }}>{editing ? 'Edit To-Do' : 'New To-Do'}</h3>
         <label style={{ display: 'block', marginTop: 12 }}>
           <span style={{ fontSize: 12.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>What do you want to do?</span>
           <input style={field} autoFocus value={title} onChange={e => setTitle(e.target.value)}
@@ -214,7 +222,7 @@ function NewTodoDialog({ preset, onClose }: { preset: { due?: string }; onClose:
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
           <button className="btn btn-secondary btn-sm" onClick={onClose}>Cancel</button>
           <button className="btn btn-sm" disabled={!title.trim() || save.isPending} onClick={() => save.mutate()}>
-            {save.isPending ? 'Adding...' : 'Add to To-Do'}
+            {save.isPending ? 'Saving...' : editing ? 'Save changes' : 'Add to To-Do'}
           </button>
         </div>
       </div>

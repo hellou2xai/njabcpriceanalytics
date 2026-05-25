@@ -394,6 +394,52 @@ export const todos = {
   remove: (id: number) => request(`/api/todos/${id}`, { method: 'DELETE' }),
 };
 
+export interface ActivityEventIn {
+  type: 'pageview' | 'action';
+  path?: string;
+  label?: string;
+  duration_ms?: number;
+  meta?: Record<string, unknown>;
+}
+export interface ActivitySummary {
+  days: number;
+  totals: { events: number; pageviews: number; actions: number; users: number; sessions: number; total_ms: number };
+  screens: { path: string; label: string | null; views: number; total_ms: number; users: number }[];
+  actions: { label: string; count: number }[];
+}
+export interface ActivityUserRow {
+  user_id: number | null;
+  user_email: string;
+  pageviews: number;
+  actions: number;
+  sessions: number;
+  total_ms: number;
+  last_active: string;
+}
+export interface ActivityUserDetail {
+  user_id: number;
+  totals: { total_ms: number; pageviews: number; actions: number; first_seen: string | null; last_active: string | null };
+  screens: { path: string; label: string | null; views: number; total_ms: number }[];
+  recent: { event_type: string; path: string | null; label: string | null; duration_ms: number | null; created_at: string }[];
+}
+export const activity = {
+  // Fire-and-forget. keepalive lets it survive a page unload; never throws or
+  // triggers the 401 redirect, so tracking can't disrupt the user.
+  track: (batch: { session_id?: string; user_agent?: string; events: ActivityEventIn[] }) => {
+    try {
+      fetch(`${BASE}/api/activity/track`, {
+        method: 'POST',
+        keepalive: true,
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify(batch),
+      }).catch(() => { /* ignore */ });
+    } catch { /* ignore */ }
+  },
+  adminSummary: (days = 30) => request<ActivitySummary>(`/api/activity/admin/summary?days=${days}`),
+  adminUsers: (days = 30) => request<ActivityUserRow[]>(`/api/activity/admin/users?days=${days}`),
+  adminUserDetail: (id: number, days = 90) => request<ActivityUserDetail>(`/api/activity/admin/user/${id}?days=${days}`),
+};
+
 export const salesReps = {
   list: () => request<SalesRep[]>('/api/sales-reps'),
   add: (rep: Omit<SalesRep, 'id'>) =>

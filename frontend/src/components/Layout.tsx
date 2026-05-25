@@ -5,11 +5,13 @@ import {
   LayoutDashboard, Package, ShoppingCart, Bell, Star, Menu, X, Combine,
   Sun, Moon, LogOut, BadgeDollarSign, ClipboardList, LayoutGrid,
   PanelLeftClose, PanelLeftOpen, StickyNote, UserCog, Settings, Shield, Sparkles, BookOpen, ListTodo,
+  Activity,
 } from 'lucide-react';
 import { alerts as alertsApi, orders as ordersApi } from '../lib/api';
 import WhatsAppShareButton from './WhatsAppShare';
 import { useAuth } from '../contexts/AuthContext';
 import { useOrderAnalysis } from '../contexts/OrderAnalysisContext';
+import { useActivityTracker } from '../lib/activityTracker';
 
 // Left menu grouped into labelled sections of related screens.
 const NAV_GROUPS: {
@@ -48,6 +50,7 @@ const NAV_GROUPS: {
       { path: '/configuration', label: 'Configuration', icon: Settings },
       { path: '/more', label: 'Addnl Pages', icon: LayoutGrid, adminOnly: true },
       { path: '/admin', label: 'Admin', icon: Shield, adminOnly: true },
+      { path: '/admin/activity', label: 'Activity', icon: Activity, adminOnly: true },
     ],
   },
   {
@@ -87,6 +90,7 @@ export default function Layout() {
   const { username, logout, user } = useAuth();
   const oa = useOrderAnalysis();
   const isMobile = useIsMobile();
+  useActivityTracker();  // record screen + time-on-screen for analytics
 
   // Desktop: persist collapsed state; Mobile: hidden by default
   const [collapsed, setCollapsed] = useState(() => {

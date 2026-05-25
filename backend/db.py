@@ -289,6 +289,25 @@ def init_user_db():
             user_agent text,
             created_at text DEFAULT {NOW_UTC}
         )""",
+        # Product analytics: one row per page view (with time spent) or action.
+        # event_type: 'pageview' (has duration_ms) | 'action'. Anonymous rows
+        # keep user_id NULL. Indexed for the admin rollups.
+        f"""CREATE TABLE IF NOT EXISTS activity_events (
+            id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            user_id integer REFERENCES users(id) ON DELETE SET NULL,
+            user_email text,
+            session_id text,
+            event_type text NOT NULL,
+            path text,
+            label text,
+            duration_ms integer,
+            meta text,
+            user_agent text,
+            created_at text DEFAULT {NOW_UTC}
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_activity_user ON activity_events(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_events(created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_activity_type ON activity_events(event_type)",
     ]
     with get_pg() as con:
         for s in stmts:

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Trash2, RefreshCw, UserCheck, UserX, X } from 'lucide-react';
+import { Trash2, RefreshCw, UserCheck, UserX, X, Activity } from 'lucide-react';
 import { admin, feedback, settings, share } from '../lib/api';
 import { setShareContentCache } from '../lib/share';
 import { useAuth } from '../contexts/AuthContext';
@@ -202,6 +203,12 @@ export default function Admin() {
       <p className="text-muted" style={{ marginTop: 0 }}>
         Usage, users, and feedback. Click a card or a user to drill in.
       </p>
+
+      <div style={{ marginBottom: 16 }}>
+        <Link to="/admin/activity" className="btn btn-secondary btn-sm" style={{ textDecoration: 'none' }}>
+          <Activity size={14} /> Activity analytics (time per screen, by user)
+        </Link>
+      </div>
 
       <div className="rip-summary-cards">
         {STAT_CARDS.map(([label, key, drill]) => (

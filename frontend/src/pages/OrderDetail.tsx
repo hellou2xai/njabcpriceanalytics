@@ -5,6 +5,7 @@ import { orders, catalog, salesReps } from '../lib/api';
 import type { OrderLine, OrderRipTier, Product, SubmitResult } from '../lib/api';
 import { useProductQuickView } from '../components/ProductQuickView';
 import { distributorName, DISTRIBUTOR_NAMES } from '../lib/distributors';
+import { trackAction } from '../lib/activityTracker';
 
 // ---- Constants ----
 
@@ -229,6 +230,7 @@ export default function OrderDetail() {
     onSuccess: (res) => {
       setSubmitConfirm(false);
       setSubmitResult(res);
+      trackAction('Order submitted', { orderId, emailed: res.emailed });
       invalidateOrder();
     },
   });

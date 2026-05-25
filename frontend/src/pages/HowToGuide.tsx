@@ -339,12 +339,18 @@ export default function HowToGuide() {
 
           <Section id="notes" icon={<StickyNote size={20} />} title="Notes">
             <Path>Notes in the left menu</Path>
-            <Shot src="/guide/07-notes.png" alt="Notes: one feed of every note you have written, filterable by where it came from." />
+            <Shot src="/guide/07-notes.png" alt="Notes: write standalone sticky notes, plus a feed of every note you have written." />
+            <h3>Sticky notes</h3>
+            <ul>
+              <li>Use the box at the top to <strong>write a sticky note</strong>: an optional title, the text, and a colour. Click <strong>Add note</strong> and it appears in the grid below.</li>
+              <li><strong>Edit</strong> any sticky in place (pencil), recolour it, or <strong>delete</strong> it (bin).</li>
+              <li>Click the <strong>To-Do</strong> icon on a sticky to turn it into a task: it prefills the note and lets you set a due date, then it shows up on your To-Do board.</li>
+            </ul>
+            <h3>Everything else</h3>
             <p>
-              A single feed of every note you have written, whether on a product, a favorite, an order, or an
-              order line. Filter by where the note came from, or search the text. Click a note to jump back to
-              what it was attached to. You write notes from the product popup, a favorite row, or an order; they
-              all collect here.
+              Below the stickies is a single feed of every note you have written elsewhere: on a product, a
+              favorite, an order, or an order line. Filter by where the note came from, or search the text. Click
+              a note to jump back to what it was attached to.
             </p>
           </Section>
 
@@ -365,8 +371,11 @@ export default function HowToGuide() {
               <li>Enter your <strong>Retail price</strong> per bottle and the app shows your <strong>GP%</strong> (margin) both at the deal price and the list price.</li>
               <li>The cards at the top show <strong>Payment Needed Now</strong> (the invoice), the <strong>RIP Rebate</strong> you will earn back, and your <strong>Effective Cost</strong>. A breakdown by category sits below.</li>
               <li><strong>Recommendations</strong> may suggest buying a closeout now, adding a few cases to reach a better tier, or waiting.</li>
-              <li>Use <strong>Clone Order</strong> to copy it, <strong>Submit Order</strong> to lock it, or <strong>Delete</strong> to remove it.</li>
+              <li><strong>Preview PDF</strong> shows the purchase order exactly as your rep will receive it: a standard PO with your store and the distributor, every line priced, and totals. Open it in a new tab or download it.</li>
+              <li><strong>Submit Order</strong> asks you to confirm, then emails that PO PDF to the order&apos;s sales rep (your email is set as reply-to, so they can answer you directly) and locks the order. If the rep has no email on file, the order still submits and you can send the PDF yourself.</li>
+              <li>Use <strong>Clone Order</strong> to copy it, or <strong>Delete</strong> to remove it.</li>
             </ul>
+            <p className="muted">A rep needs an email saved under Configuration &rarr; Sales Reps for the order to be emailed automatically.</p>
             <p className="muted">The <strong>All Order Lines</strong> tab shows every product across all your orders in one flat list.</p>
           </Section>
 
@@ -436,8 +445,8 @@ export default function HowToGuide() {
             <p>Your master data, in three tabs:</p>
             <ul>
               <li><strong>Stores</strong> — add, edit, or remove your store locations (with address lookup).</li>
-              <li><strong>Sales Reps</strong> — keep a directory of your distributor reps (name, distributor, division, email, phone). You can attach a rep to an order.</li>
-              <li><strong>Divisions</strong> — your own labels for grouping reps and products.</li>
+              <li><strong>Sales Reps</strong> — keep a directory of your distributor reps (name, distributor, division, email, phone). Each rep belongs to one distributor: pick the distributor first and the Division list then shows only that distributor&apos;s divisions. Use the pencil to <strong>edit</strong> a rep. The email here is where a submitted order&apos;s PO is sent.</li>
+              <li><strong>Divisions</strong> — your own grouping labels. A division belongs to a distributor, so choose the distributor when you add one.</li>
             </ul>
           </Section>
 
@@ -456,6 +465,7 @@ export default function HowToGuide() {
             <ul>
               <li><strong>Addnl Pages</strong> links to extra analysis screens: <strong>Discounts</strong> (best savings ranked), <strong>Clearance</strong> (closeouts), <strong>Promotions</strong> (the raw RIP list), <strong>Analytics</strong> (price movers and trends), <strong>Decisions</strong> (a ranked buy sheet with buy signals), and <strong>QA</strong> (a data-quality scan).</li>
               <li><strong>Admin</strong> shows usage, the user list, feedback, share activity, and lets an admin edit the WhatsApp share message.</li>
+              <li><strong>Activity</strong> is the usage analytics view: time spent per screen, a per-user breakdown, top actions, and a per-user detail with their recent trail, over a 7/30/90-day range.</li>
             </ul>
           </Section>
 

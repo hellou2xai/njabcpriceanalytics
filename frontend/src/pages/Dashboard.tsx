@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { analytics, deals, catalog, watchlist, orders, notes } from '../lib/api';
-import type { WatchlistItem, Order, AllNote, TimeSensitiveDeal } from '../lib/api';
+import type { WatchlistItem, Order, AllNote, TimeSensitiveDeal, NewItemsResponse } from '../lib/api';
 import KPICard from '../components/KPICard';
 import SortableTable from '../components/SortableTable';
 import WholesalerFilter from '../components/WholesalerFilter';
@@ -133,6 +133,11 @@ export default function Dashboard() {
     queryFn: () => deals.timeSensitive({ wholesaler: wholesaler || undefined, include_past: true }),
   });
 
+  const { data: newItems } = useQuery({
+    queryKey: ['new-items-tile', wholesaler],
+    queryFn: () => catalog.newItems({ wholesaler: wholesaler || undefined, limit: 500 }),
+  });
+
   // ---- My Workspace: user-specific data ----
   const { data: favorites } = useQuery({ queryKey: ['watchlist'], queryFn: watchlist.get });
   const { data: draftOrders } = useQuery({
@@ -183,6 +188,7 @@ export default function Dashboard() {
 
       <div className="section-label">Insights &amp; Opportunities</div>
       <div className="dashboard-tile-grid">
+        <NewItemsTile data={newItems} open={open} />
         <TimeSensitiveTile data={timeSensitive} open={open} />
         <PriceDropsTile data={drops} open={open} />
         <TopDealsTile data={topDeals} open={open} />
@@ -821,6 +827,61 @@ function QATile({ data }: { data: any }) {
           </>
         );
       }}
+    />
+  );
+}
+
+// Newly introduced products (UPC-based; an item not present in the prior
+// edition). Count + a preview; the full detail is the New Items page, which is
+// the Catalog with an Introduced column and a month filter.
+function NewItemsTile({ data, open }: {
+  data: NewItemsResponse | undefined;
+  open: (n: string, w: string, c?: any, opts?: { upc?: string; unitVolume?: string }) => void;
+}) {
+  const items = data?.items ?? [];
+  const total = data?.total ?? items.length;
+  const monthsLabel = (data?.months ?? [])
+    .map(m => `${monthLabel(m.edition)} (${m.count})`)
+    .join(' · ');
+  return (
+    <DashboardTile
+      title="New Items"
+      accent="#0ea5e9"
+      count={total.toLocaleString()}
+      countLabel="new products"
+      subtitle={monthsLabel || 'Introduced in recent editions'}
+      preview={items.slice(0, 3).map((r, i) => (
+        <div key={i} className="dashboard-tile-preview-row">
+          <span className="dashboard-tile-preview-name">{r.product_name}</span>
+          <span className="dashboard-tile-preview-value">{monthLabel(r.introduced_edition ?? '')}</span>
+        </div>
+      ))}
+      modalContent={(close) => (
+        <>
+          <SortableTable
+            columns={[
+              { key: 'product_name', label: 'Product', sortable: true,
+                render: r => <span style={{ fontWeight: 600 }}>{r.product_name as string}</span> },
+              { key: 'wholesaler', label: 'Distributor', sortable: true,
+                render: r => distributorName(r.wholesaler as string) },
+              { key: 'product_type', label: 'Type' },
+              { key: 'unit_volume', label: 'Size' },
+              { key: 'introduced_edition', label: 'Introduced', sortable: true,
+                render: r => <span className="tag tag-blue">{monthLabel(r.introduced_edition as string ?? '')}</span> },
+              { key: 'frontline_case_price', label: 'Case', align: 'right', sortable: true,
+                render: r => fmt$(r.frontline_case_price as number) },
+              { key: 'effective_case_price', label: 'Effective', align: 'right', sortable: true,
+                render: r => fmt$(r.effective_case_price as number) },
+            ]}
+            data={items}
+            pageSize={50}
+            exportName="new-items"
+            onRowClick={r => open(r.product_name as string, r.wholesaler as string, undefined,
+              { upc: r.upc as string, unitVolume: r.unit_volume as string })}
+          />
+          <ViewAllLink to="/new-items" label="Open New Items" close={close} />
+        </>
+      )}
     />
   );
 }

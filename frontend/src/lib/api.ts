@@ -48,6 +48,8 @@ function qs(params: Record<string, unknown>): string {
 export const catalog = {
   search: (params: Record<string, unknown>) =>
     request<{ total: number; items: Product[] }>(`/api/catalog/search${qs(params)}`),
+  newItems: (params?: Record<string, unknown>) =>
+    request<NewItemsResponse>(`/api/catalog/new-items${qs(params ?? {})}`),
   product: (wholesaler: string, name: string, opts?: { edition?: string; upc?: string; unit_volume?: string; unit_qty?: string; vintage?: string }) =>
     request<{ product: Product; discount_tiers: DiscountTier[]; rip_tiers: RipTier[] }>(
       `/api/catalog/product/${encodeURIComponent(wholesaler)}/${encodeURIComponent(name)}${qs(opts ?? {})}`
@@ -455,6 +457,18 @@ export interface Product {
   next_case_price?: number | null;
   next_effective_case_price?: number | null;
   better_month?: 'Same' | 'This Month' | 'Next Month' | null;
+  // Edition (YYYY-MM) the item was introduced in, set by /catalog/new-items.
+  introduced_edition?: string | null;
+}
+
+export interface NewItemsResponse {
+  total: number;
+  limit: number;
+  offset: number;
+  current_ym: string;
+  window_start: string | null;
+  months: { edition: string; count: number }[];
+  items: Product[];
 }
 
 export interface CatalogTier {

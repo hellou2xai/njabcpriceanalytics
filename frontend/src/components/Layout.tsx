@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   LayoutDashboard, Package, ShoppingCart, Bell, Star, Menu, X, Combine,
   Sun, Moon, LogOut, BadgeDollarSign, ClipboardList, LayoutGrid,
-  PanelLeftClose, PanelLeftOpen, StickyNote, UserCog, Settings, Shield,
+  PanelLeftClose, PanelLeftOpen, StickyNote, UserCog, Settings, Shield, Sparkles,
 } from 'lucide-react';
 import { alerts as alertsApi, orders as ordersApi } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -13,6 +13,7 @@ import { useOrderAnalysis } from '../contexts/OrderAnalysisContext';
 const NAV = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/catalog', label: 'Catalog', icon: Package },
+  { path: '/new-items', label: 'New Items', icon: Sparkles },
   { path: '/combos', label: 'Combos', icon: Combine },
   { path: '/rip-products', label: 'RIP Products', icon: BadgeDollarSign },
   { path: '/watchlist', label: 'Favorites', icon: Star },

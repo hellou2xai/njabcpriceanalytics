@@ -25,6 +25,15 @@ function fmt(v: number | null | undefined, prefix = '$'): string {
   return v == null ? '-' : `${prefix}${v.toFixed(2)}`;
 }
 
+// "2026-05" -> "May 2026" for the Introduced column.
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function introMonth(ym?: string | null): string {
+  if (!ym) return '—';
+  const [y, m] = ym.split('-');
+  const idx = parseInt(m, 10) - 1;
+  return idx >= 0 && idx < 12 ? `${MONTH_NAMES[idx]} ${y}` : ym;
+}
+
 function QtyStepper({ label, value, onChange }: { label: string; value: number; onChange: (n: number) => void }) {
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
   return (
@@ -56,6 +65,9 @@ interface Props {
   sortControls?: { sort: string; order: 'asc' | 'desc'; onSort: (col: SortKey) => void };
   // When provided and it returns a URL, show a "🎁 In combo" link under the product.
   comboLink?: (item: Product) => string | null;
+  // When true, show an "Introduced" column (the edition the item first appeared
+  // in). Used by the New Items screen; the main catalog leaves it off.
+  showIntroduced?: boolean;
 }
 
 /**
@@ -63,7 +75,7 @@ interface Props {
  * DISC/RIP tier sub-rows ("Buy N = $X", save/case, price-after, ROI). Used by
  * the Catalog screen and the Order Analysis screen so they render identically.
  */
-export default function CatalogTable({ items, open, cart, updateQty, sortControls, comboLink }: Props) {
+export default function CatalogTable({ items, open, cart, updateQty, sortControls, comboLink, showIntroduced }: Props) {
   const sortIcon = (col: string) =>
     sortControls && sortControls.sort === col ? (sortControls.order === 'asc' ? ' ▲' : ' ▼') : '';
   const headSort = (col: SortKey) => sortControls
@@ -83,6 +95,7 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
             <th>Distributor</th>
             <th>Type</th>
             <th>Size</th>
+            {showIntroduced && <th>Introduced</th>}
             <th {...rightHeadSort('frontline_case_price')}>Case / Btl{sortIcon('frontline_case_price')}</th>
             <th>Tier</th>
             <th className="right">Save (cs / btl)</th>
@@ -129,6 +142,9 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                   <td><span className="cell-distributor-badge">{distributorName(item.wholesaler)}</span></td>
                   <td>{item.product_type}</td>
                   <td>{item.unit_volume}</td>
+                  {showIntroduced && (
+                    <td><span className="tag tag-blue">{introMonth(item.introduced_edition)}</span></td>
+                  )}
                   <td className="right" style={{ fontWeight: 600 }}>
                     ${item.frontline_case_price.toFixed(2)}
                     <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>${item.frontline_unit_price.toFixed(2)}/btl</div>
@@ -183,7 +199,7 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                   return (
                     <tr key={`${reactKey}_${idx}`} className="catalog-row-sub" data-tier-met={tierMet}>
                       <td></td>
-                      <td colSpan={5} style={{ paddingLeft: 24 }}>
+                      <td colSpan={showIntroduced ? 6 : 5} style={{ paddingLeft: 24 }}>
                         <span className={`source-badge source-${t.source}`}>{t.source === 'discount' ? 'DISC' : 'RIP'}</span>
                         {t.description && <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>{t.description}</span>}
                       </td>
@@ -217,7 +233,7 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
             );
           })}
           {items.length === 0 && (
-            <tr><td colSpan={13} className="empty">No products</td></tr>
+            <tr><td colSpan={showIntroduced ? 14 : 13} className="empty">No products</td></tr>
           )}
         </tbody>
       </table>

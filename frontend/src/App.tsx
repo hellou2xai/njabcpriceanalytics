@@ -12,6 +12,7 @@ import FeedbackWidget, { BetaBadge } from './components/FeedbackWidget';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Catalog from './pages/Catalog';
+import NewItems from './pages/NewItems';
 import Discounts from './pages/Discounts';
 import Clearance from './pages/Clearance';
 import Combos from './pages/Combos';
@@ -86,6 +87,7 @@ function AuthenticatedApp() {
           <Route element={<Layout />}>
             <Route path="/" element={<Dashboard />} />
             <Route path="/catalog" element={<Catalog />} />
+            <Route path="/new-items" element={<NewItems />} />
             <Route path="/discounts" element={<Discounts />} />
             <Route path="/clearance" element={<Clearance />} />
             <Route path="/combos" element={<Combos />} />

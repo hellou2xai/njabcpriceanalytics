@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { alerts, type Alert } from '../lib/api';
-import { distributorName } from '../lib/distributors';
 import {
   CheckCheck, Clock, BadgeDollarSign, Combine, TrendingDown, Tag, Target,
   ClipboardCheck, TrendingUp, CalendarClock, BellOff,
@@ -46,6 +45,7 @@ function AlertCard({ a, onOpen }: { a: Alert; onOpen: (a: Alert) => void }) {
   const items = a.payload?.items ?? [];
   const count = a.payload?.count ?? items.length;
   const read = !!a.read;
+  const shown = items.slice(0, 3);   // fixed number of lines so every tile matches
   return (
     <div className={`alert-card intent-${intent} ${read ? 'read' : 'unread'}`}
       onClick={() => onOpen(a)} title="Open the details">
@@ -53,18 +53,18 @@ function AlertCard({ a, onOpen }: { a: Alert; onOpen: (a: Alert) => void }) {
         <span className="alert-card-title"><Icon size={16} /> {a.message}</span>
         <span className="alert-cat-chip">{meta.label}</span>
       </div>
-      {items.length > 0 && (
-        <ul className="alert-items">
-          {items.map((it, i) => (
-            <li key={i}>
-              <span className="ai-name">{it.label}</span>
-              {it.wholesaler && <span className="ai-dist">{distributorName(it.wholesaler)}</span>}
-              {it.detail && <span className="ai-detail">{it.detail}</span>}
-            </li>
-          ))}
-        </ul>
-      )}
-      {count > items.length && <div className="alert-more">+{count - items.length} more</div>}
+      <ul className="alert-items">
+        {shown.map((it, i) => (
+          <li key={i}>
+            <span className="ai-name">{it.label}</span>
+            {it.detail && <span className="ai-detail">{it.detail}</span>}
+          </li>
+        ))}
+      </ul>
+      <div className="alert-foot">
+        <span className="alert-foot-more">{count > shown.length ? `+${count - shown.length} more` : ''}</span>
+        <span className="alert-foot-link">View details &rarr;</span>
+      </div>
     </div>
   );
 }

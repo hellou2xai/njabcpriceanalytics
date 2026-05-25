@@ -216,6 +216,7 @@ export interface AdminUser {
   id: number;
   email: string;
   full_name: string | null;
+  phone?: string | null;
   activated: number;
   created_at: string;
   orders: number;

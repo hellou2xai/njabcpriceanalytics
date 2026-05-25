@@ -35,7 +35,7 @@ def list_users(user: dict = Depends(require_admin)):
     from the email allowlist (ADMIN_EMAILS), not stored."""
     with get_pg() as con:
         rows = con.execute(
-            """SELECT u.id, u.email, u.full_name, u.activated, u.created_at,
+            """SELECT u.id, u.email, u.full_name, u.phone, u.activated, u.created_at,
                       (SELECT count(*) FROM orders o WHERE o.user_id = u.id) AS orders,
                       (SELECT count(*) FROM stores s WHERE s.user_id = u.id) AS stores
                FROM users u

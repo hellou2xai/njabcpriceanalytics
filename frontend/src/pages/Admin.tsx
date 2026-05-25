@@ -234,7 +234,7 @@ export default function Admin() {
         <table>
           <thead>
             <tr>
-              <th>Email</th><th>Name</th><th>Status</th>
+              <th>Email</th><th>Name</th><th>Phone</th><th>Status</th>
               <th className="right">Orders</th><th className="right">Stores</th><th>Joined</th><th>Actions</th>
             </tr>
           </thead>
@@ -246,6 +246,7 @@ export default function Admin() {
                   {u.is_admin && <span className="tag tag-blue" style={{ marginLeft: 6, fontSize: 10 }}>ADMIN</span>}
                 </td>
                 <td>{u.full_name ?? '-'}</td>
+                <td style={{ whiteSpace: 'nowrap' }}>{u.phone || '-'}</td>
                 <td>
                   {u.activated
                     ? <span className="text-green" style={{ fontWeight: 600 }}>Active</span>

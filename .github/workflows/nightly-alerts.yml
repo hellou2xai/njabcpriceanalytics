@@ -1,0 +1,20 @@
+name: Nightly alert refresh
+
+# Rebuilds every user's alert digest at 12:01 AM US Eastern. GitHub cron is UTC
+# and not DST-aware, so we fire at both candidate times; the endpoint only does
+# work during the Eastern midnight hour, so exactly one run regenerates.
+on:
+  schedule:
+    - cron: "1 4 * * *"   # 00:01 ET while on EDT (UTC-4)
+    - cron: "1 5 * * *"   # 00:01 ET while on EST (UTC-5)
+  workflow_dispatch: {}    # allow manual runs from the Actions tab
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger regeneration
+        run: |
+          curl -fsS --max-time 300 -X POST \
+            "https://njabc-price-analytics.onrender.com/api/alerts/regenerate-all" \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}"

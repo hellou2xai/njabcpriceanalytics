@@ -44,3 +44,8 @@ services:
         sync: false           # e.g. "CELR <noreply@celr.ai>" (verified Resend domain)
       - key: APP_BASE_URL
         value: https://nj.celr.ai
+      # Shared secret for the nightly alert refresh. Set the SAME value here and
+      # as a GitHub Actions repo secret named CRON_SECRET; the scheduled workflow
+      # posts it to /api/alerts/regenerate-all at 12:01 AM Eastern.
+      - key: CRON_SECRET
+        sync: false

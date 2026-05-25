@@ -13,9 +13,10 @@ DuckDB cache; alerts are stored per user in Postgres.
 """
 
 import json
-from datetime import date
-from fastapi import APIRouter, Depends
-from typing import Optional
+import os
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from backend.db import get_duckdb, read_parquet
 from backend.pg import get_pg
@@ -127,12 +128,8 @@ def _rollup(pg, user_id, ym, category, intent, message, items, priority):
     return count
 
 
-@router.post("/generate")
-def generate_alerts(user: dict = Depends(get_current_user)):
-    """Rebuild the user's alert digest from the latest data. Idempotent."""
-    uid = user["id"]
-    ym = _current_ym()
-
+def _generate_for_user(uid, ym):
+    """Rebuild one user's alert digest from the latest data. Idempotent."""
     with get_pg() as pg, get_duckdb() as con:
         # Clear legacy per-item alerts (old engine; they carry a product_name)
         # and any stale-month roll-ups, so only this month's digest remains.
@@ -369,7 +366,46 @@ def generate_alerts(user: dict = Depends(get_current_user)):
         except Exception:
             pass
 
+    # (no return; this builds the digest for one user in place)
+
+
+@router.post("/generate")
+def generate_alerts(user: dict = Depends(get_current_user)):
+    """Rebuild the signed-in user's alert digest. Idempotent. Runs automatically
+    on app load and when the Alerts page opens (no manual button)."""
+    ym = _current_ym()
+    _generate_for_user(user["id"], ym)
     return {"status": "generated", "edition": ym}
+
+
+def regenerate_all() -> int:
+    """Rebuild the digest for every user. Used by the nightly refresh."""
+    ym = _current_ym()
+    with get_pg() as con:
+        uids = [r["id"] for r in con.execute("SELECT id FROM users").fetchall()]
+    for uid in uids:
+        try:
+            _generate_for_user(uid, ym)
+        except Exception:
+            pass
+    return len(uids)
+
+
+@router.post("/regenerate-all")
+def regenerate_all_endpoint(request: Request, force: bool = False):
+    """Nightly refresh for ALL users. Protected by the CRON_SECRET header (not a
+    user session) so a scheduler can call it. By default it only does work during
+    the midnight hour in US Eastern time (so a scheduler can fire on both
+    candidate UTC times and the right one runs, DST included); pass ?force=true
+    to run on demand."""
+    secret = os.getenv("CRON_SECRET")
+    if not secret or request.headers.get("X-Cron-Secret") != secret:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    et_hour = datetime.now(ZoneInfo("America/New_York")).hour
+    if not force and et_hour != 0:
+        return {"skipped": True, "reason": f"Eastern hour is {et_hour}, not midnight"}
+    n = regenerate_all()
+    return {"status": "regenerated", "users": n}
 
 
 def _order_checks(pg, con, enriched, rip, eds, uid):

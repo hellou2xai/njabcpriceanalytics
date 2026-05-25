@@ -1,8 +1,8 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation } from 'react-router-dom';
-import { Eye, Star, ShoppingCart, Copy, ClipboardList, MoreHorizontal, Globe, Plus } from 'lucide-react';
-import { watchlist, orders } from '../lib/api';
+import { Eye, Star, ShoppingCart, Copy, ClipboardList, MoreHorizontal, Globe, Plus, CalendarPlus, X } from 'lucide-react';
+import { watchlist, orders, todos } from '../lib/api';
 import { distributorName } from '../lib/distributors';
 import { useProductQuickView } from './ProductQuickView';
 import { useWebPriceSearch } from './WebPriceSearch';
@@ -77,6 +77,7 @@ const PATH_LABELS: Record<string, string> = {
 export function ContextMenuProvider({ children }: Props) {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [showOrders, setShowOrders] = useState(false);
+  const [todoDraft, setTodoDraft] = useState<{ product: MenuProduct; source: string } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const qc = useQueryClient();
   const location = useLocation();
@@ -218,12 +219,72 @@ export function ContextMenuProvider({ children }: Props) {
               </button>
             </div>
           )}
+          <button className="ctx-item" onClick={() => {
+            setTodoDraft({
+              product: { product_name: menu.product_name, wholesaler: menu.wholesaler, upc: menu.upc, unit_volume: menu.unit_volume },
+              source: PATH_LABELS[location.pathname] ?? location.pathname,
+            });
+            close();
+          }}>
+            <CalendarPlus size={14} /> Add to To-Do
+          </button>
           <button className="ctx-item" onClick={() => { navigator.clipboard.writeText(menu.upc || menu.product_name); close(); }}>
             <Copy size={14} /> Copy Code
           </button>
         </div>
       )}
+      {todoDraft && <TodoDialog draft={todoDraft} onClose={() => setTodoDraft(null)} />}
     </div>
     </ProductMenuCtx.Provider>
+  );
+}
+
+function TodoDialog({ draft, onClose }: { draft: { product: MenuProduct; source: string }; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [title, setTitle] = useState('');
+  const [note, setNote] = useState('');
+  const [due, setDue] = useState('');
+  const save = useMutation({
+    mutationFn: () => todos.create({
+      title: title.trim(), note: note.trim() || undefined, due_date: due || undefined,
+      product_name: draft.product.product_name, wholesaler: draft.product.wholesaler,
+      upc: draft.product.upc, unit_volume: draft.product.unit_volume, source_page: draft.source,
+    }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['todos'] }); onClose(); },
+  });
+  const field: React.CSSProperties = {
+    width: '100%', padding: '9px 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
+    background: 'var(--bg)', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-sans)',
+  };
+  return (
+    <div className="modal-overlay" onMouseDown={onClose}>
+      <div className="modal" style={{ maxWidth: 460 }} onMouseDown={e => e.stopPropagation()}>
+        <button className="modal-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        <h3 style={{ marginTop: 0 }}>Add to To-Do</h3>
+        <p className="text-muted" style={{ marginTop: -4, fontSize: 13 }}>
+          {draft.product.product_name} · {distributorName(draft.product.wholesaler)} · from {draft.source}
+        </p>
+        <label style={{ display: 'block', marginTop: 12 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>What do you want to do?</span>
+          <input style={field} autoFocus value={title} onChange={e => setTitle(e.target.value)}
+            placeholder="e.g. Compare with Fedway and order 10 cases" />
+        </label>
+        <label style={{ display: 'block', marginTop: 10 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>Note</span>
+          <textarea style={{ ...field, resize: 'vertical' }} rows={3} value={note} onChange={e => setNote(e.target.value)}
+            placeholder="Any details to help you decide later" />
+        </label>
+        <label style={{ display: 'block', marginTop: 10 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>Do it by</span>
+          <input style={field} type="date" value={due} onChange={e => setDue(e.target.value)} />
+        </label>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+          <button className="btn btn-secondary btn-sm" onClick={onClose}>Cancel</button>
+          <button className="btn btn-sm" disabled={!title.trim() || save.isPending} onClick={() => save.mutate()}>
+            {save.isPending ? 'Adding...' : 'Add to To-Do'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

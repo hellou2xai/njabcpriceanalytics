@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   LayoutDashboard, Package, ShoppingCart, Bell, Star, Menu, X, Combine,
   Sun, Moon, LogOut, BadgeDollarSign, ClipboardList, LayoutGrid,
-  PanelLeftClose, PanelLeftOpen, StickyNote, UserCog, Settings, Shield, Sparkles, BookOpen,
+  PanelLeftClose, PanelLeftOpen, StickyNote, UserCog, Settings, Shield, Sparkles, BookOpen, ListTodo,
 } from 'lucide-react';
 import { alerts as alertsApi, orders as ordersApi } from '../lib/api';
 import WhatsAppShareButton from './WhatsAppShare';
@@ -19,6 +19,7 @@ const NAV = [
   { path: '/rip-products', label: 'RIP Products', icon: BadgeDollarSign },
   { path: '/watchlist', label: 'Favorites', icon: Star },
   { path: '/notes', label: 'Notes', icon: StickyNote },
+  { path: '/todo', label: 'To-Do', icon: ListTodo },
   { path: '/orders', label: 'Orders', icon: ShoppingCart },
   { path: '/order-analysis', label: 'Order Analysis', icon: ClipboardList },
   { path: '/configuration', label: 'Configuration', icon: Settings },

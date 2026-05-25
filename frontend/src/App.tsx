@@ -14,6 +14,7 @@ import Dashboard from './pages/Dashboard';
 import Catalog from './pages/Catalog';
 import NewItems from './pages/NewItems';
 import HowToGuide from './pages/HowToGuide';
+import Todo from './pages/Todo';
 import Discounts from './pages/Discounts';
 import Clearance from './pages/Clearance';
 import Combos from './pages/Combos';
@@ -108,6 +109,7 @@ function AuthenticatedApp() {
             <Route path="/decisions" element={<Decisions />} />
             <Route path="/watchlist" element={<Watchlist />} />
             <Route path="/notes" element={<Notes />} />
+            <Route path="/todo" element={<Todo />} />
             <Route path="/orders" element={<Orders />} />
             <Route path="/orders/:id" element={<OrderDetail />} />
             <Route path="/alerts" element={<Alerts />} />

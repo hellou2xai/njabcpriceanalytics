@@ -259,6 +259,24 @@ def init_user_db():
             value text,
             updated_at text DEFAULT {NOW_UTC}
         )""",
+        # To-Do items the user creates by right-clicking a product anywhere.
+        # Keeps the product context + the page it was created from (source) so
+        # the To-Do board has everything needed to act.
+        f"""CREATE TABLE IF NOT EXISTS todos (
+            id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            user_id integer REFERENCES users(id) ON DELETE CASCADE,
+            title text NOT NULL,
+            note text,
+            due_date text,
+            status text DEFAULT 'open' CHECK (status IN ('open','done')),
+            product_name text,
+            wholesaler text,
+            upc text,
+            unit_volume text,
+            source_page text,
+            created_at text DEFAULT {NOW_UTC},
+            completed_at text
+        )""",
         # Share events: one row each time someone taps "Share via WhatsApp",
         # for signed-in users (user_id/email) and anonymous landing visitors.
         f"""CREATE TABLE IF NOT EXISTS share_events (

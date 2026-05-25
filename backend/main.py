@@ -29,7 +29,7 @@ load_dotenv()
 
 from backend.db import init_user_db
 from backend.auth import router as auth_router, get_current_user
-from backend.routers import catalog, analytics, deals, intelligence, user_state, alerts, qa, websearch, stores, feedback, admin, consent, settings, share
+from backend.routers import catalog, analytics, deals, intelligence, user_state, alerts, qa, websearch, stores, feedback, admin, consent, settings, share, todos
 
 app = FastAPI(
     title="NJ ABC Price Intelligence",
@@ -66,6 +66,7 @@ app.include_router(admin.router)
 app.include_router(consent.router)
 app.include_router(settings.router)
 app.include_router(share.router)
+app.include_router(todos.router)
 
 
 @app.on_event("startup")

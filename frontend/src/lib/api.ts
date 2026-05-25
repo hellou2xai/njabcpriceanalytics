@@ -349,6 +349,31 @@ export const alerts = {
   markAllRead: () => request('/api/alerts/mark-all-read', { method: 'PUT' }),
 };
 
+export interface Todo {
+  id: number;
+  title: string;
+  note: string | null;
+  due_date: string | null;
+  status: 'open' | 'done';
+  product_name: string | null;
+  wholesaler: string | null;
+  upc: string | null;
+  unit_volume: string | null;
+  source_page: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+export const todos = {
+  list: () => request<Todo[]>('/api/todos'),
+  create: (data: {
+    title: string; note?: string; due_date?: string;
+    product_name?: string; wholesaler?: string; upc?: string; unit_volume?: string; source_page?: string;
+  }) => request<{ id: number }>('/api/todos', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: number, data: { title?: string; note?: string; due_date?: string; status?: 'open' | 'done' }) =>
+    request(`/api/todos/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  remove: (id: number) => request(`/api/todos/${id}`, { method: 'DELETE' }),
+};
+
 export const salesReps = {
   list: () => request<SalesRep[]>('/api/sales-reps'),
   add: (rep: Omit<SalesRep, 'id'>) =>

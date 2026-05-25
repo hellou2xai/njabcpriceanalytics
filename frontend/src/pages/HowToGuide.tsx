@@ -167,35 +167,35 @@ export default function HowToGuide() {
             <p>The left menu is grouped into labelled sections of related screens:</p>
             <h3>Overview</h3>
             <ul>
-              <li><strong>Dashboard</strong> — your daily overview.</li>
-              <li><strong>Alerts</strong> — price and deal notifications (a red badge shows unread).</li>
+              <li><strong>Dashboard</strong>: your daily overview.</li>
+              <li><strong>Alerts</strong>: price and deal notifications (a red badge shows unread).</li>
             </ul>
             <h3>Find deals</h3>
             <ul>
-              <li><strong>Catalog</strong> — every product, searchable and filterable.</li>
-              <li><strong>New Items</strong> — products that just appeared this month.</li>
-              <li><strong>Combos</strong> — bundle deals.</li>
-              <li><strong>RIP Products</strong> — products with rebate offers.</li>
+              <li><strong>Catalog</strong>: every product, searchable and filterable.</li>
+              <li><strong>New Items</strong>: products that just appeared this month.</li>
+              <li><strong>Combos</strong>: bundle deals.</li>
+              <li><strong>RIP Products</strong>: products with rebate offers.</li>
             </ul>
             <h3>My work</h3>
             <ul>
-              <li><strong>Favorites</strong> — products you have starred (your watchlist).</li>
-              <li><strong>To-Do</strong> — your task board (right-click any product to add one).</li>
-              <li><strong>Notes</strong> — every note you have written, in one place.</li>
-              <li><strong>Orders</strong> — your draft and submitted orders (a badge shows drafts in progress).</li>
-              <li><strong>Order Analysis</strong> — a scratchpad of products you are still thinking about.</li>
+              <li><strong>Favorites</strong>: products you have starred (your watchlist).</li>
+              <li><strong>To-Do</strong>: your task board (right-click any product to add one).</li>
+              <li><strong>Notes</strong>: every note you have written, in one place.</li>
+              <li><strong>Orders</strong>: your draft and submitted orders (a badge shows drafts in progress).</li>
+              <li><strong>Order Analysis</strong>: a scratchpad of products you are still thinking about.</li>
             </ul>
             <h3>Setup &amp; Help</h3>
             <ul>
-              <li><strong>Configuration</strong> — your stores, sales reps, and divisions.</li>
-              <li><strong>How To Guide</strong> — this page.</li>
+              <li><strong>Configuration</strong>: your stores, sales reps, and divisions.</li>
+              <li><strong>How To Guide</strong>: this page.</li>
             </ul>
             <p>At the top and bottom of the menu:</p>
             <ul>
-              <li><strong>Light / dark theme</strong> — the sun/moon button switches the colour scheme. Your choice is remembered.</li>
-              <li><strong>Collapse / hide</strong> — shrink the menu to icons, or hide it entirely, to get more room. On a phone, tap the menu button to open it.</li>
-              <li><strong>Share via WhatsApp</strong> — opens WhatsApp with a ready-made message so you can tell another owner about the app.</li>
-              <li><strong>Profile</strong> — your account and password.</li>
+              <li><strong>Light / dark theme</strong>: the sun/moon button switches the colour scheme. Your choice is remembered.</li>
+              <li><strong>Collapse / hide</strong>: shrink the menu to icons, or hide it entirely, to get more room. On a phone, tap the menu button to open it.</li>
+              <li><strong>Share via WhatsApp</strong>: opens WhatsApp with a ready-made message so you can tell another owner about the app.</li>
+              <li><strong>Profile</strong>: your account and password.</li>
               <li><strong>Log out</strong>.</li>
             </ul>
           </Section>
@@ -218,13 +218,13 @@ export default function HowToGuide() {
             <h3>Insights &amp; Opportunities (the deal tiles)</h3>
             <p>Each tile shows a count and a 3-row preview. Click it to open a full table with its own search, filters, and export. The tiles:</p>
             <ul>
-              <li><strong>New Items</strong> — products newly introduced, with the month they appeared.</li>
-              <li><strong>Time-Sensitive Deals</strong> — deals with an end date, with day counters (red = expiring within 3 days). Filter by "Next 3 days", "This week", and so on.</li>
-              <li><strong>Biggest Price Drops</strong> — the largest month-over-month reductions.</li>
-              <li><strong>Top Discount Opportunities</strong> — the biggest savings per case right now, with a "buy now vs next month" hint.</li>
-              <li><strong>Price Changes (Month over Month)</strong> — what is going up or down next month. Filter by Drops or Hikes.</li>
-              <li><strong>Allied / Fedway / OPICI Cheaper</strong> — the same product (matched by barcode) priced at two distributors, showing who is cheaper and by how much.</li>
-              <li><strong>Allied / Fedway Exclusive</strong> — products one distributor carries that the other does not.</li>
+              <li><strong>New Items</strong>: products newly introduced, with the month they appeared.</li>
+              <li><strong>Time-Sensitive Deals</strong>: deals with an end date, with day counters (red = expiring within 3 days). Filter by "Next 3 days", "This week", and so on.</li>
+              <li><strong>Biggest Price Drops</strong>: the largest month-over-month reductions.</li>
+              <li><strong>Top Discount Opportunities</strong>: the biggest savings per case right now, with a "buy now vs next month" hint.</li>
+              <li><strong>Price Changes (Month over Month)</strong>: what is going up or down next month. Filter by Drops or Hikes.</li>
+              <li><strong>Allied / Fedway / OPICI Cheaper</strong>: the same product (matched by barcode) priced at two distributors, showing who is cheaper and by how much.</li>
+              <li><strong>Allied / Fedway Exclusive</strong>: products one distributor carries that the other does not.</li>
             </ul>
           </Section>
 
@@ -234,11 +234,11 @@ export default function HowToGuide() {
             <Shot src="/guide/02-catalog.png" alt="The Catalog: search and distributor buttons on top, the filter panel on the left, products with their discount and RIP tiers below each row." />
             <h3>Searching and filtering</h3>
             <ul>
-              <li><strong>Search box</strong> — type a product name or a barcode (UPC). The count next to it shows how many products match.</li>
-              <li><strong>Distributor buttons</strong> (top right) — limit to one wholesaler or show all.</li>
-              <li><strong>Show / Hide Filters</strong> — opens the filter panel on the left, where you can filter by <strong>Deals</strong> (has a RIP, has a discount), <strong>Distributors</strong>, <strong>Price range</strong>, <strong>Category</strong>, <strong>Brand</strong>, and <strong>Size</strong>. Each option shows a count.</li>
-              <li><strong>Tracked only</strong> — show just the products on your Favorites list.</li>
-              <li><strong>Rows</strong> — how many products per page. <strong>Clear all</strong> removes every filter.</li>
+              <li><strong>Search box</strong>: type a product name or a barcode (UPC). The count next to it shows how many products match.</li>
+              <li><strong>Distributor buttons</strong> (top right): limit to one wholesaler or show all.</li>
+              <li><strong>Show / Hide Filters</strong>: opens the filter panel on the left, where you can filter by <strong>Deals</strong> (has a RIP, has a discount), <strong>Distributors</strong>, <strong>Price range</strong>, <strong>Category</strong>, <strong>Brand</strong>, and <strong>Size</strong>. Each option shows a count.</li>
+              <li><strong>Tracked only</strong>: show just the products on your Favorites list.</li>
+              <li><strong>Rows</strong>: how many products per page. <strong>Clear all</strong> removes every filter.</li>
             </ul>
             <h3>Reading a product row</h3>
             <p>Each row shows these columns:</p>
@@ -313,8 +313,8 @@ export default function HowToGuide() {
             <p>Everything you star lands here. It is built for tracking prices and turning a shortlist into an order.</p>
             <ul>
               <li>Each row shows the buy signal, price with an up/down trend arrow, the saving and tiers, the effective price, and quantity steppers.</li>
-              <li><strong>Target</strong> — set the price you want; you get an alert when the market reaches it.</li>
-              <li><strong>Notes</strong> — jot a private note inline.</li>
+              <li><strong>Target</strong>: set the price you want; you get an alert when the market reaches it.</li>
+              <li><strong>Notes</strong>: jot a private note inline.</li>
               <li><strong>Group by category</strong> splits the list into sections with subtotals.</li>
               <li>Set quantities and the <strong>cart bar at the bottom</strong> tracks your running total. Click <strong>Save as Order</strong> to turn the cart into a draft order, or use the <strong>+</strong> on a row to add a single product to an order.</li>
               <li><strong>Templates</strong> save a cart you reuse often; <strong>History</strong> lets you re-order from a past cart; <strong>Export CSV</strong> downloads your list.</li>
@@ -399,14 +399,14 @@ export default function HowToGuide() {
             </p>
             <h3>Opportunities (don&apos;t miss)</h3>
             <ul>
-              <li><strong>Time-sensitive deals</strong> — ending within about a week.</li>
+              <li><strong>Time-sensitive deals</strong>: ending within about a week.</li>
               <li><strong>New RIP rebates</strong> and <strong>new combo bundles</strong> this month.</li>
               <li><strong>Clearance / closeouts</strong> and <strong>price drops</strong>.</li>
-              <li><strong>Target price hit</strong> — a favorite reached the price you set.</li>
+              <li><strong>Target price hit</strong>: a favorite reached the price you set.</li>
             </ul>
             <h3>Watch-outs (avoid a mistake)</h3>
             <ul>
-              <li><strong>Order check</strong> — a line in your draft orders is a couple of cases short of a bigger rebate, or is cheaper at another distributor.</li>
+              <li><strong>Order check</strong>: a line in your draft orders is a couple of cases short of a bigger rebate, or is cheaper at another distributor.</li>
               <li><strong>Buy now</strong> (gets pricier next month) and <strong>cheaper next month</strong> (consider waiting).</li>
               <li><strong>Lost discounts</strong> and <strong>price increases</strong>.</li>
             </ul>
@@ -420,13 +420,13 @@ export default function HowToGuide() {
           <Section id="rightclick" icon={<MousePointerClick size={18} />} title="The right-click menu">
             <p>Right-click any product row (or use the three-dot button) for quick actions:</p>
             <ul>
-              <li><strong>View Product</strong> — open the details popup.</li>
-              <li><strong>Search the web</strong> — look up retail prices and listings online (see below).</li>
-              <li><strong>Add to Order Analysis</strong> — set it aside on the scratchpad.</li>
-              <li><strong>Add to Favorites</strong> — star it.</li>
-              <li><strong>Add to Order</strong> — add it straight to a draft order, or start a new one.</li>
-              <li><strong>Add to To-Do</strong> — capture a task about this product (what to do, a note, a due date) on your To-Do board.</li>
-              <li><strong>Copy Code</strong> — copy the barcode to your clipboard.</li>
+              <li><strong>View Product</strong>: open the details popup.</li>
+              <li><strong>Search the web</strong>: look up retail prices and listings online (see below).</li>
+              <li><strong>Add to Order Analysis</strong>: set it aside on the scratchpad.</li>
+              <li><strong>Add to Favorites</strong>: star it.</li>
+              <li><strong>Add to Order</strong>: add it straight to a draft order, or start a new one.</li>
+              <li><strong>Add to To-Do</strong>: capture a task about this product (what to do, a note, a due date) on your To-Do board.</li>
+              <li><strong>Copy Code</strong>: copy the barcode to your clipboard.</li>
             </ul>
           </Section>
 
@@ -444,9 +444,9 @@ export default function HowToGuide() {
             <Shot src="/guide/10-configuration.png" alt="Configuration: tabs for Stores, Sales Reps, and Divisions." />
             <p>Your master data, in three tabs:</p>
             <ul>
-              <li><strong>Stores</strong> — add, edit, or remove your store locations (with address lookup).</li>
-              <li><strong>Sales Reps</strong> — keep a directory of your distributor reps (name, distributor, division, email, phone). Each rep belongs to one distributor: pick the distributor first and the Division list then shows only that distributor&apos;s divisions. Use the pencil to <strong>edit</strong> a rep. The email here is where a submitted order&apos;s PO is sent.</li>
-              <li><strong>Divisions</strong> — your own grouping labels. A division belongs to a distributor, so choose the distributor when you add one.</li>
+              <li><strong>Stores</strong>: add, edit, or remove your store locations (with address lookup).</li>
+              <li><strong>Sales Reps</strong>: keep a directory of your distributor reps (name, distributor, division, email, phone). Each rep belongs to one distributor: pick the distributor first and the Division list then shows only that distributor&apos;s divisions. Use the pencil to <strong>edit</strong> a rep. The email here is where a submitted order&apos;s PO is sent.</li>
+              <li><strong>Divisions</strong>: your own grouping labels. A division belongs to a distributor, so choose the distributor when you add one.</li>
             </ul>
           </Section>
 
@@ -471,9 +471,9 @@ export default function HowToGuide() {
 
           <Section id="help" icon={<MessageCircle size={20} />} title="Feedback, sharing, and cookies">
             <ul>
-              <li><strong>Feedback widget</strong> — the floating button in the corner. Send a bug or an idea any time; it tags your account and the page you were on.</li>
-              <li><strong>Share via WhatsApp</strong> — in the left menu; opens WhatsApp with a ready message and the app link.</li>
-              <li><strong>Cookie preferences</strong> — when you first visit you choose which cookies to allow (necessary cookies are always on; analytics and marketing are your choice). You can change this any time from the footer of the public site.</li>
+              <li><strong>Feedback widget</strong>: the floating button in the corner. Send a bug or an idea any time; it tags your account and the page you were on.</li>
+              <li><strong>Share via WhatsApp</strong>: in the left menu; opens WhatsApp with a ready message and the app link.</li>
+              <li><strong>Cookie preferences</strong>: when you first visit you choose which cookies to allow (necessary cookies are always on; analytics and marketing are your choice). You can change this any time from the footer of the public site.</li>
             </ul>
           </Section>
 

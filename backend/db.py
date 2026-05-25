@@ -329,3 +329,9 @@ def init_user_db():
             """CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_rollup
                ON alerts(user_id, alert_type, edition) WHERE product_name IS NULL"""
         )
+        # Divisions belong to a distributor (added later than the table).
+        has_div_dist = con.execute(
+            "SELECT 1 FROM information_schema.columns WHERE table_name = 'divisions' AND column_name = 'distributor'"
+        ).fetchone()
+        if not has_div_dist:
+            con.execute("ALTER TABLE divisions ADD COLUMN distributor text")

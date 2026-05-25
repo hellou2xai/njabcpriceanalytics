@@ -737,6 +737,31 @@ def add_sales_rep(rep: SalesRepCreate, user: dict = Depends(get_current_user)):
     return {"id": rep_id, "status": "created"}
 
 
+class SalesRepUpdate(BaseModel):
+    name: Optional[str] = None
+    division: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    distributor: Optional[str] = None
+
+
+@router.put("/sales-reps/{rep_id}")
+def update_sales_rep(rep_id: int, rep: SalesRepUpdate, user: dict = Depends(get_current_user)):
+    fields, vals = [], []
+    if rep.name is not None and rep.name.strip():
+        fields.append("name = %s"); vals.append(rep.name.strip())
+    for col in ("division", "email", "phone", "distributor"):
+        v = getattr(rep, col)
+        if v is not None:
+            fields.append(f"{col} = %s"); vals.append(v.strip() or None)
+    if not fields:
+        return {"status": "noop"}
+    vals.extend([rep_id, user["id"]])
+    with get_pg() as con:
+        con.execute(f"UPDATE sales_reps SET {', '.join(fields)} WHERE id = %s AND user_id = %s", vals)
+    return {"status": "updated"}
+
+
 @router.delete("/sales-reps/{rep_id}")
 def delete_sales_rep(rep_id: int, user: dict = Depends(get_current_user)):
     with get_pg() as con:
@@ -744,10 +769,11 @@ def delete_sales_rep(rep_id: int, user: dict = Depends(get_current_user)):
     return {"status": "deleted"}
 
 
-# ---- Divisions (master data) ----
+# ---- Divisions (master data; each belongs to a distributor) ----
 
 class DivisionCreate(BaseModel):
     name: str
+    distributor: Optional[str] = None
 
 
 @router.get("/divisions")
@@ -762,7 +788,10 @@ def add_division(d: DivisionCreate, user: dict = Depends(get_current_user)):
     if not d.name.strip():
         raise HTTPException(status_code=422, detail="Division name is required")
     with get_pg() as con:
-        cur = con.execute("INSERT INTO divisions (user_id, name) VALUES (%s, %s) RETURNING id", (user["id"], d.name.strip()))
+        cur = con.execute(
+            "INSERT INTO divisions (user_id, name, distributor) VALUES (%s, %s, %s) RETURNING id",
+            (user["id"], d.name.strip(), (d.distributor or None)),
+        )
         did = cur.fetchone()["id"]
     return {"id": did, "status": "created"}
 

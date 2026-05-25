@@ -4,12 +4,13 @@ import { salesReps, divisions } from '../lib/api';
 import type { SalesRep } from '../lib/api';
 import SortableTable from '../components/SortableTable';
 import { distributorName, DISTRIBUTOR_NAMES } from '../lib/distributors';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Pencil, X } from 'lucide-react';
 
 const DISTRIBUTORS = Object.keys(DISTRIBUTOR_NAMES);
 
 export default function SalesRepsPage({ embedded = false }: { embedded?: boolean }) {
   const qc = useQueryClient();
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [name, setName] = useState('');
   const [distributor, setDistributor] = useState('');
   const [division, setDivision] = useState('');
@@ -19,46 +20,61 @@ export default function SalesRepsPage({ embedded = false }: { embedded?: boolean
   const { data } = useQuery({ queryKey: ['sales-reps'], queryFn: salesReps.list });
   const { data: divs } = useQuery({ queryKey: ['divisions'], queryFn: divisions.list });
 
-  const addMut = useMutation({
-    mutationFn: (rep: Omit<SalesRep, 'id'>) => salesReps.add(rep),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['sales-reps'] });
-      setName(''); setDistributor(''); setDivision(''); setEmail(''); setPhone('');
-    },
-  });
+  // Only show divisions that belong to the chosen distributor (plus any general,
+  // distributor-less ones), since a division is specific to a distributor.
+  const repDivs = (divs ?? []).filter(d => !d.distributor || d.distributor === distributor);
 
+  const reset = () => { setEditingId(null); setName(''); setDistributor(''); setDivision(''); setEmail(''); setPhone(''); };
+
+  const saveMut = useMutation({
+    mutationFn: (rep: Omit<SalesRep, 'id'>) =>
+      editingId ? salesReps.update(editingId, rep) : salesReps.add(rep),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['sales-reps'] }); reset(); },
+  });
   const removeMut = useMutation({
     mutationFn: (id: number) => salesReps.remove(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['sales-reps'] }),
   });
 
-  const handleAdd = () => {
+  const handleSave = () => {
     if (!name || !distributor) return;
-    addMut.mutate({ name, distributor, division: division || undefined, email: email || undefined, phone: phone || undefined });
+    saveMut.mutate({ name, distributor, division: division || undefined, email: email || undefined, phone: phone || undefined });
+  };
+  const startEdit = (r: SalesRep) => {
+    setEditingId(r.id);
+    setName(r.name ?? '');
+    setDistributor(r.distributor ?? '');
+    setDivision(r.division ?? '');
+    setEmail(r.email ?? '');
+    setPhone(r.phone ?? '');
   };
 
   return (
     <div className={embedded ? '' : 'page'}>
       {!embedded && <div className="orders-header"><h2>Sales Representatives</h2></div>}
       <p className="page-sub" style={{ marginTop: embedded ? 0 : -8 }}>
-        Each rep works for one distributor. You'll pick a rep when you create an order for that distributor.
+        Each rep works for one distributor. Pick the distributor first; the Division list then shows that
+        distributor's divisions. You'll pick a rep when you create an order for that distributor.
       </p>
 
       <div className="inline-form">
         <input type="text" placeholder="Name *" value={name} onChange={e => setName(e.target.value)} />
-        <select value={distributor} onChange={e => setDistributor(e.target.value)}>
+        <select value={distributor} onChange={e => { setDistributor(e.target.value); setDivision(''); }}>
           <option value="">Distributor *</option>
           {DISTRIBUTORS.map(d => <option key={d} value={d}>{distributorName(d)}</option>)}
         </select>
-        <select value={division} onChange={e => setDivision(e.target.value)}>
+        <select value={division} onChange={e => setDivision(e.target.value)} disabled={!distributor} title={!distributor ? 'Pick a distributor first' : undefined}>
           <option value="">Division (optional)</option>
-          {(divs ?? []).map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+          {repDivs.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
         </select>
         <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} />
         <input type="text" placeholder="Phone" value={phone} onChange={e => setPhone(e.target.value)} />
-        <button className="btn" onClick={handleAdd} disabled={!name || !distributor}>
-          Add
+        <button className="btn" onClick={handleSave} disabled={!name || !distributor || saveMut.isPending}>
+          {editingId ? 'Save changes' : 'Add'}
         </button>
+        {editingId && (
+          <button className="btn btn-secondary" onClick={reset} title="Cancel edit"><X size={14} /> Cancel</button>
+        )}
       </div>
 
       <SortableTable
@@ -73,12 +89,14 @@ export default function SalesRepsPage({ embedded = false }: { embedded?: boolean
             key: 'actions',
             label: 'Actions',
             render: r => (
-              <button
-                className="btn-icon"
-                onClick={e => { e.stopPropagation(); removeMut.mutate(r.id as number); }}
-              >
-                <Trash2 size={16} />
-              </button>
+              <span style={{ display: 'inline-flex', gap: 4 }}>
+                <button className="btn-icon" title="Edit" onClick={e => { e.stopPropagation(); startEdit(r as unknown as SalesRep); }}>
+                  <Pencil size={15} />
+                </button>
+                <button className="btn-icon" title="Delete" onClick={e => { e.stopPropagation(); removeMut.mutate(r.id as number); }}>
+                  <Trash2 size={16} />
+                </button>
+              </span>
             ),
           },
         ]}

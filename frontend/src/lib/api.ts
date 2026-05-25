@@ -378,13 +378,16 @@ export const salesReps = {
   list: () => request<SalesRep[]>('/api/sales-reps'),
   add: (rep: Omit<SalesRep, 'id'>) =>
     request<{ id: number }>('/api/sales-reps', { method: 'POST', body: JSON.stringify(rep) }),
+  update: (id: number, rep: Partial<Omit<SalesRep, 'id'>>) =>
+    request(`/api/sales-reps/${id}`, { method: 'PUT', body: JSON.stringify(rep) }),
   remove: (id: number) => request(`/api/sales-reps/${id}`, { method: 'DELETE' }),
 };
 
-export interface Division { id: number; name: string }
+export interface Division { id: number; name: string; distributor?: string | null }
 export const divisions = {
   list: () => request<Division[]>('/api/divisions'),
-  add: (name: string) => request<{ id: number }>('/api/divisions', { method: 'POST', body: JSON.stringify({ name }) }),
+  add: (name: string, distributor?: string) =>
+    request<{ id: number }>('/api/divisions', { method: 'POST', body: JSON.stringify({ name, distributor }) }),
   remove: (id: number) => request(`/api/divisions/${id}`, { method: 'DELETE' }),
 };
 

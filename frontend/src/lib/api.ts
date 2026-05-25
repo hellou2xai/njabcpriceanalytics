@@ -350,10 +350,13 @@ export interface AllNote {
 export const notes = {
   list: () => request<UserNote[]>('/api/notes'),
   all: () => request<AllNote[]>('/api/notes/all'),
+  standalone: () => request<UserNote[]>('/api/notes/standalone'),
   forProduct: (wholesaler: string, productName: string) =>
     request<UserNote[]>(`/api/notes/${encodeURIComponent(wholesaler)}/${encodeURIComponent(productName)}`),
-  add: (note: { product_name: string; wholesaler: string; note: string }) =>
+  add: (note: { note: string; product_name?: string; wholesaler?: string; title?: string; color?: string }) =>
     request<{ id: number }>('/api/notes', { method: 'POST', body: JSON.stringify(note) }),
+  update: (id: number, data: { note?: string; title?: string; color?: string }) =>
+    request(`/api/notes/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   remove: (id: number) => request(`/api/notes/${id}`, { method: 'DELETE' }),
 };
 
@@ -843,7 +846,8 @@ export interface PlanOrder extends Order {
 }
 
 export interface UserNote {
-  id: number; product_name: string; wholesaler: string; note: string;
+  id: number; product_name: string | null; wholesaler: string | null; note: string;
+  title?: string | null; color?: string | null;
   deleted?: number; created_at: string; updated_at?: string;
 }
 

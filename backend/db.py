@@ -335,3 +335,19 @@ def init_user_db():
         ).fetchone()
         if not has_div_dist:
             con.execute("ALTER TABLE divisions ADD COLUMN distributor text")
+        # Notes can now be standalone sticky notes (no product), with an optional
+        # title and a colour. Relax the old product/wholesaler NOT NULLs and add
+        # the new columns if they're missing.
+        con.execute("ALTER TABLE user_notes ALTER COLUMN product_name DROP NOT NULL")
+        con.execute("ALTER TABLE user_notes ALTER COLUMN wholesaler DROP NOT NULL")
+        for col, ddl in (
+            ("title", "ALTER TABLE user_notes ADD COLUMN title text"),
+            ("color", "ALTER TABLE user_notes ADD COLUMN color text"),
+        ):
+            exists = con.execute(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = 'user_notes' AND column_name = %s",
+                (col,),
+            ).fetchone()
+            if not exists:
+                con.execute(ddl)

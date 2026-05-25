@@ -739,9 +739,18 @@ def submit_order(order_id: int, user: dict = Depends(get_current_user)):
 # ---- Notes (Â§3.5) ----
 
 class NoteCreate(BaseModel):
-    product_name: str
-    wholesaler: str
     note: str
+    # Optional: a standalone sticky note leaves product_name/wholesaler null.
+    product_name: Optional[str] = None
+    wholesaler: Optional[str] = None
+    title: Optional[str] = None
+    color: Optional[str] = None
+
+
+class NoteUpdate(BaseModel):
+    note: Optional[str] = None
+    title: Optional[str] = None
+    color: Optional[str] = None
 
 
 @router.get("/notes")
@@ -751,6 +760,18 @@ def list_notes(user: dict = Depends(get_current_user)):
     with get_pg() as con:
         rows = con.execute(
             "SELECT * FROM user_notes WHERE user_id = %s AND deleted = 0 ORDER BY created_at DESC",
+            (user["id"],)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.get("/notes/standalone")
+def list_standalone_notes(user: dict = Depends(get_current_user)):
+    """Standalone sticky notes (not attached to a product), newest first."""
+    with get_pg() as con:
+        rows = con.execute(
+            "SELECT * FROM user_notes WHERE user_id = %s AND deleted = 0 "
+            "AND product_name IS NULL ORDER BY created_at DESC",
             (user["id"],)
         ).fetchall()
     return [dict(r) for r in rows]
@@ -766,7 +787,7 @@ def list_all_notes(user: dict = Depends(get_current_user)):
     with get_pg() as con:
         for r in con.execute(
             "SELECT id, product_name, wholesaler, note, created_at FROM user_notes "
-            "WHERE user_id = %s AND deleted = 0", (uid,)
+            "WHERE user_id = %s AND deleted = 0 AND product_name IS NOT NULL", (uid,)
         ).fetchall():
             out.append({"source": "product", "id": r["id"], "note": r["note"],
                         "product_name": r["product_name"], "wholesaler": r["wholesaler"],
@@ -814,12 +835,35 @@ def get_notes(wholesaler: str, product_name: str, user: dict = Depends(get_curre
 def add_note(note: NoteCreate, user: dict = Depends(get_current_user)):
     with get_pg() as con:
         cur = con.execute(
-            "INSERT INTO user_notes (user_id, product_name, wholesaler, note) VALUES (%s, %s, %s, %s) RETURNING id",
-            (user["id"], note.product_name, note.wholesaler, note.note)
+            "INSERT INTO user_notes (user_id, product_name, wholesaler, note, title, color) "
+            "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+            (user["id"], note.product_name, note.wholesaler, note.note, note.title, note.color)
         )
         note_id = cur.fetchone()["id"]
         _audit(con, "user_notes", note_id, "insert", new_values=note.model_dump())
     return {"id": note_id, "status": "created"}
+
+
+@router.put("/notes/{note_id}")
+def update_note(note_id: int, patch: NoteUpdate, user: dict = Depends(get_current_user)):
+    """Edit a note's text, title or colour (partial update)."""
+    with get_pg() as con:
+        old = con.execute(
+            "SELECT * FROM user_notes WHERE id = %s AND user_id = %s AND deleted = 0",
+            (note_id, user["id"]),
+        ).fetchone()
+        if not old:
+            raise HTTPException(status_code=404, detail="Note not found")
+        data = patch.model_dump(exclude_unset=True)
+        if data:
+            assignments = ", ".join(f"{k} = %s" for k in data)
+            con.execute(
+                f"UPDATE user_notes SET {assignments}, updated_at = {NOW_UTC} "
+                "WHERE id = %s AND user_id = %s",
+                list(data.values()) + [note_id, user["id"]],
+            )
+            _audit(con, "user_notes", note_id, "update", new_values=data)
+    return {"status": "updated"}
 
 
 @router.delete("/notes/{note_id}")

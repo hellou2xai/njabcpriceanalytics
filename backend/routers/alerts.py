@@ -144,6 +144,12 @@ def generate_alerts(user: dict = Depends(get_current_user)):
     ym = _current_ym()
 
     with get_pg() as pg, get_duckdb() as con:
+        # Clear legacy per-item alerts (old engine; they carry a product_name)
+        # and any stale-month roll-ups, so only this month's digest remains.
+        pg.execute(
+            "DELETE FROM alerts WHERE user_id = %s AND (product_name IS NOT NULL OR edition <> %s)",
+            (uid, ym),
+        )
         enriched = read_parquet(con, "cpl_enriched")
         changes = read_parquet(con, "price_changes")
         life = read_parquet(con, "item_lifecycle")

@@ -115,6 +115,10 @@ export default function OrdersPage() {
       {view === 'lines' ? (
         <OrderLinesView status={status} />
       ) : (
+      <>
+      <p className="page-sub" style={{ marginTop: 0, fontSize: 13 }}>
+        💡 Click any order below to open it and see all its line items — the products, quantities, RIP savings, and totals.
+      </p>
       <SortableTable
         columns={[
           { key: 'id', label: 'ID', sortable: true },
@@ -139,6 +143,7 @@ export default function OrdersPage() {
         exportName="orders"
         onRowClick={(row: Order) => navigate(`/orders/${row.id}`)}
       />
+      </>
       )}
     </div>
   );

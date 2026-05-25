@@ -51,23 +51,36 @@ export default function Catalog() {
 
   const activeFilterCount = countActiveFilters(filters);
 
+  // All panel filters are sent to the server so they apply across every page
+  // (not just the current one) and the counts reconcile with the results.
+  const filterParams = {
+    has_rip: filters.hasRip,
+    has_discount: filters.hasDiscount,
+    divisions: filters.divisions.join(',') || undefined,
+    categories: filters.categories.join(',') || undefined,
+    brands: filters.brands.join(',') || undefined,
+    sizes: filters.sizes.join(',') || undefined,
+    min_price: filters.priceMin,
+    max_price: filters.priceMax,
+  };
+  const filterKey = JSON.stringify(filters);
+
   const { data, isLoading } = useQuery({
-    queryKey: ['catalog', q, wholesaler, sort, order, page, limit, filters.hasRip, filters.hasDiscount, trackedOnly],
+    queryKey: ['catalog', q, wholesaler, sort, order, page, limit, trackedOnly, filterKey],
     queryFn: () => catalog.search({
       q,
       wholesaler: wholesaler || undefined,
       sort, order, limit,
       offset: page * limit,
-      has_rip: filters.hasRip,
-      has_discount: filters.hasDiscount,
+      ...filterParams,
       tracked_only: trackedOnly || undefined,
       include_tiers: true,
     }),
   });
 
   const { data: facets } = useQuery({
-    queryKey: ['catalog-facets', q, wholesaler],
-    queryFn: () => catalog.facets({ q, wholesaler: wholesaler || undefined }),
+    queryKey: ['catalog-facets', q, wholesaler, filterKey],
+    queryFn: () => catalog.facets({ q, wholesaler: wholesaler || undefined, ...filterParams }),
   });
 
   // Products that belong to a combo bundle → link to its details.
@@ -83,31 +96,8 @@ export default function Catalog() {
     return code ? `/combos?code=${encodeURIComponent(code)}` : null;
   }, [comboMap]);
 
-  // Client-side filters layered on top of server pagination
-  // (tracked-only is applied server-side so it spans all editions/pages)
-  const items = useMemo(() => {
-    let result = data?.items ?? [];
-    if (filters.divisions.length > 0) {
-      const set = new Set(filters.divisions);
-      result = result.filter(i => set.has(i.wholesaler));
-    }
-    if (filters.priceMin !== undefined) result = result.filter(i => i.frontline_case_price >= filters.priceMin!);
-    if (filters.priceMax !== undefined) result = result.filter(i => i.frontline_case_price <= filters.priceMax!);
-    if (filters.categories.length > 0) {
-      const set = new Set(filters.categories);
-      result = result.filter(i => set.has(i.product_type));
-    }
-    if (filters.brands.length > 0) {
-      const set = new Set(filters.brands);
-      result = result.filter(i => i.brand !== undefined && set.has(i.brand));
-    }
-    if (filters.sizes.length > 0) {
-      const set = new Set(filters.sizes);
-      result = result.filter(i => set.has(i.unit_volume));
-    }
-    return result;
-  }, [data?.items, filters]);
-
+  // Filtering is done server-side now, so the returned page is already filtered.
+  const items = data?.items ?? [];
   const facetItems = data?.items ?? [];
 
   const handleSort = (col: 'product_name' | 'frontline_case_price' | 'effective_case_price') => {

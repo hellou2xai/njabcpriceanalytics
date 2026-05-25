@@ -92,6 +92,19 @@ def _display_name(code: str) -> str:
     return DISTRIBUTOR_NAMES.get(code, code)
 
 
+def _in_filter(where, params, column, csv, prefix):
+    """Append a `column IN (...)` clause for a comma-separated multi-select value."""
+    vals = [v.strip() for v in (csv or "").split(",") if v.strip()]
+    if not vals:
+        return
+    keys = []
+    for i, v in enumerate(vals):
+        k = f"{prefix}{i}"
+        params[k] = v
+        keys.append(f"${k}")
+    where.append(f"{column} IN ({', '.join(keys)})")
+
+
 def _attach_next_month_prices(con, src, records):
     """Annotate each record with next-month price + a "Better Price" verdict.
 
@@ -344,7 +357,10 @@ def search_products(
     has_rip: Optional[bool] = None,
     brand: Optional[str] = None,
     unit_volume: Optional[str] = None,
-    divisions: Optional[str] = None,
+    divisions: Optional[str] = None,        # comma-separated wholesalers (filter panel)
+    categories: Optional[str] = None,       # comma-separated product types
+    brands: Optional[str] = None,           # comma-separated brands
+    sizes: Optional[str] = None,            # comma-separated unit volumes
     tracked_only: bool = Query(False, description="If true, only return products on the watchlist"),
     sort: str = Query("product_name", description="Sort field"),
     order: str = Query("asc", description="asc or desc"),
@@ -434,6 +450,11 @@ def search_products(
             where.append("has_rip = true")
         elif has_rip is False:
             where.append("has_rip = false")
+        # Multi-select panel filters (applied server-side so they span all pages).
+        _in_filter(where, params, "wholesaler", divisions, "div_")
+        _in_filter(where, params, "product_type", categories, "cat_")
+        _in_filter(where, params, "brand", brands, "brnd_")
+        _in_filter(where, params, "unit_volume", sizes, "size_")
 
         # Restrict to watchlisted products across ALL editions/pages (server-side
         # so tracked items aren't hidden by pagination). Match on (name, wholesaler).
@@ -1837,11 +1858,18 @@ def search_facets(
     q: str = Query("", description="Search term"),
     wholesaler: Optional[str] = None,
     edition: Optional[str] = None,
+    divisions: Optional[str] = None,
+    categories: Optional[str] = None,
+    brands: Optional[str] = None,
+    sizes: Optional[str] = None,
+    min_price: Optional[float] = None,
+    max_price: Optional[float] = None,
+    has_rip: Optional[bool] = None,
+    has_discount: Optional[bool] = None,
 ):
-    """Facet counts across the whole filtered dataset (not just one page).
-
-    Respects search + wholesaler + edition. Returns counts per facet so the
-    filter panel can show total dataset counts instead of per-page counts.
+    """Drill-down facet counts. Each facet's counts honour all the OTHER active
+    filters (but not its own dimension), so the numbers reconcile with the
+    results you actually see. `total` reflects every active filter.
     """
     with get_duckdb() as con:
         src = read_parquet(con, "cpl_enriched")
@@ -1860,78 +1888,99 @@ def search_facets(
                 for _, r in max_eds.iterrows()
             }
 
-        where = ["1=1"]
-        params = {}
-
+        # ---- base scope: search box + edition (always applied) ----
+        base = ["1=1"]
+        bp: dict = {}
         if q:
             digits = "".join(ch for ch in q if ch.isdigit())
             digits_norm = digits.lstrip("0") if digits else ""
-            like_q = f"%{q}%"
-            like_norm = f"%{digits_norm}%" if digits_norm else like_q
-            where.append(
-                "(UPPER(product_name) LIKE UPPER($q)"
-                " OR UPPER(upc) LIKE UPPER($q)"
-                " OR upc LIKE $q_alt)"
-            )
-            params["q"] = like_q
-            params["q_alt"] = like_norm
+            base.append("(UPPER(product_name) LIKE UPPER($q) OR UPPER(upc) LIKE UPPER($q) OR upc LIKE $q_alt)")
+            bp["q"] = f"%{q}%"
+            bp["q_alt"] = f"%{digits_norm}%" if digits_norm else f"%{q}%"
         if wholesaler:
-            where.append("wholesaler = $wholesaler")
-            params["wholesaler"] = wholesaler
+            base.append("wholesaler = $wholesaler")
+            bp["wholesaler"] = wholesaler
         if edition:
-            where.append("edition = $edition")
-            params["edition"] = edition
-        else:
-            if wholesaler and wholesaler in latest_map:
-                where.append("edition = $latest_ed")
-                params["latest_ed"] = latest_map[wholesaler]
-            else:
-                ed_conditions = []
-                for i, (ws, ed) in enumerate(latest_map.items()):
-                    ws_key, ed_key = f"ws_{i}", f"ed_{i}"
-                    ed_conditions.append(f"(wholesaler = ${ws_key} AND edition = ${ed_key})")
-                    params[ws_key] = ws
-                    params[ed_key] = ed
-                if ed_conditions:
-                    where.append(f"({' OR '.join(ed_conditions)})")
+            base.append("edition = $edition")
+            bp["edition"] = edition
+        elif wholesaler and wholesaler in latest_map:
+            base.append("edition = $latest_ed")
+            bp["latest_ed"] = latest_map[wholesaler]
+        elif not edition:
+            ed_conditions = []
+            for i, (ws, ed) in enumerate(latest_map.items()):
+                base.append  # noqa (placeholder to keep structure clear)
+                ed_conditions.append(f"(wholesaler = $ws_{i} AND edition = $ed_{i})")
+                bp[f"ws_{i}"] = ws
+                bp[f"ed_{i}"] = ed
+            if ed_conditions:
+                base.append(f"({' OR '.join(ed_conditions)})")
 
-        wc = " AND ".join(where)
+        # ---- active filter predicates, each tagged with its dimension ----
+        preds: list[dict] = []
 
-        total = con.execute(f"SELECT count(*) FROM {src} WHERE {wc}", params).fetchone()[0]
+        def add_in(dim, column, csv, prefix):
+            vals = [v.strip() for v in (csv or "").split(",") if v.strip()]
+            if not vals:
+                return
+            keys, pp = [], {}
+            for i, v in enumerate(vals):
+                k = f"{prefix}{i}"; pp[k] = v; keys.append(f"${k}")
+            preds.append({"dim": dim, "sql": f"{column} IN ({', '.join(keys)})", "params": pp})
 
-        flags_df = con.execute(f"""
-            SELECT
-                count(*) FILTER (WHERE has_rip)      AS has_rip_count,
-                count(*) FILTER (WHERE NOT has_rip)  AS no_rip_count,
-                count(*) FILTER (WHERE has_discount) AS has_discount_count,
-                count(*) FILTER (WHERE NOT has_discount) AS no_discount_count,
-                count(*) FILTER (WHERE has_closeout) AS has_closeout_count,
-                count(*) FILTER (WHERE NOT has_closeout) AS no_closeout_count
-            FROM {src} WHERE {wc}
-        """, params).fetchdf()
-        flags = flags_df.iloc[0].to_dict()
+        add_in("div", "wholesaler", divisions, "fdiv_")
+        add_in("cat", "product_type", categories, "fcat_")
+        add_in("brand", "brand", brands, "fbrnd_")
+        add_in("size", "unit_volume", sizes, "fsize_")
+        if min_price is not None or max_price is not None:
+            parts, pp = [], {}
+            if min_price is not None: parts.append("frontline_case_price >= $fmin"); pp["fmin"] = min_price
+            if max_price is not None: parts.append("frontline_case_price <= $fmax"); pp["fmax"] = max_price
+            preds.append({"dim": "price", "sql": "(" + " AND ".join(parts) + ")", "params": pp})
+        if has_rip is not None:
+            preds.append({"dim": "rip", "sql": f"has_rip = {'true' if has_rip else 'false'}", "params": {}})
+        if has_discount is not None:
+            preds.append({"dim": "disc", "sql": f"has_discount = {'true' if has_discount else 'false'}", "params": {}})
 
-        def grouped(column):
+        def build(exclude=None):
+            clauses = list(base)
+            p = dict(bp)
+            for pr in preds:
+                if pr["dim"] == exclude:
+                    continue
+                clauses.append(pr["sql"])
+                p.update(pr["params"])
+            return " AND ".join(clauses), p
+
+        def count(exclude=None):
+            wc, p = build(exclude)
+            return int(con.execute(f"SELECT count(*) FROM {src} WHERE {wc}", p).fetchone()[0])
+
+        def grouped(column, exclude):
+            wc, p = build(exclude)
             df = con.execute(f"""
                 SELECT {column} AS key, count(*) AS n
                 FROM {src} WHERE {wc} AND {column} IS NOT NULL AND {column} != ''
-                GROUP BY {column}
-                ORDER BY n DESC
-            """, params).fetchdf()
+                GROUP BY {column} ORDER BY n DESC
+            """, p).fetchdf()
             return [{"key": r["key"], "count": int(r["n"])} for _, r in df.iterrows()]
 
+        wc, p = build("rip")
+        rf = con.execute(f"SELECT count(*) FILTER (WHERE has_rip) a, count(*) FILTER (WHERE NOT has_rip) b FROM {src} WHERE {wc}", p).fetchdf().iloc[0]
+        wc, p = build("disc")
+        dfl = con.execute(f"SELECT count(*) FILTER (WHERE has_discount) a, count(*) FILTER (WHERE NOT has_discount) b FROM {src} WHERE {wc}", p).fetchdf().iloc[0]
+        wc, p = build(None)
+        cf = con.execute(f"SELECT count(*) FILTER (WHERE has_closeout) a, count(*) FILTER (WHERE NOT has_closeout) b FROM {src} WHERE {wc}", p).fetchdf().iloc[0]
+
         return {
-            "total": int(total),
-            "has_rip": int(flags["has_rip_count"]),
-            "no_rip": int(flags["no_rip_count"]),
-            "has_discount": int(flags["has_discount_count"]),
-            "no_discount": int(flags["no_discount_count"]),
-            "has_closeout": int(flags["has_closeout_count"]),
-            "no_closeout": int(flags["no_closeout_count"]),
-            "divisions": grouped("wholesaler"),
-            "categories": grouped("product_type"),
-            "brands": grouped("brand"),
-            "sizes": grouped("unit_volume"),
+            "total": count(None),
+            "has_rip": int(rf["a"]), "no_rip": int(rf["b"]),
+            "has_discount": int(dfl["a"]), "no_discount": int(dfl["b"]),
+            "has_closeout": int(cf["a"]), "no_closeout": int(cf["b"]),
+            "divisions": grouped("wholesaler", "div"),
+            "categories": grouped("product_type", "cat"),
+            "brands": grouped("brand", "brand"),
+            "sizes": grouped("unit_volume", "size"),
         }
 
 

@@ -19,20 +19,23 @@ function parseYmd(s: string): Date { const [y, m, dd] = s.split('-').map(Number)
 const MD: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
 
 const TODAY = todayMid();
-const STARTS = [0, 1, 2, 3].map(n => addDays(TODAY, n * 7));   // each week's first day
-const COL_TITLES = ['This week', 'Next week', 'In 2 weeks', '3+ weeks / Later'];
+const STARTS = [0, 1, 2, 3].map(n => addDays(TODAY, n * 7));   // start of each of the 4 weeks
+// Column 0 is "Past" (overdue); columns 1-4 are the four weeks.
+const COL_TITLES = ['Past', 'This week', 'Next week', 'In 2 weeks', '3+ weeks / Later'];
 
 function colRange(n: number): string {
-  if (n === 3) return `On/after ${STARTS[3].toLocaleDateString(undefined, MD)}, plus undated`;
-  return `${STARTS[n].toLocaleDateString(undefined, MD)} – ${addDays(STARTS[n + 1], -1).toLocaleDateString(undefined, MD)}`;
+  if (n === 0) return 'Overdue · still here until done';
+  if (n === 4) return `On/after ${STARTS[3].toLocaleDateString(undefined, MD)}, plus undated`;
+  return `${STARTS[n - 1].toLocaleDateString(undefined, MD)} – ${addDays(STARTS[n], -1).toLocaleDateString(undefined, MD)}`;
 }
 function bucketOf(t: Todo): number {
-  if (!t.due_date) return 3;
+  if (!t.due_date) return 4;
   const d = parseYmd(t.due_date);
-  if (d < STARTS[1]) return 0;   // this week, including overdue
-  if (d < STARTS[2]) return 1;
-  if (d < STARTS[3]) return 2;
-  return 3;
+  if (d < TODAY) return 0;        // Past / overdue — its own bucket, never hidden
+  if (d < STARTS[1]) return 1;    // this week
+  if (d < STARTS[2]) return 2;
+  if (d < STARTS[3]) return 3;
+  return 4;
 }
 function isOverdue(t: Todo): boolean { return !!t.due_date && parseYmd(t.due_date) < TODAY; }
 function dueLabel(t: Todo): string {
@@ -64,8 +67,10 @@ export default function TodoPage() {
   const [adding, setAdding] = useState<{ due?: string } | null>(null);
   const [editing, setEditing] = useState<Todo | null>(null);
 
+  // Dropping into a week (cols 1-4) reschedules to that week's start. The Past
+  // column (col 0) is not a drop target — you can't schedule into the past.
   const drop = (n: number) => {
-    if (dragId != null) update.mutate({ id: dragId, d: { due_date: ymd(STARTS[n]) } });
+    if (dragId != null && n >= 1) update.mutate({ id: dragId, d: { due_date: ymd(STARTS[n - 1]) } });
     setDragId(null);
     setOverCol(null);
   };
@@ -128,25 +133,28 @@ export default function TodoPage() {
       <div className="todo-board">
         {COL_TITLES.map((title, n) => {
           const items = openItems.filter(t => bucketOf(t) === n);
+          const isPast = n === 0;
           return (
             <div
               key={n}
-              className={`todo-col ${overCol === n ? 'over' : ''}`}
-              onDragOver={e => { e.preventDefault(); if (overCol !== n) setOverCol(n); }}
-              onDragLeave={() => setOverCol(o => (o === n ? null : o))}
-              onDrop={() => drop(n)}
+              className={`todo-col ${isPast ? 'past' : ''} ${overCol === n ? 'over' : ''}`}
+              onDragOver={isPast ? undefined : e => { e.preventDefault(); if (overCol !== n) setOverCol(n); }}
+              onDragLeave={isPast ? undefined : () => setOverCol(o => (o === n ? null : o))}
+              onDrop={isPast ? undefined : () => drop(n)}
             >
               <div className="todo-col-head">
                 <span className="todo-col-title">{title}</span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <button className="todo-icon-btn" title={`Add a to-do in ${title}`}
-                    onClick={() => setAdding({ due: ymd(STARTS[n]) })}><Plus size={15} /></button>
+                  {!isPast && (
+                    <button className="todo-icon-btn" title={`Add a to-do in ${title}`}
+                      onClick={() => setAdding({ due: ymd(STARTS[n - 1]) })}><Plus size={15} /></button>
+                  )}
                   <span className="todo-col-count">{items.length}</span>
                 </span>
               </div>
               <div className="todo-col-sub">{colRange(n)}</div>
               {items.map(card)}
-              {items.length === 0 && <div className="todo-col-empty">Drop items here</div>}
+              {items.length === 0 && <div className="todo-col-empty">{isPast ? 'Nothing overdue' : 'Drop items here'}</div>}
             </div>
           );
         })}

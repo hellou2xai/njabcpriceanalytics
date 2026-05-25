@@ -2,18 +2,20 @@
 
 .todo-board {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
   gap: 12px;
   align-items: start;
 }
-@media (max-width: 1100px) { .todo-board { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 600px)  { .todo-board { grid-template-columns: 1fr; } }
+@media (max-width: 520px) { .todo-board { grid-template-columns: 1fr; } }
 
 .todo-col {
   background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
   padding: 10px; min-height: 140px; transition: background 0.12s, border-color 0.12s;
 }
 .todo-col.over { border-color: var(--accent); background: var(--accent-weak); }
+/* Past/overdue column stands out and is not a drop target. */
+.todo-col.past { border-color: color-mix(in srgb, var(--red) 35%, var(--border)); background: rgba(220, 38, 38, 0.05); }
+.todo-col.past .todo-col-title { color: var(--red); }
 .todo-col-head { display: flex; align-items: center; justify-content: space-between; }
 .todo-col-title { font-weight: 700; font-size: 14px; }
 .todo-col-count {

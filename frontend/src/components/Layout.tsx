@@ -11,21 +11,51 @@ import WhatsAppShareButton from './WhatsAppShare';
 import { useAuth } from '../contexts/AuthContext';
 import { useOrderAnalysis } from '../contexts/OrderAnalysisContext';
 
-const NAV = [
-  { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/catalog', label: 'Catalog', icon: Package },
-  { path: '/new-items', label: 'New Items', icon: Sparkles },
-  { path: '/combos', label: 'Combos', icon: Combine },
-  { path: '/rip-products', label: 'RIP Products', icon: BadgeDollarSign },
-  { path: '/watchlist', label: 'Favorites', icon: Star },
-  { path: '/notes', label: 'Notes', icon: StickyNote },
-  { path: '/todo', label: 'To-Do', icon: ListTodo },
-  { path: '/orders', label: 'Orders', icon: ShoppingCart },
-  { path: '/order-analysis', label: 'Order Analysis', icon: ClipboardList },
-  { path: '/configuration', label: 'Configuration', icon: Settings },
-  { path: '/more', label: 'Addnl Pages', icon: LayoutGrid, adminOnly: true },
-  { path: '/alerts', label: 'Alerts', icon: Bell },
-  { path: '/how-to-guide', label: 'How To Guide', icon: BookOpen },
+// Left menu grouped into labelled sections of related screens.
+const NAV_GROUPS: {
+  header: string;
+  items: { path: string; label: string; icon: typeof LayoutDashboard; adminOnly?: boolean }[];
+}[] = [
+  {
+    header: 'Overview',
+    items: [
+      { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+      { path: '/alerts', label: 'Alerts', icon: Bell },
+    ],
+  },
+  {
+    header: 'Find deals',
+    items: [
+      { path: '/catalog', label: 'Catalog', icon: Package },
+      { path: '/new-items', label: 'New Items', icon: Sparkles },
+      { path: '/combos', label: 'Combos', icon: Combine },
+      { path: '/rip-products', label: 'RIP Products', icon: BadgeDollarSign },
+    ],
+  },
+  {
+    header: 'My work',
+    items: [
+      { path: '/watchlist', label: 'Favorites', icon: Star },
+      { path: '/todo', label: 'To-Do', icon: ListTodo },
+      { path: '/notes', label: 'Notes', icon: StickyNote },
+      { path: '/orders', label: 'Orders', icon: ShoppingCart },
+      { path: '/order-analysis', label: 'Order Analysis', icon: ClipboardList },
+    ],
+  },
+  {
+    header: 'Setup',
+    items: [
+      { path: '/configuration', label: 'Configuration', icon: Settings },
+      { path: '/more', label: 'Addnl Pages', icon: LayoutGrid, adminOnly: true },
+      { path: '/admin', label: 'Admin', icon: Shield, adminOnly: true },
+    ],
+  },
+  {
+    header: 'Help',
+    items: [
+      { path: '/how-to-guide', label: 'How To Guide', icon: BookOpen },
+    ],
+  },
 ];
 
 function useTheme() {
@@ -169,36 +199,29 @@ export default function Layout() {
           </div>
         </div>
         <nav className="sidebar-nav">
-          {NAV.filter(n => !('adminOnly' in n) || user?.is_admin).map(({ path, label, icon: Icon }) => (
-            <Link
-              key={path}
-              to={path}
-              className={`nav-link ${location.pathname === path ? 'active' : ''}`}
-              title={sidebarCollapsed ? label : undefined}
-            >
-              <Icon size={18} />
-              {!sidebarCollapsed && <span>{label}</span>}
-              {path === '/alerts' && unread?.unread ? (
-                <span className="badge">{unread.unread}</span>
-              ) : null}
-              {path === '/order-analysis' && oa.count ? (
-                <span className="badge">{oa.count}</span>
-              ) : null}
-              {path === '/orders' && draftOrders?.length ? (
-                <span className="badge">{draftOrders.length}</span>
-              ) : null}
-            </Link>
-          ))}
-          {user?.is_admin && (
-            <Link
-              to="/admin"
-              className={`nav-link ${location.pathname === '/admin' ? 'active' : ''}`}
-              title={sidebarCollapsed ? 'Admin' : undefined}
-            >
-              <Shield size={18} />
-              {!sidebarCollapsed && <span>Admin</span>}
-            </Link>
-          )}
+          {NAV_GROUPS.map(group => {
+            const items = group.items.filter(it => !it.adminOnly || user?.is_admin);
+            if (items.length === 0) return null;
+            return (
+              <div className="nav-group" key={group.header}>
+                {!sidebarCollapsed && <div className="nav-group-header">{group.header}</div>}
+                {items.map(({ path, label, icon: Icon }) => (
+                  <Link
+                    key={path}
+                    to={path}
+                    className={`nav-link ${location.pathname === path ? 'active' : ''}`}
+                    title={sidebarCollapsed ? label : undefined}
+                  >
+                    <Icon size={18} />
+                    {!sidebarCollapsed && <span>{label}</span>}
+                    {path === '/alerts' && unread?.unread ? <span className="badge">{unread.unread}</span> : null}
+                    {path === '/order-analysis' && oa.count ? <span className="badge">{oa.count}</span> : null}
+                    {path === '/orders' && draftOrders?.length ? <span className="badge">{draftOrders.length}</span> : null}
+                  </Link>
+                ))}
+              </div>
+            );
+          })}
         </nav>
         <div className="sidebar-footer">
           <WhatsAppShareButton

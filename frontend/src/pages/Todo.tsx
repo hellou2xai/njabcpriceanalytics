@@ -3,8 +3,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { todos, type Todo } from '../lib/api';
 import { distributorName } from '../lib/distributors';
 import { useProductQuickView } from '../components/ProductQuickView';
-import { CheckCircle2, Trash2, RotateCcw, ListTodo } from 'lucide-react';
+import { CheckCircle2, Trash2, RotateCcw, ListTodo, Plus, X } from 'lucide-react';
 import './Todo.css';
+
+// Pastel sticky-note colours, chosen by id so a note keeps its colour when moved.
+const NOTE_COLORS = ['#fef9c3', '#dcfce7', '#dbeafe', '#fce7f3', '#ffedd5', '#e9d5ff'];
 
 // ---- date helpers (local, no timezone surprises) ----
 function todayMid(): Date { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
@@ -58,6 +61,7 @@ export default function TodoPage() {
 
   const [dragId, setDragId] = useState<number | null>(null);
   const [overCol, setOverCol] = useState<number | null>(null);
+  const [adding, setAdding] = useState<{ due?: string } | null>(null);
 
   const drop = (n: number) => {
     if (dragId != null) update.mutate({ id: dragId, d: { due_date: ymd(STARTS[n]) } });
@@ -74,7 +78,8 @@ export default function TodoPage() {
   const card = (t: Todo) => (
     <div
       key={t.id}
-      className={`todo-card ${isOverdue(t) ? 'overdue' : ''} ${dragId === t.id ? 'dragging' : ''}`}
+      className={`todo-card sticky ${isOverdue(t) ? 'overdue' : ''} ${dragId === t.id ? 'dragging' : ''}`}
+      style={{ background: NOTE_COLORS[t.id % NOTE_COLORS.length] }}
       draggable
       onDragStart={e => { setDragId(t.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(t.id)); }}
       onDragEnd={() => { setDragId(null); setOverCol(null); }}
@@ -107,10 +112,13 @@ export default function TodoPage() {
 
   return (
     <div className="page">
-      <div className="orders-header"><h2>To-Do</h2></div>
+      <div className="orders-header">
+        <h2>To-Do</h2>
+        <button className="btn btn-sm" onClick={() => setAdding({})}><Plus size={14} /> New To-Do</button>
+      </div>
       <p className="text-muted" style={{ fontSize: 13, marginTop: -8, marginBottom: 14 }}>
-        Right-click any product anywhere and choose <strong>Add to To-Do</strong>. Drag a card to a different
-        week to reschedule it.
+        Add one here, or right-click any product anywhere and choose <strong>Add to To-Do</strong>. Drag a card
+        to a different week to reschedule it.
       </p>
 
       <div className="todo-board">
@@ -126,7 +134,11 @@ export default function TodoPage() {
             >
               <div className="todo-col-head">
                 <span className="todo-col-title">{title}</span>
-                <span className="todo-col-count">{items.length}</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <button className="todo-icon-btn" title={`Add a to-do in ${title}`}
+                    onClick={() => setAdding({ due: ymd(STARTS[n]) })}><Plus size={15} /></button>
+                  <span className="todo-col-count">{items.length}</span>
+                </span>
               </div>
               <div className="todo-col-sub">{colRange(n)}</div>
               {items.map(card)}
@@ -138,7 +150,7 @@ export default function TodoPage() {
 
       {openItems.length === 0 && (
         <div className="alert-empty" style={{ marginTop: 16 }}>
-          <ListTodo size={20} /> No to-dos yet. Right-click a product and pick &ldquo;Add to To-Do&rdquo;.
+          <ListTodo size={20} /> No to-dos yet. Use <strong>New To-Do</strong> above, or right-click any product and pick &ldquo;Add to To-Do&rdquo;.
         </div>
       )}
 
@@ -161,6 +173,51 @@ export default function TodoPage() {
           </div>
         </>
       )}
+
+      {adding && <NewTodoDialog preset={adding} onClose={() => setAdding(null)} />}
+    </div>
+  );
+}
+
+function NewTodoDialog({ preset, onClose }: { preset: { due?: string }; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [title, setTitle] = useState('');
+  const [note, setNote] = useState('');
+  const [due, setDue] = useState(preset.due ?? '');
+  const save = useMutation({
+    mutationFn: () => todos.create({ title: title.trim(), note: note.trim() || undefined, due_date: due || undefined, source_page: 'To-Do' }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['todos'] }); onClose(); },
+  });
+  const field: React.CSSProperties = {
+    width: '100%', padding: '9px 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
+    background: 'var(--bg)', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-sans)',
+  };
+  return (
+    <div className="modal-overlay" onMouseDown={onClose}>
+      <div className="modal" style={{ maxWidth: 460 }} onMouseDown={e => e.stopPropagation()}>
+        <button className="modal-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        <h3 style={{ marginTop: 0 }}>New To-Do</h3>
+        <label style={{ display: 'block', marginTop: 12 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>What do you want to do?</span>
+          <input style={field} autoFocus value={title} onChange={e => setTitle(e.target.value)}
+            placeholder="e.g. Call Allied rep about the Tito's deal" />
+        </label>
+        <label style={{ display: 'block', marginTop: 10 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>Note</span>
+          <textarea style={{ ...field, resize: 'vertical' }} rows={3} value={note} onChange={e => setNote(e.target.value)}
+            placeholder="Any details to help you decide later" />
+        </label>
+        <label style={{ display: 'block', marginTop: 10 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>Do it by</span>
+          <input style={field} type="date" value={due} onChange={e => setDue(e.target.value)} />
+        </label>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+          <button className="btn btn-secondary btn-sm" onClick={onClose}>Cancel</button>
+          <button className="btn btn-sm" disabled={!title.trim() || save.isPending} onClick={() => save.mutate()}>
+            {save.isPending ? 'Adding...' : 'Add to To-Do'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

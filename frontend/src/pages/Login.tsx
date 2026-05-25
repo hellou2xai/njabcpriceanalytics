@@ -1,14 +1,17 @@
 import { useState, useRef, useEffect } from 'react';
 import type { FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { auth as authApi } from '../lib/api';
 
 export default function Login() {
   const { login, signup } = useAuth();
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const [params] = useSearchParams();
+  // The landing page links here with ?signup=1 (and an optional ?email=) so the
+  // form opens ready to create an account.
+  const [mode, setMode] = useState<'signin' | 'signup'>(params.get('signup') ? 'signup' : 'signin');
   const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(params.get('email') ?? '');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);

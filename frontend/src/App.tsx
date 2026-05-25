@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { stores as storesApi } from './lib/api';
@@ -35,6 +35,7 @@ import QA from './pages/QA';
 import OrderAnalysis from './pages/OrderAnalysis';
 import AdditionalPages from './pages/AdditionalPages';
 import Login from './pages/Login';
+import Landing from './pages/Landing';
 import Activate from './pages/Activate';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
@@ -63,6 +64,8 @@ function AuthenticatedApp() {
       <BrowserRouter>
         <BetaBadge />
         <Routes>
+          <Route path="/" element={<Landing />} />
+          <Route path="/login" element={<Login />} />
           <Route path="/activate" element={<Activate />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
@@ -108,6 +111,9 @@ function AuthenticatedApp() {
             <Route path="/qa" element={<QA />} />
             <Route path="/order-analysis" element={<OrderAnalysis />} />
             <Route path="/more" element={<AdditionalPages />} />
+            {/* After login the URL may be /login (or another public path); send
+                any unmatched authenticated route back to the dashboard. */}
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>
         </ContextMenuProvider>

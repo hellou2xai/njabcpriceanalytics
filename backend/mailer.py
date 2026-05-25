@@ -95,17 +95,19 @@ def send_password_reset(to: str, token: str, name: str | None = None) -> bool:
 
 def send_purchase_order(to: str, *, po_number: str, order_name: str,
                         buyer_name: str, distributor: str, pdf_bytes: bytes,
-                        rep_name: str | None = None, reply_to: str | None = None,
-                        cc: list[str] | None = None) -> bool:
-    """Email a purchase order to a sales rep with the PO PDF attached. Returns
-    True only if Resend accepted the message. reply_to is set to the buyer so
-    the rep can reply straight back to the retailer."""
+                        order_html: str = "", rep_name: str | None = None,
+                        reply_to: str | None = None, cc: list[str] | None = None) -> bool:
+    """Email a purchase order to a sales rep. The full order is written into the
+    email body as a formatted summary (so the rep can read it without opening
+    anything) AND attached as a PDF. Returns True only if Resend accepted the
+    message. reply_to is set to the buyer so the rep can reply straight back."""
     greeting = f"Hi {rep_name}," if rep_name else "Hello,"
     body = (
         f"<p>{greeting}</p>"
         f"<p>{buyer_name} has submitted purchase order <strong>{po_number}</strong> "
-        f"for {distributor}. The full order is attached as a PDF.</p>"
-        f"<p>Please confirm availability and pricing, then process the order. "
+        f"for {distributor}. The full order is below, and also attached as a PDF.</p>"
+        f"{order_html}"
+        f"<p style='margin-top:14px'>Please confirm availability and pricing, then process the order. "
         f"Reply to this email to reach the buyer directly.</p>"
     )
     attachment = {

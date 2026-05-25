@@ -16,7 +16,7 @@ from backend.pg import get_pg
 from backend.auth import get_current_user
 from backend.rip_utils import is_bottle_unit, rip_per_case
 from backend import mailer
-from backend.po_pdf import build_po_pdf
+from backend.po_pdf import build_po_pdf, build_po_html
 
 # Distributor slug -> display name. Kept local (and small) to avoid importing the
 # catalog router here; mirrors catalog.DISTRIBUTOR_NAMES and the frontend map.
@@ -709,6 +709,7 @@ def submit_order(order_id: int, user: dict = Depends(get_current_user)):
                 buyer_name=po_data["buyer"]["name"],
                 distributor=po_data["distributor"],
                 pdf_bytes=pdf,
+                order_html=build_po_html(po_data),
                 rep_name=rep.get("name"),
                 reply_to=po_data["buyer"].get("email"),
             )

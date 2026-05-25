@@ -1,15 +1,17 @@
 """
-Purchase Order PDF generator (reportlab).
+Purchase Order rendering.
 
-build_po_pdf(data) -> bytes. The caller (orders endpoints in user_state.py)
-gathers the order, its priced lines, the sales rep and the buyer, then hands a
-plain dict here. Keeping the layout separate from the data-gathering keeps both
-testable. The same bytes are used for the in-browser preview and the email
-attachment, so the preview is exactly what the rep receives.
+build_po_pdf(data) -> bytes renders the PDF; build_po_html(data) -> str renders
+the same purchase order as an HTML order summary for the email body, so the rep
+can read the whole order without opening the attachment. The caller (orders
+endpoints in user_state.py) gathers the order, its priced lines, the sales rep
+and the buyer, then hands a plain dict here. Both outputs read from that one
+dict, so the PDF, the in-browser preview and the email body always match.
 """
 
 from __future__ import annotations
 
+import html
 import io
 
 from reportlab.lib.pagesizes import LETTER
@@ -239,3 +241,138 @@ def build_po_pdf(data: dict) -> bytes:
 
     doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
     return buf.getvalue()
+
+
+# ---- HTML order summary (email body) ----
+
+_SLATE = "#0f172a"
+_MUTED = "#64748b"
+_BLUE = "#2563eb"
+_LINE = "#e2e8f0"
+_ZEBRA = "#f8fafc"
+
+
+def _e(v) -> str:
+    """HTML-escape a value, treating None/NaN as a dash."""
+    if v is None:
+        return "-"
+    if isinstance(v, float) and v != v:
+        return "-"
+    return html.escape(str(v))
+
+
+def _party_html(title: str, lines: list[str]) -> str:
+    body = "".join(
+        f'<div style="font-size:13px;color:{_SLATE};{"font-weight:600;" if i == 0 else ""}">{html.escape(l)}</div>'
+        for i, l in enumerate(lines) if l
+    ) or f'<div style="font-size:13px;color:{_SLATE}">-</div>'
+    return (
+        f'<td valign="top" width="50%" style="padding:10px 12px;background:{_ZEBRA};'
+        f'border:1px solid {_LINE};border-radius:6px">'
+        f'<div style="font-size:11px;font-weight:700;color:{_MUTED};text-transform:uppercase;'
+        f'letter-spacing:.3px;margin-bottom:4px">{html.escape(title)}</div>{body}</td>'
+    )
+
+
+def build_po_html(data: dict) -> str:
+    """Render the purchase order as an inline-styled HTML block for the email
+    body. Mirrors the PDF exactly so the rep need not open the attachment."""
+    v = data.get("vendor", {}) or {}
+    b = data.get("buyer", {}) or {}
+
+    def meta_cell(label: str, value) -> str:
+        return (
+            f'<td style="padding:6px 10px 6px 0">'
+            f'<div style="font-size:10px;font-weight:700;color:{_MUTED};text-transform:uppercase">{html.escape(label)}</div>'
+            f'<div style="font-size:13px;color:{_SLATE}">{_e(value)}</div></td>'
+        )
+
+    meta = (
+        '<table cellpadding="0" cellspacing="0" width="100%" '
+        f'style="border-top:2px solid {_BLUE};margin:6px 0 14px"><tr>'
+        + meta_cell("PO Number", data.get("po_number"))
+        + meta_cell("Date", data.get("date"))
+        + meta_cell("Distributor", data.get("distributor"))
+        + meta_cell("Division", data.get("division") or "-")
+        + "</tr></table>"
+    )
+
+    vendor_lines = [v.get("name", "")]
+    if v.get("rep_name"):
+        vendor_lines.append(f'Attn: {v["rep_name"]} (Sales Rep)')
+    if v.get("rep_email"):
+        vendor_lines.append(v["rep_email"])
+    if v.get("rep_phone"):
+        vendor_lines.append(v["rep_phone"])
+    buyer_lines = [b.get("name", "")]
+    for k in ("address", "license", "phone", "email"):
+        if b.get(k):
+            buyer_lines.append(f'License: {b[k]}' if k == "license" else b[k])
+
+    parties = (
+        '<table cellpadding="0" cellspacing="0" width="100%" style="margin-bottom:14px"><tr>'
+        + _party_html("Vendor", vendor_lines)
+        + '<td width="12"></td>'
+        + _party_html("Ship To / Buyer", buyer_lines)
+        + "</tr></table>"
+    )
+
+    th = (f'style="background:{_SLATE};color:#fff;font-size:11px;font-weight:700;'
+          f'padding:7px 6px;text-align:left"')
+    th_r = th.replace("text-align:left", "text-align:right")
+    head = (
+        f'<tr><th {th}>#</th><th {th}>Description</th><th {th}>UPC</th><th {th}>Size</th>'
+        f'<th {th_r}>Pk</th><th {th_r}>Cases</th><th {th_r}>Btls</th>'
+        f'<th {th_r}>Case Cost</th><th {th_r}>Line Total</th></tr>'
+    )
+
+    body_rows = []
+    for i, ln in enumerate(data.get("lines", []), start=1):
+        bg = _ZEBRA if i % 2 == 0 else "#ffffff"
+        td = (f'style="padding:6px;border-bottom:1px solid {_LINE};font-size:12px;'
+              f'color:{_SLATE};background:{bg}"')
+        td_r = td.replace("padding:6px;", "padding:6px;text-align:right;")
+        desc = _e(ln.get("description"))
+        if ln.get("rip_note"):
+            desc += f'<br><span style="color:{_MUTED};font-size:11px">{_e(ln["rip_note"])}</span>'
+        body_rows.append(
+            f"<tr><td {td}>{i}</td><td {td}>{desc}</td><td {td}>{_e(ln.get('upc'))}</td>"
+            f"<td {td}>{_e(ln.get('size'))}</td><td {td_r}>{_e(ln.get('pack'))}</td>"
+            f"<td {td_r}>{_e(ln.get('cases') or 0)}</td><td {td_r}>{_e(ln.get('bottles') or 0)}</td>"
+            f"<td {td_r}>{_money(ln.get('case_cost'))}</td><td {td_r}>{_money(ln.get('line_total'))}</td></tr>"
+        )
+    if not body_rows:
+        body_rows.append(
+            f'<tr><td colspan="9" style="padding:8px;font-size:12px;color:{_MUTED}">No line items on this order.</td></tr>'
+        )
+
+    items = (
+        '<table cellpadding="0" cellspacing="0" width="100%" '
+        f'style="border-collapse:collapse;border:1px solid {_LINE}">'
+        + head + "".join(body_rows) + "</table>"
+    )
+
+    cases_total = sum(int(ln.get("cases") or 0) for ln in data.get("lines", []))
+    totals = (
+        '<table cellpadding="0" cellspacing="0" width="100%" style="margin-top:8px"><tr>'
+        f'<td style="text-align:right;font-size:13px;color:{_SLATE};padding:2px 6px">Total cases</td>'
+        f'<td width="90" style="text-align:right;font-size:13px;color:{_SLATE};padding:2px 6px">{cases_total}</td></tr>'
+        f'<tr><td style="text-align:right;font-size:14px;font-weight:700;color:{_SLATE};padding:2px 6px;border-top:1px solid {_SLATE}">Estimated total</td>'
+        f'<td width="90" style="text-align:right;font-size:14px;font-weight:700;color:{_SLATE};padding:2px 6px;border-top:1px solid {_SLATE}">{_money(data.get("subtotal"))}</td></tr>'
+        "</table>"
+    )
+
+    notes = ""
+    if data.get("notes"):
+        notes = (
+            f'<div style="margin-top:14px"><div style="font-size:11px;font-weight:700;color:{_MUTED};'
+            f'text-transform:uppercase;margin-bottom:3px">Notes</div>'
+            f'<div style="font-size:12px;color:{_SLATE}">{html.escape(str(data["notes"])).replace(chr(10), "<br>")}</div></div>'
+        )
+
+    return (
+        '<div style="border:1px solid ' + _LINE + ';border-radius:8px;padding:16px;margin:8px 0">'
+        f'<div style="font-size:16px;font-weight:700;color:{_SLATE};margin-bottom:2px">Purchase Order</div>'
+        + meta + parties + items + totals + notes
+        + '</div>'
+    )

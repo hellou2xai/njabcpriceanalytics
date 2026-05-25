@@ -1,4 +1,5 @@
-import { shareOnWhatsApp } from '../lib/share';
+import { useEffect, useState } from 'react';
+import { shareOnWhatsApp, loadShareContent, DEFAULT_SHARE_MESSAGE, DEFAULT_SHARE_URL, type ShareContent } from '../lib/share';
 
 // WhatsApp brand glyph (lucide doesn't ship brand logos). Green by default.
 export function WhatsAppIcon({ size = 18, color = '#25D366' }: { size?: number; color?: string }) {
@@ -16,8 +17,13 @@ export default function WhatsAppShareButton({
 }: {
   className?: string; label?: string; showLabel?: boolean; title?: string; iconSize?: number;
 }) {
+  // Preload the (admin-editable) copy so the click handler stays synchronous
+  // and the WhatsApp window is not blocked as a popup.
+  const [content, setContent] = useState<ShareContent>({ message: DEFAULT_SHARE_MESSAGE, url: DEFAULT_SHARE_URL });
+  useEffect(() => { loadShareContent().then(setContent); }, []);
   return (
-    <button type="button" className={className} onClick={shareOnWhatsApp} title={title ?? label}>
+    <button type="button" className={className}
+      onClick={() => shareOnWhatsApp(content.message, content.url)} title={title ?? label}>
       <WhatsAppIcon size={iconSize} />
       {showLabel && <span>{label}</span>}
     </button>

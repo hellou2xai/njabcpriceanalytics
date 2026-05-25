@@ -1,8 +1,56 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Trash2, RefreshCw, UserCheck, UserX, X } from 'lucide-react';
-import { admin, feedback } from '../lib/api';
+import { admin, feedback, settings } from '../lib/api';
+import { setShareContentCache } from '../lib/share';
 import { useAuth } from '../contexts/AuthContext';
+
+const fieldStyle: React.CSSProperties = {
+  padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+  background: 'var(--surface)', color: 'var(--text)', fontFamily: 'var(--font-sans)', fontSize: 14,
+};
+
+// Admin editor for the WhatsApp share copy (stored server-side; used by every
+// "Share via WhatsApp" button).
+function ShareMessageEditor() {
+  const qc = useQueryClient();
+  const { data } = useQuery({ queryKey: ['share-message'], queryFn: settings.getShareMessage });
+  const [message, setMessage] = useState('');
+  const [url, setUrl] = useState('');
+  const [saved, setSaved] = useState('');
+  useEffect(() => { if (data) { setMessage(data.message); setUrl(data.url); } }, [data]);
+  const save = useMutation({
+    mutationFn: () => settings.updateShareMessage({ message, url }),
+    onSuccess: (res) => {
+      setShareContentCache(res);
+      setSaved('Saved. New shares will use this copy.');
+      qc.invalidateQueries({ queryKey: ['share-message'] });
+    },
+    onError: (e) => setSaved(e instanceof Error ? e.message : 'Save failed.'),
+  });
+  return (
+    <div style={{ marginTop: 28 }}>
+      <h3 style={{ marginBottom: 4 }}>WhatsApp share message</h3>
+      <p className="text-muted" style={{ marginTop: 0, fontSize: 13 }}>
+        Prefilled when anyone taps “Share via WhatsApp”. The link below is appended automatically.
+      </p>
+      <textarea value={message} onChange={e => { setMessage(e.target.value); setSaved(''); }}
+        rows={7} style={{ ...fieldStyle, width: '100%', maxWidth: 560, display: 'block', resize: 'vertical' }} />
+      <label style={{ display: 'block', maxWidth: 560, marginTop: 10 }}>
+        <span className="text-muted" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>Link</span>
+        <input type="text" value={url} onChange={e => { setUrl(e.target.value); setSaved(''); }}
+          style={{ ...fieldStyle, width: '100%' }} />
+      </label>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
+        <button className="btn btn-sm" disabled={save.isPending || !message.trim()}
+          onClick={() => { setSaved(''); save.mutate(); }}>
+          {save.isPending ? 'Saving...' : 'Save share message'}
+        </button>
+        {saved && <span className="text-muted" style={{ fontSize: 13 }}>{saved}</span>}
+      </div>
+    </div>
+  );
+}
 
 // [label, counts-key, drill-down: 'scroll:<id>' | 'detail:<entity>']
 const STAT_CARDS: [string, string, string][] = [
@@ -166,6 +214,8 @@ export default function Admin() {
         </button>
         {reloadMsg && <span className="text-muted" style={{ fontSize: 13 }}>{reloadMsg}</span>}
       </div>
+
+      <ShareMessageEditor />
 
       <h3 id="admin-users" style={{ marginTop: 24 }}>Users ({userList.length})</h3>
       <div className="table-container">

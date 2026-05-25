@@ -2,7 +2,7 @@ import { useState, useEffect, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Sun, Moon, ArrowRight } from 'lucide-react';
 import WhatsAppShareButton from '../components/WhatsAppShare';
-import { shareOnWhatsApp } from '../lib/share';
+import { shareOnWhatsAppCached } from '../lib/share';
 import './Landing.css';
 
 // Same behaviour as the app's theme toggle: persist to localStorage and set
@@ -354,7 +354,7 @@ export default function Landing() {
                 <li><a href="#how">How it works</a></li>
                 <li><a onClick={() => goSignup()} style={{ cursor: 'pointer' }}>Create account</a></li>
                 <li><a onClick={() => navigate('/login')} style={{ cursor: 'pointer' }}>Log in</a></li>
-                <li><a onClick={() => shareOnWhatsApp()} style={{ cursor: 'pointer' }}>Share via WhatsApp</a></li>
+                <li><a onClick={() => shareOnWhatsAppCached()} style={{ cursor: 'pointer' }}>Share via WhatsApp</a></li>
               </ul>
             </div>
             <div className="lp-footer-col">

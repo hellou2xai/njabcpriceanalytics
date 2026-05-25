@@ -356,6 +356,13 @@ export interface AuthUser { id: number; email: string; full_name?: string | null
 export interface AuthResponse { token: string; user: AuthUser }
 export interface ActivationRequired { status: 'activation_required'; email: string }
 
+// ---- Admin-editable settings ----
+export const settings = {
+  getShareMessage: () => request<{ message: string; url: string }>('/api/settings/share-message'),
+  updateShareMessage: (data: { message: string; url?: string }) =>
+    request<{ message: string; url: string }>('/api/settings/share-message', { method: 'PUT', body: JSON.stringify(data) }),
+};
+
 // ---- Cookie / consent log ----
 export const consent = {
   record: (data: {

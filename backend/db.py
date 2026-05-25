@@ -252,6 +252,13 @@ def init_user_db():
             user_agent text,
             created_at text DEFAULT {NOW_UTC}
         )""",
+        # Small key/value store for admin-editable app settings (e.g. the
+        # WhatsApp share message and link).
+        f"""CREATE TABLE IF NOT EXISTS app_settings (
+            key text PRIMARY KEY,
+            value text,
+            updated_at text DEFAULT {NOW_UTC}
+        )""",
     ]
     with get_pg() as con:
         for s in stmts:

@@ -346,6 +346,7 @@ export const alerts = {
   unreadCount: () => request<{ unread: number }>('/api/alerts/unread-count'),
   generate: () => request('/api/alerts/generate', { method: 'POST' }),
   markRead: (id: number) => request(`/api/alerts/${id}/read`, { method: 'PUT' }),
+  markAllRead: () => request('/api/alerts/mark-all-read', { method: 'PUT' }),
 };
 
 export const salesReps = {
@@ -841,9 +842,12 @@ export interface OrderScorecard {
   recommendations: string[];
 }
 
+export interface AlertItem { label: string; wholesaler?: string; detail?: string }
+export interface AlertPayload { intent?: 'opportunity' | 'risk'; count?: number; items?: AlertItem[] }
 export interface Alert {
-  id: number; alert_type: string; product_name: string; wholesaler: string;
-  edition: string; message: string; priority: number; read: boolean;
+  id: number; alert_type: string; product_name: string | null; wholesaler: string | null;
+  edition: string; message: string; priority: number; read: boolean | number;
+  payload?: AlertPayload;
 }
 
 export interface SalesRep {

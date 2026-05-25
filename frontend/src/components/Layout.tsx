@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   LayoutDashboard, Package, ShoppingCart, Bell, Star, Menu, X, Combine,
   Sun, Moon, LogOut, BadgeDollarSign, ClipboardList, LayoutGrid,
@@ -82,11 +82,22 @@ export default function Layout() {
     if (isMobile) setMobileOpen(false);
   }, [location.pathname, isMobile]);
 
+  const qc = useQueryClient();
   const { data: unread } = useQuery({
     queryKey: ['unread-alerts'],
     queryFn: alertsApi.unreadCount,
     refetchInterval: 30000,
   });
+
+  // Auto-build the alert digest once per session so the badge is populated
+  // without the user ever clicking a "generate" button.
+  useEffect(() => {
+    if (sessionStorage.getItem('lpb_alerts_generated')) return;
+    sessionStorage.setItem('lpb_alerts_generated', '1');
+    alertsApi.generate()
+      .then(() => qc.invalidateQueries({ queryKey: ['unread-alerts'] }))
+      .catch(() => {});
+  }, [qc]);
 
   // Draft-order count for the Orders nav badge (shares cache with the dashboard).
   const { data: draftOrders } = useQuery({

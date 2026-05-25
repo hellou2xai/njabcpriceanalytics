@@ -382,6 +382,42 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
 .alert-message { font-size: 13px; margin-bottom: 4px; }
 .alert-meta { display: flex; gap: 8px; font-size: 11px; color: var(--text-muted); }
 
+/* ---- Grouped alert digest (Alerts page) ---- */
+.alert-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-left: 4px solid var(--text-muted); border-radius: var(--radius);
+  padding: 12px 16px; margin-bottom: 10px; cursor: pointer;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+.alert-card:hover { box-shadow: var(--shadow-card); }
+.alert-card.intent-opportunity { border-left-color: var(--green); }
+.alert-card.intent-risk { border-left-color: var(--orange); }
+.alert-card.read { opacity: 0.62; }
+.alert-card.unread { background: var(--accent-weak); }
+.alert-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.alert-card-title { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14.5px; }
+.alert-card.intent-opportunity .alert-card-title svg { color: var(--green); }
+.alert-card.intent-risk .alert-card-title svg { color: var(--orange); }
+.alert-cat-chip {
+  font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--text-muted); background: var(--bg); border: 1px solid var(--border);
+  border-radius: 999px; padding: 2px 9px; white-space: nowrap;
+}
+.alert-items { list-style: none; margin: 10px 0 0; padding: 0; }
+.alert-items li {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  font-size: 13px; padding: 5px 0; border-top: 1px solid var(--border);
+}
+.alert-items .ai-name { font-weight: 600; }
+.alert-items .ai-dist { font-size: 11px; color: var(--text-muted); text-transform: capitalize; }
+.alert-items .ai-detail { font-size: 12.5px; color: var(--text-muted); margin-left: auto; text-align: right; }
+.alert-more { font-size: 12px; color: var(--accent); margin-top: 8px; font-weight: 600; }
+.alert-empty {
+  display: flex; align-items: center; gap: 10px; color: var(--text-muted);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 18px; font-size: 14px;
+}
+
 /* ---- Signal badge ---- */
 .signal-badge {
   display: inline-block; padding: 3px 10px; border-radius: 4px;

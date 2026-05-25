@@ -13,9 +13,9 @@ export function WhatsAppIcon({ size = 18, color = '#25D366' }: { size?: number; 
 
 /** Shared "Share via WhatsApp" trigger. Pass a className for the host context. */
 export default function WhatsAppShareButton({
-  className, label = 'Share via WhatsApp', showLabel = true, title, iconSize = 18,
+  className, label = 'Share via WhatsApp', showLabel = true, title, iconSize = 18, source,
 }: {
-  className?: string; label?: string; showLabel?: boolean; title?: string; iconSize?: number;
+  className?: string; label?: string; showLabel?: boolean; title?: string; iconSize?: number; source?: string;
 }) {
   // Preload the (admin-editable) copy so the click handler stays synchronous
   // and the WhatsApp window is not blocked as a popup.
@@ -23,7 +23,7 @@ export default function WhatsAppShareButton({
   useEffect(() => { loadShareContent().then(setContent); }, []);
   return (
     <button type="button" className={className}
-      onClick={() => shareOnWhatsApp(content.message, content.url)} title={title ?? label}>
+      onClick={() => shareOnWhatsApp(content.message, content.url, source)} title={title ?? label}>
       <WhatsAppIcon size={iconSize} />
       {showLabel && <span>{label}</span>}
     </button>

@@ -54,7 +54,8 @@ def user_detail(user_id: int, user: dict = Depends(require_admin)):
     """One user plus their orders, stores, notes, watchlist and feedback."""
     with get_pg() as con:
         u = con.execute(
-            "SELECT id, email, full_name, activated, created_at FROM users WHERE id = %s", (user_id,)
+            "SELECT id, email, full_name, phone, activated, tos_accepted_at, created_at FROM users WHERE id = %s",
+            (user_id,)
         ).fetchone()
         if not u:
             raise HTTPException(status_code=404, detail="User not found")

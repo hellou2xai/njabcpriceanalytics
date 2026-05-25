@@ -259,6 +259,18 @@ def init_user_db():
             value text,
             updated_at text DEFAULT {NOW_UTC}
         )""",
+        # Share events: one row each time someone taps "Share via WhatsApp",
+        # for signed-in users (user_id/email) and anonymous landing visitors.
+        f"""CREATE TABLE IF NOT EXISTS share_events (
+            id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            user_id integer REFERENCES users(id) ON DELETE SET NULL,
+            user_email text,
+            channel text,
+            source text,
+            page text,
+            user_agent text,
+            created_at text DEFAULT {NOW_UTC}
+        )""",
     ]
     with get_pg() as con:
         for s in stmts:

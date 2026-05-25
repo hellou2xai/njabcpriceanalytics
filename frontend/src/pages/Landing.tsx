@@ -75,7 +75,7 @@ export default function Landing() {
             <a href="#how" className="lp-navlink lp-hide-sm">How it works</a>
             <span className="lp-nav-sep lp-hide-sm" />
             <WhatsAppShareButton className="sidebar-toggle" showLabel={false}
-              title="Share via WhatsApp" />
+              title="Share via WhatsApp" source="landing-nav" />
             <button className="sidebar-toggle" onClick={toggle} title="Toggle theme" aria-label="Toggle theme"
               style={{ display: 'inline-flex' }}>
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
@@ -354,7 +354,7 @@ export default function Landing() {
                 <li><a href="#how">How it works</a></li>
                 <li><a onClick={() => goSignup()} style={{ cursor: 'pointer' }}>Create account</a></li>
                 <li><a onClick={() => navigate('/login')} style={{ cursor: 'pointer' }}>Log in</a></li>
-                <li><a onClick={() => shareOnWhatsAppCached()} style={{ cursor: 'pointer' }}>Share via WhatsApp</a></li>
+                <li><a onClick={() => shareOnWhatsAppCached('landing-footer')} style={{ cursor: 'pointer' }}>Share via WhatsApp</a></li>
               </ul>
             </div>
             <div className="lp-footer-col">

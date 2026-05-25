@@ -193,6 +193,7 @@ export default function Layout() {
             label="Share via WhatsApp"
             showLabel={!sidebarCollapsed}
             title={sidebarCollapsed ? 'Share via WhatsApp' : undefined}
+            source="sidebar"
           />
           <Link
             to="/profile"

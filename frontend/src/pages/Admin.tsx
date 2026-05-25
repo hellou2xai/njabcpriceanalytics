@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Trash2, RefreshCw, UserCheck, UserX, X } from 'lucide-react';
-import { admin, feedback, settings } from '../lib/api';
+import { admin, feedback, settings, share } from '../lib/api';
 import { setShareContentCache } from '../lib/share';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -123,8 +123,8 @@ function UserDetailModal({ id, onClose }: { id: number; onClose: () => void }) {
               {data.user.is_admin && <span className="tag tag-blue" style={{ marginLeft: 6, fontSize: 10 }}>ADMIN</span>}
             </h3>
             <p className="text-muted" style={{ marginTop: 0 }}>
-              {(data.user.full_name as string) || 'No name'} · {data.user.activated ? 'Active' : 'Pending'} ·
-              joined {fmtDate(data.user.created_at as string)}
+              {(data.user.full_name as string) || 'No name'} · 📞 {(data.user.phone as string) || 'No phone'} ·
+              {' '}{data.user.activated ? 'Active' : 'Pending'} · joined {fmtDate(data.user.created_at as string)}
             </p>
             <h4>Orders ({data.orders.length})</h4>
             <GenericTable rows={data.orders} />
@@ -154,6 +154,7 @@ export default function Admin() {
   const { data: stats } = useQuery({ queryKey: ['admin-stats'], queryFn: admin.stats, enabled: isAdmin });
   const { data: users } = useQuery({ queryKey: ['admin-users'], queryFn: admin.users, enabled: isAdmin });
   const { data: fb } = useQuery({ queryKey: ['admin-feedback'], queryFn: feedback.list, enabled: isAdmin });
+  const { data: shares } = useQuery({ queryKey: ['admin-shares'], queryFn: share.events, enabled: isAdmin });
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['admin-users'] });
@@ -216,6 +217,17 @@ export default function Admin() {
       </div>
 
       <ShareMessageEditor />
+
+      <h3 style={{ marginTop: 28 }}>WhatsApp shares ({(shares ?? []).length})</h3>
+      <p className="text-muted" style={{ marginTop: 0, fontSize: 13 }}>
+        Each tap of “Share via WhatsApp”. “Anonymous” means it was shared from the public landing page.
+      </p>
+      <GenericTable rows={(shares ?? []).map(s => ({
+        user: s.user_email ?? 'Anonymous',
+        source: s.source ?? '-',
+        page: s.page ?? '-',
+        created_at: s.created_at,
+      }))} />
 
       <h3 id="admin-users" style={{ marginTop: 24 }}>Users ({userList.length})</h3>
       <div className="table-container">

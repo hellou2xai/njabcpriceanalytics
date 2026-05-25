@@ -223,8 +223,17 @@ export interface AdminUser {
   is_admin: boolean;
 }
 
+export interface ShareEvent {
+  id: number;
+  user_email: string | null;
+  channel: string | null;
+  source: string | null;
+  page: string | null;
+  created_at: string;
+}
+
 export interface AdminUserDetail {
-  user: AdminUser & { activated: number };
+  user: AdminUser & { activated: number; phone?: string | null; tos_accepted_at?: string | null };
   orders: Record<string, unknown>[];
   stores: Record<string, unknown>[];
   notes: Record<string, unknown>[];
@@ -361,6 +370,13 @@ export const settings = {
   getShareMessage: () => request<{ message: string; url: string }>('/api/settings/share-message'),
   updateShareMessage: (data: { message: string; url?: string }) =>
     request<{ message: string; url: string }>('/api/settings/share-message', { method: 'PUT', body: JSON.stringify(data) }),
+};
+
+// ---- Share tracking ----
+export const share = {
+  track: (data: { channel?: string; source?: string; page?: string; user_agent?: string }) =>
+    request('/api/share/track', { method: 'POST', body: JSON.stringify(data) }),
+  events: () => request<ShareEvent[]>('/api/share/events'),
 };
 
 // ---- Cookie / consent log ----

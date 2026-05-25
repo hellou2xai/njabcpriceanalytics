@@ -6,7 +6,7 @@
 // /api/settings/share-message). These constants are the fallback used before
 // that loads or if the request fails.
 
-import { settings } from './api';
+import { settings, share as shareApi } from './api';
 
 export const DEFAULT_SHARE_URL = 'https://nj.celr.ai';
 
@@ -41,14 +41,28 @@ function composeText(message: string, url: string): string {
   return `${message.trim()} ${url.trim()}`.trim();
 }
 
-export function shareOnWhatsApp(message: string = DEFAULT_SHARE_MESSAGE, url: string = DEFAULT_SHARE_URL) {
+// Log the click (user or anonymous, with timestamp) for the admin view. Fire
+// and forget, and only AFTER window.open so the popup stays in the user gesture.
+function trackShare(source?: string) {
+  try {
+    shareApi.track({
+      channel: 'whatsapp', source,
+      page: window.location.pathname, user_agent: navigator.userAgent,
+    });
+  } catch { /* never block sharing on tracking */ }
+}
+
+export function shareOnWhatsApp(
+  message: string = DEFAULT_SHARE_MESSAGE, url: string = DEFAULT_SHARE_URL, source?: string,
+) {
   const text = composeText(message, url);
   window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+  trackShare(source);
 }
 
 // Share using whatever copy is cached (loaded by a mounted share button),
 // falling back to the defaults. Kept synchronous so window.open is not blocked.
-export function shareOnWhatsAppCached() {
+export function shareOnWhatsAppCached(source?: string) {
   const c = cached ?? { message: DEFAULT_SHARE_MESSAGE, url: DEFAULT_SHARE_URL };
-  shareOnWhatsApp(c.message, c.url);
+  shareOnWhatsApp(c.message, c.url, source);
 }

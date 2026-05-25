@@ -105,35 +105,25 @@ def _money(v):
 
 
 def _rollup(pg, user_id, ym, category, intent, message, items, priority):
-    """Insert/update one category roll-up; delete it when empty. Keeps the read
-    flag unless new items appeared (then re-flags as unread)."""
+    """Upsert one category roll-up (delete when empty). Relies on the partial
+    unique index idx_alerts_rollup so concurrent generates can't duplicate a
+    category. The read flag is preserved on update; a new month (different
+    edition) is a fresh, unread row."""
     count = len(items)
-    row = pg.execute(
-        "SELECT id, read, payload FROM alerts WHERE user_id = %s AND alert_type = %s AND edition = %s",
-        (user_id, category, ym),
-    ).fetchone()
     if count == 0:
-        if row:
-            pg.execute("DELETE FROM alerts WHERE id = %s", (row["id"],))
+        pg.execute(
+            "DELETE FROM alerts WHERE user_id = %s AND alert_type = %s AND edition = %s AND product_name IS NULL",
+            (user_id, category, ym),
+        )
         return 0
     payload = json.dumps({"intent": intent, "count": count, "items": items[:8]})
-    if row:
-        prev = None
-        try:
-            prev = json.loads(row["payload"] or "{}").get("count")
-        except (TypeError, ValueError):
-            prev = None
-        reset = ", read = 0" if (isinstance(prev, int) and count > prev) else ""
-        pg.execute(
-            f"UPDATE alerts SET message = %s, payload = %s, priority = %s{reset} WHERE id = %s",
-            (message, payload, priority, row["id"]),
-        )
-    else:
-        pg.execute(
-            """INSERT INTO alerts (user_id, alert_type, edition, message, priority, payload, read)
-               VALUES (%s, %s, %s, %s, %s, %s, 0)""",
-            (user_id, category, ym, message, priority, payload),
-        )
+    pg.execute(
+        """INSERT INTO alerts (user_id, alert_type, edition, message, priority, payload, read)
+           VALUES (%s, %s, %s, %s, %s, %s, 0)
+           ON CONFLICT (user_id, alert_type, edition) WHERE product_name IS NULL
+           DO UPDATE SET message = EXCLUDED.message, payload = EXCLUDED.payload, priority = EXCLUDED.priority""",
+        (user_id, category, ym, message, priority, payload),
+    )
     return count
 
 

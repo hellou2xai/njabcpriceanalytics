@@ -298,3 +298,16 @@ def init_user_db():
             ).fetchone()
             if not exists:
                 con.execute(ddl)
+        # Alerts are roll-ups (one per user/category/month, product_name NULL).
+        # De-duplicate any existing roll-ups, then enforce uniqueness so the two
+        # auto-generate triggers can't race and create duplicate category rows.
+        con.execute(
+            """DELETE FROM alerts a USING alerts b
+               WHERE a.product_name IS NULL AND b.product_name IS NULL
+                 AND a.user_id = b.user_id AND a.alert_type = b.alert_type
+                 AND a.edition = b.edition AND a.id > b.id"""
+        )
+        con.execute(
+            """CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_rollup
+               ON alerts(user_id, alert_type, edition) WHERE product_name IS NULL"""
+        )

@@ -116,9 +116,19 @@ export default function OrdersPage() {
         <OrderLinesView status={status} />
       ) : (
       <>
-      <p className="page-sub" style={{ marginTop: 0, fontSize: 13 }}>
-        💡 Click any order below to open it and see all its line items — the products, quantities, RIP savings, and totals.
-      </p>
+      <div
+        style={{
+          display: 'flex', alignItems: 'center', gap: 9, maxWidth: 740,
+          background: '#fef9c3', color: '#1f2937',
+          border: '1px solid #fde047', borderLeft: '4px solid #f59e0b',
+          borderRadius: 10, padding: '11px 16px', margin: '0 0 16px',
+          boxShadow: '0 3px 8px rgba(0,0,0,0.14)', transform: 'rotate(-0.5deg)',
+          fontSize: 13.5, fontWeight: 600, lineHeight: 1.35,
+        }}
+      >
+        <span style={{ fontSize: 20, lineHeight: 1 }}>💡</span>
+        <span>Click any order below to open it and see all its line items: the products, quantities, RIP savings, and totals.</span>
+      </div>
       <SortableTable
         columns={[
           { key: 'id', label: 'ID', sortable: true },

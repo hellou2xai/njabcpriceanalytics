@@ -889,6 +889,8 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
   transition: all 0.15s; width: 100%; text-align: left;
 }
 .sidebar-logout:hover { color: var(--red); background: var(--surface-hover); }
+/* Share button reuses the logout layout but is not destructive. */
+.sidebar-share:hover { color: var(--text); background: var(--surface-hover); }
 .sidebar-profile {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 16px; color: var(--text-muted); text-decoration: none;

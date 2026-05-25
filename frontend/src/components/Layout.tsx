@@ -7,6 +7,7 @@ import {
   PanelLeftClose, PanelLeftOpen, StickyNote, UserCog, Settings, Shield, Sparkles,
 } from 'lucide-react';
 import { alerts as alertsApi, orders as ordersApi } from '../lib/api';
+import WhatsAppShareButton from './WhatsAppShare';
 import { useAuth } from '../contexts/AuthContext';
 import { useOrderAnalysis } from '../contexts/OrderAnalysisContext';
 
@@ -187,6 +188,12 @@ export default function Layout() {
           )}
         </nav>
         <div className="sidebar-footer">
+          <WhatsAppShareButton
+            className="sidebar-logout sidebar-share"
+            label="Share via WhatsApp"
+            showLabel={!sidebarCollapsed}
+            title={sidebarCollapsed ? 'Share via WhatsApp' : undefined}
+          />
           <Link
             to="/profile"
             className={`sidebar-profile ${location.pathname === '/profile' ? 'active' : ''}`}

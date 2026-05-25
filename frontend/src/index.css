@@ -139,7 +139,7 @@ body {
 }
 .dashboard-hero { margin-bottom: 22px; }
 @media (max-width: 1023px) { .page > h2, .dashboard-hero { margin: -16px -16px 12px; padding: 14px 16px 10px; } }
-@media (max-width: 480px) { .page > h2, .dashboard-hero { margin: -12px -8px 10px; padding: 12px 8px 8px; } }
+@media (max-width: 480px) { .page > h2, .dashboard-hero { margin: -12px -14px 10px; padding: 12px 14px 8px; } }
 .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .page-actions { display: flex; gap: 8px; }
 
@@ -919,7 +919,7 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
 }
 
 @media (max-width: 480px) {
-  .main-content { padding: 12px 8px; }
+  .main-content { padding: 12px 14px; }
   .page h2 { font-size: 18px; }
   .kpi-grid { grid-template-columns: 1fr; }
   .modal { width: 96%; padding: 16px; }

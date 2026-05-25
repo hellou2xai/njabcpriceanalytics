@@ -129,13 +129,12 @@ export default function Landing() {
 
         <div className="lp-strip">
           <div className="lp-container lp-strip-inner">
-            <span className="lp-strip-label">Ingesting CPLs from</span>
+            <span className="lp-strip-label">Ingesting CPLs for</span>
             <div className="lp-strip-names">
               <span>Allied Beverage</span><span className="lp-strip-sep">❖</span>
               <span>Fedway Associates</span><span className="lp-strip-sep">❖</span>
               <span>Opici Family</span><span className="lp-strip-sep">❖</span>
-              <span>R&R Marketing</span><span className="lp-strip-sep">❖</span>
-              <span className="muted">and every NJ filer</span>
+              <span className="muted">Every major NJ Filer</span>
             </div>
           </div>
         </div>
@@ -341,7 +340,7 @@ export default function Landing() {
               </div>
               <p className="lp-footer-blurb">
                 The pricing and rebate intelligence platform built for New Jersey's independent
-                liquor retailers. A U2xAI product.
+                liquor retailers.
               </p>
             </div>
             <div className="lp-footer-col">
@@ -370,7 +369,7 @@ export default function Landing() {
             </div>
           </div>
           <div className="lp-footer-bottom">
-            <span>© 2026 CELR.ai · A U2xAI product</span>
+            <span>© 2026 CELR.ai</span>
             <span className="lp-footer-legal">
               <a onClick={() => navigate('/terms')} style={{ cursor: 'pointer' }}>Terms</a>
               <a onClick={() => navigate('/privacy')} style={{ cursor: 'pointer' }}>Privacy</a>

@@ -40,7 +40,7 @@ function LegalShell({ kicker, title, lead, children }: {
             <Link to="/privacy">Privacy Policy</Link>
             <Link to="/">Home</Link>
           </div>
-          <span className="copy">© 2026 CELR.ai · A U2xAI product</span>
+          <span className="copy">© 2026 CELR.ai</span>
         </div>
       </main>
     </div>
@@ -53,9 +53,9 @@ export function Terms() {
       kicker="Legal"
       title="Terms of Service"
       lead={
-        <>These Terms of Service ("Terms") govern your access to and use of CELR.ai (the "Service"),
-        operated by U2xAI ("CELR.ai", "we", "us", or "our"). By creating an account or using the
-        Service, you agree to these Terms. If you do not agree, do not use the Service.</>
+        <>These Terms of Service ("Terms") govern your access to and use of CELR.ai (the "Service",
+        "we", "us", or "our"). By creating an account or using the Service, you agree to these Terms.
+        If you do not agree, do not use the Service.</>
       }
     >
       <div className="legal-callout">
@@ -138,7 +138,7 @@ export function Terms() {
       <section>
         <h2>Intellectual property</h2>
         <p>The Service, including its software, design, normalized datasets, analytics, and all
-        related intellectual property, is owned by CELR.ai / U2xAI and protected by law. We grant
+        related intellectual property, is owned by CELR.ai and protected by law. We grant
         you a limited, non-exclusive, non-transferable, revocable license to use the Service for
         your internal business purposes. The underlying public filings remain the property of their
         respective sources.</p>
@@ -165,7 +165,7 @@ export function Terms() {
 
       <section>
         <h2>Limitation of liability</h2>
-        <p>TO THE MAXIMUM EXTENT PERMITTED BY LAW, CELR.ai AND U2xAI, AND THEIR OWNERS, OFFICERS,
+        <p>TO THE MAXIMUM EXTENT PERMITTED BY LAW, CELR.ai AND ITS OWNERS, OFFICERS,
         EMPLOYEES, AND SUPPLIERS, WILL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL,
         CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES, OR FOR ANY LOSS OF PROFITS, REVENUE, DATA,
         GOODWILL, OR BUSINESS, ARISING OUT OF OR RELATED TO YOUR USE OF, OR INABILITY TO USE, THE
@@ -178,7 +178,7 @@ export function Terms() {
 
       <section>
         <h2>Indemnification</h2>
-        <p>You agree to indemnify, defend, and hold harmless CELR.ai and U2xAI from and against any
+        <p>You agree to indemnify, defend, and hold harmless CELR.ai from and against any
         claims, liabilities, damages, losses, and expenses, including reasonable legal fees, arising
         out of or related to your use of the Service, your decisions made using the Service, or your
         violation of these Terms or any law.</p>

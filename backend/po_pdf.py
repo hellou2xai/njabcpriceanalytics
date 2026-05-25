@@ -1,0 +1,241 @@
+"""
+Purchase Order PDF generator (reportlab).
+
+build_po_pdf(data) -> bytes. The caller (orders endpoints in user_state.py)
+gathers the order, its priced lines, the sales rep and the buyer, then hands a
+plain dict here. Keeping the layout separate from the data-gathering keeps both
+testable. The same bytes are used for the in-browser preview and the email
+attachment, so the preview is exactly what the rep receives.
+"""
+
+from __future__ import annotations
+
+import io
+
+from reportlab.lib.pagesizes import LETTER
+from reportlab.lib.units import inch
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+)
+
+BLUE = colors.HexColor("#2563eb")
+SLATE = colors.HexColor("#0f172a")
+MUTED = colors.HexColor("#64748b")
+LINE = colors.HexColor("#e2e8f0")
+ZEBRA = colors.HexColor("#f8fafc")
+
+_styles = getSampleStyleSheet()
+_TITLE = ParagraphStyle("po_title", parent=_styles["Heading1"], textColor=SLATE,
+                        fontSize=22, leading=24, spaceBefore=0, spaceAfter=0)
+_BRAND = ParagraphStyle("po_brand", parent=_styles["Normal"], textColor=BLUE,
+                        fontSize=12, leading=14, alignment=2, fontName="Helvetica-Bold")
+_BRAND_SUB = ParagraphStyle("po_brand_sub", parent=_styles["Normal"], textColor=MUTED,
+                            fontSize=8, leading=10, alignment=2)
+_LABEL = ParagraphStyle("po_label", parent=_styles["Normal"], textColor=MUTED,
+                        fontSize=7.5, leading=9, fontName="Helvetica-Bold", spaceAfter=1)
+_VALUE = ParagraphStyle("po_value", parent=_styles["Normal"], textColor=SLATE,
+                        fontSize=9.5, leading=12)
+_CELL = ParagraphStyle("po_cell", parent=_styles["Normal"], textColor=SLATE,
+                       fontSize=8.5, leading=10.5)
+_CELL_SUB = ParagraphStyle("po_cell_sub", parent=_styles["Normal"], textColor=MUTED,
+                           fontSize=7, leading=8.5)
+_HEAD = ParagraphStyle("po_head", parent=_styles["Normal"], textColor=colors.white,
+                       fontSize=8, leading=10, fontName="Helvetica-Bold")
+
+
+def _money(v) -> str:
+    try:
+        return f"${float(v):,.2f}"
+    except (TypeError, ValueError):
+        return ""
+
+
+def _kv(label: str, value: str) -> Table:
+    """A stacked label-over-value mini block used in the meta row."""
+    t = Table([[Paragraph(label.upper(), _LABEL)], [Paragraph(value or "—", _VALUE)]],
+              colWidths=[1.6 * inch])
+    t.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 0),
+                           ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                           ("TOPPADDING", (0, 0), (-1, -1), 0),
+                           ("BOTTOMPADDING", (0, 0), (-1, -1), 1)]))
+    return t
+
+
+def _party(title: str, lines: list[str]) -> Table:
+    rows = [[Paragraph(title.upper(), _LABEL)]]
+    for i, ln in enumerate(lines):
+        if not ln:
+            continue
+        style = _VALUE if i == 0 else _CELL
+        rows.append([Paragraph(ln, style)])
+    if len(rows) == 1:
+        rows.append([Paragraph("—", _VALUE)])
+    t = Table(rows, colWidths=[3.5 * inch])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), ZEBRA),
+        ("BOX", (0, 0), (-1, -1), 0.5, LINE),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (0, 0), 7),
+        ("BOTTOMPADDING", (0, -1), (0, -1), 7),
+        ("TOPPADDING", (0, 1), (-1, -1), 1),
+    ]))
+    return t
+
+
+def _footer(canvas, doc):
+    canvas.saveState()
+    w, _h = LETTER
+    y = 0.5 * inch
+    canvas.setStrokeColor(LINE)
+    canvas.setLineWidth(0.5)
+    canvas.line(0.6 * inch, y + 14, w - 0.6 * inch, y + 14)
+    canvas.setFont("Helvetica-Bold", 8)
+    canvas.setFillColor(BLUE)
+    canvas.drawString(0.6 * inch, y, "Powered by CELR AI")
+    canvas.setFont("Helvetica", 7)
+    canvas.setFillColor(MUTED)
+    canvas.drawRightString(w - 0.6 * inch, y, f"Page {doc.page}")
+    canvas.drawCentredString(
+        w / 2, y,
+        "Prices shown are estimates from published distributor data and are not a guarantee.")
+    canvas.restoreState()
+
+
+def build_po_pdf(data: dict) -> bytes:
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=LETTER,
+        leftMargin=0.6 * inch, rightMargin=0.6 * inch,
+        topMargin=0.6 * inch, bottomMargin=0.85 * inch,
+        title=f"Purchase Order {data.get('po_number', '')}",
+    )
+    story: list = []
+
+    # --- Header: title + brand ---
+    header = Table(
+        [[Paragraph("PURCHASE ORDER", _TITLE),
+          Table([[Paragraph("CELR", _BRAND)],
+                 [Paragraph("Retail Pricing Intelligence", _BRAND_SUB)]],
+                colWidths=[2.6 * inch])]],
+        colWidths=[4.0 * inch, 2.6 * inch])
+    header.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                                ("RIGHTPADDING", (0, 0), (-1, -1), 0)]))
+    story.append(header)
+    story.append(Spacer(1, 6))
+
+    # --- Meta row: PO #, date, distributor, division ---
+    meta = Table([[
+        _kv("PO Number", data.get("po_number", "")),
+        _kv("Date", data.get("date", "")),
+        _kv("Distributor", data.get("distributor", "")),
+        _kv("Division", data.get("division", "")),
+    ]], colWidths=[1.65 * inch] * 4)
+    meta.setStyle(TableStyle([
+        ("LINEABOVE", (0, 0), (-1, 0), 1.2, BLUE),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.5, LINE),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story.append(meta)
+    story.append(Spacer(1, 4))
+
+    # --- Vendor + Ship-To blocks side by side ---
+    v = data.get("vendor", {})
+    b = data.get("buyer", {})
+    vendor_lines = [v.get("name", "")]
+    if v.get("rep_name"):
+        vendor_lines.append(f"Attn: {v['rep_name']} (Sales Rep)")
+    if v.get("rep_email"):
+        vendor_lines.append(v["rep_email"])
+    if v.get("rep_phone"):
+        vendor_lines.append(v["rep_phone"])
+    buyer_lines = [b.get("name", "")]
+    if b.get("address"):
+        buyer_lines.append(b["address"])
+    if b.get("license"):
+        buyer_lines.append(f"License: {b['license']}")
+    if b.get("phone"):
+        buyer_lines.append(b["phone"])
+    if b.get("email"):
+        buyer_lines.append(b["email"])
+
+    parties = Table([[_party("Vendor", vendor_lines), "", _party("Ship To / Buyer", buyer_lines)]],
+                    colWidths=[3.5 * inch, 0.2 * inch, 3.5 * inch])
+    parties.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"),
+                                 ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                                 ("RIGHTPADDING", (0, 0), (-1, -1), 0)]))
+    story.append(parties)
+    story.append(Spacer(1, 14))
+
+    # --- Line items ---
+    head = [Paragraph(t, _HEAD) for t in
+            ["#", "Description", "UPC", "Size", "Pk", "Cases", "Btls", "Case Cost", "Line Total"]]
+    table_rows = [head]
+    for i, ln in enumerate(data.get("lines", []), start=1):
+        desc = [Paragraph(ln.get("description", ""), _CELL)]
+        if ln.get("rip_note"):
+            desc.append(Paragraph(ln["rip_note"], _CELL_SUB))
+        table_rows.append([
+            Paragraph(str(i), _CELL),
+            desc,
+            Paragraph(ln.get("upc") or "—", _CELL),
+            Paragraph(ln.get("size") or "—", _CELL),
+            Paragraph(str(ln.get("pack") or "—"), _CELL),
+            Paragraph(str(ln.get("cases") or 0), _CELL),
+            Paragraph(str(ln.get("bottles") or 0), _CELL),
+            Paragraph(_money(ln.get("case_cost")), _CELL),
+            Paragraph(_money(ln.get("line_total")), _CELL),
+        ])
+    if len(table_rows) == 1:
+        table_rows.append([Paragraph("No line items on this order.", _CELL)] + [""] * 8)
+
+    col_w = [0.3, 1.85, 0.9, 0.6, 0.45, 0.6, 0.5, 0.82, 0.88]
+    col_w = [c * inch for c in col_w]
+    items = Table(table_rows, colWidths=col_w, repeatRows=1)
+    style = [
+        ("BACKGROUND", (0, 0), (-1, 0), SLATE),
+        ("TOPPADDING", (0, 0), (-1, 0), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+        ("TOPPADDING", (0, 1), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 1), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.4, LINE),
+        ("ALIGN", (4, 0), (-1, -1), "RIGHT"),
+    ]
+    for r in range(1, len(table_rows)):
+        if r % 2 == 0:
+            style.append(("BACKGROUND", (0, r), (-1, r), ZEBRA))
+    items.setStyle(TableStyle(style))
+    story.append(items)
+
+    # --- Totals ---
+    sub = data.get("subtotal", 0.0)
+    cases_total = sum(int(ln.get("cases") or 0) for ln in data.get("lines", []))
+    totals = Table([
+        ["", Paragraph("Total cases", _CELL), Paragraph(str(cases_total), _CELL)],
+        ["", Paragraph("Estimated total", _VALUE), Paragraph(_money(sub), _VALUE)],
+    ], colWidths=[4.5 * inch, 1.4 * inch, 1.0 * inch])
+    totals.setStyle(TableStyle([
+        ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+        ("LINEABOVE", (1, 1), (-1, 1), 1, SLATE),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("FONTNAME", (1, 1), (-1, 1), "Helvetica-Bold"),
+    ]))
+    story.append(totals)
+
+    # --- Notes ---
+    if data.get("notes"):
+        story.append(Spacer(1, 14))
+        story.append(Paragraph("NOTES", _LABEL))
+        story.append(Paragraph(str(data["notes"]).replace("\n", "<br/>"), _CELL))
+
+    doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
+    return buf.getvalue()

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { orders, catalog, salesReps } from '../lib/api';
-import type { OrderLine, OrderRipTier, Product } from '../lib/api';
+import type { OrderLine, OrderRipTier, Product, SubmitResult } from '../lib/api';
 import { useProductQuickView } from '../components/ProductQuickView';
 import { distributorName, DISTRIBUTOR_NAMES } from '../lib/distributors';
 
@@ -205,6 +205,13 @@ export default function OrderDetail() {
   const [addProductError, setAddProductError] = useState('');
   const [savedFlash, setSavedFlash] = useState(false);
 
+  // Submit + PDF preview
+  const [submitConfirm, setSubmitConfirm] = useState(false);
+  const [submitResult, setSubmitResult] = useState<SubmitResult | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState('');
+
   // ---- queries ----
   const { data, isLoading, isError } = useQuery({
     queryKey: ['order', orderId],
@@ -218,8 +225,12 @@ export default function OrderDetail() {
   }, [qc, orderId]);
 
   const submitMut = useMutation({
-    mutationFn: () => orders.updateStatus(orderId, 'submitted'),
-    onSuccess: invalidateOrder,
+    mutationFn: () => orders.submit(orderId),
+    onSuccess: (res) => {
+      setSubmitConfirm(false);
+      setSubmitResult(res);
+      invalidateOrder();
+    },
   });
 
   const cloneMut = useMutation({
@@ -279,7 +290,9 @@ export default function OrderDetail() {
 
   // ---- derived state ----
   const order = data?.order;
-  const repName = order?.sales_rep_id ? (reps?.find(r => r.id === order.sales_rep_id)?.name ?? null) : null;
+  const rep = order?.sales_rep_id ? reps?.find(r => r.id === order.sales_rep_id) : undefined;
+  const repName = rep?.name ?? null;
+  const repEmail = rep?.email ?? null;
   const repsForDist = (reps ?? []).filter(r => !order?.distributor || r.distributor === order.distributor);
   const allLines = data?.lines ?? [];
   const isDraft = order?.status === 'draft';
@@ -381,6 +394,32 @@ export default function OrderDetail() {
     deleteMut.mutate();
   }
 
+  async function openPreview() {
+    setPreviewError('');
+    setPreviewLoading(true);
+    try {
+      const blob = await orders.pdfBlob(orderId);
+      setPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return URL.createObjectURL(blob);
+      });
+    } catch (e) {
+      setPreviewError(e instanceof Error ? e.message : 'Could not load the PDF preview.');
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  function closePreview() {
+    setPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+  }
+
+  // Release the object URL when leaving the page.
+  useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
+
   // Edits autosave on change/blur; this gives an explicit confirmation and
   // re-syncs the order from the server.
   function handleSaveOrder() {
@@ -474,6 +513,10 @@ export default function OrderDetail() {
           <button className="btn btn-secondary" onClick={() => cloneMut.mutate()} disabled={cloneMut.isPending}>
             {cloneMut.isPending ? 'Cloning...' : 'Clone Order'}
           </button>
+          <button className="btn btn-secondary" onClick={openPreview} disabled={previewLoading}
+            title="See the purchase order PDF that gets sent to your rep">
+            {previewLoading ? 'Loading PDF...' : 'Preview PDF'}
+          </button>
           {isDraft && (
             <button className="btn btn-secondary" onClick={handleSaveOrder}
               title="Save changes (edits also save automatically)"
@@ -482,7 +525,7 @@ export default function OrderDetail() {
             </button>
           )}
           {isDraft && (
-            <button className="btn" onClick={() => submitMut.mutate()} disabled={submitMut.isPending}>
+            <button className="btn" onClick={() => setSubmitConfirm(true)} disabled={submitMut.isPending}>
               {submitMut.isPending ? 'Submitting...' : 'Submit Order'}
             </button>
           )}
@@ -508,6 +551,102 @@ export default function OrderDetail() {
                 {deleteMut.isPending ? 'Deleting...' : 'Delete'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {previewError && (
+        <p style={{ color: 'var(--red)', fontSize: 12, marginTop: -4, marginBottom: 8 }}>{previewError}</p>
+      )}
+
+      {/* Submit confirmation */}
+      {submitConfirm && (
+        <div className="modal-overlay" onClick={() => setSubmitConfirm(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 470 }}>
+            <h3>Submit order</h3>
+            <p style={{ margin: '12px 0', fontSize: 14 }}>
+              Submitting locks this order and emails the purchase order PDF to your sales rep.
+            </p>
+            {repEmail ? (
+              <p style={{ fontSize: 14, margin: '0 0 12px' }}>
+                We&apos;ll email <strong>{repName}</strong> at <strong>{repEmail}</strong>. Your email is set as
+                reply-to, so the rep can answer you directly.
+              </p>
+            ) : repName ? (
+              <p style={{ fontSize: 13, margin: '0 0 12px', color: '#b45309' }}>
+                {repName} has no email on file. The order will be marked submitted but not emailed. Add an
+                email under Configuration &rarr; Sales Reps, or use Preview PDF to send it yourself.
+              </p>
+            ) : (
+              <p style={{ fontSize: 13, margin: '0 0 12px', color: '#b45309' }}>
+                No sales rep is set for this order. It will be marked submitted but not emailed. Pick a
+                distributor and rep above first.
+              </p>
+            )}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              <button className="btn btn-secondary" onClick={openPreview} disabled={previewLoading}>
+                {previewLoading ? 'Loading...' : 'Preview PDF'}
+              </button>
+              <button className="btn btn-secondary" onClick={() => setSubmitConfirm(false)}>Cancel</button>
+              <button className="btn" onClick={() => submitMut.mutate()} disabled={submitMut.isPending}>
+                {submitMut.isPending ? 'Submitting...' : (repEmail ? 'Submit & send' : 'Submit anyway')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Submit result */}
+      {submitResult && (
+        <div className="modal-overlay" onClick={() => setSubmitResult(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
+            <h3>Order submitted</h3>
+            {submitResult.emailed ? (
+              <p style={{ fontSize: 14, margin: '12px 0' }}>
+                The purchase order was emailed to <strong>{submitResult.rep_name}</strong> at{' '}
+                <strong>{submitResult.to}</strong>.
+              </p>
+            ) : submitResult.reason === 'no_rep_email' ? (
+              <p style={{ fontSize: 14, margin: '12px 0', color: '#b45309' }}>
+                The order is submitted, but it wasn&apos;t emailed: the sales rep has no email on file. Use
+                Preview PDF to download and send it yourself.
+              </p>
+            ) : submitResult.reason === 'email_disabled' ? (
+              <p style={{ fontSize: 14, margin: '12px 0', color: '#b45309' }}>
+                The order is submitted. Email delivery isn&apos;t enabled on this account, so nothing was sent.
+                Use Preview PDF to download and send it.
+              </p>
+            ) : (
+              <p style={{ fontSize: 14, margin: '12px 0', color: '#b45309' }}>
+                The order is submitted, but the email could not be delivered. Use Preview PDF to download and
+                send it.
+              </p>
+            )}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn btn-secondary" onClick={() => { setSubmitResult(null); openPreview(); }}>
+                Preview PDF
+              </button>
+              <button className="btn" onClick={() => setSubmitResult(null)}>Done</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PDF preview */}
+      {previewUrl && (
+        <div className="modal-overlay" onClick={closePreview}>
+          <div className="modal" onClick={e => e.stopPropagation()}
+            style={{ maxWidth: 920, width: '92vw', height: '90vh', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8, flexWrap: 'wrap' }}>
+              <h3 style={{ margin: 0 }}>Purchase order preview</h3>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <a className="btn btn-secondary" href={previewUrl} target="_blank" rel="noopener noreferrer">Open in new tab</a>
+                <a className="btn btn-secondary" href={previewUrl} download={`PO-${orderId}.pdf`}>Download</a>
+                <button className="btn" onClick={closePreview}>Close</button>
+              </div>
+            </div>
+            <iframe title="Purchase order preview" src={previewUrl}
+              style={{ flex: 1, width: '100%', border: '1px solid var(--border)', borderRadius: 'var(--radius)' }} />
           </div>
         </div>
       )}

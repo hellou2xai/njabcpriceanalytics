@@ -7,7 +7,7 @@ Covers: Â§4 Tracking List, Â§5 Named Orders, Â§3.5 Notes, Â§3.6 Ratings,
 import json
 import math
 from datetime import date
-from fastapi import APIRouter, Query, Body, Depends, HTTPException
+from fastapi import APIRouter, Query, Body, Depends, HTTPException, Response
 from pydantic import BaseModel
 from typing import Optional
 
@@ -15,6 +15,15 @@ from backend.db import get_duckdb, read_parquet, NOW_UTC
 from backend.pg import get_pg
 from backend.auth import get_current_user
 from backend.rip_utils import is_bottle_unit, rip_per_case
+from backend import mailer
+from backend.po_pdf import build_po_pdf
+
+# Distributor slug -> display name. Kept local (and small) to avoid importing the
+# catalog router here; mirrors catalog.DISTRIBUTOR_NAMES and the frontend map.
+DISTRIBUTOR_NAMES = {
+    "allied": "Allied", "fedway": "Fedway", "high_grade": "Highgrade",
+    "opici": "Opici", "peerless": "Peerless",
+}
 
 
 def _num(v):
@@ -588,6 +597,143 @@ def clone_order(order_id: int, user: dict = Depends(get_current_user)):
                  l["unit_volume"], l["qty_cases"], l["qty_units"], l["selected_discount_tier"])
             )
     return {"id": new_id, "status": "cloned"}
+
+
+# ---- Purchase Order PDF + submit (Â§5) ----
+
+def _gather_po(con, order: dict, user: dict) -> tuple[dict, dict]:
+    """Build the dict that po_pdf.build_po_pdf expects, plus the sales rep row.
+    Returns (po_data, rep). One source of truth for both the preview and the
+    emailed copy, so the rep gets exactly what the buyer saw."""
+    order_id = order["id"]
+    rep = None
+    if order.get("sales_rep_id"):
+        rep = con.execute(
+            "SELECT * FROM sales_reps WHERE id = %s AND user_id = %s",
+            (order["sales_rep_id"], user["id"]),
+        ).fetchone()
+    rep = dict(rep) if rep else {}
+
+    urow = con.execute(
+        "SELECT full_name, email, phone FROM users WHERE id = %s", (user["id"],)
+    ).fetchone()
+    urow = dict(urow) if urow else {}
+    store = con.execute(
+        "SELECT name, formatted_address, phone, license_number FROM stores "
+        "WHERE user_id = %s ORDER BY id LIMIT 1",
+        (user["id"],),
+    ).fetchone()
+    store = dict(store) if store else {}
+
+    raw_lines = con.execute(
+        "SELECT * FROM order_lines WHERE order_id = %s ORDER BY id", (order_id,)
+    ).fetchall()
+    lines = _enrich_order_lines([dict(l) for l in raw_lines])
+
+    pdf_lines, subtotal = [], 0.0
+    for l in lines:
+        amt = round(_line_invoice(l), 2)
+        subtotal += amt
+        rip_note = None
+        if l.get("best_rip_save"):
+            rip_note = f"RIP deal: save up to ${l['best_rip_save']}/case"
+        pdf_lines.append({
+            "description": l.get("product_name") or "",
+            "upc": l.get("upc"),
+            "size": l.get("size") or l.get("unit_volume"),
+            "pack": l.get("pack"),
+            "cases": l.get("qty_cases") or 0,
+            "bottles": l.get("qty_units") or 0,
+            "case_cost": _num(l.get("case_cost")),
+            "line_total": amt,
+            "rip_note": rip_note,
+        })
+
+    buyer_name = store.get("name") or urow.get("full_name") or urow.get("email") or "Buyer"
+    po_data = {
+        "po_number": f"CELR-{order_id:05d}",
+        "date": date.today().isoformat(),
+        "distributor": DISTRIBUTOR_NAMES.get(order.get("distributor"), order.get("distributor") or "—"),
+        "division": order.get("division") or "",
+        "order_name": order.get("name") or "",
+        "notes": order.get("notes"),
+        "vendor": {
+            "name": DISTRIBUTOR_NAMES.get(order.get("distributor"), order.get("distributor") or "Distributor"),
+            "rep_name": rep.get("name"),
+            "rep_email": rep.get("email"),
+            "rep_phone": rep.get("phone"),
+        },
+        "buyer": {
+            "name": buyer_name,
+            "address": store.get("formatted_address"),
+            "license": store.get("license_number"),
+            "phone": store.get("phone") or urow.get("phone"),
+            "email": urow.get("email"),
+        },
+        "subtotal": round(subtotal, 2),
+        "lines": pdf_lines,
+    }
+    return po_data, rep
+
+
+@router.get("/orders/{order_id}/pdf")
+def order_pdf(order_id: int, user: dict = Depends(get_current_user)):
+    """Render the order as a Purchase Order PDF, inline (for the in-app preview)."""
+    with get_pg() as con:
+        order = dict(_require_order(con, order_id, user["id"]))
+        po_data, _rep = _gather_po(con, order, user)
+    pdf = build_po_pdf(po_data)
+    return Response(
+        content=pdf, media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{po_data["po_number"]}.pdf"'},
+    )
+
+
+@router.post("/orders/{order_id}/submit")
+def submit_order(order_id: int, user: dict = Depends(get_current_user)):
+    """Mark an order submitted and email the PO PDF to its sales rep. The buyer
+    is set as reply-to so the rep can answer the retailer directly. Returns
+    whether the email actually went out and to whom, so the UI can be honest."""
+    with get_pg() as con:
+        order = dict(_require_order(con, order_id, user["id"]))
+        po_data, rep = _gather_po(con, order, user)
+        pdf = build_po_pdf(po_data)
+
+        rep_email = (rep.get("email") or "").strip()
+        emailed = False
+        if rep_email and mailer.MAIL_ENABLED:
+            emailed = mailer.send_purchase_order(
+                rep_email,
+                po_number=po_data["po_number"],
+                order_name=po_data["order_name"],
+                buyer_name=po_data["buyer"]["name"],
+                distributor=po_data["distributor"],
+                pdf_bytes=pdf,
+                rep_name=rep.get("name"),
+                reply_to=po_data["buyer"].get("email"),
+            )
+
+        con.execute(
+            f"UPDATE orders SET status = 'submitted', updated_at = {NOW_UTC} "
+            "WHERE id = %s AND user_id = %s",
+            (order_id, user["id"]),
+        )
+        _audit(con, "orders", order_id, "update",
+               old_values={"status": order.get("status")},
+               new_values={"status": "submitted", "emailed_to": rep_email or None})
+
+    reason = None
+    if not rep_email:
+        reason = "no_rep_email"
+    elif not mailer.MAIL_ENABLED:
+        reason = "email_disabled"
+    return {
+        "status": "submitted",
+        "emailed": emailed,
+        "to": rep_email or None,
+        "rep_name": rep.get("name"),
+        "reason": reason,
+    }
 
 
 # ---- Notes (Â§3.5) ----

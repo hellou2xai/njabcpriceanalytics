@@ -12,6 +12,7 @@ Env:
   APP_BASE_URL     Base URL for links in emails (default https://nj.celr.ai).
 """
 
+import base64
 import os
 import httpx
 
@@ -23,16 +24,26 @@ MAIL_ENABLED = bool(RESEND_API_KEY)
 _RESEND_URL = "https://api.resend.com/emails"
 
 
-def _send(to: str, subject: str, html: str) -> bool:
+def _send(to: str, subject: str, html: str,
+          attachments: list[dict] | None = None,
+          reply_to: str | None = None,
+          cc: list[str] | None = None) -> bool:
     if not MAIL_ENABLED:
         print(f"[mail disabled] would send to {to}: {subject}")
         return False
     try:
+        payload = {"from": MAIL_FROM, "to": [to], "subject": subject, "html": html}
+        if attachments:
+            payload["attachments"] = attachments
+        if reply_to:
+            payload["reply_to"] = reply_to
+        if cc:
+            payload["cc"] = cc
         r = httpx.post(
             _RESEND_URL,
             headers={"Authorization": f"Bearer {RESEND_API_KEY}"},
-            json={"from": MAIL_FROM, "to": [to], "subject": subject, "html": html},
-            timeout=15,
+            json=payload,
+            timeout=20,
         )
         if r.status_code >= 400:
             print(f"[mail error] {r.status_code}: {r.text[:300]}")
@@ -80,3 +91,27 @@ def send_password_reset(to: str, token: str, name: str | None = None) -> bool:
     body = "<p>We received a request to reset your password. This link expires in 1 hour.</p>"
     return _send(to, "Reset your CELR password",
                  _layout("Reset your password", body, "Reset password", url))
+
+
+def send_purchase_order(to: str, *, po_number: str, order_name: str,
+                        buyer_name: str, distributor: str, pdf_bytes: bytes,
+                        rep_name: str | None = None, reply_to: str | None = None,
+                        cc: list[str] | None = None) -> bool:
+    """Email a purchase order to a sales rep with the PO PDF attached. Returns
+    True only if Resend accepted the message. reply_to is set to the buyer so
+    the rep can reply straight back to the retailer."""
+    greeting = f"Hi {rep_name}," if rep_name else "Hello,"
+    body = (
+        f"<p>{greeting}</p>"
+        f"<p>{buyer_name} has submitted purchase order <strong>{po_number}</strong> "
+        f"for {distributor}. The full order is attached as a PDF.</p>"
+        f"<p>Please confirm availability and pricing, then process the order. "
+        f"Reply to this email to reach the buyer directly.</p>"
+    )
+    attachment = {
+        "filename": f"PO-{po_number}.pdf",
+        "content": base64.b64encode(pdf_bytes).decode("ascii"),
+    }
+    subject = f"Purchase Order {po_number} from {buyer_name}"
+    return _send(to, subject, _layout(f"Purchase Order {po_number}", body),
+                 attachments=[attachment], reply_to=reply_to, cc=cc)

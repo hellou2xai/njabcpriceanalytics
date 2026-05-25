@@ -317,7 +317,24 @@ export const orders = {
   clone: (id: number) => request<{ id: number }>(`/api/orders/${id}/clone`, { method: 'POST' }),
   copyWatchlist: (id: number) => request<{ copied: number }>(`/api/orders/${id}/copy-watchlist`, { method: 'POST' }),
   scorecard: (id: number) => request<OrderScorecard>(`/api/intelligence/order-scorecard/${id}`),
+  // Submit: mark the order submitted AND email the PO PDF to the sales rep.
+  submit: (id: number) =>
+    request<SubmitResult>(`/api/orders/${id}/submit`, { method: 'POST' }),
+  // Fetch the PO PDF as a Blob (sends the auth header), for the in-app preview.
+  pdfBlob: async (id: number): Promise<Blob> => {
+    const res = await fetch(`${BASE}/api/orders/${id}/pdf`, { headers: { ...authHeaders() } });
+    if (!res.ok) throw new Error(`Could not load PDF (${res.status})`);
+    return res.blob();
+  },
 };
+
+export interface SubmitResult {
+  status: string;
+  emailed: boolean;
+  to: string | null;
+  rep_name: string | null;
+  reason: 'no_rep_email' | 'email_disabled' | null;
+}
 
 export interface AllNote {
   source: 'product' | 'watchlist' | 'order' | 'order_line';

@@ -13,6 +13,7 @@ import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Catalog from './pages/Catalog';
 import NewItems from './pages/NewItems';
+import HowToGuide from './pages/HowToGuide';
 import Discounts from './pages/Discounts';
 import Clearance from './pages/Clearance';
 import Combos from './pages/Combos';
@@ -97,6 +98,7 @@ function AuthenticatedApp() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/catalog" element={<Catalog />} />
             <Route path="/new-items" element={<NewItems />} />
+            <Route path="/how-to-guide" element={<HowToGuide />} />
             <Route path="/discounts" element={<Discounts />} />
             <Route path="/clearance" element={<Clearance />} />
             <Route path="/combos" element={<Combos />} />

@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   LayoutDashboard, Package, ShoppingCart, Bell, Star, Menu, X, Combine,
   Sun, Moon, LogOut, BadgeDollarSign, ClipboardList, LayoutGrid,
-  PanelLeftClose, PanelLeftOpen, StickyNote, UserCog, Settings, Shield, Sparkles,
+  PanelLeftClose, PanelLeftOpen, StickyNote, UserCog, Settings, Shield, Sparkles, BookOpen,
 } from 'lucide-react';
 import { alerts as alertsApi, orders as ordersApi } from '../lib/api';
 import WhatsAppShareButton from './WhatsAppShare';
@@ -24,6 +24,7 @@ const NAV = [
   { path: '/configuration', label: 'Configuration', icon: Settings },
   { path: '/more', label: 'Addnl Pages', icon: LayoutGrid, adminOnly: true },
   { path: '/alerts', label: 'Alerts', icon: Bell },
+  { path: '/how-to-guide', label: 'How To Guide', icon: BookOpen },
 ];
 
 function useTheme() {

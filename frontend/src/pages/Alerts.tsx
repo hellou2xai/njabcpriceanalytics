@@ -45,7 +45,7 @@ function AlertCard({ a, onOpen }: { a: Alert; onOpen: (a: Alert) => void }) {
   const items = a.payload?.items ?? [];
   const count = a.payload?.count ?? items.length;
   const read = !!a.read;
-  const shown = items.slice(0, 3);   // fixed number of lines so every tile matches
+  const shown = items.slice(0, 10);   // fixed number of lines so every tile matches
   return (
     <div className={`alert-card intent-${intent} ${read ? 'read' : 'unread'}`}
       onClick={() => onOpen(a)} title="Open the details">

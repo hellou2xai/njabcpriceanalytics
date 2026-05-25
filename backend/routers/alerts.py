@@ -117,7 +117,7 @@ def _rollup(pg, user_id, ym, category, intent, message, items, priority):
             (user_id, category, ym),
         )
         return 0
-    payload = json.dumps({"intent": intent, "count": count, "items": items[:8]})
+    payload = json.dumps({"intent": intent, "count": count, "items": items[:10]})
     pg.execute(
         """INSERT INTO alerts (user_id, alert_type, edition, message, priority, payload, read)
            VALUES (%s, %s, %s, %s, %s, %s, 0)

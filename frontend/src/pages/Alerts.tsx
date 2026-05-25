@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { alerts, type Alert } from '../lib/api';
 import { distributorName } from '../lib/distributors';
@@ -22,7 +23,23 @@ const CAT: Record<string, { label: string; icon: typeof Clock }> = {
   price_increase: { label: 'Price increases', icon: TrendingUp },
 };
 
-function AlertCard({ a, onRead }: { a: Alert; onRead: (id: number) => void }) {
+// Where each category opens, with the relevant filter pre-applied, so the user
+// can act on the details.
+const CAT_LINK: Record<string, string> = {
+  expiring: '/',
+  rip: '/rip-products',
+  combo: '/combos',
+  clearance: '/clearance',
+  price_drop: '/analytics?tab=movers-down',
+  target_hit: '/watchlist',
+  order_check: '/orders',
+  buy_now: '/analytics?tab=movers-up',
+  wait: '/analytics?tab=movers-down',
+  lost_deal: '/analytics?tab=lost-discounts',
+  price_increase: '/analytics?tab=movers-up',
+};
+
+function AlertCard({ a, onOpen }: { a: Alert; onOpen: (a: Alert) => void }) {
   const meta = CAT[a.alert_type] ?? { label: a.alert_type.replace(/_/g, ' '), icon: Clock };
   const Icon = meta.icon;
   const intent = a.payload?.intent ?? 'opportunity';
@@ -31,7 +48,7 @@ function AlertCard({ a, onRead }: { a: Alert; onRead: (id: number) => void }) {
   const read = !!a.read;
   return (
     <div className={`alert-card intent-${intent} ${read ? 'read' : 'unread'}`}
-      onClick={() => !read && onRead(a.id)}>
+      onClick={() => onOpen(a)} title="Open the details">
       <div className="alert-card-head">
         <span className="alert-card-title"><Icon size={16} /> {a.message}</span>
         <span className="alert-cat-chip">{meta.label}</span>
@@ -54,6 +71,7 @@ function AlertCard({ a, onRead }: { a: Alert; onRead: (id: number) => void }) {
 
 export default function AlertsPage() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const { data, isLoading } = useQuery({ queryKey: ['alerts'], queryFn: () => alerts.get() });
 
   // Auto-refresh the digest whenever the page is opened. No manual button.
@@ -84,7 +102,11 @@ export default function AlertsPage() {
   const all = data ?? [];
   const opps = all.filter(a => (a.payload?.intent ?? 'opportunity') === 'opportunity');
   const risks = all.filter(a => a.payload?.intent === 'risk');
-  const onRead = (id: number) => markRead.mutate(id);
+  // Clicking a tile marks it read and opens its source with filters applied.
+  const onOpen = (a: Alert) => {
+    if (!a.read) markRead.mutate(a.id);
+    navigate(CAT_LINK[a.alert_type] ?? '/');
+  };
 
   return (
     <div className="page">
@@ -109,12 +131,12 @@ export default function AlertsPage() {
           <div className="section-label">Opportunities · don&apos;t miss these</div>
           {opps.length === 0
             ? <p className="text-muted" style={{ fontSize: 13 }}>Nothing time-sensitive right now.</p>
-            : <div className="alert-grid">{opps.map(a => <AlertCard key={a.id} a={a} onRead={onRead} />)}</div>}
+            : <div className="alert-grid">{opps.map(a => <AlertCard key={a.id} a={a} onOpen={onOpen} />)}</div>}
 
           <div className="section-label" style={{ marginTop: 22 }}>Watch-outs · avoid a mistake</div>
           {risks.length === 0
             ? <p className="text-muted" style={{ fontSize: 13 }}>No issues found.</p>
-            : <div className="alert-grid">{risks.map(a => <AlertCard key={a.id} a={a} onRead={onRead} />)}</div>}
+            : <div className="alert-grid">{risks.map(a => <AlertCard key={a.id} a={a} onOpen={onOpen} />)}</div>}
         </>
       )}
     </div>

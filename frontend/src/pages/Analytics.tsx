@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { analytics, watchlist } from '../lib/api';
 import SortableTable from '../components/SortableTable';
@@ -14,9 +15,13 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 
 type Tab = 'movers-down' | 'movers-up' | 'new-items' | 'new-discounts' | 'lost-discounts' | 'cross-source' | 'category-trends';
 
+const VALID_TABS: Tab[] = ['movers-down', 'movers-up', 'new-items', 'new-discounts', 'lost-discounts', 'cross-source', 'category-trends'];
+
 export default function AnalyticsPage() {
+  const [params] = useSearchParams();
+  const initialTab = VALID_TABS.includes(params.get('tab') as Tab) ? (params.get('tab') as Tab) : 'movers-down';
   const [wholesaler, setWholesaler] = useState('');
-  const [tab, setTab] = useState<Tab>('movers-down');
+  const [tab, setTab] = useState<Tab>(initialTab);
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'movers-down', label: 'Price Drops' },

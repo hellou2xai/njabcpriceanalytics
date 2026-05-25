@@ -212,6 +212,9 @@ export default function OrderDetail() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState('');
+  // Revision controls (shown in the submit dialog when re-submitting)
+  const [revisionInput, setRevisionInput] = useState<number>(1);
+  const [sendCancellation, setSendCancellation] = useState(true);
 
   // ---- queries ----
   const { data, isLoading, isError } = useQuery({
@@ -226,13 +229,20 @@ export default function OrderDetail() {
   }, [qc, orderId]);
 
   const submitMut = useMutation({
-    mutationFn: () => orders.submit(orderId),
+    mutationFn: (vars: { revision: number; send_cancellation: boolean }) =>
+      orders.submit(orderId, vars),
     onSuccess: (res) => {
       setSubmitConfirm(false);
       setSubmitResult(res);
-      trackAction('Order submitted', { orderId, emailed: res.emailed });
+      trackAction(res.is_revision ? 'Order re-submitted' : 'Order submitted',
+        { orderId, revision: res.revision, emailed: res.emailed });
       invalidateOrder();
     },
+  });
+
+  const reopenMut = useMutation({
+    mutationFn: () => orders.reopen(orderId),
+    onSuccess: invalidateOrder,
   });
 
   const cloneMut = useMutation({
@@ -298,6 +308,9 @@ export default function OrderDetail() {
   const repsForDist = (reps ?? []).filter(r => !order?.distributor || r.distributor === order.distributor);
   const allLines = data?.lines ?? [];
   const isDraft = order?.status === 'draft';
+  const revision = order?.revision ?? 0;
+  const isRevision = revision >= 1;          // submitted at least once before
+  const defaultRevision = revision + 1;      // the next revision to send
   const displayNotes = notes !== null ? notes : (order?.notes ?? '');
 
   // Division filter
@@ -396,11 +409,17 @@ export default function OrderDetail() {
     deleteMut.mutate();
   }
 
-  async function openPreview() {
+  function openSubmit() {
+    setRevisionInput(defaultRevision);
+    setSendCancellation(true);
+    setSubmitConfirm(true);
+  }
+
+  async function openPreview(rev?: number) {
     setPreviewError('');
     setPreviewLoading(true);
     try {
-      const blob = await orders.pdfBlob(orderId);
+      const blob = await orders.pdfBlob(orderId, rev);
       setPreviewUrl((prev) => {
         if (prev) URL.revokeObjectURL(prev);
         return URL.createObjectURL(blob);
@@ -476,6 +495,11 @@ export default function OrderDetail() {
 
           {/* Status badge */}
           <span className={statusBadgeClass(order.status)}>{order.status.toUpperCase()}</span>
+
+          {/* Revision badge (once submitted at least once) */}
+          {isRevision && (
+            <span className="tag tag-gray" title="Purchase order revision">Rev {revision}</span>
+          )}
         </div>
 
         <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
@@ -515,7 +539,7 @@ export default function OrderDetail() {
           <button className="btn btn-secondary" onClick={() => cloneMut.mutate()} disabled={cloneMut.isPending}>
             {cloneMut.isPending ? 'Cloning...' : 'Clone Order'}
           </button>
-          <button className="btn btn-secondary" onClick={openPreview} disabled={previewLoading}
+          <button className="btn btn-secondary" onClick={() => openPreview()} disabled={previewLoading}
             title="See the purchase order PDF that gets sent to your rep">
             {previewLoading ? 'Loading PDF...' : 'Preview PDF'}
           </button>
@@ -527,8 +551,14 @@ export default function OrderDetail() {
             </button>
           )}
           {isDraft && (
-            <button className="btn" onClick={() => setSubmitConfirm(true)} disabled={submitMut.isPending}>
-              {submitMut.isPending ? 'Submitting...' : 'Submit Order'}
+            <button className="btn" onClick={openSubmit} disabled={submitMut.isPending}>
+              {submitMut.isPending ? 'Submitting...' : (isRevision ? `Re-submit (Rev ${defaultRevision})` : 'Submit Order')}
+            </button>
+          )}
+          {!isDraft && (
+            <button className="btn" onClick={() => reopenMut.mutate()} disabled={reopenMut.isPending}
+              title="Bring this order back to draft so you can change items, the rep, and re-submit a new revision">
+              {reopenMut.isPending ? 'Reopening...' : 'Reopen to revise'}
             </button>
           )}
           {isDraft && (
@@ -564,10 +594,12 @@ export default function OrderDetail() {
       {/* Submit confirmation */}
       {submitConfirm && (
         <div className="modal-overlay" onClick={() => setSubmitConfirm(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 470 }}>
-            <h3>Submit order</h3>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
+            <h3>{isRevision ? 'Re-submit order' : 'Submit order'}</h3>
             <p style={{ margin: '12px 0', fontSize: 14 }}>
-              Submitting locks this order and emails the purchase order PDF to your sales rep.
+              {isRevision
+                ? 'Submitting sends a revised purchase order to your sales rep and locks the order again.'
+                : 'Submitting locks this order and emails the purchase order PDF to your sales rep.'}
             </p>
             {repEmail ? (
               <p style={{ fontSize: 14, margin: '0 0 12px' }}>
@@ -585,13 +617,38 @@ export default function OrderDetail() {
                 distributor and rep above first.
               </p>
             )}
+
+            {isRevision && (
+              <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', marginBottom: 12 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13.5 }}>
+                  <span style={{ fontWeight: 600 }}>Revision number</span>
+                  <input
+                    type="number" min={1}
+                    value={revisionInput}
+                    onChange={e => setRevisionInput(Math.max(1, Number(e.target.value) || 1))}
+                    style={{ width: 70, padding: '5px 8px', border: '1px solid var(--border)', borderRadius: 6,
+                      background: 'var(--bg)', color: 'var(--text)', fontSize: 14 }}
+                  />
+                  <span className="text-muted" style={{ fontSize: 12 }}>was Rev {revision}</span>
+                </label>
+                {repEmail && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginTop: 10 }}>
+                    <input type="checkbox" checked={sendCancellation} onChange={e => setSendCancellation(e.target.checked)} />
+                    Email the rep a cancellation of Rev {revision} first
+                  </label>
+                )}
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-              <button className="btn btn-secondary" onClick={openPreview} disabled={previewLoading}>
+              <button className="btn btn-secondary" onClick={() => openPreview(isRevision ? revisionInput : undefined)} disabled={previewLoading}>
                 {previewLoading ? 'Loading...' : 'Preview PDF'}
               </button>
               <button className="btn btn-secondary" onClick={() => setSubmitConfirm(false)}>Cancel</button>
-              <button className="btn" onClick={() => submitMut.mutate()} disabled={submitMut.isPending}>
-                {submitMut.isPending ? 'Submitting...' : (repEmail ? 'Submit & send' : 'Submit anyway')}
+              <button className="btn"
+                onClick={() => submitMut.mutate({ revision: isRevision ? revisionInput : defaultRevision, send_cancellation: sendCancellation })}
+                disabled={submitMut.isPending}>
+                {submitMut.isPending ? 'Submitting...' : (repEmail ? (isRevision ? 'Re-submit & send' : 'Submit & send') : 'Submit anyway')}
               </button>
             </div>
           </div>
@@ -602,11 +659,15 @@ export default function OrderDetail() {
       {submitResult && (
         <div className="modal-overlay" onClick={() => setSubmitResult(null)}>
           <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
-            <h3>Order submitted</h3>
+            <h3>{submitResult.is_revision ? `Revision ${submitResult.revision} submitted` : 'Order submitted'}</h3>
             {submitResult.emailed ? (
               <p style={{ fontSize: 14, margin: '12px 0' }}>
-                The purchase order was emailed to <strong>{submitResult.rep_name}</strong> at{' '}
-                <strong>{submitResult.to}</strong>.
+                {submitResult.cancelled && (
+                  <>The previous revision was cancelled and the </>
+                )}
+                {submitResult.cancelled ? 'revised ' : 'The '}purchase order
+                {submitResult.is_revision ? ` (Revision ${submitResult.revision})` : ''} was emailed to{' '}
+                <strong>{submitResult.rep_name}</strong> at <strong>{submitResult.to}</strong>.
               </p>
             ) : submitResult.reason === 'no_rep_email' ? (
               <p style={{ fontSize: 14, margin: '12px 0', color: '#b45309' }}>

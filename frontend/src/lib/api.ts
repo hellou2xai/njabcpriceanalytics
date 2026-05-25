@@ -317,12 +317,17 @@ export const orders = {
   clone: (id: number) => request<{ id: number }>(`/api/orders/${id}/clone`, { method: 'POST' }),
   copyWatchlist: (id: number) => request<{ copied: number }>(`/api/orders/${id}/copy-watchlist`, { method: 'POST' }),
   scorecard: (id: number) => request<OrderScorecard>(`/api/intelligence/order-scorecard/${id}`),
-  // Submit: mark the order submitted AND email the PO PDF to the sales rep.
-  submit: (id: number) =>
-    request<SubmitResult>(`/api/orders/${id}/submit`, { method: 'POST' }),
+  // Submit (or re-submit) the order and email the PO to the sales rep. On a
+  // re-submit, pass a revision and whether to send a cancellation of the prior.
+  submit: (id: number, data?: { revision?: number; send_cancellation?: boolean }) =>
+    request<SubmitResult>(`/api/orders/${id}/submit`, { method: 'POST', body: JSON.stringify(data ?? {}) }),
+  // Reopen a submitted order back to draft so it can be revised.
+  reopen: (id: number) => request<{ status: string; revision: number }>(`/api/orders/${id}/reopen`, { method: 'POST' }),
   // Fetch the PO PDF as a Blob (sends the auth header), for the in-app preview.
-  pdfBlob: async (id: number): Promise<Blob> => {
-    const res = await fetch(`${BASE}/api/orders/${id}/pdf`, { headers: { ...authHeaders() } });
+  // Pass a revision to preview a specific revision number.
+  pdfBlob: async (id: number, revision?: number): Promise<Blob> => {
+    const q = revision != null ? `?revision=${revision}` : '';
+    const res = await fetch(`${BASE}/api/orders/${id}/pdf${q}`, { headers: { ...authHeaders() } });
     if (!res.ok) throw new Error(`Could not load PDF (${res.status})`);
     return res.blob();
   },
@@ -331,8 +336,11 @@ export const orders = {
 export interface SubmitResult {
   status: string;
   emailed: boolean;
+  cancelled: boolean;
   to: string | null;
   rep_name: string | null;
+  revision: number;
+  is_revision: boolean;
   reason: 'no_rep_email' | 'email_disabled' | null;
 }
 
@@ -884,6 +892,7 @@ export interface Order {
   id: number; name: string; status: string; notes?: string;
   division?: string; created_at: string; updated_at?: string;
   distributor?: string | null; sales_rep_id?: number | null;
+  revision?: number;
   total?: number;
 }
 

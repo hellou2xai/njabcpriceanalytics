@@ -370,3 +370,11 @@ def init_user_db():
             ).fetchone()
             if not exists:
                 con.execute(ddl)
+        # Orders carry a revision number. 0 = never submitted; each submit sets it
+        # (first submit -> 1), and a reopened order can be re-submitted as the next
+        # revision. Lets us cancel a prior PO and resend a revised one.
+        has_rev = con.execute(
+            "SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'revision'"
+        ).fetchone()
+        if not has_rev:
+            con.execute("ALTER TABLE orders ADD COLUMN revision integer DEFAULT 0")

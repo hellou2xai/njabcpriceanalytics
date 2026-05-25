@@ -57,7 +57,7 @@ def _money(v) -> str:
 def _kv(label: str, value: str) -> Table:
     """A stacked label-over-value mini block used in the meta row."""
     t = Table([[Paragraph(label.upper(), _LABEL)], [Paragraph(value or "—", _VALUE)]],
-              colWidths=[1.6 * inch])
+              colWidths=[1.28 * inch])
     t.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 0),
                            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                            ("TOPPADDING", (0, 0), (-1, -1), 0),
@@ -129,13 +129,15 @@ def build_po_pdf(data: dict) -> bytes:
     story.append(header)
     story.append(Spacer(1, 6))
 
-    # --- Meta row: PO #, date, distributor, division ---
+    # --- Meta row: PO #, revision, date, distributor, division ---
+    rev = data.get("revision") or 0
     meta = Table([[
         _kv("PO Number", data.get("po_number", "")),
+        _kv("Revision", str(rev) if rev >= 1 else "Draft"),
         _kv("Date", data.get("date", "")),
         _kv("Distributor", data.get("distributor", "")),
         _kv("Division", data.get("division", "")),
-    ]], colWidths=[1.65 * inch] * 4)
+    ]], colWidths=[1.32 * inch] * 5)
     meta.setStyle(TableStyle([
         ("LINEABOVE", (0, 0), (-1, 0), 1.2, BLUE),
         ("LINEBELOW", (0, 0), (-1, 0), 0.5, LINE),
@@ -287,10 +289,12 @@ def build_po_html(data: dict) -> str:
             f'<div style="font-size:13px;color:{_SLATE}">{_e(value)}</div></td>'
         )
 
+    rev = data.get("revision") or 0
     meta = (
         '<table cellpadding="0" cellspacing="0" width="100%" '
         f'style="border-top:2px solid {_BLUE};margin:6px 0 14px"><tr>'
         + meta_cell("PO Number", data.get("po_number"))
+        + meta_cell("Revision", str(rev) if rev >= 1 else "Draft")
         + meta_cell("Date", data.get("date"))
         + meta_cell("Distributor", data.get("distributor"))
         + meta_cell("Division", data.get("division") or "-")

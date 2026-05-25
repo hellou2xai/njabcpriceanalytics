@@ -601,10 +601,11 @@ def clone_order(order_id: int, user: dict = Depends(get_current_user)):
 
 # ---- Purchase Order PDF + submit (Â§5) ----
 
-def _gather_po(con, order: dict, user: dict) -> tuple[dict, dict]:
+def _gather_po(con, order: dict, user: dict, revision: int | None = None) -> tuple[dict, dict]:
     """Build the dict that po_pdf.build_po_pdf expects, plus the sales rep row.
     Returns (po_data, rep). One source of truth for both the preview and the
-    emailed copy, so the rep gets exactly what the buyer saw."""
+    emailed copy, so the rep gets exactly what the buyer saw. `revision` overrides
+    the order's stored revision (used when previewing/sending a new revision)."""
     order_id = order["id"]
     rep = None
     if order.get("sales_rep_id"):
@@ -652,6 +653,7 @@ def _gather_po(con, order: dict, user: dict) -> tuple[dict, dict]:
     buyer_name = store.get("name") or urow.get("full_name") or urow.get("email") or "Buyer"
     po_data = {
         "po_number": f"CELR-{order_id:05d}",
+        "revision": revision if revision is not None else (order.get("revision") or 0),
         "date": date.today().isoformat(),
         "distributor": DISTRIBUTOR_NAMES.get(order.get("distributor"), order.get("distributor") or "—"),
         "division": order.get("division") or "",
@@ -677,11 +679,12 @@ def _gather_po(con, order: dict, user: dict) -> tuple[dict, dict]:
 
 
 @router.get("/orders/{order_id}/pdf")
-def order_pdf(order_id: int, user: dict = Depends(get_current_user)):
-    """Render the order as a Purchase Order PDF, inline (for the in-app preview)."""
+def order_pdf(order_id: int, revision: Optional[int] = None, user: dict = Depends(get_current_user)):
+    """Render the order as a Purchase Order PDF, inline (for the in-app preview).
+    `revision` previews a specific revision number (defaults to the stored one)."""
     with get_pg() as con:
         order = dict(_require_order(con, order_id, user["id"]))
-        po_data, _rep = _gather_po(con, order, user)
+        po_data, _rep = _gather_po(con, order, user, revision=revision)
     pdf = build_po_pdf(po_data)
     return Response(
         content=pdf, media_type="application/pdf",
@@ -689,19 +692,62 @@ def order_pdf(order_id: int, user: dict = Depends(get_current_user)):
     )
 
 
-@router.post("/orders/{order_id}/submit")
-def submit_order(order_id: int, user: dict = Depends(get_current_user)):
-    """Mark an order submitted and email the PO PDF to its sales rep. The buyer
-    is set as reply-to so the rep can answer the retailer directly. Returns
-    whether the email actually went out and to whom, so the UI can be honest."""
+class SubmitOrderIn(BaseModel):
+    # New revision number to send as. Defaults to the next revision (current + 1).
+    revision: Optional[int] = None
+    # On a revision (the order was submitted before), also email a cancellation
+    # of the previous revision to the rep.
+    send_cancellation: bool = True
+
+
+@router.post("/orders/{order_id}/reopen")
+def reopen_order(order_id: int, user: dict = Depends(get_current_user)):
+    """Bring a submitted order back to draft so it can be edited and re-submitted
+    as a new revision. The revision number is left as-is until re-submit."""
     with get_pg() as con:
         order = dict(_require_order(con, order_id, user["id"]))
-        po_data, rep = _gather_po(con, order, user)
+        con.execute(
+            f"UPDATE orders SET status = 'draft', updated_at = {NOW_UTC} WHERE id = %s AND user_id = %s",
+            (order_id, user["id"]),
+        )
+        _audit(con, "orders", order_id, "update",
+               old_values={"status": order.get("status")},
+               new_values={"status": "draft"})
+    return {"status": "draft", "revision": order.get("revision") or 0}
+
+
+@router.post("/orders/{order_id}/submit")
+def submit_order(order_id: int, body: SubmitOrderIn = Body(default=SubmitOrderIn()),
+                 user: dict = Depends(get_current_user)):
+    """Submit (or re-submit) an order and email the PO to its sales rep. On a
+    re-submit it bumps the revision (the buyer may override it) and, by default,
+    first emails a cancellation of the prior revision. The buyer is set as
+    reply-to. Returns what actually happened so the UI can be honest."""
+    with get_pg() as con:
+        order = dict(_require_order(con, order_id, user["id"]))
+        prior_revision = order.get("revision") or 0
+        is_revision = prior_revision >= 1
+        new_revision = body.revision if body.revision and body.revision > 0 else prior_revision + 1
+
+        po_data, rep = _gather_po(con, order, user, revision=new_revision)
         pdf = build_po_pdf(po_data)
 
         rep_email = (rep.get("email") or "").strip()
+        can_email = bool(rep_email and mailer.MAIL_ENABLED)
         emailed = False
-        if rep_email and mailer.MAIL_ENABLED:
+        cancelled = False
+        if can_email:
+            if is_revision and body.send_cancellation:
+                cancelled = mailer.send_po_cancellation(
+                    rep_email,
+                    po_number=po_data["po_number"],
+                    prior_revision=prior_revision,
+                    new_revision=new_revision,
+                    buyer_name=po_data["buyer"]["name"],
+                    distributor=po_data["distributor"],
+                    rep_name=rep.get("name"),
+                    reply_to=po_data["buyer"].get("email"),
+                )
             emailed = mailer.send_purchase_order(
                 rep_email,
                 po_number=po_data["po_number"],
@@ -715,13 +761,13 @@ def submit_order(order_id: int, user: dict = Depends(get_current_user)):
             )
 
         con.execute(
-            f"UPDATE orders SET status = 'submitted', updated_at = {NOW_UTC} "
+            f"UPDATE orders SET status = 'submitted', revision = %s, updated_at = {NOW_UTC} "
             "WHERE id = %s AND user_id = %s",
-            (order_id, user["id"]),
+            (new_revision, order_id, user["id"]),
         )
         _audit(con, "orders", order_id, "update",
-               old_values={"status": order.get("status")},
-               new_values={"status": "submitted", "emailed_to": rep_email or None})
+               old_values={"status": order.get("status"), "revision": prior_revision},
+               new_values={"status": "submitted", "revision": new_revision, "emailed_to": rep_email or None})
 
     reason = None
     if not rep_email:
@@ -731,8 +777,11 @@ def submit_order(order_id: int, user: dict = Depends(get_current_user)):
     return {
         "status": "submitted",
         "emailed": emailed,
+        "cancelled": cancelled,
         "to": rep_email or None,
         "rep_name": rep.get("name"),
+        "revision": new_revision,
+        "is_revision": is_revision,
         "reason": reason,
     }
 

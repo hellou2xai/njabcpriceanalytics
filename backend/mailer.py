@@ -117,3 +117,20 @@ def send_purchase_order(to: str, *, po_number: str, order_name: str,
     subject = f"Purchase Order {po_number} from {buyer_name}"
     return _send(to, subject, _layout(f"Purchase Order {po_number}", body),
                  attachments=[attachment], reply_to=reply_to, cc=cc)
+
+
+def send_po_cancellation(to: str, *, po_number: str, prior_revision: int,
+                         new_revision: int, buyer_name: str, distributor: str,
+                         rep_name: str | None = None, reply_to: str | None = None) -> bool:
+    """Tell the rep a previously sent PO revision is cancelled because a revised
+    version is being sent. Plain notice, no attachment."""
+    greeting = f"Hi {rep_name}," if rep_name else "Hello,"
+    body = (
+        f"<p>{greeting}</p>"
+        f"<p>Please disregard purchase order <strong>{po_number} (Revision {prior_revision})</strong> "
+        f"for {distributor} from {buyer_name}. It has been cancelled.</p>"
+        f"<p>A revised order, <strong>{po_number} (Revision {new_revision})</strong>, is being sent now and "
+        f"replaces it. Please process only the revised version.</p>"
+    )
+    subject = f"CANCELLED: Purchase Order {po_number} (Rev {prior_revision}) from {buyer_name}"
+    return _send(to, subject, _layout(f"Purchase Order {po_number} cancelled", body), reply_to=reply_to)

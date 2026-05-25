@@ -356,8 +356,16 @@ export interface AuthUser { id: number; email: string; full_name?: string | null
 export interface AuthResponse { token: string; user: AuthUser }
 export interface ActivationRequired { status: 'activation_required'; email: string }
 
+// ---- Cookie / consent log ----
+export const consent = {
+  record: (data: {
+    anon_id?: string; analytics: boolean; marketing: boolean;
+    decision?: string; policy_version?: string; page?: string; user_agent?: string;
+  }) => request('/api/consent', { method: 'POST', body: JSON.stringify(data) }),
+};
+
 export const auth = {
-  signup: (data: { email: string; password: string; full_name?: string }) =>
+  signup: (data: { email: string; password: string; phone: string; full_name?: string }) =>
     request<AuthResponse | ActivationRequired>('/api/auth/signup', { method: 'POST', body: JSON.stringify(data) }),
   login: (data: { email: string; password: string }) =>
     request<AuthResponse>('/api/auth/login', { method: 'POST', body: JSON.stringify(data) }),

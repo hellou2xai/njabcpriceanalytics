@@ -221,5 +221,8 @@
 .lp-footer-col a, .lp-footer-col li { color: var(--text-muted); font-size: 14px; }
 .lp-footer-col a:hover { color: var(--text); }
 .lp-footer-bottom { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; margin-top: 40px; padding: 18px 0; border-top: 1px solid var(--border); font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-muted); }
+.lp-footer-legal { display: inline-flex; gap: 16px; }
+.lp-footer-legal a { cursor: pointer; }
+.lp-footer-legal a:hover { color: var(--text); }
 @media (max-width: 760px) { .lp-footer-grid { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 460px) { .lp-footer-grid { grid-template-columns: 1fr; } }

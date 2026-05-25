@@ -23,6 +23,7 @@ from typing import Optional
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 from backend.pg import get_pg
+from backend.db import NOW_UTC
 from backend import mailer
 
 # Token lifetime. Owners stay signed in for 30 days, then re-authenticate.
@@ -173,6 +174,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 class SignupRequest(BaseModel):
     email: str
     password: str
+    phone: str
     full_name: Optional[str] = None
 
     @field_validator("email")
@@ -188,6 +190,18 @@ class SignupRequest(BaseModel):
     def _min_len(cls, v: str) -> str:
         if len(v) < 8:
             raise ValueError("Password must be at least 8 characters")
+        return v
+
+    @field_validator("phone")
+    @classmethod
+    def _valid_phone(cls, v: str) -> str:
+        # Accept common formatting (spaces, dashes, parens, dots, leading +),
+        # but require a real number: 10 to 15 digits (US is 10, plus optional
+        # country code). Stored as entered, trimmed.
+        v = (v or "").strip()
+        digits = re.sub(r"\D", "", v)
+        if len(digits) < 10 or len(digits) > 15:
+            raise ValueError("Enter a valid phone number")
         return v
 
 
@@ -214,6 +228,7 @@ def _claim_orphan_data(con, user_id: int):
 def signup(req: SignupRequest):
     email = req.email.lower().strip()
     full_name = (req.full_name or "").strip() or None
+    phone = req.phone.strip()
     # When email is enabled, the account starts unactivated and must verify via
     # the emailed link. When email is off, auto-activate so nobody is locked out.
     # Admins are never gated by email verification (so a mail problem can't lock
@@ -232,8 +247,9 @@ def signup(req: SignupRequest):
                                     detail="An account with that email already exists. Please sign in.")
         else:
             cur = con.execute(
-                "INSERT INTO users (email, password_hash, full_name, activated) VALUES (%s, %s, %s, %s) RETURNING id",
-                (email, hash_password(req.password), full_name, activated),
+                "INSERT INTO users (email, password_hash, full_name, phone, activated, tos_accepted_at) "
+                f"VALUES (%s, %s, %s, %s, %s, {NOW_UTC}) RETURNING id",
+                (email, hash_password(req.password), full_name, phone, activated),
             )
             user_id = cur.fetchone()["id"]
             _claim_orphan_data(con, user_id)

@@ -1,0 +1,71 @@
+/* Cookie consent banner + preferences modal. App theme tokens (light/dark),
+   scoped under .cc. Responsive: the banner stacks on small screens. */
+
+.cc a { color: var(--accent); text-decoration: none; }
+.cc a:hover { text-decoration: underline; }
+
+.cc-banner {
+  position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 1000;
+  max-width: 920px; margin: 0 auto;
+  display: flex; align-items: center; gap: 18px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow-pop);
+  padding: 16px 18px;
+}
+.cc-text { font-size: 13.5px; line-height: 1.55; color: var(--text); flex: 1; }
+.cc-text strong { font-weight: 700; }
+.cc-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
+
+.cc-btn {
+  padding: 9px 14px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600;
+  cursor: pointer; border: 1px solid var(--border); background: transparent; color: var(--text);
+  transition: background 0.15s, border-color 0.15s, opacity 0.15s; white-space: nowrap;
+}
+.cc-ghost:hover { background: var(--surface-hover); }
+.cc-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.cc-primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+
+/* Preferences modal */
+.cc-modal-overlay {
+  position: fixed; inset: 0; z-index: 1001;
+  background: rgba(15, 23, 41, 0.45);
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.cc-modal {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow-pop);
+  width: 100%; max-width: 480px; max-height: 88vh; overflow-y: auto; padding: 24px;
+}
+.cc-modal-title { font-size: 18px; font-weight: 700; }
+.cc-modal-sub { font-size: 13.5px; line-height: 1.55; color: var(--text-muted); margin: 8px 0 16px; }
+
+.cc-row {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+  padding: 14px 0; border-top: 1px solid var(--border);
+}
+.cc-row-title { font-size: 14.5px; font-weight: 700; }
+.cc-row-desc { font-size: 12.5px; line-height: 1.5; color: var(--text-muted); margin-top: 3px; }
+
+/* Toggle switch */
+.cc-toggle { position: relative; flex-shrink: 0; width: 42px; height: 24px; cursor: pointer; }
+.cc-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.cc-track {
+  position: absolute; inset: 0; border-radius: 999px;
+  background: var(--border); transition: background 0.18s;
+}
+.cc-track::before {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
+  border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.25);
+  transition: transform 0.18s;
+}
+.cc-toggle input:checked + .cc-track { background: var(--accent); }
+.cc-toggle input:checked + .cc-track::before { transform: translateX(18px); }
+.cc-toggle-locked { cursor: not-allowed; opacity: 0.85; }
+
+.cc-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; flex-wrap: wrap; }
+
+@media (max-width: 640px) {
+  .cc-banner { flex-direction: column; align-items: stretch; gap: 12px; left: 10px; right: 10px; bottom: 10px; padding: 14px; }
+  .cc-actions { justify-content: stretch; }
+  .cc-actions .cc-btn { flex: 1; text-align: center; }
+}

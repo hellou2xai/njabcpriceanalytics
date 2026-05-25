@@ -777,6 +777,13 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
   border-radius: var(--radius); padding: 10px 14px;
   color: #1d4ed8; font-size: 13px;
 }
+.login-tos {
+  display: flex; align-items: flex-start; gap: 9px;
+  font-size: 13px; line-height: 1.45; color: var(--text-muted);
+}
+.login-tos input { margin-top: 3px; flex-shrink: 0; width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+.login-tos a { color: var(--accent); text-decoration: none; }
+.login-tos a:hover { text-decoration: underline; }
 .login-forgot { margin: 10px 0 0; text-align: center; font-size: 13px; }
 .login-forgot a { color: var(--accent); text-decoration: none; }
 .login-forgot a:hover { text-decoration: underline; }

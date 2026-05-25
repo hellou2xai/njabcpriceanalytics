@@ -354,11 +354,11 @@ export default function Landing() {
               </ul>
             </div>
             <div className="lp-footer-col">
-              <h4>Resources</h4>
+              <h4>Legal</h4>
               <ul>
-                <li>RIP regulation guide</li>
-                <li>eCPL explainer</li>
-                <li>Margin calculator</li>
+                <li><a onClick={() => navigate('/terms')} style={{ cursor: 'pointer' }}>Terms of Service</a></li>
+                <li><a onClick={() => navigate('/privacy')} style={{ cursor: 'pointer' }}>Privacy Policy</a></li>
+                <li><a onClick={() => window.dispatchEvent(new Event('celr:cookie-preferences'))} style={{ cursor: 'pointer' }}>Cookie preferences</a></li>
               </ul>
             </div>
             <div className="lp-footer-col">
@@ -371,7 +371,10 @@ export default function Landing() {
           </div>
           <div className="lp-footer-bottom">
             <span>© 2026 CELR.ai · A U2xAI product</span>
-            <span>Built for Type 44 owners, by NJ liquor operators</span>
+            <span className="lp-footer-legal">
+              <a onClick={() => navigate('/terms')} style={{ cursor: 'pointer' }}>Terms</a>
+              <a onClick={() => navigate('/privacy')} style={{ cursor: 'pointer' }}>Privacy</a>
+            </span>
           </div>
         </div>
       </footer>

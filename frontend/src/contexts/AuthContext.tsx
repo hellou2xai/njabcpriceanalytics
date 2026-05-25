@@ -10,7 +10,7 @@ interface AuthContextType {
   user: AuthUser | null;
   username: string | null;
   login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string, fullName?: string) => Promise<{ activationRequired: boolean; email?: string }>;
+  signup: (email: string, password: string, phone: string, fullName?: string) => Promise<{ activationRequired: boolean; email?: string }>;
   activate: (token: string) => Promise<void>;
   updateUser: (user: AuthUser) => void;
   logout: () => void;
@@ -63,8 +63,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     persist(res.token, res.user);
   };
 
-  const signup = async (email: string, password: string, fullName?: string) => {
-    const res = await authApi.signup({ email, password, full_name: fullName });
+  const signup = async (email: string, password: string, phone: string, fullName?: string) => {
+    const res = await authApi.signup({ email, password, phone, full_name: fullName });
     if ('token' in res) {
       persist(res.token, res.user);
       return { activationRequired: false };

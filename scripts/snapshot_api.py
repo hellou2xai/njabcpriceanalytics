@@ -203,7 +203,7 @@ class Snapshotter:
         print("Auth + user-data write/read flow (authed):")
         # Fresh user each run (unique email), so read-backs never accumulate.
         s, b = self.call("auth_signup", "POST", "/api/auth/signup", save=False,
-                         json_body={"email": self.email, "password": GOLDEN_PW, "full_name": "Golden Snapshot"})
+                         json_body={"email": self.email, "password": GOLDEN_PW, "full_name": "Golden Snapshot", "phone": "201-555-0100"})
         if s == 409:
             s, b = self.call("auth_login", "POST", "/api/auth/login", save=False,
                             json_body={"email": self.email, "password": GOLDEN_PW})

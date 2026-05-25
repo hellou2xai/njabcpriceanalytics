@@ -36,6 +36,8 @@ import OrderAnalysis from './pages/OrderAnalysis';
 import AdditionalPages from './pages/AdditionalPages';
 import Login from './pages/Login';
 import Landing from './pages/Landing';
+import { Terms, Privacy } from './pages/Legal';
+import CookieConsent from './components/CookieConsent';
 import Activate from './pages/Activate';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
@@ -66,6 +68,8 @@ function AuthenticatedApp() {
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/terms" element={<Terms />} />
+          <Route path="/privacy" element={<Privacy />} />
           <Route path="/activate" element={<Activate />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
@@ -87,6 +91,8 @@ function AuthenticatedApp() {
         <WebPriceSearchProvider>
         <ContextMenuProvider>
         <Routes>
+          <Route path="/terms" element={<Terms />} />
+          <Route path="/privacy" element={<Privacy />} />
           <Route element={<Layout />}>
             <Route path="/" element={<Dashboard />} />
             <Route path="/catalog" element={<Catalog />} />
@@ -131,6 +137,7 @@ export default function App() {
   return (
     <AuthProvider>
       <AuthenticatedApp />
+      <CookieConsent />
     </AuthProvider>
   );
 }

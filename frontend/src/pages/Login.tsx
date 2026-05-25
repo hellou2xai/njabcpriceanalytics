@@ -12,6 +12,8 @@ export default function Login() {
   const [mode, setMode] = useState<'signin' | 'signup'>(params.get('signup') ? 'signup' : 'signin');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState(params.get('email') ?? '');
+  const [phone, setPhone] = useState('');
+  const [tosAccepted, setTosAccepted] = useState(false);
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -57,11 +59,22 @@ export default function Login() {
       setError('Password must be at least 8 characters.');
       return;
     }
+    if (mode === 'signup') {
+      const digits = phone.replace(/\D/g, '');
+      if (digits.length < 10 || digits.length > 15) {
+        setError('Please enter a valid phone number.');
+        return;
+      }
+      if (!tosAccepted) {
+        setError('Please accept the Terms of Service and Privacy Policy to continue.');
+        return;
+      }
+    }
 
     setLoading(true);
     try {
       if (mode === 'signup') {
-        const res = await signup(email.trim(), password, fullName.trim() || undefined);
+        const res = await signup(email.trim(), password, phone.trim(), fullName.trim() || undefined);
         if (res.activationRequired) {
           setMode('signin');
           setPassword('');
@@ -124,6 +137,22 @@ export default function Login() {
             />
           </label>
 
+          {isSignup && (
+            <label className="login-label">
+              <span>Phone number</span>
+              <input
+                type="tel"
+                inputMode="tel"
+                className="login-input"
+                value={phone}
+                // Accept phone characters only (digits and common separators).
+                onChange={e => setPhone(e.target.value.replace(/[^0-9+()\-.\s]/g, ''))}
+                placeholder="(201) 555-0100"
+                autoComplete="tel"
+              />
+            </label>
+          )}
+
           <label className="login-label">
             <span>Password</span>
             <input
@@ -136,7 +165,19 @@ export default function Login() {
             />
           </label>
 
-          <button type="submit" className="btn login-btn" disabled={loading}>
+          {isSignup && (
+            <label className="login-tos">
+              <input type="checkbox" checked={tosAccepted} onChange={e => setTosAccepted(e.target.checked)} />
+              <span>
+                I accept the{' '}
+                <Link to="/terms" target="_blank" rel="noreferrer">Terms of Service</Link>
+                {' '}and{' '}
+                <Link to="/privacy" target="_blank" rel="noreferrer">Privacy Policy</Link>.
+              </span>
+            </label>
+          )}
+
+          <button type="submit" className="btn login-btn" disabled={loading || (isSignup && !tosAccepted)}>
             {loading
               ? (isSignup ? 'Creating account...' : 'Signing in...')
               : (isSignup ? 'Create account' : 'Sign In')}

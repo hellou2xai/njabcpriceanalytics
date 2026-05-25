@@ -85,7 +85,9 @@ def init_user_db():
             email text NOT NULL UNIQUE,
             password_hash text NOT NULL,
             full_name text,
+            phone text,
             activated integer DEFAULT 0,
+            tos_accepted_at text,
             created_at text DEFAULT {NOW_UTC}
         )""",
         f"""CREATE TABLE IF NOT EXISTS auth_tokens (
@@ -232,6 +234,24 @@ def init_user_db():
             user_agent text,
             created_at text DEFAULT {NOW_UTC}
         )""",
+        # Cookie/consent log: one row per decision (accept all, reject, or saved
+        # preferences), tracked for both signed-in and anonymous visitors. anon_id
+        # is a random id stored in the visitor's browser so repeat decisions can be
+        # correlated without any personal data.
+        f"""CREATE TABLE IF NOT EXISTS cookie_consents (
+            id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            user_id integer REFERENCES users(id) ON DELETE SET NULL,
+            user_email text,
+            anon_id text,
+            necessary integer DEFAULT 1,
+            analytics integer DEFAULT 0,
+            marketing integer DEFAULT 0,
+            decision text,
+            policy_version text,
+            page text,
+            user_agent text,
+            created_at text DEFAULT {NOW_UTC}
+        )""",
     ]
     with get_pg() as con:
         for s in stmts:
@@ -246,3 +266,16 @@ def init_user_db():
         if not has_col:
             con.execute("ALTER TABLE users ADD COLUMN activated integer DEFAULT 0")
             con.execute("UPDATE users SET activated = 1")
+        # Add later columns to an existing users table if they are missing.
+        # (CREATE TABLE IF NOT EXISTS won't alter an existing table.)
+        for col, ddl in (
+            ("phone", "ALTER TABLE users ADD COLUMN phone text"),
+            ("tos_accepted_at", "ALTER TABLE users ADD COLUMN tos_accepted_at text"),
+        ):
+            exists = con.execute(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = 'users' AND column_name = %s",
+                (col,),
+            ).fetchone()
+            if not exists:
+                con.execute(ddl)

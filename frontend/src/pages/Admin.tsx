@@ -126,6 +126,11 @@ function UserDetailModal({ id, onClose }: { id: number; onClose: () => void }) {
               {(data.user.full_name as string) || 'No name'} · 📞 {(data.user.phone as string) || 'No phone'} ·
               {' '}{data.user.activated ? 'Active' : 'Pending'} · joined {fmtDate(data.user.created_at as string)}
             </p>
+            <p className="text-muted" style={{ marginTop: 0, fontSize: 13 }}>
+              {data.user.tos_accepted_at
+                ? <>Accepted Terms of Service on {fmtDate(data.user.tos_accepted_at as string)}</>
+                : <>Terms of Service: not recorded (account predates the consent checkbox)</>}
+            </p>
             <h4>Orders ({data.orders.length})</h4>
             <GenericTable rows={data.orders} />
             <h4>Stores ({data.stores.length})</h4>
@@ -234,7 +239,7 @@ export default function Admin() {
         <table>
           <thead>
             <tr>
-              <th>Email</th><th>Name</th><th>Phone</th><th>Status</th>
+              <th>Email</th><th>Name</th><th>Phone</th><th>Status</th><th>Terms accepted</th>
               <th className="right">Orders</th><th className="right">Stores</th><th>Joined</th><th>Actions</th>
             </tr>
           </thead>
@@ -251,6 +256,11 @@ export default function Admin() {
                   {u.activated
                     ? <span className="text-green" style={{ fontWeight: 600 }}>Active</span>
                     : <span style={{ color: 'var(--yellow)', fontWeight: 600 }}>Pending</span>}
+                </td>
+                <td style={{ whiteSpace: 'nowrap' }}>
+                  {u.tos_accepted_at
+                    ? <span className="text-green" style={{ fontWeight: 600 }}>✓ {fmtDate(u.tos_accepted_at)}</span>
+                    : <span className="text-muted">—</span>}
                 </td>
                 <td className="right">{u.orders}</td>
                 <td className="right">{u.stores}</td>

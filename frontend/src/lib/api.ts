@@ -218,6 +218,7 @@ export interface AdminUser {
   full_name: string | null;
   phone?: string | null;
   activated: number;
+  tos_accepted_at?: string | null;
   created_at: string;
   orders: number;
   stores: number;

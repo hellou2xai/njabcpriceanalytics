@@ -308,6 +308,25 @@ def init_user_db():
         "CREATE INDEX IF NOT EXISTS idx_activity_user ON activity_events(user_id)",
         "CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_events(created_at)",
         "CREATE INDEX IF NOT EXISTS idx_activity_type ON activity_events(event_type)",
+        # Product enrichment from Go-UPC, keyed by the normalised UPC (leading
+        # zeros stripped, i.e. LTRIM(upc,'0')) so it joins the pricing catalogue.
+        # The image lives in R2; we store its public URL and object key here.
+        # status: 'ok' | 'not_found' | 'error'. attributes holds the raw payload.
+        f"""CREATE TABLE IF NOT EXISTS product_enrichment (
+            upc          text PRIMARY KEY,
+            name         text,
+            brand        text,
+            category     text,
+            description  text,
+            image_url    text,
+            image_key    text,
+            attributes   text,
+            source       text DEFAULT 'go-upc',
+            status       text,
+            attempts     integer DEFAULT 0,
+            fetched_at   text,
+            updated_at   text DEFAULT {NOW_UTC}
+        )""",
     ]
     with get_pg() as con:
         for s in stmts:

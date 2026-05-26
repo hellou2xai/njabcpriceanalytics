@@ -1,48 +1,20 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
-import { watchlist, intelligence, orders, catalog } from '../lib/api';
+import { watchlist, intelligence, catalog } from '../lib/api';
 import type { WatchlistItem, BuySignal } from '../lib/api';
 import RowLimitSelect from '../components/RowLimitSelect';
 import FavoriteButton from '../components/FavoriteButton';
 import ProductThumb from '../components/ProductThumb';
 import { RowMenuButton } from '../components/ContextMenu';
 import PriceTrendIndicator from '../components/PriceTrendIndicator';
-import AddToOrderButton from '../components/AddToOrderButton';
-import { Download, Layers, Save, ShoppingCart, ChevronDown, ChevronUp, Clock, FileText } from 'lucide-react';
+import AddToCartButton from '../components/AddToCartButton';
+import { Download, Layers } from 'lucide-react';
 import { distributorName } from '../lib/distributors';
 
-// ---- Cart State (localStorage) ----
-type CartQty = { cases: number; units: number };
-type CartState = Record<string, CartQty>; // key = "product_name|wholesaler"
-
-function loadCart(): CartState {
-  try { return JSON.parse(localStorage.getItem('lpb_current_cart') ?? '{}'); }
-  catch { return {}; }
-}
-function saveCart(cart: CartState) {
-  localStorage.setItem('lpb_current_cart', JSON.stringify(cart));
-}
-
-// ---- Templates (localStorage) ----
-interface OrderTemplate { name: string; cart: CartState; savedAt: string }
-function loadTemplates(): OrderTemplate[] {
-  try { return JSON.parse(localStorage.getItem('lpb_order_templates') ?? '[]'); }
-  catch { return []; }
-}
-function saveTemplates(templates: OrderTemplate[]) {
-  localStorage.setItem('lpb_order_templates', JSON.stringify(templates));
-}
-
-// ---- Order History (localStorage) ----
-interface OrderHistoryEntry { id: number; name: string; time: string; itemCount: number; cost: number; cart: CartState }
-function loadHistory(): OrderHistoryEntry[] {
-  try { return JSON.parse(localStorage.getItem('lpb_order_history') ?? '[]'); }
-  catch { return []; }
-}
-function saveHistory(history: OrderHistoryEntry[]) {
-  localStorage.setItem('lpb_order_history', JSON.stringify(history));
-}
+// Transient per-row quantities (cases/units) used to seed the "Add to cart"
+// button and the running totals. Not persisted: the real cart lives server-side.
+type Qty = { cases: number; units: number };
+type QtyState = Record<string, Qty>; // key = "product_name|wholesaler"
 
 // ---- Inline Editable Cell ----
 function InlineEdit({
@@ -77,14 +49,14 @@ function InlineEdit({
 }
 
 // ---- CSV Export ----
-function exportCSV(items: WatchlistItem[], signals: BuySignal[], cart: CartState) {
+function exportCSV(items: WatchlistItem[], signals: BuySignal[], qtys: QtyState) {
   const signalMap = new Map(signals.map(s => [`${s.product_name}|${s.wholesaler}`, s]));
   const headers = ['SKU', 'Description', 'Brand', 'Size', 'Source', 'Category', 'Case Price',
     'Bottle Price', 'Effective Price', 'Savings', 'Target Price', 'Buy Signal', 'Cases', 'Units', 'Note'];
   const rows = items.map(item => {
     const key = `${item.product_name}|${item.wholesaler}`;
     const sig = signalMap.get(key);
-    const qty = cart[key] ?? { cases: 0, units: 0 };
+    const qty = qtys[key] ?? { cases: 0, units: 0 };
     return [
       item.upc ?? '', item.product_name, sig?.brand ?? '', item.unit_volume ?? '', item.wholesaler,
       sig?.product_type ?? '', sig ? sig.frontline_case_price.toFixed(2) : '',
@@ -105,7 +77,7 @@ function exportCSV(items: WatchlistItem[], signals: BuySignal[], cart: CartState
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `order-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `favorites-${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -269,23 +241,11 @@ function parseRipTier(quantityStr?: string): { minCases: number; label: string }
 // ---- Main Component ----
 export default function WatchlistPage() {
   const qc = useQueryClient();
-  const navigate = useNavigate();
   const [limit, setLimit] = useState(100);
   const [groupByCategory, setGroupByCategory] = useState(false);
-  const [cart, setCartState] = useState<CartState>(loadCart);
-  const [orderName, setOrderName] = useState('');
-  const [showCreateOrder, setShowCreateOrder] = useState(false);
+  const [qtys, setQtys] = useState<QtyState>({});
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
-  const [showTemplates, setShowTemplates] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
-
-  // Template state
-  const [templates, setTemplatesState] = useState<OrderTemplate[]>(loadTemplates);
-  const [templateName, setTemplateName] = useState('');
-
-  // History state
-  const [history] = useState<OrderHistoryEntry[]>(loadHistory);
 
   const { data } = useQuery({ queryKey: ['watchlist'], queryFn: watchlist.get });
   const { data: signals } = useQuery({
@@ -293,10 +253,6 @@ export default function WatchlistPage() {
     queryFn: () => intelligence.buySignals(),
   });
 
-  const removeMut = useMutation({
-    mutationFn: (id: number) => watchlist.remove(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['watchlist'] }),
-  });
   const notesMut = useMutation({
     mutationFn: ({ id, notes }: { id: number; notes: string }) => watchlist.setNotes(id, notes),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['watchlist'] }),
@@ -305,51 +261,13 @@ export default function WatchlistPage() {
     mutationFn: ({ id, price }: { id: number; price: number }) => watchlist.setTargetPrice(id, price),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['watchlist'] }),
   });
-  const createOrderMut = useMutation({
-    mutationFn: async (name: string) => {
-      const { id } = await orders.create({ name });
-      await orders.copyWatchlist(id);
-      // Save to history
-      const cartItems = allItems.filter(i => {
-        const q = cart[`${i.product_name}|${i.wholesaler}`];
-        return q && (q.cases > 0 || q.units > 0);
-      });
-      let totalCost = 0;
-      for (const item of cartItems) {
-        const key = `${item.product_name}|${item.wholesaler}`;
-        const qty = cart[key];
-        const sig = signalMap.get(key);
-        totalCost += (qty.cases * (sig?.effective_case_price ?? 0));
-      }
-      const entry: OrderHistoryEntry = {
-        id, name, time: new Date().toISOString(),
-        itemCount: cartItems.length, cost: totalCost, cart: { ...cart },
-      };
-      const updatedHistory = [entry, ...loadHistory()].slice(0, 20);
-      saveHistory(updatedHistory);
-      return id;
-    },
-    onSuccess: (id) => {
-      qc.invalidateQueries({ queryKey: ['orders'] });
-      navigate(`/orders/${id}`);
-    },
-  });
 
-  // Persist cart to localStorage
-  const setCart = useCallback((update: CartState | ((prev: CartState) => CartState)) => {
-    setCartState(prev => {
-      const next = typeof update === 'function' ? update(prev) : update;
-      saveCart(next);
-      return next;
-    });
-  }, []);
-
-  const updateCartQty = useCallback((key: string, field: 'cases' | 'units', value: number) => {
-    setCart(prev => ({
+  const updateQty = useCallback((key: string, field: 'cases' | 'units', value: number) => {
+    setQtys(prev => ({
       ...prev,
-      [key]: { ...prev[key], cases: prev[key]?.cases ?? 0, units: prev[key]?.units ?? 0, [field]: value },
+      [key]: { cases: prev[key]?.cases ?? 0, units: prev[key]?.units ?? 0, [field]: value },
     }));
-  }, [setCart]);
+  }, []);
 
   const allItems = data ?? [];
   const signalMap = useMemo(() => new Map((signals ?? []).map(s => [`${s.product_name}|${s.wholesaler}`, s])), [signals]);
@@ -390,69 +308,14 @@ export default function WatchlistPage() {
     return counts;
   }, [allItems, signalMap]);
 
-  // Cart summary calculations
-  const cartSummary = useMemo(() => {
-    const cartItems = allItems.filter(i => {
-      const q = cart[`${i.product_name}|${i.wholesaler}`];
-      return q && (q.cases > 0 || q.units > 0);
-    });
-    const totalItems = cartItems.length;
-    let totalCost = 0;
-    const categoryBreakdown: Record<string, { count: number; cost: number }> = {};
-
-    for (const item of cartItems) {
-      const key = `${item.product_name}|${item.wholesaler}`;
-      const qty = cart[key];
-      const sig = signalMap.get(key);
-      const price = sig?.effective_case_price ?? 0;
-      const lineCost = qty.cases * price;
-      totalCost += lineCost;
-      const cat = sig?.product_type ?? 'Other';
-      const entry = categoryBreakdown[cat] ?? { count: 0, cost: 0 };
-      entry.count++;
-      entry.cost += lineCost;
-      categoryBreakdown[cat] = entry;
-    }
-
-    return { totalItems, totalCost, categoryBreakdown };
-  }, [allItems, cart, signalMap]);
-
-  // Template handlers
-  const handleSaveTemplate = () => {
-    if (!templateName.trim()) return;
-    const nonEmpty: CartState = {};
-    for (const [k, v] of Object.entries(cart)) {
-      if (v.cases > 0 || v.units > 0) nonEmpty[k] = v;
-    }
-    const updated = templates.filter(t => t.name !== templateName.trim());
-    updated.push({ name: templateName.trim(), cart: nonEmpty, savedAt: new Date().toISOString() });
-    saveTemplates(updated);
-    setTemplatesState(updated);
-    setTemplateName('');
-  };
-
-  const handleDeleteTemplate = (tName: string) => {
-    const updated = templates.filter(t => t.name !== tName);
-    saveTemplates(updated);
-    setTemplatesState(updated);
-  };
-
-  const handleLoadTemplate = (c: CartState) => {
-    setCart(c);
-    setShowTemplates(false);
-  };
-
   // Signal order for display
   const signalOrder = ['BUY_NOW', 'GOOD_BUY', 'HOLD', 'WAIT', 'DEFER'];
-
-  // Suppress unused var warning
-  void removeMut;
 
   // ---- Render helpers ----
   const renderRow = (item: WatchlistItem) => {
     const key = `${item.product_name}|${item.wholesaler}`;
     const sig = signalMap.get(key);
-    const qty = cart[key] ?? { cases: 0, units: 0 };
+    const qty = qtys[key] ?? { cases: 0, units: 0 };
     const hasSavings = sig && sig.total_savings_per_case > 0;
     const effectivePrice = sig?.effective_case_price ?? 0;
     const frontlinePrice = sig?.frontline_case_price ?? 0;
@@ -580,8 +443,8 @@ export default function WatchlistPage() {
         {/* 10. Quantity stepper + RIP progress */}
         <td>
           <div className="cell-stacked" style={{ minWidth: 130 }}>
-            <QtyStepper label="Btl" value={qty.units} onChange={v => updateCartQty(key, 'units', v)} />
-            <QtyStepper label="Case" value={qty.cases} onChange={v => updateCartQty(key, 'cases', v)} />
+            <QtyStepper label="Btl" value={qty.units} onChange={v => updateQty(key, 'units', v)} />
+            <QtyStepper label="Case" value={qty.cases} onChange={v => updateQty(key, 'cases', v)} />
             {sig?.has_rip && ripTier && (
               <RipProgress currentCases={qty.cases} tierCases={ripTier.minCases} tierLabel={ripTier.label} />
             )}
@@ -601,10 +464,10 @@ export default function WatchlistPage() {
             placeholder="$0.00" type="number" align="right" />
         </td>
 
-        {/* 13. Add to order */}
+        {/* 13. Add to cart */}
         <td>
-          <AddToOrderButton productName={item.product_name} wholesaler={item.wholesaler}
-            upc={item.upc} unitVolume={item.unit_volume}
+          <AddToCartButton productName={item.product_name} wholesaler={item.wholesaler}
+            upc={item.upc ?? undefined} unitVolume={item.unit_volume ?? undefined}
             qtyCases={qty.cases} qtyUnits={qty.units} />
         </td>
       </tr>
@@ -640,35 +503,19 @@ export default function WatchlistPage() {
       (groups[cat] ??= []).push(item);
     }
 
-    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b)).map(([category, groupItems]) => {
-      // Calculate category subtotal
-      let subtotal = 0;
-      for (const item of groupItems) {
-        const key = `${item.product_name}|${item.wholesaler}`;
-        const qty = cart[key] ?? { cases: 0, units: 0 };
-        const sig = signalMap.get(key);
-        subtotal += qty.cases * (sig?.effective_case_price ?? 0);
-      }
-
-      return (
-        <div key={category} style={{ marginBottom: 20 }}>
-          <h4 className="group-header">
-            {category} <span className="group-count">({groupItems.length})</span>
-            {subtotal > 0 && (
-              <span style={{ marginLeft: 'auto', color: 'var(--green)', fontWeight: 600, fontSize: 13 }}>
-                ${subtotal.toFixed(2)}
-              </span>
-            )}
-          </h4>
-          <div className="table-container">
-            <table className="tracker-table">
-              {renderTableHeader()}
-              <tbody>{groupItems.map(renderRow)}</tbody>
-            </table>
-          </div>
+    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b)).map(([category, groupItems]) => (
+      <div key={category} style={{ marginBottom: 20 }}>
+        <h4 className="group-header">
+          {category} <span className="group-count">({groupItems.length})</span>
+        </h4>
+        <div className="table-container">
+          <table className="tracker-table">
+            {renderTableHeader()}
+            <tbody>{groupItems.map(renderRow)}</tbody>
+          </table>
         </div>
-      );
-    });
+      </div>
+    ));
   };
 
   return (
@@ -676,25 +523,13 @@ export default function WatchlistPage() {
       {/* ---- Header ---- */}
       <div className="tracker-header">
         <div>
-          <h2 style={{ marginBottom: 2 }}>My Watchlist</h2>
+          <h2 style={{ marginBottom: 2 }}>My Favorites</h2>
           <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-            {allItems.length} saved product{allItems.length !== 1 ? 's' : ''}
+            {allItems.length} saved product{allItems.length !== 1 ? 's' : ''} · set quantities and use the + to add to your cart
           </span>
         </div>
         <div className="page-actions">
-          <button
-            className={`btn ${showTemplates ? '' : 'btn-secondary'}`}
-            onClick={() => { setShowTemplates(!showTemplates); setShowHistory(false); }}
-          >
-            <FileText size={16} /> Templates
-          </button>
-          <button
-            className={`btn ${showHistory ? '' : 'btn-secondary'}`}
-            onClick={() => { setShowHistory(!showHistory); setShowTemplates(false); }}
-          >
-            <Clock size={16} /> History
-          </button>
-          <button className="btn btn-secondary" onClick={() => exportCSV(allItems, signals ?? [], cart)}
+          <button className="btn btn-secondary" onClick={() => exportCSV(allItems, signals ?? [], qtys)}
             disabled={allItems.length === 0}>
             <Download size={16} /> Export CSV
           </button>
@@ -707,96 +542,6 @@ export default function WatchlistPage() {
           {signalOrder.filter(s => signalCounts[s] > 0).map(signal => (
             <SignalPill key={signal} signal={signal} count={signalCounts[signal]} />
           ))}
-        </div>
-      )}
-
-      {/* ---- Templates Panel ---- */}
-      {showTemplates && (
-        <div className="collapsible-panel">
-          <div className="collapsible-header" onClick={() => setShowTemplates(!showTemplates)}>
-            <span style={{ fontWeight: 600, fontSize: 14 }}>
-              <FileText size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />
-              Order Templates
-            </span>
-            {showTemplates ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-          </div>
-          <div className="collapsible-body">
-            {templates.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
-                {templates.map(t => (
-                  <div key={t.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
-                    <span style={{ flex: 1, fontWeight: 500, fontSize: 13 }}>{t.name}</span>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                      {Object.keys(t.cart).length} items
-                    </span>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                      {new Date(t.savedAt).toLocaleDateString()}
-                    </span>
-                    <button className="btn btn-secondary" style={{ padding: '3px 10px', fontSize: 11 }}
-                      onClick={() => handleLoadTemplate(t.cart)}>
-                      Load
-                    </button>
-                    <button className="btn btn-secondary" style={{ padding: '3px 10px', fontSize: 11, color: 'var(--red)' }}
-                      onClick={() => handleDeleteTemplate(t.name)}>
-                      Delete
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>No saved templates yet.</p>
-            )}
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <input type="text" value={templateName} onChange={e => setTemplateName(e.target.value)}
-                placeholder="Template name"
-                onKeyDown={e => { if (e.key === 'Enter') handleSaveTemplate(); }}
-                style={{ padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius)', color: 'var(--text)', fontSize: 12, width: 200 }} />
-              <button className="btn" style={{ padding: '6px 12px', fontSize: 12 }}
-                onClick={handleSaveTemplate} disabled={!templateName.trim()}>
-                <Save size={14} /> Save Cart
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ---- History Panel ---- */}
-      {showHistory && (
-        <div className="collapsible-panel">
-          <div className="collapsible-header" onClick={() => setShowHistory(!showHistory)}>
-            <span style={{ fontWeight: 600, fontSize: 14 }}>
-              <Clock size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />
-              Order History
-            </span>
-            {showHistory ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-          </div>
-          <div className="collapsible-body">
-            {history.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {history.map((h, idx) => (
-                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
-                    <span style={{ fontSize: 12, color: 'var(--text-muted)', width: 140 }}>
-                      {new Date(h.time).toLocaleString()}
-                    </span>
-                    <span style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>{h.name}</span>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{h.itemCount} items</span>
-                    <span style={{ fontSize: 11, color: 'var(--green)', fontWeight: 600 }}>${h.cost.toFixed(2)}</span>
-                    <button className="btn btn-secondary" style={{ padding: '3px 10px', fontSize: 11 }}
-                      onClick={() => navigate(`/orders/${h.id}`)}>
-                      View Order
-                    </button>
-                    <button className="btn btn-secondary" style={{ padding: '3px 10px', fontSize: 11 }}
-                      onClick={() => setCart(h.cart)}>
-                      Re-order
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>No order history yet.</p>
-            )}
-          </div>
         </div>
       )}
 
@@ -837,62 +582,12 @@ export default function WatchlistPage() {
             {renderTableHeader()}
             <tbody>
               {filteredItems.length > 0 ? filteredItems.map(renderRow) : (
-                <tr><td colSpan={14} className="empty">No tracked products yet. Star items from the catalog to add them here.</td></tr>
+                <tr><td colSpan={14} className="empty">No favorites yet. Star items from the catalog to add them here.</td></tr>
               )}
             </tbody>
           </table>
         </div>
       )}
-
-      {/* ---- Cart Summary Bar ---- */}
-      <div className="cart-summary-bar">
-        {cartSummary.totalItems > 0 ? (
-          <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 14 }}>
-                <strong>{cartSummary.totalItems}</strong> item{cartSummary.totalItems !== 1 ? 's' : ''} in cart
-              </span>
-              <span style={{ fontSize: 14 }}>
-                Estimated total: <strong style={{ color: 'var(--green)' }}>${cartSummary.totalCost.toFixed(2)}</strong>
-              </span>
-              <div style={{ marginLeft: 'auto' }}>
-                {showCreateOrder ? (
-                  <span style={{ display: 'flex', gap: 4 }}>
-                    <input type="text" value={orderName} onChange={e => setOrderName(e.target.value)}
-                      placeholder="Order name" autoFocus
-                      onKeyDown={e => { if (e.key === 'Enter' && orderName) createOrderMut.mutate(orderName); }}
-                      style={{ padding: '6px 12px', background: 'var(--bg)', border: '1px solid var(--border)',
-                        borderRadius: 'var(--radius)', color: 'var(--text)', fontSize: 13 }} />
-                    <button className="btn" onClick={() => orderName && createOrderMut.mutate(orderName)}
-                      disabled={!orderName || createOrderMut.isPending}>
-                      {createOrderMut.isPending ? 'Creating...' : 'Create'}
-                    </button>
-                    <button className="btn btn-secondary" onClick={() => setShowCreateOrder(false)}>Cancel</button>
-                  </span>
-                ) : (
-                  <button className="btn" onClick={() => setShowCreateOrder(true)}>
-                    <ShoppingCart size={16} /> Save as Order
-                  </button>
-                )}
-              </div>
-            </div>
-            {Object.keys(cartSummary.categoryBreakdown).length > 0 && (
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {Object.entries(cartSummary.categoryBreakdown).sort(([, a], [, b]) => b.cost - a.cost).map(([cat, { count, cost }], idx, arr) => (
-                  <span key={cat}>
-                    {cat}: {count} item{count !== 1 ? 's' : ''} &middot; ${cost.toFixed(2)}
-                    {idx < arr.length - 1 ? ' |' : ''}
-                  </span>
-                ))}
-              </div>
-            )}
-          </>
-        ) : (
-          <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-            {allItems.length} tracked product{allItems.length !== 1 ? 's' : ''} &middot; Set quantities or save all to an order
-          </span>
-        )}
-      </div>
     </div>
   );
 }

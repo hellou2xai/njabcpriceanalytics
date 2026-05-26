@@ -1,13 +1,12 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { deals, orders, type Combo } from '../lib/api';
+import { deals, cart, type Combo } from '../lib/api';
 import SortableTable from '../components/SortableTable';
 import RowLimitSelect from '../components/RowLimitSelect';
 import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
-import { useOrderAnalysis } from '../contexts/OrderAnalysisContext';
 import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
-import { X, ClipboardList, ShoppingCart } from 'lucide-react';
+import { X, ShoppingCart } from 'lucide-react';
 
 const $ = (v: number | null | undefined, d = 2) =>
   v == null ? '—' : `$${Number(v).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d })}`;
@@ -44,61 +43,27 @@ function SavingsCell({ c }: { c: Combo }) {
   return <span className="text-green font-bold">{$(b.savings)}</span>;
 }
 
-function ComboOrderAdder({ combo }: { combo: Combo }) {
+function ComboCartAdder({ combo }: { combo: Combo }) {
   const qc = useQueryClient();
-  const [open, setOpen] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
-  const { data: draftOrders } = useQuery({
-    queryKey: ['orders', 'draft'], queryFn: () => orders.list('draft'), enabled: open, staleTime: 30_000,
-  });
   const addMut = useMutation({
-    mutationFn: (orderId: number) => orders.addCombo(orderId, { wholesaler: combo.wholesaler, combo_code: combo.combo_code }),
-    onSuccess: (res, orderId) => {
-      const name = draftOrders?.find(o => o.id === orderId)?.name ?? 'order';
-      setFlash(`Added ${res.added} item${res.added === 1 ? '' : 's'} to ${name}`);
-      setOpen(false);
-      qc.invalidateQueries({ queryKey: ['orders'] });
-      setTimeout(() => setFlash(null), 3500);
-    },
-  });
-  const createAndAddMut = useMutation({
-    mutationFn: async () => {
-      const created = await orders.create({ name: `${distributorName(combo.wholesaler)} order`, distributor: combo.wholesaler });
-      return orders.addCombo(created.id, { wholesaler: combo.wholesaler, combo_code: combo.combo_code });
-    },
+    mutationFn: () => cart.fromCombo(combo.wholesaler, combo.combo_code),
     onSuccess: (res) => {
-      setFlash(`Added ${res.added} item${res.added === 1 ? '' : 's'} to a new order`);
-      setOpen(false);
-      qc.invalidateQueries({ queryKey: ['orders'] });
+      setFlash(`Added ${res.added} item${res.added === 1 ? '' : 's'} to your cart`);
+      qc.invalidateQueries({ queryKey: ['cart'] });
       setTimeout(() => setFlash(null), 3500);
     },
   });
   if (flash) return <span className="add-order-flash">{flash}</span>;
   return (
-    <div style={{ position: 'relative' }}>
-      <button className="btn" onClick={() => setOpen(o => !o)}>
-        <ShoppingCart size={15} /> Add bundle to Order ▾
-      </button>
-      {open && (
-        <div className="add-order-dropdown" style={{ right: 0, left: 'auto' }}>
-          {(draftOrders ?? []).map(o => (
-            <button key={o.id} className="add-order-item" disabled={addMut.isPending} onClick={() => addMut.mutate(o.id)}>
-              {o.name}{o.division ? <span className="tag tag-blue" style={{ marginLeft: 4, fontSize: 10 }}>{o.division}</span> : null}
-            </button>
-          ))}
-          <button className="add-order-item" disabled={createAndAddMut.isPending} onClick={() => createAndAddMut.mutate()}>
-            + New order for {distributorName(combo.wholesaler)}
-          </button>
-        </div>
-      )}
-    </div>
+    <button className="btn" disabled={addMut.isPending} onClick={() => addMut.mutate()}>
+      <ShoppingCart size={15} /> {addMut.isPending ? 'Adding...' : 'Add bundle to Cart'}
+    </button>
   );
 }
 
 function ComboDetailModal({ c, onClose }: { c: Combo; onClose: () => void }) {
   const b = breakdown(c);
-  const oa = useOrderAnalysis();
-  const [oaAdded, setOaAdded] = useState<number | null>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
@@ -228,10 +193,7 @@ function ComboDetailModal({ c, onClose }: { c: Combo; onClose: () => void }) {
         </p>
 
         <div className="combo-detail-actions">
-          <ComboOrderAdder combo={c} />
-          <button className="btn btn-secondary" onClick={() => setOaAdded(oa.addCombo(c))}>
-            <ClipboardList size={15} /> {oaAdded != null ? `✓ Added ${oaAdded} item${oaAdded === 1 ? '' : 's'}` : 'Add bundle to Order Analysis'}
-          </button>
+          <ComboCartAdder combo={c} />
         </div>
       </div>
     </div>

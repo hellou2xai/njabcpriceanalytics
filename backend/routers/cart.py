@@ -54,6 +54,11 @@ class GroupNoteIn(BaseModel):
     note: str = ""
 
 
+class FromComboIn(BaseModel):
+    wholesaler: str
+    combo_code: str
+
+
 def _default_rep_for(con, user_id: int, wholesaler: str):
     """Return the rep id when the distributor has exactly one rep, else None."""
     reps = con.execute(
@@ -240,6 +245,44 @@ def add_from_list(body: FromListIn, user: dict = Depends(get_current_user)):
             rep_id = _default_rep_for(con, user["id"], it["wholesaler"])
             _insert_cart_item(con, user["id"], it, rep_id)
     return {"status": "added", "count": len(rows)}
+
+
+@router.post("/from-combo")
+def add_from_combo(body: FromComboIn, user: dict = Depends(get_current_user)):
+    """Add every product in a combo bundle to the cart as separate lines, each
+    tagged with combo_code. They group under the combo's distributor/rep."""
+    from backend.db import read_parquet
+    try:
+        from backend.routers.user_state import _parse_case_qty
+    except Exception:
+        _parse_case_qty = None
+
+    with get_duckdb() as duck:
+        src = read_parquet(duck, "combo")
+        rows = duck.execute(
+            f"""SELECT DISTINCT product_name, upc, qty_per_pack
+                FROM {src}
+                WHERE wholesaler = $ws AND combo_code = $code
+                  AND product_name IS NOT NULL""",
+            {"ws": body.wholesaler, "code": body.combo_code},
+        ).fetchdf()
+
+    added = 0
+    with get_pg() as con:
+        rep_id = _default_rep_for(con, user["id"], body.wholesaler)
+        for _, r in rows.iterrows():
+            pname = r["product_name"]
+            if pname is None or (isinstance(pname, float) and pname != pname):
+                continue
+            upc = None if r["upc"] is None or (isinstance(r["upc"], float) and r["upc"] != r["upc"]) else str(r["upc"])
+            qc = _parse_case_qty(r["qty_per_pack"]) if _parse_case_qty else 1
+            _insert_cart_item(con, user["id"], {
+                "product_name": str(pname), "wholesaler": body.wholesaler,
+                "upc": upc, "combo_code": body.combo_code,
+                "qty_cases": qc or 1, "qty_units": 0,
+            }, rep_id)
+            added += 1
+    return {"status": "added", "added": added}
 
 
 @router.post("/send")

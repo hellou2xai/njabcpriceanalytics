@@ -401,6 +401,8 @@ export const cart = {
     request('/api/cart/assign-rep', { method: 'POST', body: JSON.stringify({ wholesaler, sales_rep_id }) }),
   fromList: (list_id: number, item_ids?: number[]) =>
     request<{ count: number }>('/api/cart/from-list', { method: 'POST', body: JSON.stringify({ list_id, item_ids }) }),
+  fromCombo: (wholesaler: string, combo_code: string) =>
+    request<{ added: number }>('/api/cart/from-combo', { method: 'POST', body: JSON.stringify({ wholesaler, combo_code }) }),
   send: () => request<{ sent: number; skipped_no_rep: number; orders: { order_id: number; rep_name: string; lines: number; emailed: boolean; to: string | null }[] }>('/api/cart/send', { method: 'POST' }),
 };
 
@@ -668,8 +670,13 @@ export interface Product {
   introduced_edition?: string | null;
   // Go-UPC product image (R2 CDN URL), attached per row by the list endpoints.
   image_url?: string | null;
-  // True when this UPC is shared by 2+ distinct products (data-quality flag).
+  // True only when ONE distributor reuses this barcode for 2+ products (a true
+  // data-quality duplicate). Multi-distributor sharing is normal, not this.
   dup_upc?: boolean;
+  // True when the same barcode is carried by 2+ distributors (same product,
+  // several suppliers). distributor_count is how many carry it.
+  multi_distributor?: boolean;
+  distributor_count?: number;
 }
 
 export interface NewItemsResponse {

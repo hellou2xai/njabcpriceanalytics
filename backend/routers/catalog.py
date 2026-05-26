@@ -347,27 +347,43 @@ def _attach_discount_rip_tiers(con, records):
 
 
 def _attach_dup_upc(con, src, records):
-    """Flag rows whose (normalised) UPC is shared by 2+ distinct products — a
-    data-quality red flag (one barcode reused for different items). One batch
-    query per page. Sets rec["dup_upc"] True/False."""
+    """For each row's UPC, work out whether the same barcode is carried by several
+    distributors (informational: the same product at multiple suppliers) versus
+    genuinely reused by ONE distributor for different products (a true duplicate).
+
+    Only the latest edition per wholesaler is considered, so a distributor that
+    renames an item every edition (e.g. Highgrade) does not look like a duplicate.
+    Sets rec["distributor_count"], rec["multi_distributor"], and rec["dup_upc"]
+    (same-distributor reuse). One batch query per page."""
     if not records:
         return
     norms = sorted({str(r.get("upc")).lstrip("0") for r in records
                     if r.get("upc") and str(r.get("upc")).lstrip("0")})
-    dups = set()
+    by_upc: dict[str, tuple[int, int]] = {}  # un -> (distributor_count, max products at one distributor)
     if norms:
         ph = ", ".join(f"$d{i}" for i in range(len(norms)))
         prm = {f"d{i}": u for i, u in enumerate(norms)}
         try:
             rows = con.execute(
-                f"SELECT LTRIM(upc,'0') AS u FROM {src} WHERE LTRIM(upc,'0') IN ({ph}) "
-                "GROUP BY LTRIM(upc,'0') HAVING COUNT(DISTINCT product_name) > 1", prm
+                f"""WITH latest AS (SELECT wholesaler, MAX(edition) AS ed FROM {src} GROUP BY wholesaler),
+                         cur AS (
+                           SELECT LTRIM(e.upc,'0') AS un, e.wholesaler AS w, e.product_name AS pn
+                           FROM {src} e JOIN latest l ON e.wholesaler=l.wholesaler AND e.edition=l.ed
+                           WHERE LTRIM(e.upc,'0') IN ({ph})
+                         ),
+                         per AS (SELECT un, w, COUNT(DISTINCT pn) AS pc FROM cur GROUP BY un, w)
+                    SELECT un, COUNT(DISTINCT w) AS ndist, MAX(pc) AS maxpc
+                    FROM per GROUP BY un""", prm
             ).fetchall()
-            dups = {str(r[0]) for r in rows}
+            by_upc = {str(r[0]): (int(r[1]), int(r[2])) for r in rows}
         except Exception:
-            dups = set()
+            by_upc = {}
     for rec in records:
-        rec["dup_upc"] = str(rec.get("upc") or "").lstrip("0") in dups
+        un = str(rec.get("upc") or "").lstrip("0")
+        ndist, maxpc = by_upc.get(un, (0, 0))
+        rec["distributor_count"] = ndist
+        rec["multi_distributor"] = ndist > 1
+        rec["dup_upc"] = maxpc > 1
 
 
 @router.get("/search")

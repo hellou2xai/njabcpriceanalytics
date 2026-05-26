@@ -252,9 +252,26 @@ export default function HowToGuide() {
               <li><strong>Case / Btl</strong> is the list price per case and per bottle. <strong>Effective</strong> is what you actually pay after the best deal.</li>
               <li><strong>Tier</strong> says how many discount/RIP tiers exist. The tier detail rows appear indented beneath the product, each showing "Buy N = $X", the saving, the price after, and ROI. A tier turns green once your quantity reaches it.</li>
               <li><strong>Better Price</strong> tells you if this month or next month is cheaper.</li>
-              <li>Each row leads with the <strong>product image</strong>. A <strong>dup UPC</strong> tag warns when a barcode is shared by more than one product.</li>
+              <li>Each row leads with the <strong>product image</strong>. A blue <strong>Multiple distributors</strong> tag means the same barcode is carried by more than one wholesaler (the same product, several suppliers, so you can compare and buy from whoever is cheaper). The rarer red <strong>duplicate</strong> tag means one distributor has reused a barcode for different products, so verify it before ordering.</li>
               <li>A <strong>🎁 In combo</strong> link means the product is part of a bundle; click it to open the combo in a popup window.</li>
             </ul>
+            <h3>The discount and RIP tiers (the indented rows)</h3>
+            <p>
+              Under a product that has a deal, the indented rows are its quantity tiers. They are how you decide
+              how many to buy to hit the best price:
+            </p>
+            <ul>
+              <li>A blue <strong>DISC</strong> row is a discount off the price list. A green <strong>RIP</strong> row is a rebate you earn back. RIPs often stack on top of a discount.</li>
+              <li>Each tier reads "<strong>Buy N cs = $X</strong>", with the saving, the effective price at that quantity, and the ROI.</li>
+              <li>As you raise the <strong>Qty</strong>, the tier you have reached <strong>lights up green</strong>, so you can see exactly when a deeper saving kicks in.</li>
+            </ul>
+            <h3>Better Price: buy now or wait?</h3>
+            <p>
+              The <strong>Better Price</strong> column answers one question. <strong>SAME</strong> means the price is
+              steady. <strong>This Month</strong> means it gets more expensive next month, so buy now.
+              <strong> Next Month</strong> means it drops next month, so it may pay to wait. Hover the badge to see
+              this month's effective price against next month's.
+            </p>
             <h3>Adding to the cart</h3>
             <ul>
               <li>Use the <strong>Qty</strong> steppers to set cases and/or bottles, then click the <strong>+</strong> (Add to cart) button in the Order column. The product drops into your <strong>Cart</strong> (top-right), grouped by its sales rep.</li>
@@ -295,9 +312,10 @@ export default function HowToGuide() {
             <Shot src="/guide/04-combos.png" alt="Combos: bundle deals with savings, percentage off, validity, and an outlook for next month." />
             <p>Combos are bundles of products sold together for one price. Use this screen to spot bundles that save more than buying the items separately.</p>
             <ul>
-              <li>Filter by distributor, minimum savings, and whether the bundle is valid this month, next month, or both. The cards at the top show total combos, average savings, and the biggest saving.</li>
-              <li>The table shows the bundle, its price, the regular value, the saving, the % off, and an <strong>Outlook</strong> (for example "ends this month" or "better deal next month").</li>
-              <li>Click a bundle to open its breakdown: every item in the pack, the regular price of each, the combo price, and what you save. From there you can <strong>Add bundle to Order</strong> or <strong>Add bundle to Order Analysis</strong>.</li>
+              <li>The four cards at the top show total combos, average savings, the biggest single saving, and the average % off.</li>
+              <li><strong>Filters</strong>: by distributor, a minimum dollar saving, and <strong>Validity</strong> (valid this month, valid next month, or valid both months). "Both months" finds bundles you can count on across the changeover.</li>
+              <li>The table shows the bundle, its price, the regular value, the saving, the % off, the next-month saving, and an <strong>Outlook</strong> badge: <em>Stable</em>, <em>Buy now (ends this month)</em>, or <em>New next month</em>. A small amber warning on % Off means the distributor's figures look unusual.</li>
+              <li>Click a bundle to open its breakdown: every item in the pack, the regular price of each, the combo price, and what each one saves. From there, <strong>Add bundle to Cart</strong> drops the whole pack into your cart in one go.</li>
             </ul>
             <Callout>If a bundle shows a warning icon, the underlying discount figure looks unusual (very high or negative). Double-check it against the wholesaler before relying on it.</Callout>
           </Section>
@@ -316,14 +334,14 @@ export default function HowToGuide() {
           <Section id="favorites" icon={<Star size={20} />} title="Favorites (your watchlist)">
             <Path>Favorites in the left menu</Path>
             <Shot src="/guide/06-favorites.png" alt="Favorites: your starred products with buy signals, tiers, target price, notes, and a running cart total." />
-            <p>Everything you star lands here. It is built for tracking prices and turning a shortlist into an order.</p>
+            <p>Everything you star lands here. It is your shortlist for watching prices and pushing a few products into the cart.</p>
             <ul>
-              <li>Each row shows the buy signal, price with an up/down trend arrow, the saving and tiers, the effective price, and quantity steppers.</li>
+              <li>Each row shows the <strong>buy signal</strong>, the price with an up/down <strong>trend arrow</strong>, the saving and the discount/RIP tiers, the effective price, and quantity steppers.</li>
               <li><strong>Target</strong>: set the price you want; you get an alert when the market reaches it.</li>
               <li><strong>Notes</strong>: jot a private note inline.</li>
-              <li><strong>Group by category</strong> splits the list into sections with subtotals.</li>
-              <li>Set quantities and the <strong>cart bar at the bottom</strong> tracks your running total. Click <strong>Save as Order</strong> to turn the cart into a draft order, or use the <strong>+</strong> on a row to add a single product to an order.</li>
-              <li><strong>Templates</strong> save a cart you reuse often; <strong>History</strong> lets you re-order from a past cart; <strong>Export CSV</strong> downloads your list.</li>
+              <li><strong>Group by category</strong> splits the list into sections.</li>
+              <li><strong>Add to cart</strong>: set the cases/bottles with the steppers, then click the <strong>+</strong> on a row to drop it into your <strong>Cart</strong> (top-right), grouped by sales rep. Or right-click for the same quick actions.</li>
+              <li><strong>Export CSV</strong> downloads your whole list with prices, savings, and your notes.</li>
             </ul>
           </Section>
 
@@ -336,10 +354,14 @@ export default function HowToGuide() {
               <li><strong>New To-Do</strong> button at the top of the board (or the <strong>+</strong> on a week column) for a task not tied to a product.</li>
             </ul>
             <p>
-              The board has <strong>four weekly buckets</strong>: This week, Next week, In 2 weeks, and 3+ weeks /
-              Later. Cards look like sticky notes. <strong>Drag a card to another week to reschedule it</strong>.
-              On each card you can <strong>edit</strong> (pencil), <strong>mark done</strong>, or <strong>delete</strong>,
-              and click the product to open its details. Completed items collect in a Done list at the bottom.
+              The board reads left to right: a red <strong>Past</strong> column for anything overdue, then
+              <strong> This week</strong>, <strong>Next week</strong>, <strong>In 2 weeks</strong>, and
+              <strong> 3+ weeks / Later</strong>. Each column shows its date range and a count, and tasks are sorted
+              into these buckets by their due date. Cards look like sticky notes.
+              <strong> Drag a card to another column to reschedule it</strong> (the due date moves with it). On each
+              card you can <strong>edit</strong> (pencil), <strong>mark done</strong>, or <strong>delete</strong> (bin),
+              and click the product to open its details. Overdue tasks stay red in Past until you deal with them, and
+              completed items collect in a Done list at the bottom.
             </p>
           </Section>
 

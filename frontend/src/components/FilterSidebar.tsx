@@ -65,7 +65,10 @@ interface FilterSidebarProps {
 export default function FilterSidebar({ storageKey, sections, onReset, children }: FilterSidebarProps) {
   const lsKey = `filter_sidebar_${storageKey}`;
   const [collapsed, setCollapsed] = useState<boolean>(() => {
-    return localStorage.getItem(lsKey) === 'true';
+    const stored = localStorage.getItem(lsKey);
+    if (stored !== null) return stored === 'true';
+    // Default: open on desktop, collapsed on mobile so the data shows first.
+    return typeof window !== 'undefined' && window.innerWidth <= 1023;
   });
 
   useEffect(() => {

@@ -27,7 +27,12 @@ export default function Catalog() {
   const [filters, setFilters] = useState<CatalogFilters>({ ...emptyCatalogFilters });
   const [cart, setCartState] = useState<CartState>(loadCart);
   const { open } = useProductQuickView();
-  const [showFilters, setShowFilters] = useState(() => localStorage.getItem('lpb_catalog_filters_open') !== 'false');
+  const [showFilters, setShowFilters] = useState(() => {
+    const stored = localStorage.getItem('lpb_catalog_filters_open');
+    if (stored !== null) return stored !== 'false';
+    // Default: open on desktop, collapsed on mobile so the product list shows first.
+    return typeof window === 'undefined' || window.innerWidth > 1023;
+  });
   const toggleFilters = () => setShowFilters(s => { localStorage.setItem('lpb_catalog_filters_open', String(!s)); return !s; });
 
   const setCart = useCallback((update: CartState | ((p: CartState) => CartState)) => {

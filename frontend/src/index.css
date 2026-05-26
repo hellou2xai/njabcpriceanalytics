@@ -145,8 +145,18 @@ body {
   border-bottom: 1px solid var(--border);
 }
 .dashboard-hero { margin-bottom: 22px; }
-@media (max-width: 1023px) { .page > h2, .dashboard-hero { margin: -16px -16px 12px; padding: 14px 16px 10px; } }
-@media (max-width: 480px) { .page > h2, .dashboard-hero { margin: -12px -14px 10px; padding: 12px 14px 8px; } }
+@media (max-width: 1023px) {
+  /* Reclaim side padding for data-heavy pages on phones/tablets. */
+  .main-content { padding: 16px 16px; }
+  /* Keep the sticky title flush, and clear it of the fixed hamburger (top-left). */
+  .page > h2, .dashboard-hero { margin: -16px -16px 12px; padding: 14px 16px 10px 58px; }
+  /* Non-sticky page titles (e.g. Catalog, Combos) also clear the hamburger. */
+  .orders-header { padding-left: 46px; }
+}
+@media (max-width: 480px) {
+  .main-content { padding: 12px 12px; }
+  .page > h2, .dashboard-hero { margin: -12px -12px 10px; padding: 12px 12px 8px 56px; }
+}
 .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .page-actions { display: flex; gap: 8px; }
 
@@ -1780,6 +1790,16 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
   .rip-filter-bar { flex-direction: column; }
   .rip-summary-cards { grid-template-columns: 1fr; }
   .hide-sm { display: none !important; }
+}
+
+/* ===== Compact data tables on small screens (desktop unchanged) ===== */
+@media (max-width: 1023px) {
+  .catalog-table, .tracker-table,
+  .table-container table, .rip-table-wrap table { font-size: 12px; }
+  .catalog-table th, .catalog-table td,
+  .tracker-table th, .tracker-table td { padding: 7px 8px; }
+  /* Smooth momentum scrolling for the horizontal table wrappers. */
+  .table-container, .catalog-table-wrap, .rip-table-wrap { -webkit-overflow-scrolling: touch; }
 }
 
 /* ---- QA (agentic data quality) page ---- */

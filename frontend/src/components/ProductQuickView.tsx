@@ -154,7 +154,16 @@ function QuickViewModal({
 
         {!p ? <p>Loading...</p> : (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+              {detail?.enrichment?.image_url && (
+                <img
+                  src={detail.enrichment.image_url}
+                  alt={p.product_name}
+                  style={{ width: 56, height: 56, objectFit: 'contain', borderRadius: 8,
+                    border: '1px solid var(--border)', background: '#fff', flexShrink: 0, padding: 2 }}
+                  onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                />
+              )}
               <FavoriteButton productName={productName} wholesaler={wholesaler} unitVolume={p.unit_volume} upc={p.upc} />
               <h3 style={{ margin: 0 }}>{p.product_name}</h3>
             </div>

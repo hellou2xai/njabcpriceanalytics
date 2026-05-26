@@ -51,7 +51,7 @@ export const catalog = {
   newItems: (params?: Record<string, unknown>) =>
     request<NewItemsResponse>(`/api/catalog/new-items${qs(params ?? {})}`),
   product: (wholesaler: string, name: string, opts?: { edition?: string; upc?: string; unit_volume?: string; unit_qty?: string; vintage?: string }) =>
-    request<{ product: Product; discount_tiers: DiscountTier[]; rip_tiers: RipTier[] }>(
+    request<{ product: Product; discount_tiers: DiscountTier[]; rip_tiers: RipTier[]; enrichment: ProductEnrichment | null }>(
       `/api/catalog/product/${encodeURIComponent(wholesaler)}/${encodeURIComponent(name)}${qs(opts ?? {})}`
     ),
   editions: () => request<Edition[]>('/api/catalog/editions'),
@@ -116,6 +116,14 @@ export interface ProductBreakdownEdition {
   has_rip: boolean;
   discount_tiers: { qty: number; unit: string; amount: number }[];
   rip_tiers: { qty: number; unit: string; amount: number; save_per_case: number }[];
+}
+
+// Go-UPC enrichment for a product (image + canonical details), matched by UPC.
+export interface ProductEnrichment {
+  name: string | null;
+  brand: string | null;
+  category: string | null;
+  image_url: string | null;
 }
 
 // ---- Analytics ----

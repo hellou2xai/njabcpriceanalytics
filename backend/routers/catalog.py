@@ -895,10 +895,27 @@ def get_product_detail(
                     })
             rip_tiers.sort(key=lambda x: x["qty"])
 
+        # Go-UPC enrichment (image + canonical name/brand/category), matched by
+        # normalised UPC. Empty/absent table -> no enrichment, never an error.
+        enrichment = None
+        prod_upc = item.get("upc")
+        if prod_upc is not None and str(prod_upc) not in ("None", "nan", ""):
+            try:
+                er = con.execute(
+                    "SELECT name, brand, category, image_url FROM product_enrichment "
+                    "WHERE upc = LTRIM($u, '0')",
+                    {"u": str(prod_upc)},
+                ).fetchone()
+            except Exception:
+                er = None
+            if er and (er[0] or er[3]):
+                enrichment = {"name": er[0], "brand": er[1], "category": er[2], "image_url": er[3]}
+
         return {
             "product": _clean_record(row.to_dict(orient="records")[0]),
             "discount_tiers": tiers,
             "rip_tiers": rip_tiers,
+            "enrichment": enrichment,
         }
 
 

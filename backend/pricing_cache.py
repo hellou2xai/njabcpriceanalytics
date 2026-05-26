@@ -83,15 +83,28 @@ def build_pricing_cache() -> Path:
         new_path = CACHE_DIR / f"pricing_{int(time.time() * 1000)}.duckdb"
         con = duckdb.connect(str(new_path))
         try:
+            # Lean enrichment columns only (no description/attributes/image bytes)
+            # so the catalogue can LEFT JOIN by normalised UPC cheaply.
+            enrich_cols = "upc, name, brand, category, image_url"
+            empty_enrich = (
+                "CREATE TABLE product_enrichment ("
+                "upc VARCHAR, name VARCHAR, brand VARCHAR, category VARCHAR, image_url VARCHAR)"
+            )
             if PRICING_SOURCE == "parquet":
                 for t in ALL_TABLES:
                     con.execute(f"CREATE TABLE {t} AS SELECT * FROM {_parquet_select(t)}")
+                # No enrichment in parquet dev mode; an empty table keeps joins valid.
+                con.execute(empty_enrich)
             else:
                 from backend.pg import DATABASE_URL
                 con.execute("INSTALL postgres; LOAD postgres;")
                 con.execute(f"ATTACH '{pg_libpq(DATABASE_URL)}' AS pg (TYPE postgres, READ_ONLY)")
                 for t in ALL_TABLES:
                     con.execute(f"CREATE TABLE {t} AS SELECT * FROM pg.{t}")
+                try:
+                    con.execute(f"CREATE TABLE product_enrichment AS SELECT {enrich_cols} FROM pg.product_enrichment")
+                except Exception:  # table may not exist yet on a brand-new DB
+                    con.execute(empty_enrich)
                 con.execute("DETACH pg")
         finally:
             con.close()

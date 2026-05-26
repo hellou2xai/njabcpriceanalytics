@@ -49,3 +49,19 @@ services:
       # posts it to /api/alerts/regenerate-all at 12:01 AM Eastern.
       - key: CRON_SECRET
         sync: false
+      # Product enrichment (Go-UPC lookups + images in Cloudflare R2). All
+      # optional; enrichment and images are skipped if unset. The S3 endpoint is
+      # derived from R2_ACCOUNT_ID. R2_PUBLIC_BASE_URL is the bucket's public
+      # base (custom domain or r2.dev URL), used to build served image URLs.
+      - key: GO_UPC_API_KEY
+        sync: false
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_PUBLIC_BASE_URL
+        sync: false

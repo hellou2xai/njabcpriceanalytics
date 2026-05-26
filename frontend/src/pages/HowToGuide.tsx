@@ -252,7 +252,7 @@ export default function HowToGuide() {
               <li><strong>Case / Btl</strong> is the list price per case and per bottle. <strong>Effective</strong> is what you actually pay after the best deal.</li>
               <li><strong>Tier</strong> says how many discount/RIP tiers exist. The tier detail rows appear indented beneath the product, each showing "Buy N = $X", the saving, the price after, and ROI. A tier turns green once your quantity reaches it.</li>
               <li><strong>Better Price</strong> tells you if this month or next month is cheaper.</li>
-              <li>Each row leads with the <strong>product image</strong>. A blue <strong>Multiple distributors</strong> tag means the same barcode is carried by more than one wholesaler (the same product, several suppliers, so you can compare and buy from whoever is cheaper). The rarer red <strong>duplicate</strong> tag means one distributor has reused a barcode for different products, so verify it before ordering.</li>
+              <li>Each row leads with the <strong>product image</strong>. A blue <strong>Multiple distributors</strong> tag means the same product is carried by more than one wholesaler, so you can compare and buy from whoever is cheaper. For wine, a <strong>Vintage</strong> tag shows the year: one barcode can cover several vintages, and each is priced differently, so they appear as separate rows.</li>
               <li>A <strong>🎁 In combo</strong> link means the product is part of a bundle; click it to open the combo in a popup window.</li>
             </ul>
             <h3>The discount and RIP tiers (the indented rows)</h3>

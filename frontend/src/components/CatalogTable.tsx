@@ -137,6 +137,10 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                         <div style={{ fontWeight: 600 }}>{item.product_name}</div>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                           {item.upc}
+                          {item.vintage != null && String(item.vintage) !== '0' && String(item.vintage).trim() !== '' && (
+                            <span className="tag" style={{ marginLeft: 6, fontSize: 10 }}
+                                  title="Vintage year. The same barcode can cover several vintages, each priced separately.">Vintage {item.vintage}</span>
+                          )}
                           {item.multi_distributor && (
                             <span className="tag tag-blue" style={{ marginLeft: 6, fontSize: 10 }}
                                   title={`Same product is carried by ${item.distributor_count ?? 'several'} distributors`}>Multiple distributors</span>

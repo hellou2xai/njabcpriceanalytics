@@ -670,11 +670,13 @@ export interface Product {
   introduced_edition?: string | null;
   // Go-UPC product image (R2 CDN URL), attached per row by the list endpoints.
   image_url?: string | null;
-  // True only when ONE distributor reuses this barcode for 2+ products (a true
-  // data-quality duplicate). Multi-distributor sharing is normal, not this.
+  // Vintage year. One barcode can cover several vintages (each priced
+  // differently), so vintage is part of what makes a row distinct.
+  vintage?: string | number | null;
+  // Unused now (kept for back-compat); duplicates are collapsed server-side.
   dup_upc?: boolean;
-  // True when the same barcode is carried by 2+ distributors (same product,
-  // several suppliers). distributor_count is how many carry it.
+  // True when the SAME product is carried by 2+ distributors (not a placeholder
+  // barcode). distributor_count is how many carry it.
   multi_distributor?: boolean;
   distributor_count?: number;
 }

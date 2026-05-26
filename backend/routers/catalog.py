@@ -382,8 +382,12 @@ def _attach_dup_upc(con, src, records):
         un = str(rec.get("upc") or "").lstrip("0")
         ndist, maxpc = by_upc.get(un, (0, 0))
         rec["distributor_count"] = ndist
-        rec["multi_distributor"] = ndist > 1
-        rec["dup_upc"] = maxpc > 1
+        # "Multiple distributors" = the SAME product carried by 2+ distributors.
+        # Require maxpc == 1: no single distributor reuses the barcode for more than
+        # one product. When a distributor puts one barcode on several products it is
+        # a placeholder/garbage UPC, not a shared product, so we don't tag it.
+        rec["multi_distributor"] = ndist > 1 and maxpc == 1
+        rec["dup_upc"] = False
 
 
 @router.get("/search")
@@ -537,14 +541,15 @@ def search_products(
 
         where_clause = " AND ".join(where)
 
-        # Collapse genuine duplicates: when ONE distributor lists the same barcode
-        # for more than one row (a data quirk), show only one. Rows with no UPC are
-        # never collapsed, and the same barcode at DIFFERENT distributors is kept
-        # (that is the same product at several suppliers, not a duplicate).
+        # Collapse only GENUINELY identical rows: same distributor, barcode, name,
+        # size AND vintage. We deliberately do NOT collapse on barcode alone, because
+        # in this data one barcode is reused for (a) different wine VINTAGES, which
+        # are different products at different prices, and (b) placeholder/garbage UPCs
+        # the price files put on many unrelated products. Both must stay expanded.
         dedup = (
-            "QUALIFY (LTRIM(COALESCE(upc,''),'0') = '' "
-            "OR ROW_NUMBER() OVER (PARTITION BY wholesaler, LTRIM(upc,'0') "
-            "ORDER BY frontline_case_price DESC NULLS LAST, product_name, unit_volume) = 1)"
+            "QUALIFY ROW_NUMBER() OVER (PARTITION BY wholesaler, LTRIM(COALESCE(upc,''),'0'), "
+            "product_name, unit_volume, COALESCE(CAST(vintage AS VARCHAR),'') "
+            "ORDER BY frontline_case_price DESC NULLS LAST) = 1"
         )
 
         # Count query (deduped to match the data query)
@@ -555,7 +560,7 @@ def search_products(
         # Data query
         rows = con.execute(f"""
             SELECT wholesaler, edition, upc, product_name, product_type,
-                   unit_qty, unit_volume, frontline_case_price, frontline_unit_price,
+                   unit_qty, unit_volume, vintage, frontline_case_price, frontline_unit_price,
                    best_case_price, best_unit_price, effective_case_price,
                    has_discount, has_rip, has_closeout, discount_pct,
                    total_savings_per_case, rip_code, combo_code,

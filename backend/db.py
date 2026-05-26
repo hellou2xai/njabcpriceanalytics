@@ -207,6 +207,15 @@ def init_user_db():
         )""",
         """CREATE UNIQUE INDEX IF NOT EXISTS idx_cart_user_item
             ON cart_items(user_id, product_name, wholesaler, unit_volume)""",
+        # Per-distributor "header" note for the cart, applied to that rep's order
+        # on send (one order per rep/distributor group).
+        f"""CREATE TABLE IF NOT EXISTS cart_group_notes (
+            user_id integer REFERENCES users(id) ON DELETE CASCADE,
+            wholesaler text NOT NULL,
+            note text,
+            updated_at text DEFAULT {NOW_UTC},
+            PRIMARY KEY (user_id, wholesaler)
+        )""",
         f"""CREATE TABLE IF NOT EXISTS user_ratings (
             id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
             user_id integer REFERENCES users(id) ON DELETE CASCADE,

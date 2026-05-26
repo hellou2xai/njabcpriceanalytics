@@ -367,6 +367,12 @@ export interface CartItem {
   qty_cases: number; qty_units: number;
   sales_rep_id?: number | null; sales_rep_name?: string | null;
   saved_for_later: number; image_url?: string | null; notes?: string | null;
+  // Catalogue pricing + deal tiers (so the cart shows the same deal info).
+  frontline_case_price?: number | null; frontline_unit_price?: number | null;
+  effective_case_price?: number | null; unit_qty?: number | string | null;
+  has_discount?: boolean; has_rip?: boolean;
+  discount_pct?: number | null; total_savings_per_case?: number | null;
+  tiers?: CatalogTier[];
 }
 
 export const lists = {
@@ -384,7 +390,9 @@ export const lists = {
 };
 
 export const cart = {
-  get: () => request<{ items: CartItem[] }>('/api/cart'),
+  get: () => request<{ items: CartItem[]; group_notes: Record<string, string> }>('/api/cart'),
+  groupNote: (wholesaler: string, note: string) =>
+    request('/api/cart/group-note', { method: 'POST', body: JSON.stringify({ wholesaler, note }) }),
   add: (item: Partial<CartItem>) => request('/api/cart', { method: 'POST', body: JSON.stringify(item) }),
   update: (id: number, data: { qty_cases?: number; qty_units?: number; sales_rep_id?: number | null; saved_for_later?: boolean; notes?: string }) =>
     request(`/api/cart/${id}`, { method: 'PUT', body: JSON.stringify(data) }),

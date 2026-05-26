@@ -49,6 +49,11 @@ class FromListIn(BaseModel):
     item_ids: Optional[list[int]] = None  # None/empty = every item in the list
 
 
+class GroupNoteIn(BaseModel):
+    wholesaler: str
+    note: str = ""
+
+
 def _default_rep_for(con, user_id: int, wholesaler: str):
     """Return the rep id when the distributor has exactly one rep, else None."""
     reps = con.execute(
@@ -74,9 +79,64 @@ def _insert_cart_item(con, user_id, item: dict, rep_id):
     )
 
 
+def _attach_cart_pricing(dcon, items):
+    """Enrich cart items with current-edition catalogue pricing + discount/RIP
+    tiers, so the cart shows the same deal info as the catalogue and the user can
+    adjust quantities to hit a tier before sending."""
+    if not items:
+        return
+    import math as _m
+    from backend.db import read_parquet
+    from backend.routers.catalog import _attach_discount_rip_tiers
+    src = read_parquet(dcon, "cpl_enriched")
+    norms = sorted({str(it.get("upc") or "").lstrip("0") for it in items if it.get("upc")})
+    pmap = {}
+    if norms:
+        ph = ", ".join(f"$p{i}" for i in range(len(norms)))
+        prm = {f"p{i}": u for i, u in enumerate(norms)}
+        try:
+            df = dcon.execute(f"""
+                WITH latest AS (SELECT wholesaler, MAX(edition) AS ed FROM {src} GROUP BY wholesaler)
+                SELECT e.wholesaler AS w, LTRIM(e.upc,'0') AS un, e.product_name AS pn, e.unit_volume AS uv,
+                       e.frontline_case_price AS fcp, e.frontline_unit_price AS fup,
+                       e.effective_case_price AS ecp, e.unit_qty AS uq,
+                       e.has_discount AS hd, e.has_rip AS hr,
+                       e.discount_pct AS dp, e.total_savings_per_case AS ts
+                FROM {src} e JOIN latest l ON e.wholesaler=l.wholesaler AND e.edition=l.ed
+                WHERE LTRIM(e.upc,'0') IN ({ph})
+            """, prm).fetchdf()
+            for _, r in df.iterrows():
+                pmap[(r["w"], str(r["un"]), r["pn"] or "", r["uv"] or "")] = r
+        except Exception:
+            pmap = {}
+
+    def cl(v):
+        if v is None or (isinstance(v, float) and _m.isnan(v)):
+            return None
+        return float(v) if isinstance(v, (int, float)) else v
+
+    for it in items:
+        r = pmap.get((it["wholesaler"], str(it.get("upc") or "").lstrip("0"),
+                      it.get("product_name") or "", it.get("unit_volume") or ""))
+        if r is not None:
+            it["frontline_case_price"] = cl(r["fcp"])
+            it["frontline_unit_price"] = cl(r["fup"])
+            it["effective_case_price"] = cl(r["ecp"])
+            it["unit_qty"] = cl(r["uq"])
+            it["has_discount"] = bool(r["hd"])
+            it["has_rip"] = bool(r["hr"])
+            it["discount_pct"] = cl(r["dp"])
+            it["total_savings_per_case"] = cl(r["ts"])
+    try:
+        _attach_discount_rip_tiers(dcon, items)  # adds a `tiers` list per item
+    except Exception:
+        pass
+
+
 @router.get("")
 def get_cart(user: dict = Depends(get_current_user)):
-    """All cart items (active + saved-for-later), each with its image and rep name."""
+    """All cart items (active + saved-for-later) with image, rep name, catalogue
+    pricing + deal tiers, plus per-distributor header notes."""
     with get_pg() as con:
         items = [dict(r) for r in con.execute(
             "SELECT * FROM cart_items WHERE user_id=%s ORDER BY created_at", (user["id"],)
@@ -85,13 +145,17 @@ def get_cart(user: dict = Depends(get_current_user)):
             "SELECT id, name, distributor, division, email FROM sales_reps WHERE user_id=%s",
             (user["id"],),
         ).fetchall()}
+        group_notes = {r["wholesaler"]: r["note"] for r in con.execute(
+            "SELECT wholesaler, note FROM cart_group_notes WHERE user_id=%s", (user["id"],)
+        ).fetchall()}
     if items:
         with get_duckdb() as dcon:
             attach_enrichment_image(dcon, items)
+            _attach_cart_pricing(dcon, items)
     for it in items:
         rep = reps.get(it.get("sales_rep_id"))
         it["sales_rep_name"] = rep["name"] if rep else None
-    return {"items": items}
+    return {"items": items, "group_notes": group_notes}
 
 
 @router.post("")
@@ -127,6 +191,20 @@ def remove_cart_item(item_id: int, user: dict = Depends(get_current_user)):
     with get_pg() as con:
         con.execute("DELETE FROM cart_items WHERE id=%s AND user_id=%s", (item_id, user["id"]))
     return {"status": "removed"}
+
+
+@router.post("/group-note")
+def set_group_note(body: GroupNoteIn, user: dict = Depends(get_current_user)):
+    """Save the per-distributor header note (becomes the order's notes on send)."""
+    with get_pg() as con:
+        con.execute(
+            f"""INSERT INTO cart_group_notes (user_id, wholesaler, note)
+                VALUES (%s,%s,%s)
+                ON CONFLICT (user_id, wholesaler)
+                DO UPDATE SET note=EXCLUDED.note, updated_at={NOW_UTC}""",
+            (user["id"], body.wholesaler, body.note),
+        )
+    return {"status": "saved"}
 
 
 @router.post("/assign-rep")
@@ -178,6 +256,9 @@ def send_cart(user: dict = Depends(get_current_user)):
             "SELECT * FROM cart_items WHERE user_id=%s AND saved_for_later=0 ORDER BY created_at",
             (user["id"],),
         ).fetchall()]
+        group_notes = {r["wholesaler"]: r["note"] for r in con.execute(
+            "SELECT wholesaler, note FROM cart_group_notes WHERE user_id=%s", (user["id"],)
+        ).fetchall()}
 
     groups: dict[int, list] = {}
     no_rep = 0
@@ -197,9 +278,10 @@ def send_cart(user: dict = Depends(get_current_user)):
             ).fetchone()
             rep_name = rep["name"] if rep else distributor
             oid = con.execute(
-                "INSERT INTO orders (user_id, name, status, distributor, sales_rep_id) "
-                "VALUES (%s,%s,'draft',%s,%s) RETURNING id",
-                (user["id"], f"Cart order - {rep_name}", distributor, rid),
+                "INSERT INTO orders (user_id, name, status, distributor, sales_rep_id, notes) "
+                "VALUES (%s,%s,'draft',%s,%s,%s) RETURNING id",
+                (user["id"], f"Cart order - {rep_name}", distributor, rid,
+                 group_notes.get(distributor)),
             ).fetchone()["id"]
             for it in items:
                 con.execute(

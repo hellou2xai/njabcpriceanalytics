@@ -137,13 +137,10 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                         <div style={{ fontWeight: 600 }}>{item.product_name}</div>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                           {item.upc}
-                          {item.dup_upc ? (
-                            <span className="tag tag-red" style={{ marginLeft: 6, fontSize: 10 }}
-                                  title="This distributor reuses the same barcode for more than one product — verify before ordering">duplicate</span>
-                          ) : item.multi_distributor ? (
+                          {item.multi_distributor && (
                             <span className="tag tag-blue" style={{ marginLeft: 6, fontSize: 10 }}
                                   title={`Same product is carried by ${item.distributor_count ?? 'several'} distributors`}>Multiple distributors</span>
-                          ) : null}
+                          )}
                         </div>
                         {comboLink && (() => {
                           const url = comboLink(item);

@@ -537,9 +537,19 @@ def search_products(
 
         where_clause = " AND ".join(where)
 
-        # Count query
+        # Collapse genuine duplicates: when ONE distributor lists the same barcode
+        # for more than one row (a data quirk), show only one. Rows with no UPC are
+        # never collapsed, and the same barcode at DIFFERENT distributors is kept
+        # (that is the same product at several suppliers, not a duplicate).
+        dedup = (
+            "QUALIFY (LTRIM(COALESCE(upc,''),'0') = '' "
+            "OR ROW_NUMBER() OVER (PARTITION BY wholesaler, LTRIM(upc,'0') "
+            "ORDER BY frontline_case_price DESC NULLS LAST, product_name, unit_volume) = 1)"
+        )
+
+        # Count query (deduped to match the data query)
         count = con.execute(
-            f"SELECT count(*) FROM {src} WHERE {where_clause}", params
+            f"SELECT count(*) FROM (SELECT 1 FROM {src} WHERE {where_clause} {dedup}) t", params
         ).fetchone()[0]
 
         # Data query
@@ -556,6 +566,7 @@ def search_products(
                    discount_5_qty, discount_5_amt
             FROM {src}
             WHERE {where_clause}
+            {dedup}
             ORDER BY {sort_col} {sort_dir}
             LIMIT $limit OFFSET $offset
         """, {**params, "limit": limit, "offset": offset}).fetchdf()

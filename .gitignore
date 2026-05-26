@@ -17,3 +17,6 @@ Thumbs.db
 # Generated enrichment artifacts (backfill logs + inspection exports)
 goupc_*.log
 goupc_test_*.zip
+
+# Mobile screenshot scratch output (capture_mobile.mjs)
+frontend/.mobile-shots/

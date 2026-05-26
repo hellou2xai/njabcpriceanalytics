@@ -150,8 +150,9 @@ body {
   .main-content { padding: 16px 16px; }
   /* Keep the sticky title flush, and clear it of the fixed hamburger (top-left). */
   .page > h2, .dashboard-hero { margin: -16px -16px 12px; padding: 14px 16px 10px 58px; }
-  /* Non-sticky page titles (e.g. Catalog, Combos) also clear the hamburger. */
-  .orders-header { padding-left: 46px; }
+  /* Non-sticky page titles clear the hamburger, whatever wrapper they use. */
+  .orders-header, .tracker-header, .page-header,
+  .order-header, .qa-header { padding-left: 46px; }
 }
 @media (max-width: 480px) {
   .main-content { padding: 12px 12px; }
@@ -1788,7 +1789,10 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
 }
 @media (max-width: 480px) {
   .rip-filter-bar { flex-direction: column; }
-  .rip-summary-cards { grid-template-columns: 1fr; }
+  /* Keep the summary cards 2-up (not full-width) so they don't bury the table. */
+  .rip-summary-cards { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .rip-summary-card { padding: 10px 8px; }
+  .rip-summary-value { font-size: 18px; }
   .hide-sm { display: none !important; }
 }
 

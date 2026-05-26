@@ -292,6 +292,53 @@ export default function CatalogFilterPanel({
         </div>
       </FilterSection>
 
+      {/* ---- Brand ---- */}
+      <FilterSection title="Brand" activeCount={filters.brands.length}>
+        <input
+          type="text"
+          className="filter-search"
+          placeholder="Search brands..."
+          value={brandSearch}
+          onChange={(e) => setBrandSearch(e.target.value)}
+        />
+        <div className="filter-checkbox-list" style={{ maxHeight: 240 }}>
+          {visibleBrands.map(([brand, count]) => (
+            <label key={brand} className="filter-checkbox">
+              <input
+                type="checkbox"
+                checked={filters.brands.includes(brand)}
+                onChange={() =>
+                  onChange({
+                    ...filters,
+                    brands: toggleArrayValue(filters.brands, brand),
+                  })
+                }
+              />
+              <span>{brand}</span>
+              <span className="filter-facet-count">{count}</span>
+            </label>
+          ))}
+        </div>
+        {!brandShowAll && brandEntries.length > 7 && (
+          <button
+            className="filter-show-all"
+            type="button"
+            onClick={() => setBrandShowAll(true)}
+          >
+            Show all {brandEntries.length}...
+          </button>
+        )}
+        {brandShowAll && brandEntries.length > 7 && (
+          <button
+            className="filter-show-all"
+            type="button"
+            onClick={() => setBrandShowAll(false)}
+          >
+            Show fewer
+          </button>
+        )}
+      </FilterSection>
+
       {/* ---- Price Range ---- */}
       <FilterSection title="Price Range (Case)" activeCount={priceActiveCount}>
         <div className="filter-price-range">
@@ -349,53 +396,6 @@ export default function CatalogFilterPanel({
             </label>
           ))}
         </div>
-      </FilterSection>
-
-      {/* ---- Brand ---- */}
-      <FilterSection title="Brand" activeCount={filters.brands.length}>
-        <input
-          type="text"
-          className="filter-search"
-          placeholder="Search brands..."
-          value={brandSearch}
-          onChange={(e) => setBrandSearch(e.target.value)}
-        />
-        <div className="filter-checkbox-list" style={{ maxHeight: 240 }}>
-          {visibleBrands.map(([brand, count]) => (
-            <label key={brand} className="filter-checkbox">
-              <input
-                type="checkbox"
-                checked={filters.brands.includes(brand)}
-                onChange={() =>
-                  onChange({
-                    ...filters,
-                    brands: toggleArrayValue(filters.brands, brand),
-                  })
-                }
-              />
-              <span>{brand}</span>
-              <span className="filter-facet-count">{count}</span>
-            </label>
-          ))}
-        </div>
-        {!brandShowAll && brandEntries.length > 7 && (
-          <button
-            className="filter-show-all"
-            type="button"
-            onClick={() => setBrandShowAll(true)}
-          >
-            Show all {brandEntries.length}...
-          </button>
-        )}
-        {brandShowAll && brandEntries.length > 7 && (
-          <button
-            className="filter-show-all"
-            type="button"
-            onClick={() => setBrandShowAll(false)}
-          >
-            Show fewer
-          </button>
-        )}
       </FilterSection>
 
       {/* ---- Size ---- */}

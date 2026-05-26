@@ -72,6 +72,12 @@ export default function Cart() {
         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
           {distributorName(it.wholesaler)}{it.unit_volume ? ` · ${it.unit_volume}` : ''}{it.upc ? ` · ${it.upc}` : ''}
         </div>
+        <input
+          defaultValue={it.notes ?? ''}
+          placeholder="Add a note (goes on this order line)"
+          onBlur={e => { if (e.target.value !== (it.notes ?? '')) upd.mutate({ id: it.id, patch: { notes: e.target.value } }); }}
+          style={{ marginTop: 4, width: '100%', maxWidth: 380, fontSize: 12, padding: '3px 6px' }}
+        />
       </div>
       {!saving && (
         <>

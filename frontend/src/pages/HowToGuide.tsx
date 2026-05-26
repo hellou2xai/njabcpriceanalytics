@@ -23,8 +23,9 @@ const TOC: { id: string; label: string; sub?: boolean }[] = [
   { id: 'favorites', label: 'Favorites (watchlist)' },
   { id: 'todo', label: 'To-Do board' },
   { id: 'notes', label: 'Notes' },
-  { id: 'orders', label: 'Orders' },
-  { id: 'orderanalysis', label: 'Order Analysis' },
+  { id: 'cart', label: 'Cart' },
+  { id: 'lists', label: 'Lists' },
+  { id: 'orders', label: 'Orders (submitted)' },
   { id: 'alerts', label: 'Alerts' },
   { id: 'rightclick', label: 'Right-click menu', sub: true },
   { id: 'websearch', label: 'Search the web popup', sub: true },
@@ -182,9 +183,13 @@ export default function HowToGuide() {
               <li><strong>Favorites</strong>: products you have starred (your watchlist).</li>
               <li><strong>To-Do</strong>: your task board (right-click any product to add one).</li>
               <li><strong>Notes</strong>: every note you have written, in one place.</li>
-              <li><strong>Orders</strong>: your draft and submitted orders (a badge shows drafts in progress).</li>
-              <li><strong>Order Analysis</strong>: a scratchpad of products you are still thinking about.</li>
+              <li><strong>Lists</strong>: reusable named product lists you build up and move into the cart.</li>
+              <li><strong>Orders</strong>: your submitted orders (edit, cancel, or re-share them).</li>
             </ul>
+            <p>
+              And always in the <strong>top-right corner</strong>, the <strong>Cart</strong> icon (with a live
+              item count) holds the products you are about to order, grouped by sales rep.
+            </p>
             <h3>Setup &amp; Help</h3>
             <ul>
               <li><strong>Configuration</strong>: your stores, sales reps, and divisions.</li>
@@ -236,7 +241,7 @@ export default function HowToGuide() {
             <ul>
               <li><strong>Search box</strong>: type a product name or a barcode (UPC). The count next to it shows how many products match.</li>
               <li><strong>Distributor buttons</strong> (top right): limit to one wholesaler or show all.</li>
-              <li><strong>Show / Hide Filters</strong>: opens the filter panel on the left, where you can filter by <strong>Deals</strong> (has a RIP, has a discount), <strong>Distributors</strong>, <strong>Price range</strong>, <strong>Category</strong>, <strong>Brand</strong>, and <strong>Size</strong>. Each option shows a count.</li>
+              <li><strong>Show / Hide Filters</strong>: opens the filter panel on the left, where you can filter by <strong>Deals</strong> (has a RIP, has a discount, or <strong>In combo</strong> for bundle products), <strong>Distributors</strong>, <strong>Brand</strong>, <strong>Price range</strong>, <strong>Category</strong>, and <strong>Size</strong> (listed smallest to largest). Each option shows a count.</li>
               <li><strong>Tracked only</strong>: show just the products on your Favorites list.</li>
               <li><strong>Rows</strong>: how many products per page. <strong>Clear all</strong> removes every filter.</li>
             </ul>
@@ -247,12 +252,13 @@ export default function HowToGuide() {
               <li><strong>Case / Btl</strong> is the list price per case and per bottle. <strong>Effective</strong> is what you actually pay after the best deal.</li>
               <li><strong>Tier</strong> says how many discount/RIP tiers exist. The tier detail rows appear indented beneath the product, each showing "Buy N = $X", the saving, the price after, and ROI. A tier turns green once your quantity reaches it.</li>
               <li><strong>Better Price</strong> tells you if this month or next month is cheaper.</li>
-              <li>A <strong>🎁 In combo</strong> link means the product is part of a bundle; click it to see the combo.</li>
+              <li>Each row leads with the <strong>product image</strong>. A <strong>dup UPC</strong> tag warns when a barcode is shared by more than one product.</li>
+              <li>A <strong>🎁 In combo</strong> link means the product is part of a bundle; click it to open the combo in a popup window.</li>
             </ul>
-            <h3>Adding to an order</h3>
+            <h3>Adding to the cart</h3>
             <ul>
-              <li>Use the <strong>Qty</strong> steppers to set cases and/or bottles, then click the <strong>Add to order</strong> button. You pick an existing draft order for that distributor, or create a new one on the spot.</li>
-              <li>Click the <strong>star</strong> to save a product to Favorites (you can add a note). Click anywhere else on the row to open the product details popup.</li>
+              <li>Use the <strong>Qty</strong> steppers to set cases and/or bottles, then click the <strong>+</strong> (Add to cart) button in the Order column. The product drops into your <strong>Cart</strong> (top-right), grouped by its sales rep.</li>
+              <li>Click the <strong>star</strong> to save a product to Favorites, or right-click for more (Add to Cart, Add to List). Click anywhere else on the row to open the product details popup.</li>
             </ul>
           </Section>
 
@@ -354,16 +360,45 @@ export default function HowToGuide() {
             </p>
           </Section>
 
-          <Section id="orders" icon={<ShoppingCart size={20} />} title="Orders">
+          <Section id="cart" icon={<ShoppingCart size={20} />} title="Cart">
+            <Path>The cart icon in the top-right corner (it shows a live item count)</Path>
+            <Shot src="/guide/16-cart.png" alt="The Cart: items grouped by sales rep with the deal info and tiers, a header note per rep, save-for-later, and Send All Orders to Reps." />
+            <p>
+              The cart is where you gather everything you want to buy. Add products from anywhere with the
+              <strong> +</strong> button on a row or the right-click <strong>Add to Cart</strong> action.
+            </p>
+            <ul>
+              <li><strong>Grouped by sales rep</strong>: items are organised by distributor and the rep who covers it. When a distributor has one rep it is chosen automatically; otherwise pick the rep from the dropdown (and change it any time). The rep&apos;s phone and email show under each group.</li>
+              <li><strong>Same deal info as the catalogue</strong>: each line shows the case/bottle price, the effective price, the saving, and the discount/RIP tiers, so you can bump quantities to hit a better tier before sending.</li>
+              <li><strong>Notes</strong>: add a note on any line (it lands on that order line) and a header note per rep (it becomes the order&apos;s note).</li>
+              <li><strong>Save for later</strong>: park an item in the section below the cart without removing it.</li>
+              <li><strong>Send All Orders to Reps</strong>: one click turns each rep&apos;s group into a submitted order and emails the PO to that rep. All of a rep&apos;s lines go into a single order.</li>
+            </ul>
+            <Callout>After you send, please follow up with your sales rep. Sending emails the PO; nothing is ordered automatically with the wholesaler.</Callout>
+          </Section>
+
+          <Section id="lists" icon={<ClipboardList size={20} />} title="Lists">
+            <Path>Lists in the left menu</Path>
+            <Shot src="/guide/15-lists.png" alt="Lists: multiple named product lists with checkboxes to move selected items to the cart or delete them." />
+            <p>
+              Lists are reusable, named collections of products, handy for planning (a seasonal reset, a promo,
+              a regular reorder). Create as many as you like.
+            </p>
+            <ul>
+              <li><strong>Add products</strong> from anywhere with the right-click <strong>Add to List</strong> action; pick a list or create a new one.</li>
+              <li><strong>Tick</strong> the items you want, then <strong>Move to cart</strong> (they stay in the list, so it is reusable) or <strong>Delete selected</strong>.</li>
+              <li><strong>Rename</strong> or <strong>delete</strong> a whole list from its header.</li>
+            </ul>
+          </Section>
+
+          <Section id="orders" icon={<ShoppingCart size={20} />} title="Orders (submitted)">
             <Path>Orders in the left menu</Path>
-            <Shot src="/guide/08-orders.png" alt="Orders: create an order for a distributor, then track drafts and submitted orders with totals." />
-            <p>Where you build and track purchase orders. An order is a <strong>draft</strong> while you edit it, and becomes <strong>submitted</strong> (locked) once you send it.</p>
-            <h3>Creating an order</h3>
-            <ol className="htg-steps">
-              <li>Pick a <strong>distributor</strong> (required) and, optionally, a <strong>sales rep</strong> and an order name.</li>
-              <li>Click <strong>Create Order</strong>. There is one open order per distributor and rep, so you will not make duplicates.</li>
-              <li>Open the order and add products.</li>
-            </ol>
+            <Shot src="/guide/08-orders.png" alt="Orders: your submitted orders with totals; open one to edit, cancel, or re-share it." />
+            <p>Orders holds the purchase orders you have <strong>submitted</strong> from the cart. Open any order to review it, and:</p>
+            <ul>
+              <li><strong>Edit and re-submit</strong>: reopen an order to change quantities or lines, then submit again as a new revision (the rep gets the updated PO).</li>
+              <li><strong>Cancel</strong> an order, or <strong>re-share</strong> the PDF with the rep.</li>
+            </ul>
             <h3>Inside an order</h3>
             <ul>
               <li><strong>Add products</strong> by typing a name or barcode in the search box, or pull in your starred products with <strong>Copy from Tracked</strong>.</li>
@@ -377,16 +412,6 @@ export default function HowToGuide() {
             </ul>
             <p className="muted">A rep needs an email saved under Configuration &rarr; Sales Reps for the order to be emailed automatically.</p>
             <p className="muted">The <strong>All Order Lines</strong> tab shows every product across all your orders in one flat list.</p>
-          </Section>
-
-          <Section id="orderanalysis" icon={<ClipboardList size={20} />} title="Order Analysis">
-            <Path>Order Analysis in the left menu</Path>
-            <p>
-              A scratchpad. As you browse any screen, right-click a product and choose <strong>Add to Order
-              Analysis</strong> to set it aside here without committing to an order. It looks just like the
-              Catalog, including discount and RIP tiers. When you are ready, click <strong>Save as order(s)</strong>
-              and the app creates draft orders for you, grouped by distributor. Use <strong>Clear all</strong> to empty it.
-            </p>
           </Section>
 
           <Section id="alerts" icon={<Bell size={20} />} title="Alerts">
@@ -422,9 +447,9 @@ export default function HowToGuide() {
             <ul>
               <li><strong>View Product</strong>: open the details popup.</li>
               <li><strong>Search the web</strong>: look up retail prices and listings online (see below).</li>
-              <li><strong>Add to Order Analysis</strong>: set it aside on the scratchpad.</li>
+              <li><strong>Add to Cart</strong>: drop it into your cart, ready to send to the rep.</li>
               <li><strong>Add to Favorites</strong>: star it.</li>
-              <li><strong>Add to Order</strong>: add it straight to a draft order, or start a new one.</li>
+              <li><strong>Add to List</strong>: add it to one of your named lists (or a new one).</li>
               <li><strong>Add to To-Do</strong>: capture a task about this product (what to do, a note, a due date) on your To-Do board.</li>
               <li><strong>Copy Code</strong>: copy the barcode to your clipboard.</li>
             </ul>
@@ -481,7 +506,7 @@ export default function HowToGuide() {
             <div className="htg-terms">
               <Term name="Barcode (UPC)">The product's universal product code. The app matches products across distributors and months by barcode, which is more reliable than the name.</Term>
               <Term name="Buy signal">Strong Buy, Buy Now, Good Buy, Hold, Defer, or Last Chance, based on savings and where the price is heading.</Term>
-              <Term name="Cart">The running quantities you set on the Catalog, Favorites, or Order Analysis. It is saved in your browser until you turn it into an order or clear it.</Term>
+              <Term name="Cart">Your saved cart of products to order, grouped by sales rep, in the top-right corner. "Send All Orders to Reps" turns each group into one submitted order, emailed to that rep.</Term>
               <Term name="Closeout / Clearance">A product being discontinued and sold off, usually cheap. A "permit" number may be shown for NJ closeout stock.</Term>
               <Term name="CPL / Edition">The monthly wholesaler price list, and the specific month's copy of it.</Term>
               <Term name="Discount tier vs RIP">A discount tier is a flat amount off per case at a quantity; a RIP is a rebate (money back) on volume. They can apply together, and the effective price reflects both.</Term>

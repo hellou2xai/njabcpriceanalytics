@@ -541,15 +541,16 @@ def search_products(
 
         where_clause = " AND ".join(where)
 
-        # Collapse only GENUINELY identical rows: same distributor, barcode, name,
-        # size AND vintage. We deliberately do NOT collapse on barcode alone, because
-        # in this data one barcode is reused for (a) different wine VINTAGES, which
-        # are different products at different prices, and (b) placeholder/garbage UPCs
-        # the price files put on many unrelated products. Both must stay expanded.
+        # A row is a duplicate ONLY when the barcode, name, size, vintage, PRICE and
+        # DEALS all match. Rule from the user: same barcode but a different price or
+        # different deals is NOT a duplicate (e.g. a different vintage, or a placeholder
+        # barcode reused across unrelated products), so it stays as its own row.
         dedup = (
             "QUALIFY ROW_NUMBER() OVER (PARTITION BY wholesaler, LTRIM(COALESCE(upc,''),'0'), "
-            "product_name, unit_volume, COALESCE(CAST(vintage AS VARCHAR),'') "
-            "ORDER BY frontline_case_price DESC NULLS LAST) = 1"
+            "product_name, unit_volume, COALESCE(CAST(vintage AS VARCHAR),''), "
+            "COALESCE(frontline_case_price,-1), COALESCE(effective_case_price,-1), "
+            "COALESCE(total_savings_per_case,-1), has_discount, has_rip "
+            "ORDER BY edition DESC) = 1"
         )
 
         # Count query (deduped to match the data query)

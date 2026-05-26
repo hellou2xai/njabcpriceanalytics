@@ -83,12 +83,19 @@ def build_pricing_cache() -> Path:
         new_path = CACHE_DIR / f"pricing_{int(time.time() * 1000)}.duckdb"
         con = duckdb.connect(str(new_path))
         try:
-            # Lean enrichment columns only (no description/attributes/image bytes)
-            # so the catalogue can LEFT JOIN by normalised UPC cheaply.
-            enrich_cols = "upc, name, brand, category, image_url"
+            # Enrichment columns surfaced to the catalogue (everything useful
+            # Go-UPC returns, minus the raw attributes blob which stays in
+            # Postgres). category_path/specs are JSON text parsed by the API.
+            enrich_cols = (
+                "upc, name, brand, category, category_path, description, region, "
+                "specs, ean, code_type, barcode_url, inferred, image_url, image_source"
+            )
             empty_enrich = (
                 "CREATE TABLE product_enrichment ("
-                "upc VARCHAR, name VARCHAR, brand VARCHAR, category VARCHAR, image_url VARCHAR)"
+                "upc VARCHAR, name VARCHAR, brand VARCHAR, category VARCHAR, "
+                "category_path VARCHAR, description VARCHAR, region VARCHAR, "
+                "specs VARCHAR, ean VARCHAR, code_type VARCHAR, barcode_url VARCHAR, "
+                "inferred INTEGER, image_url VARCHAR, image_source VARCHAR)"
             )
             if PRICING_SOURCE == "parquet":
                 for t in ALL_TABLES:

@@ -13,3 +13,7 @@ user_data/
 .claude/
 .DS_Store
 Thumbs.db
+
+# Generated enrichment artifacts (backfill logs + inspection exports)
+goupc_*.log
+goupc_test_*.zip

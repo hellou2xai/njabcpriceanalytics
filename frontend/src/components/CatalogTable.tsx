@@ -1,6 +1,7 @@
 import { Fragment } from 'react';
 import { Link } from 'react-router-dom';
 import FavoriteButton from './FavoriteButton';
+import ProductThumb from './ProductThumb';
 import AddToOrderButton from './AddToOrderButton';
 import { RowMenuButton } from './ContextMenu';
 import { distributorName } from '../lib/distributors';
@@ -130,14 +131,19 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                     </span>
                   </td>
                   <td>
-                    <div style={{ fontWeight: 600 }}>{item.product_name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{item.upc}</div>
-                    {comboLink && (() => {
-                      const url = comboLink(item);
-                      return url
-                        ? <Link to={url} className="combo-link-badge" onClick={e => e.stopPropagation()} title="This product is part of a combo bundle — view details">🎁 In combo</Link>
-                        : null;
-                    })()}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <ProductThumb src={item.image_url} alt={item.product_name} size={44} />
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 600 }}>{item.product_name}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{item.upc}</div>
+                        {comboLink && (() => {
+                          const url = comboLink(item);
+                          return url
+                            ? <Link to={url} className="combo-link-badge" onClick={e => e.stopPropagation()} title="This product is part of a combo bundle — view details">🎁 In combo</Link>
+                            : null;
+                        })()}
+                      </div>
+                    </div>
                   </td>
                   <td><span className="cell-distributor-badge">{distributorName(item.wholesaler)}</span></td>
                   <td>{item.product_type}</td>

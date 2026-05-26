@@ -4,6 +4,7 @@ Catalog API â€” browse, search, filter products.
 Covers: Â§2 Catalog, Â§2.6 Editions, Â§2.7 Categories/Brands, Â§3.1 Item Detail
 """
 
+import json
 import math
 import re
 from datetime import date
@@ -174,6 +175,38 @@ def _attach_next_month_prices(con, src, records):
             rec["better_month"] = "This Month"
         else:
             rec["better_month"] = "Next Month"
+
+
+def _attach_enrichment_image(con, records):
+    """Attach the Go-UPC image URL to each record by normalised UPC.
+
+    Fast by design: one batch query per page against the in-memory enrichment
+    table (no per-row lookups), then a dict join. Sets rec["image_url"] (None if
+    there is no image). The image itself is served from R2's public CDN, so the
+    API never moves image bytes. No-op when the table or UPCs are absent.
+    """
+    if not records:
+        return
+    # product_enrichment.upc is already the normalised key (LTRIM(upc,'0')).
+    norms = sorted({str(r["upc"]).lstrip("0") for r in records
+                    if r.get("upc") and str(r["upc"]).lstrip("0")})
+    img_map = {}
+    if norms:
+        ph = ", ".join(f"$e{i}" for i in range(len(norms)))
+        prm = {f"e{i}": u for i, u in enumerate(norms)}
+        try:
+            df = con.execute(
+                f"SELECT upc, image_url FROM product_enrichment WHERE upc IN ({ph})", prm
+            ).fetchdf()
+            for _, er in df.iterrows():
+                iu = er.get("image_url")
+                if isinstance(iu, float) and math.isnan(iu):
+                    iu = None
+                img_map[str(er["upc"])] = iu or None
+        except Exception:
+            img_map = {}  # table missing (parquet dev) -> everyone gets the placeholder
+    for rec in records:
+        rec["image_url"] = img_map.get(str(rec.get("upc") or "").lstrip("0"))
 
 
 def _attach_discount_rip_tiers(con, records):
@@ -528,6 +561,9 @@ def search_products(
         if include_tiers:
             _attach_discount_rip_tiers(con, records)
 
+        # Go-UPC thumbnail per row (one batch query; served from R2 CDN).
+        _attach_enrichment_image(con, records)
+
         return {
             "total": count,
             "limit": limit,
@@ -732,6 +768,7 @@ def new_items(
         _attach_next_month_prices(con, src, records)
         if include_tiers:
             _attach_discount_rip_tiers(con, records)
+        _attach_enrichment_image(con, records)
 
         return {
             "total": int(count),
@@ -895,21 +932,37 @@ def get_product_detail(
                     })
             rip_tiers.sort(key=lambda x: x["qty"])
 
-        # Go-UPC enrichment (image + canonical name/brand/category), matched by
-        # normalised UPC. Empty/absent table -> no enrichment, never an error.
+        # Go-UPC enrichment (image + canonical details), matched by normalised
+        # UPC. Empty/absent table -> no enrichment, never an error. category_path
+        # and specs are stored as JSON text; parse them back to list/dict here.
         enrichment = None
         prod_upc = item.get("upc")
         if prod_upc is not None and str(prod_upc) not in ("None", "nan", ""):
             try:
                 er = con.execute(
-                    "SELECT name, brand, category, image_url FROM product_enrichment "
-                    "WHERE upc = LTRIM($u, '0')",
+                    "SELECT name, brand, category, category_path, description, region, "
+                    "specs, ean, code_type, barcode_url, inferred, image_url, image_source "
+                    "FROM product_enrichment WHERE upc = LTRIM($u, '0')",
                     {"u": str(prod_upc)},
                 ).fetchone()
             except Exception:
                 er = None
-            if er and (er[0] or er[3]):
-                enrichment = {"name": er[0], "brand": er[1], "category": er[2], "image_url": er[3]}
+            if er and (er[0] or er[11]):  # has a name or an image
+                def _loads(v):
+                    if not v:
+                        return None
+                    try:
+                        return json.loads(v)
+                    except (TypeError, ValueError):
+                        return None
+                enrichment = {
+                    "name": er[0], "brand": er[1], "category": er[2],
+                    "category_path": _loads(er[3]), "description": er[4],
+                    "region": er[5], "specs": _loads(er[6]), "ean": er[7],
+                    "code_type": er[8], "barcode_url": er[9],
+                    "inferred": bool(er[10]), "image_url": er[11],
+                    "image_source": er[12],
+                }
 
         return {
             "product": _clean_record(row.to_dict(orient="records")[0]),

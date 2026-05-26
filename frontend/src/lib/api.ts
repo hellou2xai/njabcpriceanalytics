@@ -123,7 +123,16 @@ export interface ProductEnrichment {
   name: string | null;
   brand: string | null;
   category: string | null;
+  category_path: string[] | null;
+  description: string | null;
+  region: string | null;
+  specs: Record<string, string> | null;
+  ean: string | null;
+  code_type: string | null;
+  barcode_url: string | null;
+  inferred: boolean;
   image_url: string | null;
+  image_source: string | null;
 }
 
 // ---- Analytics ----
@@ -603,6 +612,8 @@ export interface Product {
   better_month?: 'Same' | 'This Month' | 'Next Month' | null;
   // Edition (YYYY-MM) the item was introduced in, set by /catalog/new-items.
   introduced_edition?: string | null;
+  // Go-UPC product image (R2 CDN URL), attached per row by the list endpoints.
+  image_url?: string | null;
 }
 
 export interface NewItemsResponse {

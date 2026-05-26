@@ -313,19 +313,27 @@ def init_user_db():
         # The image lives in R2; we store its public URL and object key here.
         # status: 'ok' | 'not_found' | 'error'. attributes holds the raw payload.
         f"""CREATE TABLE IF NOT EXISTS product_enrichment (
-            upc          text PRIMARY KEY,
-            name         text,
-            brand        text,
-            category     text,
-            description  text,
-            image_url    text,
-            image_key    text,
-            attributes   text,
-            source       text DEFAULT 'go-upc',
-            status       text,
-            attempts     integer DEFAULT 0,
-            fetched_at   text,
-            updated_at   text DEFAULT {NOW_UTC}
+            upc           text PRIMARY KEY,
+            name          text,
+            brand         text,
+            category      text,
+            category_path text,
+            description   text,
+            region        text,
+            specs         text,
+            ean           text,
+            code_type     text,
+            barcode_url   text,
+            inferred      integer DEFAULT 0,
+            image_url     text,
+            image_key     text,
+            image_source  text,
+            attributes    text,
+            source        text DEFAULT 'go-upc',
+            status        text,
+            attempts      integer DEFAULT 0,
+            fetched_at    text,
+            updated_at    text DEFAULT {NOW_UTC}
         )""",
     ]
     with get_pg() as con:
@@ -354,6 +362,20 @@ def init_user_db():
             ).fetchone()
             if not exists:
                 con.execute(ddl)
+        # Add later Go-UPC columns to an existing product_enrichment table if
+        # missing. We grew the schema to keep every field Go-UPC returns
+        # (category_path, specs, region, ean, barcode, etc.), not just a few.
+        for col, ddl in (
+            ("category_path", "ALTER TABLE product_enrichment ADD COLUMN IF NOT EXISTS category_path text"),
+            ("region", "ALTER TABLE product_enrichment ADD COLUMN IF NOT EXISTS region text"),
+            ("specs", "ALTER TABLE product_enrichment ADD COLUMN IF NOT EXISTS specs text"),
+            ("ean", "ALTER TABLE product_enrichment ADD COLUMN IF NOT EXISTS ean text"),
+            ("code_type", "ALTER TABLE product_enrichment ADD COLUMN IF NOT EXISTS code_type text"),
+            ("barcode_url", "ALTER TABLE product_enrichment ADD COLUMN IF NOT EXISTS barcode_url text"),
+            ("inferred", "ALTER TABLE product_enrichment ADD COLUMN IF NOT EXISTS inferred integer DEFAULT 0"),
+            ("image_source", "ALTER TABLE product_enrichment ADD COLUMN IF NOT EXISTS image_source text"),
+        ):
+            con.execute(ddl)
         # Alerts are roll-ups (one per user/category/month, product_name NULL).
         # De-duplicate any existing roll-ups, then enforce uniqueness so the two
         # auto-generate triggers can't race and create duplicate category rows.

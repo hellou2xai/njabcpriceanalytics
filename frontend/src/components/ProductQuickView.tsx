@@ -6,6 +6,7 @@ import PriceChart from './PriceChart';
 import PriceBreakdown from './PriceBreakdown';
 import PriceWaterfall from './PriceWaterfall';
 import FavoriteButton from './FavoriteButton';
+import ProductThumb from './ProductThumb';
 import { distributorName } from '../lib/distributors';
 
 interface CompareSide {
@@ -154,16 +155,8 @@ function QuickViewModal({
 
         {!p ? <p>Loading...</p> : (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-              {detail?.enrichment?.image_url && (
-                <img
-                  src={detail.enrichment.image_url}
-                  alt={p.product_name}
-                  style={{ width: 56, height: 56, objectFit: 'contain', borderRadius: 8,
-                    border: '1px solid var(--border)', background: '#fff', flexShrink: 0, padding: 2 }}
-                  onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                />
-              )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
+              <ProductThumb src={detail?.enrichment?.image_url} alt={p.product_name} size={96} />
               <FavoriteButton productName={productName} wholesaler={wholesaler} unitVolume={p.unit_volume} upc={p.upc} />
               <h3 style={{ margin: 0 }}>{p.product_name}</h3>
             </div>
@@ -171,6 +164,38 @@ function QuickViewModal({
               {p.wholesaler} · {p.product_type} · {p.unit_volume} · {p.upc}
               {vintage && <span className="tag tag-blue" style={{ marginLeft: 8, fontSize: 11 }}>Vintage {vintage}</span>}
             </p>
+
+            {detail?.enrichment && (() => {
+              const en = detail.enrichment;
+              const specs = en.specs ? Object.entries(en.specs).filter(([, v]) => v != null && String(v) !== '') : [];
+              const path = en.category_path?.filter(Boolean) ?? [];
+              const hasDesc = en.description && en.description !== 'No description found.';
+              if (!hasDesc && specs.length === 0 && path.length === 0 && !en.region) return null;
+              return (
+                <div className="panel" style={{ padding: 10, marginTop: 8, marginBottom: 8, fontSize: 13 }}>
+                  {path.length > 0 && (
+                    <div style={{ color: 'var(--text-muted)', fontSize: 11, marginBottom: 6 }}>
+                      {path.join(' › ')}
+                    </div>
+                  )}
+                  {hasDesc && <p style={{ margin: '0 0 8px' }}>{en.description}</p>}
+                  {specs.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px' }}>
+                      {specs.map(([k, v]) => (
+                        <span key={k} style={{ fontSize: 12 }}>
+                          <span style={{ color: 'var(--text-muted)' }}>{k}: </span>{String(v)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {(en.region || en.brand) && (
+                    <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 6 }}>
+                      {[en.brand, en.region].filter(Boolean).join(' · ')}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {compareWith && pB ? (
               <div style={{

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" role="img" aria-label="Image not found">
+  <rect x="1" y="1" width="318" height="318" rx="16" fill="#F4F6F9" stroke="#E2E8F0" stroke-width="2"/>
+  <!-- picture frame -->
+  <rect x="84" y="92" width="152" height="116" rx="10" fill="#FFFFFF" stroke="#C2CCD6" stroke-width="4"/>
+  <!-- sun -->
+  <circle cx="120" cy="128" r="13" fill="#C2CCD6"/>
+  <!-- mountains -->
+  <path d="M92 196 L138 150 L168 180 L196 142 L228 196 Z" fill="#C2CCD6"/>
+  <!-- diagonal slash -->
+  <line x1="92" y1="204" x2="228" y2="96" stroke="#9AA7B5" stroke-width="7" stroke-linecap="round"/>
+  <!-- caption -->
+  <text x="160" y="248" text-anchor="middle"
+        font-family="'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif"
+        font-size="22" font-weight="600" fill="#8A97A6">Image Not Found</text>
+</svg>

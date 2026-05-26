@@ -101,7 +101,7 @@ export default function Cart() {
         <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ShoppingCart size={22} /> Cart</h2>
         <button className="btn btn-primary" disabled={active.length === 0 || send.isPending}
           onClick={() => { setResult(null); send.mutate(); }}>
-          <Send size={16} /> {send.isPending ? 'Sending...' : 'Send to all reps'}
+          <Send size={16} /> {send.isPending ? 'Sending...' : 'Send All Orders to Reps'}
         </button>
       </div>
 

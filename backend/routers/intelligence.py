@@ -12,6 +12,7 @@ from typing import Optional
 from backend.db import get_duckdb, read_parquet
 from backend.pg import get_pg
 from backend.auth import get_current_user
+from backend.enrichment_join import attach_enrichment_image
 
 router = APIRouter(prefix="/api/intelligence", tags=["intelligence"])
 
@@ -56,6 +57,7 @@ def get_buy_signals(
             SELECT
                 e.wholesaler,
                 e.edition,
+                e.upc,
                 e.product_name,
                 e.product_type,
                 e.unit_volume,
@@ -114,7 +116,9 @@ def get_buy_signals(
             LIMIT $limit
         """, {**params, "limit": limit}).fetchdf()
 
-        return df.to_dict(orient="records")
+        records = df.to_dict(orient="records")
+        attach_enrichment_image(con, records)
+        return records
 
 
 @router.get("/buy-sheet")
@@ -200,7 +204,7 @@ def get_missed_opportunities(
 
         w = " AND ".join(where)
         df = con.execute(f"""
-            SELECT wholesaler, edition, product_name, product_type,
+            SELECT wholesaler, edition, upc, product_name, product_type,
                    unit_volume, frontline_case_price, effective_case_price,
                    discount_pct, total_savings_per_case,
                    has_discount, has_rip, has_closeout
@@ -213,6 +217,7 @@ def get_missed_opportunities(
         items = df.to_dict(orient="records")
         # Filter out items already on watchlist
         missed = [i for i in items if (i["product_name"], i["wholesaler"]) not in watched]
+        attach_enrichment_image(con, missed)
 
         return {
             "total_opportunities": len(missed),

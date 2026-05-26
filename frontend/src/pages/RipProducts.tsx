@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { deals, catalog } from '../lib/api';
 import FavoriteButton from '../components/FavoriteButton';
+import ProductThumb from '../components/ProductThumb';
 import { RowMenuButton } from '../components/ContextMenu';
 import RowLimitSelect from '../components/RowLimitSelect';
 import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
@@ -356,9 +357,12 @@ export default function RipProducts() {
                     </td>
                     <td>
                       {isFirstForProduct ? (
-                        <div className="rip-cell-product">
-                          <span className="rip-product-name">{item.product_name}</span>
-                          <span className="rip-product-code">{item.upc}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <ProductThumb src={item.image_url} alt={item.product_name} size={64} />
+                          <div className="rip-cell-product">
+                            <span className="rip-product-name">{item.product_name}</span>
+                            <span className="rip-product-code">{item.upc}</span>
+                          </div>
                         </div>
                       ) : (
                         <span className="rip-sub-indicator">&nbsp;</span>

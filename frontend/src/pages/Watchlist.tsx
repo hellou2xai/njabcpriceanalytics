@@ -5,6 +5,7 @@ import { watchlist, intelligence, orders, catalog } from '../lib/api';
 import type { WatchlistItem, BuySignal } from '../lib/api';
 import RowLimitSelect from '../components/RowLimitSelect';
 import FavoriteButton from '../components/FavoriteButton';
+import ProductThumb from '../components/ProductThumb';
 import { RowMenuButton } from '../components/ContextMenu';
 import PriceTrendIndicator from '../components/PriceTrendIndicator';
 import AddToOrderButton from '../components/AddToOrderButton';
@@ -489,15 +490,18 @@ export default function WatchlistPage() {
 
         {/* 3. Description + Signal + Reasons */}
         <td>
-          <div className="cell-stacked">
-            <span style={{ fontWeight: 600, fontSize: 13 }}>{item.product_name}</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              <SignalBadge signal={sig?.signal} />
-              {sig?.reason && (
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                  {sig.reason.split(';').slice(0, 2).join(' · ')}
-                </span>
-              )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <ProductThumb src={item.image_url ?? sig?.image_url} alt={item.product_name} size={64} />
+            <div className="cell-stacked">
+              <span style={{ fontWeight: 600, fontSize: 13 }}>{item.product_name}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <SignalBadge signal={sig?.signal} />
+                {sig?.reason && (
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    {sig.reason.split(';').slice(0, 2).join(' · ')}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </td>

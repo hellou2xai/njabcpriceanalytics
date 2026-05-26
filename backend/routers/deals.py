@@ -12,6 +12,7 @@ from typing import Optional
 
 from backend.db import get_duckdb, read_parquet
 from backend.rip_utils import is_bottle_unit, rip_per_case, rip_bundle_cost
+from backend.enrichment_join import attach_enrichment_image
 
 
 def _clean(rec: dict) -> dict:
@@ -162,6 +163,7 @@ def get_top_discounts(
                 src_parts.append("Closeout")
             r["discount_source"] = src_parts
 
+        attach_enrichment_image(con, records)
         return records
 
 
@@ -189,7 +191,7 @@ def get_clearance_items(
 
         w = " AND ".join(where)
         df = con.execute(f"""
-            SELECT wholesaler, edition, product_name, product_type,
+            SELECT wholesaler, edition, upc, product_name, product_type,
                    unit_volume, frontline_case_price, best_case_price,
                    effective_case_price, discount_pct, total_savings_per_case,
                    closeout_permit
@@ -198,7 +200,9 @@ def get_clearance_items(
             ORDER BY discount_pct DESC
             LIMIT $limit
         """, {**params, "limit": limit}).fetchdf()
-        return df.to_dict(orient="records")
+        records = [_clean(r) for r in df.to_dict(orient="records")]
+        attach_enrichment_image(con, records)
+        return records
 
 
 @router.get("/combo-index")
@@ -977,6 +981,7 @@ def get_rip_products(
         total = len(items)
         page_items = items[offset:offset + limit]
 
+        attach_enrichment_image(con, page_items)
         return {
             "total": total,
             "limit": limit,

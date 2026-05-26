@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { deals, watchlist, catalog } from '../lib/api';
 import SortableTable from '../components/SortableTable';
 import FavoriteButton from '../components/FavoriteButton';
+import ProductThumb from '../components/ProductThumb';
 import TrackedOnlyToggle from '../components/TrackedOnlyToggle';
 import RowLimitSelect from '../components/RowLimitSelect';
 import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
@@ -120,7 +121,12 @@ export default function Discounts() {
               { key: 'fav', label: '★', render: (r: Product) => (
                 <FavoriteButton productName={r.product_name} wholesaler={r.wholesaler} upc={r.upc} unitVolume={r.unit_volume} />
               )},
-              { key: 'product_name', label: 'Product', sortable: true },
+              { key: 'product_name', label: 'Product', sortable: true, render: (r: Product) => (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <ProductThumb src={r.image_url} alt={r.product_name} size={64} />
+                  <span style={{ fontWeight: 600 }}>{r.product_name}</span>
+                </div>
+              )},
               { key: 'wholesaler', label: 'Distributor', render: (r) => distributorName(r.wholesaler as string) },
               { key: 'product_type', label: 'Type' },
               { key: 'unit_volume', label: 'Size' },

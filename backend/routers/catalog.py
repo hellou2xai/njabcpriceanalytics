@@ -14,6 +14,7 @@ from typing import Optional
 
 from backend.db import get_duckdb, read_parquet
 from backend.auth import get_optional_user
+from backend.enrichment_join import attach_enrichment_image as _attach_enrichment_image
 from backend.rip_utils import is_bottle_unit as _is_bottle_unit, rip_per_case as _rip_per_case, rip_bundle_cost as _rip_bundle_cost
 
 
@@ -175,38 +176,6 @@ def _attach_next_month_prices(con, src, records):
             rec["better_month"] = "This Month"
         else:
             rec["better_month"] = "Next Month"
-
-
-def _attach_enrichment_image(con, records):
-    """Attach the Go-UPC image URL to each record by normalised UPC.
-
-    Fast by design: one batch query per page against the in-memory enrichment
-    table (no per-row lookups), then a dict join. Sets rec["image_url"] (None if
-    there is no image). The image itself is served from R2's public CDN, so the
-    API never moves image bytes. No-op when the table or UPCs are absent.
-    """
-    if not records:
-        return
-    # product_enrichment.upc is already the normalised key (LTRIM(upc,'0')).
-    norms = sorted({str(r["upc"]).lstrip("0") for r in records
-                    if r.get("upc") and str(r["upc"]).lstrip("0")})
-    img_map = {}
-    if norms:
-        ph = ", ".join(f"$e{i}" for i in range(len(norms)))
-        prm = {f"e{i}": u for i, u in enumerate(norms)}
-        try:
-            df = con.execute(
-                f"SELECT upc, image_url FROM product_enrichment WHERE upc IN ({ph})", prm
-            ).fetchdf()
-            for _, er in df.iterrows():
-                iu = er.get("image_url")
-                if isinstance(iu, float) and math.isnan(iu):
-                    iu = None
-                img_map[str(er["upc"])] = iu or None
-        except Exception:
-            img_map = {}  # table missing (parquet dev) -> everyone gets the placeholder
-    for rec in records:
-        rec["image_url"] = img_map.get(str(rec.get("upc") or "").lstrip("0"))
 
 
 def _attach_discount_rip_tiers(con, records):

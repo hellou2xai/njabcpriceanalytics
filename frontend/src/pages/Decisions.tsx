@@ -5,6 +5,7 @@ import SortableTable from '../components/SortableTable';
 import WholesalerFilter from '../components/WholesalerFilter';
 import KPICard from '../components/KPICard';
 import FavoriteButton from '../components/FavoriteButton';
+import ProductThumb from '../components/ProductThumb';
 import RowLimitSelect from '../components/RowLimitSelect';
 import { ContextMenuProvider } from '../components/ContextMenu';
 import { useProductQuickView } from '../components/ProductQuickView';
@@ -67,7 +68,12 @@ function BuySheetTab({ wholesaler }: { wholesaler: string }) {
                 { key: 'fav', label: '★', render: (r: BuySignal) => (
                   <FavoriteButton productName={r.product_name} wholesaler={r.wholesaler} unitVolume={r.unit_volume} />
                 )},
-                { key: 'product_name', label: 'Product' },
+                { key: 'product_name', label: 'Product', render: (r: BuySignal) => (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <ProductThumb src={r.image_url} alt={r.product_name} size={64} />
+                    <span style={{ fontWeight: 600 }}>{r.product_name}</span>
+                  </div>
+                )},
                 { key: 'wholesaler', label: 'Distributor', render: (r) => distributorName(r.wholesaler as string) },
                 { key: 'frontline_case_price', label: 'Price', align: 'right',
                   render: r => `$${r.frontline_case_price}` },
@@ -112,7 +118,12 @@ function MissedTab({ wholesaler }: { wholesaler: string }) {
             { key: 'fav', label: '★', render: (r: Product) => (
               <FavoriteButton productName={r.product_name} wholesaler={r.wholesaler} unitVolume={r.unit_volume} />
             )},
-            { key: 'product_name', label: 'Product' },
+            { key: 'product_name', label: 'Product', render: (r: Product) => (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <ProductThumb src={r.image_url} alt={r.product_name} size={64} />
+                <span style={{ fontWeight: 600 }}>{r.product_name}</span>
+              </div>
+            )},
             { key: 'wholesaler', label: 'Distributor', render: (r) => distributorName(r.wholesaler as string) },
             { key: 'product_type', label: 'Type' },
             { key: 'frontline_case_price', label: 'Price', align: 'right', render: r => `$${r.frontline_case_price}` },

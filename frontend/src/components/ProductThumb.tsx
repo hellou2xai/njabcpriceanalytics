@@ -30,8 +30,7 @@ export default function ProductThumb({ src, alt, size = 44 }: Props) {
         height: size,
         objectFit: 'contain',
         borderRadius: 6,
-        border: '1px solid var(--border)',
-        background: '#fff',
+        background: 'transparent',
         flexShrink: 0,
         padding: 2,
       }}

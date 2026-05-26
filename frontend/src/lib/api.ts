@@ -905,6 +905,7 @@ export interface MissedOpps {
 export interface WatchlistItem {
   id: number; product_name: string; wholesaler: string;
   upc?: string; unit_volume?: string; target_price?: number; notes?: string;
+  image_url?: string | null;
 }
 
 export interface Order {

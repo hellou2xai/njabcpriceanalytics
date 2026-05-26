@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from backend.db import get_duckdb, read_parquet, NOW_UTC
+from backend.enrichment_join import attach_enrichment_image
 from backend.pg import get_pg
 from backend.auth import get_current_user
 from backend.rip_utils import is_bottle_unit, rip_per_case
@@ -220,7 +221,11 @@ def get_watchlist(user: dict = Depends(get_current_user)):
         rows = con.execute(
             "SELECT * FROM watchlist WHERE user_id = %s ORDER BY created_at DESC", (user["id"],)
         ).fetchall()
-    return [dict(r) for r in rows]
+    items = [dict(r) for r in rows]
+    if items:
+        with get_duckdb() as con:
+            attach_enrichment_image(con, items)
+    return items
 
 
 @router.post("/watchlist")

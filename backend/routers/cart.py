@@ -1,0 +1,224 @@
+"""Cart API — one server-side cart per user.
+
+Items group by their assigned sales rep. On add, the rep is auto-assigned when
+the product's distributor has exactly one rep; otherwise it's left empty and the
+user picks it in the cart (a distributor can have several reps). saved_for_later=1
+parks an item in the "Save for later" section below the active cart. The
+"send to all reps" step (turns each rep group into a submitted order) is added in
+the Phase 3 order cutover.
+"""
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
+from backend.pg import get_pg
+from backend.db import get_duckdb, NOW_UTC
+from backend.auth import get_current_user
+from backend.enrichment_join import attach_enrichment_image
+
+router = APIRouter(prefix="/api/cart", tags=["cart"])
+
+
+class CartItemIn(BaseModel):
+    product_name: str
+    wholesaler: str
+    upc: Optional[str] = None
+    unit_volume: Optional[str] = None
+    combo_code: Optional[str] = None
+    qty_cases: int = 0
+    qty_units: int = 0
+
+
+class CartItemPatch(BaseModel):
+    qty_cases: Optional[int] = None
+    qty_units: Optional[int] = None
+    sales_rep_id: Optional[int] = None
+    saved_for_later: Optional[bool] = None
+    notes: Optional[str] = None
+    retail_price: Optional[float] = None
+
+
+class AssignRepIn(BaseModel):
+    wholesaler: str
+    sales_rep_id: Optional[int] = None
+
+
+class FromListIn(BaseModel):
+    list_id: int
+    item_ids: Optional[list[int]] = None  # None/empty = every item in the list
+
+
+def _default_rep_for(con, user_id: int, wholesaler: str):
+    """Return the rep id when the distributor has exactly one rep, else None."""
+    reps = con.execute(
+        "SELECT id FROM sales_reps WHERE user_id=%s AND distributor=%s", (user_id, wholesaler)
+    ).fetchall()
+    return reps[0]["id"] if len(reps) == 1 else None
+
+
+def _insert_cart_item(con, user_id, item: dict, rep_id):
+    con.execute(
+        f"""INSERT INTO cart_items
+              (user_id, product_name, wholesaler, upc, unit_volume, combo_code,
+               qty_cases, qty_units, sales_rep_id, saved_for_later)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,0)
+            ON CONFLICT (user_id, product_name, wholesaler, unit_volume) DO UPDATE SET
+              qty_cases = cart_items.qty_cases + EXCLUDED.qty_cases,
+              qty_units = cart_items.qty_units + EXCLUDED.qty_units,
+              saved_for_later = 0,
+              updated_at = {NOW_UTC}""",
+        (user_id, item["product_name"], item["wholesaler"], item.get("upc"),
+         item.get("unit_volume"), item.get("combo_code"),
+         item.get("qty_cases", 0) or 0, item.get("qty_units", 0) or 0, rep_id),
+    )
+
+
+@router.get("")
+def get_cart(user: dict = Depends(get_current_user)):
+    """All cart items (active + saved-for-later), each with its image and rep name."""
+    with get_pg() as con:
+        items = [dict(r) for r in con.execute(
+            "SELECT * FROM cart_items WHERE user_id=%s ORDER BY created_at", (user["id"],)
+        ).fetchall()]
+        reps = {r["id"]: dict(r) for r in con.execute(
+            "SELECT id, name, distributor, division, email FROM sales_reps WHERE user_id=%s",
+            (user["id"],),
+        ).fetchall()}
+    if items:
+        with get_duckdb() as dcon:
+            attach_enrichment_image(dcon, items)
+    for it in items:
+        rep = reps.get(it.get("sales_rep_id"))
+        it["sales_rep_name"] = rep["name"] if rep else None
+    return {"items": items}
+
+
+@router.post("")
+def add_to_cart(body: CartItemIn, user: dict = Depends(get_current_user)):
+    with get_pg() as con:
+        rep_id = _default_rep_for(con, user["id"], body.wholesaler)
+        _insert_cart_item(con, user["id"], body.model_dump(), rep_id)
+    return {"status": "added"}
+
+
+@router.put("/{item_id}")
+def update_cart_item(item_id: int, body: CartItemPatch, user: dict = Depends(get_current_user)):
+    fields, params = [], []
+    data = body.model_dump(exclude_unset=True)
+    for col in ("qty_cases", "qty_units", "sales_rep_id", "notes", "retail_price"):
+        if col in data:
+            fields.append(f"{col}=%s")
+            params.append(data[col])
+    if "saved_for_later" in data:
+        fields.append("saved_for_later=%s")
+        params.append(1 if data["saved_for_later"] else 0)
+    if not fields:
+        return {"status": "noop"}
+    fields.append(f"updated_at={NOW_UTC}")
+    params.extend([item_id, user["id"]])
+    with get_pg() as con:
+        con.execute(f"UPDATE cart_items SET {', '.join(fields)} WHERE id=%s AND user_id=%s", params)
+    return {"status": "updated"}
+
+
+@router.delete("/{item_id}")
+def remove_cart_item(item_id: int, user: dict = Depends(get_current_user)):
+    with get_pg() as con:
+        con.execute("DELETE FROM cart_items WHERE id=%s AND user_id=%s", (item_id, user["id"]))
+    return {"status": "removed"}
+
+
+@router.post("/assign-rep")
+def assign_rep(body: AssignRepIn, user: dict = Depends(get_current_user)):
+    """Set the sales rep for every ACTIVE item of one distributor (group rep)."""
+    with get_pg() as con:
+        con.execute(
+            f"""UPDATE cart_items SET sales_rep_id=%s, updated_at={NOW_UTC}
+                WHERE user_id=%s AND wholesaler=%s AND saved_for_later=0""",
+            (body.sales_rep_id, user["id"], body.wholesaler),
+        )
+    return {"status": "assigned"}
+
+
+@router.post("/from-list")
+def add_from_list(body: FromListIn, user: dict = Depends(get_current_user)):
+    """Move selected list items into the cart (the list keeps them; lists are
+    reusable). Adds with qty 0 — the user sets quantities in the cart."""
+    with get_pg() as con:
+        own = con.execute(
+            "SELECT 1 FROM lists WHERE id=%s AND user_id=%s", (body.list_id, user["id"])
+        ).fetchone()
+        if not own:
+            raise HTTPException(404, "List not found")
+        q = "SELECT * FROM list_items WHERE list_id=%s"
+        params = [body.list_id]
+        if body.item_ids:
+            ph = ", ".join(["%s"] * len(body.item_ids))
+            q += f" AND id IN ({ph})"
+            params.extend(body.item_ids)
+        rows = [dict(r) for r in con.execute(q, params).fetchall()]
+        for it in rows:
+            rep_id = _default_rep_for(con, user["id"], it["wholesaler"])
+            _insert_cart_item(con, user["id"], it, rep_id)
+    return {"status": "added", "count": len(rows)}
+
+
+@router.post("/send")
+def send_cart(user: dict = Depends(get_current_user)):
+    """Turn the active cart into orders: one submitted order per sales rep (all
+    of a rep's lines go together). Each order is emailed to its rep, then those
+    items are removed from the cart. Items with no rep assigned are left behind
+    and reported so the user can assign a rep and resend."""
+    # Reuse the existing submit machinery (builds the PO + emails the rep).
+    from backend.routers.user_state import submit_order, SubmitOrderIn
+
+    with get_pg() as con:
+        active = [dict(r) for r in con.execute(
+            "SELECT * FROM cart_items WHERE user_id=%s AND saved_for_later=0 ORDER BY created_at",
+            (user["id"],),
+        ).fetchall()]
+
+    groups: dict[int, list] = {}
+    no_rep = 0
+    for it in active:
+        rid = it.get("sales_rep_id")
+        if not rid:
+            no_rep += 1
+            continue
+        groups.setdefault(rid, []).append(it)
+
+    results = []
+    for rid, items in groups.items():
+        distributor = items[0]["wholesaler"]
+        with get_pg() as con:
+            rep = con.execute(
+                "SELECT name FROM sales_reps WHERE id=%s AND user_id=%s", (rid, user["id"])
+            ).fetchone()
+            rep_name = rep["name"] if rep else distributor
+            oid = con.execute(
+                "INSERT INTO orders (user_id, name, status, distributor, sales_rep_id) "
+                "VALUES (%s,%s,'draft',%s,%s) RETURNING id",
+                (user["id"], f"Cart order - {rep_name}", distributor, rid),
+            ).fetchone()["id"]
+            for it in items:
+                con.execute(
+                    """INSERT INTO order_lines
+                         (order_id, product_name, wholesaler, upc, unit_volume,
+                          qty_cases, qty_units, combo_code, retail_price, notes)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (oid, it["product_name"], it["wholesaler"], it.get("upc"),
+                     it.get("unit_volume"), it.get("qty_cases") or 0, it.get("qty_units") or 0,
+                     it.get("combo_code"), it.get("retail_price"), it.get("notes")),
+                )
+        # Submit + email (own transaction inside submit_order).
+        res = submit_order(oid, SubmitOrderIn(), user)
+        # Remove the sent items from the cart.
+        ids = [it["id"] for it in items]
+        with get_pg() as con:
+            ph = ", ".join(["%s"] * len(ids))
+            con.execute(f"DELETE FROM cart_items WHERE user_id=%s AND id IN ({ph})", (user["id"], *ids))
+        results.append({"order_id": oid, "rep_id": rid, "rep_name": rep_name,
+                        "lines": len(items), "emailed": res.get("emailed"), "to": res.get("to")})
+
+    return {"sent": len(results), "orders": results, "skipped_no_rep": no_rep}

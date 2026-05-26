@@ -7,7 +7,7 @@ import {
   PanelLeftClose, PanelLeftOpen, StickyNote, UserCog, Settings, Shield, Sparkles, BookOpen, ListTodo,
   Activity,
 } from 'lucide-react';
-import { alerts as alertsApi, orders as ordersApi } from '../lib/api';
+import { alerts as alertsApi, orders as ordersApi, cart as cartApi } from '../lib/api';
 import WhatsAppShareButton from './WhatsAppShare';
 import { useAuth } from '../contexts/AuthContext';
 import { useOrderAnalysis } from '../contexts/OrderAnalysisContext';
@@ -41,7 +41,7 @@ const NAV_GROUPS: {
       { path: '/todo', label: 'To-Do', icon: ListTodo },
       { path: '/notes', label: 'Notes', icon: StickyNote },
       { path: '/orders', label: 'Orders', icon: ShoppingCart },
-      { path: '/order-analysis', label: 'Order Analysis', icon: ClipboardList },
+      { path: '/lists', label: 'Lists', icon: ClipboardList },
     ],
   },
   {
@@ -140,6 +140,14 @@ export default function Layout() {
     queryFn: () => ordersApi.list('draft'),
   });
 
+  // Cart contents for the top-right cart badge (active items only).
+  const { data: cartData } = useQuery({
+    queryKey: ['cart'],
+    queryFn: cartApi.get,
+    refetchInterval: 30000,
+  });
+  const cartCount = (cartData?.items ?? []).filter(i => !i.saved_for_later).length;
+
   const sidebarVisible = isMobile ? mobileOpen : true;
   const sidebarCollapsed = isMobile ? false : collapsed;
 
@@ -219,7 +227,6 @@ export default function Layout() {
                     <Icon size={18} />
                     {!sidebarCollapsed && <span>{label}</span>}
                     {path === '/alerts' && unread?.unread ? <span className="badge">{unread.unread}</span> : null}
-                    {path === '/order-analysis' && oa.count ? <span className="badge">{oa.count}</span> : null}
                     {path === '/orders' && draftOrders?.length ? <span className="badge">{draftOrders.length}</span> : null}
                   </Link>
                 ))}
@@ -253,6 +260,30 @@ export default function Layout() {
           </button>
         </div>
       </aside>
+      {/* Cart: always visible, top-right, with a live item count. */}
+      <Link
+        to="/cart"
+        title="Cart"
+        aria-label="Cart"
+        className={`cart-fab ${location.pathname === '/cart' ? 'active' : ''}`}
+        style={{
+          position: 'fixed', top: 14, right: 18, zIndex: 1200,
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          width: 42, height: 42, borderRadius: 21,
+          background: 'var(--blue, #1f4e8c)', color: '#fff',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.18)', textDecoration: 'none',
+        }}
+      >
+        <ShoppingCart size={20} />
+        {cartCount > 0 && (
+          <span style={{
+            position: 'absolute', top: -4, right: -4, minWidth: 18, height: 18,
+            padding: '0 4px', borderRadius: 9, background: '#e23b3b', color: '#fff',
+            fontSize: 11, fontWeight: 700, lineHeight: '18px', textAlign: 'center',
+          }}>{cartCount}</span>
+        )}
+      </Link>
+
       <main className="main-content">
         <Outlet />
       </main>

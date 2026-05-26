@@ -165,6 +165,48 @@ def init_user_db():
             created_at text DEFAULT {NOW_UTC},
             updated_at text DEFAULT {NOW_UTC}
         )""",
+        # Lists: multiple named product lists per user (evolves Order Analysis).
+        f"""CREATE TABLE IF NOT EXISTS lists (
+            id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            user_id integer REFERENCES users(id) ON DELETE CASCADE,
+            name text NOT NULL,
+            created_at text DEFAULT {NOW_UTC},
+            updated_at text DEFAULT {NOW_UTC}
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS list_items (
+            id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            list_id integer NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
+            product_name text NOT NULL,
+            wholesaler text NOT NULL,
+            upc text,
+            unit_volume text,
+            combo_code text,
+            notes text,
+            created_at text DEFAULT {NOW_UTC}
+        )""",
+        """CREATE UNIQUE INDEX IF NOT EXISTS idx_list_items_item
+            ON list_items(list_id, product_name, wholesaler, unit_volume)""",
+        # Cart: one logical cart per user. Items group by assigned sales rep;
+        # saved_for_later=1 parks an item in the "save for later" section.
+        f"""CREATE TABLE IF NOT EXISTS cart_items (
+            id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            user_id integer REFERENCES users(id) ON DELETE CASCADE,
+            product_name text NOT NULL,
+            wholesaler text NOT NULL,
+            upc text,
+            unit_volume text,
+            combo_code text,
+            qty_cases integer DEFAULT 0,
+            qty_units integer DEFAULT 0,
+            sales_rep_id integer,
+            saved_for_later integer DEFAULT 0,
+            retail_price double precision,
+            notes text,
+            created_at text DEFAULT {NOW_UTC},
+            updated_at text DEFAULT {NOW_UTC}
+        )""",
+        """CREATE UNIQUE INDEX IF NOT EXISTS idx_cart_user_item
+            ON cart_items(user_id, product_name, wholesaler, unit_volume)""",
         f"""CREATE TABLE IF NOT EXISTS user_ratings (
             id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
             user_id integer REFERENCES users(id) ON DELETE CASCADE,

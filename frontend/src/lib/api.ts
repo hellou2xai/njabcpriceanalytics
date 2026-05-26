@@ -350,6 +350,52 @@ export const orders = {
   },
 };
 
+// ---- Lists (named product collections) + Cart ----
+export interface ProductList {
+  id: number; name: string; item_count: number; created_at: string; updated_at: string;
+}
+export interface ListItem {
+  id: number; list_id: number; product_name: string; wholesaler: string;
+  upc?: string | null; unit_volume?: string | null; combo_code?: string | null;
+  notes?: string | null; image_url?: string | null;
+}
+export interface ListDetail { id: number; name: string; created_at: string; updated_at: string; items: ListItem[]; }
+
+export interface CartItem {
+  id: number; product_name: string; wholesaler: string;
+  upc?: string | null; unit_volume?: string | null; combo_code?: string | null;
+  qty_cases: number; qty_units: number;
+  sales_rep_id?: number | null; sales_rep_name?: string | null;
+  saved_for_later: number; image_url?: string | null; notes?: string | null;
+}
+
+export const lists = {
+  list: () => request<ProductList[]>('/api/lists'),
+  create: (name: string) => request<ProductList>('/api/lists', { method: 'POST', body: JSON.stringify({ name }) }),
+  rename: (id: number, name: string) => request(`/api/lists/${id}`, { method: 'PUT', body: JSON.stringify({ name }) }),
+  remove: (id: number) => request(`/api/lists/${id}`, { method: 'DELETE' }),
+  get: (id: number) => request<ListDetail>(`/api/lists/${id}`),
+  addItem: (id: number, item: Partial<ListItem>) =>
+    request(`/api/lists/${id}/items`, { method: 'POST', body: JSON.stringify(item) }),
+  removeItem: (id: number, itemId: number) =>
+    request(`/api/lists/${id}/items/${itemId}`, { method: 'DELETE' }),
+  removeItems: (id: number, itemIds: number[]) =>
+    request(`/api/lists/${id}/items/delete`, { method: 'POST', body: JSON.stringify({ item_ids: itemIds }) }),
+};
+
+export const cart = {
+  get: () => request<{ items: CartItem[] }>('/api/cart'),
+  add: (item: Partial<CartItem>) => request('/api/cart', { method: 'POST', body: JSON.stringify(item) }),
+  update: (id: number, data: { qty_cases?: number; qty_units?: number; sales_rep_id?: number | null; saved_for_later?: boolean; notes?: string }) =>
+    request(`/api/cart/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  remove: (id: number) => request(`/api/cart/${id}`, { method: 'DELETE' }),
+  assignRep: (wholesaler: string, sales_rep_id: number | null) =>
+    request('/api/cart/assign-rep', { method: 'POST', body: JSON.stringify({ wholesaler, sales_rep_id }) }),
+  fromList: (list_id: number, item_ids?: number[]) =>
+    request<{ count: number }>('/api/cart/from-list', { method: 'POST', body: JSON.stringify({ list_id, item_ids }) }),
+  send: () => request<{ sent: number; skipped_no_rep: number; orders: { order_id: number; rep_name: string; lines: number; emailed: boolean; to: string | null }[] }>('/api/cart/send', { method: 'POST' }),
+};
+
 export interface SubmitResult {
   status: string;
   emailed: boolean;

@@ -2,11 +2,10 @@ import { createContext, useContext, useEffect, useRef, useState, useCallback } f
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation } from 'react-router-dom';
 import { Eye, Star, ShoppingCart, Copy, ClipboardList, MoreHorizontal, Globe, Plus, CalendarPlus, X } from 'lucide-react';
-import { watchlist, orders, todos } from '../lib/api';
+import { watchlist, todos, lists as listsApi, cart as cartApi } from '../lib/api';
 import { distributorName } from '../lib/distributors';
 import { useProductQuickView } from './ProductQuickView';
 import { useWebPriceSearch } from './WebPriceSearch';
-import { useOrderAnalysis } from '../contexts/OrderAnalysisContext';
 
 interface MenuProduct {
   product_name: string;
@@ -76,28 +75,31 @@ const PATH_LABELS: Record<string, string> = {
  */
 export function ContextMenuProvider({ children }: Props) {
   const [menu, setMenu] = useState<MenuState | null>(null);
-  const [showOrders, setShowOrders] = useState(false);
+  const [showLists, setShowLists] = useState(false);
   const [todoDraft, setTodoDraft] = useState<{ product: MenuProduct; source: string } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const qc = useQueryClient();
   const location = useLocation();
   const { open } = useProductQuickView();
   const webSearch = useWebPriceSearch();
-  const oa = useOrderAnalysis();
 
   const { data: wl } = useQuery({ queryKey: ['watchlist'], queryFn: watchlist.get });
-  const { data: draftOrders } = useQuery({
-    queryKey: ['orders', 'draft'],
-    queryFn: () => orders.list('draft'),
+  const { data: myLists } = useQuery({
+    queryKey: ['lists'],
+    queryFn: listsApi.list,
     enabled: !!menu,
     staleTime: 30000,
   });
 
   const isTracked = menu ? wl?.some(i => i.product_name === menu.product_name && i.wholesaler === menu.wholesaler) : false;
-  const inAnalysis = menu ? oa.has(menu) : false;
+
+  const _prod = () => ({
+    product_name: menu!.product_name, wholesaler: menu!.wholesaler,
+    upc: menu!.upc, unit_volume: menu!.unit_volume,
+  });
 
   const addWl = useMutation({
-    mutationFn: () => watchlist.add({ product_name: menu!.product_name, wholesaler: menu!.wholesaler, upc: menu!.upc, unit_volume: menu!.unit_volume }),
+    mutationFn: () => watchlist.add(_prod()),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['watchlist'] }); setMenu(null); },
   });
 
@@ -109,38 +111,35 @@ export function ContextMenuProvider({ children }: Props) {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['watchlist'] }); setMenu(null); },
   });
 
-  const addToOrder = useMutation({
-    mutationFn: (orderId: number) => orders.addLine(orderId, {
-      product_name: menu!.product_name, wholesaler: menu!.wholesaler,
-      upc: menu!.upc, unit_volume: menu!.unit_volume,
-    }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['orders'] }); setMenu(null); },
+  const addToCart = useMutation({
+    mutationFn: () => cartApi.add(_prod()),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['cart'] }); setMenu(null); },
   });
 
-  // Create a new draft order for this product's distributor, then add the
-  // product to it. Lets the user start their first order from the catalog.
-  const createAndAdd = useMutation({
+  const addToList = useMutation({
+    mutationFn: (listId: number) => listsApi.addItem(listId, _prod()),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['lists'] }); setMenu(null); },
+  });
+
+  // Create a new list, then add this product to it.
+  const createListAndAdd = useMutation({
     mutationFn: async () => {
-      const created = await orders.create({
-        name: `${distributorName(menu!.wholesaler)} order`,
-        distributor: menu!.wholesaler,
-      });
-      await orders.addLine(created.id, {
-        product_name: menu!.product_name, wholesaler: menu!.wholesaler,
-        upc: menu!.upc, unit_volume: menu!.unit_volume,
-      });
+      const name = (typeof window !== 'undefined' && window.prompt('New list name')) || '';
+      if (!name.trim()) return;
+      const created = await listsApi.create(name.trim());
+      await listsApi.addItem(created.id, _prod());
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['orders'] }); setMenu(null); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['lists'] }); setMenu(null); },
   });
 
-  const close = useCallback(() => { setMenu(null); setShowOrders(false); }, []);
+  const close = useCallback(() => { setMenu(null); setShowLists(false); }, []);
 
   const openMenu = useCallback((p: MenuProduct, anchor: { x: number; y: number }) => {
     let x = anchor.x, y = anchor.y;
     if (x + 240 > window.innerWidth) x = window.innerWidth - 250;
     if (y + 260 > window.innerHeight) y = window.innerHeight - 270;
     setMenu({ ...p, x: Math.max(8, x), y: Math.max(8, y) });
-    setShowOrders(false);
+    setShowLists(false);
   }, []);
 
   useEffect(() => {
@@ -166,22 +165,6 @@ export function ContextMenuProvider({ children }: Props) {
     );
   }, [openMenu]);
 
-  const handleAnalysis = () => {
-    if (!menu) return;
-    if (inAnalysis) {
-      oa.remove(`${menu.wholesaler}|${menu.product_name}|${menu.upc ?? ''}|${menu.unit_volume ?? ''}`);
-    } else {
-      oa.add({
-        product_name: menu.product_name,
-        wholesaler: menu.wholesaler,
-        upc: menu.upc,
-        unit_volume: menu.unit_volume,
-        source: PATH_LABELS[location.pathname] ?? location.pathname,
-      });
-    }
-    close();
-  };
-
   return (
     <ProductMenuCtx.Provider value={{ openMenu }}>
     <div ref={ref} onContextMenu={handleContextMenu} style={{ display: 'contents' }}>
@@ -195,27 +178,26 @@ export function ContextMenuProvider({ children }: Props) {
           <button className="ctx-item" onClick={() => { webSearch.open({ productName: menu.product_name, wholesaler: menu.wholesaler, upc: menu.upc, unitVolume: menu.unit_volume }); close(); }}>
             <Globe size={14} /> Search the web (prices & details)
           </button>
-          <button className="ctx-item" onClick={handleAnalysis}>
-            <ClipboardList size={14} fill={inAnalysis ? 'currentColor' : 'none'} />
-            {inAnalysis ? 'Remove from Order Analysis' : 'Add to Order Analysis'}
+          <button className="ctx-item" onClick={() => addToCart.mutate()} disabled={addToCart.isPending}>
+            <ShoppingCart size={14} /> Add to Cart
           </button>
           <button className="ctx-item" onClick={() => isTracked ? removeWl.mutate() : addWl.mutate()}>
             <Star size={14} fill={isTracked ? 'currentColor' : 'none'} />
             {isTracked ? 'Remove from Favorites' : 'Add to Favorites'}
           </button>
-          <button className="ctx-item" onClick={() => setShowOrders(!showOrders)}>
-            <ShoppingCart size={14} /> Add to Order ▸
+          <button className="ctx-item" onClick={() => setShowLists(!showLists)}>
+            <ClipboardList size={14} /> Add to List ▸
           </button>
-          {showOrders && (
+          {showLists && (
             <div className="ctx-submenu">
-              {(draftOrders ?? []).map(o => (
-                <button key={o.id} className="ctx-item" onClick={() => addToOrder.mutate(o.id)}>
-                  {o.name} {o.division && <span className="tag tag-blue" style={{ marginLeft: 4 }}>{o.division}</span>}
+              {(myLists ?? []).map(l => (
+                <button key={l.id} className="ctx-item" onClick={() => addToList.mutate(l.id)}>
+                  {l.name} <span className="text-muted" style={{ marginLeft: 4, fontSize: 11 }}>{l.item_count}</span>
                 </button>
               ))}
-              <button className="ctx-item" disabled={createAndAdd.isPending}
-                      onClick={() => createAndAdd.mutate()}>
-                <Plus size={14} /> New order for {distributorName(menu.wholesaler)}
+              <button className="ctx-item" disabled={createListAndAdd.isPending}
+                      onClick={() => createListAndAdd.mutate()}>
+                <Plus size={14} /> New list…
               </button>
             </div>
           )}

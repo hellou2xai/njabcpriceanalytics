@@ -36,6 +36,8 @@ import Admin from './pages/Admin';
 import AdminActivity from './pages/AdminActivity';
 import QA from './pages/QA';
 import OrderAnalysis from './pages/OrderAnalysis';
+import Cart from './pages/Cart';
+import Lists from './pages/Lists';
 import AdditionalPages from './pages/AdditionalPages';
 import Login from './pages/Login';
 import Landing from './pages/Landing';
@@ -121,6 +123,8 @@ function AuthenticatedApp() {
             <Route path="/admin/activity" element={<AdminActivity />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/qa" element={<QA />} />
+            <Route path="/cart" element={<Cart />} />
+            <Route path="/lists" element={<Lists />} />
             <Route path="/order-analysis" element={<OrderAnalysis />} />
             <Route path="/more" element={<AdditionalPages />} />
             {/* After login the URL may be /login (or another public path); send

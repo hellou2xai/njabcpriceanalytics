@@ -2,7 +2,7 @@ import { Fragment } from 'react';
 import { Link } from 'react-router-dom';
 import FavoriteButton from './FavoriteButton';
 import ProductThumb from './ProductThumb';
-import AddToOrderButton from './AddToOrderButton';
+import AddToCartButton from './AddToCartButton';
 import { RowMenuButton } from './ContextMenu';
 import { distributorName } from '../lib/distributors';
 import type { Product, CatalogTier } from '../lib/api';
@@ -193,7 +193,7 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                     </div>
                   </td>
                   <td onClick={e => e.stopPropagation()}>
-                    <AddToOrderButton productName={item.product_name} wholesaler={item.wholesaler}
+                    <AddToCartButton productName={item.product_name} wholesaler={item.wholesaler}
                       upc={item.upc} unitVolume={item.unit_volume}
                       qtyCases={qty.cases} qtyUnits={qty.units} />
                   </td>

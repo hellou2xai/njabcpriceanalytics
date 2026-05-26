@@ -267,7 +267,7 @@ export default function Layout() {
         aria-label="Cart"
         className={`cart-fab ${location.pathname === '/cart' ? 'active' : ''}`}
         style={{
-          position: 'fixed', top: 14, right: 18, zIndex: 1200,
+          position: 'fixed', top: 72, right: 18, zIndex: 1200,
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
           width: 42, height: 42, borderRadius: 21,
           background: 'var(--blue, #1f4e8c)', color: '#fff',

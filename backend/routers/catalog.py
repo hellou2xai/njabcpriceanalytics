@@ -401,15 +401,19 @@ def search_products(
             # also try matching against the digit-only, leading-zero-stripped form.
             digits = "".join(ch for ch in q if ch.isdigit())
             digits_norm = digits.lstrip("0") if digits else ""
-            like_q = f"%{q}%"
-            like_norm = f"%{digits_norm}%" if digits_norm else like_q
+            params["q"] = f"%{q}%"
+            params["q_alt"] = f"%{digits_norm}%" if digits_norm else f"%{q}%"
+            # Multi-word search: every word must appear in the name (in any order),
+            # so "bds sangria" matches "BDS PINK SANGRIA". UPC still matches whole.
+            tokens = [t for t in q.split() if t]
+            name_clauses = []
+            for i, tok in enumerate(tokens):
+                params[f"qt{i}"] = f"%{tok}%"
+                name_clauses.append(f"UPPER(product_name) LIKE UPPER($qt{i})")
+            name_match = " AND ".join(name_clauses) if name_clauses else "UPPER(product_name) LIKE UPPER($q)"
             where.append(
-                "(UPPER(product_name) LIKE UPPER($q)"
-                " OR UPPER(upc) LIKE UPPER($q)"
-                " OR upc LIKE $q_alt)"
+                f"(({name_match}) OR UPPER(upc) LIKE UPPER($q) OR upc LIKE $q_alt)"
             )
-            params["q"] = like_q
-            params["q_alt"] = like_norm
         if wholesaler:
             where.append("wholesaler = $wholesaler")
             params["wholesaler"] = wholesaler
@@ -685,10 +689,14 @@ def new_items(
             digits_norm = digits.lstrip("0") if digits else ""
             params["q"] = f"%{q}%"
             params["q_alt"] = f"%{digits_norm}%" if digits_norm else f"%{q}%"
+            tokens = [t for t in q.split() if t]
+            name_clauses = []
+            for i, tok in enumerate(tokens):
+                params[f"qt{i}"] = f"%{tok}%"
+                name_clauses.append(f"UPPER(e.product_name) LIKE UPPER($qt{i})")
+            name_match = " AND ".join(name_clauses) if name_clauses else "UPPER(e.product_name) LIKE UPPER($q)"
             filters.append(
-                "(UPPER(e.product_name) LIKE UPPER($q)"
-                " OR UPPER(e.upc) LIKE UPPER($q)"
-                " OR e.upc LIKE $q_alt)"
+                f"(({name_match}) OR UPPER(e.upc) LIKE UPPER($q) OR e.upc LIKE $q_alt)"
             )
         if introduced_edition:
             filters.append("i.introduced_edition = $intro")

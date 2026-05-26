@@ -139,7 +139,9 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                         {comboLink && (() => {
                           const url = comboLink(item);
                           return url
-                            ? <Link to={url} className="combo-link-badge" onClick={e => e.stopPropagation()} title="This product is part of a combo bundle — view details">🎁 In combo</Link>
+                            ? <a href={url} className="combo-link-badge"
+                                 onClick={e => { e.preventDefault(); e.stopPropagation(); window.open(url, 'combo-bundle', 'popup,width=940,height=780'); }}
+                                 title="This product is part of a combo bundle — open in a popup">🎁 In combo</a>
                             : null;
                         })()}
                       </div>

@@ -99,6 +99,12 @@ export default function Cart() {
         </button>
       </div>
 
+      {active.length > 0 && (
+        <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>
+          Please follow up with your sales rep after you send the order.
+        </p>
+      )}
+
       {result && <div className="panel" style={{ padding: 10, marginTop: 8, borderColor: 'var(--green)' }}>{result}</div>}
       {anyUnassigned && active.length > 0 && (
         <div className="panel" style={{ padding: 10, marginTop: 8 }}>
@@ -113,6 +119,8 @@ export default function Cart() {
       {groups.map(([wholesaler, groupItems]) => {
         const repId = groupItems.find(i => i.sales_rep_id)?.sales_rep_id ?? '';
         const options = repsFor(wholesaler);
+        const selRep = options.find(r => r.id === Number(repId));
+        const contact = selRep ? [selRep.phone, selRep.email].filter(Boolean).join(' · ') : '';
         return (
           <div key={wholesaler} className="panel" style={{ padding: 12, marginTop: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
@@ -126,6 +134,7 @@ export default function Cart() {
                 </select>
               </label>
             </div>
+            {contact && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{contact}</div>}
             {options.length === 0 && (
               <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
                 No reps for this distributor yet — add one under Sales Reps.

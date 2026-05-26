@@ -113,6 +113,38 @@ def build_pricing_cache() -> Path:
                 except Exception:  # table may not exist yet on a brand-new DB
                     con.execute(empty_enrich)
                 con.execute("DETACH pg")
+
+            # Wire the catalogue brand to the Go-UPC enriched brand by UPC. CPL
+            # brands are noisy/wrong; the enrichment brand (keyed by normalised
+            # UPC) is canonical. This corrects the brand everywhere at once: row
+            # display, the Brand filter facet, and brand filtering. No-op in
+            # parquet dev mode (enrichment table is the empty stub).
+            try:
+                con.execute("""
+                    UPDATE cpl_enriched
+                    SET brand = pe.brand
+                    FROM product_enrichment pe
+                    WHERE pe.upc = LTRIM(cpl_enriched.upc, '0')
+                      AND pe.brand IS NOT NULL AND pe.brand <> ''
+                """)
+            except Exception:
+                pass
+
+            # Precompute combo membership so the catalogue can filter to bundle
+            # products cheaply (a product is "in combo" if its wholesaler+UPC
+            # appears in the combo table).
+            try:
+                con.execute("ALTER TABLE cpl_enriched ADD COLUMN in_combo BOOLEAN DEFAULT false")
+                con.execute("""
+                    UPDATE cpl_enriched SET in_combo = true
+                    WHERE EXISTS (
+                        SELECT 1 FROM combo c
+                        WHERE c.wholesaler = cpl_enriched.wholesaler
+                          AND LTRIM(c.upc, '0') = LTRIM(cpl_enriched.upc, '0')
+                    )
+                """)
+            except Exception:
+                pass
         finally:
             con.close()
         old = _current_path

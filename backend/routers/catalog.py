@@ -346,6 +346,30 @@ def _attach_discount_rip_tiers(con, records):
         rec["tiers"] = disc + rips
 
 
+def _attach_dup_upc(con, src, records):
+    """Flag rows whose (normalised) UPC is shared by 2+ distinct products — a
+    data-quality red flag (one barcode reused for different items). One batch
+    query per page. Sets rec["dup_upc"] True/False."""
+    if not records:
+        return
+    norms = sorted({str(r.get("upc")).lstrip("0") for r in records
+                    if r.get("upc") and str(r.get("upc")).lstrip("0")})
+    dups = set()
+    if norms:
+        ph = ", ".join(f"$d{i}" for i in range(len(norms)))
+        prm = {f"d{i}": u for i, u in enumerate(norms)}
+        try:
+            rows = con.execute(
+                f"SELECT LTRIM(upc,'0') AS u FROM {src} WHERE LTRIM(upc,'0') IN ({ph}) "
+                "GROUP BY LTRIM(upc,'0') HAVING COUNT(DISTINCT product_name) > 1", prm
+            ).fetchall()
+            dups = {str(r[0]) for r in rows}
+        except Exception:
+            dups = set()
+    for rec in records:
+        rec["dup_upc"] = str(rec.get("upc") or "").lstrip("0") in dups
+
+
 @router.get("/search")
 def search_products(
     q: str = Query("", description="Search term"),
@@ -357,6 +381,7 @@ def search_products(
     has_discount: Optional[bool] = None,
     has_closeout: Optional[bool] = None,
     has_rip: Optional[bool] = None,
+    in_combo: Optional[bool] = None,        # True = only products that are in a combo/bundle
     brand: Optional[str] = None,
     unit_volume: Optional[str] = None,
     divisions: Optional[str] = None,        # comma-separated wholesalers (filter panel)
@@ -456,6 +481,8 @@ def search_products(
             where.append("has_rip = true")
         elif has_rip is False:
             where.append("has_rip = false")
+        if in_combo is True:
+            where.append("COALESCE(in_combo, false) = true")
         # Multi-select panel filters (applied server-side so they span all pages).
         _in_filter(where, params, "wholesaler", divisions, "div_")
         _in_filter(where, params, "product_type", categories, "cat_")
@@ -536,6 +563,7 @@ def search_products(
 
         # Go-UPC thumbnail per row (one batch query; served from R2 CDN).
         _attach_enrichment_image(con, records)
+        _attach_dup_upc(con, src, records)
 
         return {
             "total": count,
@@ -746,6 +774,7 @@ def new_items(
         if include_tiers:
             _attach_discount_rip_tiers(con, records)
         _attach_enrichment_image(con, records)
+        _attach_dup_upc(con, src, records)
 
         return {
             "total": int(count),

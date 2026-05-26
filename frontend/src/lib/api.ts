@@ -660,6 +660,8 @@ export interface Product {
   introduced_edition?: string | null;
   // Go-UPC product image (R2 CDN URL), attached per row by the list endpoints.
   image_url?: string | null;
+  // True when this UPC is shared by 2+ distinct products (data-quality flag).
+  dup_upc?: boolean;
 }
 
 export interface NewItemsResponse {

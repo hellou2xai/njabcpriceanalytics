@@ -135,7 +135,13 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                       <ProductThumb src={item.image_url} alt={item.product_name} size={64} />
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontWeight: 600 }}>{item.product_name}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{item.upc}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                          {item.upc}
+                          {item.dup_upc && (
+                            <span className="tag tag-red" style={{ marginLeft: 6, fontSize: 10 }}
+                                  title="This UPC is shared by more than one product">dup UPC</span>
+                          )}
+                        </div>
                         {comboLink && (() => {
                           const url = comboLink(item);
                           return url

@@ -56,6 +56,7 @@ export default function Catalog() {
   const filterParams = {
     has_rip: filters.hasRip,
     has_discount: filters.hasDiscount,
+    in_combo: filters.inCombo || undefined,
     divisions: filters.divisions.join(',') || undefined,
     categories: filters.categories.join(',') || undefined,
     brands: filters.brands.join(',') || undefined,

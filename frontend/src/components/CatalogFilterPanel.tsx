@@ -6,6 +6,7 @@ import { distributorName } from '../lib/distributors';
 export interface CatalogFilters {
   hasRip?: boolean;
   hasDiscount?: boolean;
+  inCombo?: boolean;
   divisions: string[];
   priceMin?: number;
   priceMax?: number;
@@ -25,6 +26,7 @@ export function countActiveFilters(f: CatalogFilters): number {
   let n = 0;
   if (f.hasRip !== undefined) n++;
   if (f.hasDiscount !== undefined) n++;
+  if (f.inCombo) n++;
   n += f.divisions.length;
   if (f.priceMin !== undefined) n++;
   if (f.priceMax !== undefined) n++;
@@ -80,6 +82,20 @@ function FilterSection({
       {open && <div className="filter-section-body">{children}</div>}
     </div>
   );
+}
+
+// Parse a size label (e.g. "750ML", "1.5L", "16OZ") to millilitres so sizes
+// sort smallest -> largest instead of alphabetically. Unknowns sort last.
+function toMl(label: string): number {
+  const s = (label || '').toUpperCase().trim();
+  const m = s.match(/^([\d.]+)\s*(ML|L|LIT|LITER|OZ)?/);
+  if (!m) return Number.MAX_SAFE_INTEGER;
+  const n = parseFloat(m[1]);
+  if (isNaN(n)) return Number.MAX_SAFE_INTEGER;
+  const unit = m[2] || 'ML';
+  if (unit.startsWith('L')) return n * 1000;   // L / LIT / LITER
+  if (unit === 'OZ') return n * 29.5735;
+  return n;                                     // ML
 }
 
 // ---- Helpers to extract facets from items ----
@@ -155,7 +171,7 @@ export default function CatalogFilterPanel({
     arr.includes(val) ? arr.filter((v) => v !== val) : [...arr, val];
 
   // ---- Deals toggle ----
-  const dealsActiveCount = (filters.hasRip !== undefined ? 1 : 0) + (filters.hasDiscount !== undefined ? 1 : 0);
+  const dealsActiveCount = (filters.hasRip !== undefined ? 1 : 0) + (filters.hasDiscount !== undefined ? 1 : 0) + (filters.inCombo ? 1 : 0);
 
   // ---- Price active count ----
   const priceActiveCount =
@@ -174,10 +190,13 @@ export default function CatalogFilterPanel({
 
   // ---- Filtered size list ----
   const sizeEntries = useMemo(() => {
-    const entries = [...sizeFacet.entries()];
-    if (!sizeSearch) return entries;
-    const q = sizeSearch.toLowerCase();
-    return entries.filter(([name]) => name.toLowerCase().includes(q));
+    let entries = [...sizeFacet.entries()];
+    if (sizeSearch) {
+      const q = sizeSearch.toLowerCase();
+      entries = entries.filter(([name]) => name.toLowerCase().includes(q));
+    }
+    // Smallest -> largest by actual volume, not alphabetical.
+    return entries.sort((a, b) => toMl(a[0]) - toMl(b[0]));
   }, [sizeFacet, sizeSearch]);
 
   return (
@@ -234,6 +253,16 @@ export default function CatalogFilterPanel({
             />
             <span>No discount</span>
             <span className="filter-facet-count">{noDiscCount}</span>
+          </label>
+          <label className="filter-checkbox">
+            <input
+              type="checkbox"
+              checked={filters.inCombo === true}
+              onChange={() =>
+                onChange({ ...filters, inCombo: filters.inCombo ? undefined : true })
+              }
+            />
+            <span>In combo</span>
           </label>
         </div>
       </FilterSection>

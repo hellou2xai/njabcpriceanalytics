@@ -132,7 +132,7 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                   </td>
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <ProductThumb src={item.image_url} alt={item.product_name} size={44} />
+                      <ProductThumb src={item.image_url} alt={item.product_name} size={64} />
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontWeight: 600 }}>{item.product_name}</div>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{item.upc}</div>

@@ -155,15 +155,24 @@ function QuickViewModal({
 
         {!p ? <p>Loading...</p> : (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
-              <ProductThumb src={detail?.enrichment?.image_url} alt={p.product_name} size={96} />
-              <FavoriteButton productName={productName} wholesaler={wholesaler} unitVolume={p.unit_volume} upc={p.upc} />
-              <h3 style={{ margin: 0 }}>{p.product_name}</h3>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 8 }}>
+              <ProductThumb src={detail?.enrichment?.image_url} alt={p.product_name} size={180} />
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <FavoriteButton productName={productName} wholesaler={wholesaler} unitVolume={p.unit_volume} upc={p.upc} />
+                  <h3 style={{ margin: 0 }}>{p.product_name}</h3>
+                </div>
+                <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '6px 0 0' }}>
+                  {p.wholesaler} · {p.product_type} · {p.unit_volume} · {p.upc}
+                  {vintage && <span className="tag tag-blue" style={{ marginLeft: 8, fontSize: 11 }}>Vintage {vintage}</span>}
+                </p>
+                {detail?.enrichment && (detail.enrichment.brand || detail.enrichment.region) && (
+                  <p style={{ color: 'var(--text-muted)', fontSize: 12, margin: '4px 0 0' }}>
+                    {[detail.enrichment.brand, detail.enrichment.region].filter(Boolean).join(' · ')}
+                  </p>
+                )}
+              </div>
             </div>
-            <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-              {p.wholesaler} · {p.product_type} · {p.unit_volume} · {p.upc}
-              {vintage && <span className="tag tag-blue" style={{ marginLeft: 8, fontSize: 11 }}>Vintage {vintage}</span>}
-            </p>
 
             {detail?.enrichment && (() => {
               const en = detail.enrichment;

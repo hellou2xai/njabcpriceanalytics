@@ -282,6 +282,7 @@ function TimeSensitiveTile({ data, open }: { data: TimeSensitiveDeal[] | undefin
   };
   return (
     <DashboardTile
+      id="time-sensitive"
       title="Time-Sensitive Deals"
       accent="#dc2626"
       count={active.length}
@@ -413,6 +414,7 @@ function TopDealsTile({ data, open }: { data: any[] | undefined; open: (n: strin
   });
   return (
     <DashboardTile
+      id="top-discounts"
       title="Top Discount Opportunities"
       accent="#10b981"
       count={(data ?? []).length}

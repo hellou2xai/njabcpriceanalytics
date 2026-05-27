@@ -1,9 +1,11 @@
 import { useState, useEffect, type ReactNode } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { X, Maximize2 } from 'lucide-react';
 import type { FilterState } from '../hooks/useTableFilters';
 import { distributorName } from '../lib/distributors';
 
 interface TileProps {
+  id?: string;            // when set, a nav link to /#tile=<id> opens this modal
   title: string;
   subtitle?: string;
   count?: number | string;
@@ -14,15 +16,31 @@ interface TileProps {
 }
 
 export function DashboardTile({
-  title, subtitle, count, countLabel, accent, preview, modalContent,
+  id, title, subtitle, count, countLabel, accent, preview, modalContent,
 }: TileProps) {
   const [open, setOpen] = useState(false);
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const close = () => {
+    setOpen(false);
+    if (id && location.hash === `#tile=${id}`) {
+      navigate(location.pathname + location.search, { replace: true });
+    }
+  };
+
+  // A nav shortcut ("/#tile=<id>") opens this tile's modal directly — works both
+  // when arriving from another page and when already on the dashboard.
+  useEffect(() => {
+    if (id && location.hash === `#tile=${id}`) setOpen(true);
+  }, [id, location.hash]);
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   return (
@@ -47,13 +65,13 @@ export function DashboardTile({
         {preview && <div className="dashboard-tile-preview">{preview}</div>}
       </button>
       {open && (
-        <div className="modal-overlay" onClick={() => setOpen(false)}>
+        <div className="modal-overlay" onClick={close}>
           <div className="modal dashboard-tile-modal" onClick={e => e.stopPropagation()}>
-            <button className="modal-close" onClick={() => setOpen(false)} aria-label="Close">
+            <button className="modal-close" onClick={close} aria-label="Close">
               <X size={18} />
             </button>
             <h3 style={{ margin: 0, marginBottom: 12 }}>{title}</h3>
-            {modalContent(() => setOpen(false))}
+            {modalContent(close)}
           </div>
         </div>
       )}

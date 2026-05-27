@@ -1870,6 +1870,56 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
   .table-container, .catalog-table-wrap, .rip-table-wrap { -webkit-overflow-scrolling: touch; }
 }
 
+/* ===== Responsive card reflow for the dense data tables (Catalog, Combos, RIP) =====
+   Below 1024px each row becomes a labelled card so no fields are hidden off-screen.
+   The desktop table (>=1024px) is untouched. */
+@media (max-width: 1023px) {
+  .catalog-table thead, .rip-products-table thead, table.sortable-cards thead { display: none; }
+  .catalog-table, .catalog-table tbody,
+  .rip-products-table, .rip-products-table tbody,
+  table.sortable-cards, table.sortable-cards tbody { display: block; width: 100%; }
+
+  /* Each product row is a self-contained card. */
+  table.sortable-cards tr,
+  .catalog-table tr.catalog-row-main,
+  .rip-products-table tr.rip-row-first {
+    display: block; background: var(--surface);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 8px 12px;
+  }
+  table.sortable-cards tr { margin-bottom: 10px; }
+  .catalog-table tr.catalog-row-main, .rip-products-table tr.rip-row-first { margin-top: 12px; }
+
+  /* Tier / extra rows: smaller tinted cards tucked under their product. */
+  .catalog-table tr.catalog-row-sub, .rip-products-table tr.rip-row-sub {
+    display: block; background: var(--bg);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 4px 12px; margin: 4px 0 0 16px;
+  }
+  .rip-products-table tr.rip-row-sub .card-title-cell { display: none; }
+
+  /* Field cell: label left, value right. */
+  .catalog-table td, .rip-products-table td, table.sortable-cards td {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    border: none !important; padding: 5px 0; text-align: right; white-space: normal; font-size: 13px;
+  }
+  .catalog-table td::before, .rip-products-table td::before, table.sortable-cards td::before {
+    content: attr(data-label);
+    font-weight: 600; color: var(--text-muted); text-transform: none;
+    letter-spacing: 0; text-align: left; flex: 0 0 auto;
+  }
+  /* Title cell is the card heading (no label). */
+  .card-title-cell { display: block !important; text-align: left !important; padding: 2px 0 6px !important; }
+  .card-title-cell::before { display: none !important; }
+  /* Star/menu actions sit unlabelled at the top of the catalog card. */
+  .catalog-table td.card-actions-cell { justify-content: flex-start; padding: 0 0 2px; }
+  .catalog-table td.card-actions-cell::before { display: none; }
+  /* Drop empty spacer cells and the actions-column label. */
+  .catalog-table td:empty, .rip-products-table td:empty, table.sortable-cards td:empty { display: none; }
+  td.col-actions::before { display: none; }
+  td.col-actions { justify-content: flex-end; }
+}
+
 /* ---- QA (agentic data quality) page ---- */
 .qa-header { margin-bottom: 16px; }
 .qa-controls { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 16px; }

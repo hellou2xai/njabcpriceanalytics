@@ -33,11 +33,14 @@ interface Props<T> {
   getRowProduct?: (row: T) => { product_name: string; wholesaler: string; upc?: string; unit_volume?: string } | null;
   // Show a visible "⋯" actions column on product rows (default true).
   rowActions?: boolean;
+  // When true, the table reflows into stacked cards on narrow screens (<=1023px).
+  cardView?: boolean;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export default function SortableTable<T extends Record<string, any>>({
   columns, data, onSort, onRowClick, pageSize, exportName, getRowProduct, rowActions = true,
+  cardView = false,
 }: Props<T>) {
   const productOf = (row: T) => {
     if (getRowProduct) return getRowProduct(row);
@@ -126,7 +129,7 @@ export default function SortableTable<T extends Record<string, any>>({
         </div>
       )}
       <div className="table-container">
-        <table>
+        <table className={cardView ? 'sortable-cards' : undefined}>
           <thead>
             <tr>
               {columns.map(col => (
@@ -159,8 +162,10 @@ export default function SortableTable<T extends Record<string, any>>({
                 data-ctx-upc={p?.upc}
                 data-ctx-volume={p?.unit_volume}
               >
-                {columns.map(col => (
-                  <td key={col.key} style={{ textAlign: col.align ?? 'left' }}>
+                {columns.map((col, ci) => (
+                  <td key={col.key} data-label={col.label}
+                    className={cardView && ci === 0 ? 'card-title-cell' : undefined}
+                    style={{ textAlign: col.align ?? 'left' }}>
                     {col.render ? col.render(row) : String(row[col.key] ?? '')}
                   </td>
                 ))}

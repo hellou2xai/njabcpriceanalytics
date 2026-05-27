@@ -359,7 +359,7 @@ export default function RipProducts() {
                     data-ctx-volume={item.unit_volume}
                     onClick={() => open(item.product_name, item.wholesaler, undefined, { upc: item.upc, unitVolume: item.unit_volume })}
                   >
-                    <td onClick={e => e.stopPropagation()}>
+                    <td className="card-actions-cell" onClick={e => e.stopPropagation()}>
                       {isFirstForProduct && (
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
                           <FavoriteButton
@@ -372,7 +372,7 @@ export default function RipProducts() {
                         </span>
                       )}
                     </td>
-                    <td>
+                    <td className="card-title-cell">
                       {isFirstForProduct ? (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                           <ProductThumb src={item.image_url} alt={item.product_name} size={64} />
@@ -385,58 +385,58 @@ export default function RipProducts() {
                         <span className="rip-sub-indicator">&nbsp;</span>
                       )}
                     </td>
-                    <td>
+                    <td data-label="Distributor">
                       {isFirstForProduct && (
                         <span className="cell-distributor-badge">
                           {distributorName(item.wholesaler)}
                         </span>
                       )}
                     </td>
-                    <td>{isFirstForProduct ? item.product_type : ''}</td>
-                    <td>{isFirstForProduct ? item.unit_volume : ''}</td>
-                    <td>
+                    <td data-label="Type">{isFirstForProduct ? item.product_type : ''}</td>
+                    <td data-label="Size">{isFirstForProduct ? item.unit_volume : ''}</td>
+                    <td data-label="RIP #">
                       {isFirstForProduct
                         ? (code ? <span className="rip-code-badge">{code}</span> : <span className="text-muted">—</span>)
                         : ''}
                     </td>
-                    <td style={{ borderRight: '1px solid var(--border)' }}>
+                    <td data-label="Incentive" style={{ borderRight: '1px solid var(--border)' }}>
                       <span className={`source-badge source-${item.source}`}>
                         {item.source === 'discount' ? 'Discount' : 'RIP'}
                       </span>
                     </td>
 
                     {/* Current month */}
-                    <td className="right">
+                    <td className="right" data-label="Case (now)">
                       {isFirstForProduct ? fmtPrice(item.curr_case_price) : ''}
                     </td>
-                    <td>
+                    <td data-label="Tier (now)">
                       {renderTierBadge(item.rip_qty, item.rip_unit, item.curr_rip_amt, 'curr')}
                     </td>
-                    <td className="right">
+                    <td className="right" data-label="Save (now)">
                       {item.curr_save_per_case != null
                         ? <span className="text-green font-bold">{fmtSave(item.curr_save_per_case)}</span>
                         : <span className="text-muted">-</span>}
                     </td>
-                    <td className="right font-bold" style={{ borderRight: '1px solid var(--border)' }}>
+                    <td className="right font-bold" data-label="Eff (now)" style={{ borderRight: '1px solid var(--border)' }}>
                       {fmtPrice(item.curr_effective_case_price)}
                     </td>
 
                     {/* Next month */}
-                    <td className="right">
+                    <td className="right" data-label="Case (next)">
                       {isFirstForProduct ? fmtPrice(item.next_case_price) : ''}
                     </td>
-                    <td>
+                    <td data-label="Tier (next)">
                       {renderTierBadge(item.rip_qty, item.rip_unit, item.next_rip_amt, 'next')}
                     </td>
-                    <td className="right">
+                    <td className="right" data-label="Save (next)">
                       {item.next_save_per_case != null
                         ? <span className="text-green font-bold">{fmtSave(item.next_save_per_case)}</span>
                         : <span className="text-muted">-</span>}
                     </td>
-                    <td className="right font-bold">
+                    <td className="right font-bold" data-label="Eff (next)">
                       {fmtPrice(item.next_effective_case_price)}
                     </td>
-                    <td>
+                    <td data-label="Better">
                       {(() => {
                         const bm = betterMonth(item.curr_save_per_case, item.next_save_per_case);
                         return bm

@@ -391,6 +391,7 @@ export default function Combos() {
           pageSize={limit}
           exportName="combos"
           onRowClick={r => setDetailCombo(r)}
+          cardView
         />
         {detailCombo && <ComboDetailModal c={detailCombo} onClose={() => setDetailCombo(null)} />}
       </div>

@@ -124,14 +124,14 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                     data-ctx-upc={item.upc}
                     data-ctx-volume={item.unit_volume}
                     onClick={() => open(item.product_name, item.wholesaler, undefined, { upc: item.upc, unitVolume: item.unit_volume })}>
-                  <td onClick={e => e.stopPropagation()}>
+                  <td className="card-actions-cell" onClick={e => e.stopPropagation()}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
                       <FavoriteButton productName={item.product_name} wholesaler={item.wholesaler}
                         upc={item.upc} unitVolume={item.unit_volume} />
                       <RowMenuButton product={{ product_name: item.product_name, wholesaler: item.wholesaler, upc: item.upc, unit_volume: item.unit_volume }} />
                     </span>
                   </td>
-                  <td>
+                  <td className="card-title-cell">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <ProductThumb src={item.image_url} alt={item.product_name} size={64} />
                       <div style={{ minWidth: 0 }}>
@@ -158,23 +158,23 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                       </div>
                     </div>
                   </td>
-                  <td><span className="cell-distributor-badge">{distributorName(item.wholesaler)}</span></td>
-                  <td>{item.product_type}</td>
-                  <td>{item.unit_volume}</td>
+                  <td data-label="Distributor"><span className="cell-distributor-badge">{distributorName(item.wholesaler)}</span></td>
+                  <td data-label="Type">{item.product_type}</td>
+                  <td data-label="Size">{item.unit_volume}</td>
                   {showIntroduced && (
-                    <td><span className="tag tag-blue">{introMonth(item.introduced_edition)}</span></td>
+                    <td data-label="Introduced"><span className="tag tag-blue">{introMonth(item.introduced_edition)}</span></td>
                   )}
-                  <td className="right" style={{ fontWeight: 600 }}>
+                  <td className="right" data-label="Case / Btl" style={{ fontWeight: 600 }}>
                     ${item.frontline_case_price.toFixed(2)}
                     <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>${item.frontline_unit_price.toFixed(2)}/btl</div>
                   </td>
-                  <td>
+                  <td data-label="Tier">
                     {hasTiers
                       ? <span className="text-muted" style={{ fontSize: 11 }}>{tiers.length} tier{tiers.length !== 1 ? 's' : ''} below</span>
                       : <span className="text-muted">&mdash;</span>}
                   </td>
-                  <td className="right"><span className="text-muted">&mdash;</span></td>
-                  <td className="right" style={{ fontWeight: 600 }}>
+                  <td className="right" data-label="Save"><span className="text-muted">&mdash;</span></td>
+                  <td className="right" data-label="Effective" style={{ fontWeight: 600 }}>
                     ${item.effective_case_price.toFixed(2)}
                     {(() => {
                       const uq = Number(item.unit_qty);
@@ -183,12 +183,12 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                         : null;
                     })()}
                   </td>
-                  <td className="right">
+                  <td className="right" data-label="ROI / GP%">
                     {item.has_discount || item.has_rip
                       ? <span className="text-green">{item.discount_pct?.toFixed(1)}%</span>
                       : <span className="text-muted">&mdash;</span>}
                   </td>
-                  <td>
+                  <td data-label="Better price">
                     {item.better_month && (
                       <span className="better-price-badge"
                         data-variant={item.better_month === 'This Month' ? 'this' : item.better_month === 'Next Month' ? 'next' : 'same'}
@@ -199,13 +199,13 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                       </span>
                     )}
                   </td>
-                  <td onClick={e => e.stopPropagation()}>
+                  <td data-label="Qty" onClick={e => e.stopPropagation()}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                       <QtyStepper label="Btl" value={qty.units} onChange={v => updateQty(cartKey, 'units', v)} />
                       <QtyStepper label="Case" value={qty.cases} onChange={v => updateQty(cartKey, 'cases', v)} />
                     </div>
                   </td>
-                  <td onClick={e => e.stopPropagation()}>
+                  <td data-label="Order" onClick={e => e.stopPropagation()}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                       <AddToCartButton productName={item.product_name} wholesaler={item.wholesaler}
                         upc={item.upc} unitVolume={item.unit_volume}
@@ -222,26 +222,26 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                   return (
                     <tr key={`${reactKey}_${idx}`} className="catalog-row-sub" data-tier-met={tierMet}>
                       <td></td>
-                      <td colSpan={showIntroduced ? 7 : 6} style={{ paddingLeft: 24 }}>
+                      <td colSpan={showIntroduced ? 7 : 6} style={{ paddingLeft: 24 }} className="card-title-cell">
                         <span className={`source-badge source-${t.source}`}>{t.source === 'discount' ? 'DISC' : 'RIP'}</span>
                         <span className={`rip-tier-badge ${t.source === 'discount' ? 'rip-tier-curr' : 'rip-tier-next'}`} style={{ marginLeft: 8 }}>
                           Buy {t.qty} {shortUnit(t.unit)} = <strong>${t.amount.toFixed(2)}</strong>
                         </span>
                         {t.description && <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>{t.description}</span>}
                       </td>
-                      <td className="right">
+                      <td className="right" data-label="Save">
                         <span className="text-green font-bold">{fmt(t.save_per_case)}</span>
                         {t.save_per_bottle != null && (
                           <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{fmt(t.save_per_bottle)}/btl</div>
                         )}
                       </td>
-                      <td className="right font-bold">
+                      <td className="right font-bold" data-label="Eff">
                         {fmt(t.price_after)}
                         {t.btl_price_after != null && (
                           <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>{fmt(t.btl_price_after)}/btl</div>
                         )}
                       </td>
-                      <td className="right">
+                      <td className="right" data-label="ROI">
                         <span className={t.roi_pct >= 10 ? 'text-green font-bold' : t.roi_pct >= 5 ? 'text-yellow' : ''}>
                           {t.roi_pct.toFixed(1)}%
                         </span>

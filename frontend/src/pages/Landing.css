@@ -55,10 +55,13 @@
   .lp-nav-links { gap: 14px; }
 }
 @media (max-width: 430px) {
-  .lp-nav-links { gap: 10px; }
-  .lp-nav-links .btn { padding: 8px 13px; font-size: 13px; }
+  .lp-nav-links { gap: 9px; }
+  .lp-nav-links .btn { padding: 8px 12px; font-size: 13px; }
   .lp-wordmark { font-size: 18px; }
 }
+/* On the narrowest phones, drop the theme toggle (least essential) so the
+   WhatsApp share button and the Create-account button always stay visible. */
+@media (max-width: 374px) { .lp-theme-toggle { display: none; } }
 
 /* ---- Eyebrow / pills ---- */
 .lp-eyebrow {

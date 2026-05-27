@@ -74,9 +74,9 @@ export default function Landing() {
             <a href="#capabilities" className="lp-navlink lp-hide-sm">Capabilities</a>
             <a href="#how" className="lp-navlink lp-hide-sm">How it works</a>
             <span className="lp-nav-sep lp-hide-sm" />
-            <WhatsAppShareButton className="sidebar-toggle lp-hide-sm" showLabel={false}
+            <WhatsAppShareButton className="sidebar-toggle" showLabel={false}
               title="Share via WhatsApp" source="landing-nav" />
-            <button className="sidebar-toggle" onClick={toggle} title="Toggle theme" aria-label="Toggle theme"
+            <button className="sidebar-toggle lp-theme-toggle" onClick={toggle} title="Toggle theme" aria-label="Toggle theme"
               style={{ display: 'inline-flex' }}>
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             </button>

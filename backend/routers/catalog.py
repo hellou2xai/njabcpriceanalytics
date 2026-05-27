@@ -109,44 +109,44 @@ def _in_filter(where, params, column, csv, prefix):
 
 def _q_clause(q: str, extra_aliases: dict | None = None,
               name_col: str = "product_name", brand_col: str = "brand",
-              upc_col: str = "upc") -> tuple[str, dict]:
-    """Build the search predicate for a free-text query, with its params.
+              upc_col: str = "upc") -> tuple[str, dict, str]:
+    """Build the search predicate for a free-text query: returns (clause, params,
+    relevance_expr).
 
     Every whitespace token must match the product NAME or BRAND (AND across
     tokens), so "chivas 12" finds "CHIVAS REGAL 12YR" but not unrelated items.
     Shorthand and nicknames are expanded (see backend/search_aliases): a token
-    like "jw" or "henny" also accepts its full brand ("johnnie walker",
-    "hennessy"), so "JW Blue" and "Johnnie Blue" both find Johnnie Walker Blue
-    Label. A query that is essentially a barcode is matched against the UPC with
-    leading-zero tolerance (we never match the digits inside a text query against
-    the UPC, which used to make "chivas 12" hit every barcode containing "12")."""
+    like "jw" or "henny" also accepts its full brand. The relevance_expr counts
+    how many tokens match the NAME (not just the brand), so a name match (real
+    Hennessy) ranks above a brand-only match (e.g. the Moet Hennessy portfolio).
+    An essentially-numeric query is matched against the UPC instead."""
     from backend.search_aliases import expansion_for
     tokens = [t for t in q.lower().split() if t]
     params: dict = {}
     counter = {"i": 0}
-
-    def _m(term: str) -> str:
-        k = f"qt{counter['i']}"
-        counter["i"] += 1
-        params[k] = f"%{term}%"
-        return f"(UPPER({name_col}) LIKE UPPER(${k}) OR UPPER(COALESCE({brand_col},'')) LIKE UPPER(${k}))"
-
-    token_clauses = []
+    token_clauses, rel_terms = [], []
     for tok in tokens:
-        subs = [_m(tok)]                              # the literal text, on name or brand
-        exp = expansion_for(tok, extra_aliases)       # plus EACH alias word (OR, not AND:
-        if exp:                                       # catalogue names abbreviate brands,
-            subs.extend(_m(w) for w in exp)           # e.g. "Johnnie Walker" -> "J WALKER")
+        terms = [tok] + (expansion_for(tok, extra_aliases) or [])
+        keys, subs = [], []
+        for term in terms:                            # literal + each alias phrase (OR'd:
+            k = f"qt{counter['i']}"                   # catalogue names abbreviate brands)
+            counter["i"] += 1
+            params[k] = f"%{term}%"
+            keys.append(k)
+            subs.append(f"(UPPER({name_col}) LIKE UPPER(${k}) OR UPPER(COALESCE({brand_col},'')) LIKE UPPER(${k}))")
         token_clauses.append("(" + " OR ".join(subs) + ")")
+        name_only = " OR ".join(f"UPPER({name_col}) LIKE UPPER(${k})" for k in keys)
+        rel_terms.append(f"(CASE WHEN ({name_only}) THEN 1 ELSE 0 END)")
     name_match = " AND ".join(token_clauses) if token_clauses else "TRUE"
+    rel_expr = "(" + " + ".join(rel_terms) + ")" if rel_terms else "0"
 
     compact = q.replace(" ", "").replace("-", "")
     if compact.isdigit() and len(compact) >= 4:
         digits_norm = compact.lstrip("0") or compact
         params["q_upc"] = f"%{compact}%"
         params["q_upc2"] = f"%{digits_norm}%"
-        return f"(({name_match}) OR {upc_col} LIKE $q_upc OR {upc_col} LIKE $q_upc2)", params
-    return f"({name_match})", params
+        return f"(({name_match}) OR {upc_col} LIKE $q_upc OR {upc_col} LIKE $q_upc2)", params, rel_expr
+    return f"({name_match})", params, rel_expr
 
 
 _BRAND_INITIALISMS = None
@@ -547,8 +547,9 @@ def search_products(
         params = {}
 
         q_clause_idx = None
+        rel_expr = "0"
         if q:
-            clause, qp = _q_clause(q, _brand_initialisms(con, src))
+            clause, qp, rel_expr = _q_clause(q, _brand_initialisms(con, src))
             where.append(clause)
             q_clause_idx = len(where) - 1
             params.update(qp)
@@ -661,9 +662,10 @@ def search_products(
         if (q and count == 0 and offset == 0 and q_clause_idx is not None
                 and any(ch.isalpha() for ch in q)):
             def _retry(fixed_q):
-                nonlocal where_clause
-                clause2, qp2 = _q_clause(fixed_q, _brand_initialisms(con, src))
+                nonlocal where_clause, rel_expr
+                clause2, qp2, rel2 = _q_clause(fixed_q, _brand_initialisms(con, src))
                 where[q_clause_idx] = clause2
+                rel_expr = rel2
                 # Drop the previous query params so none are left bound but unused
                 # (which would make the retry query error).
                 for k in [k for k in params if k.startswith("qt") or k.startswith("q_upc")]:
@@ -697,6 +699,13 @@ def search_products(
                 except Exception:
                     pass
 
+        # Rank text searches by relevance (tokens matching the NAME first) so a
+        # brand-only match (e.g. the Moet Hennessy portfolio) never outranks the
+        # real product. Only when the user hasn't picked an explicit sort.
+        order_by = f"{sort_col} {sort_dir}"
+        if q and sort == "product_name":
+            order_by = f"{rel_expr} DESC, {order_by}"
+
         # Data query
         rows = con.execute(f"""
             SELECT wholesaler, edition, upc, product_name, product_type,
@@ -712,7 +721,7 @@ def search_products(
             FROM {src}
             WHERE {where_clause}
             {dedup}
-            ORDER BY {sort_col} {sort_dir}
+            ORDER BY {order_by}
             LIMIT $limit OFFSET $offset
         """, {**params, "limit": limit, "offset": offset}).fetchdf()
 
@@ -887,8 +896,8 @@ def new_items(
         # Now layer the search box and the specific-month selection on top.
         # Same smart (alias + brand) matching as the Catalog search.
         if q:
-            clause, qp = _q_clause(q, _brand_initialisms(con, src),
-                                   name_col="e.product_name", brand_col="e.brand", upc_col="e.upc")
+            clause, qp, _ = _q_clause(q, _brand_initialisms(con, src),
+                                      name_col="e.product_name", brand_col="e.brand", upc_col="e.upc")
             filters.append(clause)
             params.update(qp)
         if introduced_edition:
@@ -2133,7 +2142,7 @@ def search_facets(
         base = ["1=1"]
         bp: dict = {}
         if q:
-            clause, qp = _q_clause(q)
+            clause, qp, _ = _q_clause(q)
             base.append(clause)
             bp.update(qp)
         if wholesaler:

@@ -641,7 +641,7 @@ def get_rip_products(
         if q:
             # Smart search: name/brand with shorthand aliases (JW -> Walker, etc.), OR RIP code.
             from backend.routers.catalog import _q_clause
-            clause, qp = _q_clause(q, name_col="c.product_name", brand_col="c.brand", upc_col="c.upc")
+            clause, qp, _ = _q_clause(q, name_col="c.product_name", brand_col="c.brand", upc_col="c.upc")
             params.update(qp)
             params["q_rip"] = f"%{q}%"
             extra.append(f"({clause} OR CAST(c.rip_code AS VARCHAR) LIKE $q_rip)")

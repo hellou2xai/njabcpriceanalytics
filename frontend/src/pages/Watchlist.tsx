@@ -18,10 +18,10 @@ type QtyState = Record<string, Qty>; // key = "product_name|wholesaler"
 
 // ---- Inline Editable Cell ----
 function InlineEdit({
-  value, onSave, placeholder, type = 'text', align,
+  value, onSave, placeholder, type = 'text', align, prefix,
 }: {
   value: string; onSave: (v: string) => void; placeholder: string;
-  type?: 'text' | 'number'; align?: 'left' | 'right';
+  type?: 'text' | 'number'; align?: 'left' | 'right'; prefix?: string;
 }) {
   const [val, setVal] = useState(value);
   const [saved, setSaved] = useState(false);
@@ -39,6 +39,7 @@ function InlineEdit({
 
   return (
     <span className="inline-edit-cell">
+      {prefix && val !== '' && <span className="inline-edit-prefix">{prefix}</span>}
       <input ref={ref} className="inline-edit-input" type={type} value={val}
         onChange={e => setVal(e.target.value)} onBlur={handleBlur}
         onKeyDown={e => { if (e.key === 'Enter') ref.current?.blur(); }}
@@ -461,7 +462,7 @@ export default function WatchlistPage() {
         <td className="hide-md">
           <InlineEdit value={item.target_price != null ? String(item.target_price) : ''}
             onSave={v => { const n = parseFloat(v); if (!isNaN(n)) priceMut.mutate({ id: item.id, price: n }); }}
-            placeholder="$0.00" type="number" align="right" />
+            placeholder="$0.00" type="number" align="right" prefix="$" />
         </td>
 
         {/* 13. Add to cart */}

@@ -886,6 +886,7 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
 
 /* ---- Inline Editable Cells ---- */
 .inline-edit-cell { display: inline-flex; align-items: center; gap: 6px; }
+.inline-edit-prefix { color: var(--text-muted); font-size: 13px; margin-right: -4px; }
 .inline-edit-input {
   width: 100%; min-width: 80px; padding: 4px 6px;
   background: transparent; border: 1px solid transparent; border-radius: 4px;

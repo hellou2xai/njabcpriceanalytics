@@ -107,22 +107,36 @@ def _in_filter(where, params, column, csv, prefix):
     where.append(f"{column} IN ({', '.join(keys)})")
 
 
-def _q_clause(q: str) -> tuple[str, dict]:
+def _q_clause(q: str, extra_aliases: dict | None = None) -> tuple[str, dict]:
     """Build the search predicate for a free-text query, with its params.
 
-    A text query matches every whitespace token against the product name (AND),
-    so "chivas 12" finds "CHIVAS REGAL 12YR" but not unrelated items. A query
-    that is essentially a barcode (mostly digits) is matched against the UPC
-    with leading-zero tolerance. The key fix: we do NOT match the digits inside
-    a text query against the UPC, which previously made "chivas 12" match every
-    product whose barcode merely contained "12"."""
-    tokens = [t for t in q.split() if t]
+    Every whitespace token must match the product NAME or BRAND (AND across
+    tokens), so "chivas 12" finds "CHIVAS REGAL 12YR" but not unrelated items.
+    Shorthand and nicknames are expanded (see backend/search_aliases): a token
+    like "jw" or "henny" also accepts its full brand ("johnnie walker",
+    "hennessy"), so "JW Blue" and "Johnnie Blue" both find Johnnie Walker Blue
+    Label. A query that is essentially a barcode is matched against the UPC with
+    leading-zero tolerance (we never match the digits inside a text query against
+    the UPC, which used to make "chivas 12" hit every barcode containing "12")."""
+    from backend.search_aliases import expansion_for
+    tokens = [t for t in q.lower().split() if t]
     params: dict = {}
-    name_clauses = []
-    for i, tok in enumerate(tokens):
-        params[f"qt{i}"] = f"%{tok}%"
-        name_clauses.append(f"UPPER(product_name) LIKE UPPER($qt{i})")
-    name_match = " AND ".join(name_clauses) if name_clauses else "TRUE"
+    counter = {"i": 0}
+
+    def _m(term: str) -> str:
+        k = f"qt{counter['i']}"
+        counter["i"] += 1
+        params[k] = f"%{term}%"
+        return f"(UPPER(product_name) LIKE UPPER(${k}) OR UPPER(COALESCE(brand,'')) LIKE UPPER(${k}))"
+
+    token_clauses = []
+    for tok in tokens:
+        subs = [_m(tok)]                              # the literal text, on name or brand
+        exp = expansion_for(tok, extra_aliases)       # plus EACH alias word (OR, not AND:
+        if exp:                                       # catalogue names abbreviate brands,
+            subs.extend(_m(w) for w in exp)           # e.g. "Johnnie Walker" -> "J WALKER")
+        token_clauses.append("(" + " OR ".join(subs) + ")")
+    name_match = " AND ".join(token_clauses) if token_clauses else "TRUE"
 
     compact = q.replace(" ", "").replace("-", "")
     if compact.isdigit() and len(compact) >= 4:
@@ -131,6 +145,26 @@ def _q_clause(q: str) -> tuple[str, dict]:
         params["q_upc2"] = f"%{digits_norm}%"
         return f"(({name_match}) OR upc LIKE $q_upc OR upc LIKE $q_upc2)", params
     return f"({name_match})", params
+
+
+_BRAND_INITIALISMS = None
+
+
+def _brand_initialisms(con, src):
+    """Auto-derived {initialism: brand} map (e.g. 'gg' -> 'grey goose') built once
+    per process from the catalogue's distinct brands, so even brands missing from
+    the curated alias table still get an abbreviation alias."""
+    global _BRAND_INITIALISMS
+    if _BRAND_INITIALISMS is None:
+        try:
+            from backend.search_aliases import build_brand_initialisms
+            rows = con.execute(
+                f"SELECT DISTINCT brand FROM {src} WHERE brand IS NOT NULL AND brand <> ''"
+            ).fetchall()
+            _BRAND_INITIALISMS = build_brand_initialisms([r[0] for r in rows])
+        except Exception:
+            _BRAND_INITIALISMS = {}
+    return _BRAND_INITIALISMS
 
 
 def _attach_next_month_prices(con, src, records):
@@ -467,9 +501,11 @@ def search_products(
         where = ["1=1"]
         params = {}
 
+        q_clause_idx = None
         if q:
-            clause, qp = _q_clause(q)
+            clause, qp = _q_clause(q, _brand_initialisms(con, src))
             where.append(clause)
+            q_clause_idx = len(where) - 1
             params.update(qp)
         if wholesaler:
             where.append("wholesaler = $wholesaler")
@@ -572,6 +608,25 @@ def search_products(
         count = con.execute(
             f"SELECT count(*) FROM (SELECT 1 FROM {src} WHERE {where_clause} {dedup}) t", params
         ).fetchone()[0]
+
+        # AI fallback: a text search that found nothing -> ask Claude (Sonnet) to map
+        # the shorthand to real brand terms and retry once. Key-gated + cached, so it
+        # only fires on genuine misses and never on the common (alias-handled) ones.
+        if (q and count == 0 and offset == 0 and q_clause_idx is not None
+                and any(ch.isalpha() for ch in q)):
+            try:
+                from backend.ai_search import ai_expand_query
+                ai_q = ai_expand_query(q)
+            except Exception:
+                ai_q = None
+            if ai_q:
+                clause2, qp2 = _q_clause(ai_q, _brand_initialisms(con, src))
+                where[q_clause_idx] = clause2
+                params.update(qp2)
+                where_clause = " AND ".join(where)
+                count = con.execute(
+                    f"SELECT count(*) FROM (SELECT 1 FROM {src} WHERE {where_clause} {dedup}) t", params
+                ).fetchone()[0]
 
         # Data query
         rows = con.execute(f"""

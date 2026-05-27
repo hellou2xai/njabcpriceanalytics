@@ -29,8 +29,13 @@ services:
         value: postgres
       # Secrets: set these in the Render dashboard (sync:false keeps them out of
       # the repo). All optional; the related feature is disabled if unset.
+      # ANTHROPIC_API_KEY also powers the smarter-search fallback: when a Catalog
+      # search finds nothing, the backend asks Claude to translate the shorthand and
+      # retries once. Stays off until a value is set. Model below (defaults to Sonnet).
       - key: ANTHROPIC_API_KEY
         sync: false
+      - key: CELR_SEARCH_AI_MODEL
+        value: claude-sonnet-4-6
       - key: GOOGLE_MAPS_API_KEY
         sync: false
       - key: SERPAPI_API_KEY

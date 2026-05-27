@@ -453,8 +453,27 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
             LIMIT {limit}
         """, params).fetchdf()
 
+        # Exclude products whose RIP carries into next month: a deal is only
+        # time-sensitive if it genuinely ends and does NOT recur next month.
+        rip_next = set()
+        try:
+            nx = con.execute(f"""
+                WITH nexted AS (SELECT wholesaler, MIN(CASE WHEN edition > $c THEN edition END) AS ned
+                                FROM {src} GROUP BY wholesaler)
+                SELECT DISTINCT e.wholesaler AS w, LTRIM(e.upc,'0') AS un
+                FROM {src} e JOIN nexted n ON e.wholesaler = n.wholesaler AND e.edition = n.ned
+                WHERE e.has_rip = true AND e.upc IS NOT NULL
+            """, {"c": current_ym}).fetchall()
+            rip_next = {(r[0], str(r[1])) for r in nx}
+        except Exception:
+            rip_next = set()
+
         out = []
         for _, r in rows.iterrows():
+            u = _str(r["upc"])
+            un = u.lstrip("0") if u else None
+            if un and (r["wholesaler"], un) in rip_next:
+                continue  # RIP still available next month -> not time-sensitive
             kinds = []
             if bool(r["has_closeout"]): kinds.append("Closeout")
             if bool(r["has_rip"]): kinds.append("RIP")

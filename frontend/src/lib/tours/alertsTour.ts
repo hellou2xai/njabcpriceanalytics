@@ -11,6 +11,7 @@ const STEPS: ScreenStep[] = [
     body: 'The <b>Mark all read</b> button clears the unread state once you have scanned them. <b>Why it helps:</b> start fresh tomorrow.' },
   { element: '.section-label', title: 'Opportunities first',
     before: () => scrollIntoView('.section-label'),
+    savings: '💰 The upside, flagged before it expires',
     body: 'The first band is <b>Opportunities</b>: deals expiring, rebates worth taking, prices that just dropped. <b>Why it helps:</b> the upside, up front.' },
   { element: '.alert-grid', title: 'Grouped, not a firehose',
     before: () => scrollIntoView('.alert-grid'),

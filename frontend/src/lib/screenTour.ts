@@ -19,6 +19,35 @@ export interface ScreenStep {
   body: string;
   /** Optional UI prep run when this step is reached (await-able). */
   before?: () => void | Promise<void>;
+  /** Animated money/decision callout shown above the popover on this step. */
+  savings?: string;
+}
+
+/**
+ * Show an animated "save money / decide faster" callout above the current tour
+ * popover. Pass undefined to clear it. Shared by the screen tours and the
+ * whole-app Product Quick Tour so every walkthrough can use it.
+ */
+export function showStepSavings(text?: string) {
+  document.querySelector('.tour-savings-pop')?.remove();
+  if (!text) return;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    document.querySelector('.tour-savings-pop')?.remove();
+    const el = document.createElement('div');
+    el.className = 'tour-savings-pop';
+    el.innerHTML = text;
+    document.body.appendChild(el);
+    const anchor = document.querySelector('.driver-popover');
+    const r = anchor?.getBoundingClientRect();
+    if (r) {
+      el.style.left = `${r.left + r.width / 2}px`;
+      el.style.top = `${Math.max(8, r.top - 44)}px`;
+      el.style.marginLeft = `-${el.offsetWidth / 2}px`;
+    } else {
+      el.style.left = '50%'; el.style.top = '64px';
+      el.style.marginLeft = `-${el.offsetWidth / 2}px`;
+    }
+  }));
 }
 
 export function waitForEl(sel?: string, timeout = 4000): Promise<void> {
@@ -52,6 +81,35 @@ export function scrollIntoView(sel: string) {
 
 export { sleep };
 
+/**
+ * Demonstrate adding a product row to the cart: bump its case quantity to 1 (the
+ * "+" on the Case stepper), let React commit, then click Add to cart. `index`
+ * picks which .catalog-order-inline on the page (default the first). Used by the
+ * Catalog and RIP Products tours (both render .catalog-order-inline).
+ */
+export async function addRowToCart(index = 0) {
+  const fac = document.querySelectorAll('.catalog-order-inline')[index] as HTMLElement | undefined;
+  if (!fac) return;
+  const plus = fac.querySelector('.qty-stepper button:last-of-type') as HTMLButtonElement | null;
+  plus?.click();
+  await sleep(280);
+  const add = fac.querySelector('.add-to-cart-btn') as HTMLButtonElement | null;
+  add?.click();
+  await sleep(550);
+}
+
+/** Open the "Add to list" menu on a product row, so the tour can point at it. */
+export async function openAddToListMenu(index = 0) {
+  const fac = document.querySelectorAll('.catalog-order-inline')[index] as HTMLElement | undefined;
+  (fac?.querySelector('.add-to-list-btn') as HTMLButtonElement | null)?.click();
+  await waitForEl('.add-to-list-menu', 1500);
+}
+
+/** Close any open "Add to list" menu (clicks its backdrop). */
+export function closeAddToListMenu() {
+  (document.querySelector('.add-to-list-backdrop') as HTMLElement | null)?.click();
+}
+
 export async function runScreenTour(steps: ScreenStep[], onCleanup?: () => void) {
   const prep = async (step?: ScreenStep) => {
     if (!step) return;
@@ -72,15 +130,20 @@ export async function runScreenTour(steps: ScreenStep[], onCleanup?: () => void)
     prevBtnText: '← Back',
     doneBtnText: 'Done',
     steps: steps.map(s => ({ element: s.element, popover: { title: s.title, description: s.body } })),
+    onHighlighted: (_el: Element | undefined, _step: unknown, opts: any) => {
+      showStepSavings(steps[opts.state.activeIndex ?? 0]?.savings);
+    },
     onNextClick: async (_el: Element | undefined, _step: unknown, opts: any) => {
+      showStepSavings(undefined);
       await prep(steps[(opts.state.activeIndex ?? 0) + 1]);
       opts.driver.moveNext();
     },
     onPrevClick: async (_el: Element | undefined, _step: unknown, opts: any) => {
+      showStepSavings(undefined);
       await prep(steps[(opts.state.activeIndex ?? 0) - 1]);
       opts.driver.movePrevious();
     },
-    onDestroyed: () => { try { onCleanup?.(); } catch { /* ignore */ } },
+    onDestroyed: () => { showStepSavings(undefined); try { onCleanup?.(); } catch { /* ignore */ } },
   });
 
   await prep(steps[0]);

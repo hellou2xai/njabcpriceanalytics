@@ -11,6 +11,7 @@ import { alerts as alertsApi, orders as ordersApi, cart as cartApi } from '../li
 import WhatsAppShareButton from './WhatsAppShare';
 import { useAuth } from '../contexts/AuthContext';
 import DataRefreshBar from './DataRefreshBar';
+import WelcomeTourPrompt from './WelcomeTourPrompt';
 import { useOrderAnalysis } from '../contexts/OrderAnalysisContext';
 import { useActivityTracker } from '../lib/activityTracker';
 
@@ -168,6 +169,7 @@ export default function Layout() {
   return (
     <div className="app-layout">
       <DataRefreshBar />
+      <WelcomeTourPrompt />
       {/* Mobile backdrop */}
       {isMobile && mobileOpen && (
         <div className="sidebar-backdrop" onClick={() => setMobileOpen(false)} />
@@ -226,6 +228,23 @@ export default function Layout() {
               <div className="nav-group" key={group.header}>
                 {!sidebarCollapsed && <div className="nav-group-header">{group.header}</div>}
                 {items.map(({ path, label, icon: Icon }) => (
+                  path === '/tours' ? (
+                    <div key={path} className="nav-tours-wrap">
+                      <Link
+                        to={path}
+                        className={`nav-link ${location.pathname === path ? 'active' : ''}`}
+                        title={sidebarCollapsed ? label : undefined}
+                      >
+                        <Icon size={18} />
+                        {!sidebarCollapsed && <span>{label}</span>}
+                      </Link>
+                      {!sidebarCollapsed && (
+                        <Link to={path} className="nav-new-sticker" aria-label="New user? Start here">
+                          ✨ New user? Start here
+                        </Link>
+                      )}
+                    </div>
+                  ) : (
                   <Link
                     key={path}
                     to={path}
@@ -237,6 +256,7 @@ export default function Layout() {
                     {path === '/alerts' && unread?.unread ? <span className="badge">{unread.unread}</span> : null}
                     {path === '/orders' && draftOrders?.length ? <span className="badge">{draftOrders.length}</span> : null}
                   </Link>
+                  )
                 ))}
               </div>
             );

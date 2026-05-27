@@ -21,6 +21,7 @@ const STEPS: ScreenStep[] = [
     body: 'A coloured badge shows whether an order is a <b>draft</b>, <b>submitted</b>, or <b>archived</b>. <b>Why it helps:</b> spot what still needs sending.' },
   { element: '.num', title: 'Totals, rebate and margin',
     before: () => scrollIntoView('.num'),
+    savings: '💰 See the rebate you earn back',
     body: 'Each order shows its total, the rebate you earn back, and your margin. <b>Why it helps:</b> judge the value of an order at a glance.' },
   { element: '.table-container', title: 'Open an order to manage it',
     body: 'Open an order to <b>reopen</b> it for edits and re-submit as a new revision, <b>cancel</b> it, or <b>re-share the PDF</b>. <b>Why it helps:</b> a sent order is still editable and traceable, with your rep kept in sync.' },

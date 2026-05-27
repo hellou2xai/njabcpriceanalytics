@@ -12,6 +12,7 @@ async function openFilters() {
 
 const STEPS: ScreenStep[] = [
   { element: '.orders-header', title: 'New Items: what just landed',
+    savings: '⚡ Be first to this edition’s new lines',
     body: 'Products that appear this edition but were not in the previous one, matched across months by <b>barcode</b> (not name, since names get rewritten). Use the buttons here to focus on one distributor.' },
   { element: '.tile-filter-bar', title: 'Which edition it appeared in',
     before: () => scrollIntoView('.tile-filter-bar'),
@@ -27,6 +28,7 @@ const STEPS: ScreenStep[] = [
     body: 'Narrow by deal (RIP, discount, in-combo), category, brand, size and price, exactly like the Catalog. <b>Why it helps:</b> turn a long list of arrivals into a focused shortlist.' },
   { element: '.catalog-table-wrap', title: 'List price vs effective price',
     before: () => scrollIntoView('.catalog-table-wrap'),
+    savings: '💰 Judge a new line on its real cost',
     body: 'Each row shows the list and the <b>Effective</b> price (after the best discount and rebate), the same as the Catalog. <b>Why it helps:</b> judge a new product on real cost.' },
   { element: '.catalog-row-sub', title: 'Quantity tiers',
     before: () => scrollIntoView('.catalog-row-sub'),

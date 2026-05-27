@@ -22,6 +22,7 @@ const STEPS: ScreenStep[] = [
     body: 'Use the checkboxes to pick specific items, or the header checkbox to select all. <b>Why it helps:</b> reorder part of a list, not always the whole thing.' },
   { element: '[data-tour="lists-move"]', title: 'Move to cart',
     before: () => scrollIntoView('[data-tour="lists-move"]'),
+    savings: '⚡ Reorder a whole list in two clicks',
     body: 'Send the ticked items (or the whole list) straight to your cart, ready to order. The list stays as it was, to use again. <b>Why it helps:</b> plan once, reorder forever.' },
   { element: '[data-tour="lists-move"]', title: 'Or remove items',
     body: 'Delete selected items you no longer want on the list. <b>Why it helps:</b> prune a list without rebuilding it.' },

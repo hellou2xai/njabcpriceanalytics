@@ -16,6 +16,7 @@ const STEPS: ScreenStep[] = [
     body: 'These cards summarise this edition: total items, active discounts, clearance, price moves, and active rebates. <b>Why it helps:</b> the shape of the month in one look.' },
   { element: '.kpi-card', title: 'Every card is a shortcut',
     before: () => scrollIntoView('.kpi-card'),
+    savings: '💰 Jump straight to the dollars on the table',
     body: 'Click a card to jump straight to that list, already filtered. Card two also shows the total <b>savings pool</b> on the table. <b>Why it helps:</b> from a number to the products behind it in one click.' },
   { element: '.dashboard-tile-grid', title: 'Your workspace',
     before: () => scrollIntoView('.dashboard-tile-grid'),

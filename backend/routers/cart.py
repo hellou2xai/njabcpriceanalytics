@@ -96,7 +96,9 @@ def _attach_cart_pricing(dcon, items):
     from backend.routers.catalog import _attach_discount_rip_tiers
     src = read_parquet(dcon, "cpl_enriched")
     norms = sorted({str(it.get("upc") or "").lstrip("0") for it in items if it.get("upc")})
-    pmap = {}
+    pmap = {}   # full key (wholesaler, upc, name, volume) -> catalogue row
+    nmap = {}   # (wholesaler, upc, name) -> row: a barcode can map to several products,
+    umap = {}   # (wholesaler, upc) -> row: last-resort match on barcode alone
     if norms:
         ph = ", ".join(f"$p{i}" for i in range(len(norms)))
         prm = {f"p{i}": u for i, u in enumerate(norms)}
@@ -113,8 +115,10 @@ def _attach_cart_pricing(dcon, items):
             """, prm).fetchdf()
             for _, r in df.iterrows():
                 pmap[(r["w"], str(r["un"]), r["pn"] or "", r["uv"] or "")] = r
+                nmap.setdefault((r["w"], str(r["un"]), r["pn"] or ""), r)
+                umap.setdefault((r["w"], str(r["un"])), r)
         except Exception:
-            pmap = {}
+            pmap = {}; nmap = {}; umap = {}
 
     def cl(v):
         if v is None or (isinstance(v, float) and _m.isnan(v)):
@@ -122,13 +126,19 @@ def _attach_cart_pricing(dcon, items):
         return float(v) if isinstance(v, (int, float)) else v
 
     for it in items:
-        r = pmap.get((it["wholesaler"], str(it.get("upc") or "").lstrip("0"),
-                      it.get("product_name") or "", it.get("unit_volume") or ""))
+        un = str(it.get("upc") or "").lstrip("0")
+        r = pmap.get((it["wholesaler"], un, it.get("product_name") or "", it.get("unit_volume") or ""))
+        if r is None:
+            r = nmap.get((it["wholesaler"], un, it.get("product_name") or ""))  # name match, any size
+        if r is None:
+            r = umap.get((it["wholesaler"], un))   # last resort: barcode alone
         if r is not None:
             it["frontline_case_price"] = cl(r["fcp"])
             it["frontline_unit_price"] = cl(r["fup"])
             it["effective_case_price"] = cl(r["ecp"])
-            it["unit_qty"] = cl(r["uq"])
+            uq, ecp = cl(r["uq"]), cl(r["ecp"])
+            it["effective_unit_price"] = round(ecp / uq, 2) if (ecp and uq) else cl(r["fup"])
+            it["unit_qty"] = uq
             it["has_discount"] = bool(r["hd"])
             it["has_rip"] = bool(r["hr"])
             it["discount_pct"] = cl(r["dp"])
@@ -137,6 +147,87 @@ def _attach_cart_pricing(dcon, items):
         _attach_discount_rip_tiers(dcon, items)  # adds a `tiers` list per item
     except Exception:
         pass
+    _attach_combo_pricing(dcon, items)
+
+
+def _attach_combo_pricing(dcon, items):
+    """Price bundle lines at the combo price ONLY while the whole combo is still in
+    the cart. When a member is removed the remaining lines fall back to their regular
+    (individual discount/RIP) price and lose the combo flag; re-adding the member
+    restores combo pricing. Sets it['combo_intact'] for every combo line."""
+    import math as _m
+    from backend.db import read_parquet
+
+    combo_lines = [it for it in items
+                   if it.get("combo_code") and str(it.get("combo_code")) not in ("", "0")]
+    for it in combo_lines:
+        it["combo_intact"] = False
+    if not combo_lines:
+        return
+
+    codes = sorted({str(it["combo_code"]) for it in combo_lines})
+    combo_src = read_parquet(dcon, "combo")
+    members: dict[tuple, set] = {}                 # (wholesaler, code) -> {component upcs}
+    price: dict[tuple, tuple] = {}                 # (wholesaler, code, upc) -> (combo_each, frontline_each)
+    try:
+        ph = ", ".join(f"$c{i}" for i in range(len(codes)))
+        prm = {f"c{i}": c for i, c in enumerate(codes)}
+        df = dcon.execute(f"""
+            WITH latest AS (SELECT wholesaler, combo_code, MAX(edition) AS ed
+                            FROM {combo_src} GROUP BY wholesaler, combo_code)
+            SELECT DISTINCT c.wholesaler AS w, CAST(c.combo_code AS VARCHAR) AS cc,
+                   LTRIM(c.upc,'0') AS un, c.combo_price_each AS cpe, c.frontline_price_each AS fpe
+            FROM {combo_src} c JOIN latest l
+              ON c.wholesaler=l.wholesaler AND c.combo_code=l.combo_code AND c.edition=l.ed
+            WHERE CAST(c.combo_code AS VARCHAR) IN ({ph}) AND c.upc IS NOT NULL
+        """, prm).fetchdf()
+        for _, r in df.iterrows():
+            key = (r["w"], str(r["cc"]))
+            members.setdefault(key, set()).add(str(r["un"]))
+            price[(r["w"], str(r["cc"]), str(r["un"]))] = (r["cpe"], r["fpe"])
+    except Exception:
+        return
+
+    # A combo is intact when every component barcode is present in the cart.
+    cart_upcs: dict[tuple, set] = {}
+    for it in combo_lines:
+        key = (it["wholesaler"], str(it["combo_code"]))
+        cart_upcs.setdefault(key, set()).add(str(it.get("upc") or "").lstrip("0"))
+
+    def num(v):
+        try:
+            f = float(v)
+            return None if _m.isnan(f) else f
+        except Exception:
+            return None
+
+    for it in combo_lines:
+        key = (it["wholesaler"], str(it["combo_code"]))
+        comp = members.get(key)
+        if not comp or not comp.issubset(cart_upcs.get(key, set())):
+            continue  # broken (or unknown) combo: keep the individual price, no sticker
+        un = str(it.get("upc") or "").lstrip("0")
+        pr = price.get((key[0], key[1], un))
+        if not pr:
+            continue
+        cpe, fpe = num(pr[0]), num(pr[1])
+        uq, fcp = it.get("unit_qty"), it.get("frontline_case_price")
+        combo_case = None
+        if cpe is not None and uq:                       # combo_price_each is per bottle
+            combo_case = round(cpe * uq, 2)
+        elif cpe is not None and fpe and fcp:            # fall back to the combo discount ratio
+            combo_case = round(fcp * (cpe / fpe), 2)
+        if combo_case is None:
+            continue
+        it["combo_intact"] = True
+        it["effective_case_price"] = combo_case
+        if cpe is not None:
+            it["effective_unit_price"] = cpe
+        if fcp is not None:
+            it["total_savings_per_case"] = round(fcp - combo_case, 2)
+        it["tiers"] = []            # the bundle is the deal; don't also show tier rows
+        it["has_discount"] = False
+        it["has_rip"] = False
 
 
 @router.get("")

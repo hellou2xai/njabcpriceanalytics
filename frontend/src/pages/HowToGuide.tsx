@@ -245,7 +245,7 @@ export default function HowToGuide() {
               <li><strong>Top Discount Opportunities</strong>: the biggest savings per case right now, with a "buy now vs next month" hint.</li>
               <li><strong>Price Changes (Month over Month)</strong>: what is going up or down next month. Filter by Drops or Hikes.</li>
               <li><strong>Allied / Fedway / OPICI Cheaper</strong>: the same product (matched by barcode) priced at two distributors, showing who is cheaper and by how much.</li>
-              <li><strong>Allied / Fedway Exclusive</strong>: products one distributor carries that the other does not.</li>
+              <li><strong>Allied / Fedway Exclusive</strong> (admin only): products one distributor carries that the other does not.</li>
             </ul>
           </Section>
 

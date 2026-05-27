@@ -103,9 +103,6 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
             <th className="right">Save (cs / btl)</th>
             <th {...rightHeadSort('effective_case_price')}>Effective (cs / btl){sortIcon('effective_case_price')}</th>
             <th className="right">ROI / GP%</th>
-            <th>Better Price</th>
-            <th>Qty</th>
-            <th>Order</th>
           </tr>
         </thead>
         <tbody>
@@ -155,6 +152,29 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                                  title="This product is part of a combo bundle — open in a popup">🎁 In combo</a>
                             : null;
                         })()}
+                        {item.better_month && (
+                          <div style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Better price:</span>
+                            <span className="better-price-badge"
+                              data-variant={item.better_month === 'This Month' ? 'this' : item.better_month === 'Next Month' ? 'next' : 'same'}
+                              title={item.next_case_price != null
+                                ? `This: $${(item.effective_case_price ?? item.frontline_case_price).toFixed(2)} · Next: $${(item.next_effective_case_price ?? item.next_case_price).toFixed(2)}`
+                                : 'No next-month data'}>
+                              {item.better_month}
+                            </span>
+                          </div>
+                        )}
+                        {/* Order facility lives in the product cell so it stays visible at any width. */}
+                        <div onClick={e => e.stopPropagation()} className="catalog-order-inline"
+                          style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <QtyStepper label="Case" value={qty.cases} onChange={v => updateQty(cartKey, 'cases', v)} />
+                          <QtyStepper label="Btl" value={qty.units} onChange={v => updateQty(cartKey, 'units', v)} />
+                          <AddToCartButton productName={item.product_name} wholesaler={item.wholesaler}
+                            upc={item.upc} unitVolume={item.unit_volume}
+                            qtyCases={qty.cases} qtyUnits={qty.units} />
+                          <AddToListButton productName={item.product_name} wholesaler={item.wholesaler}
+                            upc={item.upc} unitVolume={item.unit_volume} />
+                        </div>
                       </div>
                     </div>
                   </td>
@@ -188,32 +208,6 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                       ? <span className="text-green">{item.discount_pct?.toFixed(1)}%</span>
                       : <span className="text-muted">&mdash;</span>}
                   </td>
-                  <td data-label="Better price">
-                    {item.better_month && (
-                      <span className="better-price-badge"
-                        data-variant={item.better_month === 'This Month' ? 'this' : item.better_month === 'Next Month' ? 'next' : 'same'}
-                        title={item.next_case_price != null
-                          ? `This: $${(item.effective_case_price ?? item.frontline_case_price).toFixed(2)} · Next: $${(item.next_effective_case_price ?? item.next_case_price).toFixed(2)}`
-                          : 'No next-month data'}>
-                        {item.better_month}
-                      </span>
-                    )}
-                  </td>
-                  <td data-label="Qty" onClick={e => e.stopPropagation()}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                      <QtyStepper label="Btl" value={qty.units} onChange={v => updateQty(cartKey, 'units', v)} />
-                      <QtyStepper label="Case" value={qty.cases} onChange={v => updateQty(cartKey, 'cases', v)} />
-                    </div>
-                  </td>
-                  <td data-label="Order" onClick={e => e.stopPropagation()}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      <AddToCartButton productName={item.product_name} wholesaler={item.wholesaler}
-                        upc={item.upc} unitVolume={item.unit_volume}
-                        qtyCases={qty.cases} qtyUnits={qty.units} />
-                      <AddToListButton productName={item.product_name} wholesaler={item.wholesaler}
-                        upc={item.upc} unitVolume={item.unit_volume} />
-                    </div>
-                  </td>
                 </tr>
 
                 {tiers.map((t, idx) => {
@@ -246,7 +240,6 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                           {t.roi_pct.toFixed(1)}%
                         </span>
                       </td>
-                      <td colSpan={3}></td>
                     </tr>
                   );
                 })}
@@ -254,7 +247,7 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
             );
           })}
           {items.length === 0 && (
-            <tr><td colSpan={showIntroduced ? 14 : 13} className="empty">No products</td></tr>
+            <tr><td colSpan={showIntroduced ? 11 : 10} className="empty">No products</td></tr>
           )}
         </tbody>
       </table>

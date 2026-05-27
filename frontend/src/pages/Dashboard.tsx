@@ -109,6 +109,7 @@ export default function Dashboard() {
 
   const { data: alliedExclusive } = useQuery({
     queryKey: ['exclusive', 'allied'],
+    enabled: isAdmin,   // distributor-exclusive lists are admin-only
     queryFn: () => catalog.distributorExclusive({
       distributor: 'allied', compared_to: 'fedway',
       sort: 'frontline_case_price', order: 'desc', limit: 50000,
@@ -116,6 +117,7 @@ export default function Dashboard() {
   });
   const { data: fedwayExclusive } = useQuery({
     queryKey: ['exclusive', 'fedway'],
+    enabled: isAdmin,   // distributor-exclusive lists are admin-only
     queryFn: () => catalog.distributorExclusive({
       distributor: 'fedway', compared_to: 'allied',
       sort: 'frontline_case_price', order: 'desc', limit: 50000,
@@ -196,8 +198,8 @@ export default function Dashboard() {
         <CrossDistTile data={crossDist} label="Allied Cheaper" accent="var(--green)" open={open} />
         <CrossDistTile data={crossDistB} label="Fedway Cheaper" accent="#8b5cf6" open={open} />
         <CrossDistTile data={crossOpiciCombined} label="OPICI Cheaper" accent="#0ea5e9" open={open} />
-        <ExclusiveTile data={alliedExclusive} label="Allied Exclusive" open={open} />
-        <ExclusiveTile data={fedwayExclusive} label="Fedway Exclusive" open={open} />
+        {isAdmin && <ExclusiveTile data={alliedExclusive} label="Allied Exclusive" open={open} />}
+        {isAdmin && <ExclusiveTile data={fedwayExclusive} label="Fedway Exclusive" open={open} />}
         {isAdmin && <QATile data={qaReport} />}
       </div>
     </div>

@@ -369,10 +369,13 @@ export interface CartItem {
   saved_for_later: number; image_url?: string | null; notes?: string | null;
   // Catalogue pricing + deal tiers (so the cart shows the same deal info).
   frontline_case_price?: number | null; frontline_unit_price?: number | null;
-  effective_case_price?: number | null; unit_qty?: number | string | null;
+  effective_case_price?: number | null; effective_unit_price?: number | null;
+  unit_qty?: number | string | null;
   has_discount?: boolean; has_rip?: boolean;
   discount_pct?: number | null; total_savings_per_case?: number | null;
   tiers?: CatalogTier[];
+  // True only while the whole bundle is still in the cart (combo pricing applies).
+  combo_intact?: boolean;
 }
 
 export const lists = {

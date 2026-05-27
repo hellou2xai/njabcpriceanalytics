@@ -96,7 +96,7 @@ export default function Landing() {
             <h1 className="lp-h1">
               Every deal, spotted.<br />
               <span className="muted">Every margin, protected.</span><br />
-              Every rebate, claimed.
+              Every RIP, claimed.
             </h1>
             <p className="lp-lead">
               CELR.ai turns the monthly pile of wholesaler price books into a daily action list

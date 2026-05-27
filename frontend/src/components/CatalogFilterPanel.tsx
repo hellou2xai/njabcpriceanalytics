@@ -42,17 +42,19 @@ function FilterSection({
   title,
   activeCount,
   defaultOpen = true,
+  dataTour,
   children,
 }: {
   title: string;
   activeCount: number;
   defaultOpen?: boolean;
+  dataTour?: string;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
 
   return (
-    <div className="filter-section">
+    <div className="filter-section" data-tour={dataTour}>
       <button
         className="filter-header"
         onClick={() => setOpen((o) => !o)}
@@ -219,7 +221,7 @@ export default function CatalogFilterPanel({
       )}
 
       {/* ---- Deals Toggle ---- */}
-      <FilterSection title="Deals" activeCount={dealsActiveCount}>
+      <FilterSection title="Deals" activeCount={dealsActiveCount} dataTour="filter-deals">
         <div className="filter-checkbox-list">
           <label className="filter-checkbox">
             <input
@@ -311,7 +313,7 @@ export default function CatalogFilterPanel({
       </FilterSection>
 
       {/* ---- Brand ---- */}
-      <FilterSection title="Brand" activeCount={filters.brands.length}>
+      <FilterSection title="Brand" activeCount={filters.brands.length} dataTour="filter-brand">
         <input
           type="text"
           className="filter-search"
@@ -358,7 +360,7 @@ export default function CatalogFilterPanel({
       </FilterSection>
 
       {/* ---- Price Range ---- */}
-      <FilterSection title="Price Range (Case)" activeCount={priceActiveCount}>
+      <FilterSection title="Price Range (Case)" activeCount={priceActiveCount} dataTour="filter-price">
         <div className="filter-price-range">
           <input
             type="number"
@@ -367,7 +369,7 @@ export default function CatalogFilterPanel({
             value={priceMinInput}
             onChange={(e) => setPriceMinInput(e.target.value)}
           />
-          <span className="filter-price-sep">&ndash;</span>
+          <span className="filter-price-sep">to</span>
           <input
             type="number"
             className="filter-price-input"
@@ -395,6 +397,7 @@ export default function CatalogFilterPanel({
       <FilterSection
         title="Category"
         activeCount={filters.categories.length}
+        dataTour="filter-category"
       >
         <div className="filter-checkbox-list">
           {[...categoryFacet.entries()].map(([cat, count]) => (

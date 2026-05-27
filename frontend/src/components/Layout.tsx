@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   LayoutDashboard, Package, ShoppingCart, Bell, Star, Menu, X, Combine,
@@ -8,7 +8,6 @@ import {
   Activity, Clock, Percent, Compass,
 } from 'lucide-react';
 import { alerts as alertsApi, orders as ordersApi, cart as cartApi } from '../lib/api';
-import { startGuidedTour } from '../lib/guidedTour';
 import WhatsAppShareButton from './WhatsAppShare';
 import { useAuth } from '../contexts/AuthContext';
 import DataRefreshBar from './DataRefreshBar';
@@ -23,7 +22,7 @@ const NAV_GROUPS: {
   {
     header: 'Overview',
     items: [
-      { path: '__tour__', label: 'Guided Tour', icon: Compass },
+      { path: '/tours', label: 'Guided Tour', icon: Compass },
       { path: '/how-to-guide', label: 'How To Guide', icon: BookOpen },
       { path: '/', label: 'Dashboard', icon: LayoutDashboard },
       { path: '/alerts', label: 'Alerts', icon: Bell },
@@ -104,7 +103,6 @@ export default function Layout() {
 
   const { theme, toggle: toggleTheme } = useTheme();
   const location = useLocation();
-  const navigate = useNavigate();
 
   // Persist collapsed state for desktop
   useEffect(() => {
@@ -228,18 +226,6 @@ export default function Layout() {
               <div className="nav-group" key={group.header}>
                 {!sidebarCollapsed && <div className="nav-group-header">{group.header}</div>}
                 {items.map(({ path, label, icon: Icon }) => (
-                  path === '__tour__' ? (
-                    <button
-                      key={path}
-                      type="button"
-                      className="nav-link nav-link-btn"
-                      title={sidebarCollapsed ? label : undefined}
-                      onClick={() => { if (isMobile) setMobileOpen(false); startGuidedTour(navigate); }}
-                    >
-                      <Icon size={18} />
-                      {!sidebarCollapsed && <span>{label}</span>}
-                    </button>
-                  ) : (
                   <Link
                     key={path}
                     to={path}
@@ -251,7 +237,6 @@ export default function Layout() {
                     {path === '/alerts' && unread?.unread ? <span className="badge">{unread.unread}</span> : null}
                     {path === '/orders' && draftOrders?.length ? <span className="badge">{draftOrders.length}</span> : null}
                   </Link>
-                  )
                 ))}
               </div>
             );

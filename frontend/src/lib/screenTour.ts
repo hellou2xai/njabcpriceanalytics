@@ -84,3 +84,20 @@ export async function runScreenTour(steps: ScreenStep[], onCleanup?: () => void)
   await prep(steps[0]);
   drv.drive();
 }
+
+/**
+ * Launch a screen tour from anywhere: navigate to the page, wait for a stable
+ * element to render, then run the steps. Used by the Tours dashboard tiles.
+ */
+export async function launchScreenTour(
+  navigate: (path: string) => void,
+  route: string,
+  readySelector: string,
+  steps: ScreenStep[],
+  onCleanup?: () => void,
+) {
+  if (window.location.pathname !== route) navigate(route);
+  await waitForEl(readySelector, 8000);
+  await sleep(350);
+  runScreenTour(steps, onCleanup);
+}

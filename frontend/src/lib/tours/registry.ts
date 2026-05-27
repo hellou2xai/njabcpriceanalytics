@@ -12,6 +12,9 @@ import {
 } from 'lucide-react';
 import { startGuidedTour } from '../guidedTour';
 import { launchCatalogTour } from './catalogTour';
+import { launchCombosTour } from './combosTour';
+import { launchRipTour } from './ripTour';
+import { launchNewItemsTour } from './newItemsTour';
 
 export interface TourMeta {
   id: string;
@@ -39,9 +42,9 @@ export const TOURS: TourMeta[] = [
 
   // ---- Coming soon (one detailed tour per screen) ----
   { id: 'cart', title: 'Cart & Ordering', desc: 'Grouping by rep, pricing and combo handling, save-for-later, and sending orders.', meta: 'Coming soon', icon: ShoppingCart, accent: '#94a3b8' },
-  { id: 'combos', title: 'Combos', desc: 'How bundles work, reading the savings, and adding a whole bundle to your cart.', meta: 'Coming soon', icon: Combine, accent: '#94a3b8' },
-  { id: 'rip', title: 'RIP Products', desc: 'Rebates this month vs next, per-bottle effective pricing, and the filters.', meta: 'Coming soon', icon: BadgeDollarSign, accent: '#94a3b8' },
-  { id: 'newitems', title: 'New Items', desc: 'What just appeared this edition and how it is matched across months.', meta: 'Coming soon', icon: Sparkles, accent: '#94a3b8' },
+  { id: 'combos', title: 'Combos', desc: 'How bundles work, reading the savings, and adding a whole bundle to your cart.', meta: '12 steps', icon: Combine, accent: '#7c3aed', run: (navigate) => launchCombosTour(navigate) },
+  { id: 'rip', title: 'RIP Products', desc: 'Rebates this month vs next, per-bottle effective pricing, the tiers and filters.', meta: '12 steps', icon: BadgeDollarSign, accent: '#16a34a', run: (navigate) => launchRipTour(navigate) },
+  { id: 'newitems', title: 'New Items', desc: 'What just appeared this edition and how it is matched across months.', meta: '11 steps', icon: Sparkles, accent: '#db2777', run: (navigate) => launchNewItemsTour(navigate) },
   { id: 'favorites', title: 'Favorites', desc: 'Tracking products, setting a target price, and reading the buy signal.', meta: 'Coming soon', icon: Star, accent: '#94a3b8' },
   { id: 'todo', title: 'To-Do', desc: 'The weekly board, adding tasks, and dragging to reschedule.', meta: 'Coming soon', icon: ListTodo, accent: '#94a3b8' },
   { id: 'notes', title: 'Notes', desc: 'Sticky notes and the single feed of everything you have written.', meta: 'Coming soon', icon: StickyNote, accent: '#94a3b8' },

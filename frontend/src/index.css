@@ -136,6 +136,15 @@ body {
 
 .main-content { flex: 1; padding: 24px 32px; overflow-x: auto; }
 
+/* App shell (desktop): pin the whole layout to the viewport and let only the
+   content area scroll. This keeps the left nav and any in-page sidebar/filter
+   panel fixed on scroll for EVERY page, instead of relying on position:sticky
+   (which the long-page window scroll was defeating). Mobile keeps page scroll. */
+@media (min-width: 1025px) {
+  .app-layout { height: 100vh; overflow: hidden; }
+  .main-content { height: 100vh; overflow-y: auto; box-sizing: border-box; }
+}
+
 /* ---- Page ---- */
 .page h2 { font-size: 22px; margin-bottom: 16px; }
 /* Keep the page title line pinned to the top while scrolling (all pages). */
@@ -526,6 +535,28 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
 .tracked-toggle input[type="checkbox"] {
   accent-color: var(--accent); cursor: pointer;
 }
+
+/* In-Favorites control pinned at the top of the catalog filter panel. */
+.filter-favorites {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.filter-favorites .tracked-toggle {
+  font-size: 13px; font-weight: 600; color: var(--text);
+}
+.filter-favorites .tracked-toggle svg { color: var(--orange); }
+
+/* Data loading indicator (slow pages: RIP Products, etc.) */
+.data-loading {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 48px 0; color: var(--text-muted); font-size: 14px; font-weight: 500;
+}
+.data-loading-spin {
+  width: 18px; height: 18px; border-radius: 50%;
+  border: 2px solid var(--border); border-top-color: var(--accent);
+  animation: dl-spin 0.8s linear infinite;
+}
+@keyframes dl-spin { to { transform: rotate(360deg); } }
 
 /* ---- Row Limit Select ---- */
 .row-limit-select {
@@ -1368,6 +1399,11 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
 .web-link-why { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
 
 .catalog-table-wrap { overflow-x: auto; }
+/* Desktop: scroll the table inside its own box so the sticky <thead> (below)
+   stays pinned on scroll. Mobile keeps plain page scroll. */
+@media (min-width: 1025px) {
+  .catalog-table-wrap { overflow: auto; max-height: calc(100vh - 190px); }
+}
 .catalog-table {
   width: 100%;
   border-collapse: collapse;

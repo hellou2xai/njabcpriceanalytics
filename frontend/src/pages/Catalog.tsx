@@ -3,7 +3,6 @@ import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { catalog, deals } from '../lib/api';
 import WholesalerFilter from '../components/WholesalerFilter';
-import TrackedOnlyToggle from '../components/TrackedOnlyToggle';
 import RowLimitSelect from '../components/RowLimitSelect';
 import { useProductQuickView } from '../components/ProductQuickView';
 import CatalogTable, { loadCart, saveCart, type CartState } from '../components/CatalogTable';
@@ -131,7 +130,6 @@ export default function Catalog() {
           {showFilters ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
           {showFilters ? 'Hide Filters' : 'Show Filters'}
         </button>
-        <TrackedOnlyToggle enabled={trackedOnly} onChange={(v) => { setTrackedOnly(v); setPage(0); }} />
         <RowLimitSelect value={limit} onChange={v => { setLimit(v); setPage(0); }} />
         {activeFilterCount > 0 && (
           <button className="btn btn-secondary" onClick={() => setFilters({ ...emptyCatalogFilters })}>
@@ -147,6 +145,8 @@ export default function Catalog() {
             onChange={(f) => { setFilters(f); setPage(0); }}
             items={facetItems}
             facets={facets}
+            trackedOnly={trackedOnly}
+            onTrackedChange={(v) => { setTrackedOnly(v); setPage(0); }}
           />
         )}
 

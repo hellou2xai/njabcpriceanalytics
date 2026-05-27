@@ -7,6 +7,7 @@ import { RowMenuButton } from '../components/ContextMenu';
 import RowLimitSelect from '../components/RowLimitSelect';
 import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
 import { useProductQuickView } from '../components/ProductQuickView';
+import DataLoading from '../components/DataLoading';
 import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
 
 function tierLabel(unit?: string | null): string {
@@ -271,7 +272,7 @@ export default function RipProducts() {
         </div>
       )}
 
-      {isLoading ? <p>Loading...</p> : (
+      {isLoading ? <DataLoading /> : (
         <div className="rip-table-wrap">
           <table className="rip-products-table">
             <thead>

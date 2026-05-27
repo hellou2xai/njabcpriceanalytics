@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import type { Product, CatalogFacets } from '../lib/api';
 import { distributorName } from '../lib/distributors';
+import TrackedOnlyToggle from './TrackedOnlyToggle';
 
 // ---- Filter state interface ----
 export interface CatalogFilters {
@@ -116,11 +117,15 @@ export default function CatalogFilterPanel({
   onChange,
   items,
   facets,
+  trackedOnly,
+  onTrackedChange,
 }: {
   filters: CatalogFilters;
   onChange: (f: CatalogFilters) => void;
   items: Product[];
   facets?: CatalogFacets;
+  trackedOnly?: boolean;
+  onTrackedChange?: (v: boolean) => void;
 }) {
   // Local price inputs (only applied on "Go")
   const [priceMinInput, setPriceMinInput] = useState(
@@ -206,6 +211,13 @@ export default function CatalogFilterPanel({
 
   return (
     <aside className="filter-panel">
+      {/* ---- In Favorites (watchlist) ---- */}
+      {onTrackedChange && (
+        <div className="filter-favorites">
+          <TrackedOnlyToggle enabled={!!trackedOnly} onChange={onTrackedChange} />
+        </div>
+      )}
+
       {/* ---- Deals Toggle ---- */}
       <FilterSection title="Deals" activeCount={dealsActiveCount}>
         <div className="filter-checkbox-list">

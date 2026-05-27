@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { Star } from 'lucide-react';
 import { watchlist } from '../lib/api';
 
 interface Props {
@@ -13,7 +14,8 @@ export default function TrackedOnlyToggle({ enabled, onChange }: Props) {
   return (
     <label className="tracked-toggle">
       <input type="checkbox" checked={enabled} onChange={e => onChange(e.target.checked)} />
-      <span>Tracked only ({count})</span>
+      <Star size={13} />
+      <span>In Favorites ({count})</span>
     </label>
   );
 }

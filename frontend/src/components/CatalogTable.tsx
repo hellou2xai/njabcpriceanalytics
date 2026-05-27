@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import FavoriteButton from './FavoriteButton';
 import ProductThumb from './ProductThumb';
 import AddToCartButton from './AddToCartButton';
+import AddToListButton from './AddToListButton';
 import { RowMenuButton } from './ContextMenu';
 import { distributorName } from '../lib/distributors';
 import type { Product, CatalogTier } from '../lib/api';
@@ -35,7 +36,7 @@ function introMonth(ym?: string | null): string {
   return idx >= 0 && idx < 12 ? `${MONTH_NAMES[idx]} ${y}` : ym;
 }
 
-function QtyStepper({ label, value, onChange }: { label: string; value: number; onChange: (n: number) => void }) {
+export function QtyStepper({ label, value, onChange }: { label: string; value: number; onChange: (n: number) => void }) {
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
   return (
     <div className="qty-stepper" onClick={stop}>
@@ -205,9 +206,13 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                     </div>
                   </td>
                   <td onClick={e => e.stopPropagation()}>
-                    <AddToCartButton productName={item.product_name} wholesaler={item.wholesaler}
-                      upc={item.upc} unitVolume={item.unit_volume}
-                      qtyCases={qty.cases} qtyUnits={qty.units} />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <AddToCartButton productName={item.product_name} wholesaler={item.wholesaler}
+                        upc={item.upc} unitVolume={item.unit_volume}
+                        qtyCases={qty.cases} qtyUnits={qty.units} />
+                      <AddToListButton productName={item.product_name} wholesaler={item.wholesaler}
+                        upc={item.upc} unitVolume={item.unit_volume} />
+                    </div>
                   </td>
                 </tr>
 

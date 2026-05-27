@@ -6,7 +6,9 @@ import SortableTable from '../components/SortableTable';
 import RowLimitSelect from '../components/RowLimitSelect';
 import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
 import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
-import { X, ShoppingCart } from 'lucide-react';
+import { X, ShoppingCart, Check } from 'lucide-react';
+import { QtyStepper } from '../components/CatalogTable';
+import AddToListButton from '../components/AddToListButton';
 
 const $ = (v: number | null | undefined, d = 2) =>
   v == null ? '—' : `$${Number(v).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d })}`;
@@ -59,6 +61,35 @@ function ComboCartAdder({ combo }: { combo: Combo }) {
     <button className="btn" disabled={addMut.isPending} onClick={() => addMut.mutate()}>
       <ShoppingCart size={15} /> {addMut.isPending ? 'Adding...' : 'Add bundle to Cart'}
     </button>
+  );
+}
+
+// Per-row order controls in the combos table: choose how many bundles, then add
+// the whole bundle to the cart, or add it to a list instead.
+function ComboCartCell({ combo }: { combo: Combo }) {
+  const qc = useQueryClient();
+  const [qty, setQty] = useState(1);
+  const [flash, setFlash] = useState(false);
+  const add = useMutation({
+    mutationFn: () => cart.fromCombo(combo.wholesaler, combo.combo_code, qty),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cart'] });
+      setFlash(true);
+      setTimeout(() => setFlash(false), 1300);
+    },
+  });
+  const label = combo.comments
+    ? combo.comments.replace(/^\s*contains:\s*/i, '')
+    : (combo.product_name ?? `Combo ${combo.combo_code}`);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 130 }} onClick={e => e.stopPropagation()}>
+      <QtyStepper label="Qty" value={qty} onChange={v => setQty(Math.max(1, v))} />
+      <button type="button" className={`btn btn-sm add-to-cart-btn${flash ? ' is-added' : ''}`}
+        disabled={add.isPending} onClick={() => add.mutate()}>
+        {flash ? <><Check size={15} /> Added</> : <><ShoppingCart size={15} /> Add to cart</>}
+      </button>
+      <AddToListButton productName={label} wholesaler={combo.wholesaler} comboCode={combo.combo_code} />
+    </div>
   );
 }
 
@@ -354,6 +385,7 @@ export default function Combos() {
               } },
             { key: 'recommendation', label: 'Outlook', sortable: true,
               render: r => <span className="combo-rec" data-rec={recVariant(r.recommendation)}>{r.recommendation ?? '—'}</span> },
+            { key: '_order', label: 'Order', render: r => <ComboCartCell combo={r} /> },
           ]}
           data={items.map(i => ({ ...i, _pct_off: breakdown(i).pctOff, _regular_value: breakdown(i).regularValue }))}
           pageSize={limit}

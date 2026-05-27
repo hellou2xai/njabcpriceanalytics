@@ -57,6 +57,7 @@ class GroupNoteIn(BaseModel):
 class FromComboIn(BaseModel):
     wholesaler: str
     combo_code: str
+    qty: int = 1   # how many of the bundle to add (multiplies each component's cases)
 
 
 def _default_rep_for(con, user_id: int, wholesaler: str):
@@ -276,10 +277,11 @@ def add_from_combo(body: FromComboIn, user: dict = Depends(get_current_user)):
                 continue
             upc = None if r["upc"] is None or (isinstance(r["upc"], float) and r["upc"] != r["upc"]) else str(r["upc"])
             qc = _parse_case_qty(r["qty_per_pack"]) if _parse_case_qty else 1
+            mult = max(1, body.qty)
             _insert_cart_item(con, user["id"], {
                 "product_name": str(pname), "wholesaler": body.wholesaler,
                 "upc": upc, "combo_code": body.combo_code,
-                "qty_cases": qc or 1, "qty_units": 0,
+                "qty_cases": (qc or 1) * mult, "qty_units": 0,
             }, rep_id)
             added += 1
     return {"status": "added", "added": added}

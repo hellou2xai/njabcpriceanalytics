@@ -401,8 +401,8 @@ export const cart = {
     request('/api/cart/assign-rep', { method: 'POST', body: JSON.stringify({ wholesaler, sales_rep_id }) }),
   fromList: (list_id: number, item_ids?: number[]) =>
     request<{ count: number }>('/api/cart/from-list', { method: 'POST', body: JSON.stringify({ list_id, item_ids }) }),
-  fromCombo: (wholesaler: string, combo_code: string) =>
-    request<{ added: number }>('/api/cart/from-combo', { method: 'POST', body: JSON.stringify({ wholesaler, combo_code }) }),
+  fromCombo: (wholesaler: string, combo_code: string, qty = 1) =>
+    request<{ added: number }>('/api/cart/from-combo', { method: 'POST', body: JSON.stringify({ wholesaler, combo_code, qty }) }),
   send: () => request<{ sent: number; skipped_no_rep: number; orders: { order_id: number; rep_name: string; lines: number; emailed: boolean; to: string | null }[] }>('/api/cart/send', { method: 'POST' }),
 };
 

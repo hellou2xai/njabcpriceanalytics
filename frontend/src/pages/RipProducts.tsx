@@ -8,6 +8,9 @@ import RowLimitSelect from '../components/RowLimitSelect';
 import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
 import { useProductQuickView } from '../components/ProductQuickView';
 import DataLoading from '../components/DataLoading';
+import AddToCartButton from '../components/AddToCartButton';
+import AddToListButton from '../components/AddToListButton';
+import { QtyStepper, loadCart, saveCart, type CartState } from '../components/CatalogTable';
 import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
 
 function tierLabel(unit?: string | null): string {
@@ -69,6 +72,17 @@ export default function RipProducts() {
   const [page, setPage] = useState(0);
   const [limit, setLimit] = useState(50);
   const { open } = useProductQuickView();
+
+  // Shared draft-cart quantities (same localStorage cart as the Catalog).
+  const [cart, setCart] = useState<CartState>(loadCart);
+  const updateQty = (key: string, field: 'cases' | 'units', value: number) => {
+    setCart(prev => {
+      const cur = prev[key] ?? { cases: 0, units: 0 };
+      const next = { ...prev, [key]: { ...cur, [field]: value } };
+      saveCart(next);
+      return next;
+    });
+  };
 
   const { data, isLoading } = useQuery({
     queryKey: ['rip-products', q, ripCode, wholesaler, productType, source, minSave, minGp, tierUnit, newNext, sort, order, page, limit],
@@ -285,6 +299,7 @@ export default function RipProducts() {
                   {headerEditions.next ? `Next (${shortMonth(headerEditions.next)})` : 'Next'}
                 </th>
                 <th></th>
+                <th></th>
               </tr>
               <tr>
                 <th style={{ width: 36 }}></th>
@@ -320,6 +335,7 @@ export default function RipProducts() {
                   Effective{sortIcon('next_effective_case_price')}
                 </th>
                 <th>Better</th>
+                <th>Order</th>
               </tr>
             </thead>
             <tbody>
@@ -426,6 +442,22 @@ export default function RipProducts() {
                         return bm
                           ? <span className="better-price-badge" data-variant={bm.variant}>{bm.label}</span>
                           : <span className="text-muted">—</span>;
+                      })()}
+                    </td>
+                    <td onClick={e => e.stopPropagation()}>
+                      {isFirstForProduct && (() => {
+                        const ckey = `${item.product_name}|${item.wholesaler}`;
+                        const q = cart[ckey] ?? { cases: 0, units: 0 };
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 120 }}>
+                            <QtyStepper label="Btl" value={q.units} onChange={v => updateQty(ckey, 'units', v)} />
+                            <QtyStepper label="Case" value={q.cases} onChange={v => updateQty(ckey, 'cases', v)} />
+                            <AddToCartButton productName={item.product_name} wholesaler={item.wholesaler}
+                              upc={item.upc} unitVolume={item.unit_volume} qtyCases={q.cases} qtyUnits={q.units} />
+                            <AddToListButton productName={item.product_name} wholesaler={item.wholesaler}
+                              upc={item.upc} unitVolume={item.unit_volume} />
+                          </div>
+                        );
                       })()}
                     </td>
                   </tr>

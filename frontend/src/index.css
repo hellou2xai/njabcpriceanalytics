@@ -567,6 +567,24 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
 .add-to-cart-btn.is-added { background: var(--green); border-color: var(--green); }
 .add-to-cart-btn:disabled { opacity: 0.6; cursor: default; }
 
+/* Add-to-list button + its fixed-positioned list picker (won't clip in tables). */
+.add-to-list-btn { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.add-to-list-btn.is-added { background: var(--green); border-color: var(--green); color: #fff; }
+.add-to-list-backdrop { position: fixed; inset: 0; z-index: 1190; }
+.add-to-list-menu {
+  position: fixed; z-index: 1200; min-width: 180px; max-height: 280px; overflow-y: auto;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 10px 32px rgba(0,0,0,0.35); padding: 4px;
+}
+.add-to-list-item {
+  display: block; width: 100%; text-align: left; background: none; border: none;
+  padding: 7px 10px; border-radius: 6px; color: var(--text); font-size: 13px; cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.add-to-list-item:hover { background: var(--surface-hover); color: var(--accent); }
+.add-to-list-new { border-top: 1px solid var(--border); color: var(--accent); margin-top: 2px; }
+.add-to-list-empty { padding: 7px 10px; color: var(--text-muted); font-size: 12px; }
+
 /* ---- Row Limit Select ---- */
 .row-limit-select {
   padding: 4px 8px; background: var(--surface); border: 1px solid var(--border);

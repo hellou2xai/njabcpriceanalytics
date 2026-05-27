@@ -169,6 +169,49 @@ def _brand_initialisms(con, src):
     return _BRAND_INITIALISMS
 
 
+_VOCAB = None
+
+
+def _vocab(con, src):
+    """Distinct words (>=4 letters) from product names + brands, used to spell-fix a
+    typed token against the catalogue's own vocabulary. Built once, cached."""
+    global _VOCAB
+    if _VOCAB is None:
+        try:
+            rows = con.execute(f"""
+                SELECT DISTINCT w FROM (
+                  SELECT unnest(string_split(regexp_replace(lower(product_name), '[^a-z ]', ' ', 'g'), ' ')) AS w FROM {src}
+                  UNION ALL
+                  SELECT unnest(string_split(regexp_replace(lower(COALESCE(brand,'')), '[^a-z ]', ' ', 'g'), ' ')) AS w FROM {src}
+                ) WHERE length(w) >= 4
+            """).fetchall()
+            _VOCAB = [r[0] for r in rows]
+        except Exception:
+            _VOCAB = []
+    return _VOCAB
+
+
+def _spell_fix(q, vocab):
+    """If a query token isn't a real catalogue word but is very close to one
+    (e.g. 'hennesy' -> 'hennessy', 'glenfidich' -> 'glenfiddich'), substitute it.
+    Returns the corrected query, or None if nothing changed."""
+    import difflib
+    if not vocab:
+        return None
+    vset = set(vocab)
+    out, changed = [], False
+    for t in q.lower().split():
+        if len(t) >= 4 and t.isalpha() and t not in vset:
+            cands = [w for w in vocab if w[:1] == t[:1]]   # typos usually keep the first letter
+            m = difflib.get_close_matches(t, cands, n=1, cutoff=0.86)
+            if m and m[0] != t:
+                out.append(m[0])
+                changed = True
+                continue
+        out.append(t)
+    return " ".join(out) if changed else None
+
+
 def _attach_next_month_prices(con, src, records):
     """Annotate each record with next-month price + a "Better Price" verdict.
 
@@ -614,25 +657,45 @@ def search_products(
         # AI fallback: a text search that found nothing -> ask Claude (Sonnet) to map
         # the shorthand to real brand terms and retry once. Key-gated + cached, so it
         # only fires on genuine misses and never on the common (alias-handled) ones.
+        corrected_query = None
         if (q and count == 0 and offset == 0 and q_clause_idx is not None
                 and any(ch.isalpha() for ch in q)):
+            def _retry(fixed_q):
+                nonlocal where_clause
+                clause2, qp2 = _q_clause(fixed_q, _brand_initialisms(con, src))
+                where[q_clause_idx] = clause2
+                # Drop the previous query params so none are left bound but unused
+                # (which would make the retry query error).
+                for k in [k for k in params if k.startswith("qt") or k.startswith("q_upc")]:
+                    params.pop(k, None)
+                params.update(qp2)
+                where_clause = " AND ".join(where)
+                return con.execute(
+                    f"SELECT count(*) FROM (SELECT 1 FROM {src} WHERE {where_clause} {dedup}) t", params
+                ).fetchone()[0]
+
+            # 1) Deterministic spell-fix against the catalogue vocabulary (no API cost).
             try:
-                from backend.ai_search import ai_expand_query
-                ai_q = ai_expand_query(q)
-                if ai_q:
-                    clause2, qp2 = _q_clause(ai_q, _brand_initialisms(con, src))
-                    where[q_clause_idx] = clause2
-                    # Drop the previous query params so none are left bound but unused
-                    # (which would make the retry query error).
-                    for k in [k for k in params if k.startswith("qt") or k.startswith("q_upc")]:
-                        params.pop(k, None)
-                    params.update(qp2)
-                    where_clause = " AND ".join(where)
-                    count = con.execute(
-                        f"SELECT count(*) FROM (SELECT 1 FROM {src} WHERE {where_clause} {dedup}) t", params
-                    ).fetchone()[0]
+                fix = _spell_fix(q, _vocab(con, src))
+                if fix and fix.lower() != q.lower():
+                    n = _retry(fix)
+                    if n > 0:
+                        count, corrected_query = n, fix
             except Exception:
                 pass
+
+            # 2) AI fallback for phrasing/semantics a spell-fix can't catch
+            #    (e.g. "cordon blue" -> "cordon bleu").
+            if count == 0:
+                try:
+                    from backend.ai_search import ai_expand_query
+                    ai_q = ai_expand_query(q)
+                    if ai_q:
+                        n = _retry(ai_q)
+                        if n > 0:
+                            count, corrected_query = n, ai_q
+                except Exception:
+                    pass
 
         # Data query
         rows = con.execute(f"""
@@ -679,6 +742,7 @@ def search_products(
             "limit": limit,
             "offset": offset,
             "items": records,
+            "corrected_query": corrected_query,
         }
 
 

@@ -123,6 +123,15 @@ export default function Catalog() {
         <input type="text" placeholder="Search products..." value={q} onChange={e => { setQ(e.target.value); setPage(0); }} />
         <span className="search-count">{data?.total?.toLocaleString() ?? 0} results</span>
       </div>
+      {data?.corrected_query && data.corrected_query.toLowerCase() !== q.trim().toLowerCase() && (
+        <p className="search-correction" style={{ fontSize: 13, color: 'var(--text-muted)', margin: '-8px 0 12px' }}>
+          No exact match for "{q.trim()}". Showing results for{' '}
+          <button type="button" className="link-btn" onClick={() => { setQ(data.corrected_query!); setPage(0); }}
+            style={{ background: 'none', border: 0, padding: 0, color: 'var(--accent)', fontWeight: 600, cursor: 'pointer' }}>
+            "{data.corrected_query}"
+          </button>.
+        </p>
+      )}
 
       {/* Always-visible edge tab to hide/show the filter panel. */}
       <button

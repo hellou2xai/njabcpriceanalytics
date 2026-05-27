@@ -47,7 +47,7 @@ function qs(params: Record<string, unknown>): string {
 // ---- Catalog ----
 export const catalog = {
   search: (params: Record<string, unknown>) =>
-    request<{ total: number; items: Product[] }>(`/api/catalog/search${qs(params)}`),
+    request<{ total: number; items: Product[]; corrected_query?: string | null }>(`/api/catalog/search${qs(params)}`),
   newItems: (params?: Record<string, unknown>) =>
     request<NewItemsResponse>(`/api/catalog/new-items${qs(params ?? {})}`),
   product: (wholesaler: string, name: string, opts?: { edition?: string; upc?: string; unit_volume?: string; unit_qty?: string; vintage?: string }) =>

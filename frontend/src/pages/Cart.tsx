@@ -223,7 +223,7 @@ export default function Cart() {
     <div className="page">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
         <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ShoppingCart size={22} /> Cart</h2>
-        <button className="btn btn-primary" disabled={active.length === 0 || send.isPending}
+        <button className="btn btn-primary" data-tour="cart-send" disabled={active.length === 0 || send.isPending}
           onClick={() => { setResult(null); send.mutate(); }}>
           <Send size={16} /> {send.isPending ? 'Sending...' : 'Send All Orders to Reps'}
         </button>

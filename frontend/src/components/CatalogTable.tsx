@@ -167,8 +167,10 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                         {/* Order facility lives in the product cell so it stays visible at any width. */}
                         <div onClick={e => e.stopPropagation()} className="catalog-order-inline"
                           style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                          <QtyStepper label="Case" value={qty.cases} onChange={v => updateQty(cartKey, 'cases', v)} />
-                          <QtyStepper label="Btl" value={qty.units} onChange={v => updateQty(cartKey, 'units', v)} />
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                            <QtyStepper label="Case" value={qty.cases} onChange={v => updateQty(cartKey, 'cases', v)} />
+                            <QtyStepper label="Btl" value={qty.units} onChange={v => updateQty(cartKey, 'units', v)} />
+                          </div>
                           <AddToCartButton productName={item.product_name} wholesaler={item.wholesaler}
                             upc={item.upc} unitVolume={item.unit_volume}
                             qtyCases={qty.cases} qtyUnits={qty.units} />

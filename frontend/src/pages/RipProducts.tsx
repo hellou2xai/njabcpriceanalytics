@@ -398,8 +398,10 @@ export default function RipProducts() {
                             return (
                               <div className="catalog-order-inline" onClick={e => e.stopPropagation()}
                                 style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                                <QtyStepper label="Case" value={q.cases} onChange={v => updateQty(ckey, 'cases', v)} />
-                                <QtyStepper label="Btl" value={q.units} onChange={v => updateQty(ckey, 'units', v)} />
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                  <QtyStepper label="Case" value={q.cases} onChange={v => updateQty(ckey, 'cases', v)} />
+                                  <QtyStepper label="Btl" value={q.units} onChange={v => updateQty(ckey, 'units', v)} />
+                                </div>
                                 <AddToCartButton productName={item.product_name} wholesaler={item.wholesaler}
                                   upc={item.upc} unitVolume={item.unit_volume} qtyCases={q.cases} qtyUnits={q.units} />
                                 <AddToListButton productName={item.product_name} wholesaler={item.wholesaler}

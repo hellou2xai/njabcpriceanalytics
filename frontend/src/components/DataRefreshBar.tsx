@@ -3,10 +3,11 @@ import { useIsFetching } from '@tanstack/react-query';
 import { RefreshCw, Check } from 'lucide-react';
 
 /**
- * A small global status pill that shows whenever any page is fetching data
- * (first load or a refresh), then briefly confirms "Data refreshed" when the
- * fetches finish. Driven by React Query's global fetch count, so it works on
- * every page without each one wiring up its own indicator.
+ * Global data-loading indicator shown on every page (mounted in Layout):
+ *   - a thin animated progress bar across the very top of the window, plus a
+ *     "Fetching data…" pill, whenever ANY page is fetching (first load or refresh)
+ *   - a brief "Data refreshed" confirmation when the fetches finish.
+ * Driven by React Query's global fetch count, so no page has to wire its own.
  */
 export default function DataRefreshBar() {
   const fetching = useIsFetching();
@@ -16,7 +17,7 @@ export default function DataRefreshBar() {
   useEffect(() => {
     if (prev.current > 0 && fetching === 0) {
       setDone(true);
-      const t = setTimeout(() => setDone(false), 1800);
+      const t = setTimeout(() => setDone(false), 1500);
       prev.current = fetching;
       return () => clearTimeout(t);
     }
@@ -25,9 +26,12 @@ export default function DataRefreshBar() {
 
   if (fetching > 0) {
     return (
-      <div className="data-refresh-bar is-refreshing" role="status" aria-live="polite">
-        <RefreshCw size={13} className="drb-spin" /> Refreshing data…
-      </div>
+      <>
+        <div className="data-progress"><div className="data-progress-fill" /></div>
+        <div className="data-refresh-bar is-refreshing" role="status" aria-live="polite">
+          <RefreshCw size={13} className="drb-spin" /> Fetching data…
+        </div>
+      </>
     );
   }
   if (done) {

@@ -121,7 +121,7 @@ export default function Catalog() {
 
       <div className="search-bar">
         <input type="text" placeholder="Search products..." value={q} onChange={e => { setQ(e.target.value); setPage(0); }} />
-        <span className="search-count">{data?.total?.toLocaleString() ?? 0} results</span>
+        <span className="search-count">{isLoading ? 'Fetching data…' : `${(data?.total ?? 0).toLocaleString()} results`}</span>
       </div>
       {data?.corrected_query && data.corrected_query.toLowerCase() !== q.trim().toLowerCase() && (
         <p className="search-correction" style={{ fontSize: 13, color: 'var(--text-muted)', margin: '-8px 0 12px' }}>

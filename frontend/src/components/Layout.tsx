@@ -10,6 +10,7 @@ import {
 import { alerts as alertsApi, orders as ordersApi, cart as cartApi } from '../lib/api';
 import WhatsAppShareButton from './WhatsAppShare';
 import { useAuth } from '../contexts/AuthContext';
+import DataRefreshBar from './DataRefreshBar';
 import { useOrderAnalysis } from '../contexts/OrderAnalysisContext';
 import { useActivityTracker } from '../lib/activityTracker';
 
@@ -165,6 +166,7 @@ export default function Layout() {
 
   return (
     <div className="app-layout">
+      <DataRefreshBar />
       {/* Mobile backdrop */}
       {isMobile && mobileOpen && (
         <div className="sidebar-backdrop" onClick={() => setMobileOpen(false)} />

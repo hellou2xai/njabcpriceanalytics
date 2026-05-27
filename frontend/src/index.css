@@ -575,6 +575,19 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
 .add-to-cart-btn, .add-to-list-btn {
   padding: 3px 8px; font-size: 11px; line-height: 1.3; border-radius: 6px;
 }
+
+/* Global "refreshing data" status pill (any page that is fetching). */
+.data-refresh-bar {
+  position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
+  z-index: 1300; display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 13px; border-radius: 16px; font-size: 12px; font-weight: 600;
+  color: #fff; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14); animation: drb-in 150ms ease;
+}
+.data-refresh-bar.is-refreshing { background: var(--accent); }
+.data-refresh-bar.is-done { background: var(--green); }
+.drb-spin { animation: drb-rotate 0.8s linear infinite; }
+@keyframes drb-rotate { to { transform: rotate(360deg); } }
+@keyframes drb-in { from { opacity: 0; } to { opacity: 1; } }
 .add-to-list-backdrop { position: fixed; inset: 0; z-index: 1190; }
 .add-to-list-menu {
   position: fixed; z-index: 1200; min-width: 180px; max-height: 280px; overflow-y: auto;

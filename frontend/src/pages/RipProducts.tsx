@@ -29,6 +29,18 @@ function fmtSave(v: number | null | undefined): string {
   return v == null ? '-' : `$${v.toFixed(2)}`;
 }
 
+// Case price with the per-bottle price beneath it (same as the Catalog cells).
+function priceWithBtl(caseP: number | null | undefined, btlP: number | null | undefined) {
+  return (
+    <>
+      {fmtPrice(caseP)}
+      {btlP != null && (
+        <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>{fmtPrice(btlP)}/btl</div>
+      )}
+    </>
+  );
+}
+
 function fmtPct(v: number | null | undefined): string {
   return v == null ? '-' : `${v.toFixed(1)}%`;
 }
@@ -422,34 +434,44 @@ export default function RipProducts() {
 
                     {/* Current month */}
                     <td className="right" data-label="Case (now)">
-                      {isFirstForProduct ? fmtPrice(item.curr_case_price) : ''}
+                      {isFirstForProduct ? priceWithBtl(item.curr_case_price, item.curr_btl_price) : ''}
                     </td>
                     <td data-label="Tier (now)">
                       {renderTierBadge(item.rip_qty, item.rip_unit, item.curr_rip_amt, 'curr')}
                     </td>
                     <td className="right" data-label="Save (now)">
-                      {item.curr_save_per_case != null
-                        ? <span className="text-green font-bold">{fmtSave(item.curr_save_per_case)}</span>
-                        : <span className="text-muted">-</span>}
+                      {item.curr_save_per_case != null ? (
+                        <>
+                          <span className="text-green font-bold">{fmtSave(item.curr_save_per_case)}</span>
+                          {item.curr_btl_price != null && item.curr_effective_btl_price != null && (
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{fmtSave(item.curr_btl_price - item.curr_effective_btl_price)}/btl</div>
+                          )}
+                        </>
+                      ) : <span className="text-muted">-</span>}
                     </td>
                     <td className="right font-bold" data-label="Eff (now)" style={{ borderRight: '1px solid var(--border)' }}>
-                      {fmtPrice(item.curr_effective_case_price)}
+                      {priceWithBtl(item.curr_effective_case_price, item.curr_effective_btl_price)}
                     </td>
 
                     {/* Next month */}
                     <td className="right" data-label="Case (next)">
-                      {isFirstForProduct ? fmtPrice(item.next_case_price) : ''}
+                      {isFirstForProduct ? priceWithBtl(item.next_case_price, item.next_btl_price) : ''}
                     </td>
                     <td data-label="Tier (next)">
                       {renderTierBadge(item.rip_qty, item.rip_unit, item.next_rip_amt, 'next')}
                     </td>
                     <td className="right" data-label="Save (next)">
-                      {item.next_save_per_case != null
-                        ? <span className="text-green font-bold">{fmtSave(item.next_save_per_case)}</span>
-                        : <span className="text-muted">-</span>}
+                      {item.next_save_per_case != null ? (
+                        <>
+                          <span className="text-green font-bold">{fmtSave(item.next_save_per_case)}</span>
+                          {item.next_btl_price != null && item.next_effective_btl_price != null && (
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{fmtSave(item.next_btl_price - item.next_effective_btl_price)}/btl</div>
+                          )}
+                        </>
+                      ) : <span className="text-muted">-</span>}
                     </td>
                     <td className="right font-bold" data-label="Eff (next)">
-                      {fmtPrice(item.next_effective_case_price)}
+                      {priceWithBtl(item.next_effective_case_price, item.next_effective_btl_price)}
                     </td>
                     <td data-label="Better">
                       {(() => {

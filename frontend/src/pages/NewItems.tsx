@@ -95,17 +95,22 @@ export default function NewItems() {
   // Scope = wholesaler + search + month. Facet counts reflect this scope (as the
   // catalog's facets reflect its search/wholesaler scope).
   const scoped = useMemo(() => {
-    const term = q.trim().toLowerCase();
-    const digits = q.replace(/\D/g, '').replace(/^0+/, '');
+    // Match the backend's intelligent search: a text query must contain every
+    // token in the name (AND); only an essentially-numeric query is treated as
+    // a UPC lookup. Prevents "glen 12" from matching every UPC containing "12".
+    const tokens = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const compact = q.replace(/[\s-]/g, '');
+    const isUpc = /^\d{4,}$/.test(compact);
+    const compactNorm = compact.replace(/^0+/, '') || compact;
     return allItems.filter(i => {
       if (wholesaler && i.wholesaler !== wholesaler) return false;
       if (introduced && i.introduced_edition !== introduced) return false;
-      if (term) {
+      if (tokens.length) {
         const name = (i.product_name ?? '').toLowerCase();
         const upc = String(i.upc ?? '');
-        const upcNorm = upc.replace(/^0+/, '');
-        const hit = name.includes(term) || upc.includes(q) || (digits !== '' && upcNorm.includes(digits));
-        if (!hit) return false;
+        const nameHit = tokens.every(t => name.includes(t));
+        const upcHit = isUpc && (upc.includes(compact) || upc.replace(/^0+/, '').includes(compactNorm));
+        if (!nameHit && !upcHit) return false;
       }
       return true;
     });

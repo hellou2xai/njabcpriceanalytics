@@ -48,7 +48,7 @@ const STEPS: Step[] = [
     body: 'Multi-product packs sold for less than buying the items separately. The cards show average and biggest savings; click any bundle to see exactly what’s inside and the per-item saving, then add the whole pack to your cart. <b>Why it helps:</b> bigger savings in one move.' },
 
   // ---- RIP Products ----
-  { route: '/rip-products', element: '.orders-header', title: 'RIP Products: rebates',
+  { route: '/rip-products', element: '.rip-summary-cards', title: 'RIP Products: rebates',
     body: 'Every rebate (RIP) and discount, with <b>this month next to next month</b> and per-bottle effective pricing at each tier. Filter by distributor, type, minimum saving or margin. <b>Why it helps:</b> time your volume buys before a rebate program changes.' },
 
   // ---- Favorites ----

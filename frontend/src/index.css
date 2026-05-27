@@ -2744,22 +2744,22 @@ tr:hover .row-menu-btn { opacity: 1; }
   display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px;
 }
 .tour-card {
-  display: flex; align-items: flex-start; gap: 14px; text-align: left; padding: 18px;
+  display: flex; flex-direction: column; gap: 10px; text-align: left; padding: 16px 18px;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
   cursor: pointer; font: inherit; transition: box-shadow .15s, border-color .15s, transform .05s;
 }
 .tour-card:hover:not(:disabled) { border-color: var(--accent); box-shadow: var(--shadow-card); }
 .tour-card:active:not(:disabled) { transform: translateY(1px); }
 .tour-card--soon { cursor: default; opacity: .6; }
+.tour-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .tour-card-icon {
-  flex: 0 0 auto; width: 44px; height: 44px; border-radius: 10px;
+  flex: 0 0 auto; width: 42px; height: 42px; border-radius: 10px;
   display: inline-flex; align-items: center; justify-content: center;
 }
-.tour-card-body { display: flex; flex-direction: column; gap: 5px; flex: 1 1 auto; min-width: 0; }
 .tour-card-title { font-weight: 600; font-size: 15px; color: var(--text); }
 .tour-card-desc { font-size: 13px; color: var(--text-muted); line-height: 1.45; }
 .tour-card-meta {
-  flex: 0 0 auto; align-self: flex-start; font-size: 11px; font-weight: 600;
+  flex: 0 0 auto; font-size: 11px; font-weight: 600;
   color: var(--text-muted); background: var(--surface-hover); padding: 3px 9px;
   border-radius: 999px; white-space: nowrap;
 }
@@ -2796,13 +2796,8 @@ tr:hover .row-menu-btn { opacity: 1; }
   font-size: 11px; font-weight: 700; line-height: 1.2; text-decoration: none;
   color: #fff; background: linear-gradient(135deg, #f59e0b, #f97316);
   box-shadow: 0 3px 10px rgba(249, 115, 22, .4);
-  animation: nav-sticker-pulse 1.8s ease-in-out infinite;
 }
 .nav-new-sticker:hover { filter: brightness(1.05); }
-@keyframes nav-sticker-pulse {
-  0%, 100% { transform: scale(1); box-shadow: 0 3px 10px rgba(249, 115, 22, .4); }
-  50%      { transform: scale(1.04); box-shadow: 0 5px 16px rgba(249, 115, 22, .6); }
-}
 
 /* ---- Welcome-to-tours popup ---- */
 .welcome-overlay {

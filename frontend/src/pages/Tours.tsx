@@ -29,14 +29,14 @@ export default function Tours() {
               disabled={!live}
               onClick={() => t.run?.(navigate)}
             >
-              <span className="tour-card-icon" style={{ color: t.accent, background: `${t.accent}1f` }}>
-                <Icon size={22} />
+              <span className="tour-card-head">
+                <span className="tour-card-icon" style={{ color: t.accent, background: `${t.accent}1f` }}>
+                  <Icon size={22} />
+                </span>
+                <span className={`tour-card-meta${live ? ' is-live' : ''}`}>{t.meta}</span>
               </span>
-              <span className="tour-card-body">
-                <span className="tour-card-title">{t.title}</span>
-                <span className="tour-card-desc">{t.desc}</span>
-              </span>
-              <span className={`tour-card-meta${live ? ' is-live' : ''}`}>{t.meta}</span>
+              <span className="tour-card-title">{t.title}</span>
+              <span className="tour-card-desc">{t.desc}</span>
             </button>
           );
         })}

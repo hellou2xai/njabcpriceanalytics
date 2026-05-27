@@ -91,10 +91,32 @@ def get_price_movers(
     direction: str = Query("down", description="up or down"),
     limit: int = Query(20, ge=1, le=100),
 ):
-    """Top price movers â€” Â§6.2, Â§8.1"""
+    """Top price movers - 6.2, 8.1. Resilient to older ingested data that may
+    lack some derived columns (e.g. vintage_norm): any missing column is
+    selected as NULL so the endpoint returns rows instead of 500-ing (which is
+    why the dashboard count showed but the drill-down was empty)."""
     with get_duckdb() as con:
         src = read_parquet(con, "price_changes")
-        where = [f"direction = $direction"]
+        avail = {d[0] for d in con.execute(f"SELECT * FROM {src} LIMIT 0").description}
+
+        def col(name):
+            return name if name in avail else f"NULL AS {name}"
+
+        if "vintage_norm" in avail:
+            vintage_expr = "vintage_norm AS vintage"
+        elif "vintage" in avail:
+            vintage_expr = "vintage AS vintage"
+        else:
+            vintage_expr = "NULL AS vintage"
+
+        select_cols = ", ".join([
+            "wholesaler", "edition", "product_name",
+            col("product_type"), col("unit_volume"), vintage_expr,
+            col("case_price"), col("prev_case_price"),
+            col("case_delta"), col("case_delta_pct"), "direction",
+        ])
+
+        where = ["direction = $direction"]
         params = {"direction": direction}
         if wholesaler:
             where.append("wholesaler = $wholesaler")
@@ -107,13 +129,12 @@ def get_price_movers(
                         (f" WHERE wholesaler = $wholesaler" if wholesaler else "") + ")")
 
         w = " AND ".join(where)
+        order = "ORDER BY ABS(case_delta_pct) DESC NULLS LAST" if "case_delta_pct" in avail else ""
         df = con.execute(f"""
-            SELECT wholesaler, edition, product_name, product_type,
-                   unit_volume, vintage_norm AS vintage, case_price, prev_case_price,
-                   case_delta, case_delta_pct, direction
+            SELECT {select_cols}
             FROM {src}
             WHERE {w}
-            ORDER BY ABS(case_delta_pct) DESC
+            {order}
             LIMIT $limit
         """, {**params, "limit": limit}).fetchdf()
         return df.to_dict(orient="records")

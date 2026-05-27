@@ -168,9 +168,9 @@ export default function Dashboard() {
           <KPICard label="Clearance Items" value={kpis.clearance_items} color="#dc2626" icon={<TrendingDown size={20} />}
                    to="/clearance" title="Open the Clearance / Closeout list" />
           <KPICard label="Price Drops" value={kpis.price_drops} color="#16a34a" icon={<ArrowDownRight size={20} />}
-                   to="/analytics" title="Open Analytics for price movers" />
+                   to="/analytics?tab=movers-down" title="Open Analytics — biggest price drops" />
           <KPICard label="Price Increases" value={kpis.price_increases} color="#ea580c" icon={<ArrowUpRight size={20} />}
-                   to="/analytics" title="Open Analytics for price movers" />
+                   to="/analytics?tab=movers-up" title="Open Analytics — biggest price increases" />
           <KPICard label="Active RIPs" value={kpis.active_rips} color="#7c3aed" icon={<Zap size={20} />}
                    to="/rip-products" title="Open Products with RIP" />
         </div>

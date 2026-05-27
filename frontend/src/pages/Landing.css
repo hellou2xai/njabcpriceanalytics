@@ -7,6 +7,7 @@
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-sans);
+  overflow-x: hidden; /* guard: nothing should make the page wider than the phone */
 }
 .lp a { color: inherit; text-decoration: none; }
 .lp section { position: relative; }
@@ -47,7 +48,17 @@
 .lp-nav-links a.lp-navlink { color: var(--text-muted); font-size: 14px; font-weight: 500; }
 .lp-nav-links a.lp-navlink:hover { color: var(--text); }
 .lp-nav-sep { width: 1px; height: 18px; background: var(--border); }
-@media (max-width: 760px) { .lp-nav-links .lp-hide-sm { display: none; } }
+.lp-hide-sm { } /* hidden on small screens via the query below */
+@media (max-width: 760px) {
+  .lp-nav-links .lp-hide-sm, .lp-nav .lp-hide-sm { display: none !important; }
+  .lp-nav-inner { padding: 12px 0; gap: 10px; }
+  .lp-nav-links { gap: 14px; }
+}
+@media (max-width: 430px) {
+  .lp-nav-links { gap: 10px; }
+  .lp-nav-links .btn { padding: 8px 13px; font-size: 13px; }
+  .lp-wordmark { font-size: 18px; }
+}
 
 /* ---- Eyebrow / pills ---- */
 .lp-eyebrow {
@@ -71,9 +82,11 @@
 .lp-hero-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 26px; }
 .lp-hero-note { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-muted); }
 .lp-h1 {
-  font-size: clamp(40px, 6vw, 72px);
-  line-height: 1.02; letter-spacing: -0.03em; font-weight: 800;
+  font-size: clamp(30px, 6.2vw, 72px);
+  line-height: 1.04; letter-spacing: -0.03em; font-weight: 800;
+  overflow-wrap: break-word; /* never push past the viewport on a phone */
 }
+@media (max-width: 400px) { .lp-h1 { font-size: 28px; letter-spacing: -0.02em; } }
 .lp-h1 .muted { color: var(--text-muted); font-weight: 700; }
 .lp-lead {
   margin-top: 26px; font-size: clamp(16px, 1.6vw, 20px); line-height: 1.6;

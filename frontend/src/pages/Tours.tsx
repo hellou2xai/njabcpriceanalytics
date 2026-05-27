@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { TOURS } from '../lib/tours/registry';
+import { trackAction } from '../lib/activityTracker';
 
 /**
  * Tours dashboard. A grid of guided walkthroughs; clicking a live tile starts
@@ -27,7 +28,7 @@ export default function Tours() {
               type="button"
               className={`tour-card${live ? '' : ' tour-card--soon'}`}
               disabled={!live}
-              onClick={() => t.run?.(navigate)}
+              onClick={() => { if (t.run) { trackAction(`Started tour: ${t.title}`, { tour: t.id }); t.run(navigate); } }}
             >
               <span className="tour-card-head">
                 <span className="tour-card-icon" style={{ color: t.accent, background: `${t.accent}1f` }}>

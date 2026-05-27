@@ -74,7 +74,7 @@ export default function Landing() {
             <a href="#capabilities" className="lp-navlink lp-hide-sm">Capabilities</a>
             <a href="#how" className="lp-navlink lp-hide-sm">How it works</a>
             <span className="lp-nav-sep lp-hide-sm" />
-            <WhatsAppShareButton className="sidebar-toggle" showLabel={false}
+            <WhatsAppShareButton className="sidebar-toggle lp-hide-sm" showLabel={false}
               title="Share via WhatsApp" source="landing-nav" />
             <button className="sidebar-toggle" onClick={toggle} title="Toggle theme" aria-label="Toggle theme"
               style={{ display: 'inline-flex' }}>
@@ -95,14 +95,15 @@ export default function Landing() {
               <span className="lp-hero-note">Built for Type 44 owners</span>
             </div>
             <h1 className="lp-h1">
-              Every RIP you earned.<br />
-              <span className="muted">Every dollar you missed.</span><br />
-              In one place.
+              Every deal, spotted.<br />
+              <span className="muted">Every margin, protected.</span><br />
+              Every rebate, claimed.
             </h1>
             <p className="lp-lead">
-              CELR.ai turns the monthly pile of wholesaler price books into a daily action
-              list for New Jersey liquor store owners. Buy smarter, price sharper, and claim
-              every rebate the chains already do.
+              CELR.ai turns the monthly pile of wholesaler price books into a daily action list
+              for New Jersey liquor store owners. Spot the right opportunities faster, protect
+              your margins, and uncover rebates and profits you may be missing. Buy smarter,
+              price sharper, and never miss another deal opportunity.
             </p>
             <div className="lp-cta-row">
               <button className="btn lp-btn-lg" onClick={() => goSignup()}>Create your free account</button>

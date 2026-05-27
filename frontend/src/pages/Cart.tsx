@@ -177,8 +177,10 @@ export default function Cart() {
           </div>
           {!saving && (
             <>
-              <Stepper label="Case" value={it.qty_cases} onChange={n => upd.mutate({ id: it.id, patch: { qty_cases: n } })} />
-              <Stepper label="Btl" value={it.qty_units} onChange={n => upd.mutate({ id: it.id, patch: { qty_units: n } })} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <Stepper label="Case" value={it.qty_cases} onChange={n => upd.mutate({ id: it.id, patch: { qty_cases: n } })} />
+                <Stepper label="Btl" value={it.qty_units} onChange={n => upd.mutate({ id: it.id, patch: { qty_units: n } })} />
+              </div>
               <div style={{ minWidth: 78, textAlign: 'right', fontWeight: 700 }} title="Line total">
                 {money(lineTotal(it))}
               </div>

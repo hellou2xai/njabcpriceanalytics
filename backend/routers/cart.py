@@ -365,11 +365,19 @@ def add_from_combo(body: FromComboIn, user: dict = Depends(get_current_user)):
 
     with get_duckdb() as duck:
         src = read_parquet(duck, "combo")
+        # Latest edition only, one row per component barcode: the combo source
+        # repeats components across editions, which would otherwise double-add.
         rows = duck.execute(
-            f"""SELECT DISTINCT product_name, upc, qty_per_pack
+            f"""WITH latest AS (
+                  SELECT MAX(edition) AS ed FROM {src}
+                  WHERE wholesaler = $ws AND combo_code = $code
+                )
+                SELECT product_name, ANY_VALUE(upc) AS upc, ANY_VALUE(qty_per_pack) AS qty_per_pack
                 FROM {src}
                 WHERE wholesaler = $ws AND combo_code = $code
-                  AND product_name IS NOT NULL""",
+                  AND product_name IS NOT NULL
+                  AND edition = (SELECT ed FROM latest)
+                GROUP BY product_name, LTRIM(COALESCE(upc,''),'0')""",
             {"ws": body.wholesaler, "code": body.combo_code},
         ).fetchdf()
 

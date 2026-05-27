@@ -25,3 +25,6 @@ frontend/.mobile-shots/
 # transparent_images.py) and Playwright verification scratch.
 image_backup/
 frontend/.verify/
+
+# Local working doc (incrementally drafted, not part of the repo)
+howto.md

@@ -146,14 +146,47 @@ def repoint(args):
     print("Now reload the live pricing cache (Admin -> Reload pricing, or POST /api/admin/reload-pricing).")
 
 
+def revert(args):
+    """Undo --repoint-db: point product_enrichment.image_url back to the original
+    (pre-transparency) image keys. Rebuilds the base->original-key map by listing
+    the bucket (originals are never deleted), so the correct original extension
+    (.jpg/.png/...) is restored. Run, then reload the live cache."""
+    import psycopg
+    url = args.database_url or os.getenv("DATABASE_URL")
+    if not url:
+        print("ERROR: --database-url (or DATABASE_URL) required for --revert-db"); sys.exit(1)
+    s3 = s3_client()
+    orig = {}
+    for page in s3.get_paginator("list_objects_v2").paginate(Bucket=BUCKET):
+        for o in page.get("Contents", []):
+            k = o["Key"]
+            if k.startswith(VERSION_PREFIX + "/") or not k.lower().endswith(IMG_EXT):
+                continue
+            orig.setdefault(k.rsplit(".", 1)[0], k)  # base -> original key
+    rows = [(f"{PUBLIC_BASE}/{k}", f"{PUBLIC_BASE}/{VERSION_PREFIX}/{base}.png")
+            for base, k in orig.items()]
+    with psycopg.connect(url, autocommit=True) as con:
+        con.execute("CREATE TEMP TABLE _rev(orig text, t1 text)")
+        with con.cursor() as cur:
+            cur.executemany("INSERT INTO _rev VALUES (%s, %s)", rows)
+        n = con.execute(
+            "UPDATE product_enrichment p SET image_url = r.orig "
+            "FROM _rev r WHERE p.image_url = r.t1").rowcount
+        print(f"reverted {n} rows back to original image URLs")
+    print("Now reload the live pricing cache. (Transparent t1/ PNGs remain on R2, so this is re-runnable.)")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--backup", default=str(ROOT / "image_backup"))
     ap.add_argument("--limit", type=int, default=0, help="process only N (test)")
-    ap.add_argument("--repoint-db", action="store_true", help="update DB image_url (run AFTER full processing)")
-    ap.add_argument("--database-url", help="live DB url for --repoint-db")
+    ap.add_argument("--repoint-db", action="store_true", help="update DB image_url to t1/ PNGs (run AFTER full processing)")
+    ap.add_argument("--revert-db", action="store_true", help="undo --repoint-db: point image_url back to the originals")
+    ap.add_argument("--database-url", help="live DB url for --repoint-db / --revert-db")
     args = ap.parse_args()
-    if args.repoint_db:
+    if args.revert_db:
+        revert(args)
+    elif args.repoint_db:
         repoint(args)
     else:
         process(args)

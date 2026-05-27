@@ -12,7 +12,7 @@ import CatalogFilterPanel, {
 } from '../components/CatalogFilterPanel';
 import type { CatalogFilters } from '../components/CatalogFilterPanel';
 import type { Product } from '../lib/api';
-import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 export default function Catalog() {
   const [params] = useSearchParams();
@@ -124,12 +124,17 @@ export default function Catalog() {
         <span className="search-count">{data?.total?.toLocaleString() ?? 0} results</span>
       </div>
 
+      {/* Always-visible edge tab to hide/show the filter panel. */}
+      <button
+        className={`edge-tab edge-tab-filters${showFilters ? ' is-open' : ''}`}
+        onClick={toggleFilters}
+        title={showFilters ? 'Hide filters' : 'Show filters'}
+        aria-label={showFilters ? 'Hide filters' : 'Show filters'}
+      >
+        {showFilters ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
+      </button>
+
       <div className="toolbar">
-        <button className="btn btn-secondary btn-sm" onClick={toggleFilters}
-          title={showFilters ? 'Hide filter panel' : 'Show filter panel'}>
-          {showFilters ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
-          {showFilters ? 'Hide Filters' : 'Show Filters'}
-        </button>
         <RowLimitSelect value={limit} onChange={v => { setLimit(v); setPage(0); }} />
         {activeFilterCount > 0 && (
           <button className="btn btn-secondary" onClick={() => setFilters({ ...emptyCatalogFilters })}>

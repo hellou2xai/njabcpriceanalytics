@@ -2050,14 +2050,26 @@ tr:hover .row-menu-btn { opacity: 1; }
 /* ---- Hide toggles: catalog filter panel + left nav ---- */
 .catalog-layout--full { grid-template-columns: 1fr; }
 .sidebar.nav-hidden { display: none; }
-.nav-reveal-btn {
-  position: fixed; top: 14px; left: 14px; z-index: 60;
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 38px; height: 38px; border-radius: 10px;
-  background: var(--surface); color: var(--text); border: 1px solid var(--border);
-  cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+/* Edge tabs: always-visible vertical handles pinned at a panel's edge to
+   collapse/expand it. Positioned via --nav-w (published by Layout) so they sit
+   correctly whether the nav is open, collapsed, or hidden. Desktop only. */
+.edge-tab {
+  position: fixed; z-index: 45; top: 50%; transform: translateY(-50%);
+  display: none; align-items: center; justify-content: center;
+  width: 17px; height: 64px; padding: 0;
+  background: var(--surface); color: var(--text-muted);
+  border: 1px solid var(--border); border-left: none;
+  border-radius: 0 9px 9px 0; cursor: pointer;
+  box-shadow: 2px 0 8px rgba(0,0,0,0.14);
+  transition: left 200ms ease, color 0.15s, border-color 0.15s;
 }
-.nav-reveal-btn:hover { color: var(--accent); border-color: var(--accent); }
+.edge-tab:hover { color: var(--accent); border-color: var(--accent); }
+.edge-tab-nav { left: var(--nav-w, 232px); z-index: 46; }
+.edge-tab-filters { left: calc(var(--nav-w, 232px) + 18px); }
+.edge-tab-filters.is-open { left: calc(var(--nav-w, 232px) + 316px); }
+@media (min-width: 1025px) {
+  .edge-tab { display: flex; }
+}
 .oa-empty {
   display: flex; flex-direction: column; align-items: center; gap: 8px;
   text-align: center; padding: 60px 24px; color: var(--text-muted);

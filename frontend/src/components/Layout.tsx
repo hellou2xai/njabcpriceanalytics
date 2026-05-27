@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   LayoutDashboard, Package, ShoppingCart, Bell, Star, Menu, X, Combine,
   Sun, Moon, LogOut, BadgeDollarSign, ClipboardList, LayoutGrid,
-  PanelLeftClose, PanelLeftOpen, StickyNote, UserCog, Settings, Shield, Sparkles, BookOpen, ListTodo,
+  ChevronLeft, ChevronRight, StickyNote, UserCog, Settings, Shield, Sparkles, BookOpen, ListTodo,
   Activity,
 } from 'lucide-react';
 import { alerts as alertsApi, orders as ordersApi, cart as cartApi } from '../lib/api';
@@ -112,6 +112,13 @@ export default function Layout() {
     }
   }, [collapsed, isMobile]);
 
+  // Publish the current nav width so fixed-position edge tabs can sit at the
+  // nav's right edge across open / collapsed / hidden states.
+  useEffect(() => {
+    const w = isMobile || navHidden ? '0px' : collapsed ? 'var(--sidebar-collapsed)' : 'var(--sidebar-w)';
+    document.documentElement.style.setProperty('--nav-w', w);
+  }, [isMobile, navHidden, collapsed]);
+
   // Close mobile sidebar on route change
   useEffect(() => {
     if (isMobile) setMobileOpen(false);
@@ -177,10 +184,16 @@ export default function Layout() {
         </button>
       )}
 
-      {/* Desktop: reveal button when the nav is fully hidden */}
-      {!isMobile && navHidden && (
-        <button className="nav-reveal-btn" onClick={() => setNavHidden(false)} title="Show menu" aria-label="Show menu">
-          <PanelLeftOpen size={20} />
+      {/* Desktop: an always-visible edge tab pinned at the nav's right edge to
+          hide/show the whole nav. */}
+      {!isMobile && (
+        <button
+          className="edge-tab edge-tab-nav"
+          onClick={() => setNavHidden(h => !h)}
+          title={navHidden ? 'Show menu' : 'Hide menu'}
+          aria-label={navHidden ? 'Show menu' : 'Hide menu'}
+        >
+          {navHidden ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
         </button>
       )}
 
@@ -203,11 +216,6 @@ export default function Layout() {
             <button className="sidebar-toggle" onClick={toggleSidebar}>
               {(isMobile && mobileOpen) || (!isMobile && !collapsed) ? <X size={18} /> : <Menu size={18} />}
             </button>
-            {!isMobile && (
-              <button className="sidebar-toggle" onClick={() => setNavHidden(true)} title="Hide menu">
-                <PanelLeftClose size={18} />
-              </button>
-            )}
           </div>
         </div>
         <nav className="sidebar-nav">

@@ -91,8 +91,7 @@ export default function Landing() {
         <div className="lp-container lp-hero-grid">
           <div>
             <div className="lp-hero-head">
-              <span className="lp-chip accent"><span className="lp-chip-dot" />Oct 2025 · eCPL template live</span>
-              <span className="lp-hero-note">Built for Type 44 owners</span>
+              <span className="lp-chip accent"><span className="lp-chip-dot" />Made for NJ Liquor Retailers</span>
             </div>
             <h1 className="lp-h1">
               Every deal, spotted.<br />

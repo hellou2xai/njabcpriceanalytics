@@ -1408,10 +1408,11 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
 .web-link-why { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
 
 .catalog-table-wrap { overflow-x: auto; }
-/* Desktop: scroll the table inside its own box so the sticky <thead> (below)
-   stays pinned on scroll. Mobile keeps plain page scroll. */
+/* Desktop: the app shell already scrolls the content area, so let the table
+   flow normally and the sticky <thead> pins to that scroll — no second
+   (inner) scrollbar. Mobile keeps the table's own horizontal scroll. */
 @media (min-width: 1025px) {
-  .catalog-table-wrap { overflow: auto; max-height: calc(100vh - 190px); }
+  .catalog-table-wrap { overflow: visible; }
 }
 .catalog-table {
   width: 100%;

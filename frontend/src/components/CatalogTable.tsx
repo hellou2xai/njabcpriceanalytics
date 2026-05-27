@@ -217,14 +217,12 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                   return (
                     <tr key={`${reactKey}_${idx}`} className="catalog-row-sub" data-tier-met={tierMet}>
                       <td></td>
-                      <td colSpan={showIntroduced ? 6 : 5} style={{ paddingLeft: 24 }}>
+                      <td colSpan={showIntroduced ? 7 : 6} style={{ paddingLeft: 24 }}>
                         <span className={`source-badge source-${t.source}`}>{t.source === 'discount' ? 'DISC' : 'RIP'}</span>
-                        {t.description && <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>{t.description}</span>}
-                      </td>
-                      <td>
-                        <span className={`rip-tier-badge ${t.source === 'discount' ? 'rip-tier-curr' : 'rip-tier-next'}`}>
+                        <span className={`rip-tier-badge ${t.source === 'discount' ? 'rip-tier-curr' : 'rip-tier-next'}`} style={{ marginLeft: 8 }}>
                           Buy {t.qty} {shortUnit(t.unit)} = <strong>${t.amount.toFixed(2)}</strong>
                         </span>
+                        {t.description && <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>{t.description}</span>}
                       </td>
                       <td className="right">
                         <span className="text-green font-bold">{fmt(t.save_per_case)}</span>

@@ -82,7 +82,8 @@ function ComboCartCell({ combo }: { combo: Combo }) {
     ? combo.comments.replace(/^\s*contains:\s*/i, '')
     : (combo.product_name ?? `Combo ${combo.combo_code}`);
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 130 }} onClick={e => e.stopPropagation()}>
+    <div className="catalog-order-inline" onClick={e => e.stopPropagation()}
+      style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
       <QtyStepper label="Qty" value={qty} onChange={v => setQty(Math.max(1, v))} />
       <button type="button" className={`btn btn-sm add-to-cart-btn${flash ? ' is-added' : ''}`}
         disabled={add.isPending} onClick={() => add.mutate()}>

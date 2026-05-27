@@ -507,7 +507,10 @@ def search_products(
         _in_filter(where, params, "wholesaler", divisions, "div_")
         _in_filter(where, params, "product_type", categories, "cat_")
         _in_filter(where, params, "brand", brands, "brnd_")
-        _in_filter(where, params, "unit_volume", sizes, "size_")
+        # Size filters on the standardized bucket so e.g. "750ML" also matches a
+        # bottle stored as "25.33OZ". COALESCE keeps it working if the cache
+        # predates the unit_volume_std column.
+        _in_filter(where, params, "COALESCE(unit_volume_std, unit_volume)", sizes, "size_")
 
         # Restrict to watchlisted products across ALL editions/pages (server-side
         # so tracked items aren't hidden by pagination). Match on (name, wholesaler).
@@ -2040,7 +2043,7 @@ def search_facets(
         add_in("div", "wholesaler", divisions, "fdiv_")
         add_in("cat", "product_type", categories, "fcat_")
         add_in("brand", "brand", brands, "fbrnd_")
-        add_in("size", "unit_volume", sizes, "fsize_")
+        add_in("size", "COALESCE(unit_volume_std, unit_volume)", sizes, "fsize_")
         if min_price is not None or max_price is not None:
             parts, pp = [], {}
             if min_price is not None: parts.append("frontline_case_price >= $fmin"); pp["fmin"] = min_price
@@ -2103,7 +2106,7 @@ def search_facets(
             # real "in a combo" concept is the In combo filter, counted above.
             "categories": grouped("product_type", "cat", "product_type <> 'Combo'"),
             "brands": grouped("brand", "brand"),
-            "sizes": grouped("unit_volume", "size"),
+            "sizes": grouped("COALESCE(unit_volume_std, unit_volume)", "size"),
         }
 
 

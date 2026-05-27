@@ -145,6 +145,35 @@ def build_pricing_cache() -> Path:
                 """)
             except Exception:
                 pass
+
+            # Precompute a standardized size bucket so the Size filter groups by
+            # real physical size (750ML, 1.75L, Keg / Bulk, ...) and filters
+            # correctly, instead of the ~180 noisy raw unit_volume spellings
+            # (oz-expressed bottles, LITER vs 1L, keg ounces, etc.). The mapping
+            # is built from the distinct values actually present, so new months
+            # with new spellings still normalize. See backend/size_std.py.
+            try:
+                from backend.size_std import build_size_map
+                con.execute("ALTER TABLE cpl_enriched ADD COLUMN unit_volume_std VARCHAR")
+                raws = [r[0] for r in con.execute(
+                    "SELECT DISTINCT unit_volume FROM cpl_enriched "
+                    "WHERE unit_volume IS NOT NULL AND unit_volume <> ''"
+                ).fetchall()]
+                mp = build_size_map(raws)
+                con.execute("CREATE TEMP TABLE _size_map(raw VARCHAR, std VARCHAR)")
+                if mp:
+                    con.executemany("INSERT INTO _size_map VALUES (?, ?)", list(mp.items()))
+                con.execute(
+                    "UPDATE cpl_enriched SET unit_volume_std = m.std "
+                    "FROM _size_map m WHERE m.raw = cpl_enriched.unit_volume"
+                )
+                # Anything with a size we couldn't map still gets a bucket.
+                con.execute(
+                    "UPDATE cpl_enriched SET unit_volume_std = 'Other' "
+                    "WHERE unit_volume_std IS NULL AND unit_volume IS NOT NULL AND unit_volume <> ''"
+                )
+            except Exception:
+                pass
         finally:
             con.close()
         old = _current_path

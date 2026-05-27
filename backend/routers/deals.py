@@ -1,11 +1,12 @@
 ﻿"""
-Deals API â€” discounts, clearance, combos, RIPs.
+Deals API. Discounts, clearance, combos, RIPs.
 
 Covers: Â§7 Discount/Offer Views
 """
 
 import math
 import re
+import threading
 
 from fastapi import APIRouter, Query
 from typing import Optional
@@ -40,7 +41,7 @@ def get_top_discounts(
     limit: int = Query(50, ge=1, le=1000),
     per_category: bool = Query(False, description="If true, return top `limit` per product category instead of overall"),
 ):
-    """Discount ranker — §7.1.
+    """Discount ranker. §7.1.
 
     Baselines on the *current* edition (second-latest = this month) and looks up
     the *next* edition's effective price so each row can say whether it's cheaper
@@ -173,7 +174,7 @@ def get_clearance_items(
     edition: Optional[str] = None,
     limit: int = Query(50, ge=1, le=1000),
 ):
-    """Clearance / closeout items â€” Â§7.2"""
+    """Clearance / closeout items. Â§7.2"""
     with get_duckdb() as con:
         src = read_parquet(con, "cpl_enriched")
         where = ["has_closeout = true"]
@@ -241,7 +242,7 @@ def get_combos(
     q: str = "",
     limit: int = Query(50, ge=1, le=100000),
 ):
-    """Bundle/combo deals — ONE row per combo (components grouped). §7.3
+    """Bundle/combo deals. ONE row per combo (components grouped). §7.3
 
     The source has one row per bundle component (and sometimes duplicate
     component rows), with combo_pack_price/total_savings constant per
@@ -256,7 +257,7 @@ def get_combos(
         current_ym = f"{t.year:04d}-{t.month:02d}"
 
         # Per-wholesaler current edition (latest <= this month, else newest) and
-        # the next edition after it — so we can show this-vs-next-month outlook.
+        # the next edition after it, so we can show this-vs-next-month outlook.
         ed_df = con.execute(f"SELECT DISTINCT wholesaler, edition FROM {src}").fetchdf()
         by_ws = defaultdict(list)
         for _, r in ed_df.iterrows():
@@ -507,7 +508,7 @@ def get_active_rips(
     q: str = "",
     limit: int = Query(50, ge=1, le=1000),
 ):
-    """Active RIP promotions â€” Â§7.4"""
+    """Active RIP promotions. Â§7.4"""
     with get_duckdb() as con:
         src = read_parquet(con, "rip")
         where = ["1=1"]
@@ -575,26 +576,23 @@ def _extract_tiers(row):
     return tiers
 
 
-@router.get("/rip-products")
-def get_rip_products(
-    wholesaler: Optional[str] = None,
-    product_type: Optional[str] = None,
-    q: str = "",
-    rip_code: Optional[str] = None,
-    min_savings: Optional[float] = None,
-    min_gp: Optional[float] = None,
-    tier_unit: Optional[str] = None,   # 'case' | 'btl'
-    new_next: bool = False,
-    source: Optional[str] = None,
-    sort: str = Query("rip_save_per_case", description="Sort field"),
-    order: str = Query("desc", description="asc or desc"),
-    limit: int = Query(50, ge=1, le=1000),
-    offset: int = Query(0, ge=0),
-):
-    """Products with incentives â€” DISCOUNT tiers (CPL) and RIP tiers (RIP sheet, by rip_code+upc), curr+next side by side."""
+def _norm_unit(u):
+    """Normalise a unit label to 'case' | 'btl' (used by the RIP tier filters)."""
+    if u is None:
+        return ""
+    s = str(u).lower().strip()
+    if s in ("c", "case", "cases") or s.startswith("case"):
+        return "case"
+    if s in ("b", "btl", "bottle", "bottles") or s.startswith("btl") or s.startswith("bottle"):
+        return "btl"
+    return s
+
+
+def _build_rip_items(con, wholesaler=None, product_type=None, q="", rip_code=None):
+    """Products with incentives: DISCOUNT tiers (CPL) and RIP tiers (RIP sheet, by rip_code+upc), curr+next side by side."""
     import pandas as pd
 
-    with get_duckdb() as con:
+    if True:
         src = read_parquet(con, "cpl_enriched")
         rip_src = read_parquet(con, "rip")
 
@@ -834,7 +832,7 @@ def get_rip_products(
                 "gp_pct": gp_pct,
             }
 
-        # 6. Emit one row per (product+upc, tier) â€” union of tier (unit, qty) across editions
+        # 6. Emit one row per (product+upc, tier): union of tier (unit, qty) across editions
         items = []
         for p in product_map.values():
             curr = p["curr"]
@@ -927,6 +925,73 @@ def get_rip_products(
                 row["discount_pct"] = max(row["curr_discount_pct"] or 0, row["next_discount_pct"] or 0)
 
                 items.append(row)
+
+        return items
+
+
+# In-memory cache of the full (unfiltered) RIP tier list. It only changes when the
+# pricing cache is rebuilt, so we key it on the current cache file path and rebuild
+# when that pointer moves (a data reload). Warmed at startup so the first page open
+# is instant; a text search or a specific rip_code is always built fresh.
+_rip_lock = threading.Lock()
+_rip_cache: dict = {"token": None, "items": None}
+
+
+def _rip_items_cached(con):
+    from backend.pricing_cache import get_pricing_path
+    token = str(get_pricing_path())
+    if _rip_cache["token"] == token and _rip_cache["items"] is not None:
+        return _rip_cache["items"]
+    with _rip_lock:
+        if _rip_cache["token"] == token and _rip_cache["items"] is not None:
+            return _rip_cache["items"]
+        items = _build_rip_items(con)
+        _rip_cache["items"] = items
+        _rip_cache["token"] = token
+        return items
+
+
+def warm_rip_cache():
+    """Precompute the cached RIP tier list so the first RIP Products load is fast."""
+    try:
+        with get_duckdb() as con:
+            _rip_items_cached(con)
+    except Exception as e:
+        print(f"[startup] RIP cache warm skipped: {e}")
+
+
+@router.get("/rip-products")
+def get_rip_products(
+    wholesaler: Optional[str] = None,
+    product_type: Optional[str] = None,
+    q: str = "",
+    rip_code: Optional[str] = None,
+    min_savings: Optional[float] = None,
+    min_gp: Optional[float] = None,
+    tier_unit: Optional[str] = None,   # 'case' | 'btl'
+    new_next: bool = False,
+    source: Optional[str] = None,
+    sort: str = Query("rip_save_per_case", description="Sort field"),
+    order: str = Query("desc", description="asc or desc"),
+    limit: int = Query(50, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+):
+    """Products with incentives: DISCOUNT tiers (CPL) and RIP tiers (RIP sheet, by
+    rip_code+upc), current + next edition side by side.
+
+    The heavy tier build is cached (see _rip_items_cached) and reused across
+    requests. A text search (q) or a specific rip_code is built fresh; every other
+    view (including distributor and product-type filters) is served from the cache
+    and filtered/sorted in memory, so the common page load is fast."""
+    with get_duckdb() as con:
+        if q or rip_code:
+            items = _build_rip_items(con, wholesaler, product_type, q, rip_code)
+        else:
+            items = list(_rip_items_cached(con))
+            if wholesaler:
+                items = [i for i in items if i.get("wholesaler") == wholesaler]
+            if product_type:
+                items = [i for i in items if i.get("product_type") == product_type]
 
         if min_savings is not None:
             items = [i for i in items if (i["rip_save_per_case"] or 0) >= min_savings]

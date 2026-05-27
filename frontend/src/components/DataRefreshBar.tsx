@@ -1,30 +1,40 @@
 import { useEffect, useRef, useState } from 'react';
-import { useIsFetching } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { RefreshCw, Check } from 'lucide-react';
 
 /**
- * Global data-loading indicator shown on every page (mounted in Layout):
- *   - a thin animated progress bar across the very top of the window, plus a
- *     "Fetching data…" pill, whenever ANY page is fetching (first load or refresh)
- *   - a brief "Data refreshed" confirmation when the fetches finish.
- * Driven by React Query's global fetch count, so no page has to wire its own.
+ * Global data-loading indicator (mounted in Layout). Shows a thin top progress bar
+ * + "Fetching data…" pill ONLY for INITIAL loads, i.e. queries that are fetching
+ * with no cached data yet (status 'pending'). Background refetches and mutation
+ * invalidations (which already have data) do NOT trigger it, so it appears once
+ * when you open a screen rather than flashing on every refresh.
  */
 export default function DataRefreshBar() {
-  const fetching = useIsFetching();
-  const prev = useRef(0);
+  const qc = useQueryClient();
+  const [loading, setLoading] = useState(0);
   const [done, setDone] = useState(false);
+  const prev = useRef(0);
 
   useEffect(() => {
-    if (prev.current > 0 && fetching === 0) {
+    const cache = qc.getQueryCache();
+    const compute = () =>
+      cache.getAll().filter(q => q.state.fetchStatus === 'fetching' && q.state.status === 'pending').length;
+    const update = () => setLoading(compute());
+    update();
+    return cache.subscribe(update);
+  }, [qc]);
+
+  useEffect(() => {
+    if (prev.current > 0 && loading === 0) {
       setDone(true);
-      const t = setTimeout(() => setDone(false), 1500);
-      prev.current = fetching;
+      const t = setTimeout(() => setDone(false), 1200);
+      prev.current = loading;
       return () => clearTimeout(t);
     }
-    prev.current = fetching;
-  }, [fetching]);
+    prev.current = loading;
+  }, [loading]);
 
-  if (fetching > 0) {
+  if (loading > 0) {
     return (
       <>
         <div className="data-progress"><div className="data-progress-fill" /></div>
@@ -37,7 +47,7 @@ export default function DataRefreshBar() {
   if (done) {
     return (
       <div className="data-refresh-bar is-done" role="status" aria-live="polite">
-        <Check size={13} /> Data refreshed
+        <Check size={13} /> Data loaded
       </div>
     );
   }

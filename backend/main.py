@@ -79,6 +79,11 @@ def startup():
     try:
         from backend.pricing_cache import build_pricing_cache
         build_pricing_cache()
+        # Warm the RIP Products tier cache in the background so the first open of
+        # that (heavy) page is instant. Never blocks startup or the health check.
+        import threading
+        from backend.routers.deals import warm_rip_cache
+        threading.Thread(target=warm_rip_cache, daemon=True).start()
     except Exception as e:
         # If the pricing tables aren't in Postgres yet (no ingestion run), the
         # cache builds lazily on the first request instead of blocking startup.
@@ -99,6 +104,10 @@ def reload_pricing(user: dict = Depends(get_current_user)):
     from backend.pricing_cache import build_pricing_cache, ALL_TABLES
     from backend.db import get_duckdb
     build_pricing_cache()
+    # Rebuild the RIP tier cache against the new data, in the background.
+    import threading
+    from backend.routers.deals import warm_rip_cache
+    threading.Thread(target=warm_rip_cache, daemon=True).start()
     with get_duckdb() as con:
         counts = {t: con.execute(f"SELECT count(*) FROM {t}").fetchone()[0] for t in ALL_TABLES}
     return {"status": "reloaded", "counts": counts}

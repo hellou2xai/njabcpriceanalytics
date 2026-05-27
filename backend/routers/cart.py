@@ -135,10 +135,15 @@ def _attach_cart_pricing(dcon, items):
         if r is not None:
             it["frontline_case_price"] = cl(r["fcp"])
             it["frontline_unit_price"] = cl(r["fup"])
-            it["effective_case_price"] = cl(r["ecp"])
-            uq, ecp = cl(r["uq"]), cl(r["ecp"])
-            it["effective_unit_price"] = round(ecp / uq, 2) if (ecp and uq) else cl(r["fup"])
+            ecp = cl(r["ecp"])
+            it["effective_case_price"] = ecp
+            try:                                  # unit_qty (bottles/case) is stored as text
+                uq = float(r["uq"])
+                uq = None if _m.isnan(uq) else uq
+            except Exception:
+                uq = None
             it["unit_qty"] = uq
+            it["effective_unit_price"] = round(ecp / uq, 2) if (ecp and uq) else cl(r["fup"])
             it["has_discount"] = bool(r["hd"])
             it["has_rip"] = bool(r["hr"])
             it["discount_pct"] = cl(r["dp"])
@@ -147,7 +152,10 @@ def _attach_cart_pricing(dcon, items):
         _attach_discount_rip_tiers(dcon, items)  # adds a `tiers` list per item
     except Exception:
         pass
-    _attach_combo_pricing(dcon, items)
+    try:
+        _attach_combo_pricing(dcon, items)        # bundle pricing must never break the cart
+    except Exception:
+        pass
 
 
 def _attach_combo_pricing(dcon, items):
@@ -247,8 +255,14 @@ def get_cart(user: dict = Depends(get_current_user)):
         ).fetchall()}
     if items:
         with get_duckdb() as dcon:
-            attach_enrichment_image(dcon, items)
-            _attach_cart_pricing(dcon, items)
+            try:
+                attach_enrichment_image(dcon, items)
+            except Exception:
+                pass
+            try:
+                _attach_cart_pricing(dcon, items)   # never let pricing break the cart load
+            except Exception:
+                pass
     for it in items:
         rep = reps.get(it.get("sales_rep_id"))
         it["sales_rep_name"] = rep["name"] if rep else None

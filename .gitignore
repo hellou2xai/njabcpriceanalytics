@@ -20,3 +20,8 @@ goupc_test_*.zip
 
 # Mobile screenshot scratch output (capture_mobile.mjs)
 frontend/.mobile-shots/
+
+# Local backup of R2 product images (large; created by backup_r2_images.py /
+# transparent_images.py) and Playwright verification scratch.
+image_backup/
+frontend/.verify/

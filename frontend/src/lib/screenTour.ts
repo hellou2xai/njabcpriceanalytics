@@ -56,7 +56,9 @@ export async function runScreenTour(steps: ScreenStep[], onCleanup?: () => void)
   const prep = async (step?: ScreenStep) => {
     if (!step) return;
     if (step.before) { try { await step.before(); } catch { /* best effort */ } }
-    await waitForEl(step.element);
+    // Short wait: if a step's element is absent (e.g. a conditional row on an
+    // empty page), fall back to a centred popover quickly rather than stalling.
+    await waitForEl(step.element, 1200);
   };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

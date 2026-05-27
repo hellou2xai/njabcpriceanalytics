@@ -86,7 +86,7 @@ function ComboCartCell({ combo }: { combo: Combo }) {
       <QtyStepper label="Qty" value={qty} onChange={v => setQty(Math.max(1, v))} />
       <button type="button" className={`btn btn-sm add-to-cart-btn${flash ? ' is-added' : ''}`}
         disabled={add.isPending} onClick={() => add.mutate()}>
-        {flash ? <><Check size={15} /> Added</> : <><ShoppingCart size={15} /> Add to cart</>}
+        {flash ? <><Check size={13} /> Added</> : <><ShoppingCart size={13} /> Add to cart</>}
       </button>
       <AddToListButton productName={label} wholesaler={combo.wholesaler} comboCode={combo.combo_code} />
     </div>
@@ -340,6 +340,7 @@ export default function Combos() {
                     <div className="combo-contains combo-contains-muted">
                       Combo #{r.combo_code}{r.item_count ? ` · ${r.item_count} item${r.item_count !== 1 ? 's' : ''}` : ''}
                     </div>
+                    <ComboCartCell combo={r} />
                   </div>
                 );
               } },
@@ -385,7 +386,6 @@ export default function Combos() {
               } },
             { key: 'recommendation', label: 'Outlook', sortable: true,
               render: r => <span className="combo-rec" data-rec={recVariant(r.recommendation)}>{r.recommendation ?? '—'}</span> },
-            { key: '_order', label: 'Order', render: r => <ComboCartCell combo={r} /> },
           ]}
           data={items.map(i => ({ ...i, _pct_off: breakdown(i).pctOff, _regular_value: breakdown(i).regularValue }))}
           pageSize={limit}

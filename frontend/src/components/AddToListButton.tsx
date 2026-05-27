@@ -65,7 +65,7 @@ export default function AddToListButton({ productName, wholesaler, upc, unitVolu
         onClick={toggle}
         disabled={busy}
       >
-        {flash ? <><Check size={15} /> Added</> : <><ListPlus size={15} /> Add to list</>}
+        {flash ? <><Check size={13} /> Added</> : <><ListPlus size={13} /> Add to list</>}
       </button>
       {open && pos && (
         <>

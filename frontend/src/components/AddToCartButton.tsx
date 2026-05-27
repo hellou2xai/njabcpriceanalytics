@@ -38,7 +38,7 @@ export default function AddToCartButton({ productName, wholesaler, upc, unitVolu
       onClick={e => { e.stopPropagation(); add.mutate(); }}
       disabled={add.isPending}
     >
-      {added ? <><Check size={15} /> Added</> : <><Plus size={15} /> Add to cart</>}
+      {added ? <><Check size={13} /> Added</> : <><Plus size={13} /> Add to cart</>}
     </button>
   );
 }

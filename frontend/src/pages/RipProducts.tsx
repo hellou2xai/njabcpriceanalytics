@@ -299,7 +299,6 @@ export default function RipProducts() {
                   {headerEditions.next ? `Next (${shortMonth(headerEditions.next)})` : 'Next'}
                 </th>
                 <th></th>
-                <th></th>
               </tr>
               <tr>
                 <th style={{ width: 36 }}></th>
@@ -335,7 +334,6 @@ export default function RipProducts() {
                   Effective{sortIcon('next_effective_case_price')}
                 </th>
                 <th>Better</th>
-                <th>Order</th>
               </tr>
             </thead>
             <tbody>
@@ -374,12 +372,29 @@ export default function RipProducts() {
                     </td>
                     <td className="card-title-cell">
                       {isFirstForProduct ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <ProductThumb src={item.image_url} alt={item.product_name} size={64} />
-                          <div className="rip-cell-product">
-                            <span className="rip-product-name">{item.product_name}</span>
-                            <span className="rip-product-code">{item.upc}</span>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <ProductThumb src={item.image_url} alt={item.product_name} size={64} />
+                            <div className="rip-cell-product">
+                              <span className="rip-product-name">{item.product_name}</span>
+                              <span className="rip-product-code">{item.upc}</span>
+                            </div>
                           </div>
+                          {(() => {
+                            const ckey = `${item.product_name}|${item.wholesaler}`;
+                            const q = cart[ckey] ?? { cases: 0, units: 0 };
+                            return (
+                              <div className="catalog-order-inline" onClick={e => e.stopPropagation()}
+                                style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                <QtyStepper label="Case" value={q.cases} onChange={v => updateQty(ckey, 'cases', v)} />
+                                <QtyStepper label="Btl" value={q.units} onChange={v => updateQty(ckey, 'units', v)} />
+                                <AddToCartButton productName={item.product_name} wholesaler={item.wholesaler}
+                                  upc={item.upc} unitVolume={item.unit_volume} qtyCases={q.cases} qtyUnits={q.units} />
+                                <AddToListButton productName={item.product_name} wholesaler={item.wholesaler}
+                                  upc={item.upc} unitVolume={item.unit_volume} />
+                              </div>
+                            );
+                          })()}
                         </div>
                       ) : (
                         <span className="rip-sub-indicator">&nbsp;</span>
@@ -442,22 +457,6 @@ export default function RipProducts() {
                         return bm
                           ? <span className="better-price-badge" data-variant={bm.variant}>{bm.label}</span>
                           : <span className="text-muted">—</span>;
-                      })()}
-                    </td>
-                    <td data-label="Order" onClick={e => e.stopPropagation()}>
-                      {isFirstForProduct && (() => {
-                        const ckey = `${item.product_name}|${item.wholesaler}`;
-                        const q = cart[ckey] ?? { cases: 0, units: 0 };
-                        return (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 120 }}>
-                            <QtyStepper label="Btl" value={q.units} onChange={v => updateQty(ckey, 'units', v)} />
-                            <QtyStepper label="Case" value={q.cases} onChange={v => updateQty(ckey, 'cases', v)} />
-                            <AddToCartButton productName={item.product_name} wholesaler={item.wholesaler}
-                              upc={item.upc} unitVolume={item.unit_volume} qtyCases={q.cases} qtyUnits={q.units} />
-                            <AddToListButton productName={item.product_name} wholesaler={item.wholesaler}
-                              upc={item.upc} unitVolume={item.unit_volume} />
-                          </div>
-                        );
                       })()}
                     </td>
                   </tr>

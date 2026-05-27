@@ -68,10 +68,10 @@ export default function Lists() {
 
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         {/* List selector */}
-        <div className="panel" style={{ padding: 10, minWidth: 200 }}>
+        <div className="panel" data-tour="lists-panel" style={{ padding: 10, minWidth: 200 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <strong>My lists</strong>
-            <button className="btn btn-secondary btn-sm" title="New list"
+            <button className="btn btn-secondary btn-sm" data-tour="lists-new" title="New list"
               onClick={() => { const n = prompt('New list name'); if (n) createList.mutate(n); }}><Plus size={14} /></button>
           </div>
           {(lists ?? []).map(l => (
@@ -87,7 +87,7 @@ export default function Lists() {
         </div>
 
         {/* Selected list */}
-        <div className="panel" style={{ padding: 12, flex: 1, minWidth: 320 }}>
+        <div className="panel" data-tour="lists-detail" style={{ padding: 12, flex: 1, minWidth: 320 }}>
           {activeId == null ? (
             <p style={{ color: 'var(--text-muted)' }}>Create or pick a list.</p>
           ) : (
@@ -102,7 +102,7 @@ export default function Lists() {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: 8, margin: '10px 0' }}>
+              <div style={{ display: 'flex', gap: 8, margin: '10px 0' }} data-tour="lists-move">
                 <button className="btn btn-primary btn-sm" disabled={items.length === 0}
                   onClick={() => moveToCart.mutate(selIds)}>
                   <ShoppingCart size={14} /> Move {selIds.length || 'all'} to cart
@@ -114,7 +114,7 @@ export default function Lists() {
               </div>
 
               <ContextMenuProvider onView={open}>
-                <table className="catalog-table">
+                <table className="catalog-table" data-tour="lists-items">
                   <thead>
                     <tr>
                       <th style={{ width: 28 }}><input type="checkbox" checked={allChecked} onChange={toggleAll} /></th>

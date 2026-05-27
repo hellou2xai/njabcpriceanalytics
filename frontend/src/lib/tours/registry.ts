@@ -19,6 +19,12 @@ import { launchCartTour } from './cartTour';
 import { launchFavoritesTour } from './favoritesTour';
 import { launchTodoTour } from './todoTour';
 import { launchNotesTour } from './notesTour';
+import { launchOrdersTour } from './ordersTour';
+import { launchListsTour } from './listsTour';
+import { launchDashboardTour } from './dashboardTour';
+import { launchAlertsTour } from './alertsTour';
+import { launchConfigurationTour } from './configurationTour';
+import { LayoutDashboard, Bell } from 'lucide-react';
 
 export interface TourMeta {
   id: string;
@@ -52,7 +58,9 @@ export const TOURS: TourMeta[] = [
   { id: 'favorites', title: 'Favorites', desc: 'Tracking products, setting a target price, and reading the buy signal.', meta: '11 steps', icon: Star, accent: '#f59e0b', run: (navigate) => launchFavoritesTour(navigate) },
   { id: 'todo', title: 'To-Do', desc: 'The weekly board, adding tasks, the card actions, and dragging to reschedule.', meta: '13 steps', icon: ListTodo, accent: '#0ea5e9', run: (navigate) => launchTodoTour(navigate) },
   { id: 'notes', title: 'Notes', desc: 'Sticky notes and the single feed of everything you have written.', meta: '11 steps', icon: StickyNote, accent: '#eab308', run: (navigate) => launchNotesTour(navigate) },
-  { id: 'orders', title: 'Orders', desc: 'Sent purchase orders, reopening and re-submitting, and the PDF.', meta: 'Coming soon', icon: Receipt, accent: '#94a3b8' },
-  { id: 'lists', title: 'Lists', desc: 'Building reusable buying lists and moving them into the cart.', meta: 'Coming soon', icon: ClipboardList, accent: '#94a3b8' },
-  { id: 'config', title: 'Configuration', desc: 'Adding sales reps, divisions and stores so orders route correctly.', meta: 'Coming soon', icon: Settings, accent: '#94a3b8' },
+  { id: 'orders', title: 'Orders', desc: 'Sent purchase orders, status filters, reopening and re-submitting, and the PDF.', meta: '12 steps', icon: Receipt, accent: '#0891b2', run: (navigate) => launchOrdersTour(navigate) },
+  { id: 'lists', title: 'Lists', desc: 'Building reusable buying lists and moving them into the cart.', meta: '12 steps', icon: ClipboardList, accent: '#65a30d', run: (navigate) => launchListsTour(navigate) },
+  { id: 'dashboard', title: 'Dashboard', desc: 'The KPI cards, your workspace, and the opportunity tiles, with the distributor filter.', meta: '12 steps', icon: LayoutDashboard, accent: '#2563eb', run: (navigate) => launchDashboardTour(navigate) },
+  { id: 'alerts', title: 'Alerts', desc: 'The grouped digest of opportunities and watch-outs, and how it auto-refreshes.', meta: '12 steps', icon: Bell, accent: '#dc2626', run: (navigate) => launchAlertsTour(navigate) },
+  { id: 'config', title: 'Configuration', desc: 'Adding sales reps, divisions and stores so orders route correctly.', meta: '7 steps', icon: Settings, accent: '#475569', run: (navigate) => launchConfigurationTour(navigate) },
 ];

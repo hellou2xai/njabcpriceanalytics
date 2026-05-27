@@ -33,12 +33,12 @@ export default function AddToCartButton({ productName, wholesaler, upc, unitVolu
   return (
     <button
       type="button"
-      className="btn btn-secondary btn-sm"
+      className={`btn btn-sm add-to-cart-btn${added ? ' is-added' : ''}`}
       title="Add to cart"
       onClick={e => { e.stopPropagation(); add.mutate(); }}
       disabled={add.isPending}
     >
-      {added ? <Check size={16} /> : <Plus size={16} />}
+      {added ? <><Check size={15} /> Added</> : <><Plus size={15} /> Add to cart</>}
     </button>
   );
 }

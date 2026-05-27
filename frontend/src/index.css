@@ -558,6 +558,15 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
 }
 @keyframes dl-spin { to { transform: rotate(360deg); } }
 
+/* Add-to-cart button (catalog Order column): labelled, not a bare "+". */
+.add-to-cart-btn {
+  display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+  background: var(--accent); color: #fff; border: 1px solid var(--accent);
+}
+.add-to-cart-btn:hover { filter: brightness(1.06); }
+.add-to-cart-btn.is-added { background: var(--green); border-color: var(--green); }
+.add-to-cart-btn:disabled { opacity: 0.6; cursor: default; }
+
 /* ---- Row Limit Select ---- */
 .row-limit-select {
   padding: 4px 8px; background: var(--surface); border: 1px solid var(--border);

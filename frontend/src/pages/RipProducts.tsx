@@ -444,7 +444,7 @@ export default function RipProducts() {
                           : <span className="text-muted">—</span>;
                       })()}
                     </td>
-                    <td onClick={e => e.stopPropagation()}>
+                    <td data-label="Order" onClick={e => e.stopPropagation()}>
                       {isFirstForProduct && (() => {
                         const ckey = `${item.product_name}|${item.wholesaler}`;
                         const q = cart[ckey] ?? { cases: 0, units: 0 };

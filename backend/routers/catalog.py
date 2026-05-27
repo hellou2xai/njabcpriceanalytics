@@ -107,6 +107,32 @@ def _in_filter(where, params, column, csv, prefix):
     where.append(f"{column} IN ({', '.join(keys)})")
 
 
+def _q_clause(q: str) -> tuple[str, dict]:
+    """Build the search predicate for a free-text query, with its params.
+
+    A text query matches every whitespace token against the product name (AND),
+    so "chivas 12" finds "CHIVAS REGAL 12YR" but not unrelated items. A query
+    that is essentially a barcode (mostly digits) is matched against the UPC
+    with leading-zero tolerance. The key fix: we do NOT match the digits inside
+    a text query against the UPC, which previously made "chivas 12" match every
+    product whose barcode merely contained "12"."""
+    tokens = [t for t in q.split() if t]
+    params: dict = {}
+    name_clauses = []
+    for i, tok in enumerate(tokens):
+        params[f"qt{i}"] = f"%{tok}%"
+        name_clauses.append(f"UPPER(product_name) LIKE UPPER($qt{i})")
+    name_match = " AND ".join(name_clauses) if name_clauses else "TRUE"
+
+    compact = q.replace(" ", "").replace("-", "")
+    if compact.isdigit() and len(compact) >= 4:
+        digits_norm = compact.lstrip("0") or compact
+        params["q_upc"] = f"%{compact}%"
+        params["q_upc2"] = f"%{digits_norm}%"
+        return f"(({name_match}) OR upc LIKE $q_upc OR upc LIKE $q_upc2)", params
+    return f"({name_match})", params
+
+
 def _attach_next_month_prices(con, src, records):
     """Annotate each record with next-month price + a "Better Price" verdict.
 
@@ -442,23 +468,9 @@ def search_products(
         params = {}
 
         if q:
-            # Be tolerant of UPC queries with leading zeros, hyphens, or spaces:
-            # also try matching against the digit-only, leading-zero-stripped form.
-            digits = "".join(ch for ch in q if ch.isdigit())
-            digits_norm = digits.lstrip("0") if digits else ""
-            params["q"] = f"%{q}%"
-            params["q_alt"] = f"%{digits_norm}%" if digits_norm else f"%{q}%"
-            # Multi-word search: every word must appear in the name (in any order),
-            # so "bds sangria" matches "BDS PINK SANGRIA". UPC still matches whole.
-            tokens = [t for t in q.split() if t]
-            name_clauses = []
-            for i, tok in enumerate(tokens):
-                params[f"qt{i}"] = f"%{tok}%"
-                name_clauses.append(f"UPPER(product_name) LIKE UPPER($qt{i})")
-            name_match = " AND ".join(name_clauses) if name_clauses else "UPPER(product_name) LIKE UPPER($q)"
-            where.append(
-                f"(({name_match}) OR UPPER(upc) LIKE UPPER($q) OR upc LIKE $q_alt)"
-            )
+            clause, qp = _q_clause(q)
+            where.append(clause)
+            params.update(qp)
         if wholesaler:
             where.append("wholesaler = $wholesaler")
             params["wholesaler"] = wholesaler
@@ -2004,11 +2016,9 @@ def search_facets(
         base = ["1=1"]
         bp: dict = {}
         if q:
-            digits = "".join(ch for ch in q if ch.isdigit())
-            digits_norm = digits.lstrip("0") if digits else ""
-            base.append("(UPPER(product_name) LIKE UPPER($q) OR UPPER(upc) LIKE UPPER($q) OR upc LIKE $q_alt)")
-            bp["q"] = f"%{q}%"
-            bp["q_alt"] = f"%{digits_norm}%" if digits_norm else f"%{q}%"
+            clause, qp = _q_clause(q)
+            base.append(clause)
+            bp.update(qp)
         if wholesaler:
             base.append("wholesaler = $wholesaler")
             bp["wholesaler"] = wholesaler

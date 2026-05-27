@@ -50,6 +50,7 @@ export default function Dashboard() {
 
   const { data: drops } = useQuery({
     queryKey: ['movers-down', wholesaler],
+    enabled: isAdmin,   // Biggest Price Drops tile is admin-only
     queryFn: () => analytics.priceMovers({ wholesaler: wholesaler || undefined, direction: 'down', limit: 200 }),
   });
 
@@ -192,7 +193,7 @@ export default function Dashboard() {
       <div className="dashboard-tile-grid">
         <NewItemsTile data={newItems} open={open} />
         <TimeSensitiveTile data={timeSensitive} open={open} />
-        <PriceDropsTile data={drops} open={open} />
+        {isAdmin && <PriceDropsTile data={drops} open={open} />}
         <TopDealsTile data={topDeals} open={open} />
         <PriceChangesTile data={priceCmp} open={open} />
         <CrossDistTile data={crossDist} label="Allied Cheaper" accent="var(--green)" open={open} />

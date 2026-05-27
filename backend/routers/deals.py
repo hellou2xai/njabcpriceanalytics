@@ -341,7 +341,8 @@ def get_combos(
                 seen.add(sig)
                 bucket.append(comp)
 
-        ql = q.strip().lower()
+        from backend.search_aliases import expansion_for
+        qtokens = [t for t in q.strip().lower().split() if t]
         items = []
         for (ws, code), g in combos.items():
             curr, nxt = g["curr"], g["next"]
@@ -370,9 +371,9 @@ def get_combos(
             else:
                 recommendation = "Stable"
             comments = g["comments"]
-            if ql:
+            if qtokens:
                 hay = " ".join([comments or "", code] + [c["product_name"] or "" for c in comps]).lower()
-                if ql not in hay:
+                if not all(any(cand in hay for cand in [tok, *(expansion_for(tok) or [])]) for tok in qtokens):
                     continue
             items.append({
                 "wholesaler": ws, "combo_code": code, "comments": comments,
@@ -638,9 +639,12 @@ def get_rip_products(
             extra.append("c.product_type = $product_type")
             params["product_type"] = product_type
         if q:
-            # Search matches product name OR RIP code.
-            extra.append("(UPPER(c.product_name) LIKE UPPER($q) OR CAST(c.rip_code AS VARCHAR) LIKE $q)")
-            params["q"] = f"%{q}%"
+            # Smart search: name/brand with shorthand aliases (JW -> Walker, etc.), OR RIP code.
+            from backend.routers.catalog import _q_clause
+            clause, qp = _q_clause(q, name_col="c.product_name", brand_col="c.brand", upc_col="c.upc")
+            params.update(qp)
+            params["q_rip"] = f"%{q}%"
+            extra.append(f"({clause} OR CAST(c.rip_code AS VARCHAR) LIKE $q_rip)")
         extra_sql = (" AND " + " AND ".join(extra)) if extra else ""
 
         # Restrict to a specific RIP number (matches products carrying that

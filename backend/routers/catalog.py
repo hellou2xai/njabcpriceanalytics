@@ -107,7 +107,9 @@ def _in_filter(where, params, column, csv, prefix):
     where.append(f"{column} IN ({', '.join(keys)})")
 
 
-def _q_clause(q: str, extra_aliases: dict | None = None) -> tuple[str, dict]:
+def _q_clause(q: str, extra_aliases: dict | None = None,
+              name_col: str = "product_name", brand_col: str = "brand",
+              upc_col: str = "upc") -> tuple[str, dict]:
     """Build the search predicate for a free-text query, with its params.
 
     Every whitespace token must match the product NAME or BRAND (AND across
@@ -127,7 +129,7 @@ def _q_clause(q: str, extra_aliases: dict | None = None) -> tuple[str, dict]:
         k = f"qt{counter['i']}"
         counter["i"] += 1
         params[k] = f"%{term}%"
-        return f"(UPPER(product_name) LIKE UPPER(${k}) OR UPPER(COALESCE(brand,'')) LIKE UPPER(${k}))"
+        return f"(UPPER({name_col}) LIKE UPPER(${k}) OR UPPER(COALESCE({brand_col},'')) LIKE UPPER(${k}))"
 
     token_clauses = []
     for tok in tokens:
@@ -143,7 +145,7 @@ def _q_clause(q: str, extra_aliases: dict | None = None) -> tuple[str, dict]:
         digits_norm = compact.lstrip("0") or compact
         params["q_upc"] = f"%{compact}%"
         params["q_upc2"] = f"%{digits_norm}%"
-        return f"(({name_match}) OR upc LIKE $q_upc OR upc LIKE $q_upc2)", params
+        return f"(({name_match}) OR {upc_col} LIKE $q_upc OR {upc_col} LIKE $q_upc2)", params
     return f"({name_match})", params
 
 
@@ -815,20 +817,12 @@ def new_items(
         ]
 
         # Now layer the search box and the specific-month selection on top.
+        # Same smart (alias + brand) matching as the Catalog search.
         if q:
-            digits = "".join(ch for ch in q if ch.isdigit())
-            digits_norm = digits.lstrip("0") if digits else ""
-            params["q"] = f"%{q}%"
-            params["q_alt"] = f"%{digits_norm}%" if digits_norm else f"%{q}%"
-            tokens = [t for t in q.split() if t]
-            name_clauses = []
-            for i, tok in enumerate(tokens):
-                params[f"qt{i}"] = f"%{tok}%"
-                name_clauses.append(f"UPPER(e.product_name) LIKE UPPER($qt{i})")
-            name_match = " AND ".join(name_clauses) if name_clauses else "UPPER(e.product_name) LIKE UPPER($q)"
-            filters.append(
-                f"(({name_match}) OR UPPER(e.upc) LIKE UPPER($q) OR e.upc LIKE $q_alt)"
-            )
+            clause, qp = _q_clause(q, _brand_initialisms(con, src),
+                                   name_col="e.product_name", brand_col="e.brand", upc_col="e.upc")
+            filters.append(clause)
+            params.update(qp)
         if introduced_edition:
             filters.append("i.introduced_edition = $intro")
             params["intro"] = introduced_edition

@@ -619,16 +619,20 @@ def search_products(
             try:
                 from backend.ai_search import ai_expand_query
                 ai_q = ai_expand_query(q)
+                if ai_q:
+                    clause2, qp2 = _q_clause(ai_q, _brand_initialisms(con, src))
+                    where[q_clause_idx] = clause2
+                    # Drop the previous query params so none are left bound but unused
+                    # (which would make the retry query error).
+                    for k in [k for k in params if k.startswith("qt") or k.startswith("q_upc")]:
+                        params.pop(k, None)
+                    params.update(qp2)
+                    where_clause = " AND ".join(where)
+                    count = con.execute(
+                        f"SELECT count(*) FROM (SELECT 1 FROM {src} WHERE {where_clause} {dedup}) t", params
+                    ).fetchone()[0]
             except Exception:
-                ai_q = None
-            if ai_q:
-                clause2, qp2 = _q_clause(ai_q, _brand_initialisms(con, src))
-                where[q_clause_idx] = clause2
-                params.update(qp2)
-                where_clause = " AND ".join(where)
-                count = con.execute(
-                    f"SELECT count(*) FROM (SELECT 1 FROM {src} WHERE {where_clause} {dedup}) t", params
-                ).fetchone()[0]
+                pass
 
         # Data query
         rows = con.execute(f"""

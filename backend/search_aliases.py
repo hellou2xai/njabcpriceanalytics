@@ -19,8 +19,12 @@ from __future__ import annotations
 
 # token (lowercase, as typed) -> canonical phrase it expands to
 CURATED: dict[str, str] = {
-    # Scotch / whisky
-    "jw": "johnnie walker", "johnnie": "johnnie walker", "johnny": "johnnie walker",
+    # Scotch / whisky. Johnnie Walker is listed in the catalogue as J WALKER /
+    # JOHN WALKER, so we match those phrases (not the bare word "walker", which
+    # would also pull in Hiram Walker).
+    "jw": ["johnnie walker", "john walker", "j walker"],
+    "johnnie": ["johnnie walker", "john walker", "j walker"],
+    "johnny": ["johnnie walker", "john walker", "j walker"],
     "mac": "macallan", "fiddich": "glenfiddich", "livet": "glenlivet",
     "chivas": "chivas regal", "monkey": "monkey shoulder",
     "laga": "lagavulin", "laph": "laphroaig", "dewars": "dewars",
@@ -92,16 +96,17 @@ def build_brand_initialisms(brands) -> dict[str, str]:
 
 
 def expansion_for(token: str, extra: dict[str, str] | None = None) -> list[str] | None:
-    """Return the expansion tokens for an aliased query token, or None.
-    Curated entries win over auto-derived initialisms."""
+    """Return the expansion PHRASES for an aliased query token, or None. Each phrase
+    is matched contiguously against the product name/brand (so "john walker" excludes
+    "Hiram Walker"). Curated entries win over auto-derived initialisms."""
     t = (token or "").strip().lower()
     if not t:
         return None
-    phrase = CURATED.get(t) or (extra or {}).get(t)
-    if not phrase:
+    val = CURATED.get(t)
+    if val is None:
+        val = (extra or {}).get(t)
+    if not val:
         return None
-    words = [w for w in phrase.split() if w]
-    # Don't bother if it expands to just itself.
-    if len(words) == 1 and words[0] == t:
-        return None
-    return words
+    phrases = val if isinstance(val, list) else [val]
+    out = [p for p in phrases if p and p != t]   # skip a phrase that's just the token
+    return out or None

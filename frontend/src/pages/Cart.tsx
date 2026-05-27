@@ -44,7 +44,7 @@ function comboHue(code: string): number {
 function ComboBadge({ code }: { code: string }) {
   const h = comboHue(code);
   return (
-    <span title={`Part of combo #${code} — priced as a bundle while all items are in the cart`} style={{
+    <span data-tour="cart-combo" title={`Part of combo #${code}, priced as a bundle while all items are in the cart`} style={{
       fontSize: 10, fontWeight: 700, padding: '1px 8px', borderRadius: 10, whiteSpace: 'nowrap',
       background: `hsl(${h} 75% 93%)`, color: `hsl(${h} 70% 32%)`, border: `1px solid hsl(${h} 60% 80%)`,
     }}>🎁 Combo #{code}</span>
@@ -61,7 +61,7 @@ function AddToCartSearch({ onAdd, adding }: { onAdd: (p: Product) => void; addin
   });
   const results = data?.items ?? [];
   return (
-    <div className="panel" style={{ padding: 12, marginTop: 12 }}>
+    <div className="panel" data-tour="cart-add" style={{ padding: 12, marginTop: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <Search size={16} /><strong>Add a product to the cart</strong>
       </div>
@@ -131,7 +131,7 @@ export default function Cart() {
       invalidate();
       qc.invalidateQueries({ queryKey: ['orders'] });
       const parts = [`Sent ${r.sent} order${r.sent === 1 ? '' : 's'}`];
-      if (r.skipped_no_rep) parts.push(`${r.skipped_no_rep} item(s) skipped — assign a rep and resend`);
+      if (r.skipped_no_rep) parts.push(`${r.skipped_no_rep} item(s) skipped. Assign a rep and resend`);
       setResult(parts.join('. '));
     },
   });
@@ -155,7 +155,7 @@ export default function Cart() {
     const { perCase } = unitPrices(it);
     const showCombo = !!it.combo_code && !!it.combo_intact;
     return (
-      <div key={it.id} style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}>
+      <div key={it.id} data-tour="cart-line" style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <ProductThumb src={it.image_url} alt={it.product_name} size={56} />
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -195,7 +195,7 @@ export default function Cart() {
           <button className="btn btn-secondary btn-sm" title="Remove" onClick={() => del.mutate(it.id)}><Trash2 size={14} /></button>
         </div>
 
-        {/* Deal tiers — same info as the catalogue, to tweak qty last minute. Combo
+        {/* Deal tiers, same info as the catalogue, to tweak qty last minute. Combo
             lines hide these (the bundle is the deal). */}
         {tiers.length > 0 && (
           <div style={{ marginLeft: 68, marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: '4px 8px' }}>
@@ -243,7 +243,7 @@ export default function Cart() {
 
       {/* Cart total bar */}
       {active.length > 0 && (
-        <div className="panel" style={{ padding: '10px 14px', marginTop: 10, display: 'flex',
+        <div className="panel" data-tour="cart-total" style={{ padding: '10px 14px', marginTop: 10, display: 'flex',
           alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, borderColor: 'var(--accent)' }}>
           <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
             {active.length} item{active.length === 1 ? '' : 's'} across {groups.length} sales rep group{groups.length === 1 ? '' : 's'}
@@ -265,16 +265,16 @@ export default function Cart() {
         const contact = selRep ? [selRep.phone, selRep.email].filter(Boolean).join(' · ') : '';
         const groupTotal = groupItems.reduce((s, it) => s + lineTotal(it), 0);
         return (
-          <div key={wholesaler} className="panel" style={{ padding: 12, marginTop: 12 }}>
+          <div key={wholesaler} className="panel" data-tour="cart-group" style={{ padding: 12, marginTop: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
               <strong>{distributorName(wholesaler)}</strong>
               <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 13 }}>Group total: <strong className="text-green">{money(groupTotal)}</strong></span>
-                <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <label data-tour="cart-rep" style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
                   Sales rep:
                   <select value={repId}
                     onChange={e => assign.mutate({ wholesaler, repId: e.target.value ? Number(e.target.value) : null })}>
-                    <option value="">— select rep —</option>
+                    <option value="">Select a rep</option>
                     {options.map(r => <option key={r.id} value={r.id}>{r.name}{r.division ? ` (${r.division})` : ''}</option>)}
                   </select>
                 </label>
@@ -282,6 +282,7 @@ export default function Cart() {
             </div>
             {contact && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{contact}</div>}
             <input
+              data-tour="cart-note"
               defaultValue={groupNotes[wholesaler] ?? ''}
               placeholder="Order note for this rep (header note on their order)"
               onBlur={e => { if (e.target.value !== (groupNotes[wholesaler] ?? '')) groupNote.mutate({ wholesaler, note: e.target.value }); }}
@@ -293,7 +294,7 @@ export default function Cart() {
       })}
 
       {saved.length > 0 && (
-        <div className="panel" style={{ padding: 12, marginTop: 20 }}>
+        <div className="panel" data-tour="cart-saved" style={{ padding: 12, marginTop: 20 }}>
           <h3 style={{ margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: 8 }}><Clock size={18} /> Saved for later</h3>
           {saved.map(it => renderItem(it, true))}
         </div>

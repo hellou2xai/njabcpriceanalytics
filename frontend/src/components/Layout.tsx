@@ -21,6 +21,7 @@ const NAV_GROUPS: {
   {
     header: 'Overview',
     items: [
+      { path: '/how-to-guide', label: 'How To Guide', icon: BookOpen },
       { path: '/', label: 'Dashboard', icon: LayoutDashboard },
       { path: '/alerts', label: 'Alerts', icon: Bell },
     ],
@@ -51,12 +52,6 @@ const NAV_GROUPS: {
       { path: '/more', label: 'Addnl Pages', icon: LayoutGrid, adminOnly: true },
       { path: '/admin', label: 'Admin', icon: Shield, adminOnly: true },
       { path: '/admin/activity', label: 'Activity', icon: Activity, adminOnly: true },
-    ],
-  },
-  {
-    header: 'Help',
-    items: [
-      { path: '/how-to-guide', label: 'How To Guide', icon: BookOpen },
     ],
   },
 ];

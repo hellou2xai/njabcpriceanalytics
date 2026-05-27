@@ -7,33 +7,44 @@ import {
 } from 'lucide-react';
 import './HowToGuide.css';
 
-// In-page table of contents. Each entry maps to a section id below.
-const TOC: { id: string; label: string; sub?: boolean }[] = [
-  { id: 'welcome', label: 'Welcome' },
-  { id: 'terms', label: 'Words you will see everywhere' },
-  { id: 'account', label: 'Create your account' },
-  { id: 'store', label: 'Add your store (first run)' },
-  { id: 'navigate', label: 'Finding your way around' },
-  { id: 'dashboard', label: 'Dashboard' },
-  { id: 'catalog', label: 'Catalog' },
-  { id: 'quickview', label: 'Product details popup', sub: true },
-  { id: 'newitems', label: 'New Items' },
-  { id: 'combos', label: 'Combos' },
-  { id: 'ripproducts', label: 'RIP Products' },
-  { id: 'favorites', label: 'Favorites (watchlist)' },
-  { id: 'todo', label: 'To-Do board' },
-  { id: 'notes', label: 'Notes' },
-  { id: 'cart', label: 'Cart' },
-  { id: 'lists', label: 'Lists' },
-  { id: 'orders', label: 'Orders (submitted)' },
-  { id: 'alerts', label: 'Alerts' },
-  { id: 'rightclick', label: 'Right-click menu', sub: true },
-  { id: 'websearch', label: 'Search the web popup', sub: true },
-  { id: 'configuration', label: 'Configuration' },
-  { id: 'profile', label: 'Profile & password' },
-  { id: 'admin', label: 'Admin-only tools' },
-  { id: 'help', label: 'Feedback, sharing, cookies' },
-  { id: 'glossary', label: 'Full glossary' },
+// In-page table of contents, grouped into labelled sections. Each entry maps
+// to a section id below.
+const TOC_GROUPS: { header: string; items: { id: string; label: string; sub?: boolean }[] }[] = [
+  { header: 'Getting started', items: [
+    { id: 'welcome', label: 'Welcome' },
+    { id: 'terms', label: 'Words you will see everywhere' },
+    { id: 'account', label: 'Create your account' },
+    { id: 'store', label: 'Add your store (first run)' },
+    { id: 'navigate', label: 'Finding your way around' },
+  ] },
+  { header: 'Find deals', items: [
+    { id: 'dashboard', label: 'Dashboard' },
+    { id: 'catalog', label: 'Catalog' },
+    { id: 'quickview', label: 'Product details popup', sub: true },
+    { id: 'newitems', label: 'New Items' },
+    { id: 'combos', label: 'Combos' },
+    { id: 'ripproducts', label: 'RIP Products' },
+  ] },
+  { header: 'My work', items: [
+    { id: 'favorites', label: 'Favorites (watchlist)' },
+    { id: 'todo', label: 'To-Do board' },
+    { id: 'notes', label: 'Notes' },
+    { id: 'cart', label: 'Cart' },
+    { id: 'lists', label: 'Lists' },
+    { id: 'orders', label: 'Orders (submitted)' },
+    { id: 'alerts', label: 'Alerts' },
+    { id: 'rightclick', label: 'Right-click menu', sub: true },
+    { id: 'websearch', label: 'Search the web popup', sub: true },
+  ] },
+  { header: 'Setup & account', items: [
+    { id: 'configuration', label: 'Configuration' },
+    { id: 'profile', label: 'Profile & password' },
+    { id: 'admin', label: 'Admin-only tools' },
+    { id: 'help', label: 'Feedback, sharing, cookies' },
+  ] },
+  { header: 'Reference', items: [
+    { id: 'glossary', label: 'Full glossary' },
+  ] },
 ];
 
 function Section({ id, icon, title, children }: { id: string; icon: ReactNode; title: string; children: ReactNode }) {
@@ -84,7 +95,12 @@ export default function HowToGuide() {
       <div className="htg-shell">
         <nav className="htg-toc">
           <div className="htg-toc-title">On this page</div>
-          {TOC.map(t => <a key={t.id} href={`#${t.id}`} className={t.sub ? 'sub' : ''}>{t.label}</a>)}
+          {TOC_GROUPS.map(g => (
+            <div className="htg-toc-group" key={g.header}>
+              <div className="htg-toc-group-header">{g.header}</div>
+              {g.items.map(t => <a key={t.id} href={`#${t.id}`} className={t.sub ? 'sub' : ''}>{t.label}</a>)}
+            </div>
+          ))}
         </nav>
 
         <div className="htg-content">

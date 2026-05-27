@@ -145,10 +145,14 @@ export default function CatalogFilterPanel({
     () => facets ? toMap(facets.divisions) : buildFacet(items, 'wholesaler'),
     [facets, items]
   );
-  const categoryFacet = useMemo(
-    () => facets ? toMap(facets.categories) : buildFacet(items, 'product_type'),
-    [facets, items]
-  );
+  const categoryFacet = useMemo(() => {
+    const m = facets ? toMap(facets.categories) : buildFacet(items, 'product_type');
+    // "Combo" is a product_type on a few bundle-header rows, not the real
+    // "in a combo" concept (that's the In combo deal filter). Hide it here so
+    // the Category list stays meaningful.
+    m.delete('Combo');
+    return m;
+  }, [facets, items]);
   const brandFacet = useMemo(
     () => facets ? toMap(facets.brands) : buildFacet(items, 'brand'),
     [facets, items]
@@ -163,6 +167,7 @@ export default function CatalogFilterPanel({
   const noRipCount = facets?.no_rip ?? items.filter((i) => !i.has_rip).length;
   const discCount = facets?.has_discount ?? items.filter((i) => i.has_discount).length;
   const noDiscCount = facets?.no_discount ?? items.filter((i) => !i.has_discount).length;
+  const comboCount = facets?.has_combo ?? items.filter((i) => !!i.combo_code && i.combo_code !== '0').length;
 
   const toggleArrayValue = (
     arr: string[],
@@ -263,6 +268,7 @@ export default function CatalogFilterPanel({
               }
             />
             <span>In combo</span>
+            <span className="filter-facet-count">{comboCount}</span>
           </label>
         </div>
       </FilterSection>

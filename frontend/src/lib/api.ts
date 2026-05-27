@@ -846,6 +846,7 @@ export interface CatalogFacets {
   has_rip: number; no_rip: number;
   has_discount: number; no_discount: number;
   has_closeout: number; no_closeout: number;
+  has_combo: number; no_combo: number;
   divisions: FacetBucket[];
   categories: FacetBucket[];
   brands: FacetBucket[];

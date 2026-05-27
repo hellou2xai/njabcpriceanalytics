@@ -2065,11 +2065,12 @@ def search_facets(
             wc, p = build(exclude)
             return int(con.execute(f"SELECT count(*) FROM {src} WHERE {wc}", p).fetchone()[0])
 
-        def grouped(column, exclude):
+        def grouped(column, exclude, extra=""):
             wc, p = build(exclude)
+            extra_sql = f" AND {extra}" if extra else ""
             df = con.execute(f"""
                 SELECT {column} AS key, count(*) AS n
-                FROM {src} WHERE {wc} AND {column} IS NOT NULL AND {column} != ''
+                FROM {src} WHERE {wc} AND {column} IS NOT NULL AND {column} != ''{extra_sql}
                 GROUP BY {column} ORDER BY n DESC
             """, p).fetchdf()
             return [{"key": r["key"], "count": int(r["n"])} for _, r in df.iterrows()]
@@ -2080,14 +2081,27 @@ def search_facets(
         dfl = con.execute(f"SELECT count(*) FILTER (WHERE has_discount) a, count(*) FILTER (WHERE NOT has_discount) b FROM {src} WHERE {wc}", p).fetchdf().iloc[0]
         wc, p = build(None)
         cf = con.execute(f"SELECT count(*) FILTER (WHERE has_closeout) a, count(*) FILTER (WHERE NOT has_closeout) b FROM {src} WHERE {wc}", p).fetchdf().iloc[0]
+        # In-combo count (products that belong to a bundle), so the "In combo"
+        # filter can show a count like Has RIP / Has discount. in_combo is a
+        # derived cache column; guard in case it is absent (parquet dev with no
+        # combo table / older cache).
+        try:
+            wc, p = build(None)
+            mf = con.execute(f"SELECT count(*) FILTER (WHERE in_combo) a, count(*) FILTER (WHERE NOT in_combo) b FROM {src} WHERE {wc}", p).fetchdf().iloc[0]
+            has_combo, no_combo = int(mf["a"]), int(mf["b"])
+        except Exception:
+            has_combo, no_combo = 0, 0
 
         return {
             "total": count(None),
             "has_rip": int(rf["a"]), "no_rip": int(rf["b"]),
             "has_discount": int(dfl["a"]), "no_discount": int(dfl["b"]),
             "has_closeout": int(cf["a"]), "no_closeout": int(cf["b"]),
+            "has_combo": has_combo, "no_combo": no_combo,
             "divisions": grouped("wholesaler", "div"),
-            "categories": grouped("product_type", "cat"),
+            # Exclude product_type='Combo' (a handful of bundle-header rows); the
+            # real "in a combo" concept is the In combo filter, counted above.
+            "categories": grouped("product_type", "cat", "product_type <> 'Combo'"),
             "brands": grouped("brand", "brand"),
             "sizes": grouped("unit_volume", "size"),
         }

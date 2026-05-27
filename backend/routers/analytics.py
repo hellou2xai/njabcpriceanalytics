@@ -137,7 +137,7 @@ def get_price_movers(
             {order}
             LIMIT $limit
         """, {**params, "limit": limit}).fetchdf()
-        return df.to_dict(orient="records")
+        return _records(df)
 
 
 @router.get("/lifecycle")
@@ -195,7 +195,7 @@ def get_cross_source_comparison(
             ORDER BY name_similarity DESC
             LIMIT $limit
         """, {**params, "limit": limit}).fetchdf()
-        return df.to_dict(orient="records")
+        return _records(df)
 
 
 @router.get("/category-trends")
@@ -221,4 +221,4 @@ def get_category_trends(wholesaler: Optional[str] = None):
             GROUP BY product_type, edition
             ORDER BY edition, product_type
         """, params).fetchdf()
-        return df.to_dict(orient="records")
+        return _records(df)

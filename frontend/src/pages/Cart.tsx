@@ -22,6 +22,23 @@ function Stepper({ label, value, onChange }: { label: string; value: number; onC
 
 const money = (v?: number | null) => (v == null ? null : `$${v.toFixed(2)}`);
 
+// A unique-but-stable colour per combo id, so lines from the same bundle share a
+// sticker and different bundles are easy to tell apart at a glance.
+function comboHue(code: string): number {
+  let h = 0;
+  for (let i = 0; i < code.length; i++) h = (h * 31 + code.charCodeAt(i)) % 360;
+  return h;
+}
+function ComboBadge({ code }: { code: string }) {
+  const h = comboHue(code);
+  return (
+    <span title={`Part of combo #${code} — added as a bundle`} style={{
+      fontSize: 10, fontWeight: 700, padding: '1px 8px', borderRadius: 10, whiteSpace: 'nowrap',
+      background: `hsl(${h} 75% 93%)`, color: `hsl(${h} 70% 32%)`, border: `1px solid hsl(${h} 60% 80%)`,
+    }}>🎁 Combo #{code}</span>
+  );
+}
+
 export default function Cart() {
   const qc = useQueryClient();
   const [result, setResult] = useState<string | null>(null);
@@ -76,7 +93,10 @@ export default function Cart() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <ProductThumb src={it.image_url} alt={it.product_name} size={56} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 600 }}>{it.product_name}</div>
+            <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              {it.product_name}
+              {it.combo_code && <ComboBadge code={it.combo_code} />}
+            </div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
               {distributorName(it.wholesaler)}{it.unit_volume ? ` · ${it.unit_volume}` : ''}{it.upc ? ` · ${it.upc}` : ''}
             </div>

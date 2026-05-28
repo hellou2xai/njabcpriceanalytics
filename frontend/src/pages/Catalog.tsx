@@ -8,11 +8,9 @@ import { useProductQuickView } from '../components/ProductQuickView';
 import CatalogTable, { loadCart, saveCart, type CartState } from '../components/CatalogTable';
 import CatalogFilterPanel, {
   emptyCatalogFilters,
-  countActiveFilters,
 } from '../components/CatalogFilterPanel';
 import type { CatalogFilters } from '../components/CatalogFilterPanel';
 import type { Product } from '../lib/api';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 export default function Catalog() {
   const [params] = useSearchParams();
@@ -52,8 +50,6 @@ export default function Catalog() {
       },
     }));
   }, [setCart]);
-
-  const activeFilterCount = countActiveFilters(filters);
 
   // All panel filters are sent to the server so they apply across every page
   // (not just the current one) and the counts reconcile with the results.
@@ -133,37 +129,25 @@ export default function Catalog() {
         </p>
       )}
 
-      {/* Always-visible edge tab to hide/show the filter panel. */}
-      <button
-        className={`edge-tab edge-tab-filters${showFilters ? ' is-open' : ''}`}
-        onClick={toggleFilters}
-        title={showFilters ? 'Hide filters' : 'Show filters'}
-        aria-label={showFilters ? 'Hide filters' : 'Show filters'}
-      >
-        {showFilters ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
-      </button>
+      {/* Horizontal filter toolbar pinned above the catalog. Each section is a
+          dropdown popover so we don't lose the long checkbox lists. Clear all
+          filters anchors on the LEFT, matching the other horizontal toolbars. */}
+      <CatalogFilterPanel
+        filters={filters}
+        onChange={(f) => { setFilters(f); setPage(0); }}
+        items={facetItems}
+        facets={facets}
+        trackedOnly={trackedOnly}
+        onTrackedChange={(v) => { setTrackedOnly(v); setPage(0); }}
+        collapsed={!showFilters}
+        onToggleCollapsed={toggleFilters}
+      />
 
       <div className="toolbar">
         <RowLimitSelect value={limit} onChange={v => { setLimit(v); setPage(0); }} />
-        {activeFilterCount > 0 && (
-          <button className="btn btn-secondary" onClick={() => setFilters({ ...emptyCatalogFilters })}>
-            Clear all ({activeFilterCount})
-          </button>
-        )}
       </div>
 
-      <div className={`catalog-layout ${showFilters ? '' : 'catalog-layout--full'}`}>
-        {showFilters && (
-          <CatalogFilterPanel
-            filters={filters}
-            onChange={(f) => { setFilters(f); setPage(0); }}
-            items={facetItems}
-            facets={facets}
-            trackedOnly={trackedOnly}
-            onTrackedChange={(v) => { setTrackedOnly(v); setPage(0); }}
-          />
-        )}
-
+      <div className="catalog-layout catalog-layout--full">
         <div className="catalog-results">
           {isLoading ? <p>Loading...</p> : (
             <CatalogTable

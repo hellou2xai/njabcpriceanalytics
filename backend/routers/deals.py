@@ -328,10 +328,25 @@ def get_combos(
             params[f"w{i}"], params[f"e{i}"] = ws, e
             clauses.append(f"(c.wholesaler = $w{i} AND c.edition = $e{i})")
         # COALESCE(cpl.product_name, c.product_name) overrides bogus combo
-        # product_names (e.g. Fedway stores codes here). Date-like comments
-        # (e.g. '2026-06-01 00:00:00') get nulled so the title falls back to
-        # "Combo {code}" via the application-side default below.
+        # product_names (e.g. Fedway used to store codes here). Date-like
+        # comments (e.g. '2026-06-01 00:00:00') get nulled so the title falls
+        # back to "Combo {code}" via the application-side default below.
+        #
+        # The CPL is wrapped in a name-only CTE that DEDUPLICATES per
+        # (wholesaler, edition, upc). Without this, placeholder upcs in the
+        # CPL (notably upc='0', which Fedway has ~3,100 of per edition)
+        # cartesian-multiply with combo rows that also carry placeholder
+        # upcs, blowing the row count up to 40-166x. The SQL stays fast
+        # either way, but pandas then has to iterate a 300k-row dataframe in
+        # Python, which is the actual perceived slowness on this page.
         df = con.execute(f"""
+            WITH cpl_names AS (
+                SELECT wholesaler, edition, upc,
+                       ANY_VALUE(NULLIF(product_name, '')) AS product_name
+                FROM {cpl_src}
+                WHERE upc IS NOT NULL AND CAST(upc AS VARCHAR) <> ''
+                GROUP BY wholesaler, edition, upc
+            )
             SELECT c.wholesaler, c.edition, c.combo_code, c.upc,
                    COALESCE(NULLIF(cpl.product_name, ''), c.product_name) AS product_name,
                    c.combo_pack_price, c.qty_per_pack, c.frontline_price_each,
@@ -340,7 +355,7 @@ def get_combos(
                         THEN c.comments ELSE NULL END AS comments,
                    c.from_date, c.to_date
             FROM {src} c
-            LEFT JOIN {cpl_src} cpl
+            LEFT JOIN cpl_names cpl
               ON cpl.wholesaler = c.wholesaler
              AND cpl.edition = c.edition
              AND cpl.upc = c.upc

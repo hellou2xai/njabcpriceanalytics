@@ -504,17 +504,16 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
         except Exception:
             rip_next = set()
 
-        # Pre-fetch any AI blurbs for (wholesaler, upc, edition) of the rows we're
-        # about to emit. One round-trip, then a dict lookup per row.
+        # Pre-fetch any AI blurbs from Postgres (small table, single round-trip,
+        # then a dict lookup per row). Read live so blurbs appear as soon as the
+        # background generator writes them, without waiting for a cache rebuild.
         blurb_map: dict = {}
         try:
-            keys = [(r["wholesaler"], str(r["upc"]).lstrip("0"), r["edition"])
-                    for _, r in rows.iterrows() if r.get("upc")]
-            if keys:
-                blurb_rows = con.execute(
-                    "SELECT wholesaler, LTRIM(upc,'0') AS un, edition, blurb FROM ai_deal_blurbs"
-                ).fetchall()
-                blurb_map = {(b[0], b[1], b[2]): b[3] for b in blurb_rows}
+            from backend.pg import get_pg
+            with get_pg() as pg:
+                cur = pg.execute("SELECT wholesaler, LTRIM(upc, '0') AS un, edition, blurb FROM ai_deal_blurbs")
+                for b in cur.fetchall():
+                    blurb_map[(b[0], b[1], b[2])] = b[3]
         except Exception:
             blurb_map = {}
 

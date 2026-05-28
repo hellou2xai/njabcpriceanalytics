@@ -156,7 +156,43 @@ def get_price_movers(
             attach_enrichment_image(con, out)
         except Exception:
             pass
+        # Attach the pre-generated AI mover blurb if we have one. Read live from
+        # Postgres (small table), keyed by (wholesaler, ltrim(upc), edition,
+        # direction). Missing blurbs simply leave the field null on the row.
+        try:
+            from backend.pg import get_pg
+            blurb_map: dict = {}
+            with get_pg() as pg:
+                cur = pg.execute(
+                    "SELECT wholesaler, LTRIM(upc, '0') AS un, edition, blurb "
+                    "FROM ai_mover_blurbs WHERE direction = %s",
+                    (direction,),
+                )
+                for b in cur.fetchall():
+                    blurb_map[(b["wholesaler"], b["un"], b["edition"])] = b["blurb"]
+            for row in out:
+                u = (row.get("upc") or "")
+                un = str(u).lstrip("0") if u else ""
+                row["ai_blurb"] = blurb_map.get((row.get("wholesaler"), un, row.get("edition")))
+        except Exception:
+            for row in out:
+                row.setdefault("ai_blurb", None)
         return out
+
+
+@router.get("/price-mover-editions")
+def get_price_mover_editions(direction: str = Query("down", description="up or down")):
+    """Distinct editions for which we have price movers in the given direction,
+    newest first. Drives the Price Month filter on the Price Drops / Increases
+    pages."""
+    with get_duckdb() as con:
+        src = read_parquet(con, "price_changes")
+        df = con.execute(f"""
+            SELECT DISTINCT edition FROM {src}
+            WHERE direction = $d AND edition IS NOT NULL
+            ORDER BY edition DESC
+        """, {"d": direction}).fetchdf()
+        return [str(r["edition"]) for _, r in df.iterrows()]
 
 
 @router.get("/lifecycle")

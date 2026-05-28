@@ -403,6 +403,19 @@ def init_user_db():
         # `version` column was added later; backfill on existing rows so the
         # generator's "not yet on current version" filter works.
         "ALTER TABLE ai_deal_blurbs ADD COLUMN IF NOT EXISTS version text DEFAULT 'v1'",
+        # AI-generated price-change blurbs for the Price Drops / Price Increases
+        # pages. Same shape as ai_deal_blurbs but with a `direction` column
+        # because the same product can move both ways across editions.
+        f"""CREATE TABLE IF NOT EXISTS ai_mover_blurbs (
+            wholesaler    text NOT NULL,
+            upc           text NOT NULL,
+            edition       text NOT NULL,
+            direction     text NOT NULL CHECK (direction IN ('up', 'down')),
+            blurb         text NOT NULL,
+            version       text DEFAULT 'v1',
+            generated_at  text DEFAULT {NOW_UTC},
+            PRIMARY KEY (wholesaler, upc, edition, direction)
+        )""",
     ]
     with get_pg() as con:
         for s in stmts:

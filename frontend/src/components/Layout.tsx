@@ -37,9 +37,9 @@ const NAV_GROUPS: {
       { path: '/combos', label: 'Combos', icon: Combine },
       { path: '/rip-products', label: 'RIP Products', icon: BadgeDollarSign },
       { path: '/time-sensitive', label: 'Time-Sensitive Deals', icon: Clock },
-      { path: '/price-drops', label: 'Price Drops', icon: ArrowDownRight },
+      { path: '/price-drops', label: 'Biggest Price Drops', icon: ArrowDownRight },
       { path: '/price-increases', label: 'Price Increases', icon: ArrowUpRight },
-      { path: '/#tile=top-discounts', label: 'Top Discounts', icon: Percent },
+      { path: '/#tile=top-discounts', label: 'Top Discounts', icon: Percent, adminOnly: true },
     ],
   },
   {
@@ -229,7 +229,7 @@ export default function Layout() {
             return (
               <div className="nav-group" key={group.header}>
                 {!sidebarCollapsed && <div className="nav-group-header">{group.header}</div>}
-                {items.map(({ path, label, icon: Icon }) => (
+                {items.map(({ path, label, icon: Icon, adminOnly }) => (
                   path === '/tours' ? (
                     <div key={path} className="nav-tours-wrap">
                       <Link
@@ -255,6 +255,9 @@ export default function Layout() {
                   >
                     <Icon size={18} />
                     {!sidebarCollapsed && <span>{label}</span>}
+                    {adminOnly && !sidebarCollapsed && (
+                      <span className="nav-admin-marker" title="Admin only (other users do not see this item)">Admin</span>
+                    )}
                     {path === '/alerts' && unread?.unread ? <span className="badge">{unread.unread}</span> : null}
                     {path === '/orders' && draftOrders?.length ? <span className="badge">{draftOrders.length}</span> : null}
                   </Link>

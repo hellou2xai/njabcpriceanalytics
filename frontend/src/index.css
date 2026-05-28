@@ -2930,3 +2930,19 @@ tr:hover .row-menu-btn { opacity: 1; }
 /* Whole deal card is clickable (opens the product quick-view) */
 .deal-card { cursor: pointer; }
 .deal-card-name { cursor: inherit; }
+
+/* ---- Price Movers: month sticker + pill stack on the card head ---- */
+.deal-card-pills { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; flex: 0 0 auto; }
+.mover-month {
+  display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.2px;
+  padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+  background: var(--accent-weak); color: var(--accent);
+}
+
+/* Admin-only marker next to nav items (visible to admins so they can see
+   which left-menu entries are gated for them). */
+.nav-admin-marker {
+  margin-left: auto; font-size: 9px; font-weight: 700; letter-spacing: 0.6px;
+  padding: 2px 6px; border-radius: 4px; text-transform: uppercase;
+  background: #fef3c7; color: #92400e;
+}

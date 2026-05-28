@@ -91,6 +91,11 @@ def startup():
             warm_blurbs_async()
         except Exception as e:
             print(f"[startup] blurb generation skipped: {e}")
+        try:
+            from backend.ai_mover_blurbs import warm_mover_blurbs_async
+            warm_mover_blurbs_async()
+        except Exception as e:
+            print(f"[startup] mover-blurb generation skipped: {e}")
     except Exception as e:
         # If the pricing tables aren't in Postgres yet (no ingestion run), the
         # cache builds lazily on the first request instead of blocking startup.
@@ -121,6 +126,11 @@ def reload_pricing(user: dict = Depends(get_current_user)):
         warm_blurbs_async()
     except Exception as e:
         print(f"[reload] blurb generation skipped: {e}")
+    try:
+        from backend.ai_mover_blurbs import warm_mover_blurbs_async
+        warm_mover_blurbs_async()
+    except Exception as e:
+        print(f"[reload] mover-blurb generation skipped: {e}")
 
 
 @app.post("/api/admin/blurbs/generate")
@@ -143,16 +153,21 @@ def admin_generate_blurbs(limit: int = 10, user: dict = Depends(get_current_user
     except Exception as e:
         out["written_error"] = f"{type(e).__name__}: {e}"
         out["written_trace"] = traceback.format_exc().splitlines()[-3:]
+    # Also generate mover blurbs for both directions.
+    try:
+        from backend.ai_mover_blurbs import generate_mover_blurbs_batch
+        out["movers_down"] = generate_mover_blurbs_batch("down", limit=limit)
+        out["movers_up"] = generate_mover_blurbs_batch("up", limit=limit)
+    except Exception as e:
+        out["movers_error"] = f"{type(e).__name__}: {e}"
     # PG diagnostic: how many rows exist + a small sample.
     try:
         from backend.pg import get_pg
         with get_pg() as pg:
             row = pg.execute("SELECT COUNT(*) AS n FROM ai_deal_blurbs").fetchone()
             out["pg_count"] = int(row["n"]) if row else 0
-            sample = pg.execute(
-                "SELECT wholesaler, upc, LTRIM(upc,'0') AS un, edition, LEFT(blurb, 80) AS preview FROM ai_deal_blurbs LIMIT 3"
-            ).fetchall()
-            out["pg_sample"] = [dict(r) for r in sample]
+            row2 = pg.execute("SELECT COUNT(*) AS n FROM ai_mover_blurbs").fetchone()
+            out["pg_movers_count"] = int(row2["n"]) if row2 else 0
     except Exception as e:
         out["pg_error"] = f"{type(e).__name__}: {e}"
     return out

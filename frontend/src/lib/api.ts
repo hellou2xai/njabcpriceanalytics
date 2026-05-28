@@ -141,6 +141,8 @@ export const analytics = {
     request<DashboardKPIs>(`/api/analytics/dashboard${qs(params ?? {})}`),
   priceMovers: (params?: Record<string, unknown>) =>
     request<PriceMover[]>(`/api/analytics/price-movers${qs(params ?? {})}`),
+  priceMoverEditions: (direction: 'up' | 'down') =>
+    request<string[]>(`/api/analytics/price-mover-editions?direction=${direction}`),
   lifecycle: (params?: Record<string, unknown>) =>
     request<LifecycleEvent[]>(`/api/analytics/lifecycle${qs(params ?? {})}`),
   crossSource: (params?: Record<string, unknown>) =>
@@ -888,6 +890,7 @@ export interface PriceMover {
   effective_case_price?: number | null;
   has_rip?: boolean; has_discount?: boolean;
   image_url?: string | null;
+  ai_blurb?: string | null;
 }
 
 export interface LifecycleEvent {

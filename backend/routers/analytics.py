@@ -187,20 +187,31 @@ def get_price_movers(
         out: list[dict] = []
         for (ws, _name), s in slots.items():
             cur_r = s.get("cur"); next_r = s.get("next")
-            cur_dir = (cur_r["direction"] if cur_r is not None else None)
-            next_dir = (next_r["direction"] if next_r is not None else None)
-            cur_match = cur_r is not None and cur_dir == direction
-            next_match = next_r is not None and next_dir == direction
-            if not cur_match and not next_match:
-                continue
-            if cur_match and next_match:
-                vlabel = "both"; base = cur_r
-            elif cur_match and next_r is None:
-                vlabel = "both"; base = cur_r  # next price holds
-            elif cur_match and not next_match:
-                vlabel = "current_only"; base = cur_r  # rebound in next
-            else:
+            cur_match = cur_r is not None and cur_r["direction"] == direction
+            next_match = next_r is not None and next_r["direction"] == direction
+            # Classify by comparing the actual next-month price to the current
+            # one, not just the next-edition's direction tag. A flat/unchanged
+            # next month is "holds" (both), a reverse next month is rebound
+            # (current_only). This catches the case the user flagged where the
+            # price is identical in May and June so there is no price_changes
+            # row in June and the strict direction match misses it.
+            def _price_holds() -> bool:
+                if next_r is None: return True   # no row -> price unchanged
+                cp = cur_r["case_price"] if cur_r is not None else None
+                np_ = next_r["case_price"]
+                if cp is None or np_ is None or cp != cp or np_ != np_:
+                    return next_match
+                tol = max(0.02, abs(cp) * 0.005)  # 0.5%, min 2c
+                if direction == "down":
+                    return np_ <= cp + tol        # holds or deepens
+                return np_ >= cp - tol            # for 'up': holds or rises further
+            if cur_match:
+                vlabel = "both" if _price_holds() else "current_only"
+                base = cur_r
+            elif next_match and next_r is not None:
                 vlabel = "next_only"; base = next_r
+            else:
+                continue
             if validity != "all" and vlabel != validity:
                 continue
             row = {c: base[c] for c in base.index}

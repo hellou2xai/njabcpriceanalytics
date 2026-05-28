@@ -2926,3 +2926,7 @@ tr:hover .row-menu-btn { opacity: 1; }
 .ts-view-toggle .btn { padding: 6px 10px; font-size: 12px; }
 .deal-card.urgency-ended { border-left: 3px solid #94a3b8; opacity: .75; }
 .deal-urgency.urgency-ended { background: #f1f5f9; color: #475569; }
+
+/* Whole deal card is clickable (opens the product quick-view) */
+.deal-card { cursor: pointer; }
+.deal-card-name { cursor: inherit; }

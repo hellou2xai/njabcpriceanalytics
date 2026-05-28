@@ -289,15 +289,28 @@ function DealCard({ d, open }: { d: TimeSensitiveDeal; open: (n: string, w: stri
   const urgency = urgencyClass(d.days_to_expire);
 
   return (
-    <div className={`deal-card ${urgency}`}
+    <div className={`deal-card ${urgency}`} role="button" tabIndex={0}
          data-ctx data-ctx-product={d.product_name} data-ctx-wholesaler={d.wholesaler}
-         data-ctx-upc={d.upc ?? ''} data-ctx-volume={d.unit_volume ?? ''}>
+         data-ctx-upc={d.upc ?? ''} data-ctx-volume={d.unit_volume ?? ''}
+         onClick={(e) => {
+           // Ignore clicks that originated on an interactive child (buttons,
+           // links, inputs, the order action row) so those keep their own
+           // behaviour. Otherwise open the full product details pop-up, same
+           // as clicking a row in the table view.
+           const t = e.target as HTMLElement;
+           if (t.closest('button, a, input, label, .deal-card-actions, .add-to-list-menu, .row-menu-btn, .ctx-menu')) return;
+           open(d.product_name, d.wholesaler, undefined, { upc: d.upc ?? undefined, unitVolume: d.unit_volume ?? undefined });
+         }}
+         onKeyDown={(e) => {
+           if (e.key === 'Enter' || e.key === ' ') {
+             e.preventDefault();
+             open(d.product_name, d.wholesaler, undefined, { upc: d.upc ?? undefined, unitVolume: d.unit_volume ?? undefined });
+           }
+         }}>
       <div className="deal-card-head">
         <ProductThumb src={d.image_url ?? undefined} alt={d.product_name} size={70} />
         <div className="deal-card-id">
-          <div className="deal-card-name"
-               onClick={() => open(d.product_name, d.wholesaler, undefined, { upc: d.upc ?? undefined, unitVolume: d.unit_volume ?? undefined })}
-               title={d.product_name}>
+          <div className="deal-card-name" title={d.product_name}>
             {d.product_name}
           </div>
           <div className="deal-card-sub">

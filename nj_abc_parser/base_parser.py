@@ -117,6 +117,13 @@ class NJABCParser:
         self.combo_header_map = {**COMBO_HEADER_MAP, **config.get("combo_header_map_overrides", {})}
         self.beer_mm_header_map = {**BEER_MM_HEADER_MAP, **config.get("beer_mm_header_map_overrides", {})}
 
+        # Optional post-process hook. Called after every sheet has parsed with
+        # the (parser, sheets_dict) so a wholesaler-specific config can
+        # cross-join sheets — e.g. enrich COMBO using CPL when the source file
+        # records component item codes instead of product names. The hook may
+        # mutate the dict in place and/or return a replacement dict.
+        self.post_process = config.get("post_process")
+
     def parse_file(self, filepath: Path) -> dict[str, pd.DataFrame]:
         """
         Parse an NJ ABC Excel file into DataFrames.
@@ -154,6 +161,10 @@ class NJABCParser:
                     logger.debug(f"[{self.slug}] {sheet_type}: no data rows")
 
             wb.close()
+            if self.post_process and result:
+                replaced = self.post_process(self, result)
+                if replaced is not None:
+                    result = replaced
             return result
         finally:
             try:

@@ -2492,20 +2492,21 @@ def get_rip_siblings(
     edition: Optional[str] = None,
     exclude_upc: Optional[str] = None,
 ):
-    """Every product in the same RIP group.
+    """Every product in the same RIP rebate group.
 
-    A RIP rebate qualifies once a *combined* quantity is purchased across all
-    products sharing the same rip_code, so the product detail page needs to
-    surface the full set the user must mix together. Returns one row per
-    UPC/size in the latest edition (or `edition` if supplied), with the same
-    pricing fields the catalogue uses so the UI can render an in-place add to
-    cart for each.
+    Authoritative source is the RIP sheet — it lists every UPC that qualifies
+    under a rip_code, including ones whose CPL row carries a *different*
+    rip_code (a wholesaler can stack a SKU under multiple rebates and only
+    reference one of them on the CPL row). Pulling siblings from the CPL
+    alone misses those, so we drive the set from the RIP sheet and join CPL
+    in afterwards for the price + image data the UI shows.
     """
     rc = (rip_code or "").strip()
     if not rc or rc in ("None", "nan", "0"):
         return {"items": []}
     with get_duckdb() as con:
         src = read_parquet(con, "cpl_enriched")
+        rip_src = read_parquet(con, "rip")
         if not edition:
             current_ym = _current_yyyy_mm()
             row_ed = con.execute(
@@ -2518,28 +2519,59 @@ def get_rip_siblings(
         if not edition:
             return {"items": []}
         params = {"w": wholesaler, "rc": rc, "e": edition}
-        excl = ""
+        excl_rip = ""
+        excl_cpl = ""
         if exclude_upc:
-            excl = "AND upc <> $xu"
+            excl_rip = "AND r.upc <> $xu"
+            excl_cpl = "AND upc <> $xu"
             params["xu"] = str(exclude_upc)
-        df = con.execute(f"""
-            SELECT wholesaler, edition, upc, product_name, brand, vintage,
-                   product_type, unit_volume, unit_qty, unit_volume_std,
-                   frontline_case_price, frontline_unit_price,
-                   best_case_price, best_unit_price,
-                   effective_case_price, rip_savings, total_savings_per_case,
-                   has_discount, has_rip, has_closeout, discount_pct,
-                   rip_code, combo_code
-            FROM {src}
-            WHERE wholesaler = $w AND edition = $e
-              AND CAST(rip_code AS VARCHAR) = $rc
-              {excl}
-            ORDER BY product_name
+        # 1) Authoritative UPC list comes from the RIP sheet for this rebate.
+        upc_rows = con.execute(f"""
+            SELECT DISTINCT CAST(r.upc AS VARCHAR) AS upc
+            FROM {rip_src} r
+            WHERE r.wholesaler = $w AND r.edition = $e
+              AND CAST(r.rip_code AS VARCHAR) = $rc
+              AND r.upc IS NOT NULL AND CAST(r.upc AS VARCHAR) <> ''
+              {excl_rip}
         """, params).fetchdf()
-        records = [
-            {k: (None if isinstance(v, float) and math.isnan(v) else v) for k, v in r.items()}
-            for r in df.to_dict(orient="records")
-        ]
+        rip_upcs = sorted({str(u).strip() for u in upc_rows["upc"].tolist() if u and str(u).strip()})
+        # 2) Join CPL rows for those UPCs to pick up pricing + size info. Fall
+        #    back to whatever the CPL has even when the CPL's own rip_code
+        #    points elsewhere — UPC 80432400708 is the canonical example
+        #    (stacked under another RIP on the CPL row, still qualifies here).
+        records = []
+        if rip_upcs:
+            ph = ", ".join(f"$u{i}" for i in range(len(rip_upcs)))
+            uprm = {**{"w": wholesaler, "e": edition}, **{f"u{i}": u for i, u in enumerate(rip_upcs)}}
+            df = con.execute(f"""
+                SELECT wholesaler, edition, upc, product_name, brand, vintage,
+                       product_type, unit_volume, unit_qty, unit_volume_std,
+                       frontline_case_price, frontline_unit_price,
+                       best_case_price, best_unit_price,
+                       effective_case_price, rip_savings, total_savings_per_case,
+                       has_discount, has_rip, has_closeout, discount_pct,
+                       rip_code, combo_code
+                FROM {src}
+                WHERE wholesaler = $w AND edition = $e
+                  AND CAST(upc AS VARCHAR) IN ({ph})
+            """, uprm).fetchdf()
+            records = [
+                {k: (None if isinstance(v, float) and math.isnan(v) else v) for k, v in r.items()}
+                for r in df.to_dict(orient="records")
+            ]
+        # 3) RIP UPCs missing from the CPL still belong on screen — surface a
+        #    minimal stub so the user sees the full rebate group and knows the
+        #    SKU isn't on the current CPL. The UI keeps Add-to-Cart disabled
+        #    when the row has no price.
+        seen_upcs = {str(r.get("upc")) for r in records}
+        for u in rip_upcs:
+            if u not in seen_upcs:
+                records.append({
+                    "wholesaler": wholesaler, "edition": edition, "upc": u,
+                    "product_name": f"UPC {u} (not in current CPL)",
+                    "unavailable": True,
+                })
+        records.sort(key=lambda r: str(r.get("product_name") or ""))
         try:
             _attach_enrichment_image(con, records)
         except Exception:

@@ -180,12 +180,36 @@ def build_po_pdf(data: dict) -> bytes:
     head = [Paragraph(t, _HEAD) for t in
             ["#", "Description", "UPC", "Size", "Pk", "Cases", "Btls", "Case Cost", "Line Total"]]
     table_rows = [head]
-    for i, ln in enumerate(data.get("lines", []), start=1):
+    # group_rows tracks which row indexes are RIP-group headers, so the
+    # zebra-stripe + alignment logic below skips them.
+    group_rows: list[int] = []
+    prior_rip = "__sentinel__"
+    for ln in data.get("lines", []):
+        cur_rip = ln.get("rip_code")
+        cur_label = str(cur_rip) if cur_rip else None
+        prior_label = None if prior_rip in (None, "__sentinel__") else str(prior_rip)
+        if cur_label != prior_label or prior_rip == "__sentinel__":
+            if cur_label:
+                group_rows.append(len(table_rows))
+                table_rows.append([
+                    Paragraph(f"— RIP {cur_label} · grouped rebate —", _LABEL),
+                    "", "", "", "", "", "", "", "",
+                ])
+            elif prior_rip != "__sentinel__":
+                group_rows.append(len(table_rows))
+                table_rows.append([
+                    Paragraph("— No RIP rebate —", _LABEL),
+                    "", "", "", "", "", "", "", "",
+                ])
+        prior_rip = cur_rip
+
         desc = [Paragraph(ln.get("description", ""), _CELL)]
         if ln.get("rip_note"):
             desc.append(Paragraph(ln["rip_note"], _CELL_SUB))
+        # The "#" column is now the running line count, ignoring group headers.
+        n = len(table_rows) - 1 - len([g for g in group_rows if g < len(table_rows)])
         table_rows.append([
-            Paragraph(str(i), _CELL),
+            Paragraph(str(n), _CELL),
             desc,
             Paragraph(ln.get("upc") or "—", _CELL),
             Paragraph(ln.get("size") or "—", _CELL),
@@ -213,7 +237,18 @@ def build_po_pdf(data: dict) -> bytes:
         ("LINEBELOW", (0, 0), (-1, -1), 0.4, LINE),
         ("ALIGN", (4, 0), (-1, -1), "RIGHT"),
     ]
+    # Style the RIP-group header rows: span all 9 columns, light blue
+    # background, no zebra.
+    for r in group_rows:
+        style.append(("SPAN", (0, r), (-1, r)))
+        style.append(("BACKGROUND", (0, r), (-1, r), ZEBRA))
+        style.append(("ALIGN", (0, r), (-1, r), "LEFT"))
+        style.append(("TOPPADDING", (0, r), (-1, r), 4))
+        style.append(("BOTTOMPADDING", (0, r), (-1, r), 4))
+    group_set = set(group_rows)
     for r in range(1, len(table_rows)):
+        if r in group_set:
+            continue
         if r % 2 == 0:
             style.append(("BACKGROUND", (0, r), (-1, r), ZEBRA))
     items.setStyle(TableStyle(style))
@@ -331,7 +366,31 @@ def build_po_html(data: dict) -> str:
     )
 
     body_rows = []
+    prior_rip = "__sentinel__"
     for i, ln in enumerate(data.get("lines", []), start=1):
+        # RIP group header: inserted whenever the rip_code changes between
+        # consecutive lines (lines were pre-sorted in _gather_po so they
+        # cluster). Header is a single colourful row spanning every column.
+        cur_rip = ln.get("rip_code")
+        cur_label = str(cur_rip) if cur_rip else None
+        prior_label = str(prior_rip) if prior_rip not in (None, "__sentinel__") else (None if prior_rip is None else None)
+        if cur_label != prior_label or prior_rip == "__sentinel__":
+            if cur_label:
+                body_rows.append(
+                    f'<tr><td colspan="9" style="padding:6px 8px;background:#eff6ff;'
+                    f'border-top:1px solid {_BLUE};border-bottom:1px solid {_LINE};'
+                    f'font-size:11px;font-weight:700;color:{_BLUE};letter-spacing:.3px">'
+                    f'\U0001f517 RIP {_e(cur_label)} · grouped rebate</td></tr>'
+                )
+            elif prior_rip != "__sentinel__":
+                body_rows.append(
+                    f'<tr><td colspan="9" style="padding:6px 8px;background:{_ZEBRA};'
+                    f'border-top:1px solid {_LINE};border-bottom:1px solid {_LINE};'
+                    f'font-size:11px;font-weight:700;color:{_MUTED};letter-spacing:.3px">'
+                    f'No RIP rebate</td></tr>'
+                )
+        prior_rip = cur_rip
+
         bg = _ZEBRA if i % 2 == 0 else "#ffffff"
         td = (f'style="padding:6px;border-bottom:1px solid {_LINE};font-size:12px;'
               f'color:{_SLATE};background:{bg}"')

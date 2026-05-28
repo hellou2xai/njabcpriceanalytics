@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Trash2, Clock, Send, ShoppingCart, Plus, Search } from 'lucide-react';
+import { Trash2, Clock, Send, ShoppingCart, Plus, Search, ArrowUpFromLine, Eraser } from 'lucide-react';
 import { cart as cartApi, salesReps as repsApi, catalog, type CartItem, type Product } from '../lib/api';
 import ProductThumb from '../components/ProductThumb';
 import { shortUnit } from '../components/CatalogTable';
@@ -129,6 +129,20 @@ export default function Cart() {
   const active = items.filter(i => !i.saved_for_later);
   const saved = items.filter(i => i.saved_for_later);
 
+  // Auto-enable "Group by RIP" the moment the cart picks up any RIP-tied line,
+  // so adding a RIP deal from any page (RIP Products, Catalog, quick view, ...)
+  // immediately clusters it under its rebate code. The user can still uncheck
+  // the toggle to flatten the view; the explicit choice sticks.
+  const hasRipItem = useMemo(
+    () => items.some(i => i.rip_code && String(i.rip_code).trim()),
+    [items],
+  );
+  useEffect(() => {
+    if (hasRipItem && !groupByRip && localStorage.getItem(RIP_GROUP_KEY) === null) {
+      setGroupByRip(true);
+    }
+  }, [hasRipItem, groupByRip]);
+
   const invalidate = () => qc.invalidateQueries({ queryKey: ['cart'] });
   const upd = useMutation({
     mutationFn: (v: { id: number; patch: Parameters<typeof cartApi.update>[1] }) => cartApi.update(v.id, v.patch),
@@ -159,6 +173,17 @@ export default function Cart() {
       if (r.skipped_no_rep) parts.push(`${r.skipped_no_rep} item(s) skipped. Assign a rep and resend`);
       setResult(parts.join('. '));
     },
+  });
+  // Bulk save-for-later (Save-all/Move-all from a RIP group header).
+  const bulkSave = useMutation({
+    mutationFn: (v: { ids: number[]; saved: boolean }) => cartApi.bulkSaveForLater(v.ids, v.saved),
+    onSuccess: invalidate,
+  });
+  // Wipe the active cart in one call (the explicit "Clear all cart" button).
+  // Saved-for-later items are preserved; the user has to clear them separately.
+  const clearActive = useMutation({
+    mutationFn: () => cartApi.clear('active'),
+    onSuccess: invalidate,
   });
 
   const groups = useMemo(() => {
@@ -248,10 +273,28 @@ export default function Cart() {
     <div className="page">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
         <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ShoppingCart size={22} /> Cart</h2>
-        <button className="btn btn-primary" data-tour="cart-send" disabled={active.length === 0 || send.isPending}
-          onClick={() => { setResult(null); send.mutate(); }}>
-          <Send size={16} /> {send.isPending ? 'Sending...' : 'Send All Orders to Reps'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            className="btn btn-secondary"
+            disabled={active.length === 0 || clearActive.isPending}
+            title="Remove every item in the cart. Saved-for-later items stay put."
+            onClick={() => {
+              const n = active.length;
+              const msg = `Clear all ${n} item${n === 1 ? '' : 's'} from the cart?\n\n`
+                + `This cannot be undone. Items you've Saved for later will remain.`;
+              if (window.confirm(msg)) {
+                setResult(null);
+                clearActive.mutate();
+              }
+            }}
+          >
+            <Eraser size={16} /> {clearActive.isPending ? 'Clearing...' : 'Clear All Cart'}
+          </button>
+          <button className="btn btn-primary" data-tour="cart-send" disabled={active.length === 0 || send.isPending}
+            onClick={() => { setResult(null); send.mutate(); }}>
+            <Send size={16} /> {send.isPending ? 'Sending...' : 'Send All Orders to Reps'}
+          </button>
+        </div>
       </div>
 
       {active.length > 0 && (
@@ -341,6 +384,7 @@ export default function Cart() {
                     const lineCount = lines.length;
                     const subtotal = lines.reduce((s, it) => s + lineTotal(it), 0);
                     const totalCases = lines.reduce((s, it) => s + (it.qty_cases || 0), 0);
+                    const ids = lines.map(l => l.id);
                     return (
                       <div key={`rip-${rc}`} className="cart-rip-group" style={{
                         borderLeftColor: `hsl(${hue} 65% 55%)`,
@@ -351,6 +395,14 @@ export default function Cart() {
                           <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
                             {lineCount} line{lineCount === 1 ? '' : 's'} · {totalCases} case{totalCases === 1 ? '' : 's'} towards this rebate
                           </span>
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            title={`Move all ${lineCount} line${lineCount === 1 ? '' : 's'} under RIP ${rc} to Saved for later`}
+                            disabled={bulkSave.isPending}
+                            onClick={() => bulkSave.mutate({ ids, saved: true })}
+                          >
+                            <Clock size={13} /> Save all for later
+                          </button>
                           <span style={{ marginLeft: 'auto', fontWeight: 600 }}>
                             Subtotal: <span className="text-green">{money(subtotal)}</span>
                           </span>
@@ -380,7 +432,62 @@ export default function Cart() {
       {saved.length > 0 && (
         <div className="panel" data-tour="cart-saved" style={{ padding: 12, marginTop: 20 }}>
           <h3 style={{ margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: 8 }}><Clock size={18} /> Saved for later</h3>
-          {saved.map(it => renderItem(it, true))}
+          {(() => {
+            if (!groupByRip) return saved.map(it => renderItem(it, true));
+            // Mirror the active-cart layout: RIP buckets + an "Unrebated" bucket,
+            // each with a "Move all back to cart" action on the header.
+            const bucketMap = new Map<string, typeof saved>();
+            const unrebated: typeof saved = [];
+            for (const it of saved) {
+              const rc = it.rip_code && String(it.rip_code).trim();
+              if (!rc) { unrebated.push(it); continue; }
+              if (!bucketMap.has(rc)) bucketMap.set(rc, []);
+              bucketMap.get(rc)!.push(it);
+            }
+            const buckets = [...bucketMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+            return (
+              <>
+                {buckets.map(([rc, lines]) => {
+                  const hue = ripHueLocal(rc);
+                  const lineCount = lines.length;
+                  const ids = lines.map(l => l.id);
+                  return (
+                    <div key={`saved-rip-${rc}`} className="cart-rip-group" style={{
+                      borderLeftColor: `hsl(${hue} 65% 55%)`,
+                      background: `linear-gradient(180deg, hsl(${hue} 75% 97%) 0%, var(--surface) 16px)`,
+                    }}>
+                      <div className="cart-rip-group-header">
+                        <RipBadge code={rc} />
+                        <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
+                          {lineCount} line{lineCount === 1 ? '' : 's'} saved
+                        </span>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          title={`Move all ${lineCount} line${lineCount === 1 ? '' : 's'} under RIP ${rc} back into the active cart`}
+                          disabled={bulkSave.isPending}
+                          onClick={() => bulkSave.mutate({ ids, saved: false })}
+                        >
+                          <ArrowUpFromLine size={13} /> Move all to cart
+                        </button>
+                      </div>
+                      {lines.map(it => renderItem(it, true))}
+                    </div>
+                  );
+                })}
+                {unrebated.length > 0 && (
+                  <div className="cart-rip-group" style={{ borderLeftColor: 'var(--border)' }}>
+                    <div className="cart-rip-group-header">
+                      <span style={{ fontWeight: 600 }}>No RIP rebate</span>
+                      <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
+                        {unrebated.length} line{unrebated.length === 1 ? '' : 's'}
+                      </span>
+                    </div>
+                    {unrebated.map(it => renderItem(it, true))}
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
       )}
     </div>

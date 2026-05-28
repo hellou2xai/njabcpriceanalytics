@@ -653,7 +653,16 @@ def _gather_po(con, order: dict, user: dict, revision: int | None = None) -> tup
             "case_cost": _num(l.get("case_cost")),
             "line_total": amt,
             "rip_note": rip_note,
+            # Surface rip_code so the email + PDF can sub-group lines that
+            # share a RIP rebate, matching the cart's "Group by RIP" view.
+            "rip_code": l.get("rip_code"),
         })
+    # Sort so RIP-tied lines cluster (by code), then everything without a RIP
+    # follows. Within each RIP group, lines keep their original order.
+    pdf_lines.sort(key=lambda x: (
+        0 if x.get("rip_code") else 1,
+        str(x.get("rip_code") or ""),
+    ))
 
     buyer_name = store.get("name") or urow.get("full_name") or urow.get("email") or "Buyer"
     po_data = {

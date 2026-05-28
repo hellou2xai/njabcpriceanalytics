@@ -85,7 +85,9 @@ def delete_list(list_id: int, user: dict = Depends(get_current_user)):
 
 @router.get("/{list_id}")
 def get_list(list_id: int, user: dict = Depends(get_current_user)):
-    """One list with its items, each carrying a Go-UPC image_url for thumbnails."""
+    """One list with its items, each carrying a Go-UPC image_url for thumbnails
+    and a rip_code lookup from the latest CPL so the UI can sub-group lines by
+    RIP rebate (same as the cart). rip_code stays None for items not on RIP."""
     with get_pg() as con:
         lst = con.execute(
             "SELECT id, name, created_at, updated_at FROM lists WHERE id=%s AND user_id=%s",
@@ -99,7 +101,46 @@ def get_list(list_id: int, user: dict = Depends(get_current_user)):
     if items:
         with get_duckdb() as dcon:
             attach_enrichment_image(dcon, items)
+            _attach_rip_code_for_list_items(dcon, items)
     return {**dict(lst), "items": items}
+
+
+def _attach_rip_code_for_list_items(dcon, items):
+    """Best-effort: attach rip_code from the latest CPL edition per UPC, so the
+    Lists UI can sub-group entries that share a RIP rebate. Failures here must
+    never break the page; missing rip_code just means "not grouped"."""
+    from backend.db import read_parquet
+    import math as _m
+    try:
+        norms = sorted({str(it.get("upc") or "").lstrip("0") for it in items if it.get("upc")})
+        if not norms:
+            for it in items:
+                it["rip_code"] = None
+            return
+        src = read_parquet(dcon, "cpl_enriched")
+        ph = ", ".join(f"$p{i}" for i in range(len(norms)))
+        prm = {f"p{i}": u for i, u in enumerate(norms)}
+        df = dcon.execute(f"""
+            WITH latest AS (SELECT wholesaler, MAX(edition) AS ed FROM {src} GROUP BY wholesaler)
+            SELECT e.wholesaler AS w, LTRIM(e.upc,'0') AS un, CAST(e.rip_code AS VARCHAR) AS rc
+            FROM {src} e JOIN latest l ON e.wholesaler=l.wholesaler AND e.edition=l.ed
+            WHERE LTRIM(e.upc,'0') IN ({ph})
+        """, prm).fetchdf()
+        lookup = {}
+        for _, r in df.iterrows():
+            rc = r["rc"]
+            if rc is None or (isinstance(rc, float) and _m.isnan(rc)):
+                continue
+            rc_s = str(rc).strip()
+            if not rc_s or rc_s.lower() in ("none", "nan", "0"):
+                continue
+            lookup[(r["w"], str(r["un"]))] = rc_s
+        for it in items:
+            un = str(it.get("upc") or "").lstrip("0")
+            it["rip_code"] = lookup.get((it.get("wholesaler"), un))
+    except Exception:
+        for it in items:
+            it.setdefault("rip_code", None)
 
 
 @router.post("/{list_id}/items")

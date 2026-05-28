@@ -392,6 +392,9 @@ export interface ListItem {
   id: number; list_id: number; product_name: string; wholesaler: string;
   upc?: string | null; unit_volume?: string | null; combo_code?: string | null;
   notes?: string | null; image_url?: string | null;
+  // Latest CPL rip_code for this UPC, attached server-side so the Lists UI
+  // can sub-group lines by RIP rebate the same way the cart does.
+  rip_code?: string | null;
 }
 export interface ListDetail { id: number; name: string; created_at: string; updated_at: string; items: ListItem[]; }
 
@@ -437,6 +440,14 @@ export const cart = {
   update: (id: number, data: { qty_cases?: number; qty_units?: number; sales_rep_id?: number | null; saved_for_later?: boolean; notes?: string }) =>
     request(`/api/cart/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   remove: (id: number) => request(`/api/cart/${id}`, { method: 'DELETE' }),
+  // Bulk flip saved_for_later on N lines in one round-trip. Powers
+  // "Save all for later" / "Move all to cart" on RIP group headers.
+  bulkSaveForLater: (ids: number[], saved: boolean) =>
+    request<{ updated: number; saved: boolean }>('/api/cart/bulk-save-for-later',
+      { method: 'POST', body: JSON.stringify({ ids, saved }) }),
+  clear: (scope: 'active' | 'saved' | 'all' = 'active') =>
+    request<{ removed: number; scope: string }>(`/api/cart/clear?scope=${scope}`,
+      { method: 'POST' }),
   assignRep: (wholesaler: string, sales_rep_id: number | null) =>
     request('/api/cart/assign-rep', { method: 'POST', body: JSON.stringify({ wholesaler, sales_rep_id }) }),
   fromList: (list_id: number, item_ids?: number[]) =>

@@ -313,6 +313,58 @@ def remove_cart_item(item_id: int, user: dict = Depends(get_current_user)):
     return {"status": "removed"}
 
 
+@router.post("/clear")
+def clear_cart(scope: str = "active", user: dict = Depends(get_current_user)):
+    """Wipe the cart in one atomic call.
+
+    scope='active'  -> only the active (non-saved-for-later) items.
+    scope='saved'   -> only saved-for-later items.
+    scope='all'     -> everything in the cart.
+    Default is 'active' so the explicit "Clear all cart" button on the page
+    doesn't surprise users by removing their save-for-later stash too."""
+    with get_pg() as con:
+        if scope == "all":
+            r = con.execute(
+                "DELETE FROM cart_items WHERE user_id=%s", (user["id"],)
+            )
+        elif scope == "saved":
+            r = con.execute(
+                "DELETE FROM cart_items WHERE user_id=%s AND saved_for_later=1",
+                (user["id"],),
+            )
+        else:
+            r = con.execute(
+                "DELETE FROM cart_items WHERE user_id=%s AND saved_for_later=0",
+                (user["id"],),
+            )
+        try:
+            removed = int(r.rowcount or 0)
+        except Exception:
+            removed = 0
+    return {"status": "cleared", "removed": removed, "scope": scope}
+
+
+@router.post("/bulk-save-for-later")
+def bulk_save_for_later(body: dict, user: dict = Depends(get_current_user)):
+    """Flip saved_for_later on a list of cart line ids in one round-trip.
+
+    body = {"ids": [...], "saved": true|false}
+    Used by "Save all for later" / "Move all to cart" on a RIP group header
+    so the user doesn't fire N individual PATCH calls."""
+    ids = [int(x) for x in (body.get("ids") or []) if str(x).isdigit()]
+    saved = 1 if body.get("saved") else 0
+    if not ids:
+        return {"status": "noop", "updated": 0}
+    with get_pg() as con:
+        ph = ", ".join(["%s"] * len(ids))
+        con.execute(
+            f"UPDATE cart_items SET saved_for_later=%s, updated_at={NOW_UTC} "
+            f"WHERE user_id=%s AND id IN ({ph})",
+            (saved, user["id"], *ids),
+        )
+    return {"status": "updated", "updated": len(ids), "saved": bool(saved)}
+
+
 @router.post("/group-note")
 def set_group_note(body: GroupNoteIn, user: dict = Depends(get_current_user)):
     """Save the per-distributor header note (becomes the order's notes on send)."""

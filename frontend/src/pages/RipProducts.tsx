@@ -260,6 +260,11 @@ export default function RipProducts() {
             cartKey: `${it.wholesaler}|${upc}|${(it.unit_volume ?? '').toString()}`,
           });
         }
+        // Banner is a RIP-rebate ladder, so discount tier rows (source ===
+        // 'discount') are skipped. Otherwise a per-case CPL discount (e.g.,
+        // "1 cs = $59.64 off") slips into the ladder next to the real RIP
+        // amounts (1 cs = $12, 3 cs = $150) and confuses the buyer.
+        if (it.source !== 'rip') continue;
         const u = norm(it.rip_unit);
         unitVotes[u]++;
         const tKey = `${it.rip_qty}|${u}`;

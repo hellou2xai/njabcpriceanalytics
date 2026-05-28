@@ -263,11 +263,15 @@ export default function RipProducts() {
         const u = norm(it.rip_unit);
         unitVotes[u]++;
         const tKey = `${it.rip_qty}|${u}`;
-        const bestAmt = Math.max(it.curr_rip_amt ?? 0, it.next_rip_amt ?? 0);
-        if (bestAmt > 0) {
+        // Banner reflects the CURRENT month's RIP only. Including next-month
+        // tiers here (e.g., 5 cs = $500 that only kicks in next edition) mixes
+        // two months' deals in one ladder and misleads the buyer into thinking
+        // every threshold is live today.
+        const curAmt = it.curr_rip_amt ?? 0;
+        if (curAmt > 0) {
           const prev = tierMap.get(tKey);
-          if (!prev || bestAmt > prev.amt) {
-            tierMap.set(tKey, { qty: it.rip_qty, unit: it.rip_unit ?? 'Case(s)', amt: bestAmt, isCases: u === 'case' });
+          if (!prev || curAmt > prev.amt) {
+            tierMap.set(tKey, { qty: it.rip_qty, unit: it.rip_unit ?? 'Case(s)', amt: curAmt, isCases: u === 'case' });
           }
         }
       }

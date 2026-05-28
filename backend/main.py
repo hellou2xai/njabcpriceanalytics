@@ -121,6 +121,29 @@ def reload_pricing(user: dict = Depends(get_current_user)):
         warm_blurbs_async()
     except Exception as e:
         print(f"[reload] blurb generation skipped: {e}")
+
+
+@app.post("/api/admin/blurbs/generate")
+def admin_generate_blurbs(limit: int = 10, user: dict = Depends(get_current_user)):
+    """Synchronously generate up to `limit` AI deal blurbs and return counts +
+    the first error if any. Diagnostic only; the background warm runs at start."""
+    import os, traceback
+    from backend.ai_blurbs import generate_blurbs_batch, _candidates, _client_or_none
+    out: dict = {
+        "key_present": bool(os.getenv("ANTHROPIC_API_KEY")),
+        "client_ok": _client_or_none() is not None,
+    }
+    try:
+        out["candidates"] = len(_candidates(limit=max(limit, 5)))
+    except Exception as e:
+        out["candidates_error"] = f"{type(e).__name__}: {e}"
+        out["candidates_trace"] = traceback.format_exc().splitlines()[-3:]
+    try:
+        out["written"] = generate_blurbs_batch(limit=limit)
+    except Exception as e:
+        out["written_error"] = f"{type(e).__name__}: {e}"
+        out["written_trace"] = traceback.format_exc().splitlines()[-3:]
+    return out
     with get_duckdb() as con:
         counts = {t: con.execute(f"SELECT count(*) FROM {t}").fetchone()[0] for t in ALL_TABLES}
     return {"status": "reloaded", "counts": counts}

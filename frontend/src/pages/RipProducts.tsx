@@ -83,6 +83,19 @@ export default function RipProducts() {
   const [order, setOrder] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(0);
   const [limit, setLimit] = useState(50);
+  // Group-by-RIP toggle: when on, the loaded page is re-ordered client-side
+  // so products sharing a rip_number cluster together and each row wears a
+  // colour band keyed off the rip code (matches Catalog and the cart). The
+  // existing per-product tier grouping (consecutive tier rows under one
+  // product header) is preserved.
+  const [groupByRip, setGroupByRip] = useState<boolean>(() =>
+    localStorage.getItem('rip_products_group_by_rip') === '1'
+  );
+  const toggleGroupByRip = (v: boolean) => {
+    setGroupByRip(v);
+    if (v) localStorage.setItem('rip_products_group_by_rip', '1');
+    else localStorage.removeItem('rip_products_group_by_rip');
+  };
   const { open } = useProductQuickView();
 
   // Shared draft-cart quantities (same localStorage cart as the Catalog).
@@ -118,7 +131,39 @@ export default function RipProducts() {
     queryFn: () => catalog.categories({ wholesaler: wholesaler || undefined }),
   });
 
-  const items = data?.items ?? [];
+  const rawItems = data?.items ?? [];
+
+  // When Group by RIP is on, re-order the loaded page so products sharing a
+  // rip_number cluster together. The existing per-product tier grouping
+  // (multiple rows under one product header) is preserved: all tier rows of
+  // a single (wholesaler, product_name, unit_volume) keep their adjacency.
+  const items = useMemo(() => {
+    if (!groupByRip) return rawItems;
+    // Stable group key per product so tier rows ride along with their header.
+    const groupKey = (i: typeof rawItems[number]) =>
+      `${i.wholesaler}|${i.product_name}|${i.unit_volume ?? ''}`;
+    // Capture the index of each product's first row so groups sort in their
+    // original (server-ranked) order WITHIN a single rip_number cluster.
+    const order = new Map<string, number>();
+    rawItems.forEach((it, idx) => {
+      const k = groupKey(it);
+      if (!order.has(k)) order.set(k, idx);
+    });
+    const ripKey = (rc: string | null | undefined) => {
+      const s = (rc ?? '').toString().trim();
+      // Empty / sentinel codes drop to the bottom so real groups read first.
+      return s && s !== '0' ? s : '~';
+    };
+    const sorted = [...rawItems].sort((a, b) => {
+      const ra = ripKey(a.rip_number);
+      const rb = ripKey(b.rip_number);
+      if (ra !== rb) return ra.localeCompare(rb);
+      const ga = order.get(groupKey(a)) ?? 0;
+      const gb = order.get(groupKey(b)) ?? 0;
+      return ga - gb;
+    });
+    return sorted;
+  }, [rawItems, groupByRip]);
 
   const stats = useMemo(() => {
     if (items.length === 0) return null;
@@ -253,6 +298,14 @@ export default function RipProducts() {
       value: newNext ? '1' : '',
       onChange: v => { setNewNext(v === '1'); setPage(0); },
     },
+    {
+      type: 'toggle',
+      key: 'group_by_rip',
+      title: 'Display',
+      value: groupByRip,
+      onChange: toggleGroupByRip,
+      label: 'Group by Case Mix RIP',
+    },
   ];
 
   const resetFilters = () => {
@@ -358,10 +411,26 @@ export default function RipProducts() {
 
                 const code = item.rip_number ?? '';
 
+                // Coloured left band when Group by RIP is on. Stable hue per
+                // rip_number matches the Catalog table and the cart's RIP
+                // group sticker so the same rebate reads the same colour
+                // everywhere in the app. Drawn as an inset shadow so existing
+                // row layout / padding stays unchanged.
+                let ripBandStyle: React.CSSProperties | undefined;
+                if (groupByRip && code) {
+                  let h = 0;
+                  for (let i = 0; i < code.length; i++) h = (h * 31 + code.charCodeAt(i)) % 360;
+                  ripBandStyle = {
+                    boxShadow: `inset 6px 0 0 hsl(${h} 65% 55%)`,
+                    background: `linear-gradient(90deg, hsl(${h} 75% 96%) 0, transparent 220px)`,
+                  };
+                }
+
                 return (
                   <tr
                     key={`${item.product_name}-${item.wholesaler}-${item.unit_volume}-${item.rip_qty}-${item.rip_unit}-${idx}`}
-                    className={`rip-row ${isFirstForProduct ? 'rip-row-first' : 'rip-row-sub'}`}
+                    className={`rip-row ${isFirstForProduct ? 'rip-row-first' : 'rip-row-sub'}${groupByRip && code ? ' has-rip-group' : ''}`}
+                    style={ripBandStyle}
                     data-ctx=""
                     data-ctx-product={item.product_name}
                     data-ctx-wholesaler={item.wholesaler}

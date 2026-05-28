@@ -37,9 +37,21 @@ def get_parquet_dir() -> Path:
 def get_duckdb():
     """Yield a read-only DuckDB connection to the local pricing cache, which is
     materialised from Postgres (or Parquet in dev) by backend.pricing_cache.
-    Built lazily on first use and rebuilt by the reload endpoint."""
+    Built lazily on first use and rebuilt by the reload endpoint.
+
+    With multiple uvicorn workers, a sibling worker can sweep the cache file
+    this worker held between get_pricing_path() and duckdb.connect(). We retry
+    once on IOException so the request recovers instead of 500ing."""
     from backend.pricing_cache import get_pricing_path
-    con = duckdb.connect(str(get_pricing_path()), read_only=True)
+    try:
+        con = duckdb.connect(str(get_pricing_path()), read_only=True)
+    except (duckdb.IOException, OSError):
+        # Sibling worker swept our file between resolution and open. Calling
+        # get_pricing_path() again re-checks existence and adopts the newest
+        # file on disk (or rebuilds if nothing is left).
+        import backend.pricing_cache as _pc
+        _pc._current_path = None
+        con = duckdb.connect(str(get_pricing_path()), read_only=True)
     # Single-threaded so row order is deterministic. Native-table scans are
     # parallelised by default, which makes queries that lack a total ORDER BY
     # (ties) or post-process in Python return a varying row order run to run.

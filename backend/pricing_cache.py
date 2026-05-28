@@ -64,11 +64,19 @@ def pg_libpq(url: str) -> str:
 
 
 def _cleanup_old(keep: Path | None):
-    """Best-effort removal of stale cache files (skip any still held by a reader)."""
+    """Best-effort removal of stale cache files.
+
+    Skips the keep file, anything modified in the last 10 minutes (likely held
+    by a sibling worker that just rebuilt it), and anything whose unlink fails
+    because a reader still has it open. Multiple uvicorn workers each maintain
+    their own _current_path, so we must not sweep each other's fresh files."""
+    now = time.time()
     for p in CACHE_DIR.glob("pricing_*.duckdb"):
         if keep is not None and p == keep:
             continue
         try:
+            if now - p.stat().st_mtime < 600:
+                continue  # another worker built this recently; leave it alone
             p.unlink()
         except OSError:
             pass  # a reader still has it open; leave it for next time
@@ -190,7 +198,22 @@ def build_pricing_cache() -> Path:
 
 
 def get_pricing_path() -> Path:
-    """Path to the current cache file, building it on first use."""
-    if _current_path is None:
-        build_pricing_cache()
+    """Path to the current cache file, building it on first use.
+
+    Also recovers when a sibling worker rebuilt the cache and swept the file
+    this worker held: we adopt the newest pricing_*.duckdb on disk before
+    falling back to a full rebuild."""
+    global _current_path
+    if _current_path is not None and _current_path.exists():
+        return _current_path
+    # Adopt the newest sibling-worker file if one exists; otherwise build.
+    candidates = sorted(
+        CACHE_DIR.glob("pricing_*.duckdb"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if candidates:
+        _current_path = candidates[0]
+        return _current_path
+    build_pricing_cache()
     return _current_path

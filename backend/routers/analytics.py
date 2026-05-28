@@ -102,6 +102,7 @@ def get_price_movers(
     the product image."""
     from backend.enrichment_join import attach_enrichment_image
     from datetime import date as _date
+    import pandas as pd
 
     today = _date.today()
     current_ym = f"{today.year:04d}-{today.month:02d}"
@@ -121,6 +122,36 @@ def get_price_movers(
         else:
             vintage_expr = "NULL AS vintage"
 
+        # Compute (cur_ed, next_ed) per wholesaler in one small query, then build
+        # explicit (wholesaler, edition) pairs so the heavy join filters tightly
+        # instead of scanning the whole cpl_enriched table.
+        eds_df = con.execute(
+            f"""SELECT wholesaler,
+                   COALESCE(MAX(CASE WHEN edition <= $c THEN edition END), MAX(edition)) AS cur_ed,
+                   MIN(CASE WHEN edition > $c THEN edition END) AS next_ed
+                FROM {cpl} GROUP BY wholesaler""",
+            {"c": current_ym},
+        ).fetchdf()
+
+        ed_by_ws: dict = {}
+        conds, params, i = [], {}, 0
+        for _, row in eds_df.iterrows():
+            ws = row["wholesaler"]
+            if wholesaler and ws != wholesaler:
+                continue
+            cur_ed = row.get("cur_ed"); next_ed = row.get("next_ed")
+            cur_s = str(cur_ed) if cur_ed is not None and (not isinstance(cur_ed, float) or cur_ed == cur_ed) else None
+            next_s = str(next_ed) if next_ed is not None and (not isinstance(next_ed, float) or next_ed == next_ed) else None
+            ed_by_ws[ws] = (cur_s, next_s)
+            for ed in (cur_s, next_s):
+                if not ed:
+                    continue
+                conds.append(f"(pc.wholesaler = $w{i} AND pc.edition = $e{i})")
+                params[f"w{i}"], params[f"e{i}"] = ws, ed
+                i += 1
+        if not conds:
+            return []
+
         select_cols = ", ".join([
             "pc.wholesaler", "pc.edition", "pc.product_name",
             col("product_type"), col("unit_volume"), vintage_expr,
@@ -129,82 +160,59 @@ def get_price_movers(
             "c.upc AS upc", "c.brand AS brand", "c.unit_qty AS unit_qty",
             "c.effective_case_price AS effective_case_price",
             "c.has_rip AS has_rip", "c.has_discount AS has_discount",
-            "e.cur_ed AS cur_edition", "e.next_ed AS next_edition",
-            "nxt.frontline_case_price AS next_case_price",
-            "CASE WHEN pc.edition = e.cur_ed THEN 'cur' "
-            "     WHEN pc.edition = e.next_ed THEN 'next' "
-            "     ELSE NULL END AS slot",
         ])
 
-        # Per wholesaler, current-month edition (latest <= today's YYYY-MM) and
-        # the next edition after it. We pull price_changes for BOTH editions so
-        # we can classify each product as current_only / next_only / both.
-        params = {"current_ym": current_ym}
-        ws_clause = ""
-        if wholesaler:
-            ws_clause = "AND pc.wholesaler = $wholesaler"
-            params["wholesaler"] = wholesaler
-
         df = con.execute(f"""
-            WITH eds AS (
-              SELECT wholesaler,
-                     COALESCE(MAX(CASE WHEN edition <= $current_ym THEN edition END), MAX(edition)) AS cur_ed,
-                     MIN(CASE WHEN edition > $current_ym THEN edition END) AS next_ed
-              FROM {cpl} GROUP BY wholesaler
-            )
             SELECT {select_cols}
             FROM {src} pc
-            JOIN eds e ON e.wholesaler = pc.wholesaler
-                      AND pc.edition IN (e.cur_ed, e.next_ed)
             LEFT JOIN {cpl} c
               ON c.wholesaler = pc.wholesaler
              AND c.edition    = pc.edition
              AND c.product_name = pc.product_name
-            LEFT JOIN {cpl} nxt
-              ON nxt.wholesaler = pc.wholesaler
-             AND nxt.edition    = e.next_ed
-             AND nxt.product_name = pc.product_name
-            WHERE 1=1 {ws_clause}
+            WHERE ({' OR '.join(conds)})
         """, params).fetchdf()
 
-        # Group rows by (wholesaler, product_name); a single product can have a
-        # change in current AND a change in next. Classify validity for the
-        # requested direction.
+        # Group by (wholesaler, product_name); classify validity for the
+        # requested direction by looking at the cur slot vs the next slot.
         slots: dict = {}
         for _, r in df.iterrows():
+            cur_s, next_s = ed_by_ws.get(r["wholesaler"], (None, None))
+            ed = str(r["edition"])
+            slot = "cur" if ed == cur_s else ("next" if ed == next_s else None)
+            if slot is None:
+                continue
             key = (r["wholesaler"], r["product_name"])
-            slots.setdefault(key, {})[r["slot"]] = r
-        out = []
-        for (_ws, _name), s in slots.items():
-            cur = s.get("cur"); nxt_pc = s.get("next")
-            cur_dir = (cur["direction"] if cur is not None else None)
-            next_dir = (nxt_pc["direction"] if nxt_pc is not None else None)
-            cur_match = cur is not None and cur_dir == direction
-            next_match = nxt_pc is not None and next_dir == direction
+            slots.setdefault(key, {})[slot] = r
+
+        out: list[dict] = []
+        for (ws, _name), s in slots.items():
+            cur_r = s.get("cur"); next_r = s.get("next")
+            cur_dir = (cur_r["direction"] if cur_r is not None else None)
+            next_dir = (next_r["direction"] if next_r is not None else None)
+            cur_match = cur_r is not None and cur_dir == direction
+            next_match = next_r is not None and next_dir == direction
             if not cur_match and not next_match:
-                continue  # product has no change in the requested direction either month
+                continue
             if cur_match and next_match:
-                vlabel = "both"; base = cur
-            elif cur_match and nxt_pc is None:
-                # Current direction change, no further change next month -> price holds.
-                vlabel = "both"; base = cur
+                vlabel = "both"; base = cur_r
+            elif cur_match and next_r is None:
+                vlabel = "both"; base = cur_r  # next price holds
             elif cur_match and not next_match:
-                # Current direction change AND a reverse change next month -> rebound.
-                vlabel = "current_only"; base = cur
+                vlabel = "current_only"; base = cur_r  # rebound in next
             else:
-                vlabel = "next_only"; base = nxt_pc
+                vlabel = "next_only"; base = next_r
             if validity != "all" and vlabel != validity:
                 continue
             row = {c: base[c] for c in base.index}
             row["validity"] = vlabel
+            cur_s, next_s = ed_by_ws.get(ws, (None, None))
+            row["cur_edition"] = cur_s
+            row["next_edition"] = next_s
+            row["next_case_price"] = next_r["case_price"] if next_r is not None else None
             out.append(row)
 
-        # Sort: biggest absolute % change first.
         out.sort(key=lambda r: abs(r.get("case_delta_pct") or 0), reverse=True)
         out = out[:limit]
-
-        # _records cleans NaN -> None and stringifies any timestamps.
-        import pandas as pd
         out = _records(pd.DataFrame(out)) if out else []
         try:
             attach_enrichment_image(con, out)

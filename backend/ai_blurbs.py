@@ -45,46 +45,75 @@ _SYSTEM = (
 
 
 def _candidates(limit: int = 500) -> list[dict]:
-    """Time-sensitive products in the current or next edition that need a blurb."""
+    """Time-sensitive products in the current/next edition that don't yet have
+    a blurb. Mirrors the time_sensitive endpoint's SQL so we generate for the
+    exact same set the user sees."""
     t = _date.today()
     current_ym = f"{t.year:04d}-{t.month:02d}"
     with get_duckdb() as con:
-        rows = con.execute(
-            """
-            WITH eds AS (
-              SELECT wholesaler,
-                     COALESCE(MAX(CASE WHEN edition <= $c THEN edition END), MAX(edition)) AS cur_ed,
-                     MIN(CASE WHEN edition > $c THEN edition END) AS next_ed
-              FROM cpl_enriched GROUP BY wholesaler
-            ),
-            pairs AS (
-              SELECT wholesaler, cur_ed AS ed FROM eds WHERE cur_ed IS NOT NULL
-              UNION ALL
-              SELECT wholesaler, next_ed AS ed FROM eds WHERE next_ed IS NOT NULL
-            ),
-            cand AS (
-              SELECT c.wholesaler, c.edition, c.upc, c.product_name, c.unit_volume, c.unit_qty,
-                     c.frontline_case_price, c.effective_case_price, c.total_savings_per_case,
-                     c.discount_pct, c.has_rip, c.has_closeout, c.from_date, c.to_date,
-                     date_diff('day', CURRENT_DATE, CAST(c.to_date AS DATE)) AS dte
-              FROM cpl_enriched c JOIN pairs p ON c.wholesaler = p.wholesaler AND c.edition = p.ed
-              WHERE c.from_date IS NOT NULL AND c.to_date IS NOT NULL
-                AND CAST(c.to_date AS DATE) >= CURRENT_DATE
-                AND c.upc IS NOT NULL AND c.upc <> ''
-                AND NOT (EXTRACT(day FROM CAST(c.from_date AS DATE)) = 1
-                         AND CAST(c.to_date AS DATE) = (date_trunc('month', CAST(c.to_date AS DATE)) + INTERVAL 1 MONTH - INTERVAL 1 DAY))
-                AND c.total_savings_per_case IS NOT NULL AND c.total_savings_per_case > 0
-            )
-            SELECT cand.* FROM cand
-            LEFT JOIN ai_deal_blurbs b
-              ON b.wholesaler = cand.wholesaler AND b.upc = cand.upc AND b.edition = cand.edition
-            WHERE b.blurb IS NULL
-            ORDER BY cand.total_savings_per_case DESC NULLS LAST
-            LIMIT $lim
-            """,
-            {"c": current_ym, "lim": limit},
+        eds_df = con.execute(
+            "SELECT wholesaler, "
+            "COALESCE(MAX(CASE WHEN edition <= $c THEN edition END), MAX(edition)) AS cur_ed, "
+            "MIN(CASE WHEN edition > $c THEN edition END) AS next_ed "
+            "FROM cpl_enriched GROUP BY wholesaler",
+            {"c": current_ym},
         ).fetchdf()
-    return rows.to_dict("records")
+        conds, params, idx = [], {}, 0
+        for _, row in eds_df.iterrows():
+            for ed in (row["cur_ed"], row["next_ed"]):
+                if ed is None or (isinstance(ed, float) and ed != ed):
+                    continue
+                conds.append(f"(wholesaler = $w{idx} AND edition = $e{idx})")
+                params[f"w{idx}"], params[f"e{idx}"] = row["wholesaler"], ed
+                idx += 1
+        if not conds:
+            return []
+        rows = con.execute(f"""
+            SELECT wholesaler, edition, upc, product_name, unit_volume, unit_qty,
+                   frontline_case_price, effective_case_price, total_savings_per_case,
+                   discount_pct, has_rip, has_closeout, from_date, to_date,
+                   date_diff('day', CURRENT_DATE, CAST(to_date AS DATE)) AS dte
+            FROM cpl_enriched
+            WHERE from_date IS NOT NULL AND to_date IS NOT NULL
+              AND CAST(to_date AS DATE) >= CURRENT_DATE
+              AND upc IS NOT NULL AND upc <> ''
+              AND total_savings_per_case IS NOT NULL AND total_savings_per_case > 0
+              AND NOT (EXTRACT(day FROM CAST(from_date AS DATE)) = 1
+                       AND CAST(to_date AS DATE) = (date_trunc('month', CAST(to_date AS DATE)) + INTERVAL 1 MONTH - INTERVAL 1 DAY))
+              AND ({' OR '.join(conds)})
+            ORDER BY total_savings_per_case DESC NULLS LAST
+            LIMIT {int(limit)}
+        """, params).fetchdf()
+
+    # Exclude products that already have a blurb in Postgres.
+    have: set = set()
+    try:
+        with get_pg() as pg:
+            cur = pg.execute("SELECT wholesaler, LTRIM(upc, '0'), edition FROM ai_deal_blurbs")
+            for w, u, e in cur.fetchall():
+                have.add((w, u, e))
+    except Exception:
+        have = set()
+
+    out: list[dict] = []
+    for _, r in rows.iterrows():
+        u_raw = str(r["upc"]) if r["upc"] is not None else ""
+        u_norm = u_raw.lstrip("0")
+        if (r["wholesaler"], u_norm, r["edition"]) in have:
+            continue
+        out.append({
+            "wholesaler": r["wholesaler"], "edition": r["edition"], "upc": u_raw,
+            "product_name": r["product_name"], "unit_volume": r.get("unit_volume"),
+            "unit_qty": r.get("unit_qty"),
+            "frontline_case_price": r.get("frontline_case_price"),
+            "effective_case_price": r.get("effective_case_price"),
+            "total_savings_per_case": r.get("total_savings_per_case"),
+            "discount_pct": r.get("discount_pct"),
+            "has_rip": bool(r.get("has_rip")), "has_closeout": bool(r.get("has_closeout")),
+            "from_date": r.get("from_date"), "to_date": r.get("to_date"),
+            "dte": r.get("dte"),
+        })
+    return out
 
 
 def _prompt(row: dict) -> str:

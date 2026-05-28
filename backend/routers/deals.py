@@ -510,10 +510,13 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
             un = u.lstrip("0") if u else None
             if un and (r["wholesaler"], un) in rip_next:
                 continue  # RIP still available next month -> not time-sensitive
+            has_closeout = bool(r["has_closeout"])
+            has_rip = bool(r["has_rip"])
+            has_discount = bool(r["has_discount"])
             kinds = []
-            if bool(r["has_closeout"]): kinds.append("Closeout")
-            if bool(r["has_rip"]): kinds.append("RIP")
-            if bool(r["has_discount"]): kinds.append("Discount")
+            if has_closeout: kinds.append("Closeout")
+            if has_rip: kinds.append("RIP")
+            if has_discount: kinds.append("Discount")
             dte = r["days_to_expire"]
             out.append({
                 "wholesaler": r["wholesaler"],
@@ -530,8 +533,15 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
                 "effective_case_price": _n(r["effective_case_price"]),
                 "total_savings_per_case": _n(r["total_savings_per_case"]),
                 "discount_pct": _n(r["discount_pct"]),
+                "rip_savings": _n(r["rip_savings"]),
+                "has_rip": has_rip,
+                "has_discount": has_discount,
+                "has_closeout": has_closeout,
                 "deal_kind": " / ".join(kinds) or "Special price",
             })
+
+        # Add product images (Go-UPC enrichment) for the card view.
+        attach_enrichment_image(con, out)
         return out
 
 

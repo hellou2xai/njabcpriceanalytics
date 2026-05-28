@@ -36,7 +36,7 @@ const NAV_GROUPS: {
       { path: '/new-items', label: 'New Items', icon: Sparkles },
       { path: '/combos', label: 'Combos', icon: Combine },
       { path: '/rip-products', label: 'RIP Products', icon: BadgeDollarSign },
-      { path: '/#tile=time-sensitive', label: 'Time-Sensitive Deals', icon: Clock },
+      { path: '/time-sensitive', label: 'Time-Sensitive Deals', icon: Clock },
       { path: '/#tile=top-discounts', label: 'Top Discounts', icon: Percent },
     ],
   },

@@ -286,7 +286,13 @@ export interface TimeSensitiveDeal {
   effective_case_price: number | null;
   total_savings_per_case: number | null;
   discount_pct: number | null;
+  rip_savings?: number | null;
+  has_rip?: boolean;
+  has_discount?: boolean;
+  has_closeout?: boolean;
   deal_kind: string;
+  image_url?: string | null;       // from Go-UPC enrichment
+  ai_blurb?: string | null;         // pre-generated AI explanation
 }
 
 // ---- Intelligence ----

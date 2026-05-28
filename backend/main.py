@@ -28,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 load_dotenv()
 
 from backend.db import init_user_db
-from backend.auth import router as auth_router, get_current_user
+from backend.auth import router as auth_router, get_current_user, require_admin
 from backend.routers import catalog, analytics, deals, intelligence, user_state, alerts, qa, websearch, stores, feedback, admin, consent, settings, share, todos, activity, lists, cart
 
 app = FastAPI(
@@ -154,14 +154,16 @@ def reload_pricing(user: dict = Depends(get_current_user)):
 
 
 @app.post("/api/admin/blurbs/generate")
-def admin_generate_blurbs(limit: int = 10, user: dict = Depends(get_current_user)):
-    """Synchronously generate up to `limit` AI deal blurbs and return counts +
-    the first error if any. Diagnostic only; the background warm runs at start."""
+def admin_generate_blurbs(limit: int = 50, user: dict = Depends(require_admin)):
+    """Synchronously generate up to `limit` AI blurbs of each kind (deal,
+    mover-down, mover-up, product) and return counts + first error if any.
+    Use the Admin page button or POST it directly with ?limit=<N>."""
     import os, traceback
     from backend.ai_blurbs import generate_blurbs_batch, _candidates, _client_or_none
     out: dict = {
         "key_present": bool(os.getenv("ANTHROPIC_API_KEY")),
         "client_ok": _client_or_none() is not None,
+        "limit": int(limit),
     }
     try:
         out["candidates"] = len(_candidates(limit=max(limit, 5)))
@@ -169,25 +171,32 @@ def admin_generate_blurbs(limit: int = 10, user: dict = Depends(get_current_user
         out["candidates_error"] = f"{type(e).__name__}: {e}"
         out["candidates_trace"] = traceback.format_exc().splitlines()[-3:]
     try:
-        out["written"] = generate_blurbs_batch(limit=limit)
+        out["deal_written"] = generate_blurbs_batch(limit=limit)
     except Exception as e:
-        out["written_error"] = f"{type(e).__name__}: {e}"
-        out["written_trace"] = traceback.format_exc().splitlines()[-3:]
-    # Also generate mover blurbs for both directions.
+        out["deal_error"] = f"{type(e).__name__}: {e}"
+        out["deal_trace"] = traceback.format_exc().splitlines()[-3:]
     try:
         from backend.ai_mover_blurbs import generate_mover_blurbs_batch
-        out["movers_down"] = generate_mover_blurbs_batch("down", limit=limit)
-        out["movers_up"] = generate_mover_blurbs_batch("up", limit=limit)
+        out["mover_down_written"] = generate_mover_blurbs_batch("down", limit=limit)
+        out["mover_up_written"] = generate_mover_blurbs_batch("up", limit=limit)
     except Exception as e:
-        out["movers_error"] = f"{type(e).__name__}: {e}"
-    # PG diagnostic: how many rows exist + a small sample.
+        out["mover_error"] = f"{type(e).__name__}: {e}"
+        out["mover_trace"] = traceback.format_exc().splitlines()[-3:]
+    try:
+        from backend.ai_product_blurbs import generate_blurbs_batch as gen_product
+        out["product_written"] = gen_product(limit=limit)
+    except Exception as e:
+        out["product_error"] = f"{type(e).__name__}: {e}"
+        out["product_trace"] = traceback.format_exc().splitlines()[-3:]
     try:
         from backend.pg import get_pg
         with get_pg() as pg:
             row = pg.execute("SELECT COUNT(*) AS n FROM ai_deal_blurbs").fetchone()
-            out["pg_count"] = int(row["n"]) if row else 0
+            out["pg_deal_total"] = int(row["n"]) if row else 0
             row2 = pg.execute("SELECT COUNT(*) AS n FROM ai_mover_blurbs").fetchone()
-            out["pg_movers_count"] = int(row2["n"]) if row2 else 0
+            out["pg_mover_total"] = int(row2["n"]) if row2 else 0
+            row3 = pg.execute("SELECT COUNT(*) AS n FROM ai_product_blurbs").fetchone()
+            out["pg_product_total"] = int(row3["n"]) if row3 else 0
     except Exception as e:
         out["pg_error"] = f"{type(e).__name__}: {e}"
     return out

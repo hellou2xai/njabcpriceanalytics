@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Trash2, RefreshCw, UserCheck, UserX, X, Activity } from 'lucide-react';
-import { admin, feedback, settings, share } from '../lib/api';
+import { Trash2, RefreshCw, UserCheck, UserX, X, Activity, Sparkles } from 'lucide-react';
+import { admin, feedback, settings, share, type BlurbGenerateResult } from '../lib/api';
 import { setShareContentCache } from '../lib/share';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -156,6 +156,9 @@ export default function Admin() {
   const [reloadMsg, setReloadMsg] = useState('');
   const [detail, setDetail] = useState<{ entity: string; label: string } | null>(null);
   const [detailUser, setDetailUser] = useState<number | null>(null);
+  const [blurbLimit, setBlurbLimit] = useState<number>(50);
+  const [blurbResult, setBlurbResult] = useState<BlurbGenerateResult | null>(null);
+  const [blurbError, setBlurbError] = useState<string>('');
 
   const { data: stats } = useQuery({ queryKey: ['admin-stats'], queryFn: admin.stats, enabled: isAdmin });
   const { data: users } = useQuery({ queryKey: ['admin-users'], queryFn: admin.users, enabled: isAdmin });
@@ -176,6 +179,11 @@ export default function Admin() {
     mutationFn: () => admin.reloadPricing(),
     onSuccess: (res) => setReloadMsg(`Pricing cache rebuilt (${(res.counts?.cpl_enriched ?? 0).toLocaleString()} enriched rows).`),
     onError: (e) => setReloadMsg(e instanceof Error ? e.message : 'Reload failed.'),
+  });
+  const blurbMut = useMutation({
+    mutationFn: () => admin.generateBlurbs(blurbLimit),
+    onSuccess: (res) => { setBlurbResult(res); setBlurbError(''); },
+    onError: (e) => { setBlurbError(e instanceof Error ? e.message : 'Generation failed.'); setBlurbResult(null); },
   });
 
   const onCardClick = (key: string, label: string, drill: string) => {
@@ -226,6 +234,52 @@ export default function Admin() {
           <RefreshCw size={14} /> {reloadMut.isPending ? 'Reloading...' : 'Reload pricing cache'}
         </button>
         {reloadMsg && <span className="text-muted" style={{ fontSize: 13 }}>{reloadMsg}</span>}
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 10 }}>
+        <button className="btn btn-secondary btn-sm" disabled={blurbMut.isPending}
+                onClick={() => { setBlurbError(''); setBlurbResult(null); blurbMut.mutate(); }}>
+          <Sparkles size={14} /> {blurbMut.isPending ? 'Generating...' : 'Generate AI blurbs now'}
+        </button>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text-muted)' }}>
+          batch size
+          <input
+            type="number" min={1} max={2000} step={10}
+            value={blurbLimit}
+            onChange={e => setBlurbLimit(Math.max(1, Math.min(2000, parseInt(e.target.value || '50', 10) || 50)))}
+            style={{ width: 70, padding: '3px 6px', fontSize: 13,
+                     background: 'var(--bg)', color: 'var(--text)',
+                     border: '1px solid var(--border)', borderRadius: 'var(--radius)' }}
+          />
+          per kind
+        </label>
+        {blurbResult && (
+          <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+            wrote{' '}
+            <strong style={{ color: 'var(--text)' }}>{blurbResult.product_written ?? 0}</strong> product,{' '}
+            <strong style={{ color: 'var(--text)' }}>{blurbResult.deal_written ?? 0}</strong> deal,{' '}
+            <strong style={{ color: 'var(--text)' }}>
+              {(blurbResult.mover_up_written ?? 0) + (blurbResult.mover_down_written ?? 0)}
+            </strong>{' '}
+            mover blurbs ·{' '}
+            total in DB:{' '}
+            {(blurbResult.pg_product_total ?? 0).toLocaleString()} product /{' '}
+            {(blurbResult.pg_deal_total ?? 0).toLocaleString()} deal /{' '}
+            {(blurbResult.pg_mover_total ?? 0).toLocaleString()} mover
+            {!blurbResult.client_ok && (
+              <span className="text-red" style={{ marginLeft: 8 }}>
+                · ANTHROPIC_API_KEY {blurbResult.key_present ? 'rejected' : 'not set'}
+              </span>
+            )}
+            {(blurbResult.product_error || blurbResult.deal_error || blurbResult.mover_error) && (
+              <span className="text-red" style={{ marginLeft: 8 }}>
+                · errors: {[blurbResult.product_error, blurbResult.deal_error, blurbResult.mover_error]
+                  .filter(Boolean).join(' | ')}
+              </span>
+            )}
+          </span>
+        )}
+        {blurbError && <span className="text-red" style={{ fontSize: 13 }}>{blurbError}</span>}
       </div>
 
       <ShareMessageEditor />

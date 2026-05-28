@@ -275,7 +275,29 @@ export const admin = {
   deactivateUser: (id: number) => request<{ status: string }>(`/api/admin/users/${id}/deactivate`, { method: 'POST' }),
   deleteUser: (id: number) => request<{ status: string }>(`/api/admin/users/${id}`, { method: 'DELETE' }),
   reloadPricing: () => request<{ status: string; counts: Record<string, number> }>('/api/admin/reload-pricing', { method: 'POST' }),
+  generateBlurbs: (limit = 50) =>
+    request<BlurbGenerateResult>(`/api/admin/blurbs/generate?limit=${limit}`, { method: 'POST' }),
 };
+
+export interface BlurbGenerateResult {
+  key_present: boolean;
+  client_ok: boolean;
+  limit: number;
+  candidates?: number;
+  deal_written?: number;
+  mover_down_written?: number;
+  mover_up_written?: number;
+  product_written?: number;
+  pg_deal_total?: number;
+  pg_mover_total?: number;
+  pg_product_total?: number;
+  // Surface errors (if any) so the admin sees them inline.
+  candidates_error?: string;
+  deal_error?: string;
+  mover_error?: string;
+  product_error?: string;
+  pg_error?: string;
+}
 
 export interface TimeSensitiveDeal {
   wholesaler: string;

@@ -7,7 +7,16 @@ import PriceBreakdown from './PriceBreakdown';
 import PriceWaterfall from './PriceWaterfall';
 import FavoriteButton from './FavoriteButton';
 import ProductThumb from './ProductThumb';
+import AddToCartButton from './AddToCartButton';
 import { distributorName } from '../lib/distributors';
+
+// Stable colour hue for a RIP code so the same rebate gets the same swatch
+// everywhere (here and on the cart's RIP-grouped view).
+export function ripHue(code: string): number {
+  let h = 0;
+  for (let i = 0; i < code.length; i++) h = (h * 31 + code.charCodeAt(i)) % 360;
+  return h;
+}
 
 interface CompareSide {
   productName: string;
@@ -102,6 +111,17 @@ function QuickViewModal({
   const { data: breakdown } = useQuery({
     queryKey: ['product-breakdown', wholesaler, productName, upc, unitVolume, unitQty, vintage],
     queryFn: () => catalog.productBreakdown(wholesaler, productName, { upc, unit_volume: unitVolume, unit_qty: unitQty, vintage }),
+  });
+
+  // RIP siblings: every other product sharing this product's rip_code in the
+  // latest edition. RIP rebates qualify on combined quantity across the group,
+  // so we surface the full list with per-row Add to Cart.
+  const ripCodeRaw = detail?.product?.rip_code;
+  const ripCode = ripCodeRaw && !['None', 'nan', '0', ''].includes(String(ripCodeRaw)) ? String(ripCodeRaw) : null;
+  const { data: ripSiblings } = useQuery({
+    enabled: !!ripCode,
+    queryKey: ['rip-siblings', wholesaler, ripCode, upc],
+    queryFn: () => catalog.ripSiblings(wholesaler, ripCode!, { exclude_upc: upc }),
   });
 
   // Optional second distributor for side-by-side comparison
@@ -540,6 +560,79 @@ function QuickViewModal({
                   </table>
                 </div>
               </>
+              );
+            })()}
+
+            {ripCode && ripSiblings && ripSiblings.items.length > 0 && (() => {
+              const items = ripSiblings.items;
+              const hue = ripHue(ripCode);
+              const bandBg = `hsl(${hue} 75% 95%)`;
+              const bandFg = `hsl(${hue} 65% 28%)`;
+              const bandBorder = `hsl(${hue} 60% 78%)`;
+              const ripDesc = detail.rip_tiers?.[0]?.description ?? null;
+              return (
+                <>
+                  <h4>
+                    Other Products in this RIP{' '}
+                    <span className="source-badge source-rip" style={{ marginLeft: 6 }}>RIP {ripCode}</span>
+                    <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)', marginLeft: 8 }}>
+                      buy these together to qualify for the rebate · {items.length} item{items.length === 1 ? '' : 's'}
+                    </span>
+                  </h4>
+                  {ripDesc && (
+                    <div style={{
+                      padding: '6px 10px', marginBottom: 8, borderRadius: 6, fontSize: 12,
+                      background: bandBg, color: bandFg, border: `1px solid ${bandBorder}`,
+                    }}>
+                      {ripDesc}
+                    </div>
+                  )}
+                  <div className="rip-siblings-list">
+                    {items.map((sib, i) => {
+                      const eff = sib.effective_case_price ?? sib.frontline_case_price ?? null;
+                      const list = sib.frontline_case_price ?? null;
+                      const saveCs = sib.total_savings_per_case ?? null;
+                      return (
+                        <div
+                          key={`${sib.wholesaler}|${sib.upc}|${sib.unit_volume}|${i}`}
+                          className="rip-sibling-row"
+                          style={{ borderLeft: `4px solid hsl(${hue} 65% 55%)` }}
+                        >
+                          <ProductThumb src={sib.image_url ?? null} alt={sib.product_name} size={44} />
+                          <div className="rip-sibling-meta">
+                            <div className="rip-sibling-name">{sib.product_name}</div>
+                            <div className="rip-sibling-sub">
+                              {[sib.unit_volume, sib.unit_qty ? `${sib.unit_qty} btl/cs` : null, sib.upc]
+                                .filter(Boolean).join(' · ')}
+                            </div>
+                          </div>
+                          <div className="rip-sibling-price">
+                            {eff != null && (
+                              <div>
+                                <span className="text-green font-bold">${eff.toFixed(2)}/cs</span>
+                                {list != null && eff < list - 0.005 && (
+                                  <span className="text-muted" style={{ textDecoration: 'line-through', marginLeft: 6, fontWeight: 400 }}>
+                                    ${list.toFixed(2)}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                            {saveCs != null && saveCs > 0 && (
+                              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>save ${saveCs.toFixed(2)}/cs</div>
+                            )}
+                          </div>
+                          <AddToCartButton
+                            productName={sib.product_name}
+                            wholesaler={sib.wholesaler}
+                            upc={sib.upc ?? undefined}
+                            unitVolume={sib.unit_volume ?? undefined}
+                            qtyCases={1}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
               );
             })()}
 

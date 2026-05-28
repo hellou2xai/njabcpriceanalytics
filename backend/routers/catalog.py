@@ -2485,6 +2485,72 @@ def get_product_breakdown(
         return {"editions": editions}
 
 
+@router.get("/rip-siblings/{wholesaler}/{rip_code}")
+def get_rip_siblings(
+    wholesaler: str,
+    rip_code: str,
+    edition: Optional[str] = None,
+    exclude_upc: Optional[str] = None,
+):
+    """Every product in the same RIP group.
+
+    A RIP rebate qualifies once a *combined* quantity is purchased across all
+    products sharing the same rip_code, so the product detail page needs to
+    surface the full set the user must mix together. Returns one row per
+    UPC/size in the latest edition (or `edition` if supplied), with the same
+    pricing fields the catalogue uses so the UI can render an in-place add to
+    cart for each.
+    """
+    rc = (rip_code or "").strip()
+    if not rc or rc in ("None", "nan", "0"):
+        return {"items": []}
+    with get_duckdb() as con:
+        src = read_parquet(con, "cpl_enriched")
+        if not edition:
+            current_ym = _current_yyyy_mm()
+            row_ed = con.execute(
+                f"""SELECT MAX(CASE WHEN edition <= $c THEN edition END) AS cur,
+                           MAX(edition) AS latest
+                    FROM {src} WHERE wholesaler = $w""",
+                {"w": wholesaler, "c": current_ym},
+            ).fetchone()
+            edition = (row_ed[0] or row_ed[1]) if row_ed else None
+        if not edition:
+            return {"items": []}
+        params = {"w": wholesaler, "rc": rc, "e": edition}
+        excl = ""
+        if exclude_upc:
+            excl = "AND upc <> $xu"
+            params["xu"] = str(exclude_upc)
+        df = con.execute(f"""
+            SELECT wholesaler, edition, upc, product_name, brand, vintage,
+                   product_type, unit_volume, unit_qty, unit_volume_std,
+                   frontline_case_price, frontline_unit_price,
+                   best_case_price, best_unit_price,
+                   effective_case_price, rip_savings, total_savings_per_case,
+                   has_discount, has_rip, has_closeout, discount_pct,
+                   rip_code, combo_code
+            FROM {src}
+            WHERE wholesaler = $w AND edition = $e
+              AND CAST(rip_code AS VARCHAR) = $rc
+              {excl}
+            ORDER BY product_name
+        """, params).fetchdf()
+        records = [
+            {k: (None if isinstance(v, float) and math.isnan(v) else v) for k, v in r.items()}
+            for r in df.to_dict(orient="records")
+        ]
+        try:
+            _attach_enrichment_image(con, records)
+        except Exception:
+            pass
+        try:
+            _attach_discount_rip_tiers(con, records)
+        except Exception:
+            pass
+    return {"edition": edition, "rip_code": rc, "items": records}
+
+
 @router.get("/price-history/{wholesaler}/{product_name:path}")
 def get_price_history(
     wholesaler: str,

@@ -77,6 +77,10 @@ export const catalog = {
     request<{ editions: ProductBreakdownEdition[] }>(
       `/api/catalog/product-breakdown/${encodeURIComponent(wholesaler)}/${encodeURIComponent(name)}${qs(opts ?? {})}`
     ),
+  ripSiblings: (wholesaler: string, ripCode: string, opts?: { edition?: string; exclude_upc?: string }) =>
+    request<{ edition: string | null; rip_code: string; items: Product[] }>(
+      `/api/catalog/rip-siblings/${encodeURIComponent(wholesaler)}/${encodeURIComponent(ripCode)}${qs(opts ?? {})}`
+    ),
 };
 
 // ---- Web price search (retail pricing from nearby stores) ----
@@ -384,6 +388,9 @@ export interface CartItem {
   tiers?: CatalogTier[];
   // True only while the whole bundle is still in the cart (combo pricing applies).
   combo_intact?: boolean;
+  // RIP rebate code this line currently rolls up under (enriched from the
+  // catalogue at GET time; null when the product has no RIP).
+  rip_code?: string | null;
 }
 
 export const lists = {

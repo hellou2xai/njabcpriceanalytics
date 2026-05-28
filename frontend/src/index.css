@@ -2291,6 +2291,37 @@ tr:hover .row-menu-btn { opacity: 1; }
 .profile-msg.ok { color: var(--green); }
 .profile-msg.err { color: var(--red); }
 .profile-help { font-size: 12.5px; color: var(--text-muted); margin: 4px 0 12px; }
+
+/* RIP siblings on the product detail modal: one row per UPC sharing the
+   product's rip_code, with a colour band on the left whose hue matches the
+   cart's RIP-group sticker (same hash). */
+.rip-siblings-list { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 12px; }
+.rip-sibling-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 10px 8px 8px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.rip-sibling-meta { flex: 1; min-width: 0; }
+.rip-sibling-name { font-weight: 600; font-size: 13px; color: var(--text); }
+.rip-sibling-sub { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+.rip-sibling-price { min-width: 130px; text-align: right; font-size: 13px; }
+
+/* Cart RIP group: same colour family as the detail modal's sibling row band.
+   Each rip_code gets a stable hue (derived in the component). */
+.cart-rip-group {
+  margin-top: 10px; padding: 10px 12px;
+  border: 1px solid var(--border); border-left-width: 4px;
+  border-radius: var(--radius); background: var(--surface);
+}
+.cart-rip-group-header {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  font-size: 13px; font-weight: 600; margin-bottom: 4px;
+}
+.cart-rip-group-badge {
+  font-size: 11px; font-weight: 700; padding: 2px 8px;
+  border-radius: 10px; border: 1px solid; white-space: nowrap;
+}
 .profile-stores { margin-top: 30px; padding-top: 24px; border-top: 1px solid var(--border); }
 .profile-stores .store-grid { margin-top: 12px; }
 

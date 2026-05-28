@@ -51,6 +51,23 @@ function ComboBadge({ code }: { code: string }) {
   );
 }
 
+// Same hue scheme for RIP rebates, so a rip_code is recognisable at a glance
+// on both the cart and the product detail. The product detail uses ripHue from
+// ProductQuickView with an identical hash.
+function ripHueLocal(code: string): number {
+  let h = 0;
+  for (let i = 0; i < code.length; i++) h = (h * 31 + code.charCodeAt(i)) % 360;
+  return h;
+}
+function RipBadge({ code }: { code: string }) {
+  const h = ripHueLocal(code);
+  return (
+    <span className="cart-rip-group-badge" title={`RIP rebate ${code} — buy these together to qualify`} style={{
+      background: `hsl(${h} 75% 93%)`, color: `hsl(${h} 65% 28%)`, borderColor: `hsl(${h} 60% 78%)`,
+    }}>🔗 RIP {code}</span>
+  );
+}
+
 // Search box that adds any catalogue product straight into the cart.
 function AddToCartSearch({ onAdd, adding }: { onAdd: (p: Product) => void; adding: boolean }) {
   const [q, setQ] = useState('');
@@ -94,9 +111,17 @@ function AddToCartSearch({ onAdd, adding }: { onAdd: (p: Product) => void; addin
   );
 }
 
+const RIP_GROUP_KEY = 'celr_cart_group_by_rip';
+
 export default function Cart() {
   const qc = useQueryClient();
   const [result, setResult] = useState<string | null>(null);
+  const [groupByRip, setGroupByRip] = useState<boolean>(() => localStorage.getItem(RIP_GROUP_KEY) === '1');
+  const toggleGroupByRip = (on: boolean) => {
+    setGroupByRip(on);
+    if (on) localStorage.setItem(RIP_GROUP_KEY, '1');
+    else localStorage.removeItem(RIP_GROUP_KEY);
+  };
   const { data } = useQuery({ queryKey: ['cart'], queryFn: cartApi.get });
   const { data: reps } = useQuery({ queryKey: ['sales-reps'], queryFn: repsApi.list });
   const items = data?.items ?? [];
@@ -248,7 +273,14 @@ export default function Cart() {
           <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
             {active.length} item{active.length === 1 ? '' : 's'} across {groups.length} sales rep group{groups.length === 1 ? '' : 's'}
           </span>
-          <span style={{ fontSize: 16 }}>Cart total: <strong className="text-green">{money(cartTotal)}</strong></span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}
+              title="Sub-group cart lines that share a RIP rebate code, with a colour band per RIP">
+              <input type="checkbox" checked={groupByRip} onChange={e => toggleGroupByRip(e.target.checked)} />
+              Group by RIP
+            </label>
+            <span style={{ fontSize: 16 }}>Cart total: <strong className="text-green">{money(cartTotal)}</strong></span>
+          </span>
         </div>
       )}
 
@@ -288,7 +320,59 @@ export default function Cart() {
               onBlur={e => { if (e.target.value !== (groupNotes[wholesaler] ?? '')) groupNote.mutate({ wholesaler, note: e.target.value }); }}
               style={{ marginTop: 8, width: '100%', maxWidth: 480, fontSize: 12, padding: '4px 8px' }}
             />
-            {groupItems.map(it => renderItem(it))}
+            {(() => {
+              if (!groupByRip) return groupItems.map(it => renderItem(it));
+              // RIP sub-grouping: items with a rip_code cluster under a coloured
+              // panel; items without one fall into an "Unrebated" bucket so the
+              // user can see at a glance what is and isn't earning a rebate.
+              const bucketMap = new Map<string, typeof groupItems>();
+              const unrebated: typeof groupItems = [];
+              for (const it of groupItems) {
+                const rc = it.rip_code && String(it.rip_code).trim();
+                if (!rc) { unrebated.push(it); continue; }
+                if (!bucketMap.has(rc)) bucketMap.set(rc, []);
+                bucketMap.get(rc)!.push(it);
+              }
+              const buckets = [...bucketMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+              return (
+                <>
+                  {buckets.map(([rc, lines]) => {
+                    const hue = ripHueLocal(rc);
+                    const lineCount = lines.length;
+                    const subtotal = lines.reduce((s, it) => s + lineTotal(it), 0);
+                    const totalCases = lines.reduce((s, it) => s + (it.qty_cases || 0), 0);
+                    return (
+                      <div key={`rip-${rc}`} className="cart-rip-group" style={{
+                        borderLeftColor: `hsl(${hue} 65% 55%)`,
+                        background: `linear-gradient(180deg, hsl(${hue} 75% 97%) 0%, var(--surface) 16px)`,
+                      }}>
+                        <div className="cart-rip-group-header">
+                          <RipBadge code={rc} />
+                          <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
+                            {lineCount} line{lineCount === 1 ? '' : 's'} · {totalCases} case{totalCases === 1 ? '' : 's'} towards this rebate
+                          </span>
+                          <span style={{ marginLeft: 'auto', fontWeight: 600 }}>
+                            Subtotal: <span className="text-green">{money(subtotal)}</span>
+                          </span>
+                        </div>
+                        {lines.map(it => renderItem(it))}
+                      </div>
+                    );
+                  })}
+                  {unrebated.length > 0 && (
+                    <div className="cart-rip-group" style={{ borderLeftColor: 'var(--border)' }}>
+                      <div className="cart-rip-group-header">
+                        <span style={{ fontWeight: 600 }}>No RIP rebate</span>
+                        <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
+                          {unrebated.length} line{unrebated.length === 1 ? '' : 's'}
+                        </span>
+                      </div>
+                      {unrebated.map(it => renderItem(it))}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         );
       })}

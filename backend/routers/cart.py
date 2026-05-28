@@ -109,7 +109,8 @@ def _attach_cart_pricing(dcon, items):
                        e.frontline_case_price AS fcp, e.frontline_unit_price AS fup,
                        e.effective_case_price AS ecp, e.unit_qty AS uq,
                        e.has_discount AS hd, e.has_rip AS hr,
-                       e.discount_pct AS dp, e.total_savings_per_case AS ts
+                       e.discount_pct AS dp, e.total_savings_per_case AS ts,
+                       CAST(e.rip_code AS VARCHAR) AS rc
                 FROM {src} e JOIN latest l ON e.wholesaler=l.wholesaler AND e.edition=l.ed
                 WHERE LTRIM(e.upc,'0') IN ({ph})
             """, prm).fetchdf()
@@ -148,6 +149,14 @@ def _attach_cart_pricing(dcon, items):
             it["has_rip"] = bool(r["hr"])
             it["discount_pct"] = cl(r["dp"])
             it["total_savings_per_case"] = cl(r["ts"])
+            # rip_code: surface the RIP this line belongs to so the cart UI can
+            # group lines that share a rebate. Empty / sentinel values become None.
+            rc = r.get("rc")
+            if rc is None or (isinstance(rc, float) and _m.isnan(rc)):
+                it["rip_code"] = None
+            else:
+                rc_s = str(rc).strip()
+                it["rip_code"] = rc_s if rc_s and rc_s.lower() not in ("none", "nan", "0", "") else None
     try:
         _attach_discount_rip_tiers(dcon, items)  # adds a `tiers` list per item
     except Exception:

@@ -373,6 +373,18 @@ export default function RipProducts() {
 
   const filterSections: FilterSection[] = [
     {
+      // Highlighted + pinned on the left so the user can't miss the toggle
+      // that re-orders the table into rebate-stack groups (matches the
+      // "bring it to the left, highlight it" ask).
+      type: 'toggle',
+      key: 'group_by_rip',
+      title: 'Display',
+      value: groupByRip,
+      onChange: toggleGroupByRip,
+      label: 'Group by Case Mix RIP',
+      highlight: true,
+    },
+    {
       type: 'text',
       key: 'q',
       title: 'Search',
@@ -459,14 +471,6 @@ export default function RipProducts() {
       ],
       value: newNext ? '1' : '',
       onChange: v => { setNewNext(v === '1'); setPage(0); },
-    },
-    {
-      type: 'toggle',
-      key: 'group_by_rip',
-      title: 'Display',
-      value: groupByRip,
-      onChange: toggleGroupByRip,
-      label: 'Group by Case Mix RIP',
     },
   ];
 
@@ -681,7 +685,17 @@ export default function RipProducts() {
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                             <ProductThumb src={item.image_url} alt={item.product_name} size={64} />
                             <div className="rip-cell-product">
-                              <span className="rip-product-name">{item.product_name}</span>
+                              <span className="rip-product-name">
+                                {item.product_name}
+                                {item.needs_rep_verify && (
+                                  <span
+                                    className="rip-needs-verify-pill"
+                                    title="This product is on the RIP sheet but not on the current CPL. Confirm the case price with your sales rep before placing the order."
+                                  >
+                                    ⚠ Check with sales rep
+                                  </span>
+                                )}
+                              </span>
                               {/* Identifier line that mirrors the Provi-style
                                   per-UPC header the user asked for: size,
                                   bottles per case, then the barcode so the
@@ -755,13 +769,12 @@ export default function RipProducts() {
                       {isFirstForProduct ? priceWithBtl(item.curr_case_price, item.curr_btl_price) : ''}
                     </td>
                     <td data-label="Tier (now)">
-                      {/* When Group by RIP is on, the cluster banner above
-                          already lists every tier threshold for the rebate.
-                          Repeating the badge on every row turns the table
-                          into noise, so we hide it here in the grouped view. */}
-                      {groupByRip
-                        ? <span className="text-muted">—</span>
-                        : renderTierBadge(item.rip_qty, item.rip_unit, item.curr_rip_amt, 'curr')}
+                      {/* Always show the tier badge ("Buy 2 cs = $30") on
+                          every row so a sub-row's bare "RIP" source tag is
+                          never ambiguous: the user can read the threshold
+                          and rebate straight from the row, not just the
+                          banner. */}
+                      {renderTierBadge(item.rip_qty, item.rip_unit, item.curr_rip_amt, 'curr')}
                     </td>
                     <td className="right" data-label="Save (now)">
                       {item.curr_save_per_case != null ? (
@@ -782,9 +795,7 @@ export default function RipProducts() {
                       {isFirstForProduct ? priceWithBtl(item.next_case_price, item.next_btl_price) : ''}
                     </td>
                     <td data-label="Tier (next)">
-                      {groupByRip
-                        ? <span className="text-muted">—</span>
-                        : renderTierBadge(item.rip_qty, item.rip_unit, item.next_rip_amt, 'next')}
+                      {renderTierBadge(item.rip_qty, item.rip_unit, item.next_rip_amt, 'next')}
                     </td>
                     <td className="right" data-label="Save (next)">
                       {item.next_save_per_case != null ? (

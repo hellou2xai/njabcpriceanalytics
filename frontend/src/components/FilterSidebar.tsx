@@ -3,7 +3,12 @@ import { ChevronDown, ChevronUp, Filter as FilterIcon, XCircle } from 'lucide-re
 
 export type FilterOption = { label: string; value: string; count?: number };
 
-export type FilterSection =
+// `highlight` lets a page mark one section (e.g. a Display toggle) as the
+// primary thing the user should notice. Highlighted sections render with an
+// accent border + tint, pin to the LEFT of the toolbar, and keep their place
+// even when the toolbar is collapsed.
+type CommonSectionProps = { highlight?: boolean };
+export type FilterSection = CommonSectionProps & (
   | {
       type: 'pills';
       key: string;
@@ -53,7 +58,8 @@ export type FilterSection =
       key: string;
       title: string;
       render: () => ReactNode;
-    };
+    }
+);
 
 interface FilterSidebarProps {
   storageKey: string;
@@ -87,6 +93,12 @@ export default function FilterSidebar({ storageKey, sections, onReset, children 
     localStorage.setItem(lsKey, String(collapsed));
   }, [collapsed, lsKey]);
 
+  // Highlighted sections are pinned to the LEFT, immediately after the Clear
+  // action, so the user can't miss them. Everything else keeps its original
+  // order on the right.
+  const highlightedSections = sections.filter(s => s.highlight);
+  const regularSections = sections.filter(s => !s.highlight);
+
   return (
     <div className="page-with-filters horizontal">
       <div className={`filter-toolbar ${collapsed ? 'is-collapsed' : ''}`}>
@@ -107,9 +119,19 @@ export default function FilterSidebar({ storageKey, sections, onReset, children 
             </span>
           )}
 
-          {!collapsed && (
+          {/* Highlighted sections stay visible even when the rest are hidden,
+              so a key toggle like "Group by Case Mix RIP" is always reachable. */}
+          {highlightedSections.length > 0 && (
+            <div className="filter-toolbar-sections is-highlight">
+              {highlightedSections.map(s => (
+                <FilterSectionInline key={s.key} section={s} />
+              ))}
+            </div>
+          )}
+
+          {!collapsed && regularSections.length > 0 && (
             <div className="filter-toolbar-sections">
-              {sections.map(s => (
+              {regularSections.map(s => (
                 <FilterSectionInline key={s.key} section={s} />
               ))}
             </div>
@@ -137,7 +159,7 @@ export default function FilterSidebar({ storageKey, sections, onReset, children 
 
 function FilterSectionInline({ section: s }: { section: FilterSection }) {
   return (
-    <div className="filter-toolbar-section" data-section-type={s.type}>
+    <div className={`filter-toolbar-section${s.highlight ? ' is-highlight' : ''}`} data-section-type={s.type}>
       <div className="filter-toolbar-section-title">{s.title}</div>
       <div className="filter-toolbar-section-body">
         {s.type === 'pills' && (

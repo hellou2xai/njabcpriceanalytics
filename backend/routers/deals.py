@@ -1028,8 +1028,129 @@ def _build_rip_items(con, wholesaler=None, product_type=None, q="", rip_code=Non
                 row["rip_save_per_case"] = max(row["curr_save_per_case"] or 0, row["next_save_per_case"] or 0)
                 row["has_discount"] = bool(row["curr_has_discount"] or row["next_has_discount"])
                 row["discount_pct"] = max(row["curr_discount_pct"] or 0, row["next_discount_pct"] or 0)
+                row["needs_rep_verify"] = False
 
                 items.append(row)
+
+        # 7. RIP-sheet orphans: UPCs the RIP sheet ties to a rebate but that
+        # didn't surface on the CPL-side query (the CPL row either doesn't
+        # carry has_rip=true, or the product isn't on the CPL at all). Without
+        # this, RIPs like 111202 show 4 products instead of 5. We emit a tier
+        # row per orphan with no list price, a needs_rep_verify=True flag, and
+        # whatever name/brand product_enrichment has for the UPC; the UI then
+        # shows a "check with sales rep" sticker and still allows add-to-cart.
+        target_pair_set = {(ws_, ed_) for ws_, ed_ in target_pairs}
+        existing_pairs = {(it["wholesaler"], str(it.get("upc") or "").lstrip("0"))
+                          for it in items}
+
+        # Group orphans by (ws, upc) across curr+next editions.
+        orphan_index: dict = {}
+        for (rc, ws_, ed_, upc_), tiers in rip_lookup.items():
+            if not tiers:
+                continue
+            if (ws_, ed_) not in target_pair_set:
+                continue
+            upc_str = str(upc_)
+            upc_norm = upc_str.lstrip("0")
+            if not upc_norm or upc_norm == "0":
+                continue
+            if (ws_, upc_norm) in existing_pairs:
+                continue
+            curr_ed_o, next_ed_o = ed_map.get(ws_, (None, None))
+            if ed_ == curr_ed_o:
+                slot = "curr"
+            elif ed_ == next_ed_o:
+                slot = "next"
+            else:
+                continue
+            key = (ws_, upc_norm)
+            entry = orphan_index.setdefault(key, {
+                "rip_code": rc, "raw_upc": upc_str,
+                "curr_tiers": [], "next_tiers": [],
+                "curr_ed": curr_ed_o, "next_ed": next_ed_o,
+            })
+            entry[f"{slot}_tiers"].extend({**t, "source": "rip"} for t in tiers)
+
+        if orphan_index:
+            # One-shot enrichment lookup for orphan names/brands. The
+            # enrichment table is keyed by normalised UPC (leading zeros
+            # stripped), same as how cpl_enriched joins it elsewhere.
+            upcs_for_lookup = sorted({k[1] for k in orphan_index.keys()})
+            enrich_map: dict = {}
+            try:
+                placeholders = ", ".join(f"$u_{i}" for i in range(len(upcs_for_lookup)))
+                enrich_params = {f"u_{i}": u for i, u in enumerate(upcs_for_lookup)}
+                enrich_df = con.execute(
+                    f"SELECT upc, name, brand FROM product_enrichment WHERE upc IN ({placeholders})",
+                    enrich_params,
+                ).fetchdf()
+                for _, er in enrich_df.iterrows():
+                    enrich_map[str(er["upc"])] = (
+                        er["name"] if pd.notna(er["name"]) else None,
+                        er["brand"] if pd.notna(er["brand"]) else None,
+                    )
+            except Exception:
+                # Enrichment table can be empty in parquet dev mode; that's fine.
+                pass
+
+            for (ws_, upc_norm), info in orphan_index.items():
+                name, brand = enrich_map.get(upc_norm, (None, None))
+                tier_pairs = {}
+                for t in info["curr_tiers"]:
+                    k = (_norm_unit(t["unit"]), t["qty"])
+                    tier_pairs.setdefault(k, {"curr": None, "next": None,
+                                              "unit": t["unit"], "qty": t["qty"]})
+                    tier_pairs[k]["curr"] = t
+                for t in info["next_tiers"]:
+                    k = (_norm_unit(t["unit"]), t["qty"])
+                    if k not in tier_pairs:
+                        tier_pairs[k] = {"curr": None, "next": None,
+                                         "unit": t["unit"], "qty": t["qty"]}
+                    tier_pairs[k]["next"] = t
+                ordered = sorted(tier_pairs.values(), key=lambda x: x["qty"])
+                pretty_name = name or f"Unknown product (UPC {upc_norm})"
+                for tp in ordered:
+                    row = {
+                        "wholesaler": ws_,
+                        "upc": info["raw_upc"],
+                        "brand": brand,
+                        "product_name": pretty_name,
+                        "product_type": None,
+                        "unit_qty": None,
+                        "unit_volume": None,
+                        "curr_edition": info["curr_ed"],
+                        "next_edition": info["next_ed"],
+                        "source": "rip",
+                        "rip_unit": tp["unit"],
+                        "rip_qty": tp["qty"],
+                        # No CPL price means no save/effective calculation.
+                        "curr_case_price": None,
+                        "curr_btl_price": None,
+                        "curr_has_discount": False,
+                        "curr_discount_pct": 0.0,
+                        "curr_rip_code": info["rip_code"] if tp.get("curr") else None,
+                        "next_case_price": None,
+                        "next_btl_price": None,
+                        "next_has_discount": False,
+                        "next_discount_pct": 0.0,
+                        "next_rip_code": info["rip_code"] if tp.get("next") else None,
+                        "rip_number": info["rip_code"],
+                        "curr_rip_amt": (tp.get("curr") or {}).get("amt"),
+                        "curr_save_per_case": None,
+                        "curr_effective_case_price": None,
+                        "curr_effective_btl_price": None,
+                        "curr_gp_pct": None,
+                        "next_rip_amt": (tp.get("next") or {}).get("amt"),
+                        "next_save_per_case": None,
+                        "next_effective_case_price": None,
+                        "next_effective_btl_price": None,
+                        "next_gp_pct": None,
+                        "rip_save_per_case": 0,
+                        "has_discount": False,
+                        "discount_pct": 0,
+                        "needs_rep_verify": True,
+                    }
+                    items.append(row)
 
         return items
 
@@ -1085,11 +1206,19 @@ def get_rip_products(
     rip_code+upc), current + next edition side by side.
 
     The heavy tier build is cached (see _rip_items_cached) and reused across
-    requests. A text search (q) or a specific rip_code is built fresh; every other
-    view (including distributor and product-type filters) is served from the cache
-    and filtered/sorted in memory, so the common page load is fast."""
+    requests. A full-text search (q) is built fresh against the database; every
+    other filter (including a specific rip_code, distributor, product-type, and
+    the rest) is served from the cache and filtered/sorted in memory, so the
+    common page loads in tens of milliseconds. Two important rules:
+      - Items without an associated RIP code are dropped here. This page is
+        "Products with RIP", so a pure-discount row has no business on it.
+      - rip_code search goes through the in-memory cache, not SQL, so users
+        get instant results instead of waiting for a fresh tier build."""
     with get_duckdb() as con:
-        if q or rip_code:
+        if q:
+            # Full-text search still rebuilds: name/brand matching needs the SQL
+            # path. We pass rip_code through so it stays a single trip when both
+            # filters are set at once (rare combo).
             items = _build_rip_items(con, wholesaler, product_type, q, rip_code)
         else:
             items = list(_rip_items_cached(con))
@@ -1097,6 +1226,14 @@ def get_rip_products(
                 items = [i for i in items if i.get("wholesaler") == wholesaler]
             if product_type:
                 items = [i for i in items if i.get("product_type") == product_type]
+            if rip_code:
+                rc = str(rip_code).strip()
+                items = [i for i in items if rc in str(i.get("rip_number") or "")]
+
+        # The RIP Products page only lists products with a real RIP code; pure
+        # discount-only items (no rip_number) are filtered out here, not in the
+        # UI, so pagination counts and the summary cards are accurate.
+        items = [i for i in items if i.get("rip_number")]
 
         if min_savings is not None:
             items = [i for i in items if (i["rip_save_per_case"] or 0) >= min_savings]

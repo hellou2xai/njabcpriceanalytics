@@ -1020,6 +1020,12 @@ export interface RipProduct {
   rip_save_per_case: number;
   has_discount: boolean;
   discount_pct: number;
+  // True when this UPC was found in the RIP sheet but has no matching CPL
+  // row, so list/effective prices are unknown. The UI shows a "Check with
+  // sales rep" sticker; add-to-cart still works using UPC + name.
+  needs_rep_verify?: boolean;
+  brand?: string | null;
+  image_url?: string | null;
 }
 
 export interface BuySignal extends Product {

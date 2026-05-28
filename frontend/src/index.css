@@ -1432,50 +1432,86 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 8px 12px;
+  padding: 10px 12px;
   box-shadow: 0 1px 2px rgba(0,0,0,0.04);
 }
 .filter-toolbar.is-collapsed { padding: 6px 12px; }
 .filter-toolbar-row {
-  display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap;
+  /* Stretch baseline so every section's value row lines up on the bottom even
+     if titles wrap to two lines on narrow screens. The Clear action and the
+     Hide button still center vertically within the row via their own styles. */
+  display: flex; align-items: stretch; gap: 10px 14px; flex-wrap: wrap;
 }
 .filter-toolbar-clear {
   display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto;
   padding: 5px 10px; font-size: 12px; font-weight: 600;
   background: var(--bg); color: var(--text);
   border: 1px solid var(--border); border-radius: 6px; cursor: pointer;
+  align-self: flex-end;
 }
 .filter-toolbar-clear:hover { color: var(--red); border-color: var(--red); }
 .filter-toolbar-label {
   display: inline-flex; align-items: center; gap: 6px;
   font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
   color: var(--text-muted);
+  align-self: flex-end;
 }
 .filter-toolbar-toggle {
   display: inline-flex; align-items: center; gap: 4px; margin-left: auto;
   background: transparent; border: 1px solid var(--border);
   border-radius: 6px; color: var(--text-muted);
   cursor: pointer; padding: 4px 8px; font-size: 11px; font-weight: 600;
+  align-self: flex-end;
 }
 .filter-toolbar-toggle:hover { color: var(--accent); border-color: var(--accent); }
 .filter-toolbar-sections {
-  display: flex; flex: 1 1 auto; flex-wrap: wrap;
-  align-items: center; gap: 8px 16px;
+  display: flex; flex-wrap: wrap;
+  align-items: flex-end; gap: 8px 16px;
   /* A subtle vertical rule between the Clear action and the sections. */
   padding-left: 12px;
   border-left: 1px solid var(--border);
 }
+.filter-toolbar-sections:not(.is-highlight) { flex: 1 1 auto; }
+/* Highlighted sections sit immediately after Clear and do NOT push regular
+   sections onto a new row, so they're always reachable in collapsed mode. */
+.filter-toolbar-sections.is-highlight {
+  padding-left: 12px; border-left: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+
 .filter-toolbar-section {
-  display: inline-flex; align-items: center; gap: 8px;
-  min-height: 32px;
+  /* Stack the label above the value so every section uses the same vertical
+     rhythm. align-items: flex-end on the row makes every value row land on the
+     same baseline regardless of title length. */
+  display: inline-flex; flex-direction: column; align-items: flex-start; gap: 4px;
+  min-height: 44px; justify-content: flex-end;
 }
 .filter-toolbar-section-title {
   font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
   color: var(--text-muted); white-space: nowrap;
+  line-height: 1; padding-left: 2px;
 }
-.filter-toolbar-section-body { display: inline-flex; align-items: center; }
+.filter-toolbar-section-body {
+  display: inline-flex; align-items: center; gap: 4px;
+  min-height: 26px;
+}
 /* Pills + range can keep wrapping when there's no horizontal room. */
 .filter-toolbar-section[data-section-type="pills"] .filter-toolbar-section-body { flex-wrap: wrap; }
+
+/* Highlighted section: accent border + tint + a small "pin" so the user
+   immediately sees the toggle the page wants to promote. */
+.filter-toolbar-section.is-highlight {
+  padding: 4px 10px; border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.filter-toolbar-section.is-highlight .filter-toolbar-section-title {
+  color: var(--accent);
+}
+.filter-toolbar-section.is-highlight .filter-toggle {
+  font-weight: 700; color: var(--text);
+}
 
 .filter-pills { display: flex; flex-wrap: wrap; gap: 4px; }
 .filter-pill {
@@ -2437,11 +2473,30 @@ tr:hover .row-menu-btn { opacity: 1; }
 .rip-group-banner-products {
   font-size: 11.5px; color: var(--text-muted); font-weight: 600;
 }
+/* Stack each tier on its own line so the rebate ladder reads top-to-bottom
+   instead of as a wall of inline text. Each row says "Buy X cs = $Y" on its
+   own line, matching the user's "show each RIP tier in one line" ask. */
 .rip-group-banner-tiers {
-  display: inline-flex; flex-wrap: wrap; gap: 4px 10px; align-items: center;
+  display: inline-flex; flex-direction: column; gap: 2px;
+  padding: 4px 10px; border-radius: 6px;
+  background: rgba(255,255,255,0.5);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
 }
 .rip-group-banner-tier {
   font-size: 11.5px; font-weight: 600; white-space: nowrap;
+  line-height: 1.4;
+}
+
+/* "Check with sales rep" sticker for RIP-sheet UPCs that have no matching
+   CPL row. Sits next to the product name so the user sees it before doing
+   anything with the row; add-to-cart still works. */
+.rip-needs-verify-pill {
+  display: inline-block; margin-left: 8px;
+  padding: 1px 7px; border-radius: 10px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.2px;
+  background: #fef3c7; color: #b45309;
+  border: 1px solid #fbbf24;
+  vertical-align: middle; white-space: nowrap;
 }
 .rip-group-banner-progress {
   font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 6px;

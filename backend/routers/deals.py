@@ -7,6 +7,32 @@ Covers: Â§7 Discount/Offer Views
 import math
 import re
 import threading
+import time as _time
+
+# Shared 60s in-process cache of the ai_deal_blurbs map so a busy Time-Sensitive
+# Deals or Major Discounts page doesn't re-query Postgres on every request.
+_deal_blurb_cache: dict = {"map": None, "expires_at": 0.0}
+_deal_blurb_lock = threading.Lock()
+
+def _cached_deal_blurbs() -> dict:
+    now = _time.time()
+    if _deal_blurb_cache["map"] is not None and _deal_blurb_cache["expires_at"] > now:
+        return _deal_blurb_cache["map"]  # type: ignore
+    with _deal_blurb_lock:
+        if _deal_blurb_cache["map"] is not None and _deal_blurb_cache["expires_at"] > now:
+            return _deal_blurb_cache["map"]  # type: ignore
+        m: dict = {}
+        try:
+            from backend.pg import get_pg
+            with get_pg() as pg:
+                cur = pg.execute("SELECT wholesaler, LTRIM(upc, '0') AS un, edition, blurb FROM ai_deal_blurbs")
+                for b in cur.fetchall():
+                    m[(b["wholesaler"], b["un"], b["edition"])] = b["blurb"]
+        except Exception:
+            pass
+        _deal_blurb_cache["map"] = m
+        _deal_blurb_cache["expires_at"] = now + 60
+        return m
 
 from fastapi import APIRouter, Query
 from typing import Optional
@@ -165,22 +191,12 @@ def get_top_discounts(
             r["discount_source"] = src_parts
 
         attach_enrichment_image(con, records)
-        # Attach pre-generated AI deal blurbs (where one exists) so the Major
-        # Discounts card view can show the same line as Time-Sensitive Deals.
-        try:
-            from backend.pg import get_pg
-            blurb_map: dict = {}
-            with get_pg() as pg:
-                cur = pg.execute("SELECT wholesaler, LTRIM(upc, '0') AS un, edition, blurb FROM ai_deal_blurbs")
-                for b in cur.fetchall():
-                    blurb_map[(b["wholesaler"], b["un"], b["edition"])] = b["blurb"]
-            for r in records:
-                u = r.get("upc")
-                un = str(u).lstrip("0") if u else ""
-                r["ai_blurb"] = blurb_map.get((r.get("wholesaler"), un, r.get("edition")))
-        except Exception:
-            for r in records:
-                r.setdefault("ai_blurb", None)
+        # AI deal blurbs from the 60s in-process cache (see _cached_deal_blurbs).
+        blurb_map = _cached_deal_blurbs()
+        for r in records:
+            u = r.get("upc")
+            un = str(u).lstrip("0") if u else ""
+            r["ai_blurb"] = blurb_map.get((r.get("wholesaler"), un, r.get("edition")))
         return records
 
 
@@ -520,18 +536,8 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
         except Exception:
             rip_next = set()
 
-        # Pre-fetch any AI blurbs from Postgres (small table, single round-trip,
-        # then a dict lookup per row). Read live so blurbs appear as soon as the
-        # background generator writes them, without waiting for a cache rebuild.
-        blurb_map: dict = {}
-        try:
-            from backend.pg import get_pg
-            with get_pg() as pg:
-                cur = pg.execute("SELECT wholesaler, LTRIM(upc, '0') AS un, edition, blurb FROM ai_deal_blurbs")
-                for b in cur.fetchall():
-                    blurb_map[(b["wholesaler"], b["un"], b["edition"])] = b["blurb"]
-        except Exception:
-            blurb_map = {}
+        # 60s in-process cached PG lookup (see _cached_deal_blurbs).
+        blurb_map = _cached_deal_blurbs()
 
         out = []
         for _, r in rows.iterrows():

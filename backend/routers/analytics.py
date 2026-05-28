@@ -235,6 +235,39 @@ def warm_pm_cache_async():
     _threading.Thread(target=_run, daemon=True).start()
 
 
+# Short TTL cache for AI blurb maps. Pulled from Postgres on demand, kept for
+# 60s in process so a busy page doesn't re-query PG on every card refresh.
+import time as _time
+_blurb_map_cache: dict = {}
+_blurb_map_lock = _threading.Lock()
+
+def _cached_mover_blurbs(direction: str) -> dict:
+    key = f"mover_{direction}"
+    now = _time.time()
+    entry = _blurb_map_cache.get(key)
+    if entry and entry["expires_at"] > now:
+        return entry["map"]
+    with _blurb_map_lock:
+        entry = _blurb_map_cache.get(key)
+        if entry and entry["expires_at"] > now:
+            return entry["map"]
+        m: dict = {}
+        try:
+            from backend.pg import get_pg
+            with get_pg() as pg:
+                cur = pg.execute(
+                    "SELECT wholesaler, LTRIM(upc, '0') AS un, edition, blurb "
+                    "FROM ai_mover_blurbs WHERE direction = %s",
+                    (direction,),
+                )
+                for b in cur.fetchall():
+                    m[(b["wholesaler"], b["un"], b["edition"])] = b["blurb"]
+        except Exception:
+            pass
+        _blurb_map_cache[key] = {"map": m, "expires_at": now + 60}
+        return m
+
+
 @router.get("/price-movers")
 def get_price_movers(
     wholesaler: Optional[str] = None,
@@ -259,27 +292,13 @@ def get_price_movers(
         if validity != "all":
             out = [r for r in out if r.get("validity") == validity]
         out = out[:limit]
-        # Attach the pre-generated AI mover blurb if we have one. Read live from
-        # Postgres (small table), keyed by (wholesaler, ltrim(upc), edition,
-        # direction). Missing blurbs simply leave the field null on the row.
-        try:
-            from backend.pg import get_pg
-            blurb_map: dict = {}
-            with get_pg() as pg:
-                cur = pg.execute(
-                    "SELECT wholesaler, LTRIM(upc, '0') AS un, edition, blurb "
-                    "FROM ai_mover_blurbs WHERE direction = %s",
-                    (direction,),
-                )
-                for b in cur.fetchall():
-                    blurb_map[(b["wholesaler"], b["un"], b["edition"])] = b["blurb"]
-            for row in out:
-                u = (row.get("upc") or "")
-                un = str(u).lstrip("0") if u else ""
-                row["ai_blurb"] = blurb_map.get((row.get("wholesaler"), un, row.get("edition")))
-        except Exception:
-            for row in out:
-                row.setdefault("ai_blurb", None)
+        # AI blurbs come from a 60s-TTL cached PG read so a busy page does not
+        # hammer Postgres on every request.
+        blurb_map = _cached_mover_blurbs(direction)
+        for row in out:
+            u = (row.get("upc") or "")
+            un = str(u).lstrip("0") if u else ""
+            row["ai_blurb"] = blurb_map.get((row.get("wholesaler"), un, row.get("edition")))
         return out
 
 

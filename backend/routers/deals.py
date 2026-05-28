@@ -1043,16 +1043,29 @@ def _build_rip_items(con, wholesaler=None, product_type=None, q="", rip_code=Non
         existing_pairs = {(it["wholesaler"], str(it.get("upc") or "").lstrip("0"))
                           for it in items}
 
-        # Group orphans by (ws, upc) across curr+next editions.
+        # Group orphans by (ws, upc, rip_code) across curr+next editions.
+        # Keying by rip_code keeps separate orphan rows when one UPC belongs
+        # to multiple RIP rebates; merging them would attribute all tiers to
+        # whichever code came first.
         orphan_index: dict = {}
+        _BAD_UPC = {"", "0", "none", "nan", "null"}
         for (rc, ws_, ed_, upc_), tiers in rip_lookup.items():
             if not tiers:
                 continue
             if (ws_, ed_) not in target_pair_set:
                 continue
+            # Drop rip-sheet rows that don't have a real UPC. Some legacy rows
+            # carry None/NaN/empty UPCs and would otherwise generate a giant
+            # block of meaningless "Unknown product" orphans.
             upc_str = str(upc_)
             upc_norm = upc_str.lstrip("0")
-            if not upc_norm or upc_norm == "0":
+            if upc_norm.lower() in _BAD_UPC:
+                continue
+            if not upc_norm.isdigit():
+                continue
+            # Same for the rip code itself: skip 0/None/blank stubs.
+            rc_str = str(rc)
+            if rc_str.lower() in _BAD_UPC:
                 continue
             if (ws_, upc_norm) in existing_pairs:
                 continue
@@ -1063,9 +1076,9 @@ def _build_rip_items(con, wholesaler=None, product_type=None, q="", rip_code=Non
                 slot = "next"
             else:
                 continue
-            key = (ws_, upc_norm)
+            key = (ws_, upc_norm, rc_str)
             entry = orphan_index.setdefault(key, {
-                "rip_code": rc, "raw_upc": upc_str,
+                "rip_code": rc_str, "raw_upc": upc_str,
                 "curr_tiers": [], "next_tiers": [],
                 "curr_ed": curr_ed_o, "next_ed": next_ed_o,
             })
@@ -1205,35 +1218,46 @@ def get_rip_products(
     """Products with incentives: DISCOUNT tiers (CPL) and RIP tiers (RIP sheet, by
     rip_code+upc), current + next edition side by side.
 
-    The heavy tier build is cached (see _rip_items_cached) and reused across
-    requests. A full-text search (q) is built fresh against the database; every
-    other filter (including a specific rip_code, distributor, product-type, and
-    the rest) is served from the cache and filtered/sorted in memory, so the
-    common page loads in tens of milliseconds. Two important rules:
+    Every filter (q, rip_code, distributor, product_type, etc.) is applied
+    in-memory against the pre-built tier list (see _rip_items_cached). The
+    cache is built once per data load and reused; filtering ~50k tier rows
+    in Python takes single-digit milliseconds, so every keystroke returns
+    instantly instead of triggering a fresh DuckDB tier build.
+
+    Two important rules:
       - Items without an associated RIP code are dropped here. This page is
         "Products with RIP", so a pure-discount row has no business on it.
-      - rip_code search goes through the in-memory cache, not SQL, so users
-        get instant results instead of waiting for a fresh tier build."""
+      - Text search (q) checks product name, brand, UPC, and rip_number, so
+        typing either a product name or a RIP code hits the same fast path."""
     with get_duckdb() as con:
-        if q:
-            # Full-text search still rebuilds: name/brand matching needs the SQL
-            # path. We pass rip_code through so it stays a single trip when both
-            # filters are set at once (rare combo).
-            items = _build_rip_items(con, wholesaler, product_type, q, rip_code)
-        else:
-            items = list(_rip_items_cached(con))
-            if wholesaler:
-                items = [i for i in items if i.get("wholesaler") == wholesaler]
-            if product_type:
-                items = [i for i in items if i.get("product_type") == product_type]
-            if rip_code:
-                rc = str(rip_code).strip()
-                items = [i for i in items if rc in str(i.get("rip_number") or "")]
+        items = list(_rip_items_cached(con))
 
         # The RIP Products page only lists products with a real RIP code; pure
         # discount-only items (no rip_number) are filtered out here, not in the
         # UI, so pagination counts and the summary cards are accurate.
         items = [i for i in items if i.get("rip_number")]
+
+        if wholesaler:
+            items = [i for i in items if i.get("wholesaler") == wholesaler]
+        if product_type:
+            items = [i for i in items if i.get("product_type") == product_type]
+        if rip_code:
+            rc = str(rip_code).strip()
+            items = [i for i in items if rc in str(i.get("rip_number") or "")]
+        if q:
+            # Match the legacy SQL-side behaviour: name OR brand OR UPC OR
+            # rip_number, all case-insensitive substrings. Skipping the
+            # shorthand-alias rewrite (JW -> Walker) is a deliberate trade:
+            # instant search beats fancy expansion when the user is typing.
+            ql = q.lower().strip()
+            if ql:
+                items = [
+                    i for i in items
+                    if ql in (i.get("product_name") or "").lower()
+                    or ql in (i.get("brand") or "").lower()
+                    or ql in str(i.get("upc") or "").lower()
+                    or ql in str(i.get("rip_number") or "").lower()
+                ]
 
         if min_savings is not None:
             items = [i for i in items if (i["rip_save_per_case"] or 0) >= min_savings]

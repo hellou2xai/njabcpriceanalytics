@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { deals, catalog } from '../lib/api';
+import { Fragment, useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { deals, catalog, cart as cartApi } from '../lib/api';
+import { Plus, Check } from 'lucide-react';
 import FavoriteButton from '../components/FavoriteButton';
 import ProductThumb from '../components/ProductThumb';
 import { RowMenuButton } from '../components/ContextMenu';
@@ -140,6 +141,163 @@ export default function RipProducts() {
     () => buildRipPaletteMap(rawItems.map(i => i.rip_number ?? null)),
     [rawItems],
   );
+
+  // Live cart contents — drives the "X cases added · Y to next tier"
+  // progress message in each group header. Refetched on a short interval
+  // and on focus so adding to cart from another tab reflects here.
+  const { data: cartData } = useQuery({
+    queryKey: ['cart'],
+    queryFn: cartApi.get,
+    refetchOnWindowFocus: true,
+    refetchInterval: 15000,
+  });
+  const qc = useQueryClient();
+  const cartByKey = useMemo(() => {
+    const m = new Map<string, { cases: number; units: number }>();
+    for (const it of (cartData?.items ?? [])) {
+      const upc = (it.upc ?? '').toString().replace(/^0+/, '');
+      const k = `${it.wholesaler}|${upc}|${(it.unit_volume ?? '').toString()}`;
+      const prev = m.get(k) ?? { cases: 0, units: 0 };
+      m.set(k, { cases: prev.cases + (it.qty_cases || 0), units: prev.units + (it.qty_units || 0) });
+    }
+    return m;
+  }, [cartData]);
+
+  // Add-all-to-cart for an entire RIP group: one POST per unique product
+  // in the group, starting at 1 case each. Buyer can then tune quantities
+  // to hit the desired tier; the header progress message updates live.
+  const addAllMut = useMutation({
+    mutationFn: async (products: { product_name: string; wholesaler: string; upc?: string; unit_volume?: string }[]) => {
+      let added = 0;
+      for (const p of products) {
+        try {
+          await cartApi.add({ product_name: p.product_name, wholesaler: p.wholesaler,
+            upc: p.upc, unit_volume: p.unit_volume, qty_cases: 1, qty_units: 0 });
+          added++;
+        } catch { /* keep going on partial failures */ }
+      }
+      return added;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['cart'] }); },
+  });
+  const [addedFlash, setAddedFlash] = useState<string | null>(null);
+
+  // For each contiguous run of items sharing a rip_number (when groupByRip
+  // is on), pre-compute the metadata the group header needs: unique
+  // products, distinct tier thresholds, and the cart-based progress label.
+  // Indexed by the first-row position of each cluster so the render loop
+  // can look it up in O(1).
+  type GroupMeta = {
+    code: string;
+    paletteIdx: number;
+    products: { product_name: string; wholesaler: string; upc?: string; unit_volume?: string; cartKey: string }[];
+    // Distinct tier thresholds (qty, unit) with the best $ amount we've
+    // seen at either curr or next edition.
+    tiers: { qty: number; unit: string; amt: number; isCases: boolean }[];
+    // Dominant unit decides whether we count cart cases or cart bottles.
+    progressUnit: 'case' | 'btl';
+    casesInCart: number;     // total across products in the group
+    bottlesInCart: number;
+  };
+  const ripGroups = useMemo(() => {
+    if (!groupByRip) return new Map<number, GroupMeta>();
+    const norm = (s?: string | null) => {
+      const x = String(s ?? '').toLowerCase();
+      if (x === 'c' || x.startsWith('case')) return 'case';
+      if (x === 'b' || x.startsWith('btl') || x.startsWith('bottle')) return 'btl';
+      return 'case';
+    };
+    const out = new Map<number, GroupMeta>();
+    let i = 0;
+    while (i < items.length) {
+      const code = String(items[i].rip_number ?? '').trim();
+      if (!code || code === '0') { i++; continue; }
+      // Walk forward to find the end of this rip_number cluster.
+      let j = i;
+      while (j < items.length && String(items[j].rip_number ?? '').trim() === code) j++;
+      // Gather unique products + tier thresholds across [i, j).
+      const productMap = new Map<string, GroupMeta['products'][number]>();
+      const tierMap = new Map<string, GroupMeta['tiers'][number]>();
+      let unitVotes = { case: 0, btl: 0 };
+      for (let k = i; k < j; k++) {
+        const it = items[k];
+        const upc = (it.upc ?? '').toString().replace(/^0+/, '');
+        const pKey = `${it.wholesaler}|${it.product_name}|${it.unit_volume ?? ''}`;
+        if (!productMap.has(pKey)) {
+          productMap.set(pKey, {
+            product_name: it.product_name,
+            wholesaler: it.wholesaler,
+            upc: it.upc ?? undefined,
+            unit_volume: it.unit_volume ?? undefined,
+            cartKey: `${it.wholesaler}|${upc}|${(it.unit_volume ?? '').toString()}`,
+          });
+        }
+        const u = norm(it.rip_unit);
+        unitVotes[u]++;
+        const tKey = `${it.rip_qty}|${u}`;
+        const bestAmt = Math.max(it.curr_rip_amt ?? 0, it.next_rip_amt ?? 0);
+        if (bestAmt > 0) {
+          const prev = tierMap.get(tKey);
+          if (!prev || bestAmt > prev.amt) {
+            tierMap.set(tKey, { qty: it.rip_qty, unit: it.rip_unit ?? 'Case(s)', amt: bestAmt, isCases: u === 'case' });
+          }
+        }
+      }
+      const progressUnit: 'case' | 'btl' = unitVotes.btl > unitVotes.case ? 'btl' : 'case';
+      // Sum cart cases/bottles for all unique products.
+      let casesInCart = 0, bottlesInCart = 0;
+      for (const p of productMap.values()) {
+        const cv = cartByKey.get(p.cartKey);
+        if (cv) { casesInCart += cv.cases; bottlesInCart += cv.units; }
+      }
+      const tiers = [...tierMap.values()].sort((a, b) => a.qty - b.qty);
+      out.set(i, {
+        code,
+        paletteIdx: 0,  // unused; we look colour up via ripPalette by code
+        products: [...productMap.values()],
+        tiers,
+        progressUnit,
+        casesInCart,
+        bottlesInCart,
+      });
+      i = j;
+    }
+    return out;
+  }, [groupByRip, items, cartByKey]);
+
+  // Render a friendly progress line: "3 of 5 cases for $125 tier · 2 more
+  // to qualify". Returns null when the group has no tiers.
+  function groupProgress(meta: GroupMeta): { text: string; tone: 'pending' | 'reached' | 'gap' } | null {
+    if (meta.tiers.length === 0) return null;
+    const haveCases = meta.casesInCart;
+    const haveBottles = meta.bottlesInCart;
+    const have = meta.progressUnit === 'case' ? haveCases : haveBottles;
+    const unitWord = meta.progressUnit === 'case' ? 'case' : 'bottle';
+    const reached = meta.tiers.filter(t => have >= t.qty);
+    const ahead = meta.tiers.filter(t => have < t.qty);
+    if (reached.length > 0 && ahead.length === 0) {
+      const top = reached[reached.length - 1];
+      return { text: `✓ Top tier reached: ${have} ${unitWord}${have === 1 ? '' : 's'} · $${top.amt.toFixed(2)} rebate locked`, tone: 'reached' };
+    }
+    if (reached.length > 0) {
+      const top = reached[reached.length - 1];
+      const next = ahead[0];
+      const need = next.qty - have;
+      return {
+        text: `${have} ${unitWord}${have === 1 ? '' : 's'} in cart · $${top.amt.toFixed(2)} earned · ${need} more for $${next.amt.toFixed(2)}`,
+        tone: 'pending',
+      };
+    }
+    const next = ahead[0];
+    const need = next.qty - have;
+    if (have === 0) {
+      return { text: `Nothing in cart yet · buy ${next.qty} ${unitWord}${next.qty === 1 ? '' : 's'} for $${next.amt.toFixed(2)} rebate`, tone: 'gap' };
+    }
+    return {
+      text: `${have} ${unitWord}${have === 1 ? '' : 's'} in cart · ${need} more for $${next.amt.toFixed(2)} rebate`,
+      tone: 'gap',
+    };
+  }
 
   // When Group by RIP is on, re-order the loaded page so products sharing a
   // rip_number cluster together. The existing per-product tier grouping
@@ -419,6 +577,18 @@ export default function RipProducts() {
 
                 const code = item.rip_number ?? '';
 
+                // RIP-group header: render a sticky title row before the
+                // first item of each cluster when Group by RIP is on. The
+                // header shows the rip code in its palette colour, every
+                // tier threshold available across the group, a live
+                // "X cases added, Y to next tier" progress line, and an
+                // Add-all-to-cart action that drops 1 case of each
+                // unique product so the buyer can adjust from a starting
+                // point.
+                const groupMeta = groupByRip ? ripGroups.get(idx) : undefined;
+                const groupPalette = groupMeta ? ripPalette.get(groupMeta.code) : null;
+                const prog = groupMeta ? groupProgress(groupMeta) : null;
+
                 // Coloured left band when Group by RIP is on. Palette is
                 // assigned in order of appearance (see ripPalette above) so
                 // adjacent clustered groups always read as visually distinct
@@ -434,9 +604,59 @@ export default function RipProducts() {
                   }
                 }
 
+                const rowKey = `${item.product_name}-${item.wholesaler}-${item.unit_volume}-${item.rip_qty}-${item.rip_unit}-${idx}`;
                 return (
-                  <tr
-                    key={`${item.product_name}-${item.wholesaler}-${item.unit_volume}-${item.rip_qty}-${item.rip_unit}-${idx}`}
+                <Fragment key={rowKey}>
+                {groupMeta && (
+                  <tr className="rip-group-banner"
+                      style={groupPalette ? { background: groupPalette.tint } : undefined}>
+                    <td colSpan={16} className="rip-group-banner-cell"
+                        style={groupPalette ? { borderLeft: `5px solid ${groupPalette.stripe}` } : undefined}>
+                      <div className="rip-group-banner-row">
+                        <span className="rip-group-banner-code"
+                              style={groupPalette
+                                ? { background: groupPalette.stripe, color: '#fff' }
+                                : undefined}>
+                          🔗 RIP {groupMeta.code}
+                        </span>
+                        <span className="rip-group-banner-products">
+                          {groupMeta.products.length} product{groupMeta.products.length === 1 ? '' : 's'}
+                        </span>
+                        {groupMeta.tiers.length > 0 && (
+                          <span className="rip-group-banner-tiers">
+                            {groupMeta.tiers.map((t, i) => (
+                              <span key={i} className="rip-group-banner-tier"
+                                    style={groupPalette ? { color: groupPalette.text } : undefined}>
+                                Buy {t.qty} {t.isCases ? 'cs' : 'btl'} = <strong>${t.amt.toFixed(2)}</strong>
+                              </span>
+                            ))}
+                          </span>
+                        )}
+                        {prog && (
+                          <span className={`rip-group-banner-progress tone-${prog.tone}`}>
+                            {prog.text}
+                          </span>
+                        )}
+                        <button
+                          className="btn btn-sm rip-group-banner-add"
+                          disabled={addAllMut.isPending}
+                          onClick={e => {
+                            e.stopPropagation();
+                            addAllMut.mutate(groupMeta.products);
+                            setAddedFlash(groupMeta.code);
+                            setTimeout(() => setAddedFlash(null), 1600);
+                          }}
+                          title={`Add 1 case of each of the ${groupMeta.products.length} products in this RIP group to your cart`}
+                        >
+                          {addedFlash === groupMeta.code
+                            ? (<><Check size={13} /> Added</>)
+                            : (<><Plus size={13} /> Add all to cart</>)}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                <tr
                     className={`rip-row ${isFirstForProduct ? 'rip-row-first' : 'rip-row-sub'}${groupByRip && code ? ' has-rip-group' : ''}`}
                     style={ripBandStyle}
                     data-ctx=""
@@ -561,6 +781,7 @@ export default function RipProducts() {
                       })()}
                     </td>
                   </tr>
+                </Fragment>
                 );
               })}
             </tbody>

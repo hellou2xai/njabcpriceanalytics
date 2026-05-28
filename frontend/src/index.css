@@ -2392,6 +2392,39 @@ tr:hover .row-menu-btn { opacity: 1; }
   margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--text);
 }
 
+/* RIP Products "Group by Case Mix RIP" banner. Sticks above every cluster
+   of products sharing a rip_number, shows the rip code in its palette
+   colour, the available tier thresholds, a live cart-aware progress line
+   and an Add-all-to-cart action. */
+.rip-group-banner > .rip-group-banner-cell {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+}
+.rip-group-banner-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px;
+  font-size: 13px;
+}
+.rip-group-banner-code {
+  font-size: 11px; font-weight: 800; letter-spacing: 0.4px;
+  padding: 3px 9px; border-radius: 10px; white-space: nowrap;
+}
+.rip-group-banner-products {
+  font-size: 11.5px; color: var(--text-muted); font-weight: 600;
+}
+.rip-group-banner-tiers {
+  display: inline-flex; flex-wrap: wrap; gap: 4px 10px; align-items: center;
+}
+.rip-group-banner-tier {
+  font-size: 11.5px; font-weight: 600; white-space: nowrap;
+}
+.rip-group-banner-progress {
+  font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 6px;
+}
+.rip-group-banner-progress.tone-reached { background: color-mix(in srgb, var(--green) 18%, transparent); color: var(--green); }
+.rip-group-banner-progress.tone-pending { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.rip-group-banner-progress.tone-gap     { background: color-mix(in srgb, var(--text-muted) 12%, transparent); color: var(--text-muted); }
+.rip-group-banner-add { margin-left: auto; }
+
 /* Catalog "Group by Case Mix RIP" badges. The colour is assigned from a
    curated palette in order of appearance per page (see CatalogTable
    buildRipPaletteMap) so adjacent clustered groups always read as

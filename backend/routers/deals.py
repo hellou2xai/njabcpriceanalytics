@@ -251,6 +251,12 @@ def get_combos(
     """
     with get_duckdb() as con:
         src = read_parquet(con, "combo")
+        # cpl_enriched carries the real per-UPC product name. Fedway's combo
+        # feed stores the brand_reg_no in product_name (numeric code) and the
+        # from_date in comments, so without this join the bundle title and
+        # component names both render as garbage. Other distributors also
+        # benefit: their combo product_name is also a code in the source.
+        cpl_src = read_parquet(con, "cpl_enriched")
         from datetime import date as _date
         from collections import defaultdict
         t = _date.today()
@@ -288,14 +294,26 @@ def get_combos(
         params, clauses = {}, []
         for i, (ws, e) in enumerate(pairs):
             params[f"w{i}"], params[f"e{i}"] = ws, e
-            clauses.append(f"(wholesaler = $w{i} AND edition = $e{i})")
+            clauses.append(f"(c.wholesaler = $w{i} AND c.edition = $e{i})")
+        # COALESCE(cpl.product_name, c.product_name) overrides bogus combo
+        # product_names (e.g. Fedway stores codes here). Date-like comments
+        # (e.g. '2026-06-01 00:00:00') get nulled so the title falls back to
+        # "Combo {code}" via the application-side default below.
         df = con.execute(f"""
-            SELECT wholesaler, edition, combo_code, upc, product_name,
-                   combo_pack_price, qty_per_pack, frontline_price_each,
-                   combo_price_each, total_savings, comments, from_date, to_date
-            FROM {src}
+            SELECT c.wholesaler, c.edition, c.combo_code, c.upc,
+                   COALESCE(NULLIF(cpl.product_name, ''), c.product_name) AS product_name,
+                   c.combo_pack_price, c.qty_per_pack, c.frontline_price_each,
+                   c.combo_price_each, c.total_savings,
+                   CASE WHEN try_cast(LEFT(c.comments, 10) AS DATE) IS NULL
+                        THEN c.comments ELSE NULL END AS comments,
+                   c.from_date, c.to_date
+            FROM {src} c
+            LEFT JOIN {cpl_src} cpl
+              ON cpl.wholesaler = c.wholesaler
+             AND cpl.edition = c.edition
+             AND cpl.upc = c.upc
             WHERE {' OR '.join(clauses)}
-            ORDER BY total_savings DESC NULLS LAST
+            ORDER BY c.total_savings DESC NULLS LAST
         """, params).fetchdf()
 
         def _f(v):
@@ -372,6 +390,22 @@ def get_combos(
             else:
                 recommendation = "Stable"
             comments = g["comments"]
+            # When the source comments are empty or were dropped as garbage
+            # (e.g. Fedway writes from_date into the Comments column), build the
+            # bundle description from the components themselves. The pieces are
+            # all present: qty_per_pack from the COMBO sheet + real product
+            # names joined from cpl_enriched on UPC. Format follows the other
+            # distributors' shape (qty x name / qty x name / ...).
+            if not comments:
+                parts = []
+                for c in comps:
+                    name = c.get("product_name")
+                    if not name:
+                        continue
+                    qty = c.get("qty_per_pack")
+                    parts.append(f"{qty} x {name}" if qty else name)
+                if parts:
+                    comments = " / ".join(parts)
             if qtokens:
                 hay = " ".join([comments or "", code] + [c["product_name"] or "" for c in comps]).lower()
                 if not all(any(cand in hay for cand in [tok, *(expansion_for(tok) or [])]) for tok in qtokens):

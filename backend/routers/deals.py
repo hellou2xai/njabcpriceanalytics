@@ -513,7 +513,7 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
             with get_pg() as pg:
                 cur = pg.execute("SELECT wholesaler, LTRIM(upc, '0') AS un, edition, blurb FROM ai_deal_blurbs")
                 for b in cur.fetchall():
-                    blurb_map[(b[0], b[1], b[2])] = b[3]
+                    blurb_map[(b["wholesaler"], b["un"], b["edition"])] = b["blurb"]
         except Exception:
             blurb_map = {}
 

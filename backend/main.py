@@ -147,12 +147,12 @@ def admin_generate_blurbs(limit: int = 10, user: dict = Depends(get_current_user
     try:
         from backend.pg import get_pg
         with get_pg() as pg:
-            n = pg.execute("SELECT COUNT(*) FROM ai_deal_blurbs").fetchone()[0]
-            out["pg_count"] = int(n)
+            row = pg.execute("SELECT COUNT(*) AS n FROM ai_deal_blurbs").fetchone()
+            out["pg_count"] = int(row["n"]) if row else 0
             sample = pg.execute(
-                "SELECT wholesaler, upc, LTRIM(upc,'0') AS un, edition, LEFT(blurb, 80) FROM ai_deal_blurbs LIMIT 3"
+                "SELECT wholesaler, upc, LTRIM(upc,'0') AS un, edition, LEFT(blurb, 80) AS preview FROM ai_deal_blurbs LIMIT 3"
             ).fetchall()
-            out["pg_sample"] = [list(r) for r in sample]
+            out["pg_sample"] = [dict(r) for r in sample]
     except Exception as e:
         out["pg_error"] = f"{type(e).__name__}: {e}"
     return out

@@ -89,9 +89,9 @@ def _candidates(limit: int = 500) -> list[dict]:
     have: set = set()
     try:
         with get_pg() as pg:
-            cur = pg.execute("SELECT wholesaler, LTRIM(upc, '0'), edition FROM ai_deal_blurbs")
-            for w, u, e in cur.fetchall():
-                have.add((w, u, e))
+            cur = pg.execute("SELECT wholesaler, LTRIM(upc, '0') AS un, edition FROM ai_deal_blurbs")
+            for r in cur.fetchall():
+                have.add((r["wholesaler"], r["un"], r["edition"]))
     except Exception:
         have = set()
 

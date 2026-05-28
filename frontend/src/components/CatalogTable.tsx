@@ -23,6 +23,16 @@ export function shortUnit(u?: string | null): string {
   if (s.startsWith('bottle') || s.startsWith('btl') || s === 'b') return 'btl';
   return u;
 }
+
+// Stable colour hue for a RIP code so the same rebate gets the same swatch
+// across the catalog rows, the product detail siblings panel, and the cart.
+function ripHue(code?: string | null): number | null {
+  if (!code) return null;
+  const s = String(code);
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+  return h;
+}
 function fmt(v: number | null | undefined, prefix = '$'): string {
   return v == null ? '-' : `${prefix}${v.toFixed(2)}`;
 }
@@ -112,9 +122,21 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
             const qty = cart[cartKey] ?? { cases: 0, units: 0 };
             const tiers: CatalogTier[] = item.tiers ?? [];
             const hasTiers = tiers.length > 0;
+            // RIP-group decoration (only populated when the catalog requested
+            // group_by_rip). hue picks the same colour as the cart RIP group
+            // and the detail-modal sibling band so the user can scan related
+            // rows together.
+            const ripGroupCode = item.rip_group_code ?? null;
+            const ripHueVal = ripHue(ripGroupCode);
+            const ripBandStyle: React.CSSProperties = ripHueVal != null
+              ? { boxShadow: `inset 6px 0 0 hsl(${ripHueVal} 65% 55%)`,
+                  background: `linear-gradient(90deg, hsl(${ripHueVal} 75% 96%) 0, transparent 220px)` }
+              : {};
+            const showMismatch = !!item.rip_cpl_mismatch && !!ripGroupCode;
             return (
               <Fragment key={reactKey}>
-                <tr className="catalog-row-main"
+                <tr className={`catalog-row-main${ripGroupCode ? ' has-rip-group' : ''}`}
+                    style={ripBandStyle}
                     data-ctx=""
                     data-ctx-product={item.product_name}
                     data-ctx-wholesaler={item.wholesaler}
@@ -139,10 +161,20 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                             <span className="tag" style={{ marginLeft: 6, fontSize: 10 }}
                                   title="Vintage year. The same barcode can cover several vintages, each priced separately.">Vintage {item.vintage}</span>
                           )}
-                          {item.multi_distributor && (
-                            <span className="tag tag-blue" style={{ marginLeft: 6, fontSize: 10 }}
-                                  title={`Same product is carried by ${item.distributor_count ?? 'several'} distributors`}>Multiple distributors</span>
-                          )}
+                          {item.multi_distributor && (() => {
+                            const names = (item.multi_distributor_names ?? [])
+                              .map(s => distributorName(s))
+                              .filter(Boolean);
+                            const title = names.length > 0
+                              ? `Same product is carried by ${names.length} distributors: ${names.join(', ')}`
+                              : `Same product is carried by ${item.distributor_count ?? 'several'} distributors`;
+                            return (
+                              <span className="tag tag-blue" style={{ marginLeft: 6, fontSize: 10 }}
+                                    title={title}>
+                                Multiple distributors{names.length > 0 ? ` (${names.length})` : ''}
+                              </span>
+                            );
+                          })()}
                         </div>
                         {comboLink && (() => {
                           const url = comboLink(item);
@@ -152,6 +184,26 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                                  title="This product is part of a combo bundle — open in a popup">🎁 In combo</a>
                             : null;
                         })()}
+                        {ripGroupCode && (
+                          <span
+                            className="catalog-rip-group-badge"
+                            title={`Part of RIP rebate ${ripGroupCode}. Items sharing this code must be purchased together to qualify.`}
+                            style={ripHueVal != null
+                              ? { background: `hsl(${ripHueVal} 75% 93%)`,
+                                  color: `hsl(${ripHueVal} 65% 28%)`,
+                                  border: `1px solid hsl(${ripHueVal} 60% 78%)` }
+                              : undefined}
+                          >
+                            🔗 RIP {ripGroupCode}
+                          </span>
+                        )}
+                        {showMismatch && (
+                          <span className="catalog-rip-mismatch-badge"
+                            title={`This UPC is listed under RIP ${ripGroupCode} on the RIP sheet, but the CPL row references a different code. Verify with the sales rep before relying on the rebate.`}
+                          >
+                            ⚠ Check with Sales Rep
+                          </span>
+                        )}
                         {item.better_month && (
                           <div style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: 5 }}>
                             <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Better price:</span>

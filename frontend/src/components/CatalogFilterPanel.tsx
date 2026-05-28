@@ -9,6 +9,11 @@ export interface CatalogFilters {
   hasRip?: boolean;
   hasDiscount?: boolean;
   inCombo?: boolean;
+  // When true, the search backend clusters products sharing a Case Mix RIP
+  // rebate (each row gets a coloured band keyed off the rip code, and rows
+  // whose CPL rip_code drifted from the RIP sheet wear a "check with sales
+  // rep" sticker).
+  groupByRip?: boolean;
   divisions: string[];
   priceMin?: number;
   priceMax?: number;
@@ -29,6 +34,7 @@ export function countActiveFilters(f: CatalogFilters): number {
   if (f.hasRip !== undefined) n++;
   if (f.hasDiscount !== undefined) n++;
   if (f.inCombo) n++;
+  if (f.groupByRip) n++;
   n += f.divisions.length;
   if (f.priceMin !== undefined) n++;
   if (f.priceMax !== undefined) n++;
@@ -189,7 +195,8 @@ export default function CatalogFilterPanel({
   const dealsActiveCount =
     (filters.hasRip !== undefined ? 1 : 0) +
     (filters.hasDiscount !== undefined ? 1 : 0) +
-    (filters.inCombo ? 1 : 0);
+    (filters.inCombo ? 1 : 0) +
+    (filters.groupByRip ? 1 : 0);
   const priceActiveCount =
     (filters.priceMin !== undefined ? 1 : 0) +
     (filters.priceMax !== undefined ? 1 : 0);
@@ -275,6 +282,12 @@ export default function CatalogFilterPanel({
                   <input type="checkbox" checked={filters.inCombo === true}
                     onChange={() => onChange({ ...filters, inCombo: filters.inCombo ? undefined : true })} />
                   <span>In combo</span><span className="filter-facet-count">{comboCount}</span>
+                </label>
+                <label className="filter-checkbox"
+                  title="Cluster products that share a RIP rebate (from the RIP sheet) and colour-band each group">
+                  <input type="checkbox" checked={filters.groupByRip === true}
+                    onChange={() => onChange({ ...filters, groupByRip: filters.groupByRip ? undefined : true })} />
+                  <span>Group by Case Mix RIP</span>
                 </label>
               </div>
             </FilterDropdown>

@@ -464,7 +464,7 @@ def _attach_dup_upc(con, src, records):
         return
     norms = sorted({str(r.get("upc")).lstrip("0") for r in records
                     if r.get("upc") and str(r.get("upc")).lstrip("0")})
-    by_upc: dict[str, tuple[int, int]] = {}  # un -> (distributor_count, max products at one distributor)
+    by_upc: dict[str, tuple[int, int, list[str]]] = {}  # un -> (distributor_count, max products at one distributor, distributor slugs)
     if norms:
         ph = ", ".join(f"$d{i}" for i in range(len(norms)))
         prm = {f"d{i}": u for i, u in enumerate(norms)}
@@ -477,21 +477,30 @@ def _attach_dup_upc(con, src, records):
                            WHERE LTRIM(e.upc,'0') IN ({ph})
                          ),
                          per AS (SELECT un, w, COUNT(DISTINCT pn) AS pc FROM cur GROUP BY un, w)
-                    SELECT un, COUNT(DISTINCT w) AS ndist, MAX(pc) AS maxpc
+                    SELECT un,
+                           COUNT(DISTINCT w) AS ndist,
+                           MAX(pc) AS maxpc,
+                           list_sort(list_distinct(list(w))) AS distrib_list
                     FROM per GROUP BY un""", prm
             ).fetchall()
-            by_upc = {str(r[0]): (int(r[1]), int(r[2])) for r in rows}
+            for r in rows:
+                ws_list = list(r[3]) if r[3] is not None else []
+                by_upc[str(r[0])] = (int(r[1]), int(r[2]), [str(x) for x in ws_list if x])
         except Exception:
             by_upc = {}
     for rec in records:
         un = str(rec.get("upc") or "").lstrip("0")
-        ndist, maxpc = by_upc.get(un, (0, 0))
+        ndist, maxpc, ws_list = by_upc.get(un, (0, 0, []))
         rec["distributor_count"] = ndist
         # "Multiple distributors" = the SAME product carried by 2+ distributors.
         # Require maxpc == 1: no single distributor reuses the barcode for more than
         # one product. When a distributor puts one barcode on several products it is
         # a placeholder/garbage UPC, not a shared product, so we don't tag it.
         rec["multi_distributor"] = ndist > 1 and maxpc == 1
+        # Full slug list so the UI can spell out who carries this UPC in the
+        # tooltip ("Allied, Fedway"). Only meaningful when multi_distributor is
+        # true, but always populated for completeness.
+        rec["multi_distributor_names"] = ws_list
         rec["dup_upc"] = False
 
 
@@ -519,6 +528,7 @@ def search_products(
     limit: int = Query(50, ge=1, le=50000),
     offset: int = Query(0, ge=0),
     include_tiers: bool = Query(False, description="If true, include discount_tiers and rip_tiers arrays per item"),
+    group_by_rip: bool = Query(False, description="If true, attach rip_group_code (from the RIP sheet) per row and sort by it so products sharing a rebate cluster together"),
     user: Optional[dict] = Depends(get_optional_user),
 ):
     """Full-text search with faceted filtering. Defaults to latest edition to avoid duplicates."""
@@ -706,8 +716,38 @@ def search_products(
         if q and sort == "product_name":
             order_by = f"{rel_expr} DESC, {order_by}"
 
-        # Data query
+        # "Group by Case Mix RIP": each row carries the RIP-sheet rip_code for
+        # its UPC (a UPC can be listed under a RIP without the CPL row
+        # referencing it back; we use MIN(rip_code) as the canonical group key
+        # so the same UPC always lands in the same coloured cluster). When the
+        # toggle is on we sort by it first so products sharing a rebate appear
+        # next to each other; when it's off we still surface the field but
+        # don't disturb the ranked / user-picked sort. The CTE columns are
+        # aliased (rg_*) so the unqualified WHERE clause above keeps resolving
+        # to the CPL table unambiguously.
+        if group_by_rip:
+            order_by = (
+                "rip_group_code IS NULL, rip_group_code ASC, "
+                + order_by
+            )
+        rip_src = read_parquet(con, "rip")
         rows = con.execute(f"""
+            WITH rip_groups AS (
+                -- For each UPC, capture EVERY rip code it appears under (a UPC
+                -- can be stacked under multiple rebates). MIN() is the
+                -- deterministic canonical group code; the list lets us tell
+                -- whether the CPL's rip_code is a valid member.
+                SELECT wholesaler AS rg_wholesaler,
+                       edition    AS rg_edition,
+                       CAST(upc AS VARCHAR) AS rg_upc,
+                       MIN(CAST(rip_code AS VARCHAR)) AS rip_group_min,
+                       COUNT(DISTINCT CAST(rip_code AS VARCHAR)) AS rip_group_count,
+                       list_distinct(list(CAST(rip_code AS VARCHAR))) AS rip_group_codes
+                FROM {rip_src}
+                WHERE upc IS NOT NULL AND CAST(upc AS VARCHAR) <> ''
+                  AND rip_code IS NOT NULL AND CAST(rip_code AS VARCHAR) <> ''
+                GROUP BY wholesaler, edition, CAST(upc AS VARCHAR)
+            )
             SELECT wholesaler, edition, upc, product_name, product_type,
                    unit_qty, unit_volume, vintage, frontline_case_price, frontline_unit_price,
                    best_case_price, best_unit_price, effective_case_price,
@@ -717,8 +757,33 @@ def search_products(
                    discount_2_qty, discount_2_amt,
                    discount_3_qty, discount_3_amt,
                    discount_4_qty, discount_4_amt,
-                   discount_5_qty, discount_5_amt
+                   discount_5_qty, discount_5_amt,
+                   -- Prefer the CPL's rip_code as the visible group when it's a
+                   -- legit entry in the RIP sheet for this UPC; otherwise fall
+                   -- back to the canonical MIN so clustering still works.
+                   CASE
+                       WHEN rg.rip_group_min IS NULL THEN NULL
+                       WHEN rip_code IS NOT NULL AND CAST(rip_code AS VARCHAR) <> ''
+                            AND CAST(rip_code AS VARCHAR) <> '0'
+                            AND list_contains(rg.rip_group_codes, CAST(rip_code AS VARCHAR))
+                       THEN CAST(rip_code AS VARCHAR)
+                       ELSE rg.rip_group_min
+                   END AS rip_group_code,
+                   rg.rip_group_count,
+                   -- Mismatch = UPC is in the RIP sheet but the CPL row's
+                   -- rip_code isn't one of the codes it qualifies under
+                   -- (covers the empty / '0' CPL case too).
+                   CASE
+                       WHEN rg.rip_group_min IS NULL THEN false
+                       WHEN rip_code IS NULL OR CAST(rip_code AS VARCHAR) IN ('', '0') THEN true
+                       WHEN list_contains(rg.rip_group_codes, CAST(rip_code AS VARCHAR)) THEN false
+                       ELSE true
+                   END AS rip_cpl_mismatch
             FROM {src}
+            LEFT JOIN rip_groups rg
+              ON rg.rg_wholesaler = wholesaler
+             AND rg.rg_edition = edition
+             AND rg.rg_upc = CAST(upc AS VARCHAR)
             WHERE {where_clause}
             {dedup}
             ORDER BY {order_by}

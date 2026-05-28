@@ -57,6 +57,7 @@ export default function Catalog() {
     has_rip: filters.hasRip,
     has_discount: filters.hasDiscount,
     in_combo: filters.inCombo || undefined,
+    group_by_rip: filters.groupByRip || undefined,
     divisions: filters.divisions.join(',') || undefined,
     categories: filters.categories.join(',') || undefined,
     brands: filters.brands.join(',') || undefined,

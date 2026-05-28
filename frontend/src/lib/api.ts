@@ -691,6 +691,14 @@ export interface Product {
   total_savings_per_case: number;
   rip_code?: string;
   combo_code?: string;
+  // RIP rebate grouping (catalog only — populated when sorting/grouping by
+  // Case Mix RIP). rip_group_code is the RIP-sheet code this UPC belongs to;
+  // rip_cpl_mismatch is true when the CPL row's rip_code isn't among the
+  // codes the RIP sheet says this UPC qualifies under (stale CPL → "check
+  // with sales rep" sticker).
+  rip_group_code?: string | null;
+  rip_group_count?: number | null;
+  rip_cpl_mismatch?: boolean | null;
   brand?: string;
   discount_1_qty?: string | null;
   discount_1_amt?: number | null;
@@ -716,9 +724,11 @@ export interface Product {
   // Unused now (kept for back-compat); duplicates are collapsed server-side.
   dup_upc?: boolean;
   // True when the SAME product is carried by 2+ distributors (not a placeholder
-  // barcode). distributor_count is how many carry it.
+  // barcode). distributor_count is how many carry it; multi_distributor_names
+  // is the sorted list of slugs so the UI can spell out who.
   multi_distributor?: boolean;
   distributor_count?: number;
+  multi_distributor_names?: string[];
   // AI-generated short blurb attached by /api/deals/discounts when present.
   ai_blurb?: string | null;
   // Savings source labels ("CPL discount", "RIP", "Closeout") and the

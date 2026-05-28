@@ -641,6 +641,23 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
   border-radius: var(--radius); color: var(--text); font-size: 12px; cursor: pointer;
 }
 
+/* ---- Sort By Select (top-of-page sort, Promotions pages) ---- */
+.sort-by-select {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 8px 3px 10px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  color: var(--text); font-size: 12px; cursor: pointer;
+}
+.sort-by-select svg { color: var(--text-muted); }
+.sort-by-select .sort-by-label { color: var(--text-muted); font-weight: 600; }
+.sort-by-select select {
+  border: none; background: transparent; color: var(--text);
+  font-size: 12px; font-weight: 600; padding: 2px 0; cursor: pointer;
+  outline: none;
+}
+.sort-by-select:hover { border-color: var(--accent); }
+.sort-by-select:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent); }
+
 /* ---- Scorecard ---- */
 .grade-badge {
   display: inline-flex; align-items: center; justify-content: center;

@@ -18,7 +18,12 @@ services:
     runtime: docker
     plan: free            # spins down when idle; first hit after idle is a cold start
     dockerfilePath: ./Dockerfile
-    healthCheckPath: /api/health
+    # Readiness probe (returns 503 until the pricing cache is built). Render
+    # waits for this to return 200 before routing traffic to a newly deployed
+    # instance, so the OLD instance keeps serving users until the NEW one is
+    # ready. This is what gives us zero-downtime deploys instead of a 1-2 min
+    # gap where the new container 500s while the cache copies from Postgres.
+    healthCheckPath: /api/ready
     autoDeploy: true
     envVars:
       - key: DATABASE_URL

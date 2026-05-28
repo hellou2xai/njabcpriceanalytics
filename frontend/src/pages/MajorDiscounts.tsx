@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { LayoutGrid, Table as TableIcon, Percent } from 'lucide-react';
+import { Percent } from 'lucide-react';
 import { deals, watchlist, catalog, type Product } from '../lib/api';
 import { ContextMenuProvider, RowMenuButton } from '../components/ContextMenu';
 import FavoriteButton from '../components/FavoriteButton';
@@ -8,8 +8,8 @@ import AddToCartButton from '../components/AddToCartButton';
 import AddToListButton from '../components/AddToListButton';
 import ProductThumb from '../components/ProductThumb';
 import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
-import RowLimitSelect from '../components/RowLimitSelect';
-import SortableTable from '../components/SortableTable';
+import PromotionsToolbar from '../components/PromotionsToolbar';
+import PromotionsTable, { type PromotionRow } from '../components/PromotionsTable';
 import DealSparkline from '../components/DealSparkline';
 import { useProductQuickView } from '../components/ProductQuickView';
 import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
@@ -98,12 +98,12 @@ export default function MajorDiscounts() {
       options: [{ value: '', label: 'Any' }, { value: 'yes', label: 'Closeout' }, { value: 'no', label: 'No' }] },
     { type: 'text', key: 'size', title: 'Size', placeholder: 'e.g. 750ML, 1.75L', value: size, onChange: setSize },
     { type: 'toggle', key: 'tracked', title: 'Favorites', value: trackedOnly, onChange: setTrackedOnly, label: 'Only my favourites' },
-    { type: 'pills', key: 'sort', title: 'Sort by', value: sort, onChange: v => setSort(v as 'biggest-save' | 'biggest-pct' | 'name'),
-      options: [
-        { value: 'biggest-save', label: 'Biggest saving $' },
-        { value: 'biggest-pct', label: 'Biggest %' },
-        { value: 'name', label: 'Name (A-Z)' },
-      ] },
+  ];
+
+  const sortOptions = [
+    { value: 'biggest-save' as const, label: 'Biggest saving $' },
+    { value: 'biggest-pct' as const,  label: 'Biggest % off' },
+    { value: 'name' as const,         label: 'Name (A-Z)' },
   ];
 
   return (
@@ -125,20 +125,18 @@ export default function MajorDiscounts() {
           onReset={() => { setQ(''); setWholesaler(''); setProductType(''); setMinSave(''); setMinDiscount(''); setHasRip(''); setHasCloseout(''); setSize(''); setTrackedOnly(false); setSort('biggest-save'); }} />
 
         <div className="catalog-results">
-          <div className="toolbar" style={{ marginBottom: 12 }}>
-            <RowLimitSelect value={limit} onChange={setLimit} />
-            <span className="text-muted" style={{ fontSize: 12 }}>
-              Showing {view === 'table' ? items.length : Math.min(limit, items.length)} of {items.length}
-            </span>
-            <span className="ts-view-toggle" role="group" aria-label="View mode">
-              <button type="button" className={`btn btn-sm ${view === 'cards' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setView('cards')}>
-                <LayoutGrid size={14} /> Cards
-              </button>
-              <button type="button" className={`btn btn-sm ${view === 'table' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setView('table')}>
-                <TableIcon size={14} /> Table
-              </button>
-            </span>
-          </div>
+          <PromotionsToolbar
+            sortValue={sort}
+            onSortChange={setSort}
+            sortOptions={sortOptions}
+            limit={limit}
+            onLimitChange={setLimit}
+            total={items.length}
+            shownInCards={limit}
+            view={view}
+            onViewChange={setView}
+            noun="discounts"
+          />
 
           <ContextMenuProvider onView={open}>
             {view === 'cards' ? (
@@ -149,47 +147,12 @@ export default function MajorDiscounts() {
                 )}
               </div>
             ) : (
-              <div className="dense-table">
-                <SortableTable
-                  data={items as unknown as Record<string, unknown>[]}
-                  pageSize={50}
-                  exportName="major-discounts"
-                  onRowClick={r => open(r.product_name as string, r.wholesaler as string, undefined,
-                    { upc: (r.upc as string) ?? undefined, unitVolume: (r.unit_volume as string) ?? undefined })}
-                  columns={[
-                    { key: 'product_name', label: 'Product', sortable: true,
-                      render: r => r.product_name as string },
-                    { key: 'brand', label: 'Brand', sortable: true,
-                      render: r => (r.brand as string | null) ?? '-' },
-                    { key: 'wholesaler', label: 'Distributor', sortable: true,
-                      render: r => distributorName(r.wholesaler as string) },
-                    { key: 'product_type', label: 'Category', sortable: true },
-                    { key: 'unit_volume', label: 'Size' },
-                    { key: 'frontline_case_price', label: 'List/cs', align: 'right', sortable: true,
-                      render: r => money(r.frontline_case_price as number | null) },
-                    { key: 'effective_case_price', label: 'Net/cs', align: 'right', sortable: true,
-                      render: r => <strong>{money(r.effective_case_price as number | null)}</strong> },
-                    { key: 'total_savings_per_case', label: 'Save/cs', align: 'right', sortable: true,
-                      render: r => {
-                        const v = r.total_savings_per_case as number | null;
-                        return v != null ? <span className="text-green">{money(v)}</span> : '-';
-                      } },
-                    { key: 'discount_pct', label: '% off', align: 'right', sortable: true,
-                      render: r => r.discount_pct != null ? `${(r.discount_pct as number).toFixed(0)}%` : '-' },
-                    { key: 'has_rip', label: 'RIP', align: 'center',
-                      render: r => r.has_rip ? <span className="source-badge source-rip">RIP</span> : '' },
-                    { key: 'has_closeout', label: 'Closeout', align: 'center',
-                      render: r => r.has_closeout ? <span className="tag tag-orange">Closeout</span> : '' },
-                    { key: 'edition', label: 'Edition', sortable: true,
-                      render: r => <span className="mover-month">{fmtEdition(r.edition as string)}</span> },
-                    { key: 'ai_blurb', label: 'AI note',
-                      exportValue: r => (r.ai_blurb as string | null) ?? '',
-                      render: r => r.ai_blurb
-                        ? <span title={r.ai_blurb as string} style={{ color: 'var(--accent)', fontSize: 12 }}>✨ hover</span>
-                        : <span className="text-muted">-</span> },
-                  ]}
-                />
-              </div>
+              <PromotionsTable
+                rows={items.map(productToPromotionRow)}
+                exportName="major-discounts"
+                onRowClick={r => open(r.product_name, r.wholesaler, undefined,
+                  { upc: r.upc ?? undefined, unitVolume: r.unit_volume ?? undefined })}
+              />
             )}
           </ContextMenuProvider>
         </div>
@@ -275,4 +238,63 @@ function DiscountCard({ d, open }: { d: Product; open: (n: string, w: string, c?
       </div>
     </div>
   );
+}
+
+// ---- adapter: Product -> standard PromotionRow ----
+// MajorDiscounts deals are tied to an edition (a calendar month). Starts is
+// the first of that month, Ends is the last day, Days = days until end of
+// edition month. Type defaults to "Discount" but rolls up "Closeout" or RIP if
+// those flags are set, matching the Time-Sensitive page's deal_kind nuance.
+function editionMonthStart(ed?: string | null): string | null {
+  if (!ed) return null;
+  const m = /^(\d{4})-(\d{1,2})/.exec(ed);
+  return m ? `${m[1]}-${m[2].padStart(2, '0')}-01` : null;
+}
+function editionMonthEnd(ed?: string | null): string | null {
+  if (!ed) return null;
+  const m = /^(\d{4})-(\d{1,2})/.exec(ed);
+  if (!m) return null;
+  const y = parseInt(m[1], 10); const mo = parseInt(m[2], 10);
+  const d = new Date(y, mo, 0);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function daysFromTodayTo(iso: string | null): number | null {
+  if (!iso) return null;
+  const t = Date.parse(iso); if (isNaN(t)) return null;
+  const now = new Date(); const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((t - today) / 86400000);
+}
+
+function productToPromotionRow(p: Product): PromotionRow {
+  const from = editionMonthStart(p.edition);
+  const to   = editionMonthEnd(p.edition);
+  const days = daysFromTodayTo(to);
+  const qty = Number(p.unit_qty) || 0;
+  const net = p.effective_case_price ?? null;
+  const netBtl = qty > 0 && net != null ? net / qty : null;
+  const full = p.frontline_case_price ?? null;
+  const gp = full != null && net != null && full > 0 ? ((full - net) / full) * 100 : null;
+  const typeLabel = p.has_closeout ? 'Closeout' : (p.has_rip ? 'RIP rebate' : 'Discount');
+  return {
+    product_name: p.product_name,
+    brand: p.brand ?? null,
+    wholesaler: p.wholesaler,
+    upc: p.upc ?? null,
+    product_type: p.product_type ?? null,
+    unit_volume: p.unit_volume ?? null,
+    type_label: typeLabel,
+    from_date: from,
+    to_date: to,
+    days_to_expire: days,
+    orig_case_price: full,
+    disc_per_case: p.total_savings_per_case ?? null,
+    net_case_price: net,
+    net_btl_price: netBtl,
+    gp_pct: gp,
+    off_pct: p.discount_pct ?? null,
+    has_rip: p.has_rip ?? false,
+    has_closeout: p.has_closeout ?? false,
+    ai_blurb: p.ai_blurb ?? null,
+    sticker: null,
+  };
 }

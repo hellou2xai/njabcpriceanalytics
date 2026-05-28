@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { LayoutGrid, Table as TableIcon } from 'lucide-react';
 import { deals, watchlist, catalog, type TimeSensitiveDeal } from '../lib/api';
 import { ContextMenuProvider } from '../components/ContextMenu';
 import { RowMenuButton } from '../components/ContextMenu';
@@ -9,8 +8,8 @@ import AddToCartButton from '../components/AddToCartButton';
 import AddToListButton from '../components/AddToListButton';
 import ProductThumb from '../components/ProductThumb';
 import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
-import RowLimitSelect from '../components/RowLimitSelect';
-import SortableTable from '../components/SortableTable';
+import PromotionsToolbar from '../components/PromotionsToolbar';
+import PromotionsTable, { type PromotionRow } from '../components/PromotionsTable';
 import DealSparkline from '../components/DealSparkline';
 import { useProductQuickView } from '../components/ProductQuickView';
 import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
@@ -156,13 +155,13 @@ export default function TimeSensitive() {
       options: [{ value: '', label: 'Any' }, { value: 'yes', label: 'Closeout' }, { value: 'no', label: 'No' }] },
     { type: 'text', key: 'size', title: 'Size', placeholder: 'e.g. 750ML, 1.75L', value: size, onChange: setSize },
     { type: 'toggle', key: 'tracked', title: 'Favorites', value: trackedOnly, onChange: setTrackedOnly, label: 'Only my favourites' },
-    { type: 'pills', key: 'sort', title: 'Sort by', value: sort, onChange: v => setSort(v as 'ending' | 'save' | 'pct' | 'name'),
-      options: [
-        { value: 'ending', label: 'Ending soonest' },
-        { value: 'save', label: 'Biggest saving' },
-        { value: 'pct', label: 'Biggest %' },
-        { value: 'name', label: 'Name (A-Z)' },
-      ] },
+  ];
+
+  const sortOptions = [
+    { value: 'ending' as const, label: 'Ending soonest' },
+    { value: 'save' as const,   label: 'Biggest saving $' },
+    { value: 'pct' as const,    label: 'Biggest % off' },
+    { value: 'name' as const,   label: 'Name (A-Z)' },
   ];
 
   return (
@@ -182,22 +181,18 @@ export default function TimeSensitive() {
           onReset={() => { setQ(''); setWholesaler(''); setProductType(''); setValidity(''); setMinSave(''); setMinDiscount(''); setMinGp(''); setHasRip(''); setHasCloseout(''); setSize(''); setTrackedOnly(false); setSort('ending'); }} />
 
         <div className="catalog-results">
-          <div className="toolbar" style={{ marginBottom: 12 }}>
-            <RowLimitSelect value={limit} onChange={setLimit} />
-            <span className="text-muted" style={{ fontSize: 12 }}>
-              Showing {view === 'table' ? items.length : Math.min(limit, items.length)} of {items.length}
-            </span>
-            <span className="ts-view-toggle" role="group" aria-label="View mode">
-              <button type="button" className={`btn btn-sm ${view === 'cards' ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => setView('cards')} title="Card view">
-                <LayoutGrid size={14} /> Cards
-              </button>
-              <button type="button" className={`btn btn-sm ${view === 'table' ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => setView('table')} title="Table view (every column)">
-                <TableIcon size={14} /> Table
-              </button>
-            </span>
-          </div>
+          <PromotionsToolbar
+            sortValue={sort}
+            onSortChange={setSort}
+            sortOptions={sortOptions}
+            limit={limit}
+            onLimitChange={setLimit}
+            total={items.length}
+            shownInCards={limit}
+            view={view}
+            onViewChange={setView}
+            noun="deals"
+          />
 
           <ContextMenuProvider onView={open}>
             {view === 'cards' ? (
@@ -210,66 +205,12 @@ export default function TimeSensitive() {
                 )}
               </div>
             ) : (
-              <div className="dense-table">
-                <SortableTable
-                  data={items as unknown as Record<string, unknown>[]}
-                  pageSize={50}
-                  exportName="time-sensitive-deals"
-                  onRowClick={(r) => open(r.product_name as string, r.wholesaler as string, undefined,
-                    { upc: (r.upc as string) ?? undefined, unitVolume: (r.unit_volume as string) ?? undefined })}
-                  columns={[
-                    { key: 'product_name', label: 'Product', sortable: true,
-                      render: r => <span>{r.product_name as string}{tsdSticker(r as unknown as TimeSensitiveDeal)}</span> },
-                    { key: 'wholesaler', label: 'Distributor', sortable: true,
-                      render: r => distributorName(r.wholesaler as string) },
-                    { key: 'deal_kind', label: 'Type', sortable: true,
-                      render: r => <span className="text-muted">{r.deal_kind as string}</span> },
-                    { key: 'product_type', label: 'Category', sortable: true },
-                    { key: 'unit_volume', label: 'Size' },
-                    { key: 'from_date', label: 'Starts', sortable: true, render: r => fmtDate(r.from_date as string | null) },
-                    { key: 'to_date', label: 'Ends', sortable: true, render: r => fmtDate(r.to_date as string | null) },
-                    { key: 'days_to_expire', label: 'Days', align: 'right', sortable: true,
-                      render: r => dayBadge(r.days_to_expire as number | null) },
-                    { key: 'frontline_case_price', label: 'Orig/cs', align: 'right', sortable: true,
-                      render: r => fmt$(r.frontline_case_price as number | null) },
-                    { key: 'total_savings_per_case', label: 'Disc/cs', align: 'right', sortable: true,
-                      exportValue: r => (r.total_savings_per_case as number | null) ?? '',
-                      render: r => r.total_savings_per_case != null
-                        ? <span className="text-green">{fmt$(r.total_savings_per_case as number)}</span>
-                        : '-' },
-                    { key: 'effective_case_price', label: 'Net/cs', align: 'right', sortable: true,
-                      sortValue: r => tsdNetCase(r as unknown as TimeSensitiveDeal) ?? -1,
-                      exportValue: r => tsdNetCase(r as unknown as TimeSensitiveDeal) ?? '',
-                      render: r => fmt$(tsdNetCase(r as unknown as TimeSensitiveDeal)) },
-                    { key: 'net_btl', label: 'Net/btl', align: 'right', sortable: true,
-                      sortValue: r => tsdNetBtl(r as unknown as TimeSensitiveDeal) ?? -1,
-                      exportValue: r => tsdNetBtl(r as unknown as TimeSensitiveDeal) ?? '',
-                      render: r => fmt$(tsdNetBtl(r as unknown as TimeSensitiveDeal)) },
-                    { key: 'gp', label: 'GP%', align: 'right', sortable: true,
-                      sortValue: r => tsdGp(r as unknown as TimeSensitiveDeal) ?? -999,
-                      exportValue: r => { const g = tsdGp(r as unknown as TimeSensitiveDeal); return g == null ? '' : Number(g.toFixed(1)); },
-                      render: r => {
-                        const g = tsdGp(r as unknown as TimeSensitiveDeal);
-                        return g == null
-                          ? <span className="text-muted">-</span>
-                          : <span style={{ fontWeight: 700, color: 'var(--green)' }}>{g.toFixed(1)}%</span>;
-                      } },
-                    { key: 'discount_pct', label: '% off', align: 'right', sortable: true,
-                      render: r => r.discount_pct != null ? `${(r.discount_pct as number).toFixed(0)}%` : '-' },
-                    { key: 'has_rip', label: 'RIP', align: 'center',
-                      exportValue: r => r.has_rip ? 'yes' : '',
-                      render: r => r.has_rip ? <span className="source-badge source-rip">RIP</span> : '' },
-                    { key: 'has_closeout', label: 'Closeout', align: 'center',
-                      exportValue: r => r.has_closeout ? 'yes' : '',
-                      render: r => r.has_closeout ? <span className="tag tag-orange">Closeout</span> : '' },
-                    { key: 'ai_blurb', label: 'AI note',
-                      exportValue: r => (r.ai_blurb as string | null) ?? '',
-                      render: r => r.ai_blurb
-                        ? <span title={r.ai_blurb as string} style={{ color: 'var(--accent)', fontSize: 12 }}>✨ hover</span>
-                        : <span className="text-muted">-</span> },
-                  ]}
-                />
-              </div>
+              <PromotionsTable
+                rows={items.map(tsdToPromotionRow)}
+                exportName="time-sensitive-deals"
+                onRowClick={(r) => open(r.product_name, r.wholesaler, undefined,
+                  { upc: r.upc ?? undefined, unitVolume: r.unit_volume ?? undefined })}
+              />
             )}
           </ContextMenuProvider>
         </div>
@@ -364,19 +305,11 @@ function DealCard({ d, open }: { d: TimeSensitiveDeal; open: (n: string, w: stri
 }
 
 
-// ---- helpers carried over from the original Dashboard tile so the table view
-// shows exactly the same derived columns (qty/pack, net/cs, net/btl, GP%) and
-// the "1-DAY ONLY" / "UNDER A WEEK" sticker next to the product name. ----
+// ---- adapter: TimeSensitiveDeal -> standard PromotionRow ----
+// The shared PromotionsTable renders the standard column set, so every
+// promotions page (Time-Sensitive, Major Discounts, Price Drops/Increases,
+// Top Discounts) shows the same columns in the same order.
 
-function fmt$(v: number | null | undefined): string {
-  return v == null ? '-' : `$${Number(v).toFixed(2)}`;
-}
-function fmtDate(d?: string | null): string {
-  if (!d) return '-';
-  const [y, m, day] = d.split(/[ T]/)[0].split('-').map(Number);
-  if (!y || !m || !day) return d;
-  return new Date(y, m - 1, day).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
 function tsdQty(r: TimeSensitiveDeal): number {
   const q = r.unit_qty ? parseInt(r.unit_qty, 10) : 0;
   return isNaN(q) ? 0 : q;
@@ -384,35 +317,46 @@ function tsdQty(r: TimeSensitiveDeal): number {
 function tsdNetCase(r: TimeSensitiveDeal): number | null {
   return r.effective_case_price ?? r.frontline_case_price ?? null;
 }
-function tsdNetBtl(r: TimeSensitiveDeal): number | null {
-  const q = tsdQty(r); const c = tsdNetCase(r);
-  return q > 0 && c != null ? c / q : null;
-}
-function tsdGp(r: TimeSensitiveDeal): number | null {
-  const full = r.frontline_case_price; const net = tsdNetCase(r);
-  if (full == null || net == null || full <= 0) return null;
-  return ((full - net) / full) * 100;
-}
 function tsdSpanDays(r: TimeSensitiveDeal): number | null {
   if (!r.from_date || !r.to_date) return null;
   const f = Date.parse(r.from_date); const t = Date.parse(r.to_date);
   if (isNaN(f) || isNaN(t)) return null;
   return Math.round((t - f) / 86400000);
 }
-function tsdSticker(r: TimeSensitiveDeal) {
+function tsdStickerObj(r: TimeSensitiveDeal): PromotionRow['sticker'] {
   const s = tsdSpanDays(r);
   if (s == null) return null;
-  const base: React.CSSProperties = {
-    display: 'inline-block', marginLeft: 6, padding: '1px 6px', borderRadius: 4,
-    fontSize: 10, fontWeight: 700, letterSpacing: 0.3, verticalAlign: 'middle', whiteSpace: 'nowrap',
-  };
-  if (s <= 0) return <span style={{ ...base, background: '#fee2e2', color: '#b91c1c' }}>1-DAY ONLY</span>;
-  if (s < 7) return <span style={{ ...base, background: '#ffedd5', color: '#c2410c' }}>UNDER A WEEK</span>;
+  if (s <= 0) return { label: '1-DAY ONLY', tone: 'red' };
+  if (s < 7)  return { label: 'UNDER A WEEK', tone: 'orange' };
   return null;
 }
-function dayBadge(days: number | null | undefined) {
-  if (days == null) return <span className="text-muted">-</span>;
-  const colour = days < 0 ? '#6b7280' : days <= 3 ? '#dc2626' : days <= 7 ? '#d97706' : days <= 14 ? '#2563eb' : '#16a34a';
-  const label = days < 0 ? `${-days}d ago` : `${days}d`;
-  return <span style={{ fontWeight: 700, color: colour }}>{label}</span>;
+
+function tsdToPromotionRow(r: TimeSensitiveDeal): PromotionRow {
+  const net = tsdNetCase(r);
+  const qty = tsdQty(r);
+  const netBtl = qty > 0 && net != null ? net / qty : null;
+  const full = r.frontline_case_price;
+  const gp = full != null && net != null && full > 0 ? ((full - net) / full) * 100 : null;
+  return {
+    product_name: r.product_name,
+    brand: r.brand ?? null,
+    wholesaler: r.wholesaler,
+    upc: r.upc ?? null,
+    product_type: r.product_type ?? null,
+    unit_volume: r.unit_volume ?? null,
+    type_label: r.deal_kind ?? 'Deal',
+    from_date: r.from_date ?? null,
+    to_date: r.to_date ?? null,
+    days_to_expire: r.days_to_expire ?? null,
+    orig_case_price: r.frontline_case_price ?? null,
+    disc_per_case: r.total_savings_per_case ?? null,
+    net_case_price: net,
+    net_btl_price: netBtl,
+    gp_pct: gp,
+    off_pct: r.discount_pct ?? null,
+    has_rip: r.has_rip ?? false,
+    has_closeout: r.has_closeout ?? false,
+    ai_blurb: r.ai_blurb ?? null,
+    sticker: tsdStickerObj(r),
+  };
 }

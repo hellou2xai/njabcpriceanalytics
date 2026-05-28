@@ -16,7 +16,7 @@ import os
 import sys
 from pathlib import Path
 
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -188,9 +188,9 @@ def admin_generate_blurbs(limit: int = 10, user: dict = Depends(get_current_user
 
 @app.get("/api/health")
 def health():
-    """Health check for Render. Stays 200 even before the pricing cache is
-    populated (first deploy, ingestion not yet run), so the service comes up
-    healthy; the happy-path response is unchanged once pricing is loaded."""
+    """Liveness probe. Always returns 200 once the process is up so monitoring
+    (and Render's own keepalive) sees the service as alive even while the
+    pricing cache is still warming on a fresh disk."""
     from backend.db import get_duckdb, read_parquet
     from backend.mailer import MAIL_ENABLED
     try:
@@ -200,6 +200,29 @@ def health():
         return {"status": "ok", "cpl_rows": count, "mail_enabled": MAIL_ENABLED}
     except Exception:
         return {"status": "starting", "cpl_rows": None, "mail_enabled": MAIL_ENABLED}
+
+
+@app.get("/api/ready")
+def ready(response: Response):
+    """Readiness probe. Returns 200 ONLY when the pricing cache is built and
+    data endpoints can serve real traffic; returns 503 while booting.
+
+    Point Render's healthCheckPath at this so a new deploy keeps the OLD
+    instance receiving traffic until the NEW instance can actually serve data.
+    That gives a true zero-downtime rollout instead of the gap users hit while
+    the new container is busy copying ~130k rows from Postgres into DuckDB."""
+    from backend.db import get_duckdb, read_parquet
+    try:
+        with get_duckdb() as con:
+            src = read_parquet(con, "cpl")
+            count = con.execute(f"SELECT count(*) FROM {src}").fetchone()[0]
+        if not count or count <= 0:
+            response.status_code = 503
+            return {"status": "starting", "cpl_rows": count}
+        return {"status": "ready", "cpl_rows": count}
+    except Exception as e:
+        response.status_code = 503
+        return {"status": "starting", "cpl_rows": None, "error": f"{type(e).__name__}"}
 
 
 # In production (Render), serve the built React frontend with an SPA fallback:

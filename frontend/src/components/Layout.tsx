@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Package, ShoppingCart, Bell, Star, Menu, X, Combine,
   Sun, Moon, LogOut, BadgeDollarSign, ClipboardList, LayoutGrid,
   ChevronLeft, ChevronRight, StickyNote, UserCog, Settings, Shield, Sparkles, BookOpen, ListTodo,
-  Activity, Clock, Percent, Compass,
+  Activity, Clock, Percent, Compass, ArrowDownRight, ArrowUpRight,
 } from 'lucide-react';
 import { alerts as alertsApi, orders as ordersApi, cart as cartApi } from '../lib/api';
 import WhatsAppShareButton from './WhatsAppShare';
@@ -37,6 +37,8 @@ const NAV_GROUPS: {
       { path: '/combos', label: 'Combos', icon: Combine },
       { path: '/rip-products', label: 'RIP Products', icon: BadgeDollarSign },
       { path: '/time-sensitive', label: 'Time-Sensitive Deals', icon: Clock },
+      { path: '/price-drops', label: 'Price Drops', icon: ArrowDownRight },
+      { path: '/price-increases', label: 'Price Increases', icon: ArrowUpRight },
       { path: '/#tile=top-discounts', label: 'Top Discounts', icon: Percent },
     ],
   },

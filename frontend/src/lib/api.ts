@@ -884,6 +884,10 @@ export interface PriceMover {
   wholesaler: string; edition: string; product_name: string; product_type: string;
   unit_volume: string; vintage: string | null; case_price: number; prev_case_price: number;
   case_delta: number; case_delta_pct: number; direction: string;
+  upc?: string | null; brand?: string | null; unit_qty?: string | null;
+  effective_case_price?: number | null;
+  has_rip?: boolean; has_discount?: boolean;
+  image_url?: string | null;
 }
 
 export interface LifecycleEvent {

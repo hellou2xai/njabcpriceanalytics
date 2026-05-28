@@ -89,55 +89,74 @@ def get_price_movers(
     wholesaler: Optional[str] = None,
     edition: Optional[str] = None,
     direction: str = Query("down", description="up or down"),
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(200, ge=1, le=5000),
 ):
-    """Top price movers - 6.2, 8.1. Resilient to older ingested data that may
-    lack some derived columns (e.g. vintage_norm): any missing column is
-    selected as NULL so the endpoint returns rows instead of 500-ing (which is
-    why the dashboard count showed but the drill-down was empty)."""
+    """Top price movers (6.2, 8.1). Resilient to older ingested data that may
+    lack some derived columns (e.g. vintage_norm) - any missing column is
+    selected as NULL so the endpoint returns rows instead of 500-ing.
+
+    Joins back to cpl_enriched to surface the product's upc, brand, the current
+    effective (post-discount/RIP) case price, and the has_rip/has_discount
+    flags, and runs the catalogue's enrichment join so the card view can show
+    the product image."""
+    from backend.enrichment_join import attach_enrichment_image
+
     with get_duckdb() as con:
         src = read_parquet(con, "price_changes")
+        cpl = read_parquet(con, "cpl_enriched")
         avail = {d[0] for d in con.execute(f"SELECT * FROM {src} LIMIT 0").description}
 
         def col(name):
-            return name if name in avail else f"NULL AS {name}"
+            return f"pc.{name}" if name in avail else f"NULL AS {name}"
 
         if "vintage_norm" in avail:
-            vintage_expr = "vintage_norm AS vintage"
+            vintage_expr = "pc.vintage_norm AS vintage"
         elif "vintage" in avail:
-            vintage_expr = "vintage AS vintage"
+            vintage_expr = "pc.vintage AS vintage"
         else:
             vintage_expr = "NULL AS vintage"
 
         select_cols = ", ".join([
-            "wholesaler", "edition", "product_name",
+            "pc.wholesaler", "pc.edition", "pc.product_name",
             col("product_type"), col("unit_volume"), vintage_expr,
             col("case_price"), col("prev_case_price"),
-            col("case_delta"), col("case_delta_pct"), "direction",
+            col("case_delta"), col("case_delta_pct"), "pc.direction",
+            "c.upc AS upc", "c.brand AS brand", "c.unit_qty AS unit_qty",
+            "c.effective_case_price AS effective_case_price",
+            "c.has_rip AS has_rip", "c.has_discount AS has_discount",
         ])
 
-        where = ["direction = $direction"]
+        where = ["pc.direction = $direction"]
         params = {"direction": direction}
         if wholesaler:
-            where.append("wholesaler = $wholesaler")
+            where.append("pc.wholesaler = $wholesaler")
             params["wholesaler"] = wholesaler
         if edition:
-            where.append("edition = $edition")
+            where.append("pc.edition = $edition")
             params["edition"] = edition
         else:
-            where.append(f"edition = (SELECT MAX(edition) FROM {src}" +
-                        (f" WHERE wholesaler = $wholesaler" if wholesaler else "") + ")")
+            where.append(f"pc.edition = (SELECT MAX(edition) FROM {src}" +
+                        (" WHERE wholesaler = $wholesaler" if wholesaler else "") + ")")
 
         w = " AND ".join(where)
-        order = "ORDER BY ABS(case_delta_pct) DESC NULLS LAST" if "case_delta_pct" in avail else ""
+        order = "ORDER BY ABS(pc.case_delta_pct) DESC NULLS LAST" if "case_delta_pct" in avail else ""
         df = con.execute(f"""
             SELECT {select_cols}
-            FROM {src}
+            FROM {src} pc
+            LEFT JOIN {cpl} c
+              ON c.wholesaler = pc.wholesaler
+             AND c.edition    = pc.edition
+             AND c.product_name = pc.product_name
             WHERE {w}
             {order}
             LIMIT $limit
         """, {**params, "limit": limit}).fetchdf()
-        return _records(df)
+        out = _records(df)
+        try:
+            attach_enrichment_image(con, out)
+        except Exception:
+            pass
+        return out
 
 
 @router.get("/lifecycle")

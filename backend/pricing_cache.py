@@ -102,6 +102,7 @@ def build_pricing_cache() -> Path:
                     con.execute(f"CREATE TABLE {t} AS SELECT * FROM {_parquet_select(t)}")
                 # No enrichment in parquet dev mode; an empty table keeps joins valid.
                 con.execute(empty_enrich)
+                con.execute("CREATE TABLE ai_deal_blurbs (wholesaler VARCHAR, upc VARCHAR, edition VARCHAR, blurb VARCHAR)")
             else:
                 from backend.pg import DATABASE_URL
                 con.execute("INSTALL postgres; LOAD postgres;")
@@ -112,6 +113,12 @@ def build_pricing_cache() -> Path:
                     con.execute(f"CREATE TABLE product_enrichment AS SELECT {enrich_cols} FROM pg.product_enrichment")
                 except Exception:  # table may not exist yet on a brand-new DB
                     con.execute(empty_enrich)
+                # AI-generated deal blurbs (one per product per edition). Used by
+                # the Time-Sensitive Deals endpoint to attach an "AI says" line.
+                try:
+                    con.execute("CREATE TABLE ai_deal_blurbs AS SELECT wholesaler, upc, edition, blurb FROM pg.ai_deal_blurbs")
+                except Exception:
+                    con.execute("CREATE TABLE ai_deal_blurbs (wholesaler VARCHAR, upc VARCHAR, edition VARCHAR, blurb VARCHAR)")
                 con.execute("DETACH pg")
 
             # Wire the catalogue brand to the Go-UPC enriched brand by UPC. CPL

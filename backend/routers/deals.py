@@ -474,7 +474,7 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
 
         active_clause = "" if include_past else "AND CAST(to_date AS DATE) >= CURRENT_DATE"
         rows = con.execute(f"""
-            SELECT wholesaler, product_name, product_type, unit_volume, unit_qty, upc, brand,
+            SELECT wholesaler, edition, product_name, product_type, unit_volume, unit_qty, upc, brand,
                    CAST(from_date AS DATE) AS from_date, CAST(to_date AS DATE) AS to_date,
                    date_diff('day', CURRENT_DATE, CAST(to_date AS DATE)) AS days_to_expire,
                    frontline_case_price, effective_case_price, total_savings_per_case, discount_pct,
@@ -503,6 +503,20 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
             rip_next = {(r[0], str(r[1])) for r in nx}
         except Exception:
             rip_next = set()
+
+        # Pre-fetch any AI blurbs for (wholesaler, upc, edition) of the rows we're
+        # about to emit. One round-trip, then a dict lookup per row.
+        blurb_map: dict = {}
+        try:
+            keys = [(r["wholesaler"], str(r["upc"]).lstrip("0"), r["edition"])
+                    for _, r in rows.iterrows() if r.get("upc")]
+            if keys:
+                blurb_rows = con.execute(
+                    "SELECT wholesaler, LTRIM(upc,'0') AS un, edition, blurb FROM ai_deal_blurbs"
+                ).fetchall()
+                blurb_map = {(b[0], b[1], b[2]): b[3] for b in blurb_rows}
+        except Exception:
+            blurb_map = {}
 
         out = []
         for _, r in rows.iterrows():
@@ -538,6 +552,7 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
                 "has_discount": has_discount,
                 "has_closeout": has_closeout,
                 "deal_kind": " / ".join(kinds) or "Special price",
+                "ai_blurb": blurb_map.get((r["wholesaler"], un or "", r["edition"])) if un else None,
             })
 
         # Add product images (Go-UPC enrichment) for the card view.

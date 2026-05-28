@@ -84,6 +84,13 @@ def startup():
         import threading
         from backend.routers.deals import warm_rip_cache
         threading.Thread(target=warm_rip_cache, daemon=True).start()
+        # Generate any missing AI deal blurbs for the Time-Sensitive Deals page.
+        # No-op if ANTHROPIC_API_KEY is unset, capped per run.
+        try:
+            from backend.ai_blurbs import warm_blurbs_async
+            warm_blurbs_async()
+        except Exception as e:
+            print(f"[startup] blurb generation skipped: {e}")
     except Exception as e:
         # If the pricing tables aren't in Postgres yet (no ingestion run), the
         # cache builds lazily on the first request instead of blocking startup.
@@ -108,6 +115,12 @@ def reload_pricing(user: dict = Depends(get_current_user)):
     import threading
     from backend.routers.deals import warm_rip_cache
     threading.Thread(target=warm_rip_cache, daemon=True).start()
+    # Re-run AI deal blurb generation for new products surfaced by this reload.
+    try:
+        from backend.ai_blurbs import warm_blurbs_async
+        warm_blurbs_async()
+    except Exception as e:
+        print(f"[reload] blurb generation skipped: {e}")
     with get_duckdb() as con:
         counts = {t: con.execute(f"SELECT count(*) FROM {t}").fetchone()[0] for t in ALL_TABLES}
     return {"status": "reloaded", "counts": counts}

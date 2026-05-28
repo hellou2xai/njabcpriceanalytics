@@ -617,7 +617,12 @@ export default function RipProducts() {
                               style={groupPalette
                                 ? { background: groupPalette.stripe, color: '#fff' }
                                 : undefined}>
-                          🔗 RIP {groupMeta.code}
+                          {/* Inline-flex so the link glyph + "RIP" + the code
+                              never break across lines: a regular space inside
+                              the pill was wrapping when the banner row had
+                              many tier lines stacked next to it. */}
+                          <span aria-hidden>🔗</span>
+                          <span>RIP&nbsp;{groupMeta.code}</span>
                         </span>
                         <span className="rip-group-banner-products">
                           {groupMeta.products.length} product{groupMeta.products.length === 1 ? '' : 's'}

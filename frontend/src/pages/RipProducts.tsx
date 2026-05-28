@@ -142,6 +142,26 @@ export default function RipProducts() {
     [rawItems],
   );
 
+  // Best (curr, next) savings per product across ALL tier rows, so the
+  // "Better deal next month" / "Better deal this month" sticker reflects
+  // the strongest available rebate, not just whatever appears on the
+  // first tier row (which is often the flat DISCOUNT line and looks the
+  // same both months).
+  const bestByProduct = useMemo(() => {
+    const m = new Map<string, { curr: number; next: number }>();
+    for (const it of rawItems) {
+      const k = `${it.wholesaler}|${it.product_name}|${it.unit_volume ?? ''}`;
+      const c = it.curr_save_per_case ?? 0;
+      const n = it.next_save_per_case ?? 0;
+      const prev = m.get(k) ?? { curr: 0, next: 0 };
+      m.set(k, {
+        curr: Math.max(prev.curr, c > 0 ? c : 0),
+        next: Math.max(prev.next, n > 0 ? n : 0),
+      });
+    }
+    return m;
+  }, [rawItems]);
+
   // Live cart contents — drives the "X cases added · Y to next tier"
   // progress message in each group header. Refetched on a short interval
   // and on focus so adding to cart from another tab reflects here.
@@ -721,16 +741,39 @@ export default function RipProducts() {
                                   : null}
                                 {item.upc ? <> · UPC {item.upc}</> : null}
                               </span>
-                              {/* "Better deal next month" identifier per
-                                  UPC. Shown prominently right under the
-                                  product name so the buyer can spot it
-                                  without scanning the right-most column. */}
+                              {/* "Better deal" identifier per UPC. The
+                                  comparison is across EVERY tier of this
+                                  product, not just the first row, so a
+                                  product with a flat discount up top still
+                                  surfaces a better RIP rebate next month. */}
                               {(() => {
-                                const bm = betterMonth(item.curr_save_per_case, item.next_save_per_case);
-                                if (!bm || bm.variant !== 'next') return null;
+                                const bestKey = `${item.wholesaler}|${item.product_name}|${item.unit_volume ?? ''}`;
+                                const best = bestByProduct.get(bestKey);
+                                if (!best) return null;
+                                if (best.curr <= 0 && best.next <= 0) return null;
+                                // 0.5% tolerance so rounding doesn't flip the label.
+                                const denom = Math.max(best.curr, best.next, 1);
+                                if (Math.abs(best.curr - best.next) / denom < 0.005) {
+                                  return (
+                                    <span className="rip-better-same-pill" title="The best rebate is the same in both months">
+                                      = Same deal both months
+                                    </span>
+                                  );
+                                }
+                                if (best.next > best.curr) {
+                                  const extra = best.next - best.curr;
+                                  return (
+                                    <span className="rip-better-next-pill"
+                                          title={`Best rebate is $${best.next.toFixed(2)}/cs next month vs $${best.curr.toFixed(2)}/cs now`}>
+                                      ⭐ Better deal next month (+${extra.toFixed(0)}/cs)
+                                    </span>
+                                  );
+                                }
+                                const extra = best.curr - best.next;
                                 return (
-                                  <span className="rip-better-next-pill" title="The same SKU has a deeper rebate on next month's CPL">
-                                    ⭐ Better deal next month
+                                  <span className="rip-better-this-pill"
+                                        title={`Best rebate is $${best.curr.toFixed(2)}/cs this month vs $${best.next.toFixed(2)}/cs next month`}>
+                                    ⭐ Better deal this month (+${extra.toFixed(0)}/cs)
                                   </span>
                                 );
                               })()}

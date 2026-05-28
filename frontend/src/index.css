@@ -2461,13 +2461,27 @@ tr:hover .row-menu-btn { opacity: 1; }
   color: var(--text-muted);
   margin-top: 2px;
 }
-.rip-better-next-pill {
+.rip-better-next-pill,
+.rip-better-this-pill,
+.rip-better-same-pill {
   display: inline-flex; align-items: center; gap: 4px; margin-top: 4px;
   padding: 2px 8px; font-size: 11px; font-weight: 700;
+  border-radius: 10px; white-space: nowrap;
+}
+.rip-better-next-pill {
   background: color-mix(in srgb, var(--orange, #f59e0b) 18%, transparent);
   color: color-mix(in srgb, var(--orange, #f59e0b) 70%, #000);
   border: 1px solid color-mix(in srgb, var(--orange, #f59e0b) 55%, transparent);
-  border-radius: 10px; white-space: nowrap;
+}
+.rip-better-this-pill {
+  background: color-mix(in srgb, var(--green) 16%, transparent);
+  color: color-mix(in srgb, var(--green) 75%, #000);
+  border: 1px solid color-mix(in srgb, var(--green) 50%, transparent);
+}
+.rip-better-same-pill {
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
 }
 
 /* RIP Products "Group by Case Mix RIP" banner. Sticks above every cluster

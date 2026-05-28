@@ -443,20 +443,61 @@ export default function Cart() {
             />
             {(() => {
               if (!groupByRip) return groupItems.map(it => renderItem(it));
-              // RIP sub-grouping: items with a rip_code cluster under a coloured
-              // panel; items without one fall into an "Unrebated" bucket so the
-              // user can see at a glance what is and isn't earning a rebate.
-              const bucketMap = new Map<string, typeof groupItems>();
+              // Three-way sub-grouping. Combos take priority because they're
+              // hard requirements (lose any line and the bundle breaks); RIPs
+              // are thresholds that earn the buyer money; everything else
+              // falls into "No deal grouping".
+              const comboMap = new Map<string, typeof groupItems>();
+              const ripMap = new Map<string, typeof groupItems>();
               const unrebated: typeof groupItems = [];
               for (const it of groupItems) {
+                const cc = it.combo_code && String(it.combo_code).trim();
+                if (cc) {
+                  if (!comboMap.has(cc)) comboMap.set(cc, []);
+                  comboMap.get(cc)!.push(it);
+                  continue;
+                }
                 const rc = it.rip_code && String(it.rip_code).trim();
                 if (!rc) { unrebated.push(it); continue; }
-                if (!bucketMap.has(rc)) bucketMap.set(rc, []);
-                bucketMap.get(rc)!.push(it);
+                if (!ripMap.has(rc)) ripMap.set(rc, []);
+                ripMap.get(rc)!.push(it);
               }
-              const buckets = [...bucketMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+              const comboBuckets = [...comboMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+              const buckets = [...ripMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
               return (
                 <>
+                  {comboBuckets.map(([cc, lines]) => {
+                    const hue = comboHue(cc);
+                    const lineCount = lines.length;
+                    const subtotal = lines.reduce((s, it) => s + lineTotal(it), 0);
+                    const totalCases = lines.reduce((s, it) => s + (it.qty_cases || 0), 0);
+                    const ids = lines.map(l => l.id);
+                    return (
+                      <div key={`combo-${cc}`} className="cart-rip-group" style={{
+                        borderLeftColor: `hsl(${hue} 65% 55%)`,
+                        background: `linear-gradient(180deg, hsl(${hue} 75% 97%) 0%, var(--surface) 16px)`,
+                      }}>
+                        <div className="cart-rip-group-header">
+                          <ComboBadge code={cc} />
+                          <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
+                            {lineCount} line{lineCount === 1 ? '' : 's'} · {totalCases} case{totalCases === 1 ? '' : 's'} · bundle priced together
+                          </span>
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            title={`Move all ${lineCount} line${lineCount === 1 ? '' : 's'} of combo #${cc} to Saved for later`}
+                            disabled={bulkSave.isPending}
+                            onClick={() => bulkSave.mutate({ ids, saved: true })}
+                          >
+                            <Clock size={13} /> Save all for later
+                          </button>
+                          <span style={{ marginLeft: 'auto', fontWeight: 600 }}>
+                            Subtotal: <span className="text-green">{money(subtotal)}</span>
+                          </span>
+                        </div>
+                        {lines.map(it => renderItem(it))}
+                      </div>
+                    );
+                  })}
                   {buckets.map(([rc, lines]) => {
                     const hue = ripHueLocal(rc);
                     const lineCount = lines.length;
@@ -513,7 +554,7 @@ export default function Cart() {
                   {unrebated.length > 0 && (
                     <div className="cart-rip-group" style={{ borderLeftColor: 'var(--border)' }}>
                       <div className="cart-rip-group-header">
-                        <span style={{ fontWeight: 600 }}>No RIP rebate</span>
+                        <span style={{ fontWeight: 600 }}>No deal grouping</span>
                         <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
                           {unrebated.length} line{unrebated.length === 1 ? '' : 's'}
                         </span>
@@ -533,19 +574,55 @@ export default function Cart() {
           <h3 style={{ margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: 8 }}><Clock size={18} /> Saved for later</h3>
           {(() => {
             if (!groupByRip) return saved.map(it => renderItem(it, true));
-            // Mirror the active-cart layout: RIP buckets + an "Unrebated" bucket,
-            // each with a "Move all back to cart" action on the header.
-            const bucketMap = new Map<string, typeof saved>();
+            // Mirror the active-cart layout: combos first (priority), then RIPs,
+            // then everything else. Each cluster header carries a "Move all back
+            // to cart" action.
+            const comboMap = new Map<string, typeof saved>();
+            const ripMap = new Map<string, typeof saved>();
             const unrebated: typeof saved = [];
             for (const it of saved) {
+              const cc = it.combo_code && String(it.combo_code).trim();
+              if (cc) {
+                if (!comboMap.has(cc)) comboMap.set(cc, []);
+                comboMap.get(cc)!.push(it);
+                continue;
+              }
               const rc = it.rip_code && String(it.rip_code).trim();
               if (!rc) { unrebated.push(it); continue; }
-              if (!bucketMap.has(rc)) bucketMap.set(rc, []);
-              bucketMap.get(rc)!.push(it);
+              if (!ripMap.has(rc)) ripMap.set(rc, []);
+              ripMap.get(rc)!.push(it);
             }
-            const buckets = [...bucketMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+            const comboBuckets = [...comboMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+            const buckets = [...ripMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
             return (
               <>
+                {comboBuckets.map(([cc, lines]) => {
+                  const hue = comboHue(cc);
+                  const lineCount = lines.length;
+                  const ids = lines.map(l => l.id);
+                  return (
+                    <div key={`saved-combo-${cc}`} className="cart-rip-group" style={{
+                      borderLeftColor: `hsl(${hue} 65% 55%)`,
+                      background: `linear-gradient(180deg, hsl(${hue} 75% 97%) 0%, var(--surface) 16px)`,
+                    }}>
+                      <div className="cart-rip-group-header">
+                        <ComboBadge code={cc} />
+                        <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
+                          {lineCount} line{lineCount === 1 ? '' : 's'} saved
+                        </span>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          title={`Move all ${lineCount} line${lineCount === 1 ? '' : 's'} of combo #${cc} back into the active cart`}
+                          disabled={bulkSave.isPending}
+                          onClick={() => bulkSave.mutate({ ids, saved: false })}
+                        >
+                          <ArrowUpFromLine size={13} /> Move all to cart
+                        </button>
+                      </div>
+                      {lines.map(it => renderItem(it, true))}
+                    </div>
+                  );
+                })}
                 {buckets.map(([rc, lines]) => {
                   const hue = ripHueLocal(rc);
                   const lineCount = lines.length;
@@ -576,7 +653,7 @@ export default function Cart() {
                 {unrebated.length > 0 && (
                   <div className="cart-rip-group" style={{ borderLeftColor: 'var(--border)' }}>
                     <div className="cart-rip-group-header">
-                      <span style={{ fontWeight: 600 }}>No RIP rebate</span>
+                      <span style={{ fontWeight: 600 }}>No deal grouping</span>
                       <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
                         {unrebated.length} line{unrebated.length === 1 ? '' : 's'}
                       </span>

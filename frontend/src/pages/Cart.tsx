@@ -68,6 +68,84 @@ function RipBadge({ code }: { code: string }) {
   );
 }
 
+// Normalise a tier unit label ("Case(s)" -> "case", "Btl"/"Bottle" -> "btl").
+function normUnit(u?: string | null): 'case' | 'btl' {
+  const s = String(u ?? '').toLowerCase().trim();
+  if (s === 'b' || s.startsWith('btl') || s.startsWith('bottle')) return 'btl';
+  return 'case';
+}
+
+interface RipTier { qty: number; unit: 'case' | 'btl'; amt: number; }
+
+/** Reduce a RIP cluster of cart lines to its rebate ladder + a progress
+ *  message ("4 cases towards $250 · 1 more for $400 rebate"). Each cart
+ *  line already carries its server-attached `tiers`, so we just dedupe by
+ *  (qty, normalised unit), keep the highest amount per slot, then compare
+ *  the buyer's current cart quantity against those thresholds. */
+function ripBucketSummary(lines: CartItem[]): {
+  tiers: RipTier[];
+  progressUnit: 'case' | 'btl';
+  cartCases: number;
+  cartBottles: number;
+  progress: { text: string; tone: 'gap' | 'pending' | 'reached' } | null;
+} {
+  const map = new Map<string, RipTier>();
+  let votes = { case: 0, btl: 0 };
+  for (const it of lines) {
+    for (const t of (it.tiers ?? [])) {
+      if (t.source !== 'rip') continue;
+      const u = normUnit(t.unit);
+      votes[u]++;
+      const k = `${t.qty}|${u}`;
+      const prev = map.get(k);
+      if (!prev || t.amount > prev.amt) {
+        map.set(k, { qty: t.qty, unit: u, amt: t.amount });
+      }
+    }
+  }
+  const tiers = [...map.values()].sort((a, b) => a.qty - b.qty);
+  const progressUnit: 'case' | 'btl' = votes.btl > votes.case ? 'btl' : 'case';
+  const cartCases = lines.reduce((s, it) => s + (it.qty_cases || 0), 0);
+  const cartBottles = lines.reduce((s, it) => s + (it.qty_units || 0), 0);
+  const have = progressUnit === 'case' ? cartCases : cartBottles;
+  const unitWord = progressUnit === 'case' ? 'case' : 'bottle';
+  let progress: { text: string; tone: 'gap' | 'pending' | 'reached' } | null = null;
+  if (tiers.length > 0) {
+    const reached = tiers.filter(t => have >= t.qty);
+    const ahead = tiers.filter(t => have < t.qty);
+    if (reached.length && ahead.length === 0) {
+      const top = reached[reached.length - 1];
+      progress = {
+        text: `✓ Top tier reached: ${have} ${unitWord}${have === 1 ? '' : 's'} · $${top.amt.toFixed(2)} rebate locked`,
+        tone: 'reached',
+      };
+    } else if (reached.length) {
+      const top = reached[reached.length - 1];
+      const next = ahead[0];
+      const need = next.qty - have;
+      progress = {
+        text: `${have} ${unitWord}${have === 1 ? '' : 's'} in cart · $${top.amt.toFixed(2)} earned · ${need} more for $${next.amt.toFixed(2)}`,
+        tone: 'pending',
+      };
+    } else {
+      const next = ahead[0];
+      const need = next.qty - have;
+      if (have === 0) {
+        progress = {
+          text: `Buy ${next.qty} ${unitWord}${next.qty === 1 ? '' : 's'} to unlock $${next.amt.toFixed(2)} rebate`,
+          tone: 'gap',
+        };
+      } else {
+        progress = {
+          text: `${have} ${unitWord}${have === 1 ? '' : 's'} in cart · ${need} more for $${next.amt.toFixed(2)} rebate`,
+          tone: 'gap',
+        };
+      }
+    }
+  }
+  return { tiers, progressUnit, cartCases, cartBottles, progress };
+}
+
 // Search box that adds any catalogue product straight into the cart.
 function AddToCartSearch({ onAdd, adding }: { onAdd: (p: Product) => void; adding: boolean }) {
   const [q, setQ] = useState('');
@@ -383,8 +461,8 @@ export default function Cart() {
                     const hue = ripHueLocal(rc);
                     const lineCount = lines.length;
                     const subtotal = lines.reduce((s, it) => s + lineTotal(it), 0);
-                    const totalCases = lines.reduce((s, it) => s + (it.qty_cases || 0), 0);
                     const ids = lines.map(l => l.id);
+                    const summary = ripBucketSummary(lines);
                     return (
                       <div key={`rip-${rc}`} className="cart-rip-group" style={{
                         borderLeftColor: `hsl(${hue} 65% 55%)`,
@@ -393,7 +471,7 @@ export default function Cart() {
                         <div className="cart-rip-group-header">
                           <RipBadge code={rc} />
                           <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
-                            {lineCount} line{lineCount === 1 ? '' : 's'} · {totalCases} case{totalCases === 1 ? '' : 's'} towards this rebate
+                            {lineCount} line{lineCount === 1 ? '' : 's'}
                           </span>
                           <button
                             className="btn btn-secondary btn-sm"
@@ -407,6 +485,27 @@ export default function Cart() {
                             Subtotal: <span className="text-green">{money(subtotal)}</span>
                           </span>
                         </div>
+                        {(summary.tiers.length > 0 || summary.progress) && (
+                          <div className="cart-rip-ladder">
+                            {summary.tiers.length > 0 && (
+                              <div className="cart-rip-tiers">
+                                {summary.tiers.map((t, i) => {
+                                  const reached = (t.unit === 'case' ? summary.cartCases : summary.cartBottles) >= t.qty;
+                                  return (
+                                    <span key={i} className={`cart-rip-tier ${reached ? 'reached' : 'pending'}`}>
+                                      Buy {t.qty} {t.unit === 'case' ? 'cs' : 'btl'} = <strong>${t.amt.toFixed(2)}</strong>
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            {summary.progress && (
+                              <div className={`cart-rip-progress tone-${summary.progress.tone}`}>
+                                {summary.progress.text}
+                              </div>
+                            )}
+                          </div>
+                        )}
                         {lines.map(it => renderItem(it))}
                       </div>
                     );

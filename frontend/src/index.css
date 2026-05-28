@@ -2583,6 +2583,34 @@ tr:hover .row-menu-btn { opacity: 1; }
   font-size: 11px; font-weight: 700; padding: 2px 8px;
   border-radius: 10px; border: 1px solid; white-space: nowrap;
 }
+
+/* ---- RIP rebate ladder + progress line inside each cart RIP group ---- */
+.cart-rip-ladder {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 8px 10px; margin: 4px 0 8px;
+  background: rgba(255,255,255,0.55);
+  border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--border));
+  border-radius: 6px;
+}
+.cart-rip-tiers { display: flex; flex-wrap: wrap; gap: 6px; }
+.cart-rip-tier {
+  display: inline-block; padding: 2px 8px; border-radius: 10px;
+  font-size: 11.5px; font-weight: 600; white-space: nowrap;
+  border: 1px solid var(--border); background: var(--bg);
+}
+.cart-rip-tier.reached {
+  background: color-mix(in srgb, var(--green) 14%, transparent);
+  color: var(--green); border-color: color-mix(in srgb, var(--green) 32%, var(--border));
+}
+.cart-rip-tier.pending { color: var(--text-muted); }
+.cart-rip-progress {
+  font-size: 12.5px; font-weight: 600;
+  padding: 4px 8px; border-radius: 5px;
+}
+.cart-rip-progress.tone-reached { background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); }
+.cart-rip-progress.tone-pending { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
+.cart-rip-progress.tone-gap     { background: color-mix(in srgb, var(--text-muted) 10%, transparent); color: var(--text); }
+
 .profile-stores { margin-top: 30px; padding-top: 24px; border-top: 1px solid var(--border); }
 .profile-stores .store-grid { margin-top: 12px; }
 

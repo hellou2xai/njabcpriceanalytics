@@ -387,17 +387,22 @@ def init_user_db():
             fetched_at    text,
             updated_at    text DEFAULT {NOW_UTC}
         )""",
-        # AI-generated 2-line "why this is a deal" blurb, keyed per product per
-        # edition. Pre-generated after each data load (see backend.ai_blurbs) so
-        # the Time-Sensitive Deals page can show it without a live AI call.
+        # AI-generated "why this is a deal" blurb, keyed per product per edition.
+        # Pre-generated after each data load (see backend.ai_blurbs). `version`
+        # marks the prompt revision so we can bump it and have the generator
+        # naturally re-write older entries with the richer context.
         f"""CREATE TABLE IF NOT EXISTS ai_deal_blurbs (
             wholesaler    text NOT NULL,
             upc           text NOT NULL,
             edition       text NOT NULL,
             blurb         text NOT NULL,
+            version       text DEFAULT 'v1',
             generated_at  text DEFAULT {NOW_UTC},
             PRIMARY KEY (wholesaler, upc, edition)
         )""",
+        # `version` column was added later; backfill on existing rows so the
+        # generator's "not yet on current version" filter works.
+        "ALTER TABLE ai_deal_blurbs ADD COLUMN IF NOT EXISTS version text DEFAULT 'v1'",
     ]
     with get_pg() as con:
         for s in stmts:

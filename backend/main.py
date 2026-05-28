@@ -143,6 +143,18 @@ def admin_generate_blurbs(limit: int = 10, user: dict = Depends(get_current_user
     except Exception as e:
         out["written_error"] = f"{type(e).__name__}: {e}"
         out["written_trace"] = traceback.format_exc().splitlines()[-3:]
+    # PG diagnostic: how many rows exist + a small sample.
+    try:
+        from backend.pg import get_pg
+        with get_pg() as pg:
+            n = pg.execute("SELECT COUNT(*) FROM ai_deal_blurbs").fetchone()[0]
+            out["pg_count"] = int(n)
+            sample = pg.execute(
+                "SELECT wholesaler, upc, LTRIM(upc,'0') AS un, edition, LEFT(blurb, 80) FROM ai_deal_blurbs LIMIT 3"
+            ).fetchall()
+            out["pg_sample"] = [list(r) for r in sample]
+    except Exception as e:
+        out["pg_error"] = f"{type(e).__name__}: {e}"
     return out
     with get_duckdb() as con:
         counts = {t: con.execute(f"SELECT count(*) FROM {t}").fetchone()[0] for t in ALL_TABLES}

@@ -2273,6 +2273,7 @@ tr:hover .row-menu-btn { opacity: 1; }
 .profile-msg { font-size: 13px; margin: 4px 0 10px; }
 .profile-msg.ok { color: var(--green); }
 .profile-msg.err { color: var(--red); }
+.profile-help { font-size: 12.5px; color: var(--text-muted); margin: 4px 0 12px; }
 .profile-stores { margin-top: 30px; padding-top: 24px; border-top: 1px solid var(--border); }
 .profile-stores .store-grid { margin-top: 12px; }
 
@@ -2765,6 +2766,28 @@ tr:hover .row-menu-btn { opacity: 1; }
   border-radius: 999px; white-space: nowrap;
 }
 .tour-card-meta.is-live { color: var(--accent); background: var(--accent-weak); }
+
+/* The recommended tile (Product Quick Tour) wears a Start Here banner so new
+   users coming off the welcome popup land on something obvious to click. */
+.tour-card--recommended {
+  position: relative;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+  padding-top: 30px;
+}
+.tour-card-starthere {
+  position: absolute; top: 0; left: 0; right: 0;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  font-size: 11.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: #fff; background: var(--accent);
+  padding: 5px 10px; border-radius: var(--radius) var(--radius) 0 0;
+}
+.tour-card--pulse { animation: celrTourPulse 1.1s ease-out 0s 3; }
+@keyframes celrTourPulse {
+  0%   { box-shadow: 0 0 0 1px var(--accent) inset, 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
+  60%  { box-shadow: 0 0 0 1px var(--accent) inset, 0 0 0 14px color-mix(in srgb, var(--accent) 0%, transparent); }
+  100% { box-shadow: 0 0 0 1px var(--accent) inset, 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent); }
+}
 @media (max-width: 640px) { .tours-grid { grid-template-columns: 1fr; } }
 
 /* ---- Guided-tour animated savings callout ---- */

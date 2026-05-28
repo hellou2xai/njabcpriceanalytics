@@ -34,6 +34,7 @@ export interface TourMeta {
   icon: LucideIcon;
   accent: string;                     // tile icon colour
   run?: (navigate: (path: string) => void) => void;   // present = live
+  recommended?: boolean;              // shows a "Start here" call-out on the tile
 }
 
 export const TOURS: TourMeta[] = [
@@ -41,6 +42,7 @@ export const TOURS: TourMeta[] = [
     id: 'quick', title: 'Product Quick Tour',
     desc: 'A fast walk through every screen, end to end: find a deal, build an order, send it to your rep.',
     meta: 'All screens · about 3 min', icon: Compass, accent: '#2563eb',
+    recommended: true,
     run: (navigate) => startGuidedTour(navigate),
   },
   {

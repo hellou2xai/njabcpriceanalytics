@@ -27,7 +27,13 @@ export default function WelcomeTourPrompt() {
   const markSeen = () => sessionStorage.setItem(SESSION_KEY, '1');
   const skip = () => { markSeen(); setOpen(false); };
   const never = () => { localStorage.setItem(NEVER_KEY, '1'); setOpen(false); };
-  const goTours = () => { markSeen(); setOpen(false); navigate('/tours'); };
+  const goTours = () => {
+    markSeen();
+    setOpen(false);
+    // Highlight signal so the Tours page pulses the Product Quick Tour tile,
+    // removing the "I am here but what now?" confusion new users reported.
+    navigate('/tours', { state: { highlight: 'quick' } });
+  };
   const goDashboard = () => { markSeen(); setOpen(false); navigate('/'); };
 
   return (

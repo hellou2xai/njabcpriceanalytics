@@ -146,7 +146,8 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
             <th {...headSort('product_name')}>Product{sortIcon('product_name')}</th>
             <th>Distributor</th>
             <th>Type</th>
-            <th>Size</th>
+            {/* Size column dropped: Size and Bottles-per-Case are surfaced
+                in the product cell's identifier line. */}
             {showIntroduced && <th>Introduced</th>}
             <th {...rightHeadSort('frontline_case_price')}>Case / Btl{sortIcon('frontline_case_price')}</th>
             <th>Tier</th>
@@ -194,6 +195,18 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                       <ProductThumb src={item.image_url} alt={item.product_name} size={64} />
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontWeight: 600 }}>{item.product_name}</div>
+                        {/* Identifier line per Provi-style layout: Size and
+                            bottles-per-case sit right under the name so the
+                            buyer reads the SKU shape (1L, 12 btl/cs) at a
+                            glance. UPC + badges follow on the next line.
+                            The standalone Size column is dropped because
+                            the same info is more useful here. */}
+                        <div className="catalog-product-spec">
+                          {item.unit_volume ?? '—'}
+                          {item.unit_qty
+                            ? <> · {item.unit_qty} btl/cs</>
+                            : null}
+                        </div>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                           {item.upc}
                           {item.vintage != null && String(item.vintage) !== '0' && String(item.vintage).trim() !== '' && (
@@ -296,7 +309,7 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                   </td>
                   <td data-label="Distributor"><span className="cell-distributor-badge">{distributorName(item.wholesaler)}</span></td>
                   <td data-label="Type">{item.product_type}</td>
-                  <td data-label="Size">{item.unit_volume}</td>
+                  {/* Size column dropped: surfaced in the product cell. */}
                   {showIntroduced && (
                     <td data-label="Introduced"><span className="tag tag-blue">{introMonth(item.introduced_edition)}</span></td>
                   )}
@@ -332,7 +345,7 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                   return (
                     <tr key={`${reactKey}_${idx}`} className="catalog-row-sub" data-tier-met={tierMet}>
                       <td></td>
-                      <td colSpan={showIntroduced ? 7 : 6} style={{ paddingLeft: 24 }} className="card-title-cell">
+                      <td colSpan={showIntroduced ? 6 : 5} style={{ paddingLeft: 24 }} className="card-title-cell">
                         <span className={`source-badge source-${t.source}`}>{t.source === 'discount' ? 'DISC' : 'RIP'}</span>
                         <span className={`rip-tier-badge ${t.source === 'discount' ? 'rip-tier-curr' : 'rip-tier-next'}`} style={{ marginLeft: 8 }}>
                           Buy {t.qty} {shortUnit(t.unit)} = <strong>${t.amount.toFixed(2)}</strong>
@@ -363,7 +376,7 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
             );
           })}
           {items.length === 0 && (
-            <tr><td colSpan={showIntroduced ? 11 : 10} className="empty">No products</td></tr>
+            <tr><td colSpan={showIntroduced ? 10 : 9} className="empty">No products</td></tr>
           )}
         </tbody>
       </table>

@@ -682,7 +682,30 @@ export default function RipProducts() {
                             <ProductThumb src={item.image_url} alt={item.product_name} size={64} />
                             <div className="rip-cell-product">
                               <span className="rip-product-name">{item.product_name}</span>
-                              <span className="rip-product-code">{item.upc}</span>
+                              {/* Identifier line that mirrors the Provi-style
+                                  per-UPC header the user asked for: size,
+                                  bottles per case, then the barcode so the
+                                  same UPC reads the same on every screen. */}
+                              <span className="rip-product-meta">
+                                {item.unit_volume ?? '—'}
+                                {item.unit_qty
+                                  ? <> · {item.unit_qty} btl/cs</>
+                                  : null}
+                                {item.upc ? <> · UPC {item.upc}</> : null}
+                              </span>
+                              {/* "Better deal next month" identifier per
+                                  UPC. Shown prominently right under the
+                                  product name so the buyer can spot it
+                                  without scanning the right-most column. */}
+                              {(() => {
+                                const bm = betterMonth(item.curr_save_per_case, item.next_save_per_case);
+                                if (!bm || bm.variant !== 'next') return null;
+                                return (
+                                  <span className="rip-better-next-pill" title="The same SKU has a deeper rebate on next month's CPL">
+                                    ⭐ Better deal next month
+                                  </span>
+                                );
+                              })()}
                             </div>
                           </div>
                           {(() => {
@@ -732,7 +755,13 @@ export default function RipProducts() {
                       {isFirstForProduct ? priceWithBtl(item.curr_case_price, item.curr_btl_price) : ''}
                     </td>
                     <td data-label="Tier (now)">
-                      {renderTierBadge(item.rip_qty, item.rip_unit, item.curr_rip_amt, 'curr')}
+                      {/* When Group by RIP is on, the cluster banner above
+                          already lists every tier threshold for the rebate.
+                          Repeating the badge on every row turns the table
+                          into noise, so we hide it here in the grouped view. */}
+                      {groupByRip
+                        ? <span className="text-muted">—</span>
+                        : renderTierBadge(item.rip_qty, item.rip_unit, item.curr_rip_amt, 'curr')}
                     </td>
                     <td className="right" data-label="Save (now)">
                       {item.curr_save_per_case != null ? (
@@ -753,7 +782,9 @@ export default function RipProducts() {
                       {isFirstForProduct ? priceWithBtl(item.next_case_price, item.next_btl_price) : ''}
                     </td>
                     <td data-label="Tier (next)">
-                      {renderTierBadge(item.rip_qty, item.rip_unit, item.next_rip_amt, 'next')}
+                      {groupByRip
+                        ? <span className="text-muted">—</span>
+                        : renderTierBadge(item.rip_qty, item.rip_unit, item.next_rip_amt, 'next')}
                     </td>
                     <td className="right" data-label="Save (next)">
                       {item.next_save_per_case != null ? (

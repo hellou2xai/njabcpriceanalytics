@@ -182,6 +182,34 @@ export default function RipProducts() {
   });
   const [addedFlash, setAddedFlash] = useState<string | null>(null);
 
+  // When Group by RIP is on, re-order the loaded page so products sharing a
+  // rip_number cluster together. The existing per-product tier grouping
+  // (multiple rows under one product header) is preserved: all tier rows of
+  // a single (wholesaler, product_name, unit_volume) keep their adjacency.
+  const items = useMemo(() => {
+    if (!groupByRip) return rawItems;
+    const groupKey = (i: typeof rawItems[number]) =>
+      `${i.wholesaler}|${i.product_name}|${i.unit_volume ?? ''}`;
+    const order = new Map<string, number>();
+    rawItems.forEach((it, idx) => {
+      const k = groupKey(it);
+      if (!order.has(k)) order.set(k, idx);
+    });
+    const ripKey = (rc: string | null | undefined) => {
+      const s = (rc ?? '').toString().trim();
+      return s && s !== '0' ? s : '~';
+    };
+    const sorted = [...rawItems].sort((a, b) => {
+      const ra = ripKey(a.rip_number);
+      const rb = ripKey(b.rip_number);
+      if (ra !== rb) return ra.localeCompare(rb);
+      const ga = order.get(groupKey(a)) ?? 0;
+      const gb = order.get(groupKey(b)) ?? 0;
+      return ga - gb;
+    });
+    return sorted;
+  }, [rawItems, groupByRip]);
+
   // For each contiguous run of items sharing a rip_number (when groupByRip
   // is on), pre-compute the metadata the group header needs: unique
   // products, distinct tier thresholds, and the cart-based progress label.
@@ -298,38 +326,6 @@ export default function RipProducts() {
       tone: 'gap',
     };
   }
-
-  // When Group by RIP is on, re-order the loaded page so products sharing a
-  // rip_number cluster together. The existing per-product tier grouping
-  // (multiple rows under one product header) is preserved: all tier rows of
-  // a single (wholesaler, product_name, unit_volume) keep their adjacency.
-  const items = useMemo(() => {
-    if (!groupByRip) return rawItems;
-    // Stable group key per product so tier rows ride along with their header.
-    const groupKey = (i: typeof rawItems[number]) =>
-      `${i.wholesaler}|${i.product_name}|${i.unit_volume ?? ''}`;
-    // Capture the index of each product's first row so groups sort in their
-    // original (server-ranked) order WITHIN a single rip_number cluster.
-    const order = new Map<string, number>();
-    rawItems.forEach((it, idx) => {
-      const k = groupKey(it);
-      if (!order.has(k)) order.set(k, idx);
-    });
-    const ripKey = (rc: string | null | undefined) => {
-      const s = (rc ?? '').toString().trim();
-      // Empty / sentinel codes drop to the bottom so real groups read first.
-      return s && s !== '0' ? s : '~';
-    };
-    const sorted = [...rawItems].sort((a, b) => {
-      const ra = ripKey(a.rip_number);
-      const rb = ripKey(b.rip_number);
-      if (ra !== rb) return ra.localeCompare(rb);
-      const ga = order.get(groupKey(a)) ?? 0;
-      const gb = order.get(groupKey(b)) ?? 0;
-      return ga - gb;
-    });
-    return sorted;
-  }, [rawItems, groupByRip]);
 
   const stats = useMemo(() => {
     if (items.length === 0) return null;

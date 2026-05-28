@@ -30,14 +30,19 @@ const NAV_GROUPS: {
     ],
   },
   {
-    header: 'Find deals',
+    header: 'Catalog',
     items: [
       { path: '/catalog', label: 'Catalog', icon: Package },
       { path: '/new-items', label: 'New Items', icon: Sparkles },
       { path: '/combos', label: 'Combos', icon: Combine },
       { path: '/rip-products', label: 'RIP Products', icon: BadgeDollarSign },
+    ],
+  },
+  {
+    header: 'Promotions',
+    items: [
       { path: '/time-sensitive', label: 'Time-Sensitive Deals', icon: Clock },
-      { path: '/price-drops', label: 'Biggest Price Drops', icon: ArrowDownRight },
+      { path: '/price-drops', label: 'Price Drops', icon: ArrowDownRight },
       { path: '/price-increases', label: 'Price Increases', icon: ArrowUpRight },
       { path: '/#tile=top-discounts', label: 'Top Discounts', icon: Percent, adminOnly: true },
     ],

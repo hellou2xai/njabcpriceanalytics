@@ -24,6 +24,21 @@ function fmtEdition(ed?: string | null): string {
   if (!m) return ed;
   return `${MONTHS[parseInt(m[2], 10) - 1]} ${m[1]}`;
 }
+function fmtEdShort(ed?: string | null): string {
+  if (!ed) return '';
+  const m = /^(\d{4})-(\d{1,2})/.exec(ed);
+  return m ? MONTHS[parseInt(m[2], 10) - 1] : ed;
+}
+/** Sticker text per validity using the row's cur/next edition labels. */
+function activeLabel(validity?: string, cur?: string | null, next?: string | null): string {
+  const curM = fmtEdShort(cur);
+  const nextM = fmtEdShort(next);
+  const yr = (cur || next || '').slice(0, 4);
+  if (validity === 'both' && curM && nextM)   return `Active ${curM} + ${nextM} ${yr}`;
+  if (validity === 'next_only' && nextM)      return `Active ${nextM} ${yr} only`;
+  if (validity === 'current_only' && curM)    return `Active ${curM} ${yr} only`;
+  return cur ? `Active ${fmtEdition(cur)}` : '';
+}
 
 interface Props { direction: 'up' | 'down'; }
 
@@ -44,18 +59,13 @@ export default function PriceMovers({ direction }: Props) {
   const [trackedOnly, setTrackedOnly] = useState(false);
   const [sort, setSort] = useState<'biggest-pct' | 'biggest-dollar' | 'name'>('biggest-pct');
   const [limit, setLimit] = useState(60);
-  const [edition, setEdition] = useState('');
+  const [validity, setValidity] = useState<'all' | 'current_only' | 'next_only' | 'both'>('current_only');
   const [view, setView] = useState<'cards' | 'table'>(() => (localStorage.getItem('pm-view') as 'cards' | 'table') || 'cards');
   useEffect(() => { localStorage.setItem('pm-view', view); }, [view]);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['price-movers', direction, wholesaler, edition],
-    queryFn: () => analytics.priceMovers({ direction, wholesaler: wholesaler || undefined, edition: edition || undefined, limit: 2000 }),
-  });
-  const { data: editions } = useQuery({
-    queryKey: ['price-mover-editions', direction],
-    queryFn: () => analytics.priceMoverEditions(direction),
-    staleTime: 5 * 60_000,
+    queryKey: ['price-movers', direction, wholesaler, validity],
+    queryFn: () => analytics.priceMovers({ direction, wholesaler: wholesaler || undefined, validity, limit: 2000 }),
   });
   const { data: wl } = useQuery({ queryKey: ['watchlist'], queryFn: watchlist.get, enabled: trackedOnly });
   const { data: cats } = useQuery({
@@ -93,12 +103,14 @@ export default function PriceMovers({ direction }: Props) {
   const sections: FilterSection[] = [
     { type: 'text', key: 'q', title: 'Search', placeholder: 'Product or brand', value: q, onChange: setQ },
     { type: 'pills', key: 'wholesaler', title: 'Distributor', options: ALL_DISTRIBUTORS, value: wholesaler, onChange: setWholesaler },
-    { type: 'pills', key: 'edition', title: 'Price month',
+    { type: 'pills', key: 'validity', title: 'Price month',
       options: [
-        { value: '', label: 'Latest' },
-        ...((editions ?? []).slice(0, 12).map(e => ({ value: e, label: fmtEdition(e) }))),
+        { value: 'current_only', label: 'Current month only' },
+        { value: 'both',         label: 'Valid both months' },
+        { value: 'next_only',    label: 'Next month only' },
+        { value: 'all',          label: 'All' },
       ],
-      value: edition, onChange: setEdition },
+      value: validity, onChange: (v) => setValidity(v as 'all' | 'current_only' | 'next_only' | 'both') },
     { type: 'select', key: 'product_type', title: 'Category', placeholder: 'All categories',
       options: (cats ?? []).map(c => ({ value: c.product_type, label: c.product_type, count: c.count })),
       value: productType, onChange: setProductType },
@@ -142,7 +154,7 @@ export default function PriceMovers({ direction }: Props) {
 
       <div className="catalog-layout">
         <FilterSidebar storageKey={`pm-${direction}-filters`} sections={sections}
-          onReset={() => { setQ(''); setWholesaler(''); setEdition(''); setProductType(''); setMinChange(''); setMinDollar(''); setHasRip(''); setSize(''); setTrackedOnly(false); setSort('biggest-pct'); }} />
+          onReset={() => { setQ(''); setWholesaler(''); setValidity('current_only'); setProductType(''); setMinChange(''); setMinDollar(''); setHasRip(''); setSize(''); setTrackedOnly(false); setSort('biggest-pct'); }} />
 
         <div className="catalog-results">
           <div className="toolbar" style={{ marginBottom: 12 }}>
@@ -207,8 +219,12 @@ export default function PriceMovers({ direction }: Props) {
                       render: r => money(r.effective_case_price as number | null) },
                     { key: 'has_rip', label: 'RIP', align: 'center',
                       render: r => r.has_rip ? <span className="source-badge source-rip">RIP</span> : '' },
-                    { key: 'edition', label: 'Active month', sortable: true,
-                      render: r => <span className="mover-month">{fmtEdition(r.edition as string)}</span> },
+                    { key: 'edition', label: 'Active', sortable: true,
+                      render: r => <span className="mover-month">{activeLabel(
+                        r.validity as string,
+                        (r.cur_edition as string | null) ?? (r.edition as string | null),
+                        r.next_edition as string | null,
+                      )}</span> },
                     { key: 'ai_blurb', label: 'AI note',
                       exportValue: r => (r.ai_blurb as string | null) ?? '',
                       render: r => r.ai_blurb
@@ -265,8 +281,8 @@ function MoverCard({ d, isDrop, open }: { d: PriceMover; isDrop: boolean; open: 
           <span className="deal-urgency" style={{ background: isDrop ? '#dcfce7' : '#fee2e2', color: colour }}>
             {isDrop ? 'Price drop' : 'Price up'}
           </span>
-          <span className="mover-month" title="Edition this price change is active in">
-            Active {fmtEdition(d.edition)}
+          <span className="mover-month" title="Months this price change is active in">
+            {activeLabel(d.validity, d.cur_edition ?? d.edition, d.next_edition)}
           </span>
         </div>
       </div>

@@ -891,6 +891,10 @@ export interface PriceMover {
   has_rip?: boolean; has_discount?: boolean;
   image_url?: string | null;
   ai_blurb?: string | null;
+  validity?: 'current_only' | 'next_only' | 'both';
+  cur_edition?: string | null;
+  next_edition?: string | null;
+  next_case_price?: number | null;
 }
 
 export interface LifecycleEvent {

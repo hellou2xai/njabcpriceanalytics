@@ -89,7 +89,8 @@ def get_price_movers(
     wholesaler: Optional[str] = None,
     edition: Optional[str] = None,
     direction: str = Query("down", description="up or down"),
-    limit: int = Query(200, ge=1, le=5000),
+    validity: str = Query("all", description="all | current_only | next_only | both"),
+    limit: int = Query(500, ge=1, le=5000),
 ):
     """Top price movers (6.2, 8.1). Resilient to older ingested data that may
     lack some derived columns (e.g. vintage_norm) - any missing column is
@@ -100,6 +101,10 @@ def get_price_movers(
     flags, and runs the catalogue's enrichment join so the card view can show
     the product image."""
     from backend.enrichment_join import attach_enrichment_image
+    from datetime import date as _date
+
+    today = _date.today()
+    current_ym = f"{today.year:04d}-{today.month:02d}"
 
     with get_duckdb() as con:
         src = read_parquet(con, "price_changes")
@@ -124,34 +129,83 @@ def get_price_movers(
             "c.upc AS upc", "c.brand AS brand", "c.unit_qty AS unit_qty",
             "c.effective_case_price AS effective_case_price",
             "c.has_rip AS has_rip", "c.has_discount AS has_discount",
+            "e.cur_ed AS cur_edition", "e.next_ed AS next_edition",
+            "nxt.frontline_case_price AS next_case_price",
+            "CASE WHEN pc.edition = e.cur_ed THEN 'cur' "
+            "     WHEN pc.edition = e.next_ed THEN 'next' "
+            "     ELSE NULL END AS slot",
         ])
 
-        where = ["pc.direction = $direction"]
-        params = {"direction": direction}
+        # Per wholesaler, current-month edition (latest <= today's YYYY-MM) and
+        # the next edition after it. We pull price_changes for BOTH editions so
+        # we can classify each product as current_only / next_only / both.
+        params = {"current_ym": current_ym}
+        ws_clause = ""
         if wholesaler:
-            where.append("pc.wholesaler = $wholesaler")
+            ws_clause = "AND pc.wholesaler = $wholesaler"
             params["wholesaler"] = wholesaler
-        if edition:
-            where.append("pc.edition = $edition")
-            params["edition"] = edition
-        else:
-            where.append(f"pc.edition = (SELECT MAX(edition) FROM {src}" +
-                        (" WHERE wholesaler = $wholesaler" if wholesaler else "") + ")")
 
-        w = " AND ".join(where)
-        order = "ORDER BY ABS(pc.case_delta_pct) DESC NULLS LAST" if "case_delta_pct" in avail else ""
         df = con.execute(f"""
+            WITH eds AS (
+              SELECT wholesaler,
+                     COALESCE(MAX(CASE WHEN edition <= $current_ym THEN edition END), MAX(edition)) AS cur_ed,
+                     MIN(CASE WHEN edition > $current_ym THEN edition END) AS next_ed
+              FROM {cpl} GROUP BY wholesaler
+            )
             SELECT {select_cols}
             FROM {src} pc
+            JOIN eds e ON e.wholesaler = pc.wholesaler
+                      AND pc.edition IN (e.cur_ed, e.next_ed)
             LEFT JOIN {cpl} c
               ON c.wholesaler = pc.wholesaler
              AND c.edition    = pc.edition
              AND c.product_name = pc.product_name
-            WHERE {w}
-            {order}
-            LIMIT $limit
-        """, {**params, "limit": limit}).fetchdf()
-        out = _records(df)
+            LEFT JOIN {cpl} nxt
+              ON nxt.wholesaler = pc.wholesaler
+             AND nxt.edition    = e.next_ed
+             AND nxt.product_name = pc.product_name
+            WHERE 1=1 {ws_clause}
+        """, params).fetchdf()
+
+        # Group rows by (wholesaler, product_name); a single product can have a
+        # change in current AND a change in next. Classify validity for the
+        # requested direction.
+        slots: dict = {}
+        for _, r in df.iterrows():
+            key = (r["wholesaler"], r["product_name"])
+            slots.setdefault(key, {})[r["slot"]] = r
+        out = []
+        for (_ws, _name), s in slots.items():
+            cur = s.get("cur"); nxt_pc = s.get("next")
+            cur_dir = (cur["direction"] if cur is not None else None)
+            next_dir = (nxt_pc["direction"] if nxt_pc is not None else None)
+            cur_match = cur is not None and cur_dir == direction
+            next_match = nxt_pc is not None and next_dir == direction
+            if not cur_match and not next_match:
+                continue  # product has no change in the requested direction either month
+            if cur_match and next_match:
+                vlabel = "both"; base = cur
+            elif cur_match and nxt_pc is None:
+                # Current direction change, no further change next month -> price holds.
+                vlabel = "both"; base = cur
+            elif cur_match and not next_match:
+                # Current direction change AND a reverse change next month -> rebound.
+                vlabel = "current_only"; base = cur
+            else:
+                vlabel = "next_only"; base = nxt_pc
+            if validity != "all" and vlabel != validity:
+                continue
+            row = {c: base[c] for c in base.index}
+            row["validity"] = vlabel
+            out.append(row)
+
+        # Sort: biggest absolute % change first.
+        out.sort(key=lambda r: abs(r.get("case_delta_pct") or 0), reverse=True)
+        out = out[:limit]
+
+        # _records cleans NaN -> None and stringifies any timestamps.
+        import pandas as pd
+        out = _records(pd.DataFrame(out)) if out else []
         try:
             attach_enrichment_image(con, out)
         except Exception:

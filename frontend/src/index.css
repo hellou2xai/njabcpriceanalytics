@@ -1348,69 +1348,62 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
   color: var(--green); font-weight: 600;
 }
 /* Filter sidebar */
-.page-with-filters {
-  display: grid;
-  grid-template-columns: 240px 1fr;
-  gap: 16px;
-  align-items: start;
-}
-.page-with-filters.filters-collapsed {
-  grid-template-columns: 40px 1fr;
-}
-/* Let the main column shrink so a wide table scrolls inside its own
-   overflow-x container instead of pushing content off the right edge. */
+/* Filter layout: a horizontal toolbar pinned above the page content. Pages
+   that wrap their body in <FilterSidebar> get a sticky filter bar on top and
+   a full-width content area below — replacing the prior 240px left rail so
+   tables and grids get the full viewport. */
+.page-with-filters { display: flex; flex-direction: column; gap: 12px; }
 .page-with-filters-main { min-width: 0; }
-.filter-sidebar {
-  position: sticky;
-  top: 12px;
+
+.filter-toolbar {
+  position: sticky; top: 0; z-index: 10;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 8px 8px 12px;
-  max-height: calc(100vh - 24px);
-  overflow-y: auto;
+  padding: 8px 12px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
 }
-.filter-sidebar-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 4px 6px 8px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 8px;
+.filter-toolbar.is-collapsed { padding: 6px 12px; }
+.filter-toolbar-row {
+  display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap;
 }
-.filter-sidebar-title {
+.filter-toolbar-clear {
+  display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto;
+  padding: 5px 10px; font-size: 12px; font-weight: 600;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px; cursor: pointer;
+}
+.filter-toolbar-clear:hover { color: var(--red); border-color: var(--red); }
+.filter-toolbar-label {
   display: inline-flex; align-items: center; gap: 6px;
   font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
   color: var(--text-muted);
 }
-.filter-sidebar-toggle, .filter-reset-btn {
-  display: inline-flex; align-items: center; justify-content: center;
+.filter-toolbar-toggle {
+  display: inline-flex; align-items: center; gap: 4px; margin-left: auto;
   background: transparent; border: 1px solid var(--border);
-  border-radius: 4px; color: var(--text-muted);
-  cursor: pointer; padding: 3px 6px; font-size: 11px;
+  border-radius: 6px; color: var(--text-muted);
+  cursor: pointer; padding: 4px 8px; font-size: 11px; font-weight: 600;
 }
-.filter-sidebar-toggle:hover, .filter-reset-btn:hover {
-  color: var(--accent); border-color: var(--accent);
+.filter-toolbar-toggle:hover { color: var(--accent); border-color: var(--accent); }
+.filter-toolbar-sections {
+  display: flex; flex: 1 1 auto; flex-wrap: wrap;
+  align-items: center; gap: 8px 16px;
+  /* A subtle vertical rule between the Clear action and the sections. */
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
 }
-.filters-collapsed .filter-sidebar {
-  padding: 6px 4px;
+.filter-toolbar-section {
+  display: inline-flex; align-items: center; gap: 8px;
+  min-height: 32px;
 }
-.filters-collapsed .filter-sidebar-header {
-  border-bottom: none;
-  margin-bottom: 0;
-  padding: 0;
-  justify-content: center;
+.filter-toolbar-section-title {
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--text-muted); white-space: nowrap;
 }
-.filter-sidebar-body {
-  display: flex; flex-direction: column; gap: 14px;
-}
-.filter-section-title {
-  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
-  color: var(--text-muted);
-  margin-bottom: 6px;
-}
-.filter-section-body { display: flex; flex-direction: column; gap: 6px; }
+.filter-toolbar-section-body { display: inline-flex; align-items: center; }
+/* Pills + range can keep wrapping when there's no horizontal room. */
+.filter-toolbar-section[data-section-type="pills"] .filter-toolbar-section-body { flex-wrap: wrap; }
 
 .filter-pills { display: flex; flex-wrap: wrap; gap: 4px; }
 .filter-pill {
@@ -1433,10 +1426,13 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
 }
 
 .filter-select, .filter-text, .filter-range-input {
-  width: 100%; padding: 5px 8px; font-size: 12px;
+  padding: 5px 8px; font-size: 12px;
   background: var(--bg); color: var(--text);
   border: 1px solid var(--border); border-radius: 4px;
 }
+.filter-select { min-width: 140px; }
+.filter-text { min-width: 180px; }
+.filter-range-input { width: 80px; }
 .filter-range { display: flex; align-items: center; gap: 4px; }
 .filter-range-sep { font-size: 10px; color: var(--text-muted); }
 .filter-toggle {
@@ -1445,8 +1441,8 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
 }
 
 @media (max-width: 1023px) {
-  .page-with-filters { grid-template-columns: 1fr; }
-  .filter-sidebar { position: static; max-height: none; }
+  .filter-toolbar { padding: 8px; }
+  .filter-toolbar-sections { padding-left: 0; border-left: none; }
 }
 
 .source-badge {

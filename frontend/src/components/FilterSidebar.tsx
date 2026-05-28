@@ -1,5 +1,5 @@
 import { useState, useEffect, type ReactNode } from 'react';
-import { ChevronLeft, ChevronRight, Filter as FilterIcon } from 'lucide-react';
+import { ChevronDown, ChevronUp, Filter as FilterIcon, XCircle } from 'lucide-react';
 
 export type FilterOption = { label: string; value: string; count?: number };
 
@@ -62,13 +62,25 @@ interface FilterSidebarProps {
   children: ReactNode;
 }
 
+/**
+ * Horizontal filter toolbar pinned above the page content.
+ *
+ * Replaced the prior vertical sidebar so list pages get their full width back
+ * for the data. The component name and prop API stay the same so every page
+ * already using it (Combos, Clearance, Discounts, MajorDiscounts, PriceMovers,
+ * RipProducts, Rips, ...) picks up the new layout without changes.
+ *
+ * Sections lay out as labelled inline controls that wrap to additional rows
+ * on narrow screens; a Clear/Reset action is anchored on the LEFT so it's the
+ * first thing users see, matching the user's "Clear all filters tagged in the
+ * horizontal menu on the left" request. A right-aligned Hide toggle collapses
+ * the toolbar to a single row when the user wants the data to take over.
+ */
 export default function FilterSidebar({ storageKey, sections, onReset, children }: FilterSidebarProps) {
-  const lsKey = `filter_sidebar_${storageKey}`;
+  const lsKey = `filter_toolbar_${storageKey}`;
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     const stored = localStorage.getItem(lsKey);
-    if (stored !== null) return stored === 'true';
-    // Default: open on desktop, collapsed on mobile so the data shows first.
-    return typeof window !== 'undefined' && window.innerWidth <= 1023;
+    return stored === 'true';
   });
 
   useEffect(() => {
@@ -76,39 +88,45 @@ export default function FilterSidebar({ storageKey, sections, onReset, children 
   }, [collapsed, lsKey]);
 
   return (
-    <div className={`page-with-filters ${collapsed ? 'filters-collapsed' : ''}`}>
-      <aside className="filter-sidebar">
-        <div className="filter-sidebar-header">
-          {!collapsed && (
-            <>
-              <span className="filter-sidebar-title">
-                <FilterIcon size={14} /> Filters
-              </span>
-              {onReset && (
-                <button className="filter-reset-btn" onClick={onReset} type="button">
-                  Reset
-                </button>
-              )}
-            </>
+    <div className="page-with-filters horizontal">
+      <div className={`filter-toolbar ${collapsed ? 'is-collapsed' : ''}`}>
+        <div className="filter-toolbar-row">
+          {onReset && (
+            <button
+              className="filter-toolbar-clear"
+              onClick={onReset}
+              type="button"
+              title="Clear all filters on this page"
+            >
+              <XCircle size={14} /> Clear all filters
+            </button>
           )}
+          {!onReset && (
+            <span className="filter-toolbar-label">
+              <FilterIcon size={14} /> Filters
+            </span>
+          )}
+
+          {!collapsed && (
+            <div className="filter-toolbar-sections">
+              {sections.map(s => (
+                <FilterSectionInline key={s.key} section={s} />
+              ))}
+            </div>
+          )}
+
           <button
-            className="filter-sidebar-toggle"
+            className="filter-toolbar-toggle"
             onClick={() => setCollapsed(c => !c)}
             title={collapsed ? 'Show filters' : 'Hide filters'}
             type="button"
           >
-            {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+            {collapsed
+              ? (<><ChevronDown size={14} /> Show filters</>)
+              : (<><ChevronUp size={14} /> Hide</>)}
           </button>
         </div>
-
-        {!collapsed && (
-          <div className="filter-sidebar-body">
-            {sections.map(s => (
-              <FilterSectionBlock key={s.key} section={s} />
-            ))}
-          </div>
-        )}
-      </aside>
+      </div>
 
       <div className="page-with-filters-main">
         {children}
@@ -117,11 +135,11 @@ export default function FilterSidebar({ storageKey, sections, onReset, children 
   );
 }
 
-function FilterSectionBlock({ section: s }: { section: FilterSection }) {
+function FilterSectionInline({ section: s }: { section: FilterSection }) {
   return (
-    <div className="filter-section">
-      <div className="filter-section-title">{s.title}</div>
-      <div className="filter-section-body">
+    <div className="filter-toolbar-section" data-section-type={s.type}>
+      <div className="filter-toolbar-section-title">{s.title}</div>
+      <div className="filter-toolbar-section-body">
         {s.type === 'pills' && (
           <div className="filter-pills">
             {s.options.map(opt => (

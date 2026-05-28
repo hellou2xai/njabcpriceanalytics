@@ -96,6 +96,11 @@ def startup():
             warm_mover_blurbs_async()
         except Exception as e:
             print(f"[startup] mover-blurb generation skipped: {e}")
+        try:
+            from backend.routers.analytics import warm_pm_cache_async
+            warm_pm_cache_async()
+        except Exception as e:
+            print(f"[startup] price-movers cache warm skipped: {e}")
     except Exception as e:
         # If the pricing tables aren't in Postgres yet (no ingestion run), the
         # cache builds lazily on the first request instead of blocking startup.
@@ -131,6 +136,11 @@ def reload_pricing(user: dict = Depends(get_current_user)):
         warm_mover_blurbs_async()
     except Exception as e:
         print(f"[reload] mover-blurb generation skipped: {e}")
+    try:
+        from backend.routers.analytics import warm_pm_cache_async
+        warm_pm_cache_async()
+    except Exception as e:
+        print(f"[reload] price-movers cache warm skipped: {e}")
 
 
 @app.post("/api/admin/blurbs/generate")

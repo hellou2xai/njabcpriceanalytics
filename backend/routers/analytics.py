@@ -84,6 +84,157 @@ def get_dashboard(wholesaler: Optional[str] = None, edition: Optional[str] = Non
         return {**kpis, **movers}
 
 
+# In-process cache of the full classified price-movers list per direction. The
+# heavy work (joins + Python classification) runs once per pricing-cache version
+# and per direction; subsequent requests just filter the cached list, which
+# keeps the endpoint well under Render's proxy timeout even cold.
+import threading as _threading
+_pm_cache: dict = {"token": None, "down": None, "up": None}
+_pm_lock = _threading.Lock()
+
+
+def _pm_compute_full(con, direction: str) -> list[dict]:
+    """Compute the full classified mover list for a direction (no filters)."""
+    from backend.enrichment_join import attach_enrichment_image
+    from datetime import date as _date
+    import pandas as pd
+
+    today = _date.today()
+    current_ym = f"{today.year:04d}-{today.month:02d}"
+
+    src = read_parquet(con, "price_changes")
+    cpl = read_parquet(con, "cpl_enriched")
+    avail = {d[0] for d in con.execute(f"SELECT * FROM {src} LIMIT 0").description}
+    def col(name):
+        return f"pc.{name}" if name in avail else f"NULL AS {name}"
+    if "vintage_norm" in avail:
+        vintage_expr = "pc.vintage_norm AS vintage"
+    elif "vintage" in avail:
+        vintage_expr = "pc.vintage AS vintage"
+    else:
+        vintage_expr = "NULL AS vintage"
+
+    eds_df = con.execute(
+        f"""SELECT wholesaler,
+               COALESCE(MAX(CASE WHEN edition <= $c THEN edition END), MAX(edition)) AS cur_ed,
+               MIN(CASE WHEN edition > $c THEN edition END) AS next_ed
+            FROM {cpl} GROUP BY wholesaler""",
+        {"c": current_ym},
+    ).fetchdf()
+
+    ed_by_ws: dict = {}
+    conds, params, i = [], {}, 0
+    for _, row in eds_df.iterrows():
+        ws = row["wholesaler"]
+        cur_ed = row.get("cur_ed"); next_ed = row.get("next_ed")
+        cur_s = str(cur_ed) if cur_ed is not None and (not isinstance(cur_ed, float) or cur_ed == cur_ed) else None
+        next_s = str(next_ed) if next_ed is not None and (not isinstance(next_ed, float) or next_ed == next_ed) else None
+        ed_by_ws[ws] = (cur_s, next_s)
+        for ed in (cur_s, next_s):
+            if not ed: continue
+            conds.append(f"(pc.wholesaler = $w{i} AND pc.edition = $e{i})")
+            params[f"w{i}"], params[f"e{i}"] = ws, ed
+            i += 1
+    if not conds:
+        return []
+
+    select_cols = ", ".join([
+        "pc.wholesaler", "pc.edition", "pc.product_name",
+        col("product_type"), col("unit_volume"), vintage_expr,
+        col("case_price"), col("prev_case_price"),
+        col("case_delta"), col("case_delta_pct"), "pc.direction",
+        "c.upc AS upc", "c.brand AS brand", "c.unit_qty AS unit_qty",
+        "c.effective_case_price AS effective_case_price",
+        "c.has_rip AS has_rip", "c.has_discount AS has_discount",
+    ])
+    df = con.execute(f"""
+        SELECT {select_cols}
+        FROM {src} pc
+        LEFT JOIN {cpl} c
+          ON c.wholesaler = pc.wholesaler
+         AND c.edition    = pc.edition
+         AND c.product_name = pc.product_name
+        WHERE ({' OR '.join(conds)})
+    """, params).fetchdf()
+
+    slots: dict = {}
+    for _, r in df.iterrows():
+        cur_s, next_s = ed_by_ws.get(r["wholesaler"], (None, None))
+        ed = str(r["edition"])
+        slot = "cur" if ed == cur_s else ("next" if ed == next_s else None)
+        if slot is None: continue
+        key = (r["wholesaler"], r["product_name"])
+        slots.setdefault(key, {})[slot] = r
+
+    out: list[dict] = []
+    for (ws, _name), s in slots.items():
+        cur_r = s.get("cur"); next_r = s.get("next")
+        cur_match = cur_r is not None and cur_r["direction"] == direction
+        next_match = next_r is not None and next_r["direction"] == direction
+        def _price_holds() -> bool:
+            if next_r is None: return True
+            cp = cur_r["case_price"] if cur_r is not None else None
+            np_ = next_r["case_price"]
+            if cp is None or np_ is None or cp != cp or np_ != np_:
+                return next_match
+            tol = max(0.02, abs(cp) * 0.005)
+            if direction == "down":
+                return np_ <= cp + tol
+            return np_ >= cp - tol
+        if cur_match:
+            vlabel = "both" if _price_holds() else "current_only"
+            base = cur_r
+        elif next_match and next_r is not None:
+            vlabel = "next_only"; base = next_r
+        else:
+            continue
+        row = {c: base[c] for c in base.index}
+        row["validity"] = vlabel
+        cur_s, next_s = ed_by_ws.get(ws, (None, None))
+        row["cur_edition"] = cur_s
+        row["next_edition"] = next_s
+        row["next_case_price"] = next_r["case_price"] if next_r is not None else None
+        out.append(row)
+
+    out.sort(key=lambda r: abs(r.get("case_delta_pct") or 0), reverse=True)
+    out = _records(pd.DataFrame(out)) if out else []
+    try:
+        attach_enrichment_image(con, out)
+    except Exception:
+        pass
+    return out
+
+
+def _pm_cached(con, direction: str) -> list[dict]:
+    from backend.pricing_cache import get_pricing_path
+    token = str(get_pricing_path())
+    if _pm_cache.get("token") == token and _pm_cache.get(direction) is not None:
+        return _pm_cache[direction]  # type: ignore
+    with _pm_lock:
+        if _pm_cache.get("token") == token and _pm_cache.get(direction) is not None:
+            return _pm_cache[direction]  # type: ignore
+        result = _pm_compute_full(con, direction)
+        # If the cache token changed since we got into the lock, reset the bag.
+        if _pm_cache.get("token") != token:
+            _pm_cache.clear(); _pm_cache["token"] = token
+        _pm_cache[direction] = result
+        _pm_cache["token"] = token
+        return result
+
+
+def warm_pm_cache_async():
+    """Pre-compute the price-mover lists in the background so the first request
+    after a deploy or reload doesn't wait through the heavy classification."""
+    def _run():
+        try:
+            with get_duckdb() as con:
+                _pm_cached(con, "down")
+                _pm_cached(con, "up")
+        except Exception as e:
+            print(f"[pm] price-movers cache warm skipped: {e}")
+    _threading.Thread(target=_run, daemon=True).start()
+
+
 @router.get("/price-movers")
 def get_price_movers(
     wholesaler: Optional[str] = None,
@@ -100,135 +251,14 @@ def get_price_movers(
     effective (post-discount/RIP) case price, and the has_rip/has_discount
     flags, and runs the catalogue's enrichment join so the card view can show
     the product image."""
-    from backend.enrichment_join import attach_enrichment_image
-    from datetime import date as _date
-    import pandas as pd
-
-    today = _date.today()
-    current_ym = f"{today.year:04d}-{today.month:02d}"
-
     with get_duckdb() as con:
-        src = read_parquet(con, "price_changes")
-        cpl = read_parquet(con, "cpl_enriched")
-        avail = {d[0] for d in con.execute(f"SELECT * FROM {src} LIMIT 0").description}
-
-        def col(name):
-            return f"pc.{name}" if name in avail else f"NULL AS {name}"
-
-        if "vintage_norm" in avail:
-            vintage_expr = "pc.vintage_norm AS vintage"
-        elif "vintage" in avail:
-            vintage_expr = "pc.vintage AS vintage"
-        else:
-            vintage_expr = "NULL AS vintage"
-
-        # Compute (cur_ed, next_ed) per wholesaler in one small query, then build
-        # explicit (wholesaler, edition) pairs so the heavy join filters tightly
-        # instead of scanning the whole cpl_enriched table.
-        eds_df = con.execute(
-            f"""SELECT wholesaler,
-                   COALESCE(MAX(CASE WHEN edition <= $c THEN edition END), MAX(edition)) AS cur_ed,
-                   MIN(CASE WHEN edition > $c THEN edition END) AS next_ed
-                FROM {cpl} GROUP BY wholesaler""",
-            {"c": current_ym},
-        ).fetchdf()
-
-        ed_by_ws: dict = {}
-        conds, params, i = [], {}, 0
-        for _, row in eds_df.iterrows():
-            ws = row["wholesaler"]
-            if wholesaler and ws != wholesaler:
-                continue
-            cur_ed = row.get("cur_ed"); next_ed = row.get("next_ed")
-            cur_s = str(cur_ed) if cur_ed is not None and (not isinstance(cur_ed, float) or cur_ed == cur_ed) else None
-            next_s = str(next_ed) if next_ed is not None and (not isinstance(next_ed, float) or next_ed == next_ed) else None
-            ed_by_ws[ws] = (cur_s, next_s)
-            for ed in (cur_s, next_s):
-                if not ed:
-                    continue
-                conds.append(f"(pc.wholesaler = $w{i} AND pc.edition = $e{i})")
-                params[f"w{i}"], params[f"e{i}"] = ws, ed
-                i += 1
-        if not conds:
-            return []
-
-        select_cols = ", ".join([
-            "pc.wholesaler", "pc.edition", "pc.product_name",
-            col("product_type"), col("unit_volume"), vintage_expr,
-            col("case_price"), col("prev_case_price"),
-            col("case_delta"), col("case_delta_pct"), "pc.direction",
-            "c.upc AS upc", "c.brand AS brand", "c.unit_qty AS unit_qty",
-            "c.effective_case_price AS effective_case_price",
-            "c.has_rip AS has_rip", "c.has_discount AS has_discount",
-        ])
-
-        df = con.execute(f"""
-            SELECT {select_cols}
-            FROM {src} pc
-            LEFT JOIN {cpl} c
-              ON c.wholesaler = pc.wholesaler
-             AND c.edition    = pc.edition
-             AND c.product_name = pc.product_name
-            WHERE ({' OR '.join(conds)})
-        """, params).fetchdf()
-
-        # Group by (wholesaler, product_name); classify validity for the
-        # requested direction by looking at the cur slot vs the next slot.
-        slots: dict = {}
-        for _, r in df.iterrows():
-            cur_s, next_s = ed_by_ws.get(r["wholesaler"], (None, None))
-            ed = str(r["edition"])
-            slot = "cur" if ed == cur_s else ("next" if ed == next_s else None)
-            if slot is None:
-                continue
-            key = (r["wholesaler"], r["product_name"])
-            slots.setdefault(key, {})[slot] = r
-
-        out: list[dict] = []
-        for (ws, _name), s in slots.items():
-            cur_r = s.get("cur"); next_r = s.get("next")
-            cur_match = cur_r is not None and cur_r["direction"] == direction
-            next_match = next_r is not None and next_r["direction"] == direction
-            # Classify by comparing the actual next-month price to the current
-            # one, not just the next-edition's direction tag. A flat/unchanged
-            # next month is "holds" (both), a reverse next month is rebound
-            # (current_only). This catches the case the user flagged where the
-            # price is identical in May and June so there is no price_changes
-            # row in June and the strict direction match misses it.
-            def _price_holds() -> bool:
-                if next_r is None: return True   # no row -> price unchanged
-                cp = cur_r["case_price"] if cur_r is not None else None
-                np_ = next_r["case_price"]
-                if cp is None or np_ is None or cp != cp or np_ != np_:
-                    return next_match
-                tol = max(0.02, abs(cp) * 0.005)  # 0.5%, min 2c
-                if direction == "down":
-                    return np_ <= cp + tol        # holds or deepens
-                return np_ >= cp - tol            # for 'up': holds or rises further
-            if cur_match:
-                vlabel = "both" if _price_holds() else "current_only"
-                base = cur_r
-            elif next_match and next_r is not None:
-                vlabel = "next_only"; base = next_r
-            else:
-                continue
-            if validity != "all" and vlabel != validity:
-                continue
-            row = {c: base[c] for c in base.index}
-            row["validity"] = vlabel
-            cur_s, next_s = ed_by_ws.get(ws, (None, None))
-            row["cur_edition"] = cur_s
-            row["next_edition"] = next_s
-            row["next_case_price"] = next_r["case_price"] if next_r is not None else None
-            out.append(row)
-
-        out.sort(key=lambda r: abs(r.get("case_delta_pct") or 0), reverse=True)
+        full = _pm_cached(con, direction)
+        out = list(full)
+        if wholesaler:
+            out = [r for r in out if r.get("wholesaler") == wholesaler]
+        if validity != "all":
+            out = [r for r in out if r.get("validity") == validity]
         out = out[:limit]
-        out = _records(pd.DataFrame(out)) if out else []
-        try:
-            attach_enrichment_image(con, out)
-        except Exception:
-            pass
         # Attach the pre-generated AI mover blurb if we have one. Read live from
         # Postgres (small table), keyed by (wholesaler, ltrim(upc), edition,
         # direction). Missing blurbs simply leave the field null on the row.

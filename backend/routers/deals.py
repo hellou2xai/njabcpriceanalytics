@@ -523,6 +523,16 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
             un = u.lstrip("0") if u else None
             if un and (r["wholesaler"], un) in rip_next:
                 continue  # RIP still available next month -> not time-sensitive
+            # Defensive guard: even if the SQL filter or a data quality issue lets
+            # a stale-to_date row through, skip anything genuinely in the past
+            # unless the caller explicitly asked for past deals.
+            dte_raw = r["days_to_expire"]
+            try:
+                dte_int = int(dte_raw) if dte_raw == dte_raw and dte_raw is not None else None
+            except (TypeError, ValueError):
+                dte_int = None
+            if not include_past and dte_int is not None and dte_int < 0:
+                continue
             has_closeout = bool(r["has_closeout"])
             has_rip = bool(r["has_rip"])
             has_discount = bool(r["has_discount"])

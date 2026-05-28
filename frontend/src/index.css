@@ -2920,3 +2920,9 @@ tr:hover .row-menu-btn { opacity: 1; }
 .tag.tag-orange { background: #ffedd5; color: #c2410c; }
 
 @media (max-width: 560px) { .deal-cards { grid-template-columns: 1fr; } }
+
+/* ---- Time-Sensitive Deals: view toggle + ended urgency ---- */
+.ts-view-toggle { display: inline-flex; gap: 4px; margin-left: auto; }
+.ts-view-toggle .btn { padding: 6px 10px; font-size: 12px; }
+.deal-card.urgency-ended { border-left: 3px solid #94a3b8; opacity: .75; }
+.deal-urgency.urgency-ended { background: #f1f5f9; color: #475569; }

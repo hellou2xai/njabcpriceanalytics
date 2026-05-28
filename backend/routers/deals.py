@@ -1106,7 +1106,7 @@ def _build_rip_items(con, wholesaler=None, product_type=None, q="", rip_code=Non
                 # Enrichment table can be empty in parquet dev mode; that's fine.
                 pass
 
-            for (ws_, upc_norm), info in orphan_index.items():
+            for (ws_, upc_norm, _rc), info in orphan_index.items():
                 name, brand = enrich_map.get(upc_norm, (None, None))
                 tier_pairs = {}
                 for t in info["curr_tiers"]:

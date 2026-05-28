@@ -690,6 +690,11 @@ export interface Product {
   // barcode). distributor_count is how many carry it.
   multi_distributor?: boolean;
   distributor_count?: number;
+  // AI-generated short blurb attached by /api/deals/discounts when present.
+  ai_blurb?: string | null;
+  // Savings source labels ("CPL discount", "RIP", "Closeout") and the
+  // computed better-month tag for the discount.
+  discount_source?: string[];
 }
 
 export interface NewItemsResponse {

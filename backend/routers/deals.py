@@ -88,7 +88,7 @@ def get_top_discounts(
         sort_col = sort if sort in allowed_sorts else "total_savings_per_case"
 
         w = " AND ".join(where)
-        cols = """wholesaler, edition, upc, product_name, product_type,
+        cols = """wholesaler, edition, upc, product_name, brand, product_type,
                    unit_volume, unit_qty, frontline_case_price, frontline_unit_price,
                    best_case_price, effective_case_price, discount_pct,
                    total_savings_per_case, rip_savings, has_rip, has_discount,
@@ -165,6 +165,22 @@ def get_top_discounts(
             r["discount_source"] = src_parts
 
         attach_enrichment_image(con, records)
+        # Attach pre-generated AI deal blurbs (where one exists) so the Major
+        # Discounts card view can show the same line as Time-Sensitive Deals.
+        try:
+            from backend.pg import get_pg
+            blurb_map: dict = {}
+            with get_pg() as pg:
+                cur = pg.execute("SELECT wholesaler, LTRIM(upc, '0') AS un, edition, blurb FROM ai_deal_blurbs")
+                for b in cur.fetchall():
+                    blurb_map[(b["wholesaler"], b["un"], b["edition"])] = b["blurb"]
+            for r in records:
+                u = r.get("upc")
+                un = str(u).lstrip("0") if u else ""
+                r["ai_blurb"] = blurb_map.get((r.get("wholesaler"), un, r.get("edition")))
+        except Exception:
+            for r in records:
+                r.setdefault("ai_blurb", None)
         return records
 
 

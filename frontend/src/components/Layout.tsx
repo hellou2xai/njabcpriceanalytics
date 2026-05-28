@@ -42,6 +42,7 @@ const NAV_GROUPS: {
     header: 'Promotions',
     items: [
       { path: '/time-sensitive', label: 'Time-Sensitive Deals', icon: Clock },
+      { path: '/major-discounts', label: 'Major Discounts', icon: Percent },
       { path: '/price-drops', label: 'Price Drops', icon: ArrowDownRight },
       { path: '/price-increases', label: 'Price Increases', icon: ArrowUpRight },
       { path: '/#tile=top-discounts', label: 'Top Discounts', icon: Percent, adminOnly: true },

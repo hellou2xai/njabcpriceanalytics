@@ -1144,11 +1144,31 @@ def get_product_detail(
                     "image_source": er[12],
                 }
 
+        # AI explainer (pre-generated). Falls back to None when there isn't
+        # one yet, so the UI hides the section gracefully.
+        ai_blurb = None
+        try:
+            from backend.pg import get_pg
+            pu = str(prod_upc) if prod_upc is not None else ""
+            if pu:
+                with get_pg() as pg:
+                    rec = pg.execute(
+                        "SELECT blurb FROM ai_product_blurbs "
+                        "WHERE wholesaler = %s AND LTRIM(upc, '0') = LTRIM(%s, '0') AND edition = %s "
+                        "ORDER BY generated_at DESC LIMIT 1",
+                        (wholesaler, pu, str(item.get("edition") or "")),
+                    ).fetchone()
+                    if rec and rec.get("blurb"):
+                        ai_blurb = rec["blurb"]
+        except Exception:
+            ai_blurb = None
+
         return {
             "product": _clean_record(row.to_dict(orient="records")[0]),
             "discount_tiers": tiers,
             "rip_tiers": rip_tiers,
             "enrichment": enrichment,
+            "ai_blurb": ai_blurb,
         }
 
 

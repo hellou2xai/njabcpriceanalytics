@@ -428,6 +428,21 @@ def init_user_db():
             generated_at  text DEFAULT {NOW_UTC},
             PRIMARY KEY (wholesaler, upc, edition, direction)
         )""",
+        # AI-generated plain-English explanation rendered on the product detail
+        # modal (between the description and the Price Breakdown chart). Aimed
+        # at a layman buyer: what the product is, what the discount + RIP mean
+        # in real money, what they need to buy to qualify, and the best
+        # effective case price. Keyed per edition so the explanation tracks
+        # changes in tiers and pricing month over month.
+        f"""CREATE TABLE IF NOT EXISTS ai_product_blurbs (
+            wholesaler    text NOT NULL,
+            upc           text NOT NULL,
+            edition       text NOT NULL,
+            blurb         text NOT NULL,
+            version       text DEFAULT 'v1',
+            generated_at  text DEFAULT {NOW_UTC},
+            PRIMARY KEY (wholesaler, upc, edition)
+        )""",
     ]
     with get_pg() as con:
         for s in stmts:

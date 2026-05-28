@@ -51,7 +51,7 @@ export const catalog = {
   newItems: (params?: Record<string, unknown>) =>
     request<NewItemsResponse>(`/api/catalog/new-items${qs(params ?? {})}`),
   product: (wholesaler: string, name: string, opts?: { edition?: string; upc?: string; unit_volume?: string; unit_qty?: string; vintage?: string }) =>
-    request<{ product: Product; discount_tiers: DiscountTier[]; rip_tiers: RipTier[]; enrichment: ProductEnrichment | null }>(
+    request<{ product: Product; discount_tiers: DiscountTier[]; rip_tiers: RipTier[]; enrichment: ProductEnrichment | null; ai_blurb: string | null }>(
       `/api/catalog/product/${encodeURIComponent(wholesaler)}/${encodeURIComponent(name)}${qs(opts ?? {})}`
     ),
   editions: () => request<Edition[]>('/api/catalog/editions'),

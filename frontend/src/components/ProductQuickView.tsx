@@ -226,6 +226,17 @@ function QuickViewModal({
               );
             })()}
 
+            {detail?.ai_blurb && (
+              <div className="pv-ai-blurb">
+                <div className="pv-ai-blurb-head">
+                  <span className="pv-ai-blurb-icon" aria-hidden="true">✨</span>
+                  <span>What this means in plain English</span>
+                  <span className="pv-ai-blurb-tag">AI explainer</span>
+                </div>
+                <p>{detail.ai_blurb}</p>
+              </div>
+            )}
+
             {compareWith && pB ? (
               <div style={{
                 display: 'grid',

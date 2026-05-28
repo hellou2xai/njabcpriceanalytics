@@ -97,6 +97,11 @@ def startup():
         except Exception as e:
             print(f"[startup] mover-blurb generation skipped: {e}")
         try:
+            from backend.ai_product_blurbs import warm_product_blurbs_async
+            warm_product_blurbs_async()
+        except Exception as e:
+            print(f"[startup] product-blurb generation skipped: {e}")
+        try:
             from backend.routers.analytics import warm_pm_cache_async
             warm_pm_cache_async()
         except Exception as e:
@@ -136,6 +141,11 @@ def reload_pricing(user: dict = Depends(get_current_user)):
         warm_mover_blurbs_async()
     except Exception as e:
         print(f"[reload] mover-blurb generation skipped: {e}")
+    try:
+        from backend.ai_product_blurbs import warm_product_blurbs_async
+        warm_product_blurbs_async()
+    except Exception as e:
+        print(f"[reload] product-blurb generation skipped: {e}")
     try:
         from backend.routers.analytics import warm_pm_cache_async
         warm_pm_cache_async()

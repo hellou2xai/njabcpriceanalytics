@@ -2360,6 +2360,38 @@ tr:hover .row-menu-btn { opacity: 1; }
 .profile-msg.err { color: var(--red); }
 .profile-help { font-size: 12.5px; color: var(--text-muted); margin: 4px 0 12px; }
 
+/* Plain-English AI explainer rendered on the product detail modal between
+   the enrichment description and the Price Breakdown chart. Pre-generated
+   server-side (see backend.ai_product_blurbs) so opening a product never
+   waits on a model call. Visually a friendly callout, not a sales banner. */
+.pv-ai-blurb {
+  margin: 10px 0 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--accent) 8%, var(--surface)) 0%,
+    var(--surface) 100%);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-left: 4px solid var(--accent);
+}
+.pv-ai-blurb-head {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 700; letter-spacing: 0.2px;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.pv-ai-blurb-icon { font-size: 14px; line-height: 1; }
+.pv-ai-blurb-tag {
+  margin-left: auto;
+  padding: 1px 7px; border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+}
+.pv-ai-blurb p {
+  margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--text);
+}
+
 /* RIP siblings on the product detail modal: one row per UPC sharing the
    product's rip_code, with a colour band on the left whose hue matches the
    cart's RIP-group sticker (same hash). */

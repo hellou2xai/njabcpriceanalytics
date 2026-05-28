@@ -29,6 +29,11 @@ from backend import mailer
 # Token lifetime. Owners stay signed in for 30 days, then re-authenticate.
 TOKEN_TTL_DAYS = 30
 
+# Idle timeout for non-admin sessions. Bumped on every authenticated request;
+# once exceeded, the token is deleted and the user must sign in again. Admins
+# (operator accounts) are exempt so a long-running ops session doesn't drop.
+IDLE_TIMEOUT_HOURS = 1
+
 # PBKDF2 cost. High enough to be slow for an attacker, cheap for one login.
 _PBKDF2_ITERATIONS = 200_000
 
@@ -71,10 +76,11 @@ def verify_password(password: str, stored: str) -> bool:
 
 def _new_token(con, user_id: int) -> str:
     token = secrets.token_urlsafe(32)
-    expires = datetime.now(timezone.utc) + timedelta(days=TOKEN_TTL_DAYS)
+    now = datetime.now(timezone.utc)
+    expires = now + timedelta(days=TOKEN_TTL_DAYS)
     con.execute(
-        "INSERT INTO auth_tokens (token, user_id, expires_at) VALUES (%s, %s, %s)",
-        (token, user_id, expires.isoformat()),
+        "INSERT INTO auth_tokens (token, user_id, expires_at, last_activity) VALUES (%s, %s, %s, %s)",
+        (token, user_id, expires.isoformat(), now.isoformat()),
     )
     return token
 
@@ -108,21 +114,37 @@ def _consume_email_token(con, token: str, purpose: str) -> Optional[int]:
 
 def _user_for_token(con, token: str) -> Optional[dict]:
     row = con.execute(
-        """SELECT u.id, u.email, u.full_name, t.expires_at
+        """SELECT u.id, u.email, u.full_name, t.expires_at, t.last_activity
            FROM auth_tokens t JOIN users u ON u.id = t.user_id
            WHERE t.token = %s""",
         (token,),
     ).fetchone()
     if not row:
         return None
+    now = datetime.now(timezone.utc)
     try:
-        if datetime.fromisoformat(row["expires_at"]) < datetime.now(timezone.utc):
+        if datetime.fromisoformat(row["expires_at"]) < now:
             con.execute("DELETE FROM auth_tokens WHERE token = %s", (token,))
             return None
     except (ValueError, TypeError):
         return None
+    is_admin = _is_admin(row["email"])
+    # Non-admin sessions auto-expire after IDLE_TIMEOUT_HOURS of inactivity.
+    # Admin/operator sessions are exempt so a long-running ops console doesn't drop.
+    if not is_admin and row.get("last_activity"):
+        try:
+            last = datetime.fromisoformat(row["last_activity"])
+            if now - last > timedelta(hours=IDLE_TIMEOUT_HOURS):
+                con.execute("DELETE FROM auth_tokens WHERE token = %s", (token,))
+                return None
+        except (ValueError, TypeError):
+            pass
+    con.execute(
+        "UPDATE auth_tokens SET last_activity = %s WHERE token = %s",
+        (now.isoformat(), token),
+    )
     return {"id": row["id"], "email": row["email"], "full_name": row["full_name"],
-            "is_admin": _is_admin(row["email"])}
+            "is_admin": is_admin}
 
 
 def _token_from_header(authorization: Optional[str]) -> Optional[str]:
@@ -318,7 +340,6 @@ class ProfileUpdate(BaseModel):
 
 
 class PasswordChange(BaseModel):
-    current_password: str
     new_password: str
 
     @field_validator("new_password")
@@ -353,17 +374,26 @@ def update_profile(req: ProfileUpdate, user: dict = Depends(get_current_user)):
 
 
 @router.post("/change-password")
-def change_password(req: PasswordChange, user: dict = Depends(get_current_user)):
+def change_password(req: PasswordChange,
+                    user: dict = Depends(get_current_user),
+                    authorization: Optional[str] = Header(None)):
+    """Set a new password for the signed-in user. The active session is treated
+    as proof of identity (no current-password challenge). Every OTHER session
+    for this user is invalidated so a forgotten browser on another machine
+    can't keep going after a password change."""
+    current_token = _token_from_header(authorization)
     with get_pg() as con:
-        row = con.execute(
-            "SELECT password_hash FROM users WHERE id = %s", (user["id"],)
-        ).fetchone()
-        if not row or not verify_password(req.current_password, row["password_hash"]):
-            raise HTTPException(status_code=403, detail="Current password is incorrect")
         con.execute(
             "UPDATE users SET password_hash = %s WHERE id = %s",
             (hash_password(req.new_password), user["id"]),
         )
+        if current_token:
+            con.execute(
+                "DELETE FROM auth_tokens WHERE user_id = %s AND token != %s",
+                (user["id"], current_token),
+            )
+        else:
+            con.execute("DELETE FROM auth_tokens WHERE user_id = %s", (user["id"],))
     return {"status": "password_changed"}
 
 
@@ -431,10 +461,14 @@ def forgot_password(email: str = Body(..., embed=True)):
 
 @router.post("/reset-password")
 def reset_password(req: ResetPassword):
+    """Consume a reset token, set the new password, and end every other session
+    for this user (e.g. an old browser tab still signed in elsewhere) so the
+    rotated password is the only credential that works."""
     with get_pg() as con:
         user_id = _consume_email_token(con, req.token, "reset")
         if not user_id:
             raise HTTPException(status_code=400, detail="This reset link is invalid or has expired.")
         con.execute("UPDATE users SET password_hash = %s WHERE id = %s",
                     (hash_password(req.new_password), user_id))
+        con.execute("DELETE FROM auth_tokens WHERE user_id = %s", (user_id,))
     return {"status": "password_reset"}

@@ -577,7 +577,7 @@ export const auth = {
   me: () => request<{ user: AuthUser }>('/api/auth/me'),
   updateProfile: (data: { full_name?: string; email?: string }) =>
     request<{ user: AuthUser }>('/api/auth/profile', { method: 'PUT', body: JSON.stringify(data) }),
-  changePassword: (data: { current_password: string; new_password: string }) =>
+  changePassword: (data: { new_password: string }) =>
     request<{ status: string }>('/api/auth/change-password', { method: 'POST', body: JSON.stringify(data) }),
   activate: (token: string) =>
     request<AuthResponse>('/api/auth/activate', { method: 'POST', body: JSON.stringify({ token }) }),

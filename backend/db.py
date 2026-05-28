@@ -94,7 +94,8 @@ def init_user_db():
             token text PRIMARY KEY,
             user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             created_at text DEFAULT {NOW_UTC},
-            expires_at text NOT NULL
+            expires_at text NOT NULL,
+            last_activity text DEFAULT {NOW_UTC}
         )""",
         f"""CREATE TABLE IF NOT EXISTS stores (
             id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -400,6 +401,18 @@ def init_user_db():
         if not has_col:
             con.execute("ALTER TABLE users ADD COLUMN activated integer DEFAULT 0")
             con.execute("UPDATE users SET activated = 1")
+        # Session idle-timeout tracking. last_activity is bumped on every
+        # authenticated request; non-admin sessions are auto-expired after
+        # IDLE_TIMEOUT_HOURS of inactivity (see backend/auth.py). Backfill
+        # existing rows so users on a session at migration time get a fresh
+        # idle window rather than being kicked instantly.
+        has_last_activity = con.execute(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'auth_tokens' AND column_name = 'last_activity'"
+        ).fetchone()
+        if not has_last_activity:
+            con.execute(f"ALTER TABLE auth_tokens ADD COLUMN last_activity text DEFAULT {NOW_UTC}")
+            con.execute(f"UPDATE auth_tokens SET last_activity = {NOW_UTC} WHERE last_activity IS NULL")
         # Add later columns to an existing users table if they are missing.
         # (CREATE TABLE IF NOT EXISTS won't alter an existing table.)
         for col, ddl in (

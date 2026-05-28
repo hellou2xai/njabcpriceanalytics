@@ -12,7 +12,6 @@ export default function Profile() {
   const [profileMsg, setProfileMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [savingProfile, setSavingProfile] = useState(false);
 
-  const [currentPw, setCurrentPw] = useState('');
   const [newPw, setNewPw] = useState('');
   const [confirmPw, setConfirmPw] = useState('');
   const [pwMsg, setPwMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -49,9 +48,9 @@ export default function Profile() {
     }
     setSavingPw(true);
     try {
-      await authApi.changePassword({ current_password: currentPw, new_password: newPw });
-      setPwMsg({ ok: true, text: 'Password changed.' });
-      setCurrentPw(''); setNewPw(''); setConfirmPw('');
+      await authApi.changePassword({ new_password: newPw });
+      setPwMsg({ ok: true, text: 'Password changed. Any other devices signed in to your account were signed out.' });
+      setNewPw(''); setConfirmPw('');
     } catch (err) {
       setPwMsg({ ok: false, text: err instanceof Error ? err.message : 'Could not change password.' });
     } finally {
@@ -83,10 +82,6 @@ export default function Profile() {
           <h3>Change password</h3>
           {pwMsg && <div className={`profile-msg ${pwMsg.ok ? 'ok' : 'err'}`}>{pwMsg.text}</div>}
           <label className="profile-field">
-            <span>Current password</span>
-            <input type="password" value={currentPw} onChange={e => setCurrentPw(e.target.value)} autoComplete="current-password" />
-          </label>
-          <label className="profile-field">
             <span>New password</span>
             <input type="password" value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="At least 8 characters" autoComplete="new-password" />
           </label>
@@ -94,7 +89,8 @@ export default function Profile() {
             <span>Confirm new password</span>
             <input type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} autoComplete="new-password" />
           </label>
-          <button type="submit" className="btn" disabled={savingPw || !currentPw || !newPw}>
+          <p className="profile-help">Saving signs out any other devices currently using this account.</p>
+          <button type="submit" className="btn" disabled={savingPw || !newPw}>
             {savingPw ? 'Updating...' : 'Update password'}
           </button>
         </form>

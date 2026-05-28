@@ -2392,12 +2392,17 @@ tr:hover .row-menu-btn { opacity: 1; }
   margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--text);
 }
 
-/* Catalog "Group by Case Mix RIP" badges. The colour matches the row's
-   left band (same hue derivation everywhere a rip_code shows up: catalog,
-   product detail siblings panel, cart). */
+/* Catalog "Group by Case Mix RIP" badges. The colour is assigned from a
+   curated palette in order of appearance per page (see CatalogTable
+   buildRipPaletteMap) so adjacent clustered groups always read as
+   visually distinct. A UPC stacked under multiple RIP codes gets one
+   sticker per code, each in its own palette colour. */
+.catalog-rip-group-row {
+  display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px;
+  margin-top: 4px;
+}
 .catalog-rip-group-badge {
   display: inline-flex; align-items: center; gap: 4px;
-  margin-top: 4px; margin-right: 6px;
   padding: 2px 8px; font-size: 10px; font-weight: 700; letter-spacing: 0.2px;
   border-radius: 10px; white-space: nowrap;
 }

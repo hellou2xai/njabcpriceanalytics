@@ -1,4 +1,4 @@
-import { Fragment } from 'react';
+import { Fragment, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import FavoriteButton from './FavoriteButton';
 import ProductThumb from './ProductThumb';
@@ -24,14 +24,42 @@ export function shortUnit(u?: string | null): string {
   return u;
 }
 
-// Stable colour hue for a RIP code so the same rebate gets the same swatch
-// across the catalog rows, the product detail siblings panel, and the cart.
-function ripHue(code?: string | null): number | null {
-  if (!code) return null;
-  const s = String(code);
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
-  return h;
+// Distinct-colour palette for RIP groups in a table view. We assign colours
+// by order-of-appearance on the page (not by hashing the code) so adjacent
+// groups never collide: codes 111200 / 111201 / 111202 cluster together in
+// SQL but had nearly identical hashed hues, defeating the whole point of
+// grouping. Twelve evenly-spaced, high-saturation hues are plenty for what
+// a single catalog page shows; we cycle if a page somehow has more.
+export interface RipPaletteEntry { stripe: string; tint: string; text: string; border: string }
+export const RIP_PALETTE: RipPaletteEntry[] = [
+  { stripe: '#2563eb', tint: '#dbeafe', text: '#1e40af', border: '#bfdbfe' }, // blue
+  { stripe: '#dc2626', tint: '#fee2e2', text: '#991b1b', border: '#fecaca' }, // red
+  { stripe: '#16a34a', tint: '#dcfce7', text: '#14532d', border: '#bbf7d0' }, // green
+  { stripe: '#ea580c', tint: '#ffedd5', text: '#9a3412', border: '#fdba74' }, // orange
+  { stripe: '#7c3aed', tint: '#ede9fe', text: '#5b21b6', border: '#ddd6fe' }, // purple
+  { stripe: '#0891b2', tint: '#cffafe', text: '#155e75', border: '#a5f3fc' }, // cyan
+  { stripe: '#db2777', tint: '#fce7f3', text: '#9d174d', border: '#fbcfe8' }, // pink
+  { stripe: '#65a30d', tint: '#ecfccb', text: '#365314', border: '#bef264' }, // lime
+  { stripe: '#0d9488', tint: '#ccfbf1', text: '#134e4a', border: '#99f6e4' }, // teal
+  { stripe: '#a16207', tint: '#fef3c7', text: '#713f12', border: '#fde68a' }, // amber
+  { stripe: '#4f46e5', tint: '#e0e7ff', text: '#3730a3', border: '#c7d2fe' }, // indigo
+  { stripe: '#be123c', tint: '#ffe4e6', text: '#881337', border: '#fecdd3' }, // rose
+];
+
+// Map every distinct rip code on a page to its palette slot in the order it
+// first appears, so the visual band rotation matches the SQL cluster order.
+export function buildRipPaletteMap(codes: Iterable<string | null | undefined>): Map<string, RipPaletteEntry> {
+  const map = new Map<string, RipPaletteEntry>();
+  let idx = 0;
+  for (const raw of codes) {
+    if (!raw) continue;
+    const c = String(raw);
+    if (!map.has(c)) {
+      map.set(c, RIP_PALETTE[idx % RIP_PALETTE.length]);
+      idx++;
+    }
+  }
+  return map;
 }
 function fmt(v: number | null | undefined, prefix = '$'): string {
   return v == null ? '-' : `${prefix}${v.toFixed(2)}`;
@@ -88,6 +116,18 @@ interface Props {
  * the Catalog screen and the Order Analysis screen so they render identically.
  */
 export default function CatalogTable({ items, open, cart, updateQty, sortControls, comboLink, showIntroduced }: Props) {
+  // Palette assignment for "Group by RIP" coloured row bands. Built once
+  // per items snapshot in order of appearance so adjacent SQL-clustered
+  // groups always get visually distinct slots (no hash collisions). We feed
+  // primary codes FIRST so the band/sort cluster colour always lands in the
+  // first slots; secondary stacked codes pick up the next free palette
+  // entries.
+  const ripPalette = useMemo(() => {
+    const ordered: (string | null | undefined)[] = [];
+    for (const i of items) ordered.push(i.rip_group_code ?? null);
+    for (const i of items) for (const c of (i.rip_all_codes ?? [])) ordered.push(c);
+    return buildRipPaletteMap(ordered);
+  }, [items]);
   const sortIcon = (col: string) =>
     sortControls && sortControls.sort === col ? (sortControls.order === 'asc' ? ' ▲' : ' ▼') : '';
   const headSort = (col: SortKey) => sortControls
@@ -123,14 +163,13 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
             const tiers: CatalogTier[] = item.tiers ?? [];
             const hasTiers = tiers.length > 0;
             // RIP-group decoration (only populated when the catalog requested
-            // group_by_rip). hue picks the same colour as the cart RIP group
-            // and the detail-modal sibling band so the user can scan related
-            // rows together.
+            // group_by_rip). Palette is assigned in order-of-appearance so
+            // adjacent clusters always get visually distinct colours.
             const ripGroupCode = item.rip_group_code ?? null;
-            const ripHueVal = ripHue(ripGroupCode);
-            const ripBandStyle: React.CSSProperties = ripHueVal != null
-              ? { boxShadow: `inset 6px 0 0 hsl(${ripHueVal} 65% 55%)`,
-                  background: `linear-gradient(90deg, hsl(${ripHueVal} 75% 96%) 0, transparent 220px)` }
+            const ripColour = ripGroupCode ? ripPalette.get(String(ripGroupCode)) ?? null : null;
+            const ripBandStyle: React.CSSProperties = ripColour
+              ? { boxShadow: `inset 6px 0 0 ${ripColour.stripe}`,
+                  background: `linear-gradient(90deg, ${ripColour.tint} 0, transparent 240px)` }
               : {};
             const showMismatch = !!item.rip_cpl_mismatch && !!ripGroupCode;
             return (
@@ -184,19 +223,42 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                                  title="This product is part of a combo bundle — open in a popup">🎁 In combo</a>
                             : null;
                         })()}
-                        {ripGroupCode && (
-                          <span
-                            className="catalog-rip-group-badge"
-                            title={`Part of RIP rebate ${ripGroupCode}. Items sharing this code must be purchased together to qualify.`}
-                            style={ripHueVal != null
-                              ? { background: `hsl(${ripHueVal} 75% 93%)`,
-                                  color: `hsl(${ripHueVal} 65% 28%)`,
-                                  border: `1px solid hsl(${ripHueVal} 60% 78%)` }
-                              : undefined}
-                          >
-                            🔗 RIP {ripGroupCode}
-                          </span>
-                        )}
+                        {ripGroupCode && (() => {
+                          // Render one coloured sticker per RIP code this UPC
+                          // qualifies under, with the primary (cluster) code
+                          // first. A SKU stacked under 5 rebates shows 5
+                          // stickers so the buyer sees every rebate the UPC
+                          // is eligible for in one glance.
+                          const all = (item.rip_all_codes && item.rip_all_codes.length > 0)
+                            ? item.rip_all_codes
+                            : [String(ripGroupCode)];
+                          const codes = [
+                            String(ripGroupCode),
+                            ...all.filter(c => String(c) !== String(ripGroupCode)),
+                          ];
+                          return (
+                            <span className="catalog-rip-group-row">
+                              {codes.map((c, i) => {
+                                const col = ripPalette.get(c) ?? ripColour;
+                                const isPrimary = i === 0;
+                                return (
+                                  <span
+                                    key={c}
+                                    className="catalog-rip-group-badge"
+                                    title={isPrimary
+                                      ? `Part of RIP rebate ${c}. Items sharing this code must be purchased together to qualify.`
+                                      : `Also qualifies under RIP rebate ${c}.`}
+                                    style={col
+                                      ? { background: col.tint, color: col.text, border: `1px solid ${col.border}` }
+                                      : undefined}
+                                  >
+                                    🔗 RIP {c}
+                                  </span>
+                                );
+                              })}
+                            </span>
+                          );
+                        })()}
                         {showMismatch && (
                           <span className="catalog-rip-mismatch-badge"
                             title={`This UPC is listed under RIP ${ripGroupCode} on the RIP sheet, but the CPL row references a different code. Verify with the sales rep before relying on the rebate.`}

@@ -10,7 +10,7 @@ import { useProductQuickView } from '../components/ProductQuickView';
 import DataLoading from '../components/DataLoading';
 import AddToCartButton from '../components/AddToCartButton';
 import AddToListButton from '../components/AddToListButton';
-import { QtyStepper, loadCart, saveCart, type CartState } from '../components/CatalogTable';
+import { QtyStepper, loadCart, saveCart, buildRipPaletteMap, type CartState } from '../components/CatalogTable';
 import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
 
 function tierLabel(unit?: string | null): string {
@@ -132,6 +132,14 @@ export default function RipProducts() {
   });
 
   const rawItems = data?.items ?? [];
+
+  // Palette assignment by order of appearance so adjacent RIP clusters in
+  // the table always render in visually distinct colours (no two-near-codes
+  // hash collision).
+  const ripPalette = useMemo(
+    () => buildRipPaletteMap(rawItems.map(i => i.rip_number ?? null)),
+    [rawItems],
+  );
 
   // When Group by RIP is on, re-order the loaded page so products sharing a
   // rip_number cluster together. The existing per-product tier grouping
@@ -411,19 +419,19 @@ export default function RipProducts() {
 
                 const code = item.rip_number ?? '';
 
-                // Coloured left band when Group by RIP is on. Stable hue per
-                // rip_number matches the Catalog table and the cart's RIP
-                // group sticker so the same rebate reads the same colour
-                // everywhere in the app. Drawn as an inset shadow so existing
-                // row layout / padding stays unchanged.
+                // Coloured left band when Group by RIP is on. Palette is
+                // assigned in order of appearance (see ripPalette above) so
+                // adjacent clustered groups always read as visually distinct
+                // colours.
                 let ripBandStyle: React.CSSProperties | undefined;
                 if (groupByRip && code) {
-                  let h = 0;
-                  for (let i = 0; i < code.length; i++) h = (h * 31 + code.charCodeAt(i)) % 360;
-                  ripBandStyle = {
-                    boxShadow: `inset 6px 0 0 hsl(${h} 65% 55%)`,
-                    background: `linear-gradient(90deg, hsl(${h} 75% 96%) 0, transparent 220px)`,
-                  };
+                  const col = ripPalette.get(code);
+                  if (col) {
+                    ripBandStyle = {
+                      boxShadow: `inset 6px 0 0 ${col.stripe}`,
+                      background: `linear-gradient(90deg, ${col.tint} 0, transparent 240px)`,
+                    };
+                  }
                 }
 
                 return (

@@ -699,6 +699,11 @@ export interface Product {
   rip_group_code?: string | null;
   rip_group_count?: number | null;
   rip_cpl_mismatch?: boolean | null;
+  // Every RIP code this UPC qualifies under in the RIP sheet (a single UPC
+  // can stack across multiple rebates). rip_group_code is the primary one
+  // used for clustering / sort; the UI also shows a sticker per entry here
+  // so the buyer sees every rebate the SKU is eligible for.
+  rip_all_codes?: string[] | null;
   brand?: string;
   discount_1_qty?: string | null;
   discount_1_amt?: number | null;

@@ -798,6 +798,41 @@ def search_products(
                 if isinstance(v, float) and _math.isnan(v):
                     rec[k] = None
 
+        # When the toggle is on, attach the FULL list of RIP codes per UPC
+        # (a single UPC can stack across several rebates). Done as a separate
+        # batch lookup so we hand FastAPI a clean Python list[str] instead of
+        # the numpy ndarray DuckDB returns from list_sort/list_distinct,
+        # which the encoder cannot serialize.
+        if group_by_rip and records:
+            pairs = sorted({(r.get("wholesaler"), r.get("edition"), str(r.get("upc") or ""))
+                            for r in records if r.get("upc")})
+            codes_by_key: dict[tuple, list[str]] = {}
+            if pairs:
+                ph = ", ".join(f"($w{i}, $e{i}, $u{i})" for i in range(len(pairs)))
+                prm = {}
+                for i, (w, e, u) in enumerate(pairs):
+                    prm[f"w{i}"], prm[f"e{i}"], prm[f"u{i}"] = w, e, u
+                try:
+                    rip_src2 = read_parquet(con, "rip")
+                    rdf = con.execute(f"""
+                        SELECT DISTINCT wholesaler, edition,
+                               CAST(upc AS VARCHAR) AS upc,
+                               CAST(rip_code AS VARCHAR) AS rip_code
+                        FROM {rip_src2}
+                        WHERE upc IS NOT NULL AND rip_code IS NOT NULL
+                          AND CAST(upc AS VARCHAR) <> '' AND CAST(rip_code AS VARCHAR) <> ''
+                          AND (wholesaler, edition, CAST(upc AS VARCHAR)) IN ({ph})
+                    """, prm).fetchdf()
+                    for _, r in rdf.iterrows():
+                        key = (r["wholesaler"], r["edition"], r["upc"])
+                        codes_by_key.setdefault(key, []).append(str(r["rip_code"]))
+                except Exception:
+                    codes_by_key = {}
+            for rec in records:
+                key = (rec.get("wholesaler"), rec.get("edition"), str(rec.get("upc") or ""))
+                codes = codes_by_key.get(key)
+                rec["rip_all_codes"] = sorted(set(codes)) if codes else None
+
         # Look up next-month prices for the same UPCs so the UI can show
         # a "Better Price: Same / This Month / Next Month" column.
         if not edition:

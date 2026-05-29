@@ -96,11 +96,31 @@ function QuickViewModal({
     queryFn: () => catalog.product(wholesaler, productName, { edition: months?.curr, upc, unit_volume: unitVolume, unit_qty: unitQty, vintage }),
   });
 
+  // Auto-derive a current/next edition pair from whatever this page loaded,
+  // so EVERY product detail shows two charts (this month + next month) even
+  // when the opener didn't pass `months` explicitly. nextYM bumps a YYYY-MM
+  // string by one calendar month with year roll-over.
+  const nextYM = (ym?: string | null): string | null => {
+    if (!ym) return null;
+    const m = /^(\d{4})-(\d{1,2})$/.exec(ym);
+    if (!m) return null;
+    const y = parseInt(m[1], 10); const mo = parseInt(m[2], 10);
+    const ny = mo === 12 ? y + 1 : y;
+    const nm = mo === 12 ? 1 : mo + 1;
+    return `${ny}-${String(nm).padStart(2, '0')}`;
+  };
+  const detailEd = detail?.product?.edition ?? null;
+  const effectiveMonths: MonthCompare | undefined = months
+    ? months
+    : (detailEd ? { curr: detailEd, next: nextYM(detailEd) ?? detailEd } : undefined);
+
   // Next-month edition of the SAME SKU, for month-over-month breakdown.
+  // Fires as soon as we know which edition the current detail belongs to,
+  // so the two-chart layout is the default for every page using quick view.
   const { data: detailNext } = useQuery({
-    enabled: !!months,
-    queryKey: ['product-detail', wholesaler, productName, upc, unitVolume, unitQty, vintage, months?.next],
-    queryFn: () => catalog.product(wholesaler, productName, { edition: months!.next, upc, unit_volume: unitVolume, unit_qty: unitQty, vintage }),
+    enabled: !!effectiveMonths?.next && effectiveMonths.next !== effectiveMonths.curr,
+    queryKey: ['product-detail', wholesaler, productName, upc, unitVolume, unitQty, vintage, effectiveMonths?.next],
+    queryFn: () => catalog.product(wholesaler, productName, { edition: effectiveMonths!.next, upc, unit_volume: unitVolume, unit_qty: unitQty, vintage }),
   });
 
   const { data: history } = useQuery({
@@ -297,12 +317,14 @@ function QuickViewModal({
                 discountTiers: discs ?? [],
               });
               // Month-over-month: this edition vs next edition of the same SKU.
-              const monthMode = !!months && !!detailNext?.product;
+              // Auto-on whenever we have both editions loaded; the explicit
+              // `months` prop is no longer required.
+              const monthMode = !!effectiveMonths && !!detailNext?.product;
               let sides;
-              if (monthMode && detailNext) {
+              if (monthMode && detailNext && effectiveMonths) {
                 sides = [
-                  side(p, `This month · ${monthLabel(months!.curr)}`, detail.rip_tiers, detail.discount_tiers),
-                  side(detailNext.product, `Next month · ${monthLabel(months!.next)}`, detailNext.rip_tiers, detailNext.discount_tiers),
+                  side(p, `This month · ${monthLabel(effectiveMonths.curr)}`, detail.rip_tiers, detail.discount_tiers),
+                  side(detailNext.product, `Next month · ${monthLabel(effectiveMonths.next)}`, detailNext.rip_tiers, detailNext.discount_tiers),
                 ];
               } else {
                 sides = [side(p, distributorName(wholesaler), detail.rip_tiers, detail.discount_tiers)];

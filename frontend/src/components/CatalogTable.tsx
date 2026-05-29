@@ -194,42 +194,7 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                   <td className="card-title-cell">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <ProductThumb src={item.image_url} alt={item.product_name} size={64} />
-                      {/* This-month vs next-month sparkline + popover. Built
-                          from the row's tiers (per-tier RIP detail for
-                          current month) and the aggregated next_case_price /
-                          next_effective_case_price for next month. */}
-                      {(() => {
-                        const ce = item.effective_case_price ?? item.frontline_case_price ?? null;
-                        const ne = item.next_effective_case_price ?? item.next_case_price ?? null;
-                        if (ce == null && ne == null) return null;
-                        const discTiers = (item.tiers ?? []).filter(t => t.source === 'discount');
-                        const ripTiers  = (item.tiers ?? []).filter(t => t.source === 'rip');
-                        const bestDisc = discTiers.length
-                          ? Math.min(...discTiers.map(t => t.price_after ?? Infinity).filter(v => Number.isFinite(v)))
-                          : null;
-                        const curr = {
-                          edition: item.edition ?? null,
-                          frontline: item.frontline_case_price ?? null,
-                          afterDiscount: bestDisc != null && Number.isFinite(bestDisc) ? bestDisc : null,
-                          ripTiers: ripTiers
-                            .map(t => ({ qty: t.qty, unit: t.unit, eff: t.price_after ?? 0 }))
-                            .filter(t => t.eff > 0),
-                          bestEff: ce,
-                        };
-                        const next = {
-                          edition: null,
-                          frontline: item.next_case_price ?? null,
-                          afterDiscount: null,
-                          ripTiers: [],
-                          bestEff: ne,
-                        };
-                        return (
-                          <span onClick={e => e.stopPropagation()}>
-                            <MonthEffectiveSparkline curr={curr} next={next} />
-                          </span>
-                        );
-                      })()}
-                      <div style={{ minWidth: 0 }}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
                         <div style={{ fontWeight: 600 }}>{item.product_name}</div>
                         {/* Identifier line per Provi-style layout: Size and
                             bottles-per-case sit right under the name so the
@@ -275,19 +240,23 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                         {ripGroupCode && (() => {
                           // Render one coloured sticker per RIP code this UPC
                           // qualifies under, with the primary (cluster) code
-                          // first. A SKU stacked under 5 rebates shows 5
-                          // stickers so the buyer sees every rebate the UPC
-                          // is eligible for in one glance.
+                          // first. Hard cap at 8 stickers + "+N more": some
+                          // stub UPCs in the RIP sheet match HUNDREDS of
+                          // codes and would otherwise blow up the row into a
+                          // wall of badges.
+                          const HARD_CAP = 8;
                           const all = (item.rip_all_codes && item.rip_all_codes.length > 0)
                             ? item.rip_all_codes
                             : [String(ripGroupCode)];
-                          const codes = [
+                          const ordered = [
                             String(ripGroupCode),
                             ...all.filter(c => String(c) !== String(ripGroupCode)),
                           ];
+                          const visible = ordered.slice(0, HARD_CAP);
+                          const overflow = ordered.length - visible.length;
                           return (
                             <span className="catalog-rip-group-row">
-                              {codes.map((c, i) => {
+                              {visible.map((c, i) => {
                                 const col = ripPalette.get(c) ?? ripColour;
                                 const isPrimary = i === 0;
                                 return (
@@ -305,6 +274,15 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                                   </span>
                                 );
                               })}
+                              {overflow > 0 && (
+                                <span
+                                  className="catalog-rip-group-badge"
+                                  title={`This UPC also qualifies under ${overflow} additional RIP code${overflow === 1 ? '' : 's'}. Open the product to see the full list.`}
+                                  style={{ background: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+                                >
+                                  +{overflow} more
+                                </span>
+                              )}
                             </span>
                           );
                         })()}
@@ -341,6 +319,53 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                             upc={item.upc} unitVolume={item.unit_volume} />
                         </div>
                       </div>
+                      {/* This-month vs next-month sparkline sits on the
+                          RIGHT side of the product cell, after the name +
+                          spec + badges block, so the catalog row isn't
+                          crowded next to the thumbnail. Popover lays out
+                          Frontline / After Discount / RIP tiers / Best for
+                          both months side by side. */}
+                      {(() => {
+                        const ce = item.effective_case_price ?? item.frontline_case_price ?? null;
+                        const ne = item.next_effective_case_price ?? item.next_case_price ?? null;
+                        if (ce == null && ne == null) return null;
+                        const buildBlock = (
+                          tiers: CatalogTier[] | undefined,
+                          frontline: number | null,
+                          bestEff: number | null,
+                          edition: string | null,
+                        ) => {
+                          const disc = (tiers ?? []).filter(t => t.source === 'discount');
+                          const rip  = (tiers ?? []).filter(t => t.source === 'rip');
+                          const bestDisc = disc.length
+                            ? Math.min(...disc.map(t => t.price_after ?? Infinity).filter(v => Number.isFinite(v)))
+                            : null;
+                          return {
+                            edition,
+                            frontline,
+                            afterDiscount: bestDisc != null && Number.isFinite(bestDisc) ? bestDisc : null,
+                            ripTiers: rip
+                              .map(t => ({ qty: t.qty, unit: t.unit, eff: t.price_after ?? 0 }))
+                              .filter(t => t.eff > 0),
+                            bestEff,
+                          };
+                        };
+                        const nextEd = (() => {
+                          const m = /^(\d{4})-(\d{1,2})$/.exec(item.edition ?? '');
+                          if (!m) return null;
+                          const y = parseInt(m[1], 10), mo = parseInt(m[2], 10);
+                          const ny = mo === 12 ? y + 1 : y;
+                          const nm = mo === 12 ? 1 : mo + 1;
+                          return `${ny}-${String(nm).padStart(2, '0')}`;
+                        })();
+                        const curr = buildBlock(item.tiers, item.frontline_case_price ?? null, ce, item.edition ?? null);
+                        const next = buildBlock(item.next_tiers, item.next_case_price ?? null, ne, nextEd);
+                        return (
+                          <span onClick={e => e.stopPropagation()} style={{ marginLeft: 'auto', flexShrink: 0 }}>
+                            <MonthEffectiveSparkline curr={curr} next={next} />
+                          </span>
+                        );
+                      })()}
                     </div>
                   </td>
                   <td data-label="Distributor"><span className="cell-distributor-badge">{distributorName(item.wholesaler)}</span></td>

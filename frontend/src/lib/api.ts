@@ -727,6 +727,10 @@ export interface Product {
   discount_5_qty?: string | null;
   discount_5_amt?: number | null;
   tiers?: CatalogTier[];
+  // Same shape as `tiers` but computed against next month's edition, so the
+  // catalog row sparkline popover can show Frontline / After Discount /
+  // RIP tiers for both months.
+  next_tiers?: CatalogTier[];
   next_case_price?: number | null;
   next_effective_case_price?: number | null;
   better_month?: 'Same' | 'This Month' | 'Next Month' | null;

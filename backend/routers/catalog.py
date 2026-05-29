@@ -451,6 +451,74 @@ def _attach_discount_rip_tiers(con, records):
         rec["tiers"] = disc + rips
 
 
+def _attach_next_tiers(con, records):
+    """Attach a ``next_tiers`` list per record: the same shape as ``tiers``
+    but computed against the SAME UPC in next month's edition. Lets the
+    Catalog row's this-vs-next sparkline popover show Frontline / After
+    Discount / RIP tier breakdown for both months (not just current).
+
+    No-op when no UPCs are present or no next-edition row matches; rows
+    without a next-edition match get ``next_tiers = []``."""
+    if not records:
+        return
+    next_ym = _next_yyyy_mm()
+    upcs = sorted({str(r["upc"]) for r in records if r.get("upc")})
+    if not upcs:
+        for r in records:
+            r["next_tiers"] = []
+        return
+    src = read_parquet(con, "cpl_enriched")
+    upc_ph = ", ".join(f"$u{i}" for i in range(len(upcs)))
+    up_params = {f"u{i}": u for i, u in enumerate(upcs)}
+    try:
+        df = con.execute(f"""
+            SELECT wholesaler, edition, upc, product_name, unit_volume, unit_qty,
+                   frontline_case_price, frontline_unit_price,
+                   discount_1_qty, discount_1_amt, discount_2_qty, discount_2_amt,
+                   discount_3_qty, discount_3_amt, discount_4_qty, discount_4_amt,
+                   discount_5_qty, discount_5_amt,
+                   rip_code
+            FROM {src}
+            WHERE edition = $next_ym AND upc IN ({upc_ph})
+        """, {**up_params, "next_ym": next_ym}).fetchdf()
+    except Exception:
+        for r in records:
+            r["next_tiers"] = []
+        return
+
+    # Build a (wholesaler, upc, product_name, unit_volume) -> dict map of the
+    # next-edition rows, with fallbacks for the cases where a row carries a
+    # less-specific identity.
+    next_rows: list[dict] = []
+    by_full: dict = {}
+    by_name: dict = {}
+    by_upc: dict = {}
+    for _, nr in df.iterrows():
+        d = dict(nr)
+        next_rows.append(d)
+        ws = d.get("wholesaler"); upc = str(d.get("upc") or "")
+        nm = d.get("product_name") or ""; vol = d.get("unit_volume") or ""
+        by_full[(ws, upc, nm, vol)] = d
+        by_full.setdefault((ws, upc, nm), d)
+        by_name[(ws, nm, vol)] = d
+        by_name.setdefault((ws, nm), d)
+        by_upc[(ws, upc, vol)] = d
+        by_upc.setdefault((ws, upc), d)
+
+    # Reuse _attach_discount_rip_tiers on the next-edition dicts; it sets
+    # next_rows[i]["tiers"] in place using next-edition rip_code/edition.
+    if next_rows:
+        _attach_discount_rip_tiers(con, next_rows)
+
+    for rec in records:
+        ws = rec.get("wholesaler"); upc = str(rec.get("upc") or "")
+        nm = rec.get("product_name") or ""; vol = rec.get("unit_volume") or ""
+        match = (by_full.get((ws, upc, nm, vol)) or by_full.get((ws, upc, nm))
+                 or by_name.get((ws, nm, vol)) or by_name.get((ws, nm))
+                 or by_upc.get((ws, upc, vol)) or by_upc.get((ws, upc)))
+        rec["next_tiers"] = match.get("tiers", []) if match else []
+
+
 def _attach_dup_upc(con, src, records):
     """For each row's UPC, work out whether the same barcode is carried by several
     distributors (informational: the same product at multiple suppliers) versus
@@ -737,6 +805,11 @@ def search_products(
                 -- can be stacked under multiple rebates). MIN() is the
                 -- deterministic canonical group code; the list lets us tell
                 -- whether the CPL's rip_code is a valid member.
+                -- IMPORTANT: drop stub UPC values ('0', 'None', 'nan'). The
+                -- RIP sheet uses '0' as a placeholder when the rebate isn't
+                -- tied to a specific UPC; matching products that also carry
+                -- UPC '0' (e.g. kegs) against those would put every RIP code
+                -- on every keg row.
                 SELECT wholesaler AS rg_wholesaler,
                        edition    AS rg_edition,
                        CAST(upc AS VARCHAR) AS rg_upc,
@@ -744,8 +817,10 @@ def search_products(
                        COUNT(DISTINCT CAST(rip_code AS VARCHAR)) AS rip_group_count,
                        list_distinct(list(CAST(rip_code AS VARCHAR))) AS rip_group_codes
                 FROM {rip_src}
-                WHERE upc IS NOT NULL AND CAST(upc AS VARCHAR) <> ''
-                  AND rip_code IS NOT NULL AND CAST(rip_code AS VARCHAR) <> ''
+                WHERE upc IS NOT NULL
+                  AND CAST(upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
+                  AND rip_code IS NOT NULL
+                  AND CAST(rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
                 GROUP BY wholesaler, edition, CAST(upc AS VARCHAR)
             )
             SELECT wholesaler, edition, upc, product_name, product_type,
@@ -820,7 +895,8 @@ def search_products(
                                CAST(rip_code AS VARCHAR) AS rip_code
                         FROM {rip_src2}
                         WHERE upc IS NOT NULL AND rip_code IS NOT NULL
-                          AND CAST(upc AS VARCHAR) <> '' AND CAST(rip_code AS VARCHAR) <> ''
+                          AND CAST(upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
+                          AND CAST(rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
                           AND (wholesaler, edition, CAST(upc AS VARCHAR)) IN ({ph})
                     """, prm).fetchdf()
                     for _, r in rdf.iterrows():
@@ -841,6 +917,9 @@ def search_products(
         # Optionally enrich each item with discount + RIP tier sub-rows.
         if include_tiers:
             _attach_discount_rip_tiers(con, records)
+            # And the SAME shape for next month so the row sparkline popover
+            # can show Frontline / After Discount / RIP / Best for both.
+            _attach_next_tiers(con, records)
 
         # Go-UPC thumbnail per row (one batch query; served from R2 CDN).
         _attach_enrichment_image(con, records)

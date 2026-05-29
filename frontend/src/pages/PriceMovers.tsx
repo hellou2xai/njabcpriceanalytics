@@ -10,7 +10,7 @@ import ProductThumb from '../components/ProductThumb';
 import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
 import PromotionsToolbar from '../components/PromotionsToolbar';
 import PromotionsTable, { type PromotionRow } from '../components/PromotionsTable';
-import DealSparkline from '../components/DealSparkline';
+import MonthEffectiveSparkline from '../components/MonthEffectiveSparkline';
 import { useProductQuickView } from '../components/ProductQuickView';
 import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
 
@@ -320,14 +320,30 @@ function MoverCard({ d, isDrop, open }: { d: PriceMover; isDrop: boolean; open: 
       </div>
 
       <div className="deal-card-spark" onClick={(e) => e.stopPropagation()}>
-        <DealSparkline
-          wholesaler={d.wholesaler}
-          productName={d.product_name}
-          interactive
-          upc={d.upc ?? undefined}
-          unitVolume={d.unit_volume ?? undefined}
-          curEdition={d.cur_edition ?? d.edition ?? undefined}
-          nextEdition={d.next_edition ?? undefined}
+        {/* Same this-month vs next-month sparkline + popover as the
+            Catalog row. Price-mover items already carry both editions
+            and their effective + frontline prices so the sparkline
+            renders two dots and the popover shows Frontline / Best
+            for both months side by side. Tier ladders aren't on the
+            payload, so the popover's discount / RIP sections stay
+            empty — that part needs a backend join to surface. */}
+        <MonthEffectiveSparkline
+          curr={{
+            edition: d.cur_edition ?? d.edition ?? null,
+            frontline: d.frontline_case_price ?? null,
+            afterDiscount: null,
+            discountTiers: [],
+            ripTiers: [],
+            bestEff: d.case_price ?? d.effective_case_price ?? null,
+          }}
+          next={{
+            edition: d.next_edition ?? null,
+            frontline: d.frontline_next_case_price ?? null,
+            afterDiscount: null,
+            discountTiers: [],
+            ripTiers: [],
+            bestEff: d.next_case_price ?? null,
+          }}
         />
         <span className="text-muted" style={{ fontSize: 11 }}>Edition {fmtEdition(d.edition)}</span>
       </div>

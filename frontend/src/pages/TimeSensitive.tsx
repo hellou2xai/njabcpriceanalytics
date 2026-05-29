@@ -10,7 +10,7 @@ import ProductThumb from '../components/ProductThumb';
 import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
 import PromotionsToolbar from '../components/PromotionsToolbar';
 import PromotionsTable, { type PromotionRow } from '../components/PromotionsTable';
-import DealSparkline from '../components/DealSparkline';
+import MonthEffectiveSparkline from '../components/MonthEffectiveSparkline';
 import { useProductQuickView } from '../components/ProductQuickView';
 import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
 
@@ -299,7 +299,30 @@ function DealCard({ d, open }: { d: TimeSensitiveDeal; open: (n: string, w: stri
       </div>
 
       <div className="deal-card-spark">
-        <DealSparkline wholesaler={d.wholesaler} productName={d.product_name} />
+        {/* Same two-point this-month vs next-month sparkline + popover as
+            the Catalog row. Time-Sensitive items don't carry next-month
+            data in the API today, so the second point is null and the
+            sparkline renders the single this-month dot; popover shows the
+            Frontline / Best for the current month. Anchored to the deal's
+            from_date as the edition. */}
+        <MonthEffectiveSparkline
+          curr={{
+            edition: d.from_date ? d.from_date.slice(0, 7) : null,
+            frontline: d.frontline_case_price ?? null,
+            afterDiscount: null,
+            discountTiers: [],
+            ripTiers: [],
+            bestEff: d.effective_case_price ?? null,
+          }}
+          next={{
+            edition: null,
+            frontline: null,
+            afterDiscount: null,
+            discountTiers: [],
+            ripTiers: [],
+            bestEff: null,
+          }}
+        />
         <span className="text-muted" style={{ fontSize: 11 }}>{fmtDateRange(d.from_date, d.to_date)}</span>
       </div>
 

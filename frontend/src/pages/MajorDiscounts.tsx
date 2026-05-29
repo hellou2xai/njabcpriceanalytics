@@ -10,7 +10,7 @@ import ProductThumb from '../components/ProductThumb';
 import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
 import PromotionsToolbar from '../components/PromotionsToolbar';
 import PromotionsTable, { type PromotionRow } from '../components/PromotionsTable';
-import DealSparkline from '../components/DealSparkline';
+import MonthEffectiveSparkline from '../components/MonthEffectiveSparkline';
 import { useProductQuickView } from '../components/ProductQuickView';
 import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
 
@@ -229,7 +229,37 @@ function DiscountCard({ d, open }: { d: Product; open: (n: string, w: string, c?
       </div>
 
       <div className="deal-card-spark">
-        <DealSparkline wholesaler={d.wholesaler} productName={d.product_name} />
+        {/* Same this-month vs next-month sparkline + popover as the
+            Catalog row. Discount products have next_effective_case_price
+            and next_case_price baked into the API response, so both
+            dots render and the popover shows Frontline / Best for
+            both months. */}
+        <MonthEffectiveSparkline
+          curr={{
+            edition: d.edition ?? null,
+            frontline: d.frontline_case_price ?? null,
+            afterDiscount: null,
+            discountTiers: [],
+            ripTiers: [],
+            bestEff: d.effective_case_price ?? null,
+          }}
+          next={{
+            edition: (() => {
+              // Roll edition forward one month for the popover label.
+              const m = /^(\d{4})-(\d{1,2})/.exec(d.edition ?? '');
+              if (!m) return null;
+              const y = parseInt(m[1], 10), mo = parseInt(m[2], 10);
+              const ny = mo === 12 ? y + 1 : y;
+              const nm = mo === 12 ? 1 : mo + 1;
+              return `${ny}-${String(nm).padStart(2, '0')}`;
+            })(),
+            frontline: d.next_case_price ?? null,
+            afterDiscount: null,
+            discountTiers: [],
+            ripTiers: [],
+            bestEff: d.next_effective_case_price ?? null,
+          }}
+        />
         <span className="text-muted" style={{ fontSize: 11 }}>Edition {fmtEdition(d.edition)}</span>
       </div>
 

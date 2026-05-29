@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import { TOURS } from '../lib/tours/registry';
 import { trackAction } from '../lib/activityTracker';
+import { useAuth } from '../contexts/AuthContext';
 
 /**
  * Tours dashboard. A grid of guided walkthroughs; clicking a live tile starts
@@ -18,8 +19,17 @@ import { trackAction } from '../lib/activityTracker';
 export default function Tours() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
   const highlightId = (location.state as { highlight?: string } | null)?.highlight ?? null;
   const highlightedRef = useRef<HTMLButtonElement | null>(null);
+
+  // Hide tiles whose tour targets an admin-only screen (e.g. RIP Products)
+  // when the viewer isn't an admin. Otherwise a non-admin would start the
+  // tour and be navigated to a route they can't open.
+  const visibleTours = useMemo(
+    () => TOURS.filter(t => !t.adminOnly || user?.is_admin),
+    [user?.is_admin],
+  );
 
   useEffect(() => {
     if (!highlightId) return;
@@ -42,7 +52,7 @@ export default function Tours() {
       </p>
 
       <div className="tours-grid">
-        {TOURS.map((t) => {
+        {visibleTours.map((t) => {
           const Icon = t.icon;
           const live = !!t.run;
           const isRecommended = !!t.recommended && live;

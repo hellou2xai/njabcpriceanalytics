@@ -39,3 +39,4 @@ tests/golden/after*/
 
 # One-off analysis scripts kept locally.
 analyze_*.py
+backend.log

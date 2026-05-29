@@ -1052,13 +1052,18 @@ def _build_rip_items(con, wholesaler=None, product_type=None, q="", rip_code=Non
 
         # 7. RIP-sheet orphans: UPCs the RIP sheet ties to a rebate but that
         # didn't surface on the CPL-side query (the CPL row either doesn't
-        # carry has_rip=true, or the product isn't on the CPL at all). Without
-        # this, RIPs like 111202 show 4 products instead of 5. We emit a tier
-        # row per orphan with no list price, a needs_rep_verify=True flag, and
-        # whatever name/brand product_enrichment has for the UPC; the UI then
-        # shows a "check with sales rep" sticker and still allows add-to-cart.
+        # carry has_rip=true, or the product isn't on the CPL at all, or the
+        # CPL row's rip_code points to a DIFFERENT rebate this UPC also
+        # qualifies under). Without this, codes like 111889 ("Sutter Home
+        # Moscato / Pink / Sweet Red / White Zin") show 0 products even
+        # though 4 UPCs qualify, because every one of those UPCs has its CPL
+        # row pointing at 111886 (a related but distinct Sutter Home
+        # rebate). The skip set keys by (ws, upc, rip_code) so a UPC stacked
+        # across N rebates is emitted N times, once per code.
         target_pair_set = {(ws_, ed_) for ws_, ed_ in target_pairs}
-        existing_pairs = {(it["wholesaler"], str(it.get("upc") or "").lstrip("0"))
+        existing_pairs = {(it["wholesaler"],
+                           str(it.get("upc") or "").lstrip("0"),
+                           str(it.get("rip_number") or ""))
                           for it in items}
 
         # Group orphans by (ws, upc, rip_code) across curr+next editions.
@@ -1085,7 +1090,7 @@ def _build_rip_items(con, wholesaler=None, product_type=None, q="", rip_code=Non
             rc_str = str(rc)
             if rc_str.lower() in _BAD_UPC:
                 continue
-            if (ws_, upc_norm) in existing_pairs:
+            if (ws_, upc_norm, rc_str) in existing_pairs:
                 continue
             curr_ed_o, next_ed_o = ed_map.get(ws_, (None, None))
             if ed_ == curr_ed_o:

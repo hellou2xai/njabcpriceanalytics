@@ -403,8 +403,19 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                 {tiers.map((t, idx) => {
                   const tierMet = (t.unit.toLowerCase().startsWith('case') || t.unit.toLowerCase() === 'c')
                     ? qty.cases >= t.qty : qty.units >= t.qty;
+                  // Tier sub-rows wear the same coloured RIP band so the
+                  // stripe reads as one continuous bar from the parent
+                  // product down through its discount + RIP tier rows. The
+                  // background gradient is dropped (only the parent gets the
+                  // tinted lead-in) but the left edge bar carries through.
+                  const tierBandStyle: React.CSSProperties | undefined = ripColour
+                    ? { boxShadow: `inset 6px 0 0 ${ripColour.stripe}` }
+                    : undefined;
                   return (
-                    <tr key={`${reactKey}_${idx}`} className="catalog-row-sub" data-tier-met={tierMet}>
+                    <tr key={`${reactKey}_${idx}`}
+                        className={`catalog-row-sub${ripGroupCode ? ' has-rip-group' : ''}`}
+                        style={tierBandStyle}
+                        data-tier-met={tierMet}>
                       <td></td>
                       <td colSpan={showIntroduced ? 6 : 5} style={{ paddingLeft: 24 }} className="card-title-cell">
                         <span className={`source-badge source-${t.source}`}>{t.source === 'discount' ? 'DISC' : 'RIP'}</span>

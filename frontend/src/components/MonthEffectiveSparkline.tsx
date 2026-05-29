@@ -34,7 +34,7 @@ function fmtMonth(ed: string | null): string {
 
 const fmt = (v: number | null) => v == null ? '—' : `$${v.toFixed(2)}/cs`;
 
-function MonthBlock({ label, b }: { label: string; b: MonthBreakdown }) {
+function MonthBlock({ label, short, b }: { label: string; short?: string; b: MonthBreakdown }) {
   const hasDiscTiers = (b.discountTiers ?? []).length > 0;
   const showDiscSummary = !hasDiscTiers
     && b.afterDiscount != null
@@ -121,7 +121,9 @@ function MonthBlock({ label, b }: { label: string; b: MonthBreakdown }) {
           )}
 
           <tr className="mes-best">
-            <td>Best</td>
+            {/* Prefix the month so a reader scanning side-by-side knows which
+                column's best they're looking at ("May Best" vs "Jun Best"). */}
+            <td>{short ? `${short} Best` : 'Best'}</td>
             <td className="mes-num">{fmt(b.bestEff)}</td>
           </tr>
         </tbody>
@@ -184,8 +186,8 @@ export default function MonthEffectiveSparkline({ curr, next }: Props) {
         </span>
       </span>
       <span className="mes-popover" role="tooltip">
-        <MonthBlock label={monC || 'This month'} b={curr} />
-        <MonthBlock label={monN || 'Next month'} b={next} />
+        <MonthBlock label={monC || 'This month'} short={monC ? labC : undefined} b={curr} />
+        <MonthBlock label={monN || 'Next month'} short={monN ? labN : undefined} b={next} />
       </span>
     </span>
   );

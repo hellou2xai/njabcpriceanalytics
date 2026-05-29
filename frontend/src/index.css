@@ -2639,6 +2639,86 @@ tr:hover .row-menu-btn { opacity: 1; }
    group at all. */
 .catalog-rip-banner-add { margin-left: 4px; }
 
+/* ---- Pro placeholder columns (Suggested Qty + Quantity Justification) ----
+   Two teaser columns between Product and Distributor that show what the
+   POS-integrated suggestion will look like once a user upgrades. Cells
+   wear an amber wash so they stand out from the live data columns, with
+   a "Pro" badge pinned to the corner and a short value-prop sticker. */
+.catalog-pro-th {
+  position: relative;
+  background: color-mix(in srgb, #b45309 5%, transparent);
+  color: #92400e;
+  font-weight: 700;
+}
+.catalog-pro-th .catalog-pro-badge { margin-right: 6px; }
+.catalog-pro-cell {
+  position: relative;
+  background: color-mix(in srgb, #f59e0b 8%, transparent);
+  border-left: 1px dashed color-mix(in srgb, #b45309 35%, transparent);
+  border-right: 1px dashed color-mix(in srgb, #b45309 35%, transparent);
+  vertical-align: top;
+  padding: 8px 10px;
+  min-width: 170px;
+  max-width: 240px;
+}
+.catalog-pro-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.catalog-pro-badge {
+  display: inline-flex; align-items: center; gap: 2px;
+  background: linear-gradient(135deg, #f59e0b, #b45309);
+  color: #fff;
+  font-size: 9.5px; font-weight: 800; letter-spacing: 0.6px;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgba(120, 53, 15, 0.25);
+}
+.catalog-pro-badge--corner {
+  position: absolute;
+  top: -2px;
+  right: -4px;
+}
+.catalog-pro-value {
+  font-size: 14px;
+  font-weight: 800;
+  color: #92400e;
+  font-variant-numeric: tabular-nums;
+}
+.catalog-pro-sub {
+  font-size: 10.5px;
+  color: color-mix(in srgb, #92400e 75%, transparent);
+  font-style: italic;
+}
+.catalog-pro-justify {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: #78350f;
+}
+.catalog-pro-justify em {
+  font-style: italic;
+  color: color-mix(in srgb, #92400e 70%, transparent);
+}
+.catalog-pro-justify strong {
+  color: #b45309;
+  font-weight: 700;
+}
+.catalog-pro-savings {
+  display: inline-flex;
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #b45309, #92400e);
+  border-radius: 999px;
+  letter-spacing: 0.3px;
+}
+
 .rip-better-next-pill,
 .rip-better-this-pill,
 .rip-better-same-pill {

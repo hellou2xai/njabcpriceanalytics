@@ -289,6 +289,17 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
           <tr>
             <th style={{ width: 56 }}></th>
             <th {...headSort('product_name')}>Product{sortIcon('product_name')}</th>
+            {/* Pro placeholders. Live preview of the POS-integrated buying
+                suggestion + justification, shown as a teaser on every row
+                so the value of the upgrade is visible while browsing. */}
+            <th className="catalog-pro-th" title="Pro feature: connects to your POS to recommend how much to buy based on your real sales velocity and on-hand stock.">
+              <span className="catalog-pro-badge">Pro</span>
+              Suggested Qty
+            </th>
+            <th className="catalog-pro-th" title="Pro feature: explains the suggested quantity using your store's sales history and current inventory.">
+              <span className="catalog-pro-badge">Pro</span>
+              Quantity Justification
+            </th>
             <th>Distributor</th>
             <th>Type</th>
             {/* Size column dropped: Size and Bottles-per-Case are surfaced
@@ -324,7 +335,9 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
             const banner = groupByRip ? ripBanners.get(rowIdx) : undefined;
             const bannerColour = banner ? ripPalette.get(banner.code) ?? null : null;
             const bannerProg = banner ? bannerProgress(banner) : null;
-            const totalColumns = showIntroduced ? 10 : 9;
+            // +2 for the Pro placeholder columns (Suggested Qty + Justification)
+            // that sit between Product and Distributor.
+            const totalColumns = showIntroduced ? 12 : 11;
             return (
               <Fragment key={reactKey}>
                 {banner && (
@@ -587,6 +600,32 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                       })()}
                     </div>
                   </td>
+                  {/* Pro teaser cells: the buying suggestion + the
+                      justification behind it. Placeholder copy until POS
+                      integration is live. Each cell carries the Pro badge,
+                      a hover tooltip explaining the upgrade, and the
+                      "frees up 40+ hrs / wk" value-prop sticker. */}
+                  <td className="catalog-pro-cell" data-label="Suggested Qty"
+                      title="Pro feature: connects to your POS. After integration this column shows the actual case + bottle quantity recommended for this product, calculated from your daily sell-through and current on-hand inventory.">
+                    <div className="catalog-pro-body">
+                      <span className="catalog-pro-badge catalog-pro-badge--corner">Pro</span>
+                      <div className="catalog-pro-value">Qty XXXXX</div>
+                      <div className="catalog-pro-sub">cs / btl after POS sync</div>
+                      <span className="catalog-pro-savings">Frees up 40+ hrs / week</span>
+                    </div>
+                  </td>
+                  <td className="catalog-pro-cell" data-label="Quantity Justification"
+                      title="Pro feature: after POS integration this column shows the math behind the suggestion — your store's daily sales velocity for this product, current on-hand stock, and the case count to buy this month.">
+                    <div className="catalog-pro-body">
+                      <span className="catalog-pro-badge catalog-pro-badge--corner">Pro</span>
+                      <div className="catalog-pro-justify">
+                        Your store <em>[Store Name]</em> sells <strong>XX</strong> btl / day.
+                        On-hand: <strong>YY</strong>. Recommended buy this month:
+                        <strong> XXXXX cases</strong>.
+                      </div>
+                      <span className="catalog-pro-savings">Eliminates guess-work buying</span>
+                    </div>
+                  </td>
                   <td data-label="Distributor"><span className="cell-distributor-badge">{distributorName(item.wholesaler)}</span></td>
                   <td data-label="Type">{item.product_type}</td>
                   {/* Size column dropped: surfaced in the product cell. */}
@@ -643,7 +682,10 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                           are LEFT-aligned, so the description sits
                           directly beneath the chip with their left edges
                           flush. */}
-                      <td colSpan={showIntroduced ? 6 : 5} className="card-title-cell catalog-tier-sub-cell">
+                      {/* +2 from the Pro placeholder columns (Suggested Qty
+                          + Justification) that sit between Product and
+                          Distributor; tier sub-rows skip across them. */}
+                      <td colSpan={showIntroduced ? 8 : 7} className="card-title-cell catalog-tier-sub-cell">
                         <div className="catalog-tier-sub-stack">
                           <div className="catalog-tier-sub-chip">
                             <span className={`source-badge source-${t.source}`}>{t.source === 'discount' ? 'DISC' : 'RIP'}</span>
@@ -681,7 +723,7 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
             );
           })}
           {items.length === 0 && (
-            <tr><td colSpan={showIntroduced ? 10 : 9} className="empty">No products</td></tr>
+            <tr><td colSpan={showIntroduced ? 12 : 11} className="empty">No products</td></tr>
           )}
         </tbody>
       </table>

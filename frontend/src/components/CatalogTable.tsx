@@ -462,9 +462,15 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                             // Partition the group's products into those with
                             // a typed qty and those with none. The button
                             // sends ONLY the typed-qty subset; the popup
-                            // covers the partial / all-empty cases.
+                            // covers the partial / all-empty cases. Read
+                            // from p.stepperKey — the row-unique cart key
+                            // (name|wholesaler|upc|unit_volume) that the
+                            // row's Case/Btl steppers write to. Using the
+                            // old name|wholesaler shape here would always
+                            // miss and fire "No quantities entered" even
+                            // when the buyer just typed something.
                             const entries = banner.products.map(p => {
-                              const q = cart[`${p.product_name}|${p.wholesaler}`] ?? { cases: 0, units: 0 };
+                              const q = cart[p.stepperKey] ?? { cases: 0, units: 0 };
                               return { ...p, qty_cases: q.cases, qty_units: q.units };
                             });
                             const toAdd = entries.filter(e => e.qty_cases > 0 || e.qty_units > 0);

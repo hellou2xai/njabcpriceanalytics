@@ -599,13 +599,12 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                   </td>
                   {/* Pro teaser cells: the buying suggestion + the
                       justification behind it. Placeholder copy until POS
-                      integration is live. Each cell carries the Pro badge,
-                      a hover tooltip explaining the upgrade, and the
-                      "frees up 40+ hrs / wk" value-prop sticker. */}
+                      integration is live. The Pro badge lives only on the
+                      column header (no per-row repeat). Each cell still
+                      carries a hover tooltip and a value-prop sticker. */}
                   <td className="catalog-pro-cell" data-label="Suggested Qty"
                       title="Pro feature: connects to your POS. After integration this column shows the actual case + bottle quantity recommended for this product, calculated from your daily sell-through and current on-hand inventory.">
                     <div className="catalog-pro-body">
-                      <span className="catalog-pro-badge catalog-pro-badge--corner">Pro</span>
                       <div className="catalog-pro-value">Qty XXXXX</div>
                       <div className="catalog-pro-sub">cs / btl after POS sync</div>
                       <span className="catalog-pro-savings">Frees up 40+ hrs / week</span>
@@ -614,12 +613,12 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                   <td className="catalog-pro-cell" data-label="Quantity Justification"
                       title="Pro feature: after POS integration this column shows the math behind the suggestion — your store's daily sales velocity for this product, current on-hand stock, and the case count to buy this month.">
                     <div className="catalog-pro-body">
-                      <span className="catalog-pro-badge catalog-pro-badge--corner">Pro</span>
-                      <div className="catalog-pro-justify">
-                        Your store <em>[Store Name]</em> sells <strong>XX</strong> btl / day.
-                        On-hand: <strong>YY</strong>. Recommended buy this month:
-                        <strong> XXXXX cases</strong>.
-                      </div>
+                      <dl className="catalog-pro-kv">
+                        <div><dt>Store</dt><dd><em>[Store Name]</em></dd></div>
+                        <div><dt>Velocity</dt><dd><strong>XX</strong> btl / day</dd></div>
+                        <div><dt>On-hand</dt><dd><strong>YY</strong> btl</dd></div>
+                        <div className="catalog-pro-kv-buy"><dt>Buy</dt><dd><strong>XXXXX</strong> cases</dd></div>
+                      </dl>
                       <span className="catalog-pro-savings">Eliminates guess-work buying</span>
                     </div>
                   </td>

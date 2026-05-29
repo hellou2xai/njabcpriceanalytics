@@ -2672,9 +2672,10 @@ tr:hover .row-menu-btn { opacity: 1; }
 
 /* ---- Pro placeholder columns (Suggested Qty + Quantity Justification) ----
    Two teaser columns between Product and Distributor that show what the
-   POS-integrated suggestion will look like once a user upgrades. Cells
-   wear an amber wash so they stand out from the live data columns, with
-   a "Pro" badge pinned to the corner and a short value-prop sticker. */
+   POS-integrated suggestion will look like once a user upgrades. The "Pro"
+   badge lives only on the column header (no per-row repeat). Cells wear
+   an amber wash so the row reads "this is a paid preview, not your live
+   data", and each carries a short value-prop sticker at the bottom. */
 .catalog-pro-th {
   position: relative;
   background: color-mix(in srgb, #b45309 5%, transparent);
@@ -2688,16 +2689,17 @@ tr:hover .row-menu-btn { opacity: 1; }
   border-left: 1px dashed color-mix(in srgb, #b45309 35%, transparent);
   border-right: 1px dashed color-mix(in srgb, #b45309 35%, transparent);
   vertical-align: top;
-  padding: 8px 10px;
-  min-width: 170px;
-  max-width: 240px;
+  padding: 8px 12px;
+  min-width: 180px;
+  max-width: 260px;
 }
 .catalog-pro-body {
-  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
+/* Header-only Pro chip. Per-row badges were removed; the column title
+   carries the badge so the buyer sees the upgrade tag once per scroll. */
 .catalog-pro-badge {
   display: inline-flex; align-items: center; gap: 2px;
   background: linear-gradient(135deg, #f59e0b, #b45309);
@@ -2707,11 +2709,6 @@ tr:hover .row-menu-btn { opacity: 1; }
   padding: 2px 6px;
   border-radius: 4px;
   box-shadow: 0 1px 2px rgba(120, 53, 15, 0.25);
-}
-.catalog-pro-badge--corner {
-  position: absolute;
-  top: -2px;
-  right: -4px;
 }
 .catalog-pro-value {
   font-size: 14px;
@@ -2724,23 +2721,57 @@ tr:hover .row-menu-btn { opacity: 1; }
   color: color-mix(in srgb, #92400e 75%, transparent);
   font-style: italic;
 }
-.catalog-pro-justify {
+/* Key-value grid replaces the run-on sentence the user flagged as messy.
+   Each row reads as "Label  Value", labels muted, values bolded — same
+   visual rhythm as the rest of the catalog's compact stat blocks. */
+.catalog-pro-kv {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 8px;
+  row-gap: 2px;
+  margin: 0;
   font-size: 11.5px;
-  line-height: 1.4;
+  line-height: 1.35;
   color: #78350f;
 }
-.catalog-pro-justify em {
-  font-style: italic;
-  color: color-mix(in srgb, #92400e 70%, transparent);
+.catalog-pro-kv > div {
+  display: contents;
 }
-.catalog-pro-justify strong {
+.catalog-pro-kv dt {
+  color: color-mix(in srgb, #92400e 70%, transparent);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  align-self: center;
+}
+.catalog-pro-kv dd {
+  margin: 0;
+  color: #78350f;
+}
+.catalog-pro-kv strong {
   color: #b45309;
   font-weight: 700;
+}
+.catalog-pro-kv em {
+  font-style: italic;
+  color: color-mix(in srgb, #92400e 75%, transparent);
+}
+/* The buy row gets a thin divider above it so the eye lands on the
+   final recommendation as the punchline of the breakdown. */
+.catalog-pro-kv-buy dt,
+.catalog-pro-kv-buy dd {
+  padding-top: 4px;
+  border-top: 1px solid color-mix(in srgb, #b45309 18%, transparent);
+  margin-top: 2px;
+}
+.catalog-pro-kv-buy dd strong {
+  font-size: 13px;
+  color: #92400e;
 }
 .catalog-pro-savings {
   display: inline-flex;
   align-self: flex-start;
-  margin-top: 2px;
   padding: 2px 7px;
   font-size: 10px;
   font-weight: 700;

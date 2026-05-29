@@ -519,20 +519,35 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
         if not conds:
             return []
 
-        active_clause = "" if include_past else "AND CAST(to_date AS DATE) >= CURRENT_DATE"
+        # Two ways a row qualifies as time-sensitive:
+        #  (a) it has a specific from/to window that isn't the full calendar
+        #      month (the original definition), OR
+        #  (b) the CPL flags it as a CLOSEOUT — closeouts are inherently
+        #      time-sensitive (inventory disappears once cleared) regardless
+        #      of whether the sheet carries explicit dates for them.
+        # Closeouts without a to_date stay in even when include_past=False.
+        active_clause = (
+            "" if include_past
+            else "AND (to_date IS NULL OR CAST(to_date AS DATE) >= CURRENT_DATE)"
+        )
+        dated_window = (
+            "from_date IS NOT NULL AND to_date IS NOT NULL "
+            "AND NOT (EXTRACT(day FROM CAST(from_date AS DATE)) = 1 "
+            "AND CAST(to_date AS DATE) = (date_trunc('month', CAST(to_date AS DATE)) + INTERVAL 1 MONTH - INTERVAL 1 DAY))"
+        )
         rows = con.execute(f"""
             SELECT wholesaler, edition, product_name, product_type, unit_volume, unit_qty, upc, brand,
                    CAST(from_date AS DATE) AS from_date, CAST(to_date AS DATE) AS to_date,
-                   date_diff('day', CURRENT_DATE, CAST(to_date AS DATE)) AS days_to_expire,
+                   CASE WHEN to_date IS NULL THEN NULL
+                        ELSE date_diff('day', CURRENT_DATE, CAST(to_date AS DATE))
+                   END AS days_to_expire,
                    frontline_case_price, effective_case_price, total_savings_per_case, discount_pct,
                    rip_savings, has_rip, has_discount, has_closeout
             FROM {src}
-            WHERE from_date IS NOT NULL AND to_date IS NOT NULL
-              AND NOT (EXTRACT(day FROM CAST(from_date AS DATE)) = 1
-                       AND CAST(to_date AS DATE) = (date_trunc('month', CAST(to_date AS DATE)) + INTERVAL 1 MONTH - INTERVAL 1 DAY))
+            WHERE (({dated_window}) OR has_closeout = true)
               {active_clause}
               AND ({' OR '.join(conds)})
-            ORDER BY to_date ASC, total_savings_per_case DESC NULLS LAST
+            ORDER BY to_date ASC NULLS LAST, total_savings_per_case DESC NULLS LAST
             LIMIT {limit}
         """, params).fetchdf()
 
@@ -558,8 +573,11 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
         for _, r in rows.iterrows():
             u = _str(r["upc"])
             un = u.lstrip("0") if u else None
-            if un and (r["wholesaler"], un) in rip_next:
-                continue  # RIP still available next month -> not time-sensitive
+            # Closeouts skip the "RIP recurs next month" exclusion: inventory
+            # being cleared is genuinely time-sensitive even when the SKU's
+            # rebate happens to carry into the next CPL.
+            if (not bool(r["has_closeout"])) and un and (r["wholesaler"], un) in rip_next:
+                continue
             # Defensive guard: even if the SQL filter or a data quality issue lets
             # a stale-to_date row through, skip anything genuinely in the past
             # unless the caller explicitly asked for past deals.

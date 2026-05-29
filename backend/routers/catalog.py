@@ -720,17 +720,66 @@ def search_products(
         # DEALS all match. Rule from the user: same barcode but a different price or
         # different deals is NOT a duplicate (e.g. a different vintage, or a placeholder
         # barcode reused across unrelated products), so it stays as its own row.
+        # When group_by_rip is on, the RIP membership code is included in the
+        # partition so a UPC stacked under N rebates produces N distinct rows
+        # (one per cluster) instead of being collapsed back to 1.
+        dedup_extra = ", COALESCE(rm.membership_code, '')" if group_by_rip else ""
         dedup = (
             "QUALIFY ROW_NUMBER() OVER (PARTITION BY wholesaler, LTRIM(COALESCE(upc,''),'0'), "
             "product_name, unit_volume, COALESCE(CAST(vintage AS VARCHAR),''), "
             "COALESCE(frontline_case_price,-1), COALESCE(effective_case_price,-1), "
-            "COALESCE(total_savings_per_case,-1), has_discount, has_rip "
+            "COALESCE(total_savings_per_case,-1), has_discount, has_rip"
+            f"{dedup_extra} "
             "ORDER BY edition DESC) = 1"
         )
 
-        # Count query (deduped to match the data query)
+        # When group_by_rip is on, build the rip_groups + rip_memberships CTEs
+        # once and inject them into BOTH the count and data queries so the
+        # fan-out (one row per RIP a UPC qualifies for) is reflected in
+        # pagination totals. Defined ahead of the count query so both call
+        # sites share the same CTE text.
+        rip_cte_sql = ""
+        rip_join_sql = ""
+        if group_by_rip:
+            rip_src_cte = read_parquet(con, "rip")
+            rip_cte_sql = f"""
+                WITH rip_groups AS (
+                    SELECT wholesaler AS rg_wholesaler,
+                           edition    AS rg_edition,
+                           CAST(upc AS VARCHAR) AS rg_upc,
+                           MIN(CAST(rip_code AS VARCHAR)) AS rip_group_min,
+                           COUNT(DISTINCT CAST(rip_code AS VARCHAR)) AS rip_group_count,
+                           list_distinct(list(CAST(rip_code AS VARCHAR))) AS rip_group_codes
+                    FROM {rip_src_cte}
+                    WHERE upc IS NOT NULL
+                      AND CAST(upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
+                      AND rip_code IS NOT NULL
+                      AND CAST(rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
+                    GROUP BY wholesaler, edition, CAST(upc AS VARCHAR)
+                ),
+                -- Fan rip_groups out by code so a UPC with N rebates emits N
+                -- rows. The LEFT JOIN below preserves UPCs that don't qualify
+                -- for any rebate (they pass through with NULL membership).
+                rip_memberships AS (
+                    SELECT rg_wholesaler, rg_edition, rg_upc,
+                           UNNEST(rip_group_codes) AS membership_code,
+                           rip_group_min, rip_group_count, rip_group_codes
+                    FROM rip_groups
+                )
+            """
+            rip_join_sql = """
+                LEFT JOIN rip_memberships rm
+                  ON rm.rg_wholesaler = wholesaler
+                 AND rm.rg_edition    = edition
+                 AND rm.rg_upc        = CAST(upc AS VARCHAR)
+            """
+
+        # Count query (deduped to match the data query). With group_by_rip on
+        # the join + partition mirror the data path so total reflects fan-out.
         count = con.execute(
-            f"SELECT count(*) FROM (SELECT 1 FROM {src} WHERE {where_clause} {dedup}) t", params
+            f"{rip_cte_sql} SELECT count(*) FROM "
+            f"(SELECT 1 FROM {src} {rip_join_sql} WHERE {where_clause} {dedup}) t",
+            params,
         ).fetchone()[0]
 
         # AI fallback: a text search that found nothing -> ask Claude (Sonnet) to map
@@ -751,7 +800,9 @@ def search_products(
                 params.update(qp2)
                 where_clause = " AND ".join(where)
                 return con.execute(
-                    f"SELECT count(*) FROM (SELECT 1 FROM {src} WHERE {where_clause} {dedup}) t", params
+                    f"{rip_cte_sql} SELECT count(*) FROM "
+                    f"(SELECT 1 FROM {src} {rip_join_sql} WHERE {where_clause} {dedup}) t",
+                    params,
                 ).fetchone()[0]
 
             # 1) Deterministic spell-fix against the catalogue vocabulary (no API cost).
@@ -798,31 +849,69 @@ def search_products(
                 "rip_group_code IS NULL, rip_group_code ASC, "
                 + order_by
             )
-        rip_src = read_parquet(con, "rip")
+        # When group_by_rip is on we LEFT JOIN the fanned-out rip_memberships
+        # so a UPC stacked under N rebates emits one row per rebate (per
+        # cluster). When off, we LEFT JOIN the per-UPC canonical group
+        # (one row) so normal browsing is undisturbed.
+        if group_by_rip:
+            rip_select_sql = """
+                   rm.membership_code AS rip_group_code,
+                   rm.rip_group_count,
+                   CASE
+                       WHEN rm.rip_group_min IS NULL THEN false
+                       WHEN rip_code IS NULL OR CAST(rip_code AS VARCHAR) IN ('', '0') THEN true
+                       WHEN list_contains(rm.rip_group_codes, CAST(rip_code AS VARCHAR)) THEN false
+                       ELSE true
+                   END AS rip_cpl_mismatch
+            """
+            data_cte_sql = rip_cte_sql
+            data_join_sql = rip_join_sql
+        else:
+            rip_src_legacy = read_parquet(con, "rip")
+            data_cte_sql = f"""
+                WITH rip_groups AS (
+                    SELECT wholesaler AS rg_wholesaler,
+                           edition    AS rg_edition,
+                           CAST(upc AS VARCHAR) AS rg_upc,
+                           MIN(CAST(rip_code AS VARCHAR)) AS rip_group_min,
+                           COUNT(DISTINCT CAST(rip_code AS VARCHAR)) AS rip_group_count,
+                           list_distinct(list(CAST(rip_code AS VARCHAR))) AS rip_group_codes
+                    FROM {rip_src_legacy}
+                    WHERE upc IS NOT NULL
+                      AND CAST(upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
+                      AND rip_code IS NOT NULL
+                      AND CAST(rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
+                    GROUP BY wholesaler, edition, CAST(upc AS VARCHAR)
+                )
+            """
+            data_join_sql = """
+                LEFT JOIN rip_groups rg
+                  ON rg.rg_wholesaler = wholesaler
+                 AND rg.rg_edition    = edition
+                 AND rg.rg_upc        = CAST(upc AS VARCHAR)
+            """
+            # Off path: keep the canonical-group select so the "RIP family"
+            # tag still rides along on rows even when clustering is off.
+            rip_select_sql = """
+                   CASE
+                       WHEN rg.rip_group_min IS NULL THEN NULL
+                       WHEN rip_code IS NOT NULL AND CAST(rip_code AS VARCHAR) <> ''
+                            AND CAST(rip_code AS VARCHAR) <> '0'
+                            AND list_contains(rg.rip_group_codes, CAST(rip_code AS VARCHAR))
+                       THEN CAST(rip_code AS VARCHAR)
+                       ELSE rg.rip_group_min
+                   END AS rip_group_code,
+                   rg.rip_group_count,
+                   CASE
+                       WHEN rg.rip_group_min IS NULL THEN false
+                       WHEN rip_code IS NULL OR CAST(rip_code AS VARCHAR) IN ('', '0') THEN true
+                       WHEN list_contains(rg.rip_group_codes, CAST(rip_code AS VARCHAR)) THEN false
+                       ELSE true
+                   END AS rip_cpl_mismatch
+            """
+
         rows = con.execute(f"""
-            WITH rip_groups AS (
-                -- For each UPC, capture EVERY rip code it appears under (a UPC
-                -- can be stacked under multiple rebates). MIN() is the
-                -- deterministic canonical group code; the list lets us tell
-                -- whether the CPL's rip_code is a valid member.
-                -- IMPORTANT: drop stub UPC values ('0', 'None', 'nan'). The
-                -- RIP sheet uses '0' as a placeholder when the rebate isn't
-                -- tied to a specific UPC; matching products that also carry
-                -- UPC '0' (e.g. kegs) against those would put every RIP code
-                -- on every keg row.
-                SELECT wholesaler AS rg_wholesaler,
-                       edition    AS rg_edition,
-                       CAST(upc AS VARCHAR) AS rg_upc,
-                       MIN(CAST(rip_code AS VARCHAR)) AS rip_group_min,
-                       COUNT(DISTINCT CAST(rip_code AS VARCHAR)) AS rip_group_count,
-                       list_distinct(list(CAST(rip_code AS VARCHAR))) AS rip_group_codes
-                FROM {rip_src}
-                WHERE upc IS NOT NULL
-                  AND CAST(upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
-                  AND rip_code IS NOT NULL
-                  AND CAST(rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
-                GROUP BY wholesaler, edition, CAST(upc AS VARCHAR)
-            )
+            {data_cte_sql}
             SELECT wholesaler, edition, upc, product_name, product_type,
                    unit_qty, unit_volume, vintage, frontline_case_price, frontline_unit_price,
                    best_case_price, best_unit_price, effective_case_price,
@@ -833,32 +922,9 @@ def search_products(
                    discount_3_qty, discount_3_amt,
                    discount_4_qty, discount_4_amt,
                    discount_5_qty, discount_5_amt,
-                   -- Prefer the CPL's rip_code as the visible group when it's a
-                   -- legit entry in the RIP sheet for this UPC; otherwise fall
-                   -- back to the canonical MIN so clustering still works.
-                   CASE
-                       WHEN rg.rip_group_min IS NULL THEN NULL
-                       WHEN rip_code IS NOT NULL AND CAST(rip_code AS VARCHAR) <> ''
-                            AND CAST(rip_code AS VARCHAR) <> '0'
-                            AND list_contains(rg.rip_group_codes, CAST(rip_code AS VARCHAR))
-                       THEN CAST(rip_code AS VARCHAR)
-                       ELSE rg.rip_group_min
-                   END AS rip_group_code,
-                   rg.rip_group_count,
-                   -- Mismatch = UPC is in the RIP sheet but the CPL row's
-                   -- rip_code isn't one of the codes it qualifies under
-                   -- (covers the empty / '0' CPL case too).
-                   CASE
-                       WHEN rg.rip_group_min IS NULL THEN false
-                       WHEN rip_code IS NULL OR CAST(rip_code AS VARCHAR) IN ('', '0') THEN true
-                       WHEN list_contains(rg.rip_group_codes, CAST(rip_code AS VARCHAR)) THEN false
-                       ELSE true
-                   END AS rip_cpl_mismatch
+                   {rip_select_sql}
             FROM {src}
-            LEFT JOIN rip_groups rg
-              ON rg.rg_wholesaler = wholesaler
-             AND rg.rg_edition = edition
-             AND rg.rg_upc = CAST(upc AS VARCHAR)
+            {data_join_sql}
             WHERE {where_clause}
             {dedup}
             ORDER BY {order_by}

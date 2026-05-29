@@ -88,12 +88,27 @@ def build_price_changes(parquet_dir: str | Path, output_dir: Path):
     has_enriched = Path(enriched_path).exists()
     eff_expr = "effective_case_price" if has_enriched else "CAST(NULL AS DOUBLE) AS effective_case_price"
 
+    # Normalised unit_qty key. The monthly Excel files round-trip
+    # `unit_qty` as an integer in some editions ("12") and a float in
+    # others ("12.0") — same SKU, different string. Without this
+    # collapse the LAG partition splits a 12-pack May listing into its
+    # own partition and a 12-pack April → June chain shows up as a
+    # spurious price move (April $96 -> June $181 attributed to the
+    # June row because May was hidden in the "12.0" partition; root
+    # cause for FEDERALIST CAB SAUV LODI UPC 86891083186). Trim a
+    # trailing ".0" (and any longer ".0+") so "12" / 12 / 12.0 / "12.0"
+    # all collapse to "12".
+    uq_key = (
+        "regexp_replace(TRIM(CAST(unit_qty AS VARCHAR)), '\\.0+$', '')"
+    )
+
     df = con.execute(f"""
         WITH withv AS (
             SELECT *
                 {("" if has_enriched else f", {eff_expr}")},
                 CASE WHEN UPPER(product_type) IN ('WINE','SPARKLING','VERMOUTH')
-                     THEN {vnorm} ELSE NULL END AS vkey
+                     THEN {vnorm} ELSE NULL END AS vkey,
+                {uq_key} AS uq_key
             {base_select}
         ),
         base AS (
@@ -101,34 +116,34 @@ def build_price_changes(parquet_dir: str | Path, output_dir: Path):
             -- compares one clean value per edition.
             SELECT * FROM withv
             QUALIFY ROW_NUMBER() OVER (
-                PARTITION BY wholesaler, product_name, unit_volume, unit_qty, vkey, edition
+                PARTITION BY wholesaler, product_name, unit_volume, uq_key, vkey, edition
                 ORDER BY frontline_case_price
             ) = 1
         ),
         ranked AS (
             SELECT *,
                 LAG(frontline_case_price) OVER (
-                    PARTITION BY wholesaler, product_name, unit_volume, unit_qty, vkey
+                    PARTITION BY wholesaler, product_name, unit_volume, uq_key, vkey
                     ORDER BY edition
                 ) AS prev_case_price,
                 LAG(best_case_price) OVER (
-                    PARTITION BY wholesaler, product_name, unit_volume, unit_qty, vkey
+                    PARTITION BY wholesaler, product_name, unit_volume, uq_key, vkey
                     ORDER BY edition
                 ) AS prev_best_price,
                 LAG(effective_case_price) OVER (
-                    PARTITION BY wholesaler, product_name, unit_volume, unit_qty, vkey
+                    PARTITION BY wholesaler, product_name, unit_volume, uq_key, vkey
                     ORDER BY edition
                 ) AS prev_effective_case_price,
                 LAG(frontline_unit_price) OVER (
-                    PARTITION BY wholesaler, product_name, unit_volume, unit_qty, vkey
+                    PARTITION BY wholesaler, product_name, unit_volume, uq_key, vkey
                     ORDER BY edition
                 ) AS prev_unit_price,
                 LAG(edition) OVER (
-                    PARTITION BY wholesaler, product_name, unit_volume, unit_qty, vkey
+                    PARTITION BY wholesaler, product_name, unit_volume, uq_key, vkey
                     ORDER BY edition
                 ) AS prev_edition,
                 LAG(discount_1_amt) OVER (
-                    PARTITION BY wholesaler, product_name, unit_volume, unit_qty, vkey
+                    PARTITION BY wholesaler, product_name, unit_volume, uq_key, vkey
                     ORDER BY edition
                 ) AS prev_discount_1_amt
             FROM base

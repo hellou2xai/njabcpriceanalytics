@@ -160,7 +160,16 @@ def _pm_compute_full(con, direction: str) -> list[dict]:
     # row into multiple joined rows (one per vintage) and the wrong UPC /
     # effective price could land on the row downstream. _vintage_norm_sql
     # normalizes the raw cpl vintage to the same form pc carries.
+    #
+    # IMPORTANT: unit_qty must be normalised too. The monthly Excel files
+    # ingest the pack count as an integer in some editions and a float in
+    # others ("12" vs "12.0"), and a strict IS NOT DISTINCT FROM would
+    # miss the match. regexp_replace strips a trailing .0 so both shapes
+    # land on the same string. Otherwise a May "12.0" row gets stranded,
+    # the LAG chain breaks (already fixed in derive) AND the join here
+    # would still pull the wrong cpl side.
     from backend.routers.catalog import _vintage_norm_sql
+    uq_norm = "regexp_replace(TRIM(CAST({col} AS VARCHAR)), '\\.0+$', '')"
     df = con.execute(f"""
         SELECT {select_cols}
         FROM {src} pc
@@ -169,7 +178,7 @@ def _pm_compute_full(con, direction: str) -> list[dict]:
          AND c.edition    = pc.edition
          AND c.product_name = pc.product_name
          AND c.unit_volume IS NOT DISTINCT FROM pc.unit_volume
-         AND c.unit_qty    IS NOT DISTINCT FROM pc.unit_qty
+         AND {uq_norm.format(col='c.unit_qty')} IS NOT DISTINCT FROM {uq_norm.format(col='pc.unit_qty')}
          AND ({_vintage_norm_sql('c.vintage')}) IS NOT DISTINCT FROM pc.vintage_norm
         WHERE ({' OR '.join(conds)})
     """, params).fetchdf()
@@ -181,6 +190,14 @@ def _pm_compute_full(con, direction: str) -> list[dict]:
     slots: dict = {}
     def _kpart(v):
         return v if (v is not None and not (isinstance(v, float) and v != v)) else None
+    def _norm_uq(v):
+        """Collapse "12" and "12.0" (parquet round-trip artifact) to one key."""
+        s = _kpart(v)
+        if s is None: return ""
+        s = str(s).strip()
+        if "." in s and s.endswith("0"):
+            s = s.rstrip("0").rstrip(".")
+        return s
     for _, r in df.iterrows():
         cur_s, next_s = ed_by_ws.get(r["wholesaler"], (None, None))
         ed = str(r["edition"])
@@ -189,7 +206,7 @@ def _pm_compute_full(con, direction: str) -> list[dict]:
         key = (
             r["wholesaler"], r["product_name"],
             _kpart(r.get("unit_volume")) or "",
-            _kpart(r.get("unit_qty")) or "",
+            _norm_uq(r.get("unit_qty")),
             _kpart(r.get("vintage")) or "",
         )
         slots.setdefault(key, {})[slot] = r

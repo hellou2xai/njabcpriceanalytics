@@ -65,7 +65,13 @@ export default function PriceMovers({ direction }: Props) {
   // `both` = show every product on the page (the user's "show all" semantic).
   // `current_only` = rose last→this. `next_only` = will rise this→next.
   // A product can satisfy both transitions, so memberships overlap.
-  const [validity, setValidity] = useState<'current_only' | 'next_only' | 'both'>('both');
+  // Default the validity to next_only: "show only what's going to move
+  // this month -> next" (user feedback: "Show only whats going to move").
+  // Rows whose move was actually prev -> cur (the rise already happened)
+  // drop off the page unless the user explicitly switches the filter to
+  // current_only or both — those buyers usually want to know what's
+  // about to change, not what already did.
+  const [validity, setValidity] = useState<'current_only' | 'next_only' | 'both'>('next_only');
   const [view, setView] = useState<'cards' | 'table'>(() => (localStorage.getItem('pm-view') as 'cards' | 'table') || 'cards');
   useEffect(() => { localStorage.setItem('pm-view', view); }, [view]);
 
@@ -189,7 +195,7 @@ export default function PriceMovers({ direction }: Props) {
 
       <div className="catalog-layout">
         <FilterSidebar storageKey={`pm-${direction}-filters`} sections={sections}
-          onReset={() => { setQ(''); setWholesaler(''); setValidity('both'); setProductType(''); setMinChange(''); setMinDollar(''); setHasRip(''); setSizes([]); setTrackedOnly(false); setSort('biggest-pct'); }} />
+          onReset={() => { setQ(''); setWholesaler(''); setValidity('next_only'); setProductType(''); setMinChange(''); setMinDollar(''); setHasRip(''); setSizes([]); setTrackedOnly(false); setSort('biggest-pct'); }} />
 
         <div className="catalog-results">
           <PromotionsToolbar

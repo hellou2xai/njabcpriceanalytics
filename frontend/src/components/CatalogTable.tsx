@@ -146,18 +146,37 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
     }
     return m;
   }, [cartData]);
+  // Adds an explicit per-product quantity, so the row steppers drive what
+  // gets sent. Items with both qty_cases = 0 AND qty_units = 0 are filtered
+  // out by the caller before the mutation runs (the confirmation popup
+  // covers that case).
   const addAllMut = useMutation({
-    mutationFn: async (products: { product_name: string; wholesaler: string; upc?: string; unit_volume?: string }[]) => {
-      for (const p of products) {
+    mutationFn: async (entries: {
+      product_name: string; wholesaler: string; upc?: string; unit_volume?: string;
+      qty_cases: number; qty_units: number;
+    }[]) => {
+      for (const p of entries) {
         try {
           await cartApi.add({ product_name: p.product_name, wholesaler: p.wholesaler,
-            upc: p.upc, unit_volume: p.unit_volume, qty_cases: 1, qty_units: 0 });
+            upc: p.upc, unit_volume: p.unit_volume,
+            qty_cases: p.qty_cases, qty_units: p.qty_units });
         } catch { /* keep going on partial failures */ }
       }
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['cart'] }); },
   });
   const [addedFlash, setAddedFlash] = useState<string | null>(null);
+  // Confirmation modal state for "Add All Case Mix to Cart". Null = closed.
+  // Two flavours: 'none' (zero quantities entered, ask user to enter some),
+  // and 'partial' (some products have qty, others don't — confirm skipping
+  // the empties). On confirm, we send the non-zero subset to addAllMut.
+  const [addAllConfirm, setAddAllConfirm] = useState<{
+    code: string;
+    kind: 'none' | 'partial';
+    toAdd: { product_name: string; wholesaler: string; upc?: string; unit_volume?: string;
+             qty_cases: number; qty_units: number }[];
+    skipped: { product_name: string }[];
+  } | null>(null);
   // Open RIP-members popup: { wholesaler, ripCode } when set, null when closed.
   // Triggered by clicking any of the per-row RIP chips below; the chip's
   // onClick stops propagation so the row's quick-view doesn't also fire.
@@ -174,6 +193,12 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
     progressUnit: 'case' | 'btl';
     casesInCart: number;
     bottlesInCart: number;
+    // What the user has typed into the per-row steppers but not yet
+    // added. Updates instantly as they edit Case/Btl, so the banner
+    // can show "Adding N cs · 2 more for $1.00 rebate" without waiting
+    // for the Add to Cart click. Total = inCart + typed.
+    casesTyped: number;
+    bottlesTyped: number;
   };
   const normUnit = (s?: string | null): 'case' | 'btl' => {
     const x = (s ?? '').toLowerCase();
@@ -218,9 +243,14 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
       }
       const progressUnit: 'case' | 'btl' = unitVotes.btl > unitVotes.case ? 'btl' : 'case';
       let casesInCart = 0, bottlesInCart = 0;
+      let casesTyped = 0, bottlesTyped = 0;
       for (const p of productMap.values()) {
         const cv = cartByKey.get(p.cartKey);
         if (cv) { casesInCart += cv.cases; bottlesInCart += cv.units; }
+        // Local stepper state is keyed by `${product_name}|${wholesaler}`
+        // (see the row render below; matches what updateQty writes).
+        const tv = cart[`${p.product_name}|${p.wholesaler}`];
+        if (tv) { casesTyped += tv.cases; bottlesTyped += tv.units; }
       }
       out.set(i, {
         code,
@@ -229,35 +259,54 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
         progressUnit,
         casesInCart,
         bottlesInCart,
+        casesTyped,
+        bottlesTyped,
       });
       i = j;
     }
     return out;
-  }, [groupByRip, items, cartByKey]);
+    // `cart` is in the dep list so the banner totals update as the user
+    // types into the steppers, not just when the server cart refreshes.
+  }, [groupByRip, items, cartByKey, cart]);
+  // Live progress message for the banner. Reads the combined live total
+  // (what's in the server cart + what the user has just typed into the
+  // steppers for any product in this RIP group), so a buyer typing
+  // "Case 3" on row two sees the banner instantly move from
+  // "Adding 0 cs" to "Adding 3 cs · 2 more for $1.00 rebate".
   function bannerProgress(b: RipBanner): { text: string; tone: 'gap' | 'pending' | 'reached' } | null {
     if (b.tiers.length === 0) return null;
-    const have = b.progressUnit === 'case' ? b.casesInCart : b.bottlesInCart;
-    const unitWord = b.progressUnit === 'case' ? 'case' : 'bottle';
+    const inCart = b.progressUnit === 'case' ? b.casesInCart : b.bottlesInCart;
+    const typed  = b.progressUnit === 'case' ? b.casesTyped  : b.bottlesTyped;
+    const have = inCart + typed;
+    const unitShort = b.progressUnit === 'case' ? 'cs' : 'btl';
+    // "Adding 3 cs (2 already in cart)" or "Adding 3 cs" or "3 cs in cart"
+    const ledgerPrefix = (() => {
+      if (typed > 0 && inCart > 0) return `Adding ${typed} ${unitShort} (${inCart} already in cart)`;
+      if (typed > 0) return `Adding ${typed} ${unitShort}`;
+      if (inCart > 0) return `${inCart} ${unitShort} in cart`;
+      return 'Nothing entered yet';
+    })();
     const reached = b.tiers.filter(t => have >= t.qty);
-    const ahead = b.tiers.filter(t => have < t.qty);
+    const ahead   = b.tiers.filter(t => have < t.qty);
+    const best    = b.tiers[b.tiers.length - 1];
     if (reached.length > 0 && ahead.length === 0) {
-      const top = reached[reached.length - 1];
-      return { text: `✓ Top tier reached: ${have} ${unitWord}${have === 1 ? '' : 's'} · $${top.amount.toFixed(2)} rebate locked`, tone: 'reached' };
+      // Top tier hit. Lead with the win, then the ledger.
+      return { text: `✓ Best RIP locked: $${best.amount.toFixed(2)} rebate · ${ledgerPrefix}`, tone: 'reached' };
     }
+    const next = ahead[0];
+    const gap = next.qty - have;
     if (reached.length > 0) {
       const top = reached[reached.length - 1];
-      const next = ahead[0];
       return {
-        text: `${have} ${unitWord}${have === 1 ? '' : 's'} in cart · $${top.amount.toFixed(2)} earned · ${next.qty - have} more for $${next.amount.toFixed(2)}`,
+        text: `${ledgerPrefix} · $${top.amount.toFixed(2)} earned · Add ${gap} more ${unitShort} for $${next.amount.toFixed(2)} (best: $${best.amount.toFixed(2)} at ${best.qty} ${unitShort})`,
         tone: 'pending',
       };
     }
-    const next = ahead[0];
     if (have === 0) {
-      return { text: `Nothing in cart yet · buy ${next.qty} ${unitWord}${next.qty === 1 ? '' : 's'} for $${next.amount.toFixed(2)} rebate`, tone: 'gap' };
+      return { text: `Nothing entered yet · Add ${next.qty} ${unitShort} for $${next.amount.toFixed(2)} rebate (best: $${best.amount.toFixed(2)} at ${best.qty} ${unitShort})`, tone: 'gap' };
     }
     return {
-      text: `${have} ${unitWord}${have === 1 ? '' : 's'} in cart · ${next.qty - have} more for $${next.amount.toFixed(2)} rebate`,
+      text: `${ledgerPrefix} · Add ${gap} more ${unitShort} for $${next.amount.toFixed(2)} rebate (best: $${best.amount.toFixed(2)} at ${best.qty} ${unitShort})`,
       tone: 'gap',
     };
   }
@@ -375,11 +424,31 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                           disabled={addAllMut.isPending}
                           onClick={e => {
                             e.stopPropagation();
-                            addAllMut.mutate(banner.products);
+                            // Partition the group's products into those with
+                            // a typed qty and those with none. The button
+                            // sends ONLY the typed-qty subset; the popup
+                            // covers the partial / all-empty cases.
+                            const entries = banner.products.map(p => {
+                              const q = cart[`${p.product_name}|${p.wholesaler}`] ?? { cases: 0, units: 0 };
+                              return { ...p, qty_cases: q.cases, qty_units: q.units };
+                            });
+                            const toAdd = entries.filter(e => e.qty_cases > 0 || e.qty_units > 0);
+                            const skipped = entries
+                              .filter(e => e.qty_cases === 0 && e.qty_units === 0)
+                              .map(e => ({ product_name: e.product_name }));
+                            if (toAdd.length === 0) {
+                              setAddAllConfirm({ code: banner.code, kind: 'none', toAdd: [], skipped });
+                              return;
+                            }
+                            if (skipped.length > 0) {
+                              setAddAllConfirm({ code: banner.code, kind: 'partial', toAdd, skipped });
+                              return;
+                            }
+                            addAllMut.mutate(toAdd);
                             setAddedFlash(banner.code);
                             setTimeout(() => setAddedFlash(null), 1600);
                           }}
-                          title={`Add 1 case of each of the ${banner.products.length} products in this RIP group to your cart`}
+                          title={`Add the typed quantity of every product in this RIP group. Products with no quantity entered are skipped.`}
                         >
                           {addedFlash === banner.code
                             ? (<><Check size={13} /> Added</>)
@@ -757,6 +826,73 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
           ripCode={ripModal.ripCode}
           onClose={() => setRipModal(null)}
         />
+      )}
+      {/* Confirmation popup for "Add All Case Mix to Cart" when some / all
+          rows have no quantity typed. Two modes:
+            'none'    — every product in the group has 0 cases AND 0 bottles;
+                        ask the buyer to enter quantities first.
+            'partial' — some products have qty, others don't; confirm that
+                        only the typed ones are sent and the rest are skipped. */}
+      {addAllConfirm && (
+        <div className="catalog-confirm-overlay"
+             role="dialog" aria-modal="true"
+             aria-labelledby="catalog-confirm-title"
+             onClick={e => { if (e.target === e.currentTarget) setAddAllConfirm(null); }}>
+          <div className="catalog-confirm-modal">
+            <div className="catalog-confirm-head">
+              <span className="catalog-confirm-code">RIP {addAllConfirm.code}</span>
+              <h3 id="catalog-confirm-title" className="catalog-confirm-title">
+                {addAllConfirm.kind === 'none'
+                  ? 'No quantities entered'
+                  : `Skip ${addAllConfirm.skipped.length} product${addAllConfirm.skipped.length === 1 ? '' : 's'} with no quantity?`}
+              </h3>
+            </div>
+            <div className="catalog-confirm-body">
+              {addAllConfirm.kind === 'none' ? (
+                <p>
+                  None of the products in this Case Mix have a case or bottle quantity entered yet.
+                  Enter quantities on the rows you want to order, then tap <b>Add All Case Mix to Cart</b> again.
+                </p>
+              ) : (
+                <>
+                  <p>
+                    <b>{addAllConfirm.toAdd.length}</b> product{addAllConfirm.toAdd.length === 1 ? '' : 's'} with a typed quantity will be added to your cart.
+                    The following {addAllConfirm.skipped.length === 1 ? 'product has' : `${addAllConfirm.skipped.length} products have`} no quantity entered and will be skipped:
+                  </p>
+                  <ul className="catalog-confirm-list">
+                    {addAllConfirm.skipped.slice(0, 8).map((p, i) => (
+                      <li key={i}>{p.product_name}</li>
+                    ))}
+                    {addAllConfirm.skipped.length > 8 && (
+                      <li className="catalog-confirm-list-more">
+                        + {addAllConfirm.skipped.length - 8} more
+                      </li>
+                    )}
+                  </ul>
+                </>
+              )}
+            </div>
+            <div className="catalog-confirm-actions">
+              {addAllConfirm.kind === 'partial' && (
+                <button type="button" className="btn btn-primary"
+                        onClick={() => {
+                          const code = addAllConfirm.code;
+                          const toAdd = addAllConfirm.toAdd;
+                          setAddAllConfirm(null);
+                          addAllMut.mutate(toAdd);
+                          setAddedFlash(code);
+                          setTimeout(() => setAddedFlash(null), 1600);
+                        }}>
+                  Add {addAllConfirm.toAdd.length} to Cart, Skip the Rest
+                </button>
+              )}
+              <button type="button" className="btn btn-secondary"
+                      onClick={() => setAddAllConfirm(null)}>
+                {addAllConfirm.kind === 'none' ? 'Got it' : 'Cancel'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

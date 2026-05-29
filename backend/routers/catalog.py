@@ -651,6 +651,8 @@ def search_products(
     has_closeout: Optional[bool] = None,
     has_rip: Optional[bool] = None,
     in_combo: Optional[bool] = None,        # True = only products that are in a combo/bundle
+    price_drop: Optional[bool] = None,      # True = keep rows whose next-month effective is cheaper
+    price_increase: Optional[bool] = None,  # True = keep rows whose next-month effective is higher
     brand: Optional[str] = None,
     unit_volume: Optional[str] = None,
     divisions: Optional[str] = None,        # comma-separated wholesalers (filter panel)
@@ -841,11 +843,72 @@ def search_products(
                  AND rm.rg_upc        = CAST(upc AS VARCHAR)
             """
 
+        # Price-trend filter: keep rows whose effective price changes between
+        # this month and next. We pre-aggregate next-month effective per
+        # (wholesaler, upc, product_name, unit_volume, vintage_norm) so the
+        # LEFT JOIN never multiplies rows, then OR the two checks when both
+        # checkboxes are on (= "any change"). The match key mirrors what
+        # _attach_next_month_prices computes post-pagination, so the
+        # better_month sticker the table renders stays consistent with what
+        # the page-level filter kept.
+        trend_active = (price_drop is True) or (price_increase is True)
+        trend_cte_body = ""
+        trend_join_sql = ""
+        if trend_active:
+            params["next_ym"] = _next_yyyy_mm()
+            src_vn = _vintage_norm_sql(f"{src}.vintage")
+            nx_vn = _vintage_norm_sql("vintage")
+            trend_cte_body = f"""
+                next_eff_lookup AS (
+                    SELECT wholesaler,
+                           COALESCE(CAST(upc AS VARCHAR), '') AS upc_key,
+                           COALESCE(product_name, '') AS name_key,
+                           COALESCE(unit_volume, '') AS size_key,
+                           {nx_vn} AS vintage_key,
+                           MIN(effective_case_price) AS next_eff
+                    FROM {src}
+                    WHERE edition = $next_ym
+                    GROUP BY 1, 2, 3, 4, 5
+                )
+            """
+            trend_join_sql = f"""
+                LEFT JOIN next_eff_lookup nx
+                  ON nx.wholesaler  = {src}.wholesaler
+                 AND nx.upc_key     = COALESCE(CAST({src}.upc AS VARCHAR), '')
+                 AND nx.name_key    = COALESCE({src}.product_name, '')
+                 AND nx.size_key    = COALESCE({src}.unit_volume, '')
+                 AND nx.vintage_key IS NOT DISTINCT FROM ({src_vn})
+            """
+            trend_conds = []
+            curr_eff_expr = "COALESCE(effective_case_price, frontline_case_price)"
+            if price_drop is True:
+                trend_conds.append(
+                    f"(nx.next_eff IS NOT NULL AND {curr_eff_expr} IS NOT NULL "
+                    f"AND nx.next_eff < {curr_eff_expr} - 0.005)"
+                )
+            if price_increase is True:
+                trend_conds.append(
+                    f"(nx.next_eff IS NOT NULL AND {curr_eff_expr} IS NOT NULL "
+                    f"AND nx.next_eff > {curr_eff_expr} + 0.005)"
+                )
+            where.append("(" + " OR ".join(trend_conds) + ")")
+            where_clause = " AND ".join(where)
+
+        def _add_cte(existing: str, body: str) -> str:
+            """Append a CTE body to an existing WITH block, or open a new one."""
+            if not body:
+                return existing
+            if existing.strip():
+                return f"{existing.rstrip()}, {body}"
+            return f"WITH {body}"
+
+        count_cte_sql = _add_cte(rip_cte_sql, trend_cte_body)
+
         # Count query (deduped to match the data query). With group_by_rip on
         # the join + partition mirror the data path so total reflects fan-out.
         count = con.execute(
-            f"{rip_cte_sql} SELECT count(*) FROM "
-            f"(SELECT 1 FROM {src} {rip_join_sql} WHERE {where_clause} {dedup}) t",
+            f"{count_cte_sql} SELECT count(*) FROM "
+            f"(SELECT 1 FROM {src} {rip_join_sql} {trend_join_sql} WHERE {where_clause} {dedup}) t",
             params,
         ).fetchone()[0]
 
@@ -867,8 +930,8 @@ def search_products(
                 params.update(qp2)
                 where_clause = " AND ".join(where)
                 return con.execute(
-                    f"{rip_cte_sql} SELECT count(*) FROM "
-                    f"(SELECT 1 FROM {src} {rip_join_sql} WHERE {where_clause} {dedup}) t",
+                    f"{count_cte_sql} SELECT count(*) FROM "
+                    f"(SELECT 1 FROM {src} {rip_join_sql} {trend_join_sql} WHERE {where_clause} {dedup}) t",
                     params,
                 ).fetchone()[0]
 
@@ -977,8 +1040,11 @@ def search_products(
                    END AS rip_cpl_mismatch
             """
 
+        # Same trend CTE + LEFT JOIN as the count query so total / pages stay
+        # consistent when the user has Price Drop / Price Increase checked.
+        data_cte_full = _add_cte(data_cte_sql, trend_cte_body)
         rows = con.execute(f"""
-            {data_cte_sql}
+            {data_cte_full}
             SELECT wholesaler, edition, upc, product_name, product_type,
                    unit_qty, unit_volume, vintage, frontline_case_price, frontline_unit_price,
                    best_case_price, best_unit_price, effective_case_price,
@@ -992,6 +1058,7 @@ def search_products(
                    {rip_select_sql}
             FROM {src}
             {data_join_sql}
+            {trend_join_sql}
             WHERE {where_clause}
             {dedup}
             ORDER BY {order_by}

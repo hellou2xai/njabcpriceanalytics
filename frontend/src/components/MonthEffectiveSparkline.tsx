@@ -12,7 +12,8 @@ export interface RipTier { qty: number; unit: string; eff: number; }
 export interface MonthBreakdown {
   edition: string | null;
   frontline: number | null;
-  afterDiscount: number | null;   // best price after CPL discount, before RIP
+  afterDiscount: number | null;   // best price after CPL discount, before RIP (single number)
+  discountTiers?: RipTier[];      // every CPL discount option for this month (optional detail)
   ripTiers: RipTier[];            // every RIP option for this month
   bestEff: number | null;         // headline price the sparkline plots
 }
@@ -34,14 +35,32 @@ function fmtMonth(ed: string | null): string {
 const fmt = (v: number | null) => v == null ? '—' : `$${v.toFixed(2)}/cs`;
 
 function MonthBlock({ label, b }: { label: string; b: MonthBreakdown }) {
-  const showDisc = b.afterDiscount != null && (b.frontline == null || b.afterDiscount < b.frontline - 0.005);
+  const hasDiscTiers = (b.discountTiers ?? []).length > 0;
+  const showDiscSummary = !hasDiscTiers
+    && b.afterDiscount != null
+    && (b.frontline == null || b.afterDiscount < b.frontline - 0.005);
   return (
     <div className="mes-block">
       <div className="mes-block-head">{label}</div>
       <table className="mes-table">
         <tbody>
           <tr><td>Frontline</td><td>{fmt(b.frontline)}</td></tr>
-          {showDisc && <tr><td>After discount</td><td>{fmt(b.afterDiscount)}</td></tr>}
+          {hasDiscTiers && (
+            <tr>
+              <td>After discount</td>
+              <td>
+                {[...(b.discountTiers ?? [])].sort((a, b) => a.eff - b.eff).map((t, i) => {
+                  const u = /btl|bottle/i.test(t.unit) ? 'btl' : 'cs';
+                  return (
+                    <div key={i}>
+                      Buy {t.qty} {u} → <strong>${t.eff.toFixed(2)}</strong>
+                    </div>
+                  );
+                })}
+              </td>
+            </tr>
+          )}
+          {showDiscSummary && <tr><td>After discount</td><td>{fmt(b.afterDiscount)}</td></tr>}
           {b.ripTiers.length > 0 && (
             <tr>
               <td>After RIP</td>

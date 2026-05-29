@@ -344,6 +344,9 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                             edition,
                             frontline,
                             afterDiscount: bestDisc != null && Number.isFinite(bestDisc) ? bestDisc : null,
+                            discountTiers: disc
+                              .map(t => ({ qty: t.qty, unit: t.unit, eff: t.price_after ?? 0 }))
+                              .filter(t => t.eff > 0),
                             ripTiers: rip
                               .map(t => ({ qty: t.qty, unit: t.unit, eff: t.price_after ?? 0 }))
                               .filter(t => t.eff > 0),

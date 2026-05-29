@@ -173,8 +173,8 @@ export default function RipProducts() {
       let entry = m.get(k);
       if (!entry) {
         entry = {
-          curr: { edition: null, frontline: null, afterDiscount: null, ripTiers: [], bestEff: null },
-          next: { edition: null, frontline: null, afterDiscount: null, ripTiers: [], bestEff: null },
+          curr: { edition: null, frontline: null, afterDiscount: null, discountTiers: [], ripTiers: [], bestEff: null },
+          next: { edition: null, frontline: null, afterDiscount: null, discountTiers: [], ripTiers: [], bestEff: null },
         };
         m.set(k, entry);
       }
@@ -190,9 +190,15 @@ export default function RipProducts() {
       if (ne != null && (entry.next.bestEff == null || ne < entry.next.bestEff)) entry.next.bestEff = ne;
 
       if (it.source === 'discount') {
-        // Best CPL-only price (before any RIP) per month.
-        if (ce != null && (entry.curr.afterDiscount == null || ce < entry.curr.afterDiscount)) entry.curr.afterDiscount = ce;
-        if (ne != null && (entry.next.afterDiscount == null || ne < entry.next.afterDiscount)) entry.next.afterDiscount = ne;
+        // Track every discount tier individually + the rolling best as a summary.
+        if (ce != null && (it.curr_save_per_case ?? 0) > 0) {
+          entry.curr.discountTiers!.push({ qty: it.rip_qty, unit: it.rip_unit ?? 'Case', eff: ce });
+          if (entry.curr.afterDiscount == null || ce < entry.curr.afterDiscount) entry.curr.afterDiscount = ce;
+        }
+        if (ne != null && (it.next_save_per_case ?? 0) > 0) {
+          entry.next.discountTiers!.push({ qty: it.rip_qty, unit: it.rip_unit ?? 'Case', eff: ne });
+          if (entry.next.afterDiscount == null || ne < entry.next.afterDiscount) entry.next.afterDiscount = ne;
+        }
       } else if (it.source === 'rip') {
         if (ce != null && (it.curr_save_per_case ?? 0) > 0) {
           entry.curr.ripTiers.push({ qty: it.rip_qty, unit: it.rip_unit ?? 'Case', eff: ce });
@@ -714,21 +720,28 @@ export default function RipProducts() {
                             {prog.text}
                           </span>
                         )}
-                        <button
-                          className="btn btn-sm rip-group-banner-add"
-                          disabled={addAllMut.isPending}
-                          onClick={e => {
-                            e.stopPropagation();
-                            addAllMut.mutate(groupMeta.products);
-                            setAddedFlash(groupMeta.code);
-                            setTimeout(() => setAddedFlash(null), 1600);
-                          }}
-                          title={`Add 1 case of each of the ${groupMeta.products.length} products in this RIP group to your cart`}
-                        >
-                          {addedFlash === groupMeta.code
-                            ? (<><Check size={13} /> Added</>)
-                            : (<><Plus size={13} /> Add all to cart</>)}
-                        </button>
+                        {/* Hide the bulk-add button on single-product RIPs:
+                            there's nothing to "mix" if only one SKU qualifies.
+                            For 2+ products the label reads "Add RIP Mix to
+                            Cart" since the rebate is a case-mix across the
+                            group, not just a generic add-all. */}
+                        {groupMeta.products.length > 1 && (
+                          <button
+                            className="btn btn-sm rip-group-banner-add"
+                            disabled={addAllMut.isPending}
+                            onClick={e => {
+                              e.stopPropagation();
+                              addAllMut.mutate(groupMeta.products);
+                              setAddedFlash(groupMeta.code);
+                              setTimeout(() => setAddedFlash(null), 1600);
+                            }}
+                            title={`Add 1 case of each of the ${groupMeta.products.length} products in this RIP group to your cart`}
+                          >
+                            {addedFlash === groupMeta.code
+                              ? (<><Check size={13} /> Added</>)
+                              : (<><Plus size={13} /> Add RIP Mix to Cart</>)}
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -761,23 +774,7 @@ export default function RipProducts() {
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                             <ProductThumb src={item.image_url} alt={item.product_name} size={64} />
-                            {/* Sparkline lives in the same flex row as the
-                                product cell so it sits NEXT TO the name,
-                                not stacked underneath. The popover renders
-                                above the chip on hover with the structured
-                                Frontline / After Discount / RIP / Best
-                                breakdown for both months. */}
-                            {(() => {
-                              const sk = `${item.wholesaler}|${item.product_name}|${item.unit_volume ?? ''}`;
-                              const s = sparkByProduct.get(sk);
-                              if (!s) return null;
-                              return (
-                                <span onClick={e => e.stopPropagation()}>
-                                  <MonthEffectiveSparkline curr={s.curr} next={s.next} />
-                                </span>
-                              );
-                            })()}
-                            <div className="rip-cell-product">
+                            <div className="rip-cell-product" style={{ flex: 1, minWidth: 0 }}>
                               <span className="rip-product-name">
                                 {item.product_name}
                                 {item.needs_rep_verify && (
@@ -837,6 +834,22 @@ export default function RipProducts() {
                                 );
                               })()}
                             </div>
+                            {/* Sparkline at the right edge of the product cell,
+                                matching the Catalog layout. marginLeft:auto on
+                                a flex item pushes it to the row end; the chip
+                                opens a popover above on hover with Frontline /
+                                discount tiers / RIP tiers / Best for both
+                                months. */}
+                            {(() => {
+                              const sk = `${item.wholesaler}|${item.product_name}|${item.unit_volume ?? ''}`;
+                              const s = sparkByProduct.get(sk);
+                              if (!s) return null;
+                              return (
+                                <span onClick={e => e.stopPropagation()} style={{ marginLeft: 'auto', flexShrink: 0 }}>
+                                  <MonthEffectiveSparkline curr={s.curr} next={s.next} />
+                                </span>
+                              );
+                            })()}
                           </div>
                           {(() => {
                             const ckey = `${item.product_name}|${item.wholesaler}`;

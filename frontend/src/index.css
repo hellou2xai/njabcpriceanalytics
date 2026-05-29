@@ -579,13 +579,16 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
 /* Inline order action block: Case/Btl steppers + Add to cart + Add to list,
    used under each product row on Catalog, RIP Products, and Combos. Given a
    subtle surface tint + padding so the block reads as one cohesive action
-   area and isn't visually cramped against the row above. */
+   area and isn't visually cramped against the row above. `width: fit-content`
+   keeps it from stretching across the column when its parent is flex:1. */
 .catalog-order-inline {
   background: color-mix(in srgb, var(--accent) 5%, var(--surface));
   border: 1px solid color-mix(in srgb, var(--accent) 15%, var(--border));
   border-radius: 8px;
   padding: 8px 10px;
   gap: 10px !important;
+  width: fit-content;
+  max-width: 100%;
 }
 
 /* Nav item rendered as a button (Guided Tour launcher) — match the nav links. */

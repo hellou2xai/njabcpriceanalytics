@@ -372,7 +372,7 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
             {/* Pro placeholders. Live preview of the POS-integrated buying
                 suggestion + justification, shown as a teaser on every row
                 so the value of the upgrade is visible while browsing. */}
-            <th className="catalog-pro-th" title="Pro feature: estimates how long this product takes to sell through based on your real sales velocity. Pick Day / Week / Month to change the time unit.">
+            <th className="catalog-pro-th" title="Pro feature: takes the Case + Btl quantity you're adding to cart, divides by your store's real sales velocity from POS, and shows how long that stock will take to sell through. Updates live as you edit Case / Btl. Pick Day / Week / Month for the unit.">
               <span className="catalog-pro-badge">Pro</span>
               Time to Sell
             </th>
@@ -751,12 +751,12 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                       column header (no per-row repeat). Each cell still
                       carries a hover tooltip and a value-prop sticker. */}
                   <td className="catalog-pro-cell" data-label="Time to Sell"
-                      title="Pro feature: after POS integration this column shows how long this product takes to sell through at your store's actual sales velocity. Toggle Day / Week / Month below to change the unit.">
+                      title="Pro feature: takes the Case + Btl quantity you're adding to cart, divides by your store's real sales velocity from POS, and shows how long that stock will take to sell through. Updates live as you edit Case / Btl. Pick Day / Week / Month for the unit.">
                     <div className="catalog-pro-body">
                       <div className="catalog-pro-value">
                         XX <span className="catalog-pro-unit">{ttsUnit === 'day' ? 'days' : ttsUnit === 'week' ? 'weeks' : 'months'}</span>
                       </div>
-                      <div className="catalog-pro-sub">to sell through after POS sync</div>
+                      <div className="catalog-pro-sub">based on the qty you add to cart</div>
                       {/* Unit toggle. Click changes ttsUnit for every row at
                           once so the buyer picks once and the whole catalog
                           re-labels. Pure display preference for now; the

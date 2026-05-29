@@ -420,12 +420,23 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                         style={tierBandStyle}
                         data-tier-met={tierMet}>
                       <td></td>
-                      <td colSpan={showIntroduced ? 6 : 5} style={{ paddingLeft: 24 }} className="card-title-cell">
-                        <span className={`source-badge source-${t.source}`}>{t.source === 'discount' ? 'DISC' : 'RIP'}</span>
-                        <span className={`rip-tier-badge ${t.source === 'discount' ? 'rip-tier-curr' : 'rip-tier-next'}`} style={{ marginLeft: 8 }}>
-                          Buy {t.qty} {shortUnit(t.unit)} = <strong>${t.amount.toFixed(2)}</strong>
-                        </span>
-                        {t.description && <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>{t.description}</span>}
+                      {/* Sub-row layout: keep the DISC/RIP + tier chip
+                          right-aligned at the END of the wide span so it
+                          sits next to the Save / Effective / ROI columns
+                          (otherwise it floats far to the left and the buyer
+                          loses the visual link). The tier description
+                          ("-196 CANS") drops to a second line beneath the
+                          chip so the chip-and-numbers stay on one row. */}
+                      <td colSpan={showIntroduced ? 6 : 5} className="card-title-cell catalog-tier-sub-cell">
+                        <div className="catalog-tier-sub-chip">
+                          <span className={`source-badge source-${t.source}`}>{t.source === 'discount' ? 'DISC' : 'RIP'}</span>
+                          <span className={`rip-tier-badge ${t.source === 'discount' ? 'rip-tier-curr' : 'rip-tier-next'}`}>
+                            Buy {t.qty} {shortUnit(t.unit)} = <strong>${t.amount.toFixed(2)}</strong>
+                          </span>
+                        </div>
+                        {t.description && (
+                          <div className="catalog-tier-sub-desc">{t.description}</div>
+                        )}
                       </td>
                       <td className="right" data-label="Save">
                         <span className="text-green font-bold">{fmt(t.save_per_case)}</span>

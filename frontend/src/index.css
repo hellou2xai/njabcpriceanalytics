@@ -2540,6 +2540,25 @@ tr:hover .row-menu-btn { opacity: 1; }
 .mes-row-best td { background: color-mix(in srgb, var(--green) 10%, transparent); }
 .mes-row-best .mes-save { color: var(--green); }
 
+/* Catalog tier sub-row: chip pushes to the right edge of its wide
+   colSpan so the DISC/RIP badge sits next to the Save / Effective
+   columns instead of floating far to the left. The description text
+   (e.g. "-196 CANS") drops to a second line beneath the chip so the
+   chip-and-numbers row stays compact. */
+.catalog-tier-sub-cell {
+  text-align: right;
+  padding-right: 14px;
+}
+.catalog-tier-sub-chip {
+  display: inline-flex; align-items: center; gap: 8px;
+  white-space: nowrap;
+}
+.catalog-tier-sub-desc {
+  font-size: 11px; color: var(--text-muted);
+  margin-top: 2px;
+  text-align: right;
+}
+
 .rip-better-next-pill,
 .rip-better-this-pill,
 .rip-better-same-pill {

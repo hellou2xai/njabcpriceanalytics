@@ -4008,11 +4008,56 @@ tr:hover .row-menu-btn { opacity: 1; }
 /* ---- Drill table ---- */
 .pro-drill-table {
   width: 100%; border-collapse: collapse; font-size: 13px;
+  table-layout: auto;
 }
 .pro-drill-table th, .pro-drill-table td {
   padding: 8px 10px; border-bottom: 1px solid var(--border);
   text-align: left; vertical-align: top;
 }
+
+/* New Products table: rationale column was wrapping into the velocity
+   column because cells were sized by content. Fix with explicit column
+   widths via table-layout: fixed, and force the rationale to wrap
+   while every numeric/short column stays narrow. */
+.pro-drill-table--new { table-layout: fixed; }
+.pro-drill-table--new th.col-product,
+.pro-drill-table--new td.col-product   { width: 22%; word-wrap: break-word; }
+.pro-drill-table--new th.col-size,
+.pro-drill-table--new td.col-size      { width: 7%;  white-space: nowrap; }
+.pro-drill-table--new th.col-cat,
+.pro-drill-table--new td.col-cat       { width: 8%;  white-space: nowrap; }
+.pro-drill-table--new th.col-rationale,
+.pro-drill-table--new td.col-rationale {
+  width: 34%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+  color: var(--text);
+}
+.pro-drill-table--new th.col-vel,
+.pro-drill-table--new td.col-vel       { width: 9%;  white-space: nowrap; }
+.pro-drill-table--new th.col-rip,
+.pro-drill-table--new td.col-rip       { width: 9%;  white-space: nowrap; }
+.pro-drill-table--new th.col-cost,
+.pro-drill-table--new td.col-cost      { width: 7%;  white-space: nowrap; }
+.pro-drill-table--new th.col-match,
+.pro-drill-table--new td.col-match     { width: 4%;  white-space: nowrap; }
+
+/* Reorder table: the basket info is wide; keep numeric cells narrow and
+   nowrap so the RIP + Best month cells get their own visual breathing
+   room. */
+.pro-drill-table--reorder th.r,
+.pro-drill-table--reorder td.r { white-space: nowrap; }
+.pro-drill-table--reorder td { vertical-align: middle; }
+.pro-rip-deal {
+  display: inline-flex; flex-direction: column; gap: 1px;
+  font-size: 11px; line-height: 1.2;
+}
+.pro-rip-deal-code { font-weight: 700; color: var(--text); }
+.pro-rip-deal-amount { color: var(--green); font-weight: 700; }
+.month-this { background: color-mix(in srgb, var(--green) 18%, transparent); color: var(--green); }
+.month-next { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+.month-flat { background: color-mix(in srgb, var(--text-muted) 14%, transparent); color: var(--text-muted); }
 .pro-drill-table th {
   font-size: 11px; font-weight: 700; letter-spacing: 0.3px;
   text-transform: uppercase; color: var(--text-muted);

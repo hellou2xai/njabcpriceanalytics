@@ -34,22 +34,25 @@ interface ReorderRow {
   velocity: number;          // bottles sold per day, 30-day avg
   daysOfCover: number;       // onHand / velocity
   suggestedCases: number;    // recommended cases to buy
-  caseCost: Money;
+  caseCost: Money;           // best effective case price this/next month combined
   marginPct: number;
+  bestRip: string | null;    // RIP code + qty for the rebate carrying the basket
+  bestRipRebate: Money;      // dollar rebate at the chosen tier
+  bestMonth: 'this' | 'next' | 'flat'; // which edition is cheapest
   urgency: 'critical' | 'low' | 'comfortable';
 }
 
 const REORDER: ReorderRow[] = [
-  { product: 'TITO\'S HANDMADE VODKA',   size: '750ML', onHand:  9, velocity: 2.8, daysOfCover:  3, suggestedCases: 6, caseCost: 195.00, marginPct: 24, urgency: 'critical' },
-  { product: 'JAMESON IRISH WHISKEY',    size: '750ML', onHand: 14, velocity: 1.9, daysOfCover:  7, suggestedCases: 4, caseCost: 232.00, marginPct: 22, urgency: 'critical' },
-  { product: 'KENDALL JACKSON CHARD',    size: '750ML', onHand: 22, velocity: 2.4, daysOfCover:  9, suggestedCases: 5, caseCost: 132.00, marginPct: 28, urgency: 'low' },
-  { product: 'BUFFALO TRACE BOURBON',    size: '750ML', onHand:  7, velocity: 1.1, daysOfCover:  6, suggestedCases: 3, caseCost: 268.00, marginPct: 26, urgency: 'critical' },
-  { product: 'CAYMUS CABERNET',          size: '750ML', onHand: 18, velocity: 1.4, daysOfCover: 13, suggestedCases: 3, caseCost: 552.00, marginPct: 32, urgency: 'low' },
-  { product: 'ABSOLUT VODKA',            size: '1.75L', onHand:  4, velocity: 0.8, daysOfCover:  5, suggestedCases: 2, caseCost: 169.00, marginPct: 19, urgency: 'critical' },
-  { product: 'CASAMIGOS BLANCO',         size: '750ML', onHand: 11, velocity: 1.6, daysOfCover:  7, suggestedCases: 4, caseCost: 488.00, marginPct: 30, urgency: 'critical' },
-  { product: 'JOSH CELLARS CABERNET',    size: '750ML', onHand: 28, velocity: 3.1, daysOfCover:  9, suggestedCases: 7, caseCost:  98.00, marginPct: 35, urgency: 'low' },
-  { product: 'MAKER\'S MARK BOURBON',    size: '750ML', onHand: 16, velocity: 1.5, daysOfCover: 11, suggestedCases: 3, caseCost: 278.00, marginPct: 24, urgency: 'low' },
-  { product: 'WHISPERING ANGEL ROSE',    size: '750ML', onHand: 12, velocity: 2.2, daysOfCover:  5, suggestedCases: 5, caseCost: 215.00, marginPct: 29, urgency: 'critical' },
+  { product: 'TITO\'S HANDMADE VODKA',   size: '750ML', onHand:  9, velocity: 2.8, daysOfCover:  3, suggestedCases: 6, caseCost: 195.00, marginPct: 24, bestRip: 'RIP 30142 · 5 cs',  bestRipRebate:  60, bestMonth: 'this',  urgency: 'critical' },
+  { product: 'JAMESON IRISH WHISKEY',    size: '750ML', onHand: 14, velocity: 1.9, daysOfCover:  7, suggestedCases: 4, caseCost: 232.00, marginPct: 22, bestRip: 'RIP 21088 · 4 cs',  bestRipRebate:  84, bestMonth: 'next',  urgency: 'critical' },
+  { product: 'KENDALL JACKSON CHARD',    size: '750ML', onHand: 22, velocity: 2.4, daysOfCover:  9, suggestedCases: 5, caseCost: 132.00, marginPct: 28, bestRip: 'RIP 41205 · 5 cs',  bestRipRebate:  45, bestMonth: 'flat',  urgency: 'low' },
+  { product: 'BUFFALO TRACE BOURBON',    size: '750ML', onHand:  7, velocity: 1.1, daysOfCover:  6, suggestedCases: 3, caseCost: 268.00, marginPct: 26, bestRip: null,              bestRipRebate:   0, bestMonth: 'this',  urgency: 'critical' },
+  { product: 'CAYMUS CABERNET',          size: '750ML', onHand: 18, velocity: 1.4, daysOfCover: 13, suggestedCases: 3, caseCost: 552.00, marginPct: 32, bestRip: 'RIP 50018 · 3 cs',  bestRipRebate: 120, bestMonth: 'next',  urgency: 'low' },
+  { product: 'ABSOLUT VODKA',            size: '1.75L', onHand:  4, velocity: 0.8, daysOfCover:  5, suggestedCases: 2, caseCost: 169.00, marginPct: 19, bestRip: 'RIP 30217 · 2 cs',  bestRipRebate:  24, bestMonth: 'this',  urgency: 'critical' },
+  { product: 'CASAMIGOS BLANCO',         size: '750ML', onHand: 11, velocity: 1.6, daysOfCover:  7, suggestedCases: 4, caseCost: 488.00, marginPct: 30, bestRip: 'RIP 33119 · 4 cs',  bestRipRebate: 100, bestMonth: 'this',  urgency: 'critical' },
+  { product: 'JOSH CELLARS CABERNET',    size: '750ML', onHand: 28, velocity: 3.1, daysOfCover:  9, suggestedCases: 7, caseCost:  98.00, marginPct: 35, bestRip: 'RIP 41032 · 5 cs',  bestRipRebate:  35, bestMonth: 'next',  urgency: 'low' },
+  { product: 'MAKER\'S MARK BOURBON',    size: '750ML', onHand: 16, velocity: 1.5, daysOfCover: 11, suggestedCases: 3, caseCost: 278.00, marginPct: 24, bestRip: 'RIP 21466 · 3 cs',  bestRipRebate:  42, bestMonth: 'flat',  urgency: 'low' },
+  { product: 'WHISPERING ANGEL ROSE',    size: '750ML', onHand: 12, velocity: 2.2, daysOfCover:  5, suggestedCases: 5, caseCost: 215.00, marginPct: 29, bestRip: 'RIP 47008 · 5 cs',  bestRipRebate:  75, bestMonth: 'next',  urgency: 'critical' },
 ];
 
 interface DeadStockRow {
@@ -133,8 +136,8 @@ const TILES: TileMeta[] = [
     headlineSub: 'across 10 SKUs running short this week',
     bullets: [
       { dot: '#dc2626', text: '5 SKUs at < 7 days of cover' },
-      { dot: '#ea580c', text: '$8.2k recommended buy this week' },
-      { dot: '#16a34a', text: 'Avg margin on basket: 27%' },
+      { dot: '#ea580c', text: '$10.1k buy, $2.5k RIP rebate locked' },
+      { dot: '#16a34a', text: '4 SKUs cheaper next month, 5 best now' },
     ],
   },
   {
@@ -232,29 +235,49 @@ function ReorderDrill() {
   const totalCost = REORDER.reduce((a, c) => a + c.suggestedCases * c.caseCost, 0);
   const critical = REORDER.filter(r => r.urgency === 'critical').length;
   const avgMargin = Math.round(REORDER.reduce((a, c) => a + c.marginPct, 0) / REORDER.length);
+  const totalRebate = REORDER.reduce((a, c) => a + c.bestRipRebate * c.suggestedCases, 0);
   return (
     <>
       <div className="pro-drill-stats">
         <Stat label="Recommended buy" value={`${totalUnits} cs`} />
         <Stat label="Cash needed" value={`$${totalCost.toLocaleString()}`} />
         <Stat label="Critical SKUs" value={`${critical} of ${REORDER.length}`} tone="bad" />
+        <Stat label="RIP rebate on basket" value={`$${totalRebate.toLocaleString()}`} tone="good" />
         <Stat label="Avg basket margin" value={`${avgMargin}%`} tone="good" />
       </div>
-      <table className="pro-drill-table">
+      <table className="pro-drill-table pro-drill-table--reorder">
         <thead>
           <tr>
-            <th>Product</th><th>Size</th><th className="r">On hand</th><th className="r">Velocity / day</th>
-            <th className="r">Days cover</th><th className="r">Suggested buy</th><th className="r">Case cost</th><th className="r">Margin</th><th>Urgency</th>
+            <th>Product</th><th>Size</th>
+            <th className="r">On hand</th>
+            <th className="r">Velocity / day</th>
+            <th className="r">Days cover</th>
+            <th className="r">Suggested buy</th>
+            <th>Best RIP deal</th>
+            <th>Best month</th>
+            <th className="r">Case cost</th>
+            <th className="r">Margin</th>
+            <th>Urgency</th>
           </tr>
         </thead>
         <tbody>
           {REORDER.map((r, i) => (
             <tr key={i}>
-              <td>{r.product}</td><td>{r.size}</td>
+              <td>{r.product}</td>
+              <td>{r.size}</td>
               <td className="r">{r.onHand} btl</td>
               <td className="r">{r.velocity.toFixed(1)}</td>
               <td className="r">{r.daysOfCover} d</td>
               <td className="r"><strong>{r.suggestedCases} cs</strong></td>
+              <td>
+                {r.bestRip ? (
+                  <span className="pro-rip-deal">
+                    <span className="pro-rip-deal-code">{r.bestRip}</span>
+                    <span className="pro-rip-deal-amount">−${r.bestRipRebate}/cs</span>
+                  </span>
+                ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+              </td>
+              <td><BestMonthBadge month={r.bestMonth} /></td>
               <td className="r">${r.caseCost.toFixed(2)}</td>
               <td className="r">{r.marginPct}%</td>
               <td><UrgencyBadge urgency={r.urgency} /></td>
@@ -264,7 +287,8 @@ function ReorderDrill() {
       </table>
       <p className="pro-drill-explain">
         With POS connected, this list updates daily from your real sell-through, current on-hand, and incoming POs.
-        Each row would be one-click added to your cart as a buy line.
+        Each row pairs the recommended buy with the strongest active RIP and flags whether the cheapest effective
+        price lands this month or waits for next month, so you don't pay full price the day before a rebate kicks in.
       </p>
     </>
   );
@@ -324,22 +348,30 @@ function NewProductsDrill() {
         <Stat label="With active RIP" value={`${withRip}`} />
         <Stat label="Source" value="This edition's New Items" />
       </div>
-      <table className="pro-drill-table">
+      <table className="pro-drill-table pro-drill-table--new">
         <thead>
           <tr>
-            <th>Product</th><th>Size</th><th>Category</th><th>Why this fits</th>
-            <th className="r">Expected velocity</th><th>RIP</th><th className="r">Intro cost</th><th className="r">Match</th>
+            <th className="col-product">Product</th>
+            <th className="col-size">Size</th>
+            <th className="col-cat">Category</th>
+            <th className="col-rationale">Why this fits</th>
+            <th className="r col-vel">Velocity / day</th>
+            <th className="col-rip">RIP</th>
+            <th className="r col-cost">Intro cost</th>
+            <th className="r col-match">Match</th>
           </tr>
         </thead>
         <tbody>
           {NEW_PRODUCTS.map((r, i) => (
             <tr key={i}>
-              <td>{r.product}</td><td>{r.size}</td><td>{r.category}</td>
-              <td style={{ maxWidth: 320 }}>{r.rationale}</td>
-              <td className="r">{r.expectedVelocity.toFixed(1)} / day</td>
-              <td>{r.rip ?? <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
-              <td className="r">${r.introCost.toFixed(2)}</td>
-              <td className="r"><ScorePill score={r.matchScore} /></td>
+              <td className="col-product">{r.product}</td>
+              <td className="col-size">{r.size}</td>
+              <td className="col-cat">{r.category}</td>
+              <td className="col-rationale">{r.rationale}</td>
+              <td className="r col-vel">{r.expectedVelocity.toFixed(1)}</td>
+              <td className="col-rip">{r.rip ?? <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+              <td className="r col-cost">${r.introCost.toFixed(2)}</td>
+              <td className="r col-match"><ScorePill score={r.matchScore} /></td>
             </tr>
           ))}
         </tbody>
@@ -458,6 +490,19 @@ function UrgencyBadge({ urgency }: { urgency: ReorderRow['urgency'] }) {
   };
   const m = map[urgency];
   return <span className={`pro-pill ${m.cls}`}>{m.label}</span>;
+}
+
+function BestMonthBadge({ month }: { month: ReorderRow['bestMonth'] }) {
+  const map = {
+    'this': { label: 'This month', cls: 'month-this',
+              title: 'Cheapest effective case price lands in the current edition — buy now.' },
+    'next': { label: 'Next month', cls: 'month-next',
+              title: 'Effective case price drops next edition — wait if you can.' },
+    'flat': { label: 'Same',       cls: 'month-flat',
+              title: 'No move between this month and next.' },
+  } as const;
+  const m = map[month];
+  return <span className={`pro-pill ${m.cls}`} title={m.title}>{m.label}</span>;
 }
 
 function ActionBadge({ action }: { action: DeadStockRow['recommendedAction'] }) {

@@ -188,7 +188,17 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
   // cluster's first-row index lets the render loop look it up in O(1).
   type RipBanner = {
     code: string;
-    products: { product_name: string; wholesaler: string; upc?: string; unit_volume?: string; cartKey: string }[];
+    // One entry per ROW in the cluster (not per SKU): the row-unique
+    // stepperKey lets the banner read the per-row typed qty, and the
+    // popup count + skipped list line up with what the user sees on
+    // screen. Multiple vintages of the same SKU still merge at the
+    // cart endpoint, but the UI tracks them separately here.
+    products: {
+      product_name: string; wholesaler: string;
+      upc?: string; unit_volume?: string;
+      cartKey: string;    // cartByKey lookup (wholesaler|upc-norm|unit_volume)
+      stepperKey: string; // local cart[stepperKey] lookup for typed qty
+    }[];
     tiers: { qty: number; unit: string; amount: number; isCases: boolean }[];
     progressUnit: 'case' | 'btl';
     casesInCart: number;
@@ -220,7 +230,11 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
       for (let k = i; k < j; k++) {
         const it = items[k];
         const upc = (it.upc ?? '').toString().replace(/^0+/, '');
-        const pKey = `${it.wholesaler}|${it.product_name}|${it.unit_volume ?? ''}`;
+        // Per-ROW key (UPC included), so multi-vintage rows of the same
+        // SKU don't collapse to one entry in the popup or the running
+        // total. Same shape as the cartKey computed in the row render
+        // below, so cart[stepperKey] is a direct lookup.
+        const pKey = `${it.product_name}|${it.wholesaler}|${it.upc ?? ''}|${it.unit_volume ?? ''}`;
         if (!productMap.has(pKey)) {
           productMap.set(pKey, {
             product_name: it.product_name,
@@ -228,6 +242,7 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
             upc: it.upc ?? undefined,
             unit_volume: it.unit_volume ?? undefined,
             cartKey: `${it.wholesaler}|${upc}|${(it.unit_volume ?? '').toString()}`,
+            stepperKey: pKey,
           });
         }
         for (const t of (it.tiers ?? [])) {
@@ -247,9 +262,7 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
       for (const p of productMap.values()) {
         const cv = cartByKey.get(p.cartKey);
         if (cv) { casesInCart += cv.cases; bottlesInCart += cv.units; }
-        // Local stepper state is keyed by `${product_name}|${wholesaler}`
-        // (see the row render below; matches what updateQty writes).
-        const tv = cart[`${p.product_name}|${p.wholesaler}`];
+        const tv = cart[p.stepperKey];
         if (tv) { casesTyped += tv.cases; bottlesTyped += tv.units; }
       }
       out.set(i, {
@@ -274,7 +287,6 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
   // "Case 3" on row two sees the banner instantly move from
   // "Adding 0 cs" to "Adding 3 cs · 2 more for $1.00 rebate".
   function bannerProgress(b: RipBanner): { text: string; tone: 'gap' | 'pending' | 'reached' } | null {
-    if (b.tiers.length === 0) return null;
     const inCart = b.progressUnit === 'case' ? b.casesInCart : b.bottlesInCart;
     const typed  = b.progressUnit === 'case' ? b.casesTyped  : b.bottlesTyped;
     const have = inCart + typed;
@@ -286,6 +298,13 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
       if (inCart > 0) return `${inCart} ${unitShort} in cart`;
       return 'Nothing entered yet';
     })();
+    // No per-quantity tier ladder for this RIP (flat rebate or stripped
+    // by the dedupe): we still surface the running total so the buyer
+    // sees what they're about to send, just without the "X more for $Y"
+    // milestone language.
+    if (b.tiers.length === 0) {
+      return { text: ledgerPrefix, tone: typed > 0 || inCart > 0 ? 'pending' : 'gap' };
+    }
     const reached = b.tiers.filter(t => have >= t.qty);
     const ahead   = b.tiers.filter(t => have < t.qty);
     const best    = b.tiers[b.tiers.length - 1];
@@ -363,8 +382,16 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
         </thead>
         <tbody>
           {items.map((item: Product, rowIdx: number) => {
-            const cartKey = `${item.product_name}|${item.wholesaler}`;
-            const reactKey = `${cartKey}|${item.upc}|${rowIdx}`;
+            // Row-unique stepper key: include UPC + unit_volume so two
+            // rows that share a product name (e.g. multiple vintages of
+            // the same wine, each with its own UPC) get independent
+            // Case/Btl steppers, separate banner totals and a separate
+            // line in the "Skip N products" popup. The cart endpoint
+            // dedupes downstream via its UNIQUE (name, wholesaler,
+            // unit_volume) index, so multiple POSTs for the same SKU
+            // get summed server-side.
+            const cartKey = `${item.product_name}|${item.wholesaler}|${item.upc ?? ''}|${item.unit_volume ?? ''}`;
+            const reactKey = `${cartKey}|${rowIdx}`;
             const qty = cart[cartKey] ?? { cases: 0, units: 0 };
             const tiers: CatalogTier[] = item.tiers ?? [];
             const hasTiers = tiers.length > 0;

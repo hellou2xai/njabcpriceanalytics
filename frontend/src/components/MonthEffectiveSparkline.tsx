@@ -44,11 +44,18 @@ function MonthBlock({ label, b }: { label: string; b: MonthBreakdown }) {
   // "frontline - discount - RIP = effective" instead of just the end
   // prices. Discount savings are vs frontline; RIP savings stack on
   // top of the best applicable discount, so they're vs afterDiscount.
+  // Rows render in ascending qty order so the smallest commitment
+  // reads first (10 cs before 25 cs, 5 cs before 50 cs). The "best"
+  // green highlight still marks the lowest effective price.
   const ripVsDisc = b.afterDiscount ?? b.frontline ?? null;
-  const sortedDisc = [...(b.discountTiers ?? [])].sort((a, c) => a.eff - c.eff);
-  const sortedRip = [...b.ripTiers].sort((a, c) => a.eff - c.eff);
-  const bestDiscEff = sortedDisc.length ? sortedDisc[0].eff : null;
-  const bestRipEff = sortedRip.length ? sortedRip[0].eff : null;
+  const sortedDisc = [...(b.discountTiers ?? [])].sort((a, c) => a.qty - c.qty);
+  const sortedRip = [...b.ripTiers].sort((a, c) => a.qty - c.qty);
+  const bestDiscEff = sortedDisc.length
+    ? Math.min(...sortedDisc.map(t => t.eff))
+    : null;
+  const bestRipEff = sortedRip.length
+    ? Math.min(...sortedRip.map(t => t.eff))
+    : null;
 
   const tierLabel = (t: RipTier) => `Buy ${t.qty} ${/btl|bottle/i.test(t.unit) ? 'btl' : 'cs'}`;
   const dollars = (n: number) => `$${n.toFixed(2)}`;

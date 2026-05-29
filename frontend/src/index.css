@@ -2658,38 +2658,37 @@ tr:hover .row-menu-btn { opacity: 1; }
   display: inline-flex; flex-wrap: wrap; gap: 4px 10px; align-items: center;
 }
 .catalog-rip-banner-tier { font-size: 11.5px; font-weight: 600; white-space: nowrap; }
-/* Banner running-total pill. It carries the live "Adding N cs · X more
-   for $Y rebate" message, which is the headline information on the
-   banner row, so it's styled to land as the dominant visual element:
-   solid tonal fill (not muted), full-weight bold, larger text, and a
-   thin border for contrast on light banner backgrounds. The three
-   tones map cleanly to ladder state — gap (still climbing), pending
-   (mid-ladder), reached (top tier locked). */
+/* Banner running-total pill. Sized to match the Add All Case Mix to
+   Cart button right beside it (same padding, same font, same radius),
+   so the two land as a balanced pair rather than "one small, one big".
+   Colour is the only thing that differs: orange = gap, green = pending,
+   emerald = reached. Distinct from the blue Add button so a glance
+   reads "this is status, that is action". */
 .catalog-rip-banner-progress {
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 700;
   padding: 6px 12px;
-  border-radius: 999px;
-  line-height: 1.25;
+  border-radius: 6px;
+  line-height: 1.2;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  border: 1px solid transparent;
 }
 .catalog-rip-banner-progress.tone-reached {
   background: var(--green);
   color: #fff;
-  border: 1px solid color-mix(in srgb, var(--green) 80%, #064e3b);
+  border-color: color-mix(in srgb, var(--green) 80%, #064e3b);
 }
 .catalog-rip-banner-progress.tone-pending {
-  background: var(--accent);
+  background: #0d9488;
   color: #fff;
-  border: 1px solid color-mix(in srgb, var(--accent) 75%, #1e3a8a);
+  border-color: #115e59;
 }
 .catalog-rip-banner-progress.tone-gap {
-  background: #fef3c7;
-  color: #92400e;
-  border: 1px solid #fcd34d;
+  background: #ea580c;
+  color: #fff;
+  border-color: #9a3412;
 }
 /* Banner button sits inline after the "N products" count and tier ladder,
    not pushed to the right edge: the empty space between the metadata and

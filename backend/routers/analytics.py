@@ -143,8 +143,15 @@ def _pm_compute_full(con, direction: str) -> list[dict]:
         col("product_type"), col("unit_volume"), vintage_expr,
         col("case_price"), col("prev_case_price"),
         col("case_delta"), col("case_delta_pct"), "pc.direction",
+        # Effective-price counterparts (added to price_changes by the pipeline
+        # — see nj_abc_parser/derive.py::build_price_changes). When the parquet
+        # was built before this addition the col() helper falls back to NULL
+        # and the loop below degrades to frontline-only classification.
+        col("effective_case_price"), col("prev_effective_case_price"),
+        col("effective_delta"), col("effective_delta_pct"),
+        col("effective_direction"),
         "c.upc AS upc", "c.brand AS brand", "c.unit_qty AS unit_qty",
-        "c.effective_case_price AS effective_case_price",
+        "c.effective_case_price AS c_effective_case_price",
         "c.has_rip AS has_rip", "c.has_discount AS has_discount",
     ])
     df = con.execute(f"""
@@ -166,34 +173,132 @@ def _pm_compute_full(con, direction: str) -> list[dict]:
         key = (r["wholesaler"], r["product_name"])
         slots.setdefault(key, {})[slot] = r
 
+    def _isnum(v) -> bool:
+        # Catches Python None, NaN float, and pandas NA — which now coexist in
+        # the dataframe because the parquet round-trips integer columns through
+        # nullable dtypes. Without the pd.isna() catch a pandas NA propagates
+        # into downstream `in` / equality checks and blows up with "ambiguous".
+        if v is None: return False
+        try:
+            if pd.isna(v): return False  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            pass
+        if isinstance(v, float) and v != v: return False
+        return True
+    def _f(r, name):
+        if r is None: return None
+        try:
+            v = r[name]
+        except (KeyError, IndexError):
+            return None
+        return v if _isnum(v) else None
+
     out: list[dict] = []
     for (ws, _name), s in slots.items():
         cur_r = s.get("cur"); next_r = s.get("next")
-        cur_match = cur_r is not None and cur_r["direction"] == direction
-        next_match = next_r is not None and next_r["direction"] == direction
-        def _price_holds() -> bool:
-            if next_r is None: return True
-            cp = cur_r["case_price"] if cur_r is not None else None
-            np_ = next_r["case_price"]
-            if cp is None or np_ is None or cp != cp or np_ != np_:
-                return next_match
-            tol = max(0.02, abs(cp) * 0.005)
-            if direction == "down":
-                return np_ <= cp + tol
-            return np_ >= cp - tol
-        if cur_match:
-            vlabel = "both" if _price_holds() else "current_only"
-            base = cur_r
-        elif next_match and next_r is not None:
-            vlabel = "next_only"; base = next_r
-        else:
+
+        # Prefer the effective_direction classifier (computed off the after-RIP
+        # price) because that's what the user calls "the price". Fall back to
+        # the frontline `direction` when the parquet was built before the
+        # effective_* columns were added.
+        def _dir(r) -> str | None:
+            if r is None: return None
+            d = _f(r, "effective_direction")
+            if d in ("up", "down", "stable", "new"): return d
+            d2 = _f(r, "direction")
+            return d2 if d2 in ("up", "down", "stable", "new") else None
+        cur_match = (_dir(cur_r) == direction)
+        next_match = (_dir(next_r) == direction)
+        if not (cur_match or next_match):
             continue
+
+        base = cur_r if cur_r is not None else next_r
         row = {c: base[c] for c in base.index}
-        row["validity"] = vlabel
+
+        # Frontline three prices (list / before-RIP).
+        if cur_r is not None:
+            fp_prev = _f(cur_r, "prev_case_price")
+            fp_cur  = _f(cur_r, "case_price")
+        else:
+            held = _f(next_r, "prev_case_price")
+            fp_prev = held; fp_cur = held
+        fp_next = _f(next_r, "case_price")
+
+        # Effective three prices (after best discount + best RIP). Falls back
+        # to frontline if the parquet is missing the effective columns, so an
+        # older deployment degrades gracefully to the frontline-only view.
+        if cur_r is not None:
+            ep_prev = _f(cur_r, "prev_effective_case_price")
+            ep_cur  = _f(cur_r, "effective_case_price")
+        else:
+            ep_prev = _f(next_r, "prev_effective_case_price")
+            ep_cur  = _f(next_r, "prev_effective_case_price")
+        if ep_prev is None: ep_prev = fp_prev
+        if ep_cur  is None: ep_cur  = fp_cur
+        ep_next = _f(next_r, "effective_case_price")
+        if ep_next is None: ep_next = fp_next
+
+        # `prev_case_price` / `case_price` / `next_case_price` are the headline
+        # prices the UI displays — set them to the EFFECTIVE values, matching
+        # the user's definition of "the price" (= list − discounts − best RIP).
+        # Keep the frontline values under explicit frontline_* keys so the card
+        # can show both side-by-side.
+        row["prev_case_price"] = ep_prev
+        row["case_price"]      = ep_cur
+        row["next_case_price"] = ep_next
+        row["frontline_prev_case_price"] = fp_prev
+        row["frontline_case_price"]      = fp_cur
+        row["frontline_next_case_price"] = fp_next
+
+        def _delta(a, b):
+            if a is None or b is None: return (None, None)
+            d = b - a
+            p = (d / a * 100.0) if a else None
+            return (d, p)
+        cur_delta,  cur_delta_pct  = _delta(ep_prev, ep_cur)
+        next_delta, next_delta_pct = _delta(ep_cur,  ep_next)
+        fl_cur_delta,  fl_cur_delta_pct  = _delta(fp_prev, fp_cur)
+        fl_next_delta, fl_next_delta_pct = _delta(fp_cur,  fp_next)
+        row["cur_delta"]      = cur_delta
+        row["cur_delta_pct"]  = cur_delta_pct
+        row["next_delta"]     = next_delta
+        row["next_delta_pct"] = next_delta_pct
+        row["frontline_cur_delta"]      = fl_cur_delta
+        row["frontline_cur_delta_pct"]  = fl_cur_delta_pct
+        row["frontline_next_delta"]     = fl_next_delta
+        row["frontline_next_delta_pct"] = fl_next_delta_pct
+        row["cur_match"]  = bool(cur_match)
+        row["next_match"] = bool(next_match)
+
+        # Headline = whichever direction-matching transition has the larger
+        # |effective Δ%|. case_delta / case_delta_pct are overwritten so the
+        # existing client-side sort + min-rise filter pick up the headlined
+        # transition without changes.
+        candidates = []
+        if cur_match:
+            candidates.append(("cur", cur_delta, cur_delta_pct))
+        if next_match:
+            candidates.append(("next", next_delta, next_delta_pct))
+        candidates.sort(
+            key=lambda c: (abs(c[2]) if c[2] is not None else (abs(c[1]) if c[1] is not None else -1.0)),
+            reverse=True,
+        )
+        period, head_d, head_dp = candidates[0]
+        row["headline_period"] = period
+        row["case_delta"] = head_d
+        row["case_delta_pct"] = head_dp
+
+        # Legacy validity label (kept so older callers don't break).
+        if cur_match and next_match:
+            row["validity"] = "both"
+        elif cur_match:
+            row["validity"] = "current_only"
+        else:
+            row["validity"] = "next_only"
+
         cur_s, next_s = ed_by_ws.get(ws, (None, None))
         row["cur_edition"] = cur_s
         row["next_edition"] = next_s
-        row["next_case_price"] = next_r["case_price"] if next_r is not None else None
         out.append(row)
 
     out.sort(key=lambda r: abs(r.get("case_delta_pct") or 0), reverse=True)
@@ -289,8 +394,19 @@ def get_price_movers(
         out = list(full)
         if wholesaler:
             out = [r for r in out if r.get("wholesaler") == wholesaler]
-        if validity != "all":
-            out = [r for r in out if r.get("validity") == validity]
+        # New OR-membership filter: a row may be in BOTH 'current' and 'next'
+        # buckets if it rose (or dropped) in both transitions, so the filter
+        # tests the cur_match / next_match flags rather than the single-bucket
+        # validity label.
+        #   current / current_only → last→this matched the direction
+        #   next    / next_only    → this→next matched the direction
+        #   both / all (default)   → either is true (i.e., every row qualifies)
+        v = (validity or "all").lower()
+        if v in ("current", "current_only"):
+            out = [r for r in out if r.get("cur_match")]
+        elif v in ("next", "next_only"):
+            out = [r for r in out if r.get("next_match")]
+        # 'both', 'all', anything else → no further filter
         out = out[:limit]
         # AI blurbs come from a 60s-TTL cached PG read so a busy page does not
         # hammer Postgres on every request.

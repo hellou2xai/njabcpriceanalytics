@@ -109,10 +109,20 @@ function QuickViewModal({
     const nm = mo === 12 ? 1 : mo + 1;
     return `${ny}-${String(nm).padStart(2, '0')}`;
   };
+  const prevYM = (ym?: string | null): string | null => {
+    if (!ym) return null;
+    const m = /^(\d{4})-(\d{1,2})$/.exec(ym);
+    if (!m) return null;
+    const y = parseInt(m[1], 10); const mo = parseInt(m[2], 10);
+    const py = mo === 1 ? y - 1 : y;
+    const pm = mo === 1 ? 12 : mo - 1;
+    return `${py}-${String(pm).padStart(2, '0')}`;
+  };
   const detailEd = detail?.product?.edition ?? null;
   const effectiveMonths: MonthCompare | undefined = months
     ? months
     : (detailEd ? { curr: detailEd, next: nextYM(detailEd) ?? detailEd } : undefined);
+  const prevEd = prevYM(effectiveMonths?.curr ?? null);
 
   // Next-month edition of the SAME SKU, for month-over-month breakdown.
   // Fires as soon as we know which edition the current detail belongs to,
@@ -121,6 +131,15 @@ function QuickViewModal({
     enabled: !!effectiveMonths?.next && effectiveMonths.next !== effectiveMonths.curr,
     queryKey: ['product-detail', wholesaler, productName, upc, unitVolume, unitQty, vintage, effectiveMonths?.next],
     queryFn: () => catalog.product(wholesaler, productName, { edition: effectiveMonths!.next, upc, unit_volume: unitVolume, unit_qty: unitQty, vintage }),
+  });
+  // Prior-month edition. Needed on the price-movers modal so a rise that
+  // happened last→this (and is now flat into next) is visible at a glance —
+  // without this the user sees two identical waterfalls and wonders why the
+  // product is on the Price Increase page.
+  const { data: detailPrev } = useQuery({
+    enabled: !!prevEd && prevEd !== effectiveMonths?.curr,
+    queryKey: ['product-detail', wholesaler, productName, upc, unitVolume, unitQty, vintage, prevEd],
+    queryFn: () => catalog.product(wholesaler, productName, { edition: prevEd!, upc, unit_volume: unitVolume, unit_qty: unitQty, vintage }),
   });
 
   const { data: history } = useQuery({
@@ -320,20 +339,31 @@ function QuickViewModal({
               // Auto-on whenever we have both editions loaded; the explicit
               // `months` prop is no longer required.
               const monthMode = !!effectiveMonths && !!detailNext?.product;
+              // A prior-month panel is added when we successfully fetched the
+              // edition before "this month" — this is what lets the user see
+              // a last→this rise on products that are flat this→next (and
+              // would otherwise look unchanged in the two-panel view).
+              const hasPrev = !!detailPrev?.product && !!prevEd;
               let sides;
               if (monthMode && detailNext && effectiveMonths) {
-                sides = [
-                  side(p, `This month · ${monthLabel(effectiveMonths.curr)}`, detail.rip_tiers, detail.discount_tiers),
-                  side(detailNext.product, `Next month · ${monthLabel(effectiveMonths.next)}`, detailNext.rip_tiers, detailNext.discount_tiers),
-                ];
+                sides = [];
+                if (hasPrev && detailPrev) {
+                  sides.push(side(detailPrev.product, `Last month · ${monthLabel(prevEd!)}`, detailPrev.rip_tiers, detailPrev.discount_tiers));
+                }
+                sides.push(side(p, `This month · ${monthLabel(effectiveMonths.curr)}`, detail.rip_tiers, detail.discount_tiers));
+                sides.push(side(detailNext.product, `Next month · ${monthLabel(effectiveMonths.next)}`, detailNext.rip_tiers, detailNext.discount_tiers));
               } else {
                 sides = [side(p, distributorName(wholesaler), detail.rip_tiers, detail.discount_tiers)];
                 if (compareWith && pB && detailB) sides.push(side(pB, distributorName(compareWith.wholesaler), detailB.rip_tiers, detailB.discount_tiers));
               }
               const hasStory = sides.some(s => s.list - s.effective > 0.01);
               if (!hasStory && !compareWith && !monthMode) return null;
-              const wfColors = ['#6366f1', '#0ea5e9'];
-              const headerNote = monthMode ? 'this month vs next month — list → discount → RIP → price after RIP' : 'current edition — list → discount → RIP → price after RIP';
+              const wfColors = ['#6366f1', '#0ea5e9', '#10b981'];
+              const headerNote = monthMode
+                ? (hasPrev
+                    ? 'last month · this month · next month — list → discount → RIP → price after RIP'
+                    : 'this month vs next month — list → discount → RIP → price after RIP')
+                : 'current edition — list → discount → RIP → price after RIP';
               // Shared Y ceiling so paired waterfalls are visually comparable
               // (List is the tallest bar in each). Round up to a tidy number.
               const rawMax = Math.max(...sides.map(s => s.list), 0);
@@ -346,7 +376,7 @@ function QuickViewModal({
               return (
                 <>
                   <h4>Price Breakdown <span className="text-muted" style={{ fontSize: 11, fontWeight: 400 }}>({headerNote})</span></h4>
-                  <div className={`pb-waterfalls ${sides.length > 1 ? 'pb-waterfalls-two' : ''}`}>
+                  <div className={`pb-waterfalls ${sides.length === 3 ? 'pb-waterfalls-three' : sides.length > 1 ? 'pb-waterfalls-two' : ''}`}>
                     {sides.map((s, i) => (
                       <div key={s.label}>
                         <div className="pb-wf-title" style={{ color: wfColors[i] }}>{s.label}</div>

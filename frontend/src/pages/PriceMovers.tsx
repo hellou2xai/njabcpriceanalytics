@@ -59,7 +59,10 @@ export default function PriceMovers({ direction }: Props) {
   const [trackedOnly, setTrackedOnly] = useState(false);
   const [sort, setSort] = useState<'biggest-pct' | 'biggest-dollar' | 'name'>('biggest-pct');
   const [limit, setLimit] = useState(60);
-  const [validity, setValidity] = useState<'all' | 'current_only' | 'next_only' | 'both'>('current_only');
+  // `both` = show every product on the page (the user's "show all" semantic).
+  // `current_only` = rose last→this. `next_only` = will rise this→next.
+  // A product can satisfy both transitions, so memberships overlap.
+  const [validity, setValidity] = useState<'current_only' | 'next_only' | 'both'>('both');
   const [view, setView] = useState<'cards' | 'table'>(() => (localStorage.getItem('pm-view') as 'cards' | 'table') || 'cards');
   useEffect(() => { localStorage.setItem('pm-view', view); }, [view]);
 
@@ -103,14 +106,13 @@ export default function PriceMovers({ direction }: Props) {
   const sections: FilterSection[] = [
     { type: 'text', key: 'q', title: 'Search', placeholder: 'Product or brand', value: q, onChange: setQ },
     { type: 'pills', key: 'wholesaler', title: 'Distributor', options: ALL_DISTRIBUTORS, value: wholesaler, onChange: setWholesaler },
-    { type: 'pills', key: 'validity', title: 'Price month',
+    { type: 'pills', key: 'validity', title: isDrop ? 'When the drop hits' : 'When the rise hits',
       options: [
-        { value: 'current_only', label: 'Current month only' },
-        { value: 'both',         label: 'Valid both months' },
-        { value: 'next_only',    label: 'Next month only' },
-        { value: 'all',          label: 'All' },
+        { value: 'both',         label: 'Both (show all)' },
+        { value: 'current_only', label: isDrop ? 'This month (vs last)' : 'This month (vs last)' },
+        { value: 'next_only',    label: 'Next month (vs this)' },
       ],
-      value: validity, onChange: (v) => setValidity(v as 'all' | 'current_only' | 'next_only' | 'both') },
+      value: validity, onChange: (v) => setValidity(v as 'current_only' | 'next_only' | 'both') },
     { type: 'select', key: 'product_type', title: 'Category', placeholder: 'All categories',
       options: (cats ?? []).map(c => ({ value: c.product_type, label: c.product_type, count: c.count })),
       value: productType, onChange: setProductType },
@@ -154,7 +156,7 @@ export default function PriceMovers({ direction }: Props) {
 
       <div className="catalog-layout">
         <FilterSidebar storageKey={`pm-${direction}-filters`} sections={sections}
-          onReset={() => { setQ(''); setWholesaler(''); setValidity('current_only'); setProductType(''); setMinChange(''); setMinDollar(''); setHasRip(''); setSize(''); setTrackedOnly(false); setSort('biggest-pct'); }} />
+          onReset={() => { setQ(''); setWholesaler(''); setValidity('both'); setProductType(''); setMinChange(''); setMinDollar(''); setHasRip(''); setSize(''); setTrackedOnly(false); setSort('biggest-pct'); }} />
 
         <div className="catalog-results">
           <PromotionsToolbar
@@ -194,10 +196,42 @@ export default function PriceMovers({ direction }: Props) {
 }
 
 function MoverCard({ d, isDrop, open }: { d: PriceMover; isDrop: boolean; open: (n: string, w: string, c?: unknown, opts?: { upc?: string; unitVolume?: string }) => void }) {
-  const prev = d.prev_case_price ?? null;
-  const now = d.case_price ?? null;
+  // The headline reflects whichever transition is the bigger |effective Δ%|.
+  // We pull the two prices that bracket that transition from the API row.
+  const headline: 'cur' | 'next' = (d.headline_period as 'cur' | 'next' | undefined) ?? 'cur';
+  const headWas  = headline === 'next' ? (d.case_price ?? null)       : (d.prev_case_price ?? null);
+  const headNow  = headline === 'next' ? (d.next_case_price ?? null)  : (d.case_price ?? null);
+  // Month labels for the headline transition.
+  const monthLabels = (() => {
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const ymToLabel = (ym?: string | null) => {
+      if (!ym) return '';
+      const m = /^(\d{4})-(\d{1,2})/.exec(ym);
+      return m ? `${months[parseInt(m[2],10)-1]} ${m[1].slice(2)}` : ym;
+    };
+    const prevYM = (ym?: string | null) => {
+      if (!ym) return null;
+      const m = /^(\d{4})-(\d{1,2})/.exec(ym);
+      if (!m) return null;
+      const y = parseInt(m[1],10); const mo = parseInt(m[2],10);
+      return `${mo===1?y-1:y}-${String(mo===1?12:mo-1).padStart(2,'0')}`;
+    };
+    const curEd = d.cur_edition ?? d.edition;
+    if (headline === 'next') return { fromM: ymToLabel(curEd), toM: ymToLabel(d.next_edition ?? null) };
+    return { fromM: ymToLabel(prevYM(curEd)), toM: ymToLabel(curEd) };
+  })();
   const delta = d.case_delta ?? null;
   const deltaPct = d.case_delta_pct ?? null;
+  // Frontline (list) story for the same headline transition, shown as a small
+  // secondary line so the user sees when a list-price spike is masked by RIP.
+  const flWas = headline === 'next' ? (d.frontline_case_price ?? null) : (d.frontline_prev_case_price ?? null);
+  const flNow = headline === 'next' ? (d.frontline_next_case_price ?? null) : (d.frontline_case_price ?? null);
+  const flDelta = headline === 'next' ? (d.frontline_next_delta ?? null) : (d.frontline_cur_delta ?? null);
+  const flDeltaPct = headline === 'next' ? (d.frontline_next_delta_pct ?? null) : (d.frontline_cur_delta_pct ?? null);
+  // "List" line is worth showing only when it disagrees materially with the
+  // effective story (e.g. list up 27% but effective up 0.5%).
+  const showListLine = flDeltaPct != null && deltaPct != null && Math.abs(flDeltaPct - deltaPct) >= 1.0;
+
   const eff = d.effective_case_price ?? null;
   const uq = Number(d.unit_qty) || 0;
   const effBtl = eff != null && uq > 1 ? eff / uq : null;
@@ -240,14 +274,30 @@ function MoverCard({ d, isDrop, open }: { d: PriceMover; isDrop: boolean; open: 
       </div>
 
       <div className="deal-card-price">
-        {prev != null && <span className="deal-was">{money(prev)}</span>}
-        <span className="deal-now" style={{ color: colour }}>{money(now)}<span className="deal-unit">/cs</span></span>
+        {monthLabels.fromM && (
+          <span className="text-muted" style={{ fontSize: 11, marginRight: 4 }}>{monthLabels.fromM}</span>
+        )}
+        {headWas != null && <span className="deal-was">{money(headWas)}</span>}
+        {monthLabels.toM && (
+          <span className="text-muted" style={{ fontSize: 11, margin: '0 4px' }}>→ {monthLabels.toM}</span>
+        )}
+        <span className="deal-now" style={{ color: colour }}>{money(headNow)}<span className="deal-unit">/cs</span></span>
         {delta != null && (
           <span className="deal-save" style={{ color: colour }}>
             <strong>{delta > 0 ? '+' : ''}{money(delta)}/cs</strong>{deltaPct != null ? ` · ${pct(deltaPct, true)}` : ''}
           </span>
         )}
       </div>
+      {showListLine && flWas != null && flNow != null && (
+        <div className="deal-card-listline text-muted" style={{ fontSize: 11, marginTop: -4, marginBottom: 4 }}>
+          List: {money(flWas)} → <strong>{money(flNow)}</strong>
+          {flDelta != null && (
+            <> ({flDelta > 0 ? '+' : ''}{money(flDelta)}
+            {flDeltaPct != null && ` · ${pct(flDeltaPct, true)}`})</>
+          )}{' '}
+          <span title="Effective price hides most of this list change because the RIP rebate offsets it.">· RIP absorbs</span>
+        </div>
+      )}
 
       <div className="deal-card-meta">
         {eff != null && <span>Net {money(eff)}/cs (after deals)</span>}
@@ -256,8 +306,16 @@ function MoverCard({ d, isDrop, open }: { d: PriceMover; isDrop: boolean; open: 
         {d.vintage && <span>· Vintage {d.vintage}</span>}
       </div>
 
-      <div className="deal-card-spark">
-        <DealSparkline wholesaler={d.wholesaler} productName={d.product_name} />
+      <div className="deal-card-spark" onClick={(e) => e.stopPropagation()}>
+        <DealSparkline
+          wholesaler={d.wholesaler}
+          productName={d.product_name}
+          interactive
+          upc={d.upc ?? undefined}
+          unitVolume={d.unit_volume ?? undefined}
+          curEdition={d.cur_edition ?? d.edition ?? undefined}
+          nextEdition={d.next_edition ?? undefined}
+        />
         <span className="text-muted" style={{ fontSize: 11 }}>Edition {fmtEdition(d.edition)}</span>
       </div>
 
@@ -308,19 +366,22 @@ function daysFromTodayTo(iso: string | null): number | null {
 function moverToPromotionRow(r: PriceMover, isDrop: boolean): PromotionRow {
   const curEd = r.cur_edition ?? r.edition ?? null;
   const nextEd = r.next_edition ?? null;
-  // For "valid both months" the deal runs through next-edition month end; for
-  // current-only it stops at end of current edition.
-  const endsEd = (r.validity === 'both' && nextEd) ? nextEd : curEd;
-  const from = editionMonthStart(curEd);
-  const to   = editionMonthEnd(endsEd);
+  // Headline transition picks which two effective prices the row displays as
+  // "was" (orig_case_price) and "now" (net_case_price) — the same one the card
+  // bolds. case_delta / case_delta_pct already reflect the headlined Δ.
+  const headline = r.headline_period === 'next' ? 'next' : 'cur';
+  const headFrom = headline === 'next' ? curEd : null; // start at "this month"
+  const headTo   = headline === 'next' ? nextEd : curEd;
+  const from = editionMonthStart(headFrom ?? curEd);
+  const to   = editionMonthEnd(headTo);
   const days = daysFromTodayTo(to);
   const delta = r.case_delta ?? null;
-  // Disc/cs is the absolute change (savings when dropping, cost increase when rising).
   const discPerCase = delta != null ? Math.abs(delta) : null;
   const offPct = r.case_delta_pct != null ? Math.abs(r.case_delta_pct) : null;
   const qty = Number(r.unit_qty) || 0;
-  const net = r.case_price ?? null;                  // current case price
-  const netBtl = qty > 0 && net != null ? net / qty : null;
+  const wasPrice = headline === 'next' ? (r.case_price ?? null)      : (r.prev_case_price ?? null);
+  const nowPrice = headline === 'next' ? (r.next_case_price ?? null) : (r.case_price ?? null);
+  const netBtl = qty > 0 && nowPrice != null ? nowPrice / qty : null;
   // Sticker re-uses the existing "Active May 2026 only" label so users see
   // exactly which months this price change is live in.
   const stickerLabel = activeLabel(r.validity, curEd, nextEd);
@@ -338,9 +399,9 @@ function moverToPromotionRow(r: PriceMover, isDrop: boolean): PromotionRow {
     from_date: from,
     to_date: to,
     days_to_expire: days,
-    orig_case_price: r.prev_case_price ?? null,      // was
+    orig_case_price: wasPrice,                       // was (effective)
     disc_per_case: discPerCase,                      // |Δ|
-    net_case_price: net,                             // now
+    net_case_price: nowPrice,                        // now (effective)
     net_btl_price: netBtl,
     gp_pct: null,                                    // not applicable here
     off_pct: offPct,                                 // |Δ%|

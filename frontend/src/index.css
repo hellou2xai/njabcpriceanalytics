@@ -1860,6 +1860,7 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
 /* Price-build waterfalls above the receipt */
 .pb-waterfalls { margin: 6px 0 10px; }
 .pb-waterfalls.pb-waterfalls-two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.pb-waterfalls.pb-waterfalls-three { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
 .pb-wf-title { text-align: center; font-size: 12px; font-weight: 700; margin-bottom: 2px; }
 .pb-wf-legend { display: flex; justify-content: center; gap: 18px; margin: 2px 0 6px; font-size: 11px; color: var(--text-muted); }
 .pb-wf-legend span { display: inline-flex; align-items: center; gap: 5px; }
@@ -3419,7 +3420,47 @@ tr:hover .row-menu-btn { opacity: 1; }
 }
 .deal-card-spark { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .deal-spark { display: inline-block; }
+.deal-spark--interactive { cursor: pointer; border-radius: 4px; transition: background 0.12s; }
+.deal-spark--interactive:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.deal-spark--interactive:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .deal-spark-placeholder { width: 100%; height: 100%; background: var(--surface-hover); border-radius: 4px; }
+
+/* Popover anchored above the interactive sparkline. Compact 3-column layout
+   shows last / this / next month with two delta arrows. The "this month"
+   column is highlighted so the user reads it as the anchor. List (frontline)
+   prices sit on a muted row beneath the effective row so the dominant story
+   is what the buyer actually pays. */
+.deal-spark-popover {
+  position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%);
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.14);
+  padding: 8px 10px; z-index: 50; min-width: 260px;
+  font-size: 11.5px; line-height: 1.35;
+}
+.deal-spark-popover::after {
+  content: ""; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+  border: 5px solid transparent; border-top-color: var(--surface);
+  filter: drop-shadow(0 1px 0 var(--border));
+}
+.deal-spark-popover .dsp-row { display: grid;
+  grid-template-columns: 1fr 38px 1fr 38px 1fr; align-items: center; gap: 4px;
+  padding: 3px 0; }
+.deal-spark-popover .dsp-row-months { font-weight: 700; color: var(--text-muted); font-size: 10.5px;
+  text-transform: uppercase; letter-spacing: .3px; border-bottom: 1px dashed var(--border); padding-bottom: 4px; }
+.deal-spark-popover .dsp-row-eff strong { font-size: 13px; color: var(--text); }
+.deal-spark-popover .dsp-row-list { color: var(--text-muted); }
+.deal-spark-popover .dsp-cell { text-align: center; }
+.deal-spark-popover .dsp-cell-cur { background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-radius: 4px; padding: 2px 4px; }
+.deal-spark-popover .dsp-arrow { text-align: center; color: var(--text-muted); }
+.deal-spark-popover .dsp-arrow::before { content: "→"; }
+.deal-spark-popover .dsp-delta { text-align: center; font-weight: 600; font-size: 10.5px; }
+.deal-spark-popover .dsp-label { display: block; font-size: 9.5px; font-weight: 600;
+  letter-spacing: .3px; text-transform: uppercase; color: var(--text-muted); }
+.deal-spark-popover .dsp-up   { color: var(--red); }
+.deal-spark-popover .dsp-down { color: var(--green); }
+.deal-spark-popover .dsp-flat { color: var(--text-muted); }
 
 .deal-card-ai {
   font-size: 12.5px; line-height: 1.45; color: var(--text);

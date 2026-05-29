@@ -959,6 +959,26 @@ export interface PriceMover {
   cur_edition?: string | null;
   next_edition?: string | null;
   next_case_price?: number | null;
+  // Per-transition deltas + match flags. `headline_period` says which of the
+  // two transitions the card should put in the big number (we pick whichever
+  // direction-matching transition has the larger |effective Δ%|).
+  // case_price / prev_case_price / next_case_price are the EFFECTIVE prices
+  // (list − all discounts − best RIP). The frontline_* counterparts let the
+  // card surface a list-price story alongside.
+  cur_match?: boolean;
+  next_match?: boolean;
+  cur_delta?: number | null;
+  cur_delta_pct?: number | null;
+  next_delta?: number | null;
+  next_delta_pct?: number | null;
+  headline_period?: 'cur' | 'next';
+  frontline_prev_case_price?: number | null;
+  frontline_case_price?: number | null;
+  frontline_next_case_price?: number | null;
+  frontline_cur_delta?: number | null;
+  frontline_cur_delta_pct?: number | null;
+  frontline_next_delta?: number | null;
+  frontline_next_delta_pct?: number | null;
 }
 
 export interface LifecycleEvent {

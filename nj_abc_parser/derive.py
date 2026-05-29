@@ -68,12 +68,33 @@ def build_price_changes(parquet_dir: str | Path, output_dir: Path):
         "CASE WHEN CAST(vintage AS INTEGER) <= 30 THEN '20' || vintage ELSE '19' || vintage END "
         "ELSE NULL END"
     )
+    # Prefer the enriched parquet (has effective_case_price) so we can compute
+    # the effective-price delta alongside the frontline one. Fall back to the
+    # raw cpl partitions when cpl_enriched.parquet isn't built yet — in that
+    # case the effective_* output columns will be NULL and consumers degrade
+    # to frontline-only direction.
+    enriched_path = (Path(parquet_dir) / "derived" / "cpl_enriched.parquet").as_posix()
+    if Path(enriched_path).exists():
+        base_select = f"FROM read_parquet('{enriched_path}')"
+    else:
+        base_select = (
+            f"FROM read_parquet('{pdir}/cpl/**/data.parquet', "
+            f"hive_partitioning=true, union_by_name=true)"
+        )
+        # When falling back to raw CPL, synthesize the column so the LAG below
+        # still binds. The rest of the pipeline handles NULL effective gracefully.
+        base_select = base_select  # keep as-is; effective injected via SELECT below
+
+    has_enriched = Path(enriched_path).exists()
+    eff_expr = "effective_case_price" if has_enriched else "CAST(NULL AS DOUBLE) AS effective_case_price"
+
     df = con.execute(f"""
         WITH withv AS (
-            SELECT *,
+            SELECT *
+                {("" if has_enriched else f", {eff_expr}")},
                 CASE WHEN UPPER(product_type) IN ('WINE','SPARKLING','VERMOUTH')
                      THEN {vnorm} ELSE NULL END AS vkey
-            FROM read_parquet('{pdir}/cpl/**/data.parquet', hive_partitioning=true, union_by_name=true)
+            {base_select}
         ),
         base AS (
             -- Collapse duplicate rows within a SKU+vintage+edition so LAG
@@ -94,6 +115,10 @@ def build_price_changes(parquet_dir: str | Path, output_dir: Path):
                     PARTITION BY wholesaler, product_name, unit_volume, unit_qty, vkey
                     ORDER BY edition
                 ) AS prev_best_price,
+                LAG(effective_case_price) OVER (
+                    PARTITION BY wholesaler, product_name, unit_volume, unit_qty, vkey
+                    ORDER BY edition
+                ) AS prev_effective_case_price,
                 LAG(frontline_unit_price) OVER (
                     PARTITION BY wholesaler, product_name, unit_volume, unit_qty, vkey
                     ORDER BY edition
@@ -135,6 +160,20 @@ def build_price_changes(parquet_dir: str | Path, output_dir: Path):
                 THEN ((best_case_price - prev_best_price) / prev_best_price) * 100
                 ELSE NULL END, 2
             ) AS best_delta_pct,
+            -- Effective = list - all discounts - best RIP rebate. The user
+            -- treats this as "the" price (see memory: effective-price-definition)
+            -- so price-movers detection on the frontend prefers this delta
+            -- over the frontline one. We still keep frontline above so the UI
+            -- can show both sides of a list-vs-effective story (e.g. a list
+            -- hike that's masked by a new RIP).
+            effective_case_price,
+            prev_effective_case_price,
+            ROUND(effective_case_price - prev_effective_case_price, 2) AS effective_delta,
+            ROUND(
+                CASE WHEN prev_effective_case_price > 0
+                THEN ((effective_case_price - prev_effective_case_price) / prev_effective_case_price) * 100
+                ELSE NULL END, 2
+            ) AS effective_delta_pct,
             frontline_unit_price AS unit_price,
             prev_unit_price,
             discount_1_amt,
@@ -144,7 +183,13 @@ def build_price_changes(parquet_dir: str | Path, output_dir: Path):
                 WHEN frontline_case_price > prev_case_price THEN 'up'
                 WHEN frontline_case_price < prev_case_price THEN 'down'
                 ELSE 'stable'
-            END AS direction
+            END AS direction,
+            CASE
+                WHEN prev_effective_case_price IS NULL THEN 'new'
+                WHEN effective_case_price > prev_effective_case_price THEN 'up'
+                WHEN effective_case_price < prev_effective_case_price THEN 'down'
+                ELSE 'stable'
+            END AS effective_direction
         FROM ranked
         WHERE prev_edition IS NOT NULL
         ORDER BY wholesaler, edition, ABS(case_delta_pct) DESC NULLS LAST
@@ -537,9 +582,12 @@ def build_all(parquet_dir: str | Path = "parquet_output"):
     print("\nBuilding derived Parquet files...")
     print("=" * 50)
 
+    # cpl_enriched first because build_price_changes now reads effective_case_price
+    # from it (see the effective_* columns in price_changes — those depend on the
+    # enrichment join that lives only in cpl_enriched).
+    build_cpl_enriched(parquet_dir, output_dir)
     build_price_changes(parquet_dir, output_dir)
     build_item_lifecycle(parquet_dir, output_dir)
-    build_cpl_enriched(parquet_dir, output_dir)
 
     print("\nBuilding cross-source links (this may take a minute)...")
     build_cross_source_links(parquet_dir, output_dir)

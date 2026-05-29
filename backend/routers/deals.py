@@ -1247,6 +1247,7 @@ def get_rip_products(
         "Products with RIP", so a pure-discount row has no business on it.
       - Text search (q) checks product name, brand, UPC, and rip_number, so
         typing either a product name or a RIP code hits the same fast path."""
+    corrected_query: str | None = None
     with get_duckdb() as con:
         items = list(_rip_items_cached(con))
 
@@ -1263,44 +1264,120 @@ def get_rip_products(
             rc = str(rip_code).strip()
             items = [i for i in items if rc in str(i.get("rip_number") or "")]
         if q:
-            # Tokenise the query so "sutter home" finds rows whose distributor
-            # text is the abbreviation "SUTTER HM CAB" (literal-substring
-            # search misses these because the user's words never appear
-            # contiguously). Each token must hit somewhere across name /
-            # brand / UPC / rip_number; short distributor abbreviations
-            # (HM = Home, CH = Chardonnay etc.) are accepted as the
-            # equivalent of the full word so a typed-in real name still
-            # finds the abbreviated row.
+            # Token-AND search across name + brand + UPC + rip_number, with
+            # each token also accepting its common distributor abbreviation
+            # so a typed-in real brand name ("Sutter Home", "Robert Mondavi
+            # Reserve") finds the distributor's truncated text ("SUTTER HM
+            # CAB", "ROBT MONDAVI RSV"). Three complementary expansion
+            # sources kick in for every token:
+            #   1. backend.search_aliases.expansion_for — curated shorthand
+            #      ("jw" -> "johnnie walker", "henny" -> "hennessy")
+            #   2. SHORT_FORMS below — curated wine / spirits abbreviations
+            #      ("home" -> "hm", "chardonnay" -> "ch"/"chard", ...).
+            #   3. Vowel-strip heuristic ("reserve" -> "rsrv", "vineyards"
+            #      -> "vnyrds", "manor" -> "mnr") to catch the long tail
+            #      no curated map covers.
+            # When NOTHING hits we fall through to the catalog's spell-fix
+            # against the catalogue vocabulary, then to the AI rewrite —
+            # exactly the chain the catalog uses for genuine misses.
+            from backend.search_aliases import expansion_for as _alias_for
             SHORT_FORMS = {
-                "home": ["hm"],
-                "homes": ["hm"],
-                "chardonnay": ["ch", "chard"],
-                "cabernet": ["cab"],
-                "merlot": ["mer"],
-                "moscato": ["mos"],
-                "sauvignon": ["sauv"],
-                "pinot": ["pin"],
-                "reserve": ["res", "rsv"],
-                "vineyards": ["vyd", "vnyd"],
-                "vineyard": ["vyd", "vnyd"],
-                "winery": ["wnry"],
+                # Varietals
+                "cabernet": ["cab"], "sauvignon": ["sauv", "sb"], "chardonnay": ["ch", "chard"],
+                "merlot": ["mer"], "pinot": ["pin"], "noir": ["nr"], "grigio": ["pg"],
+                "blanc": ["bl"], "moscato": ["mos"], "zinfandel": ["zin"], "syrah": ["syr"],
+                "riesling": ["ries"], "tempranillo": ["temp"],
+                # Estate / winery / brand words
+                "home": ["hm"], "homes": ["hm"],
+                "estate": ["est"], "estates": ["est"],
+                "vineyard": ["vyd", "vnyd", "vy"], "vineyards": ["vyd", "vnyd", "vy"],
+                "winery": ["wnry", "win"], "wineries": ["wnry"],
+                "selection": ["sel", "selct"], "reserve": ["res", "rsv"], "reserva": ["rsv"],
+                "founders": ["foundr", "fndr"], "founder": ["foundr"],
+                # Spirits
+                "scotch": ["sc"], "single": ["sgl", "sngl"], "malt": ["mlt"],
+                "whiskey": ["wsky", "whsky", "whky"], "whisky": ["wsky", "whsky"],
+                "bourbon": ["brbn", "bbn"], "rye": ["ry"],
+                "vodka": ["vd", "vdk"], "tequila": ["teq", "tqla"], "rum": ["rm"],
+                "gin": ["gn"], "champagne": ["champ", "chp"], "brandy": ["brndy"],
+                # Vintage years / packaging
+                "year": ["yr"], "years": ["yr", "yrs"], "old": ["yo"],
+                "case": ["cs"], "bottle": ["btl"], "bottles": ["btl"],
+                "pack": ["pk"], "twin": ["tw"], "tray": ["tr"],
+                # Common brand fragments
+                "robert": ["robt", "rbt"], "richard": ["rich"], "william": ["wm"],
             }
-            tokens = [t for t in q.lower().split() if t]
-            if tokens:
-                def hits(it, tok):
+
+            def _vowel_strip(word: str) -> str:
+                """First letter + interior consonants only ("home"->"hm",
+                "reserve"->"rsrv", "vineyards"->"vnyrds"). A cheap heuristic
+                that catches the long tail of distributor abbreviations no
+                curated map covers."""
+                if not word or len(word) < 3:
+                    return word
+                return word[0] + "".join(c for c in word[1:] if c.lower() not in "aeiou")
+
+            def _expansions_for(tok: str) -> list[str]:
+                """Every accepted form of a query token: the literal, any
+                curated alias (search_aliases), any wine/spirits short form,
+                and the vowel-strip abbreviation as a final fallback."""
+                seen, out = set(), []
+                for cand in (
+                    [tok]
+                    + (_alias_for(tok) or [])
+                    + SHORT_FORMS.get(tok, [])
+                    + [_vowel_strip(tok)]
+                ):
+                    c = (cand or "").lower().strip()
+                    if c and c not in seen:
+                        seen.add(c)
+                        out.append(c)
+                return out
+
+            def _filter_items(items_list: list[dict], qq: str) -> list[dict]:
+                toks = [t for t in qq.lower().split() if t]
+                if not toks:
+                    return items_list
+                tok_terms = [_expansions_for(t) for t in toks]
+                out = []
+                for it in items_list:
                     hay = " ".join([
                         (it.get("product_name") or "").lower(),
                         (it.get("brand") or "").lower(),
                         str(it.get("upc") or "").lower(),
                         str(it.get("rip_number") or "").lower(),
                     ])
-                    if tok in hay:
-                        return True
-                    for short in SHORT_FORMS.get(tok, ()):
-                        if short in hay:
-                            return True
-                    return False
-                items = [i for i in items if all(hits(i, t) for t in tokens)]
+                    if all(any(term in hay for term in terms) for terms in tok_terms):
+                        out.append(it)
+                return out
+
+            filtered = _filter_items(items, q)
+
+            # Spell-fix + AI rewrite for genuine misses ("cordon blue" ->
+            # "cordon bleu"). Off automatically when ANTHROPIC_API_KEY is unset.
+            if not filtered and any(ch.isalpha() for ch in q):
+                try:
+                    from backend.routers.catalog import _spell_fix as _cat_spell_fix, _vocab as _cat_vocab
+                    cpl_src = read_parquet(con, "cpl_enriched")
+                    fixed = _cat_spell_fix(q, _cat_vocab(con, cpl_src))
+                    if fixed and fixed.lower() != q.lower():
+                        retried = _filter_items(items, fixed)
+                        if retried:
+                            filtered, corrected_query = retried, fixed
+                except Exception:
+                    pass
+                if not filtered:
+                    try:
+                        from backend.ai_search import ai_expand_query
+                        ai_q = ai_expand_query(q)
+                        if ai_q and ai_q.lower() != q.lower():
+                            retried = _filter_items(items, ai_q)
+                            if retried:
+                                filtered, corrected_query = retried, ai_q
+                    except Exception:
+                        pass
+
+            items = filtered
 
         if min_savings is not None:
             items = [i for i in items if (i["rip_save_per_case"] or 0) >= min_savings]
@@ -1384,4 +1461,5 @@ def get_rip_products(
             "limit": limit,
             "offset": offset,
             "items": page_items,
+            "corrected_query": corrected_query,
         }

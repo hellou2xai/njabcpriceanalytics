@@ -3836,3 +3836,255 @@ tr:hover .row-menu-btn { opacity: 1; }
   padding: 2px 6px; border-radius: 4px; text-transform: uppercase;
   background: #fef3c7; color: #92400e;
 }
+
+/* ===== Pro Insights teaser tiles + drill-down modal (Dashboard) =====
+   Four POS-driven sample tiles slotted between My Workspace and
+   Insights & Opportunities. Tiles share the catalog Pro amber wash so
+   the upgrade tag stays visually consistent between Dashboard and
+   Catalog; the drill-down opens as a wide modal with stat cards, a
+   data table, and a "Need POS Integration" sticker. */
+
+.pro-section-label {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.pro-section-label .catalog-pro-badge { font-size: 9.5px; padding: 2px 7px; }
+.pro-section-sub {
+  font-size: 12px; color: var(--text-muted); font-weight: 500;
+}
+
+.pro-tile-grid {
+  /* Match dashboard-tile-grid layout but give the Pro tiles a touch more
+     vertical room since they pack in headline + bullets + footer. */
+}
+
+.pro-tile {
+  appearance: none;
+  cursor: pointer;
+  text-align: left;
+  display: flex; flex-direction: column;
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, #b45309 28%, var(--border));
+  border-radius: 12px;
+  padding: 14px 16px 12px;
+  box-shadow: 0 2px 6px -3px rgba(120, 53, 15, 0.18);
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+  background-image:
+    linear-gradient(180deg, color-mix(in srgb, #f59e0b 7%, transparent) 0, transparent 90px),
+    linear-gradient(var(--surface), var(--surface));
+  gap: 10px;
+}
+.pro-tile:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 28px -16px rgba(120, 53, 15, 0.4);
+  border-color: color-mix(in srgb, #b45309 60%, var(--border));
+}
+.pro-tile-head {
+  display: flex; align-items: center; justify-content: space-between;
+}
+.pro-tile-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border-radius: 10px;
+}
+.pro-tile-badge {
+  font-size: 9.5px; font-weight: 800; letter-spacing: 0.6px;
+  text-transform: uppercase;
+  padding: 3px 7px; border-radius: 4px;
+  background: linear-gradient(135deg, #f59e0b, #b45309);
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(120, 53, 15, 0.25);
+}
+.pro-tile-title {
+  font-size: 15px; font-weight: 700; color: var(--text);
+}
+.pro-tile-headline {
+  display: flex; flex-direction: column; gap: 2px; margin-top: -2px;
+}
+.pro-tile-headline-value {
+  font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums;
+  line-height: 1.05;
+}
+.pro-tile-headline-sub {
+  font-size: 12.5px; color: var(--text-muted); font-weight: 500;
+}
+.pro-tile-bullets {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-direction: column; gap: 5px;
+}
+.pro-tile-bullets li {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12.5px; color: var(--text);
+}
+.pro-tile-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto;
+}
+.pro-tile-footer {
+  display: flex; flex-direction: column; gap: 6px;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px dashed color-mix(in srgb, #b45309 28%, transparent);
+}
+.pro-tile-pos-sticker,
+.pro-drill-pos-sticker {
+  display: inline-flex; align-items: center; gap: 5px;
+  align-self: flex-start;
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.2px;
+  color: #fff;
+  background: linear-gradient(135deg, #b45309, #92400e);
+  padding: 3px 8px; border-radius: 999px;
+}
+.pro-tile-cta {
+  display: inline-flex; align-items: center; gap: 4px;
+  align-self: flex-end;
+  font-size: 12px; font-weight: 700;
+  color: #b45309;
+}
+
+/* ---- Drill-down modal ---- */
+.pro-drill-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+}
+.pro-drill-modal {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  width: min(1100px, 100%);
+  max-height: calc(100vh - 48px);
+  display: flex; flex-direction: column;
+  box-shadow: 0 30px 70px -20px rgba(15, 23, 42, 0.5);
+  overflow: hidden;
+}
+.pro-drill-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px;
+  padding: 18px 24px 16px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, color-mix(in srgb, #f59e0b 8%, transparent), transparent);
+}
+.pro-drill-head-text { display: flex; flex-direction: column; gap: 4px; }
+.pro-drill-head-text h3 {
+  margin: 4px 0 0; font-size: 19px; font-weight: 700;
+}
+.pro-drill-head-text p {
+  margin: 0; font-size: 13px; color: var(--text-muted);
+}
+.pro-drill-head-side {
+  display: flex; align-items: center; gap: 12px;
+}
+.pro-drill-close {
+  appearance: none; border: 1px solid var(--border); background: var(--surface);
+  width: 32px; height: 32px; border-radius: 8px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-muted);
+}
+.pro-drill-close:hover { color: var(--text); background: color-mix(in srgb, var(--text-muted) 10%, transparent); }
+.pro-drill-body {
+  padding: 16px 24px 22px;
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 16px;
+}
+
+/* ---- Stat strip (4 stats above the table) ---- */
+.pro-drill-stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+.pro-stat {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  background: var(--surface);
+}
+.pro-stat.tone-good  { border-left: 4px solid var(--green); }
+.pro-stat.tone-warn  { border-left: 4px solid #f59e0b; }
+.pro-stat.tone-bad   { border-left: 4px solid #dc2626; }
+.pro-stat.tone-neutral { border-left: 4px solid var(--accent); }
+.pro-stat-value { font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.pro-stat-label { font-size: 11.5px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; }
+
+/* ---- Drill table ---- */
+.pro-drill-table {
+  width: 100%; border-collapse: collapse; font-size: 13px;
+}
+.pro-drill-table th, .pro-drill-table td {
+  padding: 8px 10px; border-bottom: 1px solid var(--border);
+  text-align: left; vertical-align: top;
+}
+.pro-drill-table th {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.3px;
+  text-transform: uppercase; color: var(--text-muted);
+  background: color-mix(in srgb, var(--text-muted) 4%, var(--surface));
+  position: sticky; top: 0;
+}
+.pro-drill-table th.r, .pro-drill-table td.r { text-align: right; font-variant-numeric: tabular-nums; }
+.pro-drill-table tr:hover td { background: color-mix(in srgb, #f59e0b 5%, transparent); }
+
+.pro-pill {
+  display: inline-flex; align-items: center;
+  padding: 2px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; white-space: nowrap;
+}
+.urgency-critical { background: color-mix(in srgb, #dc2626 18%, transparent); color: #991b1b; }
+.urgency-low       { background: color-mix(in srgb, #f59e0b 20%, transparent); color: #92400e; }
+.urgency-ok        { background: color-mix(in srgb, var(--green) 18%, transparent); color: var(--green); }
+.action-markdown   { background: color-mix(in srgb, #f59e0b 20%, transparent); color: #92400e; }
+.action-return     { background: color-mix(in srgb, var(--green) 18%, transparent); color: var(--green); }
+.action-bundle     { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+.action-monitor    { background: color-mix(in srgb, var(--text-muted) 14%, transparent); color: var(--text-muted); }
+.score-good        { background: color-mix(in srgb, var(--green) 18%, transparent); color: var(--green); }
+.score-warn        { background: color-mix(in srgb, #f59e0b 20%, transparent); color: #92400e; }
+.score-bad         { background: color-mix(in srgb, #dc2626 18%, transparent); color: #991b1b; }
+
+.pro-drill-explain {
+  margin: 0; font-size: 12.5px; color: var(--text-muted);
+  padding: 10px 14px; border-radius: 10px;
+  background: color-mix(in srgb, #f59e0b 8%, transparent);
+  border: 1px dashed color-mix(in srgb, #b45309 35%, transparent);
+}
+
+/* ---- Cash Flow mini bar chart ---- */
+.pro-cash-chart {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 12px 4px;
+}
+.pro-cash-row {
+  display: grid; grid-template-columns: 110px 1fr 100px;
+  align-items: center; gap: 10px;
+}
+.pro-cash-week { font-size: 13px; font-weight: 600; color: var(--text); }
+.pro-cash-bars {
+  display: flex; flex-direction: column; gap: 4px;
+}
+.pro-cash-bar {
+  display: flex; align-items: center; justify-content: flex-end;
+  height: 22px; padding: 0 8px;
+  color: #fff; font-size: 11px; font-weight: 700;
+  border-radius: 6px;
+  font-variant-numeric: tabular-nums;
+  transition: filter 120ms ease;
+}
+.pro-cash-bar:hover { filter: brightness(1.06); }
+.pro-cash-bar--in  { background: linear-gradient(90deg, #b45309, #f59e0b); }
+.pro-cash-bar--out { background: linear-gradient(90deg, #047857, #10b981); }
+.pro-cash-net {
+  text-align: right; font-size: 13px; font-weight: 800;
+  color: var(--green); font-variant-numeric: tabular-nums;
+}
+.pro-cash-legend {
+  display: flex; gap: 18px; font-size: 11.5px; color: var(--text-muted);
+  padding-top: 8px; border-top: 1px solid var(--border);
+}
+.pro-cash-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.pro-cash-key {
+  display: inline-block; width: 14px; height: 8px; border-radius: 3px;
+}
+.pro-cash-key--in  { background: linear-gradient(90deg, #b45309, #f59e0b); }
+.pro-cash-key--out { background: linear-gradient(90deg, #047857, #10b981); }
+
+@media (max-width: 768px) {
+  .pro-drill-table { font-size: 12px; }
+  .pro-cash-row { grid-template-columns: 80px 1fr 80px; }
+}

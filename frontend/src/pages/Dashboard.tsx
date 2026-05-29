@@ -11,6 +11,7 @@ import { useProductQuickView } from '../components/ProductQuickView';
 import { useAuth } from '../contexts/AuthContext';
 import { DashboardTile, TileFilterBar } from '../components/DashboardTile';
 import SmartHeaderStrip from '../components/SmartHeaderStrip';
+import ProInsightsTiles from '../components/ProInsightsTiles';
 import { useTableFilters } from '../hooks/useTableFilters';
 import { distributorName } from '../lib/distributors';
 import { Package, BadgePercent, TrendingDown, ArrowDownRight, ArrowUpRight, Zap, ArrowRight } from 'lucide-react';
@@ -188,6 +189,10 @@ export default function Dashboard() {
           subtitle="Orders sent to distributors" status="submitted" />
         <NotesTile data={myNotes} open={open} />
       </div>
+
+      {/* Pro Insights teaser block. Four sample-data tiles + a drill-down
+          modal that previews what the POS-integrated upgrade unlocks. */}
+      <ProInsightsTiles />
 
       <div className="section-label">Insights &amp; Opportunities</div>
       <div className="dashboard-tile-grid">

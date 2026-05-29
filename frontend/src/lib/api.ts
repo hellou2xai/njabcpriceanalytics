@@ -304,6 +304,9 @@ export interface TimeSensitiveDeal {
   // Edition (YYYY-MM) the deal applies to; surfaced by the API so the
   // card's MonthEffectiveSparkline popover can label its two months.
   edition?: string | null;
+  // Vintage year (or 'NV'). Same UPC is reused across vintages and
+  // pack sizes, so the card calls it out next to the brand / size.
+  vintage?: string | null;
   // Full Discount + RIP tier ladder for this month and next, attached by
   // the backend via attach_promotion_tiers so the popover renders the
   // same Frontline / Discount / RIP / Best breakdown the Catalog row uses.

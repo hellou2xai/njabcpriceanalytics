@@ -280,8 +280,11 @@ function DealCard({ d, open }: { d: TimeSensitiveDeal; open: (n: string, w: stri
           <div className="deal-card-sub">
             {d.brand && <span>{d.brand}</span>}
             {d.unit_volume && <span>· {d.unit_volume}</span>}
+            {d.vintage && d.vintage !== '0' && (
+              <span>· Vintage {String(d.vintage).replace(/\.0+$/, '')}</span>
+            )}
             <span className="cell-distributor-badge">{distributorName(d.wholesaler)}</span>
-            <VintageSticker vintages={d.vintages_available} />
+            <VintageSticker vintages={d.vintages_available} currentVintage={d.vintage as string | null} />
           </div>
         </div>
         <span className={`deal-urgency ${urgency}`} title={fmtDateRange(d.from_date, d.to_date)}>

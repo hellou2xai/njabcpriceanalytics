@@ -340,7 +340,9 @@ function MoverCard({ d, isDrop, open }: { d: PriceMover; isDrop: boolean; open: 
         {eff != null && <span>Net {money(eff)}/cs (after deals)</span>}
         {effBtl != null && <span>· {money(effBtl)}/btl</span>}
         {d.has_rip && <span className="source-badge source-rip">RIP rebate stacks</span>}
-        {d.vintage && <span>· Vintage {d.vintage}</span>}
+        {d.vintage && !/^(0|0\.0+|na|n\/a|nv|none)$/i.test(String(d.vintage)) && (
+          <span>· Vintage {String(d.vintage).replace(/\.0+$/, '')}</span>
+        )}
         <VintageSticker vintages={d.vintages_available} currentVintage={d.vintage} />
       </div>
 

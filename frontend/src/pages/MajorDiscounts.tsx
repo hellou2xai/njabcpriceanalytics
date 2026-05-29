@@ -207,6 +207,9 @@ function DiscountCard({ d, open }: { d: Product; open: (n: string, w: string, c?
           <div className="deal-card-sub">
             {d.brand && <span>{d.brand}</span>}
             {d.unit_volume && <span>· {d.unit_volume}</span>}
+            {d.vintage && !/^(0|0\.0+|na|n\/a|nv|none)$/i.test(String(d.vintage)) && (
+              <span>· Vintage {String(d.vintage).replace(/\.0+$/, '')}</span>
+            )}
             <span className="cell-distributor-badge">{distributorName(d.wholesaler)}</span>
             <VintageSticker vintages={d.vintages_available} currentVintage={d.vintage as string | null} />
           </div>

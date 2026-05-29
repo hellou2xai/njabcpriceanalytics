@@ -566,6 +566,7 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
         )
         rows = con.execute(f"""
             SELECT wholesaler, edition, product_name, product_type, unit_volume, unit_qty, upc, brand,
+                   vintage,
                    CAST(from_date AS DATE) AS from_date, CAST(to_date AS DATE) AS to_date,
                    CASE WHEN to_date IS NULL THEN NULL
                         ELSE date_diff('day', CURRENT_DATE, CAST(to_date AS DATE))
@@ -637,6 +638,10 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
                 "unit_qty": _str(r["unit_qty"]),
                 "upc": _str(r["upc"]),
                 "brand": _str(r["brand"]),
+                # Vintage is surfaced on the card so the buyer can tell which
+                # vintage of a multi-vintage SKU the row refers to. Same UPC
+                # is reused across vintages and pack sizes.
+                "vintage": _str(r["vintage"]),
                 "from_date": str(r["from_date"])[:10] if r["from_date"] is not None else None,
                 "to_date": str(r["to_date"])[:10] if r["to_date"] is not None else None,
                 "days_to_expire": int(dte) if dte == dte else None,  # drop NaN

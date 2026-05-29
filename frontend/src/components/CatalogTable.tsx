@@ -510,19 +510,30 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                             </span>
                           </div>
                         )}
-                        {/* Order facility lives in the product cell so it stays visible at any width. */}
-                        <div onClick={e => e.stopPropagation()} className="catalog-order-inline"
-                          style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                            <QtyStepper label="Case" value={qty.cases} onChange={v => updateQty(cartKey, 'cases', v)} />
-                            <QtyStepper label="Btl" value={qty.units} onChange={v => updateQty(cartKey, 'units', v)} />
+                        {/* Order facility: when this product has no tier
+                            sub-rows, render it here in the product cell so it's
+                            visible at any width. When tiers DO follow, the
+                            order block moves to a dedicated row beneath them
+                            (rendered after the tiers.map below) so the user
+                            sees the qty inputs AFTER reading the tier ladder.
+                            Otherwise the inputs sit on top of the product row
+                            while a stack of "Buy 5 cs", "Buy 20 cs",
+                            "Buy 50 cs" tiers follows, and it's unclear which
+                            tier a typed qty is meant to satisfy. */}
+                        {!hasTiers && (
+                          <div onClick={e => e.stopPropagation()} className="catalog-order-inline"
+                            style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                              <QtyStepper label="Case" value={qty.cases} onChange={v => updateQty(cartKey, 'cases', v)} />
+                              <QtyStepper label="Btl" value={qty.units} onChange={v => updateQty(cartKey, 'units', v)} />
+                            </div>
+                            <AddToCartButton productName={item.product_name} wholesaler={item.wholesaler}
+                              upc={item.upc} unitVolume={item.unit_volume}
+                              qtyCases={qty.cases} qtyUnits={qty.units} />
+                            <AddToListButton productName={item.product_name} wholesaler={item.wholesaler}
+                              upc={item.upc} unitVolume={item.unit_volume} />
                           </div>
-                          <AddToCartButton productName={item.product_name} wholesaler={item.wholesaler}
-                            upc={item.upc} unitVolume={item.unit_volume}
-                            qtyCases={qty.cases} qtyUnits={qty.units} />
-                          <AddToListButton productName={item.product_name} wholesaler={item.wholesaler}
-                            upc={item.upc} unitVolume={item.unit_volume} />
-                        </div>
+                        )}
                       </div>
                       {/* This-month vs next-month sparkline sits on the
                           RIGHT side of the product cell, after the name +
@@ -665,6 +676,39 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                     </tr>
                   );
                 })}
+
+                {/* Order footer row: sits BELOW every tier sub-row so the
+                    buyer reads the ladder first, then chooses a qty. Only
+                    rendered when there are tiers (otherwise the inline
+                    block in the product cell handles the simple case).
+                    Carries the same RIP colour band as the tier rows
+                    above so the whole cluster reads as one unit. */}
+                {hasTiers && (() => {
+                  const footerBandStyle: React.CSSProperties | undefined = ripColour
+                    ? { boxShadow: `inset 6px 0 0 ${ripColour.stripe}` }
+                    : undefined;
+                  return (
+                    <tr key={`${reactKey}_order`}
+                        className={`catalog-row-sub catalog-row-order${ripGroupCode ? ' has-rip-group' : ''}`}
+                        style={footerBandStyle}>
+                      <td></td>
+                      <td colSpan={showIntroduced ? 9 : 8} className="catalog-tier-sub-cell">
+                        <div onClick={e => e.stopPropagation()} className="catalog-order-inline"
+                          style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                            <QtyStepper label="Case" value={qty.cases} onChange={v => updateQty(cartKey, 'cases', v)} />
+                            <QtyStepper label="Btl" value={qty.units} onChange={v => updateQty(cartKey, 'units', v)} />
+                          </div>
+                          <AddToCartButton productName={item.product_name} wholesaler={item.wholesaler}
+                            upc={item.upc} unitVolume={item.unit_volume}
+                            qtyCases={qty.cases} qtyUnits={qty.units} />
+                          <AddToListButton productName={item.product_name} wholesaler={item.wholesaler}
+                            upc={item.upc} unitVolume={item.unit_volume} />
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })()}
               </Fragment>
             );
           })}

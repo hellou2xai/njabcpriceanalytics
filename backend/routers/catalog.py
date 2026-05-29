@@ -326,12 +326,20 @@ def _attach_discount_rip_tiers(con, records):
         return
     rip_src = read_parquet(con, "rip")
 
-    # Collect rip lookup keys for this page in one query
+    # Collect rip lookup keys for this page in one query. We include BOTH
+    # the CPL row's own rip_code AND the rip_group_code (the cluster
+    # membership when group_by_rip fans a UPC across multiple RIPs). They
+    # can differ — the CPL row may reference RIP B while the cluster on
+    # the page is RIP A — and the tier sub-rows are expected to follow
+    # the cluster, not the CPL side. When fan-out isn't in effect, both
+    # codes are usually the same and de-duplication keeps the IN-list
+    # short.
     keys = []
     for rec in records:
-        rc = rec.get("rip_code")
-        if rc and str(rc) not in ("None", "nan", "0", ""):
-            keys.append((str(rc), rec["wholesaler"], rec["edition"]))
+        for fld in ("rip_code", "rip_group_code"):
+            rc = rec.get(fld)
+            if rc and str(rc) not in ("None", "nan", "0", ""):
+                keys.append((str(rc), rec["wholesaler"], rec["edition"]))
     # Dedupe codes for the IN-list
     uniq_codes = sorted({k[0] for k in keys})
     uniq_ws = sorted({k[1] for k in keys})
@@ -387,14 +395,24 @@ def _attach_discount_rip_tiers(con, records):
             rip_full.setdefault(upc_key, []).extend(tiers_here)
 
     def _lookup_rips(rec):
-        rc = str(rec.get("rip_code") or "")
-        if not rc or rc in ("None", "nan", "0", ""):
-            return []
-        upc_key = (rc, rec["wholesaler"], rec["edition"], str(rec.get("upc") or ""))
-        if upc_key in rip_full:
-            return rip_full[upc_key]
-        code_key = (rc, rec["wholesaler"], rec["edition"])
-        return rip_by_code.get(code_key, [])
+        # Prefer the CLUSTER's code (rip_group_code) when present, so a row
+        # fanned out under RIP A shows RIP A's tiers even if its CPL-side
+        # rip_code points at RIP B. Fall back to the CPL rip_code so non-
+        # fanout views keep working unchanged.
+        candidates: list[str] = []
+        for fld in ("rip_group_code", "rip_code"):
+            v = str(rec.get(fld) or "")
+            if v and v not in ("None", "nan", "0", "") and v not in candidates:
+                candidates.append(v)
+        for rc in candidates:
+            upc_key = (rc, rec["wholesaler"], rec["edition"], str(rec.get("upc") or ""))
+            if upc_key in rip_full:
+                return rip_full[upc_key]
+            code_key = (rc, rec["wholesaler"], rec["edition"])
+            tiers = rip_by_code.get(code_key, [])
+            if tiers:
+                return tiers
+        return []
 
     def _uq(rec) -> float:
         """Bottles per case (for per-bottle pricing). Defaults to 1."""

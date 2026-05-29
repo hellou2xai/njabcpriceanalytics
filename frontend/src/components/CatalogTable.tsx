@@ -349,6 +349,10 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
     for (const i of items) for (const c of (i.rip_all_codes ?? [])) ordered.push(c);
     return buildRipPaletteMap(ordered);
   }, [items]);
+  // Display unit for the Pro Time to Sell teaser column. Single shared
+  // state for the whole table so the buyer picks once and every row
+  // re-labels. Pure placeholder UX until POS integration is live.
+  const [ttsUnit, setTtsUnit] = useState<'day' | 'week' | 'month'>('week');
   const sortIcon = (col: string) =>
     sortControls && sortControls.sort === col ? (sortControls.order === 'asc' ? ' ▲' : ' ▼') : '';
   const headSort = (col: SortKey) => sortControls
@@ -368,6 +372,10 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
             {/* Pro placeholders. Live preview of the POS-integrated buying
                 suggestion + justification, shown as a teaser on every row
                 so the value of the upgrade is visible while browsing. */}
+            <th className="catalog-pro-th" title="Pro feature: estimates how long this product takes to sell through based on your real sales velocity. Pick Day / Week / Month to change the time unit.">
+              <span className="catalog-pro-badge">Pro</span>
+              Time to Sell
+            </th>
             <th className="catalog-pro-th" title="Pro feature: connects to your POS to recommend how much to buy based on your real sales velocity and on-hand stock.">
               <span className="catalog-pro-badge">Pro</span>
               Suggested Qty
@@ -419,9 +427,9 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
             const banner = groupByRip ? ripBanners.get(rowIdx) : undefined;
             const bannerColour = banner ? ripPalette.get(banner.code) ?? null : null;
             const bannerProg = banner ? bannerProgress(banner) : null;
-            // +2 for the Pro placeholder columns (Suggested Qty + Justification)
-            // that sit between Product and Distributor.
-            const totalColumns = showIntroduced ? 12 : 11;
+            // +3 for the Pro placeholder columns (Time to Sell + Suggested
+            // Qty + Justification) that sit between Product and Distributor.
+            const totalColumns = showIntroduced ? 13 : 12;
             return (
               <Fragment key={reactKey}>
                 {banner && (
@@ -737,11 +745,37 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                       })()}
                     </div>
                   </td>
-                  {/* Pro teaser cells: the buying suggestion + the
-                      justification behind it. Placeholder copy until POS
+                  {/* Pro teaser cells: time-to-sell + buying suggestion +
+                      justification. Placeholder copy until POS
                       integration is live. The Pro badge lives only on the
                       column header (no per-row repeat). Each cell still
                       carries a hover tooltip and a value-prop sticker. */}
+                  <td className="catalog-pro-cell" data-label="Time to Sell"
+                      title="Pro feature: after POS integration this column shows how long this product takes to sell through at your store's actual sales velocity. Toggle Day / Week / Month below to change the unit.">
+                    <div className="catalog-pro-body">
+                      <div className="catalog-pro-value">
+                        XX <span className="catalog-pro-unit">{ttsUnit === 'day' ? 'days' : ttsUnit === 'week' ? 'weeks' : 'months'}</span>
+                      </div>
+                      <div className="catalog-pro-sub">to sell through after POS sync</div>
+                      {/* Unit toggle. Click changes ttsUnit for every row at
+                          once so the buyer picks once and the whole catalog
+                          re-labels. Pure display preference for now; the
+                          numeric XX is a placeholder until POS lands. */}
+                      <div className="catalog-pro-unit-pick" onClick={e => e.stopPropagation()}>
+                        {(['day', 'week', 'month'] as const).map(u => (
+                          <button
+                            key={u}
+                            type="button"
+                            className={`catalog-pro-unit-btn${ttsUnit === u ? ' is-active' : ''}`}
+                            onClick={() => setTtsUnit(u)}
+                          >
+                            {u === 'day' ? 'Day' : u === 'week' ? 'Week' : 'Month'}
+                          </button>
+                        ))}
+                      </div>
+                      <span className="catalog-pro-savings">No more dead stock</span>
+                    </div>
+                  </td>
                   <td className="catalog-pro-cell" data-label="Suggested Qty"
                       title="Pro feature: connects to your POS. After integration this column shows the actual case + bottle quantity recommended for this product, calculated from your daily sell-through and current on-hand inventory.">
                     <div className="catalog-pro-body">
@@ -818,10 +852,11 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                           are LEFT-aligned, so the description sits
                           directly beneath the chip with their left edges
                           flush. */}
-                      {/* +2 from the Pro placeholder columns (Suggested Qty
-                          + Justification) that sit between Product and
-                          Distributor; tier sub-rows skip across them. */}
-                      <td colSpan={showIntroduced ? 8 : 7} className="card-title-cell catalog-tier-sub-cell">
+                      {/* +3 from the Pro placeholder columns (Time to Sell
+                          + Suggested Qty + Justification) that sit between
+                          Product and Distributor; tier sub-rows skip across
+                          them. */}
+                      <td colSpan={showIntroduced ? 9 : 8} className="card-title-cell catalog-tier-sub-cell">
                         {/* Tier sub-cell is a flex row: the order block sits
                             on the LEFT (only on the FIRST tier row, so it
                             shows once per product even when several tiers
@@ -887,7 +922,7 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
             );
           })}
           {items.length === 0 && (
-            <tr><td colSpan={showIntroduced ? 12 : 11} className="empty">No products</td></tr>
+            <tr><td colSpan={showIntroduced ? 13 : 12} className="empty">No products</td></tr>
           )}
         </tbody>
       </table>

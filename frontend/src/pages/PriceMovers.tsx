@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowDownRight, ArrowUpRight } from 'lucide-react';
-import { analytics, watchlist, catalog, type PriceMover } from '../lib/api';
+import { analytics, watchlist, type PriceMover } from '../lib/api';
 import { ContextMenuProvider, RowMenuButton } from '../components/ContextMenu';
 import FavoriteButton from '../components/FavoriteButton';
 import AddToCartButton from '../components/AddToCartButton';
@@ -71,10 +71,21 @@ export default function PriceMovers({ direction }: Props) {
     queryFn: () => analytics.priceMovers({ direction, wholesaler: wholesaler || undefined, validity, limit: 2000 }),
   });
   const { data: wl } = useQuery({ queryKey: ['watchlist'], queryFn: watchlist.get, enabled: trackedOnly });
-  const { data: cats } = useQuery({
-    queryKey: ['categories', wholesaler],
-    queryFn: () => catalog.categories({ wholesaler: wholesaler || undefined }),
-  });
+  // Category facet computed from the actual movers list, not the global
+  // /api/catalog/categories endpoint. See TimeSensitive.tsx for the same
+  // reasoning: the global facet returned "Wine (61,861)" on a page that
+  // only shows a few hundred movers.
+  const cats = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const d of data ?? []) {
+      const t = d.product_type;
+      if (!t) continue;
+      counts.set(t, (counts.get(t) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([product_type, count]) => ({ product_type, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [data]);
 
   const items = useMemo(() => {
     let res: PriceMover[] = data ?? [];
@@ -175,7 +186,9 @@ export default function PriceMovers({ direction }: Props) {
           <ContextMenuProvider onView={open}>
             {view === 'cards' ? (
               <div className="deal-cards">
-                {shown.map(d => <MoverCard key={`${d.wholesaler}|${d.upc ?? d.product_name}`} d={d} isDrop={isDrop} open={open} />)}
+                {/* Index in the key so multi-vintage / multi-edition rows
+                    with the same (wholesaler, UPC) don't collide. */}
+                {shown.map((d, i) => <MoverCard key={`${d.wholesaler}|${d.upc ?? d.product_name}|${d.unit_volume ?? ''}|${d.edition ?? ''}|${i}`} d={d} isDrop={isDrop} open={open} />)}
                 {!isLoading && shown.length === 0 && (
                   <div className="empty" style={{ padding: 30, textAlign: 'center' }}>No products match these filters.</div>
                 )}

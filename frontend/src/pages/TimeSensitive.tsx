@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { deals, watchlist, catalog, type TimeSensitiveDeal } from '../lib/api';
+import { deals, watchlist, type TimeSensitiveDeal } from '../lib/api';
 import { ContextMenuProvider } from '../components/ContextMenu';
 import { RowMenuButton } from '../components/ContextMenu';
 import FavoriteButton from '../components/FavoriteButton';
@@ -59,10 +59,22 @@ export default function TimeSensitive() {
     queryFn: () => deals.timeSensitive({ wholesaler: wholesaler || undefined, include_past: showPast || undefined, limit: 2000 }),
   });
   const { data: wl } = useQuery({ queryKey: ['watchlist'], queryFn: watchlist.get, enabled: trackedOnly });
-  const { data: cats } = useQuery({
-    queryKey: ['categories', wholesaler],
-    queryFn: () => catalog.categories({ wholesaler: wholesaler || undefined }),
-  });
+  // Category facet computed from the actual time-sensitive deals list, not
+  // the global /api/catalog/categories endpoint. The global one returned the
+  // full catalog ("Wine 61,861") which on a 214-deal page is misleading at
+  // best and click-bait at worst. Now the dropdown shows the real count of
+  // time-sensitive deals per category.
+  const cats = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const d of data ?? []) {
+      const t = d.product_type;
+      if (!t) continue;
+      counts.set(t, (counts.get(t) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([product_type, count]) => ({ product_type, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [data]);
 
   const items = useMemo(() => {
     let res: TimeSensitiveDeal[] = data ?? [];
@@ -197,8 +209,14 @@ export default function TimeSensitive() {
           <ContextMenuProvider onView={open}>
             {view === 'cards' ? (
               <div className="deal-cards">
-                {shown.map(d => (
-                  <DealCard key={`${d.wholesaler}|${d.upc ?? d.product_name}`} d={d} open={open} />
+                {shown.map((d, i) => (
+                  // Key includes index so multi-vintage rows with the same
+                  // (wholesaler, UPC) don't collide. Vintage/edition is
+                  // not on TimeSensitiveDeal so falling back to the index
+                  // is the cheapest collision-free option, and the list
+                  // is short enough (capped by `limit`) that index-key
+                  // reconciliation is fine here.
+                  <DealCard key={`${d.wholesaler}|${d.upc ?? d.product_name}|${d.unit_volume ?? ''}|${i}`} d={d} open={open} />
                 ))}
                 {!isLoading && shown.length === 0 && (
                   <div className="empty" style={{ padding: 30, textAlign: 'center' }}>No deals match these filters.</div>

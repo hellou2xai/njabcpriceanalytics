@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Percent } from 'lucide-react';
-import { deals, watchlist, catalog, type Product } from '../lib/api';
+import { deals, watchlist, type Product } from '../lib/api';
 import { ContextMenuProvider, RowMenuButton } from '../components/ContextMenu';
 import FavoriteButton from '../components/FavoriteButton';
 import AddToCartButton from '../components/AddToCartButton';
@@ -48,10 +48,19 @@ export default function MajorDiscounts() {
     }),
   });
   const { data: wl } = useQuery({ queryKey: ['watchlist'], queryFn: watchlist.get, enabled: trackedOnly });
-  const { data: cats } = useQuery({
-    queryKey: ['categories', wholesaler],
-    queryFn: () => catalog.categories({ wholesaler: wholesaler || undefined }),
-  });
+  // Category facet from the actual discount list, not the global catalog
+  // (see TimeSensitive.tsx / PriceMovers.tsx for the same reasoning).
+  const cats = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const d of data ?? []) {
+      const t = d.product_type;
+      if (!t) continue;
+      counts.set(t, (counts.get(t) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([product_type, count]) => ({ product_type, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [data]);
 
   const items = useMemo(() => {
     let res: Product[] = data ?? [];
@@ -141,7 +150,10 @@ export default function MajorDiscounts() {
           <ContextMenuProvider onView={open}>
             {view === 'cards' ? (
               <div className="deal-cards">
-                {shown.map(d => <DiscountCard key={`${d.wholesaler}|${d.upc ?? d.product_name}`} d={d} open={open} />)}
+                {/* Key includes vintage / edition / row index so the multi-
+                    vintage Remy Louis lines (1P / COF1P / GIFT1P all
+                    landing as $32.99) don't collide on (wholesaler, UPC). */}
+                {shown.map((d, i) => <DiscountCard key={`${d.wholesaler}|${d.upc ?? d.product_name}|${d.unit_volume ?? ''}|${d.edition ?? ''}|${i}`} d={d} open={open} />)}
                 {!isLoading && shown.length === 0 && (
                   <div className="empty" style={{ padding: 30, textAlign: 'center' }}>No products match these filters.</div>
                 )}

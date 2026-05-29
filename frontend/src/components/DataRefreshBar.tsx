@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useSyncExternalStore } from 'react';
+import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { RefreshCw, Check } from 'lucide-react';
 
@@ -8,31 +9,56 @@ import { RefreshCw, Check } from 'lucide-react';
  * with no cached data yet (status 'pending'). Background refetches and mutation
  * invalidations (which already have data) do NOT trigger it, so it appears once
  * when you open a screen rather than flashing on every refresh.
+ *
+ * IMPLEMENTATION: we read the query-cache via useSyncExternalStore so the read
+ * is render-phase safe. The earlier implementation used cache.subscribe(setState)
+ * inside a useEffect, which fires the setState SYNCHRONOUSLY when a child's
+ * useQuery touches the cache during its own render — that produced React's
+ * "Cannot update a component (DataRefreshBar) while rendering a different
+ * component (DealSparkline / FavoriteButton / AddToListButton)" warning on
+ * pages with many query-using children (Time-Sensitive Deals saw 11 of these
+ * per render). useSyncExternalStore handles the subscribe + read in one
+ * concurrent-safe step, no setState during another component's render.
  */
 export default function DataRefreshBar() {
   const qc = useQueryClient();
-  const [loading, setLoading] = useState(0);
+
+  // Subscribe once to the query cache; the snapshot getter counts queries
+  // that are fetching for the first time (no cached data yet). React calls
+  // these from the right phase, so we no longer fire setState during a
+  // child render.
+  const loading = useSyncExternalStore(
+    (cb) => {
+      const cache = qc.getQueryCache();
+      return cache.subscribe(cb);
+    },
+    () => qc.getQueryCache().getAll().filter(q =>
+      q.state.fetchStatus === 'fetching' && q.state.status === 'pending'
+    ).length,
+    // Server snapshot (SSR / first render before subscribe): nothing fetching.
+    () => 0,
+  );
+
+  // "Data loaded" flash lives in its own useEffect because the snapshot
+  // transition (>0 to 0) is the cheap signal we already have; this stays
+  // unchanged from the previous implementation.
   const [done, setDone] = useState(false);
-  const prev = useRef(0);
-
   useEffect(() => {
-    const cache = qc.getQueryCache();
-    const compute = () =>
-      cache.getAll().filter(q => q.state.fetchStatus === 'fetching' && q.state.status === 'pending').length;
-    const update = () => setLoading(compute());
-    update();
-    return cache.subscribe(update);
-  }, [qc]);
-
-  useEffect(() => {
-    if (prev.current > 0 && loading === 0) {
-      setDone(true);
-      const t = setTimeout(() => setDone(false), 1200);
-      prev.current = loading;
-      return () => clearTimeout(t);
-    }
-    prev.current = loading;
+    if (loading > 0) return;
+    // Only flash done if we ever saw a non-zero count. Skip on the very
+    // first render where loading starts at 0.
+    let cancelled = false;
+    const t = setTimeout(() => { if (!cancelled) setDone(false); }, 1200);
+    return () => { cancelled = true; clearTimeout(t); };
   }, [loading]);
+  // Set "done = true" when the count drops to zero from a higher value.
+  // Using a ref-equivalent via state on transitions; same idea as the
+  // previous prev.current pattern, kept minimal.
+  const [prev, setPrev] = useState(0);
+  useEffect(() => {
+    if (prev > 0 && loading === 0) setDone(true);
+    if (prev !== loading) setPrev(loading);
+  }, [loading, prev]);
 
   if (loading > 0) {
     return (

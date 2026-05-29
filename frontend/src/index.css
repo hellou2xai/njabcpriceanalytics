@@ -1443,8 +1443,17 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
    that wrap their body in <FilterSidebar> get a sticky filter bar on top and
    a full-width content area below — replacing the prior 240px left rail so
    tables and grids get the full viewport. */
-.page-with-filters { display: flex; flex-direction: column; gap: 12px; }
-.page-with-filters-main { min-width: 0; }
+/* Promotions pages render FilterSidebar without children: the results
+   are a SIBLING (.catalog-results) of <FilterSidebar/> inside the page
+   wrapper, not a child. So `.page-with-filters` only ever wraps the
+   toolbar + an empty main slot. With its own height equal to the
+   toolbar's, position: sticky on .filter-toolbar would scroll out the
+   moment its parent bottom passed the viewport. `display: contents`
+   collapses .page-with-filters out of the layout so the toolbar's
+   effective parent becomes the page wrapper, which extends past every
+   card — and sticky actually pins as you scroll. */
+.page-with-filters { display: contents; }
+.page-with-filters-main { display: contents; }
 
 .filter-toolbar {
   position: sticky; top: 0; z-index: 10;
@@ -3827,6 +3836,19 @@ tr:hover .row-menu-btn { opacity: 1; }
   display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.2px;
   padding: 3px 8px; border-radius: 999px; white-space: nowrap;
   background: var(--accent-weak); color: var(--accent);
+}
+
+/* "Multiple vintages" sticker on Promotions wine cards. Subtle purple
+   pill (vintage cellar / wine cellar mental model) with the icon and
+   the count; full list lives in the tooltip. */
+.vintage-sticker {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: color-mix(in srgb, #7c3aed 14%, transparent);
+  color: #5b21b6;
+  border: 1px solid color-mix(in srgb, #7c3aed 32%, transparent);
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.2px;
+  padding: 1px 7px; border-radius: 999px;
+  white-space: nowrap;
 }
 
 /* Admin-only marker next to nav items (visible to admins so they can see

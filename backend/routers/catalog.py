@@ -657,6 +657,73 @@ def _attach_dup_upc(con, src, records):
         rec["dup_upc"] = False
 
 
+def attach_vintages_available(con, records):
+    """For each Promotions record that's a wine / sparkling / vermouth, look
+    up the distinct vintages of the same (wholesaler, product_name,
+    unit_volume) listed in the same edition and attach them as
+    ``vintages_available`` (sorted, normalised 4-digit strings + 'NV' for
+    non-vintage). Lets the card render a "Multiple vintages" sticker so
+    the buyer knows a single product name covers several SKUs.
+
+    No-op for records whose product_type isn't a vintage-bearing category,
+    or whose lookup tuple is incomplete. ``vintages_available`` is set
+    only when there are two or more distinct vintages — single-vintage
+    SKUs get an empty list. The current row's own vintage is included
+    when present so the tooltip's "current vs the rest" framing reads.
+    """
+    if not records:
+        return
+    VIN_TYPES = {"WINE", "SPARKLING", "VERMOUTH"}
+    src = read_parquet(con, "cpl_enriched")
+    keys = []
+    for r in records:
+        pt = (r.get("product_type") or "").upper()
+        if pt not in VIN_TYPES:
+            r["vintages_available"] = []
+            continue
+        ws = r.get("wholesaler")
+        nm = r.get("product_name")
+        vol = r.get("unit_volume")
+        ed = r.get("edition")
+        if not (ws and nm and ed):
+            r["vintages_available"] = []
+            continue
+        keys.append((ws, nm, vol or "", ed))
+    if not keys:
+        return
+    uniq = sorted(set(keys))
+    ph = ", ".join(f"($w{i}, $n{i}, $v{i}, $e{i})" for i in range(len(uniq)))
+    params = {}
+    for i, (w, n, v, e) in enumerate(uniq):
+        params[f"w{i}"], params[f"n{i}"], params[f"v{i}"], params[f"e{i}"] = w, n, v, e
+    vn = _vintage_norm_sql("vintage")
+    df = con.execute(
+        f"""SELECT wholesaler, product_name, COALESCE(unit_volume, '') AS unit_volume,
+                   edition, {vn} AS vn
+            FROM {src}
+            WHERE (wholesaler, product_name, COALESCE(unit_volume, ''), edition)
+                  IN ({ph})""",
+        params,
+    ).fetchdf()
+    bag: dict = {}
+    for _, nr in df.iterrows():
+        key = (nr["wholesaler"], nr["product_name"], nr["unit_volume"], nr["edition"])
+        v = nr["vn"]
+        # Normalise None / NaN to the 'NV' bucket; a wine with no vintage
+        # tag is meaningfully distinct from a 2019 listing of the same SKU.
+        if v is None or (isinstance(v, float) and math.isnan(v)):
+            label = "NV"
+        else:
+            label = str(v)
+        bag.setdefault(key, set()).add(label)
+    for r in records:
+        if "vintages_available" in r:  # already set above (non-wine or incomplete key)
+            continue
+        key = (r["wholesaler"], r["product_name"], r.get("unit_volume") or "", r["edition"])
+        vs = sorted(bag.get(key, set()))
+        r["vintages_available"] = vs if len(vs) > 1 else []
+
+
 def attach_promotion_tiers(con, records):
     """Public entry-point for the Promotions endpoints (Time-Sensitive Deals,
     Major Discounts, Price Drops / Increases). Takes records from any

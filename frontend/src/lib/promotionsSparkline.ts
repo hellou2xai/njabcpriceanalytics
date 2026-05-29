@@ -84,40 +84,27 @@ function nextEdition(curr: string | null): string | null {
 
 export function buildSparkProps(item: SparkSourceItem):
   { curr: MonthBreakdown; next: MonthBreakdown } {
-  // Mover rows can qualify on EITHER transition (prev→cur or cur→next).
-  // If we always plot cur→next, rows that qualified because prev→cur
-  // dropped show up as a flat line (user feedback: "products where
-  // price is not changing but they are flagged as price drop"). Plot
-  // the headline transition instead so the line always reflects the
-  // actual movement that put the row on the page.
-  const isMover = item.headline_period != null
-              || item.case_price != null
-              || item.next_case_price != null;
+  // Always show CURR vs NEXT (this month vs next month), matching the
+  // Catalog row. The user explicitly asked for "we are in May. This
+  // should compare May Vs June." Rows whose price-change qualifier
+  // landed on the prev→cur transition rather than cur→next still show
+  // up on the page (the "Active May 2026 only" / "Active Jun 2026 only"
+  // tag tells the buyer WHEN the move happened), but the sparkline +
+  // popover stay anchored on the current-vs-next comparison so the
+  // visualisation is consistent with the Catalog.
+  const isMover = item.case_price != null
+              || item.next_case_price != null
+              || item.headline_period != null;
 
-  if (isMover && item.headline_period === 'cur') {
-    // prev → cur is the headline. Use prev_* as the LEFT dot and the
-    // mover's "current" values (case_price / cur_edition) as the RIGHT
-    // dot. Tier ladders aren't computed for the prev edition, so the
-    // popover's left column shows only Frontline / Best for prev.
-    const leftEd  = item.prev_edition ?? null;
-    const rightEd = item.cur_edition ?? item.edition ?? null;
-    return {
-      curr: buildBlock(undefined, item.frontline_prev_case_price ?? null,
-                       item.prev_case_price ?? null, leftEd),
-      next: buildBlock(item.tiers,
-                       item.frontline_case_price ?? null,
-                       item.case_price ?? null, rightEd),
-    };
-  }
-
-  // Default: cur → next. Movers (headline 'next') and the
-  // non-mover Time-Sensitive / Major Discounts shapes both land here.
   const currEd = item.cur_edition
     ?? item.edition
     ?? (item.from_date ? item.from_date.slice(0, 7) : null)
     ?? null;
   const nextEd = item.next_edition ?? nextEdition(currEd);
 
+  // PriceMover stores EFFECTIVE prices in `case_price` / `next_case_price`
+  // (LIST values land under frontline_*). Other shapes use the catalog
+  // naming where `frontline_*` is list and `effective_*` is post-discount.
   const currFront = item.frontline_case_price ?? null;
   const currBest  = isMover
     ? (item.case_price ?? null)

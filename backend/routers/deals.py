@@ -114,8 +114,12 @@ def get_top_discounts(
         sort_col = sort if sort in allowed_sorts else "total_savings_per_case"
 
         w = " AND ".join(where)
+        # vintage is included so the next-month price lookup below can match
+        # apple-to-apple: a 2019 wine listing in May must not silently pick
+        # up the 2020 release's June price (different SKU, looks like a
+        # huge swing).
         cols = """wholesaler, edition, upc, product_name, brand, product_type,
-                   unit_volume, unit_qty, frontline_case_price, frontline_unit_price,
+                   unit_volume, unit_qty, vintage, frontline_case_price, frontline_unit_price,
                    best_case_price, effective_case_price, discount_pct,
                    total_savings_per_case, rip_savings, has_rip, has_discount,
                    has_closeout, discount_1_qty, discount_1_amt"""
@@ -145,6 +149,12 @@ def get_top_discounts(
         records = [_clean(r) for r in df.to_dict(orient="records")]
 
         # Next-month effective for the same SKU → "cheaper now or next?"
+        # Vintage is part of the SKU identity (a 2019 wine carrying the same
+        # UPC as a 2020 release is NOT the same product), so the lookup key
+        # carries the normalised vintage too. Without it, a wine row's
+        # "next month price" would silently pick up a different vintage and
+        # the better_month flag + next sparkline would be apples-to-oranges.
+        from backend.routers.catalog import _vintage_norm_sql, _norm_vintage
         next_eds = sorted({v for v in next_map.values() if v})
         upcs = sorted({str(r["upc"]) for r in records if r.get("upc")})
         next_lookup = {}
@@ -153,15 +163,21 @@ def get_top_discounts(
             eph = ", ".join(f"$e{i}" for i in range(len(next_eds)))
             np = {f"u{i}": u for i, u in enumerate(upcs)}
             np.update({f"e{i}": e for i, e in enumerate(next_eds)})
+            vn = _vintage_norm_sql("vintage")
             ndf = con.execute(f"""
                 SELECT wholesaler, edition, upc, product_name, unit_volume,
+                       {vn} AS vintage_norm,
                        effective_case_price
                 FROM {src}
                 WHERE upc IN ({uph}) AND edition IN ({eph})
             """, np).fetchdf()
             for _, nr in ndf.iterrows():
+                vn_v = nr.get("vintage_norm")
+                if vn_v is not None and isinstance(vn_v, float) and math.isnan(vn_v):
+                    vn_v = None
                 key = (nr["wholesaler"], nr["edition"], str(nr["upc"]),
-                       nr.get("product_name") or "", nr.get("unit_volume") or "")
+                       nr.get("product_name") or "", nr.get("unit_volume") or "",
+                       str(vn_v) if vn_v is not None else "")
                 v = nr["effective_case_price"]
                 next_lookup[key] = None if (v is None or (isinstance(v, float) and math.isnan(v))) else float(v)
 
@@ -169,8 +185,10 @@ def get_top_discounts(
             ws = r["wholesaler"]
             ne_ed = next_map.get(ws)
             ce = r.get("effective_case_price")
+            r_vn = _norm_vintage(r.get("vintage"))
             ne = next_lookup.get((ws, ne_ed, str(r.get("upc") or ""),
-                                  r.get("product_name") or "", r.get("unit_volume") or "")) if ne_ed else None
+                                  r.get("product_name") or "", r.get("unit_volume") or "",
+                                  r_vn or "")) if ne_ed else None
             r["next_effective_case_price"] = ne
             if ne is None or ce is None:
                 r["better_month"] = "This month"   # no next-month data → act now
@@ -198,9 +216,12 @@ def get_top_discounts(
             un = str(u).lstrip("0") if u else ""
             r["ai_blurb"] = blurb_map.get((r.get("wholesaler"), un, r.get("edition")))
         # Attach the Discount + RIP tier ladder for THIS month and next month,
-        # so the card's MonthEffectiveSparkline popover shows the full ladder.
-        from backend.routers.catalog import attach_promotion_tiers
+        # so the card's MonthEffectiveSparkline popover shows the full ladder,
+        # plus the list of distinct vintages so wines can wear a "Multiple
+        # vintages" sticker.
+        from backend.routers.catalog import attach_promotion_tiers, attach_vintages_available
         attach_promotion_tiers(con, records)
+        attach_vintages_available(con, records)
         return records
 
 
@@ -632,9 +653,12 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
         # Attach the full Discount + RIP tier ladder for THIS month and
         # next month, same shape the Catalog row uses, so the card's
         # MonthEffectiveSparkline popover can show Frontline / Discount /
-        # RIP / Best for both months side by side.
-        from backend.routers.catalog import attach_promotion_tiers
+        # RIP / Best for both months side by side. Also flag wines that
+        # have multiple vintages so the card can show a "Multiple
+        # vintages" sticker.
+        from backend.routers.catalog import attach_promotion_tiers, attach_vintages_available
         attach_promotion_tiers(con, out)
+        attach_vintages_available(con, out)
         return out
 
 

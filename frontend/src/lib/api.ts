@@ -312,6 +312,14 @@ export interface TimeSensitiveDeal {
   // Next-edition headline figures from the same Catalog enrichment path.
   next_case_price?: number | null;
   next_effective_case_price?: number | null;
+  // Product type, surfaced so the card can decide whether the multi-
+  // vintage sticker applies (vintage only matters on wine / sparkling /
+  // vermouth rows).
+  product_type?: string | null;
+  // For wines / sparkling / vermouth: the list of distinct vintages of
+  // the same SKU listed in the same edition. Empty when there's only
+  // one vintage on file.
+  vintages_available?: string[];
   product_name: string;
   product_type: string | null;
   unit_volume: string | null;
@@ -745,6 +753,10 @@ export interface Product {
   next_case_price?: number | null;
   next_effective_case_price?: number | null;
   better_month?: 'Same' | 'This Month' | 'Next Month' | null;
+  // Distinct vintages of the same SKU listed in the same edition (wines /
+  // sparkling / vermouth only; empty otherwise). Lets the card render a
+  // "Multiple vintages" sticker.
+  vintages_available?: string[];
   // Edition (YYYY-MM) the item was introduced in, set by /catalog/new-items.
   introduced_edition?: string | null;
   // Go-UPC product image (R2 CDN URL), attached per row by the list endpoints.
@@ -993,6 +1005,9 @@ export interface PriceMover {
   // Tier ladders for this month and next, attached by attach_promotion_tiers.
   tiers?: CatalogTier[];
   next_tiers?: CatalogTier[];
+  // Distinct vintages of the same SKU listed in the same edition (wines /
+  // sparkling / vermouth only; empty otherwise).
+  vintages_available?: string[];
 }
 
 export interface LifecycleEvent {

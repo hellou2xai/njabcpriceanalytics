@@ -12,6 +12,7 @@ import PromotionsToolbar from '../components/PromotionsToolbar';
 import PromotionsTable, { type PromotionRow } from '../components/PromotionsTable';
 import MonthEffectiveSparkline from '../components/MonthEffectiveSparkline';
 import { buildSparkProps } from '../lib/promotionsSparkline';
+import VintageSticker from '../components/VintageSticker';
 import { useProductQuickView } from '../components/ProductQuickView';
 import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
 
@@ -36,6 +37,7 @@ export default function MajorDiscounts() {
   const [trackedOnly, setTrackedOnly] = useState(false);
   const [sort, setSort] = useState<'biggest-save' | 'biggest-pct' | 'name'>('biggest-save');
   const [limit, setLimit] = useState(60);
+  const [page, setPage] = useState(0);
   const [view, setView] = useState<'cards' | 'table'>(() => (localStorage.getItem('md-view') as 'cards' | 'table') || 'cards');
   useEffect(() => { localStorage.setItem('md-view', view); }, [view]);
 
@@ -84,7 +86,7 @@ export default function MajorDiscounts() {
     return res;
   }, [data, q, productType, size, hasRip, hasCloseout, minSave, trackedOnly, wl, sort]);
 
-  const shown = items.slice(0, limit);
+  const shown = items.slice(page * limit, (page + 1) * limit);
 
   const sections: FilterSection[] = [
     { type: 'text', key: 'q', title: 'Search', placeholder: 'Product or brand', value: q, onChange: setQ },
@@ -140,12 +142,14 @@ export default function MajorDiscounts() {
             onSortChange={setSort}
             sortOptions={sortOptions}
             limit={limit}
-            onLimitChange={setLimit}
+            onLimitChange={(n) => { setLimit(n); setPage(0); }}
             total={items.length}
-            shownInCards={limit}
+            shownInCards={shown.length}
             view={view}
             onViewChange={setView}
             noun="discounts"
+            page={page}
+            onPageChange={setPage}
           />
 
           <ContextMenuProvider onView={open}>
@@ -204,6 +208,7 @@ function DiscountCard({ d, open }: { d: Product; open: (n: string, w: string, c?
             {d.brand && <span>{d.brand}</span>}
             {d.unit_volume && <span>· {d.unit_volume}</span>}
             <span className="cell-distributor-badge">{distributorName(d.wholesaler)}</span>
+            <VintageSticker vintages={d.vintages_available} currentVintage={d.vintage as string | null} />
           </div>
         </div>
         <div className="deal-card-pills">

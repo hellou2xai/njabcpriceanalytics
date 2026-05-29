@@ -18,6 +18,18 @@ export type FilterSection = CommonSectionProps & (
       onChange: (v: string) => void;
     }
   | {
+      // Multi-select pill group. Clicking a pill toggles its value in / out
+      // of `values`. Used by Price Drops / Increases for the Size filter
+      // so the buyer can pick "750ML + 1.75L + 50ML" in one go without
+      // typing into a text input.
+      type: 'multi-pills';
+      key: string;
+      title: string;
+      options: FilterOption[];
+      values: string[];
+      onChange: (v: string[]) => void;
+    }
+  | {
       type: 'select';
       key: string;
       title: string;
@@ -175,6 +187,28 @@ function FilterSectionInline({ section: s }: { section: FilterSection }) {
                 {opt.count != null && <span className="filter-pill-count">{opt.count}</span>}
               </button>
             ))}
+          </div>
+        )}
+
+        {s.type === 'multi-pills' && (
+          <div className="filter-pills">
+            {s.options.map(opt => {
+              const active = s.values.includes(opt.value);
+              return (
+                <button
+                  key={opt.value}
+                  className={`filter-pill ${active ? 'active' : ''}`}
+                  onClick={() => {
+                    if (active) s.onChange(s.values.filter(v => v !== opt.value));
+                    else s.onChange([...s.values, opt.value]);
+                  }}
+                  type="button"
+                >
+                  {opt.label}
+                  {opt.count != null && <span className="filter-pill-count">{opt.count}</span>}
+                </button>
+              );
+            })}
           </div>
         )}
 

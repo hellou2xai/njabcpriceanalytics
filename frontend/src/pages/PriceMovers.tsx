@@ -12,6 +12,7 @@ import PromotionsToolbar from '../components/PromotionsToolbar';
 import PromotionsTable, { type PromotionRow } from '../components/PromotionsTable';
 import MonthEffectiveSparkline from '../components/MonthEffectiveSparkline';
 import { buildSparkProps } from '../lib/promotionsSparkline';
+import VintageSticker from '../components/VintageSticker';
 import { useProductQuickView } from '../components/ProductQuickView';
 import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
 
@@ -56,10 +57,11 @@ export default function PriceMovers({ direction }: Props) {
   const [minChange, setMinChange] = useState('');     // min ABS % change
   const [minDollar, setMinDollar] = useState('');     // min ABS $ change per case
   const [hasRip, setHasRip] = useState<'' | 'yes' | 'no'>('');
-  const [size, setSize] = useState('');
+  const [sizes, setSizes] = useState<string[]>([]);
   const [trackedOnly, setTrackedOnly] = useState(false);
   const [sort, setSort] = useState<'biggest-pct' | 'biggest-dollar' | 'name'>('biggest-pct');
   const [limit, setLimit] = useState(60);
+  const [page, setPage] = useState(0);
   // `both` = show every product on the page (the user's "show all" semantic).
   // `current_only` = rose last→this. `next_only` = will rise this→next.
   // A product can satisfy both transitions, so memberships overlap.
@@ -95,7 +97,10 @@ export default function PriceMovers({ direction }: Props) {
       res = res.filter(i => i.product_name.toLowerCase().includes(ql) || (i.brand ?? '').toLowerCase().includes(ql));
     }
     if (productType) res = res.filter(i => i.product_type === productType);
-    if (size) res = res.filter(i => (i.unit_volume ?? '').toLowerCase().includes(size.toLowerCase()));
+    if (sizes.length > 0) {
+      const set = new Set(sizes);
+      res = res.filter(i => set.has(i.unit_volume ?? ''));
+    }
     if (hasRip === 'yes') res = res.filter(i => i.has_rip);
     if (hasRip === 'no') res = res.filter(i => !i.has_rip);
     if (minChange) { const n = parseFloat(minChange); res = res.filter(i => Math.abs(i.case_delta_pct ?? 0) >= n); }
@@ -111,9 +116,25 @@ export default function PriceMovers({ direction }: Props) {
       default:               res = [...res].sort((a, b) => Math.abs(b.case_delta_pct ?? 0) - Math.abs(a.case_delta_pct ?? 0));
     }
     return res;
-  }, [data, q, productType, size, hasRip, minChange, minDollar, trackedOnly, wl, sort]);
+  }, [data, q, productType, sizes, hasRip, minChange, minDollar, trackedOnly, wl, sort]);
 
-  const shown = items.slice(0, limit);
+  // Build the Size filter options from the data: every distinct
+  // unit_volume that appears in the current movers, ranked by frequency
+  // so the most-stocked sizes (750ML, 1.75L, ...) land first.
+  const sizeOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const d of data ?? []) {
+      const v = d.unit_volume;
+      if (!v) continue;
+      counts.set(v, (counts.get(v) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 18)
+      .map(([value, count]) => ({ value, label: value, count }));
+  }, [data]);
+
+  const shown = items.slice(page * limit, (page + 1) * limit);
 
   const sections: FilterSection[] = [
     { type: 'text', key: 'q', title: 'Search', placeholder: 'Product or brand', value: q, onChange: setQ },
@@ -140,7 +161,7 @@ export default function PriceMovers({ direction }: Props) {
       ] },
     { type: 'pills', key: 'has_rip', title: 'Has RIP rebate', value: hasRip, onChange: v => setHasRip(v as '' | 'yes' | 'no'),
       options: [{ value: '', label: 'Any' }, { value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }] },
-    { type: 'text', key: 'size', title: 'Size', placeholder: 'e.g. 750ML, 1.75L', value: size, onChange: setSize },
+    { type: 'multi-pills', key: 'size', title: 'Size', options: sizeOptions, values: sizes, onChange: setSizes },
     { type: 'toggle', key: 'tracked', title: 'Favorites', value: trackedOnly, onChange: setTrackedOnly, label: 'Only my favourites' },
   ];
 
@@ -168,7 +189,7 @@ export default function PriceMovers({ direction }: Props) {
 
       <div className="catalog-layout">
         <FilterSidebar storageKey={`pm-${direction}-filters`} sections={sections}
-          onReset={() => { setQ(''); setWholesaler(''); setValidity('both'); setProductType(''); setMinChange(''); setMinDollar(''); setHasRip(''); setSize(''); setTrackedOnly(false); setSort('biggest-pct'); }} />
+          onReset={() => { setQ(''); setWholesaler(''); setValidity('both'); setProductType(''); setMinChange(''); setMinDollar(''); setHasRip(''); setSizes([]); setTrackedOnly(false); setSort('biggest-pct'); }} />
 
         <div className="catalog-results">
           <PromotionsToolbar
@@ -176,12 +197,14 @@ export default function PriceMovers({ direction }: Props) {
             onSortChange={setSort}
             sortOptions={sortOptions}
             limit={limit}
-            onLimitChange={setLimit}
+            onLimitChange={(n) => { setLimit(n); setPage(0); }}
             total={items.length}
-            shownInCards={limit}
+            shownInCards={shown.length}
             view={view}
             onViewChange={setView}
             noun={isDrop ? 'price drops' : 'price increases'}
+            page={page}
+            onPageChange={setPage}
           />
 
           <ContextMenuProvider onView={open}>
@@ -318,6 +341,7 @@ function MoverCard({ d, isDrop, open }: { d: PriceMover; isDrop: boolean; open: 
         {effBtl != null && <span>· {money(effBtl)}/btl</span>}
         {d.has_rip && <span className="source-badge source-rip">RIP rebate stacks</span>}
         {d.vintage && <span>· Vintage {d.vintage}</span>}
+        <VintageSticker vintages={d.vintages_available} currentVintage={d.vintage} />
       </div>
 
       <div className="deal-card-spark" onClick={(e) => e.stopPropagation()}>

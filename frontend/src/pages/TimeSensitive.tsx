@@ -12,6 +12,7 @@ import PromotionsToolbar from '../components/PromotionsToolbar';
 import PromotionsTable, { type PromotionRow } from '../components/PromotionsTable';
 import MonthEffectiveSparkline from '../components/MonthEffectiveSparkline';
 import { buildSparkProps } from '../lib/promotionsSparkline';
+import VintageSticker from '../components/VintageSticker';
 import { useProductQuickView } from '../components/ProductQuickView';
 import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
 
@@ -53,6 +54,7 @@ export default function TimeSensitive() {
   const [trackedOnly, setTrackedOnly] = useState(false);
   const [sort, setSort] = useState<'ending' | 'save' | 'pct' | 'name'>('ending');
   const [limit, setLimit] = useState(60);
+  const [page, setPage] = useState(0);
 
   const showPast = validity === 'past';
   const { data, isLoading } = useQuery({
@@ -128,7 +130,7 @@ export default function TimeSensitive() {
     return res;
   }, [data, q, productType, size, hasRip, hasCloseout, minSave, minDiscount, minGp, validity, trackedOnly, wl, sort]);
 
-  const shown = items.slice(0, limit);
+  const shown = items.slice(page * limit, (page + 1) * limit);
   const [view, setView] = useState<'cards' | 'table'>(() => (localStorage.getItem('ts-view') as 'cards' | 'table') || 'cards');
   useEffect(() => { localStorage.setItem('ts-view', view); }, [view]);
 
@@ -199,11 +201,13 @@ export default function TimeSensitive() {
             onSortChange={setSort}
             sortOptions={sortOptions}
             limit={limit}
-            onLimitChange={setLimit}
+            onLimitChange={(n) => { setLimit(n); setPage(0); }}
             total={items.length}
-            shownInCards={limit}
+            shownInCards={shown.length}
             view={view}
             onViewChange={setView}
+            page={page}
+            onPageChange={setPage}
             noun="deals"
           />
 
@@ -277,6 +281,7 @@ function DealCard({ d, open }: { d: TimeSensitiveDeal; open: (n: string, w: stri
             {d.brand && <span>{d.brand}</span>}
             {d.unit_volume && <span>· {d.unit_volume}</span>}
             <span className="cell-distributor-badge">{distributorName(d.wholesaler)}</span>
+            <VintageSticker vintages={d.vintages_available} />
           </div>
         </div>
         <span className={`deal-urgency ${urgency}`} title={fmtDateRange(d.from_date, d.to_date)}>

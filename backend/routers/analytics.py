@@ -439,9 +439,11 @@ def get_price_movers(
             row["ai_blurb"] = blurb_map.get((row.get("wholesaler"), un, row.get("edition")))
         # Attach the Discount + RIP tier ladder for THIS month and next month
         # so the mover card's MonthEffectiveSparkline popover shows the full
-        # ladder, matching the Catalog row's behaviour.
-        from backend.routers.catalog import attach_promotion_tiers
+        # ladder, matching the Catalog row's behaviour. Also flag wines with
+        # multiple vintages so the card can wear a sticker.
+        from backend.routers.catalog import attach_promotion_tiers, attach_vintages_available
         attach_promotion_tiers(con, out)
+        attach_vintages_available(con, out)
         return out
 
 

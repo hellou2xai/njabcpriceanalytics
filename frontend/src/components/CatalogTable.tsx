@@ -5,6 +5,7 @@ import ProductThumb from './ProductThumb';
 import AddToCartButton from './AddToCartButton';
 import AddToListButton from './AddToListButton';
 import { RowMenuButton } from './ContextMenu';
+import MonthEffectiveSparkline from './MonthEffectiveSparkline';
 import { distributorName } from '../lib/distributors';
 import type { Product, CatalogTier } from '../lib/api';
 
@@ -193,6 +194,41 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                   <td className="card-title-cell">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <ProductThumb src={item.image_url} alt={item.product_name} size={64} />
+                      {/* This-month vs next-month sparkline + popover. Built
+                          from the row's tiers (per-tier RIP detail for
+                          current month) and the aggregated next_case_price /
+                          next_effective_case_price for next month. */}
+                      {(() => {
+                        const ce = item.effective_case_price ?? item.frontline_case_price ?? null;
+                        const ne = item.next_effective_case_price ?? item.next_case_price ?? null;
+                        if (ce == null && ne == null) return null;
+                        const discTiers = (item.tiers ?? []).filter(t => t.source === 'discount');
+                        const ripTiers  = (item.tiers ?? []).filter(t => t.source === 'rip');
+                        const bestDisc = discTiers.length
+                          ? Math.min(...discTiers.map(t => t.price_after ?? Infinity).filter(v => Number.isFinite(v)))
+                          : null;
+                        const curr = {
+                          edition: item.edition ?? null,
+                          frontline: item.frontline_case_price ?? null,
+                          afterDiscount: bestDisc != null && Number.isFinite(bestDisc) ? bestDisc : null,
+                          ripTiers: ripTiers
+                            .map(t => ({ qty: t.qty, unit: t.unit, eff: t.price_after ?? 0 }))
+                            .filter(t => t.eff > 0),
+                          bestEff: ce,
+                        };
+                        const next = {
+                          edition: null,
+                          frontline: item.next_case_price ?? null,
+                          afterDiscount: null,
+                          ripTiers: [],
+                          bestEff: ne,
+                        };
+                        return (
+                          <span onClick={e => e.stopPropagation()}>
+                            <MonthEffectiveSparkline curr={curr} next={next} />
+                          </span>
+                        );
+                      })()}
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontWeight: 600 }}>{item.product_name}</div>
                         {/* Identifier line per Provi-style layout: Size and

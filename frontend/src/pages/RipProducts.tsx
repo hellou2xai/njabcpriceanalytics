@@ -7,7 +7,7 @@ import ProductThumb from '../components/ProductThumb';
 import { RowMenuButton } from '../components/ContextMenu';
 import RowLimitSelect from '../components/RowLimitSelect';
 import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
-import MonthEffectiveSparkline from '../components/MonthEffectiveSparkline';
+import MonthEffectiveSparkline, { type MonthBreakdown } from '../components/MonthEffectiveSparkline';
 import { useProductQuickView } from '../components/ProductQuickView';
 import DataLoading from '../components/DataLoading';
 import AddToCartButton from '../components/AddToCartButton';
@@ -163,39 +163,44 @@ export default function RipProducts() {
     return m;
   }, [rawItems]);
 
-  // For the inline sparkline: best (=lowest) effective case price per month
-  // per product, plus every discount + RIP option labelled for the tooltip
-  // so the buyer can see exactly which tier produces the best price.
+  // Per-product MonthBreakdown for the inline sparkline. We fold every tier
+  // row of the same (wholesaler, name, volume) so the popover can list
+  // Frontline -> After Discount -> every RIP tier -> Best for both months.
   const sparkByProduct = useMemo(() => {
-    type Opt = { source: 'discount' | 'rip'; qty: number; unit: string; eff: number };
-    type Sum = {
-      currEff: number | null;
-      nextEff: number | null;
-      currOpts: Opt[];
-      nextOpts: Opt[];
-      currEd: string | null;
-      nextEd: string | null;
-    };
-    const m = new Map<string, Sum>();
+    const m = new Map<string, { curr: MonthBreakdown; next: MonthBreakdown }>();
     for (const it of rawItems) {
       const k = `${it.wholesaler}|${it.product_name}|${it.unit_volume ?? ''}`;
-      const s = m.get(k) ?? {
-        currEff: null, nextEff: null, currOpts: [], nextOpts: [],
-        currEd: null, nextEd: null,
-      };
-      if (s.currEd == null && it.curr_edition) s.currEd = it.curr_edition;
-      if (s.nextEd == null && it.next_edition) s.nextEd = it.next_edition;
+      let entry = m.get(k);
+      if (!entry) {
+        entry = {
+          curr: { edition: null, frontline: null, afterDiscount: null, ripTiers: [], bestEff: null },
+          next: { edition: null, frontline: null, afterDiscount: null, ripTiers: [], bestEff: null },
+        };
+        m.set(k, entry);
+      }
+      if (entry.curr.edition == null && it.curr_edition) entry.curr.edition = it.curr_edition;
+      if (entry.next.edition == null && it.next_edition) entry.next.edition = it.next_edition;
+      // Frontline is the same across every tier row of a product, so first one wins.
+      if (entry.curr.frontline == null && it.curr_case_price != null) entry.curr.frontline = it.curr_case_price;
+      if (entry.next.frontline == null && it.next_case_price != null) entry.next.frontline = it.next_case_price;
+
       const ce = it.curr_effective_case_price ?? null;
       const ne = it.next_effective_case_price ?? null;
-      if (ce != null && (s.currEff == null || ce < s.currEff)) s.currEff = ce;
-      if (ne != null && (s.nextEff == null || ne < s.nextEff)) s.nextEff = ne;
-      if (ce != null && (it.curr_save_per_case ?? 0) > 0) {
-        s.currOpts.push({ source: it.source, qty: it.rip_qty, unit: it.rip_unit ?? 'Case', eff: ce });
+      if (ce != null && (entry.curr.bestEff == null || ce < entry.curr.bestEff)) entry.curr.bestEff = ce;
+      if (ne != null && (entry.next.bestEff == null || ne < entry.next.bestEff)) entry.next.bestEff = ne;
+
+      if (it.source === 'discount') {
+        // Best CPL-only price (before any RIP) per month.
+        if (ce != null && (entry.curr.afterDiscount == null || ce < entry.curr.afterDiscount)) entry.curr.afterDiscount = ce;
+        if (ne != null && (entry.next.afterDiscount == null || ne < entry.next.afterDiscount)) entry.next.afterDiscount = ne;
+      } else if (it.source === 'rip') {
+        if (ce != null && (it.curr_save_per_case ?? 0) > 0) {
+          entry.curr.ripTiers.push({ qty: it.rip_qty, unit: it.rip_unit ?? 'Case', eff: ce });
+        }
+        if (ne != null && (it.next_save_per_case ?? 0) > 0) {
+          entry.next.ripTiers.push({ qty: it.rip_qty, unit: it.rip_unit ?? 'Case', eff: ne });
+        }
       }
-      if (ne != null && (it.next_save_per_case ?? 0) > 0) {
-        s.nextOpts.push({ source: it.source, qty: it.rip_qty, unit: it.rip_unit ?? 'Case', eff: ne });
-      }
-      m.set(k, s);
     }
     return m;
   }, [rawItems]);
@@ -756,6 +761,22 @@ export default function RipProducts() {
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                             <ProductThumb src={item.image_url} alt={item.product_name} size={64} />
+                            {/* Sparkline lives in the same flex row as the
+                                product cell so it sits NEXT TO the name,
+                                not stacked underneath. The popover renders
+                                above the chip on hover with the structured
+                                Frontline / After Discount / RIP / Best
+                                breakdown for both months. */}
+                            {(() => {
+                              const sk = `${item.wholesaler}|${item.product_name}|${item.unit_volume ?? ''}`;
+                              const s = sparkByProduct.get(sk);
+                              if (!s) return null;
+                              return (
+                                <span onClick={e => e.stopPropagation()}>
+                                  <MonthEffectiveSparkline curr={s.curr} next={s.next} />
+                                </span>
+                              );
+                            })()}
                             <div className="rip-cell-product">
                               <span className="rip-product-name">
                                 {item.product_name}
@@ -779,20 +800,6 @@ export default function RipProducts() {
                                   : null}
                                 {item.upc ? <> · UPC {item.upc}</> : null}
                               </span>
-                              {/* Two-point this-vs-next sparkline (best
-                                  effective case price). Tooltip carries
-                                  every discount + RIP option for both
-                                  months so the buyer can audit the win. */}
-                              {(() => {
-                                const sk = `${item.wholesaler}|${item.product_name}|${item.unit_volume ?? ''}`;
-                                const s = sparkByProduct.get(sk);
-                                if (!s) return null;
-                                return <MonthEffectiveSparkline
-                                  currEff={s.currEff} nextEff={s.nextEff}
-                                  currOpts={s.currOpts} nextOpts={s.nextOpts}
-                                  currEd={s.currEd} nextEd={s.nextEd}
-                                />;
-                              })()}
                               {/* "Better deal" identifier per UPC. The
                                   comparison is across EVERY tier of this
                                   product, not just the first row, so a

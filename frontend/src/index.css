@@ -2461,6 +2461,17 @@ tr:hover .row-menu-btn { opacity: 1; }
   color: var(--text-muted);
   margin-top: 2px;
 }
+/* Two-point sparkline (this month -> next month) shown next to each RIP
+   Products row's product name. Tooltip lists every option per month. */
+.rip-month-spark {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 4px; padding: 2px 6px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); cursor: help;
+}
+.rip-month-spark svg { display: block; }
+.rip-month-spark-val { font-size: 11px; font-weight: 700; white-space: nowrap; }
+
 .rip-better-next-pill,
 .rip-better-this-pill,
 .rip-better-same-pill {

@@ -7,6 +7,7 @@ import ProductThumb from '../components/ProductThumb';
 import { RowMenuButton } from '../components/ContextMenu';
 import RowLimitSelect from '../components/RowLimitSelect';
 import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
+import MonthEffectiveSparkline from '../components/MonthEffectiveSparkline';
 import { useProductQuickView } from '../components/ProductQuickView';
 import DataLoading from '../components/DataLoading';
 import AddToCartButton from '../components/AddToCartButton';
@@ -158,6 +159,43 @@ export default function RipProducts() {
         curr: Math.max(prev.curr, c > 0 ? c : 0),
         next: Math.max(prev.next, n > 0 ? n : 0),
       });
+    }
+    return m;
+  }, [rawItems]);
+
+  // For the inline sparkline: best (=lowest) effective case price per month
+  // per product, plus every discount + RIP option labelled for the tooltip
+  // so the buyer can see exactly which tier produces the best price.
+  const sparkByProduct = useMemo(() => {
+    type Opt = { source: 'discount' | 'rip'; qty: number; unit: string; eff: number };
+    type Sum = {
+      currEff: number | null;
+      nextEff: number | null;
+      currOpts: Opt[];
+      nextOpts: Opt[];
+      currEd: string | null;
+      nextEd: string | null;
+    };
+    const m = new Map<string, Sum>();
+    for (const it of rawItems) {
+      const k = `${it.wholesaler}|${it.product_name}|${it.unit_volume ?? ''}`;
+      const s = m.get(k) ?? {
+        currEff: null, nextEff: null, currOpts: [], nextOpts: [],
+        currEd: null, nextEd: null,
+      };
+      if (s.currEd == null && it.curr_edition) s.currEd = it.curr_edition;
+      if (s.nextEd == null && it.next_edition) s.nextEd = it.next_edition;
+      const ce = it.curr_effective_case_price ?? null;
+      const ne = it.next_effective_case_price ?? null;
+      if (ce != null && (s.currEff == null || ce < s.currEff)) s.currEff = ce;
+      if (ne != null && (s.nextEff == null || ne < s.nextEff)) s.nextEff = ne;
+      if (ce != null && (it.curr_save_per_case ?? 0) > 0) {
+        s.currOpts.push({ source: it.source, qty: it.rip_qty, unit: it.rip_unit ?? 'Case', eff: ce });
+      }
+      if (ne != null && (it.next_save_per_case ?? 0) > 0) {
+        s.nextOpts.push({ source: it.source, qty: it.rip_qty, unit: it.rip_unit ?? 'Case', eff: ne });
+      }
+      m.set(k, s);
     }
     return m;
   }, [rawItems]);
@@ -741,6 +779,20 @@ export default function RipProducts() {
                                   : null}
                                 {item.upc ? <> · UPC {item.upc}</> : null}
                               </span>
+                              {/* Two-point this-vs-next sparkline (best
+                                  effective case price). Tooltip carries
+                                  every discount + RIP option for both
+                                  months so the buyer can audit the win. */}
+                              {(() => {
+                                const sk = `${item.wholesaler}|${item.product_name}|${item.unit_volume ?? ''}`;
+                                const s = sparkByProduct.get(sk);
+                                if (!s) return null;
+                                return <MonthEffectiveSparkline
+                                  currEff={s.currEff} nextEff={s.nextEff}
+                                  currOpts={s.currOpts} nextOpts={s.nextOpts}
+                                  currEd={s.currEd} nextEd={s.nextEd}
+                                />;
+                              })()}
                               {/* "Better deal" identifier per UPC. The
                                   comparison is across EVERY tier of this
                                   product, not just the first row, so a
@@ -893,3 +945,4 @@ export default function RipProducts() {
     </FilterSidebar>
   );
 }
+

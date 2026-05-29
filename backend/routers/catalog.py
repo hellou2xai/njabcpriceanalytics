@@ -78,6 +78,36 @@ def _clean_vintage(v):
     return str(v)
 
 
+# Python mirror of _vintage_norm_sql so price lookups can build dictionary
+# keys that match what the SQL side computes — used for apple-to-apple
+# year-by-year vintage matching when cross-month comparing the same UPC.
+import re as _re
+_VN_RE_4 = _re.compile(r"^[0-9]{4}$")
+_VN_RE_40 = _re.compile(r"^([0-9]{4})\.0+$")
+_VN_RE_2 = _re.compile(r"^[0-9]{2}$")
+
+def _norm_vintage(v) -> str | None:
+    """Return a 4-digit vintage string ('2019') or None for NV / blank / junk."""
+    if v is None:
+        return None
+    if isinstance(v, float):
+        if math.isnan(v):
+            return None
+        v = str(int(v)) if v.is_integer() else str(v)
+    s = str(v).strip()
+    if not s or s.upper() in ("NA", "N/A", "NONE", "NV"):
+        return None
+    if _VN_RE_4.match(s):
+        return s
+    m = _VN_RE_40.match(s)
+    if m:
+        return m.group(1)
+    if _VN_RE_2.match(s):
+        n = int(s)
+        return ("20" if n <= 30 else "19") + s
+    return None
+
+
 router = APIRouter(prefix="/api/catalog", tags=["catalog"])
 
 # Distributor display name mapping
@@ -229,16 +259,19 @@ def _attach_next_month_prices(con, src, records):
     upc_ph = ", ".join(f"$u{i}" for i in range(len(upcs)))
     up_params = {f"u{i}": u for i, u in enumerate(upcs)}
     next_df = con.execute(f"""
-        SELECT wholesaler, edition, upc, product_name, unit_volume,
+        SELECT wholesaler, edition, upc, product_name, unit_volume, vintage,
                frontline_case_price AS next_case_price,
                effective_case_price AS next_effective_case_price
         FROM {src}
         WHERE edition = $next_ym
           AND upc IN ({upc_ph})
     """, {**up_params, "next_ym": next_ym}).fetchdf()
-    # Key on (wholesaler, upc, product_name, unit_volume) because a single UPC
-    # can be attached to multiple distinct products in the source data (e.g.
-    # Allied uses one UPC for both MACALLAN DBL CSK 12Y and MACALLAN LUNAR20 4P).
+    # Key on (wholesaler, upc, product_name, unit_volume, vintage_norm) because
+    # a single UPC can be attached to multiple distinct products in the source
+    # data (e.g. Allied uses one UPC for both MACALLAN DBL CSK 12Y and MACALLAN
+    # LUNAR20 4P), AND the same wine UPC is reused across vintages so a 2019
+    # listing this month must not be compared against a 2020 listing next
+    # month — that would surface a "price change" caused by a vintage swap.
     next_map = {}
     for _, nr in next_df.iterrows():
         k = (
@@ -246,6 +279,7 @@ def _attach_next_month_prices(con, src, records):
             str(nr["upc"]),
             nr.get("product_name") or "",
             nr.get("unit_volume") or "",
+            _norm_vintage(nr.get("vintage")),
         )
         next_map[k] = nr
     for rec in records:
@@ -254,6 +288,7 @@ def _attach_next_month_prices(con, src, records):
             str(rec.get("upc") or ""),
             rec.get("product_name") or "",
             rec.get("unit_volume") or "",
+            _norm_vintage(rec.get("vintage")),
         )
         nr = next_map.get(key)
         curr_eff = rec.get("effective_case_price")
@@ -472,7 +507,7 @@ def _attach_next_tiers(con, records):
     up_params = {f"u{i}": u for i, u in enumerate(upcs)}
     try:
         df = con.execute(f"""
-            SELECT wholesaler, edition, upc, product_name, unit_volume, unit_qty,
+            SELECT wholesaler, edition, upc, product_name, unit_volume, unit_qty, vintage,
                    frontline_case_price, frontline_unit_price,
                    discount_1_qty, discount_1_amt, discount_2_qty, discount_2_amt,
                    discount_3_qty, discount_3_amt, discount_4_qty, discount_4_amt,
@@ -486,9 +521,11 @@ def _attach_next_tiers(con, records):
             r["next_tiers"] = []
         return
 
-    # Build a (wholesaler, upc, product_name, unit_volume) -> dict map of the
-    # next-edition rows, with fallbacks for the cases where a row carries a
-    # less-specific identity.
+    # Build a (wholesaler, upc, product_name, unit_volume, vintage_norm) -> dict
+    # map of the next-edition rows, with progressively less-specific fallbacks
+    # for rows that have partial identity. Vintage is part of the primary key
+    # so a 2019 listing this month never picks up 2020's tier ladder as its
+    # "next month" — a vintage swap is not a real price/tier change.
     next_rows: list[dict] = []
     by_full: dict = {}
     by_name: dict = {}
@@ -498,11 +535,17 @@ def _attach_next_tiers(con, records):
         next_rows.append(d)
         ws = d.get("wholesaler"); upc = str(d.get("upc") or "")
         nm = d.get("product_name") or ""; vol = d.get("unit_volume") or ""
-        by_full[(ws, upc, nm, vol)] = d
+        vn = _norm_vintage(d.get("vintage"))
+        # Tiered key fallbacks — vintage-aware levels come first so we never
+        # accidentally cross vintages when a more-specific key would match.
+        by_full[(ws, upc, nm, vol, vn)] = d
+        by_full.setdefault((ws, upc, nm, vol), d)
         by_full.setdefault((ws, upc, nm), d)
-        by_name[(ws, nm, vol)] = d
+        by_name[(ws, nm, vol, vn)] = d
+        by_name.setdefault((ws, nm, vol), d)
         by_name.setdefault((ws, nm), d)
-        by_upc[(ws, upc, vol)] = d
+        by_upc[(ws, upc, vol, vn)] = d
+        by_upc.setdefault((ws, upc, vol), d)
         by_upc.setdefault((ws, upc), d)
 
     # Reuse _attach_discount_rip_tiers on the next-edition dicts; it sets
@@ -513,9 +556,13 @@ def _attach_next_tiers(con, records):
     for rec in records:
         ws = rec.get("wholesaler"); upc = str(rec.get("upc") or "")
         nm = rec.get("product_name") or ""; vol = rec.get("unit_volume") or ""
-        match = (by_full.get((ws, upc, nm, vol)) or by_full.get((ws, upc, nm))
-                 or by_name.get((ws, nm, vol)) or by_name.get((ws, nm))
-                 or by_upc.get((ws, upc, vol)) or by_upc.get((ws, upc)))
+        vn = _norm_vintage(rec.get("vintage"))
+        match = (by_full.get((ws, upc, nm, vol, vn)) or by_full.get((ws, upc, nm, vol))
+                 or by_full.get((ws, upc, nm))
+                 or by_name.get((ws, nm, vol, vn)) or by_name.get((ws, nm, vol))
+                 or by_name.get((ws, nm))
+                 or by_upc.get((ws, upc, vol, vn)) or by_upc.get((ws, upc, vol))
+                 or by_upc.get((ws, upc)))
         rec["next_tiers"] = match.get("tiers", []) if match else []
 
 

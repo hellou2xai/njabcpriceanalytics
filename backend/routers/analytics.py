@@ -154,6 +154,13 @@ def _pm_compute_full(con, direction: str) -> list[dict]:
         "c.effective_case_price AS c_effective_case_price",
         "c.has_rip AS has_rip", "c.has_discount AS has_discount",
     ])
+    # Tighten the metadata JOIN so cpl rows only match when the SKU's
+    # size + pack + vintage agree with the pc row. Without this, a wine with
+    # both 2019 and 2020 vintages in the same edition would explode each pc
+    # row into multiple joined rows (one per vintage) and the wrong UPC /
+    # effective price could land on the row downstream. _vintage_norm_sql
+    # normalizes the raw cpl vintage to the same form pc carries.
+    from backend.routers.catalog import _vintage_norm_sql
     df = con.execute(f"""
         SELECT {select_cols}
         FROM {src} pc
@@ -161,16 +168,30 @@ def _pm_compute_full(con, direction: str) -> list[dict]:
           ON c.wholesaler = pc.wholesaler
          AND c.edition    = pc.edition
          AND c.product_name = pc.product_name
+         AND c.unit_volume IS NOT DISTINCT FROM pc.unit_volume
+         AND c.unit_qty    IS NOT DISTINCT FROM pc.unit_qty
+         AND ({_vintage_norm_sql('c.vintage')}) IS NOT DISTINCT FROM pc.vintage_norm
         WHERE ({' OR '.join(conds)})
     """, params).fetchdf()
 
+    # Apple-to-apple: a single (wholesaler, product_name) can hold several
+    # distinct SKUs (different sizes, pack qty, or wine vintage). The cur ↔
+    # next pairing must stay within ONE SKU so a 2019 in May is never matched
+    # against a 2020 in June — that's not a price move, that's a vintage swap.
     slots: dict = {}
+    def _kpart(v):
+        return v if (v is not None and not (isinstance(v, float) and v != v)) else None
     for _, r in df.iterrows():
         cur_s, next_s = ed_by_ws.get(r["wholesaler"], (None, None))
         ed = str(r["edition"])
         slot = "cur" if ed == cur_s else ("next" if ed == next_s else None)
         if slot is None: continue
-        key = (r["wholesaler"], r["product_name"])
+        key = (
+            r["wholesaler"], r["product_name"],
+            _kpart(r.get("unit_volume")) or "",
+            _kpart(r.get("unit_qty")) or "",
+            _kpart(r.get("vintage")) or "",
+        )
         slots.setdefault(key, {})[slot] = r
 
     def _isnum(v) -> bool:
@@ -194,7 +215,8 @@ def _pm_compute_full(con, direction: str) -> list[dict]:
         return v if _isnum(v) else None
 
     out: list[dict] = []
-    for (ws, _name), s in slots.items():
+    for _key, s in slots.items():
+        ws = _key[0]
         cur_r = s.get("cur"); next_r = s.get("next")
 
         # Prefer the effective_direction classifier (computed off the after-RIP

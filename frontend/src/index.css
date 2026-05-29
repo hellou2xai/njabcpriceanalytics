@@ -2540,13 +2540,18 @@ tr:hover .row-menu-btn { opacity: 1; }
 .mes-row-best td { background: color-mix(in srgb, var(--green) 10%, transparent); }
 .mes-row-best .mes-save { color: var(--green); }
 
-/* Catalog tier sub-row: chip + description stack left-aligned so the
-   row reads naturally with the product cell above. The description
-   ("-196 CANS") drops to its own line beneath the chip so wide rows
-   don't wrap awkwardly. */
+/* Catalog tier sub-row: an inline-block stack containing the chip and
+   the description gets pushed to the RIGHT edge of the wide colSpan
+   so it sits next to the Save / Effective / ROI columns. INSIDE the
+   stack both lines are LEFT-aligned, so the description ("-196 CANS")
+   appears directly beneath the chip with their left edges flush. */
 .catalog-tier-sub-cell {
+  text-align: right;
+  padding-right: 14px;
+}
+.catalog-tier-sub-stack {
+  display: inline-block;
   text-align: left;
-  padding-left: 24px;
 }
 .catalog-tier-sub-chip {
   display: inline-flex; align-items: center; gap: 8px;
@@ -2555,7 +2560,6 @@ tr:hover .row-menu-btn { opacity: 1; }
 .catalog-tier-sub-desc {
   font-size: 11px; color: var(--text-muted);
   margin-top: 2px;
-  text-align: left;
 }
 
 .rip-better-next-pill,

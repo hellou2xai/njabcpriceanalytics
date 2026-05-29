@@ -15,7 +15,7 @@ from typing import Optional
 from backend.db import get_duckdb, read_parquet
 from backend.auth import get_optional_user
 from backend.enrichment_join import attach_enrichment_image as _attach_enrichment_image
-from backend.rip_utils import is_bottle_unit as _is_bottle_unit, rip_per_case as _rip_per_case, rip_bundle_cost as _rip_bundle_cost
+from backend.rip_utils import is_bottle_unit as _is_bottle_unit, rip_per_case as _rip_per_case, rip_bundle_cost as _rip_bundle_cost, normalize_unit as _norm_unit
 
 
 def _current_yyyy_mm() -> str:
@@ -424,8 +424,12 @@ def _attach_discount_rip_tiers(con, records):
                 qty_n = int(float(m.group(1)))
             except (TypeError, ValueError):
                 continue
-            tail = (m.group(2) or "").lower().strip()
-            unit = "Bottles" if tail.startswith("bottle") or tail in ("b", "btl", "bottles") else "Cases"
+            # Route the tail through the shared normalizer so allied's
+            # 'Cases', fedway's bare numerics, opici's lowercase 'bottle' all
+            # collapse uniformly. Anything unrecognised defaults to Cases —
+            # matching every wholesaler whose discount qty column omits the
+            # unit text (fedway, high_grade, peerless).
+            unit = "Bottles" if _norm_unit(m.group(2) or "") == "bottle" else "Cases"
             amt_f = float(amt)
             disc.append({
                 "source": "discount",

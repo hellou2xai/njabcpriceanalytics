@@ -28,3 +28,14 @@ frontend/.verify/
 
 # Local working doc (incrementally drafted, not part of the repo)
 howto.md
+
+# Ad-hoc Playwright verification scripts and their screenshot output (one-off,
+# per-session; not tests we run on CI).
+frontend/verify_*.mjs
+frontend/.verify-shots/
+
+# Golden-snapshot scratch from manual API diffing sessions.
+tests/golden/after*/
+
+# One-off analysis scripts kept locally.
+analyze_*.py

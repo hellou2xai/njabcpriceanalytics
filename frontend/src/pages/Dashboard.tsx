@@ -175,7 +175,7 @@ export default function Dashboard() {
           <KPICard label="Price Increases" value={kpis.price_increases} color="#ea580c" icon={<ArrowUpRight size={20} />}
                    to="/analytics?tab=movers-up" title="Open Analytics — biggest price increases" />
           <KPICard label="Active RIPs" value={kpis.active_rips} color="#7c3aed" icon={<Zap size={20} />}
-                   to="/rip-products" title="Open Products with RIP" />
+                   to="/catalog?hasRip=1" title="Open Catalog filtered to products with a RIP rebate" />
         </div>
       )}
 

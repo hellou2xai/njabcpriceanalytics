@@ -2727,6 +2727,17 @@ tr:hover .row-menu-btn { opacity: 1; }
   padding: 2px 8px; font-size: 10px; font-weight: 700; letter-spacing: 0.2px;
   border-radius: 10px; white-space: nowrap;
 }
+/* The RIP chips become buttons when the row carries real codes (so a click
+   opens the members popup). Reset the native <button> chrome so the chip
+   looks identical to the legacy <span> rendering, then add an interactive
+   affordance — pointer cursor, subtle lift on hover, focus ring. */
+.catalog-rip-group-badge--btn {
+  cursor: pointer; font-family: inherit; line-height: 1.4;
+  transition: transform 0.08s ease, box-shadow 0.12s ease, filter 0.12s ease;
+}
+.catalog-rip-group-badge--btn:hover { filter: brightness(0.96); box-shadow: 0 1px 3px rgba(15, 23, 42, 0.16); }
+.catalog-rip-group-badge--btn:active { transform: translateY(0.5px); }
+.catalog-rip-group-badge--btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .catalog-rip-mismatch-badge {
   display: inline-flex; align-items: center; gap: 4px;
   margin-top: 4px;

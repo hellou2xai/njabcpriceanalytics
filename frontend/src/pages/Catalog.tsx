@@ -21,7 +21,15 @@ export default function Catalog() {
   const [page, setPage] = useState(0);
   const [limit, setLimit] = useState(50);
   const [trackedOnly, setTrackedOnly] = useState(false);
-  const [filters, setFilters] = useState<CatalogFilters>({ ...emptyCatalogFilters });
+  const [filters, setFilters] = useState<CatalogFilters>(() => {
+    // Honor a `hasRip=1` URL param so dashboards / external links can deep-link
+    // into the "products with a RIP rebate" view of the catalog without
+    // routing through the (now admin-only) RIP Products page.
+    const next: CatalogFilters = { ...emptyCatalogFilters };
+    if (params.get('hasRip') === '1') next.hasRip = true;
+    if (params.get('hasDiscount') === '1') next.hasDiscount = true;
+    return next;
+  });
   const [cart, setCartState] = useState<CartState>(loadCart);
   const { open } = useProductQuickView();
   const [showFilters, setShowFilters] = useState(() => {

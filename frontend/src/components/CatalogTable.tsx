@@ -8,6 +8,7 @@ import AddToCartButton from './AddToCartButton';
 import AddToListButton from './AddToListButton';
 import { RowMenuButton } from './ContextMenu';
 import MonthEffectiveSparkline from './MonthEffectiveSparkline';
+import RipMembersModal from './RipMembersModal';
 import { distributorName } from '../lib/distributors';
 import { cart as cartApi } from '../lib/api';
 import type { Product, CatalogTier } from '../lib/api';
@@ -157,6 +158,10 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['cart'] }); },
   });
   const [addedFlash, setAddedFlash] = useState<string | null>(null);
+  // Open RIP-members popup: { wholesaler, ripCode } when set, null when closed.
+  // Triggered by clicking any of the per-row RIP chips below; the chip's
+  // onClick stops propagation so the row's quick-view doesn't also fire.
+  const [ripModal, setRipModal] = useState<{ wholesaler: string; ripCode: string } | null>(null);
 
   // Precompute per-cluster banner metadata when groupByRip is on. Cluster
   // boundaries are the points where rip_group_code changes between
@@ -455,18 +460,23 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                                 const col = ripPalette.get(c) ?? ripColour;
                                 const isPrimary = i === 0;
                                 return (
-                                  <span
+                                  <button
+                                    type="button"
                                     key={c}
-                                    className="catalog-rip-group-badge"
+                                    className="catalog-rip-group-badge catalog-rip-group-badge--btn"
                                     title={isPrimary
-                                      ? `Part of RIP rebate ${c}. Items sharing this code must be purchased together to qualify.`
-                                      : `Also qualifies under RIP rebate ${c}.`}
+                                      ? `Click to see all products in RIP ${c}. Items sharing this code must be purchased together to qualify.`
+                                      : `Click to see all products in RIP ${c}.`}
                                     style={col
                                       ? { background: col.tint, color: col.text, border: `1px solid ${col.border}` }
                                       : undefined}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setRipModal({ wholesaler: item.wholesaler, ripCode: String(c) });
+                                    }}
                                   >
                                     🔗 RIP {c}
-                                  </span>
+                                  </button>
                                 );
                               })}
                               {overflow > 0 && (
@@ -663,6 +673,13 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
           )}
         </tbody>
       </table>
+      {ripModal && (
+        <RipMembersModal
+          wholesaler={ripModal.wholesaler}
+          ripCode={ripModal.ripCode}
+          onClose={() => setRipModal(null)}
+        />
+      )}
     </div>
   );
 }

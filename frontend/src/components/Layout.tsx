@@ -33,7 +33,7 @@ const NAV_GROUPS: {
     header: 'Catalog',
     items: [
       { path: '/catalog', label: 'Catalog', icon: Package },
-      { path: '/rip-products', label: 'RIP Products', icon: BadgeDollarSign },
+      { path: '/rip-products', label: 'RIP Products', icon: BadgeDollarSign, adminOnly: true },
       { path: '/new-items', label: 'New Items', icon: Sparkles },
       { path: '/combos', label: 'Combos', icon: Combine },
     ],

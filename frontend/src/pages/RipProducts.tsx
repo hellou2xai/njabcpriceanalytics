@@ -1,7 +1,7 @@
 import { Fragment, useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { deals, catalog, cart as cartApi } from '../lib/api';
-import { Plus, Check, X } from 'lucide-react';
+import { Plus, Check } from 'lucide-react';
 import FavoriteButton from '../components/FavoriteButton';
 import ProductThumb from '../components/ProductThumb';
 import { RowMenuButton } from '../components/ContextMenu';
@@ -13,7 +13,9 @@ import DataLoading from '../components/DataLoading';
 import AddToCartButton from '../components/AddToCartButton';
 import AddToListButton from '../components/AddToListButton';
 import { QtyStepper, loadCart, saveCart, buildRipPaletteMap, type CartState } from '../components/CatalogTable';
+import RipMembersModal from '../components/RipMembersModal';
 import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
+import { useAuth } from '../contexts/AuthContext';
 
 function tierLabel(unit?: string | null): string {
   if (!unit) return '';
@@ -71,77 +73,33 @@ function betterMonth(curr?: number | null, next?: number | null): { label: strin
   return c > n ? { label: 'This Month', variant: 'this' } : { label: 'Next Month', variant: 'next' };
 }
 
-/**
- * Popup that lists every product included in a single RIP code, opened by
- * clicking the RIP chip on a row. Reuses /api/catalog/rip-siblings (no
- * exclude_upc so the modal shows the full member list, not just the
- * "other" siblings).
- */
-function RipMembersModal({
-  wholesaler, ripCode, onClose,
-}: { wholesaler: string; ripCode: string; onClose: () => void }) {
-  const { data, isLoading } = useQuery({
-    queryKey: ['rip-siblings-modal', wholesaler, ripCode],
-    queryFn: () => catalog.ripSiblings(wholesaler, ripCode),
-  });
-  const items = data?.items ?? [];
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal rip-members-modal" onClick={e => e.stopPropagation()}>
-        <button className="modal-close" onClick={onClose} aria-label="Close">
-          <X size={18} />
-        </button>
-        <h3 style={{ marginTop: 0, marginBottom: 4 }}>
-          <span className="rip-code-badge">🔗 RIP {ripCode}</span>
-          <span style={{ fontSize: 13, color: 'var(--text-muted)', marginLeft: 10, fontWeight: 400 }}>
-            ({wholesaler})
-          </span>
-        </h3>
-        <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 0 }}>
-          {isLoading
-            ? 'Loading…'
-            : `${items.length} product${items.length === 1 ? '' : 's'} must be purchased together (any mix of these UPCs) to qualify for this rebate.`}
+// RipMembersModal lives in components/RipMembersModal.tsx so the Catalog
+// table can mount the same popup (imported below).
+
+// RIP Products is admin-only: the Catalog table (with the new clickable RIP
+// chips that open the RipMembersModal) and the per-product QuickView cover
+// the same ground for regular users, so the dense per-tier table here is
+// kept as an internal admin tool. The exported component gates on is_admin
+// and renders the full page implementation below only for admins, so the
+// implementation's hooks never run when the gate denies access.
+export default function RipProducts() {
+  const { user } = useAuth();
+  if (!user?.is_admin) {
+    return (
+      <div className="page">
+        <div className="orders-header"><h2>RIP Products</h2></div>
+        <p className="text-muted" style={{ marginTop: 8 }}>
+          This page is now admin-only. The same RIP information is available on the{' '}
+          <a href="/catalog" style={{ color: 'var(--accent)' }}>Catalog</a> — click any RIP chip
+          on a product row to see every UPC that qualifies for that rebate.
         </p>
-        {!isLoading && items.length === 0 && (
-          <p className="text-muted" style={{ marginTop: 12 }}>No products listed under this RIP.</p>
-        )}
-        <div className="rip-members-list">
-          {items.map((p, idx) => {
-            const eff = p.effective_case_price ?? p.frontline_case_price ?? null;
-            const list = p.frontline_case_price ?? null;
-            const save = p.total_savings_per_case ?? null;
-            return (
-              <div key={`${p.upc}|${idx}`} className="rip-member-row">
-                <span className="rip-member-meta">
-                  <strong>{p.product_name}</strong>
-                  <span className="rip-member-sub">
-                    {[p.unit_volume, p.unit_qty ? `${p.unit_qty} btl/cs` : null, p.upc]
-                      .filter(Boolean).join(' · ')}
-                  </span>
-                </span>
-                <span className="rip-member-price">
-                  {eff != null && (
-                    <span className="text-green font-bold">${eff.toFixed(2)}/cs</span>
-                  )}
-                  {list != null && eff != null && eff < list - 0.005 && (
-                    <span className="text-muted" style={{ textDecoration: 'line-through', marginLeft: 6, fontWeight: 400 }}>
-                      ${list.toFixed(2)}
-                    </span>
-                  )}
-                  {save != null && save > 0 && (
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>save ${save.toFixed(2)}/cs</div>
-                  )}
-                </span>
-              </div>
-            );
-          })}
-        </div>
       </div>
-    </div>
-  );
+    );
+  }
+  return <RipProductsImpl />;
 }
 
-export default function RipProducts() {
+function RipProductsImpl() {
   const [q, setQ] = useState('');
   const [ripCode, setRipCode] = useState('');
   const [wholesaler, setWholesaler] = useState('');

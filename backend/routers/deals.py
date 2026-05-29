@@ -149,12 +149,13 @@ def get_top_discounts(
         records = [_clean(r) for r in df.to_dict(orient="records")]
 
         # Next-month effective for the same SKU → "cheaper now or next?"
-        # Vintage is part of the SKU identity (a 2019 wine carrying the same
-        # UPC as a 2020 release is NOT the same product), so the lookup key
-        # carries the normalised vintage too. Without it, a wine row's
-        # "next month price" would silently pick up a different vintage and
-        # the better_month flag + next sparkline would be apples-to-oranges.
-        from backend.routers.catalog import _vintage_norm_sql, _norm_vintage
+        # Same UPC is reused across different vintages (2019 vs 2020) AND
+        # different pack sizes (12-pack vs 6-pack), so the lookup key
+        # carries BOTH normalised vintage and unit_qty. Without them, a
+        # wine row's "next month price" silently picks up a different
+        # SKU and better_month / next sparkline turn into nonsense (see
+        # DE TOREN FUSION V: UPC 816053000375 = 12-pack 2019 + 6-pack 2020).
+        from backend.routers.catalog import _vintage_norm_sql, _norm_vintage, _uq_key
         next_eds = sorted({v for v in next_map.values() if v})
         upcs = sorted({str(r["upc"]) for r in records if r.get("upc")})
         next_lookup = {}
@@ -166,6 +167,7 @@ def get_top_discounts(
             vn = _vintage_norm_sql("vintage")
             ndf = con.execute(f"""
                 SELECT wholesaler, edition, upc, product_name, unit_volume,
+                       unit_qty,
                        {vn} AS vintage_norm,
                        effective_case_price
                 FROM {src}
@@ -177,6 +179,7 @@ def get_top_discounts(
                     vn_v = None
                 key = (nr["wholesaler"], nr["edition"], str(nr["upc"]),
                        nr.get("product_name") or "", nr.get("unit_volume") or "",
+                       _uq_key(nr.get("unit_qty")),
                        str(vn_v) if vn_v is not None else "")
                 v = nr["effective_case_price"]
                 next_lookup[key] = None if (v is None or (isinstance(v, float) and math.isnan(v))) else float(v)
@@ -188,6 +191,7 @@ def get_top_discounts(
             r_vn = _norm_vintage(r.get("vintage"))
             ne = next_lookup.get((ws, ne_ed, str(r.get("upc") or ""),
                                   r.get("product_name") or "", r.get("unit_volume") or "",
+                                  _uq_key(r.get("unit_qty")),
                                   r_vn or "")) if ne_ed else None
             r["next_effective_case_price"] = ne
             if ne is None or ce is None:

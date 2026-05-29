@@ -86,6 +86,31 @@ _VN_RE_4 = _re.compile(r"^[0-9]{4}$")
 _VN_RE_40 = _re.compile(r"^([0-9]{4})\.0+$")
 _VN_RE_2 = _re.compile(r"^[0-9]{2}$")
 
+def _uq_key(v) -> str:
+    """Normalise a raw unit_qty cell for use in cross-edition lookup keys.
+
+    A bottle-pack count of "12", "12.0", 12.0, " 12 ", and the integer 12 must
+    all collapse to the same string so a 12-pack listing in May matches the
+    12-pack listing in June — distinct pack sizes like 6 vs 12 are different
+    SKUs (see DE TOREN FUSION V: UPC 816053000375 ships as a 12-pack 2019 and
+    a 6-pack 2020 in the same edition). NaN / None / blank → '' so missing
+    pack info doesn't accidentally bucket every row together.
+    """
+    if v is None: return ""
+    if isinstance(v, float):
+        if v != v: return ""  # NaN
+        try:
+            return str(int(v)) if float(v).is_integer() else str(v)
+        except (TypeError, ValueError, OverflowError):
+            return ""
+    try:
+        s = str(v).strip()
+        if not s: return ""
+        return str(int(float(s)))
+    except (TypeError, ValueError):
+        return str(v).strip()
+
+
 def _norm_vintage(v) -> str | None:
     """Return a 4-digit vintage string ('2019') or None for NV / blank / junk."""
     if v is None:
@@ -259,19 +284,24 @@ def _attach_next_month_prices(con, src, records):
     upc_ph = ", ".join(f"$u{i}" for i in range(len(upcs)))
     up_params = {f"u{i}": u for i, u in enumerate(upcs)}
     next_df = con.execute(f"""
-        SELECT wholesaler, edition, upc, product_name, unit_volume, vintage,
+        SELECT wholesaler, edition, upc, product_name, unit_volume, unit_qty, vintage,
                frontline_case_price AS next_case_price,
                effective_case_price AS next_effective_case_price
         FROM {src}
         WHERE edition = $next_ym
           AND upc IN ({upc_ph})
     """, {**up_params, "next_ym": next_ym}).fetchdf()
-    # Key on (wholesaler, upc, product_name, unit_volume, vintage_norm) because
-    # a single UPC can be attached to multiple distinct products in the source
-    # data (e.g. Allied uses one UPC for both MACALLAN DBL CSK 12Y and MACALLAN
-    # LUNAR20 4P), AND the same wine UPC is reused across vintages so a 2019
-    # listing this month must not be compared against a 2020 listing next
-    # month — that would surface a "price change" caused by a vintage swap.
+    # Key on (wholesaler, upc, product_name, unit_volume, unit_qty,
+    # vintage_norm). A single UPC is reused in the source data for:
+    #   - distinct products entirely (Allied has one UPC mapped to both
+    #     MACALLAN DBL CSK 12Y and MACALLAN LUNAR20 4P),
+    #   - the same wine across different vintages (2019 vs 2020),
+    #   - the same product in different pack sizes (DE TOREN FUSION V
+    #     UPC 816053000375 ships as a 12-pack 2019 AND a 6-pack 2020 in
+    #     the same edition — different unit_qty, different SKU).
+    # Without unit_qty in the key, a 12-pack May listing silently picks
+    # up the 6-pack June price and the row's better_month + next-eff
+    # sparkline land on a completely different SKU.
     next_map = {}
     for _, nr in next_df.iterrows():
         k = (
@@ -279,6 +309,7 @@ def _attach_next_month_prices(con, src, records):
             str(nr["upc"]),
             nr.get("product_name") or "",
             nr.get("unit_volume") or "",
+            _uq_key(nr.get("unit_qty")),
             _norm_vintage(nr.get("vintage")),
         )
         next_map[k] = nr
@@ -288,6 +319,7 @@ def _attach_next_month_prices(con, src, records):
             str(rec.get("upc") or ""),
             rec.get("product_name") or "",
             rec.get("unit_volume") or "",
+            _uq_key(rec.get("unit_qty")),
             _norm_vintage(rec.get("vintage")),
         )
         nr = next_map.get(key)
@@ -559,11 +591,12 @@ def _attach_next_tiers(con, records):
             r["next_tiers"] = []
         return
 
-    # Build a (wholesaler, upc, product_name, unit_volume, vintage_norm) -> dict
-    # map of the next-edition rows, with progressively less-specific fallbacks
-    # for rows that have partial identity. Vintage is part of the primary key
-    # so a 2019 listing this month never picks up 2020's tier ladder as its
-    # "next month" — a vintage swap is not a real price/tier change.
+    # Build a (wholesaler, upc, product_name, unit_volume, unit_qty,
+    # vintage_norm) -> dict map of the next-edition rows, with progressively
+    # less-specific fallbacks for rows that have partial identity. Vintage AND
+    # unit_qty are part of the primary key — a 2019 12-pack listing this month
+    # must never inherit the 2020 6-pack's tier ladder as its "next month"
+    # tiers (same UPC, different SKU).
     next_rows: list[dict] = []
     by_full: dict = {}
     by_name: dict = {}
@@ -573,16 +606,21 @@ def _attach_next_tiers(con, records):
         next_rows.append(d)
         ws = d.get("wholesaler"); upc = str(d.get("upc") or "")
         nm = d.get("product_name") or ""; vol = d.get("unit_volume") or ""
+        uq = _uq_key(d.get("unit_qty"))
         vn = _norm_vintage(d.get("vintage"))
-        # Tiered key fallbacks — vintage-aware levels come first so we never
-        # accidentally cross vintages when a more-specific key would match.
-        by_full[(ws, upc, nm, vol, vn)] = d
+        # Tiered key fallbacks — vintage+unit_qty-aware levels come first so we
+        # never accidentally cross vintages or pack sizes when a more-specific
+        # key would match.
+        by_full[(ws, upc, nm, vol, uq, vn)] = d
+        by_full.setdefault((ws, upc, nm, vol, uq), d)
         by_full.setdefault((ws, upc, nm, vol), d)
         by_full.setdefault((ws, upc, nm), d)
-        by_name[(ws, nm, vol, vn)] = d
+        by_name[(ws, nm, vol, uq, vn)] = d
+        by_name.setdefault((ws, nm, vol, uq), d)
         by_name.setdefault((ws, nm, vol), d)
         by_name.setdefault((ws, nm), d)
-        by_upc[(ws, upc, vol, vn)] = d
+        by_upc[(ws, upc, vol, uq, vn)] = d
+        by_upc.setdefault((ws, upc, vol, uq), d)
         by_upc.setdefault((ws, upc, vol), d)
         by_upc.setdefault((ws, upc), d)
 
@@ -594,12 +632,14 @@ def _attach_next_tiers(con, records):
     for rec in records:
         ws = rec.get("wholesaler"); upc = str(rec.get("upc") or "")
         nm = rec.get("product_name") or ""; vol = rec.get("unit_volume") or ""
+        uq = _uq_key(rec.get("unit_qty"))
         vn = _norm_vintage(rec.get("vintage"))
-        match = (by_full.get((ws, upc, nm, vol, vn)) or by_full.get((ws, upc, nm, vol))
-                 or by_full.get((ws, upc, nm))
-                 or by_name.get((ws, nm, vol, vn)) or by_name.get((ws, nm, vol))
-                 or by_name.get((ws, nm))
-                 or by_upc.get((ws, upc, vol, vn)) or by_upc.get((ws, upc, vol))
+        match = (by_full.get((ws, upc, nm, vol, uq, vn)) or by_full.get((ws, upc, nm, vol, uq))
+                 or by_full.get((ws, upc, nm, vol)) or by_full.get((ws, upc, nm))
+                 or by_name.get((ws, nm, vol, uq, vn)) or by_name.get((ws, nm, vol, uq))
+                 or by_name.get((ws, nm, vol)) or by_name.get((ws, nm))
+                 or by_upc.get((ws, upc, vol, uq, vn)) or by_upc.get((ws, upc, vol, uq))
+                 or by_upc.get((ws, upc, vol))
                  or by_upc.get((ws, upc)))
         rec["next_tiers"] = match.get("tiers", []) if match else []
 

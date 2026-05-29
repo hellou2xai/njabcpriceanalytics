@@ -38,45 +38,85 @@ function MonthBlock({ label, b }: { label: string; b: MonthBreakdown }) {
   const hasDiscTiers = (b.discountTiers ?? []).length > 0;
   const showDiscSummary = !hasDiscTiers
     && b.afterDiscount != null
-    && (b.frontline == null || b.afterDiscount < b.frontline - 0.005);
+    && b.frontline != null
+    && b.afterDiscount < b.frontline - 0.005;
+  // Show savings amounts AND the calculation, so the buyer reads
+  // "frontline - discount - RIP = effective" instead of just the end
+  // prices. Discount savings are vs frontline; RIP savings stack on
+  // top of the best applicable discount, so they're vs afterDiscount.
+  const ripVsDisc = b.afterDiscount ?? b.frontline ?? null;
+  const sortedDisc = [...(b.discountTiers ?? [])].sort((a, c) => a.eff - c.eff);
+  const sortedRip = [...b.ripTiers].sort((a, c) => a.eff - c.eff);
+  const bestDiscEff = sortedDisc.length ? sortedDisc[0].eff : null;
+  const bestRipEff = sortedRip.length ? sortedRip[0].eff : null;
+
+  const tierLabel = (t: RipTier) => `Buy ${t.qty} ${/btl|bottle/i.test(t.unit) ? 'btl' : 'cs'}`;
+  const dollars = (n: number) => `$${n.toFixed(2)}`;
+
   return (
     <div className="mes-block">
       <div className="mes-block-head">{label}</div>
       <table className="mes-table">
         <tbody>
-          <tr><td>Frontline</td><td>{fmt(b.frontline)}</td></tr>
-          {hasDiscTiers && (
-            <tr>
-              <td>After discount</td>
-              <td>
-                {[...(b.discountTiers ?? [])].sort((a, b) => a.eff - b.eff).map((t, i) => {
-                  const u = /btl|bottle/i.test(t.unit) ? 'btl' : 'cs';
-                  return (
-                    <div key={i}>
-                      Buy {t.qty} {u} → <strong>${t.eff.toFixed(2)}</strong>
-                    </div>
-                  );
-                })}
-              </td>
-            </tr>
+          <tr><td>Frontline</td><td className="mes-num">{fmt(b.frontline)}</td></tr>
+
+          {hasDiscTiers && b.frontline != null && (
+            <>
+              <tr className="mes-section"><td colSpan={2}>Discount</td></tr>
+              {sortedDisc.map((t, i) => {
+                const save = b.frontline! - t.eff;
+                const isBest = t.eff === bestDiscEff;
+                return (
+                  <tr key={`d${i}`} className={isBest ? 'mes-row-best' : ''}>
+                    <td>{tierLabel(t)}</td>
+                    <td className="mes-num">
+                      <span className="mes-save">−{dollars(save)}</span>
+                      <span className="mes-arrow"> = </span>
+                      <strong>{dollars(t.eff)}</strong>
+                    </td>
+                  </tr>
+                );
+              })}
+            </>
           )}
-          {showDiscSummary && <tr><td>After discount</td><td>{fmt(b.afterDiscount)}</td></tr>}
-          {b.ripTiers.length > 0 && (
-            <tr>
-              <td>After RIP</td>
-              <td>
-                {[...b.ripTiers].sort((a, b) => a.eff - b.eff).map((t, i) => {
-                  const u = /btl|bottle/i.test(t.unit) ? 'btl' : 'cs';
-                  return (
-                    <div key={i}>
-                      Buy {t.qty} {u} → <strong>${t.eff.toFixed(2)}</strong>
-                    </div>
-                  );
-                })}
-              </td>
-            </tr>
+          {showDiscSummary && (
+            <>
+              <tr className="mes-section"><td colSpan={2}>Discount</td></tr>
+              <tr className="mes-row-best">
+                <td>applied</td>
+                <td className="mes-num">
+                  <span className="mes-save">−{dollars(b.frontline! - b.afterDiscount!)}</span>
+                  <span className="mes-arrow"> = </span>
+                  <strong>{dollars(b.afterDiscount!)}</strong>
+                </td>
+              </tr>
+            </>
           )}
-          <tr className="mes-best"><td>Best</td><td>{fmt(b.bestEff)}</td></tr>
+
+          {b.ripTiers.length > 0 && ripVsDisc != null && (
+            <>
+              <tr className="mes-section"><td colSpan={2}>RIP {hasDiscTiers || showDiscSummary ? '(stacks)' : ''}</td></tr>
+              {sortedRip.map((t, i) => {
+                const save = ripVsDisc - t.eff;
+                const isBest = t.eff === bestRipEff;
+                return (
+                  <tr key={`r${i}`} className={isBest ? 'mes-row-best' : ''}>
+                    <td>{tierLabel(t)}</td>
+                    <td className="mes-num">
+                      <span className="mes-save">−{dollars(save)}</span>
+                      <span className="mes-arrow"> = </span>
+                      <strong>{dollars(t.eff)}</strong>
+                    </td>
+                  </tr>
+                );
+              })}
+            </>
+          )}
+
+          <tr className="mes-best">
+            <td>Best</td>
+            <td className="mes-num">{fmt(b.bestEff)}</td>
+          </tr>
         </tbody>
       </table>
     </div>

@@ -2527,6 +2527,18 @@ tr:hover .row-menu-btn { opacity: 1; }
 .mes-table td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
 .mes-best td { padding-top: 5px; border-top: 1px solid var(--border); font-weight: 700; color: var(--green); }
 .mes-best td:first-child { color: var(--green); }
+/* Per-tier rows show: "Buy N cs   -$X = $Y" so the buyer reads the
+   reduction AND the resulting price. The save amount is muted-red, the
+   result is bold, the small arrow is grey. The row that wins each
+   section gets a subtle green background. */
+.mes-section td { padding-top: 6px; font-size: 10.5px; font-weight: 700;
+                  text-transform: uppercase; letter-spacing: .35px;
+                  color: var(--text-muted); }
+.mes-num { white-space: nowrap; }
+.mes-save { color: var(--red); font-weight: 600; }
+.mes-arrow { color: var(--text-muted); margin: 0 2px; }
+.mes-row-best td { background: color-mix(in srgb, var(--green) 10%, transparent); }
+.mes-row-best .mes-save { color: var(--green); }
 
 .rip-better-next-pill,
 .rip-better-this-pill,

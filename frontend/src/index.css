@@ -2562,6 +2562,37 @@ tr:hover .row-menu-btn { opacity: 1; }
   text-align: right;
   padding-right: 14px;
 }
+/* Tier sub-cell wraps an embedded order block on the LEFT and the tier
+   chip + description stack on the RIGHT. On the FIRST tier row the order
+   block renders; on subsequent rows it's replaced by a spacer the same
+   width so the chip stays vertically aligned with the row above it. */
+.catalog-tier-sub-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+}
+.catalog-order-embedded {
+  flex: 0 0 auto;
+  align-self: center;
+  padding: 4px 0;
+}
+.catalog-order-embedded-spacer {
+  flex: 0 0 auto;
+  /* Reserves the same width as the order block on tier rows 2+ so the
+     tier ladder on the right stays vertically aligned, even when the
+     order block only renders on the first tier row. */
+  width: 1px;
+}
+.catalog-order-hint {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  font-style: italic;
+  align-self: center;
+  max-width: 140px;
+  line-height: 1.25;
+}
 .catalog-tier-sub-stack {
   display: inline-block;
   text-align: left;

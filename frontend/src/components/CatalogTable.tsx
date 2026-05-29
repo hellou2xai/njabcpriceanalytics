@@ -523,30 +523,27 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                             </span>
                           </div>
                         )}
-                        {/* Order facility lives in the product cell so it
-                            stays visible at any width and right at the top
-                            of the cluster (no wide empty footer row below
-                            the tier ladder). The "best tier auto-applies"
-                            hint clears up the ambiguity that prompted the
-                            earlier "which tier is this for?" feedback. */}
-                        <div onClick={e => e.stopPropagation()} className="catalog-order-inline"
-                          style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                            <QtyStepper label="Case" value={qty.cases} onChange={v => updateQty(cartKey, 'cases', v)} />
-                            <QtyStepper label="Btl" value={qty.units} onChange={v => updateQty(cartKey, 'units', v)} />
+                        {/* Order facility: stays inline in the product cell
+                            for simple products (no tier ladder below).
+                            When tier sub-rows DO follow, the order block
+                            instead rides on the LEFT of the first tier
+                            sub-row, embedded in the same band as the
+                            DISC / RIP rungs so the buyer reads
+                            ladder + qty inputs as one unit. */}
+                        {!hasTiers && (
+                          <div onClick={e => e.stopPropagation()} className="catalog-order-inline"
+                            style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                              <QtyStepper label="Case" value={qty.cases} onChange={v => updateQty(cartKey, 'cases', v)} />
+                              <QtyStepper label="Btl" value={qty.units} onChange={v => updateQty(cartKey, 'units', v)} />
+                            </div>
+                            <AddToCartButton productName={item.product_name} wholesaler={item.wholesaler}
+                              upc={item.upc} unitVolume={item.unit_volume}
+                              qtyCases={qty.cases} qtyUnits={qty.units} />
+                            <AddToListButton productName={item.product_name} wholesaler={item.wholesaler}
+                              upc={item.upc} unitVolume={item.unit_volume} />
                           </div>
-                          <AddToCartButton productName={item.product_name} wholesaler={item.wholesaler}
-                            upc={item.upc} unitVolume={item.unit_volume}
-                            qtyCases={qty.cases} qtyUnits={qty.units} />
-                          <AddToListButton productName={item.product_name} wholesaler={item.wholesaler}
-                            upc={item.upc} unitVolume={item.unit_volume} />
-                          {hasTiers && (
-                            <span style={{ fontSize: 10.5, color: 'var(--text-muted)', fontStyle: 'italic' }}
-                                  title="Type any quantity. The best applicable tier from the ladder below is applied automatically.">
-                              best tier auto-applies
-                            </span>
-                          )}
-                        </div>
+                        )}
                       </div>
                       {/* This-month vs next-month sparkline sits on the
                           RIGHT side of the product cell, after the name +
@@ -686,16 +683,44 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                           + Justification) that sit between Product and
                           Distributor; tier sub-rows skip across them. */}
                       <td colSpan={showIntroduced ? 8 : 7} className="card-title-cell catalog-tier-sub-cell">
-                        <div className="catalog-tier-sub-stack">
-                          <div className="catalog-tier-sub-chip">
-                            <span className={`source-badge source-${t.source}`}>{t.source === 'discount' ? 'DISC' : 'RIP'}</span>
-                            <span className={`rip-tier-badge ${t.source === 'discount' ? 'rip-tier-curr' : 'rip-tier-next'}`}>
-                              Buy {t.qty} {shortUnit(t.unit)} = <strong>${t.amount.toFixed(2)}</strong>
-                            </span>
-                          </div>
-                          {t.description && (
-                            <div className="catalog-tier-sub-desc">{t.description}</div>
+                        {/* Tier sub-cell is a flex row: the order block sits
+                            on the LEFT (only on the FIRST tier row, so it
+                            shows once per product even when several tiers
+                            stack below). The chip + description stays
+                            anchored on the RIGHT next to Save / Eff / ROI
+                            exactly as before. */}
+                        <div className="catalog-tier-sub-row">
+                          {idx === 0 ? (
+                            <div onClick={e => e.stopPropagation()} className="catalog-order-inline catalog-order-embedded"
+                              style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                <QtyStepper label="Case" value={qty.cases} onChange={v => updateQty(cartKey, 'cases', v)} />
+                                <QtyStepper label="Btl" value={qty.units} onChange={v => updateQty(cartKey, 'units', v)} />
+                              </div>
+                              <AddToCartButton productName={item.product_name} wholesaler={item.wholesaler}
+                                upc={item.upc} unitVolume={item.unit_volume}
+                                qtyCases={qty.cases} qtyUnits={qty.units} />
+                              <AddToListButton productName={item.product_name} wholesaler={item.wholesaler}
+                                upc={item.upc} unitVolume={item.unit_volume} />
+                              <span className="catalog-order-hint"
+                                    title="Type any quantity. The best applicable tier from the ladder on the right is applied automatically.">
+                                best tier auto-applies
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="catalog-order-embedded-spacer" aria-hidden />
                           )}
+                          <div className="catalog-tier-sub-stack">
+                            <div className="catalog-tier-sub-chip">
+                              <span className={`source-badge source-${t.source}`}>{t.source === 'discount' ? 'DISC' : 'RIP'}</span>
+                              <span className={`rip-tier-badge ${t.source === 'discount' ? 'rip-tier-curr' : 'rip-tier-next'}`}>
+                                Buy {t.qty} {shortUnit(t.unit)} = <strong>${t.amount.toFixed(2)}</strong>
+                              </span>
+                            </div>
+                            {t.description && (
+                              <div className="catalog-tier-sub-desc">{t.description}</div>
+                            )}
+                          </div>
                         </div>
                       </td>
                       <td className="right" data-label="Save">

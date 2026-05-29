@@ -298,34 +298,42 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
       if (inCart > 0) return `${inCart} ${unitShort} in cart`;
       return 'Nothing entered yet';
     })();
-    // No per-quantity tier ladder for this RIP (flat rebate or stripped
-    // by the dedupe): we still surface the running total so the buyer
-    // sees what they're about to send, just without the "X more for $Y"
-    // milestone language.
-    if (b.tiers.length === 0) {
+    // A mixed-unit RIP can list both case and bottle tiers. We track
+    // progress in ONE unit (the cluster's majority unit), so the
+    // milestone math has to consult only tiers expressed in that unit
+    // (otherwise a 6-bottle tier gets compared to 4 cases on hand and
+    // the popover prints "6 cs" for what's actually 6 btl).
+    const isCaseUnit = b.progressUnit === 'case';
+    const sameUnitTiers = b.tiers.filter(t => t.isCases === isCaseUnit);
+    if (sameUnitTiers.length === 0) {
       return { text: ledgerPrefix, tone: typed > 0 || inCart > 0 ? 'pending' : 'gap' };
     }
-    const reached = b.tiers.filter(t => have >= t.qty);
-    const ahead   = b.tiers.filter(t => have < t.qty);
-    const best    = b.tiers[b.tiers.length - 1];
+    const reached = sameUnitTiers.filter(t => have >= t.qty);
+    const ahead   = sameUnitTiers.filter(t => have < t.qty);
+    // "Best" is the LARGEST REBATE AMOUNT, not the largest qty.
+    // Tiers don't always reward proportional to volume (in the user's
+    // RIP 10047, $84 at 2 cs beats $30 at 1 cs and $6 at 6 btl), so
+    // sorting by qty and picking the last is wrong.
+    const best = sameUnitTiers.reduce((a, c) => c.amount > a.amount ? c : a, sameUnitTiers[0]);
+    const tierUnit = (t: { isCases: boolean }) => t.isCases ? 'cs' : 'btl';
     if (reached.length > 0 && ahead.length === 0) {
-      // Top tier hit. Lead with the win, then the ledger.
-      return { text: `✓ Best RIP locked: $${best.amount.toFixed(2)} rebate · ${ledgerPrefix}`, tone: 'reached' };
+      const top = reached.reduce((a, c) => c.amount > a.amount ? c : a, reached[0]);
+      return { text: `✓ Best RIP locked: $${top.amount.toFixed(2)} rebate · ${ledgerPrefix}`, tone: 'reached' };
     }
     const next = ahead[0];
     const gap = next.qty - have;
     if (reached.length > 0) {
-      const top = reached[reached.length - 1];
+      const top = reached.reduce((a, c) => c.amount > a.amount ? c : a, reached[0]);
       return {
-        text: `${ledgerPrefix} · $${top.amount.toFixed(2)} earned · Add ${gap} more ${unitShort} for $${next.amount.toFixed(2)} (best: $${best.amount.toFixed(2)} at ${best.qty} ${unitShort})`,
+        text: `${ledgerPrefix} · $${top.amount.toFixed(2)} earned · Add ${gap} more ${tierUnit(next)} for $${next.amount.toFixed(2)} (best: $${best.amount.toFixed(2)} at ${best.qty} ${tierUnit(best)})`,
         tone: 'pending',
       };
     }
     if (have === 0) {
-      return { text: `Nothing entered yet · Add ${next.qty} ${unitShort} for $${next.amount.toFixed(2)} rebate (best: $${best.amount.toFixed(2)} at ${best.qty} ${unitShort})`, tone: 'gap' };
+      return { text: `Nothing entered yet · Add ${next.qty} ${tierUnit(next)} for $${next.amount.toFixed(2)} rebate (best: $${best.amount.toFixed(2)} at ${best.qty} ${tierUnit(best)})`, tone: 'gap' };
     }
     return {
-      text: `${ledgerPrefix} · Add ${gap} more ${unitShort} for $${next.amount.toFixed(2)} rebate (best: $${best.amount.toFixed(2)} at ${best.qty} ${unitShort})`,
+      text: `${ledgerPrefix} · Add ${gap} more ${tierUnit(next)} for $${next.amount.toFixed(2)} rebate (best: $${best.amount.toFixed(2)} at ${best.qty} ${tierUnit(best)})`,
       tone: 'gap',
     };
   }

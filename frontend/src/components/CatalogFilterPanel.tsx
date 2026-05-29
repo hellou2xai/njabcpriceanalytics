@@ -14,11 +14,11 @@ export interface CatalogFilters {
   // whose CPL rip_code drifted from the RIP sheet wear a "check with sales
   // rep" sticker).
   groupByRip?: boolean;
-  // Price-trend pills: filter by this-month vs next-month effective best
-  // price. Both flags can be on at once (= "any change"); both off = no
-  // filter. Backed server-side so pagination + result count reconcile.
-  priceDrop?: boolean;
-  priceIncrease?: boolean;
+  // Price-trend radio: filter by this-month vs next-month effective best
+  // price. Mutually exclusive (radio semantics, not stacking checkboxes);
+  // undefined = no filter. Backed server-side so pagination + result count
+  // reconcile.
+  priceTrend?: 'drop' | 'increase';
   divisions: string[];
   priceMin?: number;
   priceMax?: number;
@@ -40,8 +40,7 @@ export function countActiveFilters(f: CatalogFilters): number {
   if (f.hasDiscount !== undefined) n++;
   if (f.inCombo) n++;
   if (f.groupByRip) n++;
-  if (f.priceDrop) n++;
-  if (f.priceIncrease) n++;
+  if (f.priceTrend) n++;
   n += f.divisions.length;
   if (f.priceMin !== undefined) n++;
   if (f.priceMax !== undefined) n++;
@@ -296,32 +295,37 @@ export default function CatalogFilterPanel({
               />
               <span>Has Discount</span>
             </label>
-            {/* Price-trend pills: keep rows whose this-month vs next-month
-                best effective case price moves. Independent toggles, so
-                checking both means "any change" (OR semantics server-side).
-                The "Better price: THIS / NEXT MONTH" sticker on each row
-                tells the buyer which direction it moved. */}
+            {/* Price-trend radio: keep rows whose this-month vs next-month
+                best effective case price moves. Radio semantics, so picking
+                one clears the other; clicking the already-selected one
+                clears the filter entirely. The "Better price: THIS / NEXT
+                MONTH" sticker on each row tells the buyer which direction
+                it moved. */}
             <label
-              className={`tracked-toggle ${filters.priceDrop ? 'is-active' : ''}`}
+              className={`tracked-toggle ${filters.priceTrend === 'drop' ? 'is-active' : ''}`}
               data-tour="filter-price-drop"
               title="Show only products whose effective best price drops next month"
             >
               <input
-                type="checkbox"
-                checked={filters.priceDrop === true}
-                onChange={() => onChange({ ...filters, priceDrop: filters.priceDrop ? undefined : true })}
+                type="radio"
+                name="catalog-price-trend"
+                checked={filters.priceTrend === 'drop'}
+                onClick={() => onChange({ ...filters, priceTrend: filters.priceTrend === 'drop' ? undefined : 'drop' })}
+                onChange={() => { /* click-handled so we can also toggle off */ }}
               />
               <span>Price Drop</span>
             </label>
             <label
-              className={`tracked-toggle ${filters.priceIncrease ? 'is-active' : ''}`}
+              className={`tracked-toggle ${filters.priceTrend === 'increase' ? 'is-active' : ''}`}
               data-tour="filter-price-increase"
               title="Show only products whose effective best price rises next month"
             >
               <input
-                type="checkbox"
-                checked={filters.priceIncrease === true}
-                onChange={() => onChange({ ...filters, priceIncrease: filters.priceIncrease ? undefined : true })}
+                type="radio"
+                name="catalog-price-trend"
+                checked={filters.priceTrend === 'increase'}
+                onClick={() => onChange({ ...filters, priceTrend: filters.priceTrend === 'increase' ? undefined : 'increase' })}
+                onChange={() => { /* click-handled so we can also toggle off */ }}
               />
               <span>Price Increase</span>
             </label>

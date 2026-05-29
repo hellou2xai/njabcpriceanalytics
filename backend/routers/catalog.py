@@ -844,54 +844,75 @@ def search_products(
             """
 
         # Price-trend filter: keep rows whose effective price changes between
-        # this month and next. We pre-aggregate next-month effective per
-        # (wholesaler, upc, product_name, unit_volume, vintage_norm) so the
-        # LEFT JOIN never multiplies rows, then OR the two checks when both
-        # checkboxes are on (= "any change"). The match key mirrors what
-        # _attach_next_month_prices computes post-pagination, so the
-        # better_month sticker the table renders stays consistent with what
-        # the page-level filter kept.
+        # this month and next. Two paths:
+        #   FAST: read the precomputed `price_trend` column on cpl_enriched
+        #         (built by nj_abc_parser/derive.py via LEAD per UPC), so the
+        #         filter is a plain `WHERE price_trend = 'drop'`.
+        #   FALLBACK: build a next_eff_lookup CTE + LEFT JOIN on the fly,
+        #         used while Render hasn't yet ingested a parquet with the
+        #         new column. Same match key as _attach_next_month_prices
+        #         so the per-row "Better price" sticker agrees with what
+        #         the filter kept.
+        # The frontend currently exposes radio semantics (only one of
+        # drop / increase set) but the backend OR-s them so a future
+        # "any change" toggle works without further changes.
         trend_active = (price_drop is True) or (price_increase is True)
         trend_cte_body = ""
         trend_join_sql = ""
         if trend_active:
-            params["next_ym"] = _next_yyyy_mm()
-            src_vn = _vintage_norm_sql(f"{src}.vintage")
-            nx_vn = _vintage_norm_sql("vintage")
-            trend_cte_body = f"""
-                next_eff_lookup AS (
-                    SELECT wholesaler,
-                           COALESCE(CAST(upc AS VARCHAR), '') AS upc_key,
-                           COALESCE(product_name, '') AS name_key,
-                           COALESCE(unit_volume, '') AS size_key,
-                           {nx_vn} AS vintage_key,
-                           MIN(effective_case_price) AS next_eff
-                    FROM {src}
-                    WHERE edition = $next_ym
-                    GROUP BY 1, 2, 3, 4, 5
-                )
-            """
-            trend_join_sql = f"""
-                LEFT JOIN next_eff_lookup nx
-                  ON nx.wholesaler  = {src}.wholesaler
-                 AND nx.upc_key     = COALESCE(CAST({src}.upc AS VARCHAR), '')
-                 AND nx.name_key    = COALESCE({src}.product_name, '')
-                 AND nx.size_key    = COALESCE({src}.unit_volume, '')
-                 AND nx.vintage_key IS NOT DISTINCT FROM ({src_vn})
-            """
-            trend_conds = []
-            curr_eff_expr = "COALESCE(effective_case_price, frontline_case_price)"
-            if price_drop is True:
-                trend_conds.append(
-                    f"(nx.next_eff IS NOT NULL AND {curr_eff_expr} IS NOT NULL "
-                    f"AND nx.next_eff < {curr_eff_expr} - 0.005)"
-                )
-            if price_increase is True:
-                trend_conds.append(
-                    f"(nx.next_eff IS NOT NULL AND {curr_eff_expr} IS NOT NULL "
-                    f"AND nx.next_eff > {curr_eff_expr} + 0.005)"
-                )
-            where.append("(" + " OR ".join(trend_conds) + ")")
+            # Cheap column-existence probe so a stale schema falls back to
+            # the runtime join instead of 500ing on an unknown column.
+            try:
+                _cols = {r[0] for r in con.execute(f"DESCRIBE {src}").fetchall()}
+            except Exception:
+                _cols = set()
+            has_trend_col = "price_trend" in _cols
+
+            if has_trend_col:
+                trend_conds = []
+                if price_drop is True:
+                    trend_conds.append(f"{src}.price_trend = 'drop'")
+                if price_increase is True:
+                    trend_conds.append(f"{src}.price_trend = 'increase'")
+                where.append("(" + " OR ".join(trend_conds) + ")")
+            else:
+                params["next_ym"] = _next_yyyy_mm()
+                src_vn = _vintage_norm_sql(f"{src}.vintage")
+                nx_vn = _vintage_norm_sql("vintage")
+                trend_cte_body = f"""
+                    next_eff_lookup AS (
+                        SELECT wholesaler AS nx_wholesaler,
+                               COALESCE(CAST(upc AS VARCHAR), '') AS nx_upc_key,
+                               COALESCE(product_name, '') AS nx_name_key,
+                               COALESCE(unit_volume, '') AS nx_size_key,
+                               {nx_vn} AS nx_vintage_key,
+                               MIN(effective_case_price) AS next_eff
+                        FROM {src}
+                        WHERE edition = $next_ym
+                        GROUP BY 1, 2, 3, 4, 5
+                    )
+                """
+                trend_join_sql = f"""
+                    LEFT JOIN next_eff_lookup nx
+                      ON nx.nx_wholesaler  = {src}.wholesaler
+                     AND nx.nx_upc_key     = COALESCE(CAST({src}.upc AS VARCHAR), '')
+                     AND nx.nx_name_key    = COALESCE({src}.product_name, '')
+                     AND nx.nx_size_key    = COALESCE({src}.unit_volume, '')
+                     AND nx.nx_vintage_key IS NOT DISTINCT FROM ({src_vn})
+                """
+                trend_conds = []
+                curr_eff_expr = f"COALESCE({src}.effective_case_price, {src}.frontline_case_price)"
+                if price_drop is True:
+                    trend_conds.append(
+                        f"(nx.next_eff IS NOT NULL AND {curr_eff_expr} IS NOT NULL "
+                        f"AND nx.next_eff < {curr_eff_expr} - 0.005)"
+                    )
+                if price_increase is True:
+                    trend_conds.append(
+                        f"(nx.next_eff IS NOT NULL AND {curr_eff_expr} IS NOT NULL "
+                        f"AND nx.next_eff > {curr_eff_expr} + 0.005)"
+                    )
+                where.append("(" + " OR ".join(trend_conds) + ")")
             where_clause = " AND ".join(where)
 
         def _add_cte(existing: str, body: str) -> str:

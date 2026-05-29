@@ -290,6 +290,22 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
     con = _get_conn(parquet_dir)
     pdir = Path(parquet_dir).as_posix()
 
+    # Same vintage normaliser used in build_price_changes and the runtime
+    # search. Wines reuse one UPC across vintages, so the "next edition"
+    # match must compare like-for-like vintage; otherwise a 2019 row in May
+    # would chain into a 2020 row in June and look like a price change
+    # that's actually a vintage swap.
+    vnorm = (
+        "CASE "
+        "WHEN vintage IS NULL OR vintage = '' THEN NULL "
+        "WHEN UPPER(vintage) IN ('NA','N/A','NONE','NV') THEN NULL "
+        "WHEN regexp_matches(vintage, '^[0-9]{4}$') THEN vintage "
+        "WHEN regexp_matches(vintage, '^[0-9]{4}\\.0+$') THEN substr(vintage, 1, 4) "
+        "WHEN regexp_matches(vintage, '^[0-9]{2}$') THEN "
+        "CASE WHEN CAST(vintage AS INTEGER) <= 30 THEN '20' || vintage ELSE '19' || vintage END "
+        "ELSE NULL END"
+    )
+
     df = con.execute(f"""
         WITH rip_per_code_upc AS (
             -- Best savings keyed by (wholesaler, edition, rip_code, upc).
@@ -395,39 +411,65 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
                     ORDER BY COALESCE(code_best_rip, 0) DESC
                 ) AS rn
             FROM cpl_with_rip
+        ),
+        enriched AS (
+            SELECT
+                * EXCLUDE (best_rip_amt, rn),
+                -- Effective price: best case price minus RIP savings (capped at 0)
+                GREATEST(
+                    ROUND(COALESCE(best_case_price, frontline_case_price)
+                          - COALESCE(best_rip_amt, 0), 2),
+                    0
+                ) AS effective_case_price,
+                COALESCE(best_rip_amt, 0) AS rip_savings,
+                -- Flags
+                CASE WHEN discount_1_amt IS NOT NULL AND discount_1_amt > 0
+                     THEN true ELSE false END AS has_discount,
+                CASE WHEN best_rip_amt IS NOT NULL AND best_rip_amt > 0
+                     THEN true ELSE false END AS has_rip,
+                CASE WHEN closeout_permit IS NOT NULL AND closeout_permit != ''
+                     THEN true ELSE false END AS has_closeout,
+                -- Savings percentage (discount tiers only, not RIP)
+                ROUND(
+                    CASE WHEN frontline_case_price > 0
+                    THEN ((frontline_case_price - COALESCE(best_case_price, frontline_case_price))
+                          / frontline_case_price) * 100
+                    ELSE 0 END, 2
+                ) AS discount_pct,
+                -- Total potential savings per case (discount + RIP, capped at frontline price)
+                LEAST(
+                    ROUND(frontline_case_price
+                          - COALESCE(best_case_price, frontline_case_price)
+                          + COALESCE(best_rip_amt, 0), 2),
+                    frontline_case_price
+                ) AS total_savings_per_case
+            FROM joined
+            WHERE rn = 1
         )
-        SELECT
-            * EXCLUDE (best_rip_amt, rn),
-            -- Effective price: best case price minus RIP savings (capped at 0)
-            GREATEST(
-                ROUND(COALESCE(best_case_price, frontline_case_price)
-                      - COALESCE(best_rip_amt, 0), 2),
-                0
-            ) AS effective_case_price,
-            COALESCE(best_rip_amt, 0) AS rip_savings,
-            -- Flags
-            CASE WHEN discount_1_amt IS NOT NULL AND discount_1_amt > 0
-                 THEN true ELSE false END AS has_discount,
-            CASE WHEN best_rip_amt IS NOT NULL AND best_rip_amt > 0
-                 THEN true ELSE false END AS has_rip,
-            CASE WHEN closeout_permit IS NOT NULL AND closeout_permit != ''
-                 THEN true ELSE false END AS has_closeout,
-            -- Savings percentage (discount tiers only, not RIP)
-            ROUND(
-                CASE WHEN frontline_case_price > 0
-                THEN ((frontline_case_price - COALESCE(best_case_price, frontline_case_price))
-                      / frontline_case_price) * 100
-                ELSE 0 END, 2
-            ) AS discount_pct,
-            -- Total potential savings per case (discount + RIP, capped at frontline price)
-            LEAST(
-                ROUND(frontline_case_price
-                      - COALESCE(best_case_price, frontline_case_price)
-                      + COALESCE(best_rip_amt, 0), 2),
-                frontline_case_price
-            ) AS total_savings_per_case
-        FROM joined
-        WHERE rn = 1
+        -- Precompute the this-month -> next-month effective comparison so the
+        -- catalog search can filter by Price Drop / Price Increase as a plain
+        -- column read instead of running a self-join on every request.
+        -- Partition key matches what backend.routers.catalog._attach_next_month_prices
+        -- uses post-pagination so the filter and the per-row "Better price"
+        -- sticker agree. NULL trend = no next-edition match for this row.
+        SELECT *,
+            LEAD(effective_case_price) OVER w AS next_effective_case_price,
+            CASE
+                WHEN effective_case_price IS NULL THEN NULL
+                WHEN LEAD(effective_case_price) OVER w IS NULL THEN NULL
+                WHEN ABS(LEAD(effective_case_price) OVER w - effective_case_price) <= 0.005 THEN 'flat'
+                WHEN LEAD(effective_case_price) OVER w < effective_case_price THEN 'drop'
+                ELSE 'increase'
+            END AS price_trend
+        FROM enriched
+        WINDOW w AS (
+            PARTITION BY wholesaler,
+                         COALESCE(CAST(upc AS VARCHAR), ''),
+                         COALESCE(product_name, ''),
+                         COALESCE(unit_volume, ''),
+                         {vnorm}
+            ORDER BY edition
+        )
         ORDER BY wholesaler, edition, product_name
     """).fetchdf()
 

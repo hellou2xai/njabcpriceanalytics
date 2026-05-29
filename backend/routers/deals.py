@@ -1263,19 +1263,44 @@ def get_rip_products(
             rc = str(rip_code).strip()
             items = [i for i in items if rc in str(i.get("rip_number") or "")]
         if q:
-            # Match the legacy SQL-side behaviour: name OR brand OR UPC OR
-            # rip_number, all case-insensitive substrings. Skipping the
-            # shorthand-alias rewrite (JW -> Walker) is a deliberate trade:
-            # instant search beats fancy expansion when the user is typing.
-            ql = q.lower().strip()
-            if ql:
-                items = [
-                    i for i in items
-                    if ql in (i.get("product_name") or "").lower()
-                    or ql in (i.get("brand") or "").lower()
-                    or ql in str(i.get("upc") or "").lower()
-                    or ql in str(i.get("rip_number") or "").lower()
-                ]
+            # Tokenise the query so "sutter home" finds rows whose distributor
+            # text is the abbreviation "SUTTER HM CAB" (literal-substring
+            # search misses these because the user's words never appear
+            # contiguously). Each token must hit somewhere across name /
+            # brand / UPC / rip_number; short distributor abbreviations
+            # (HM = Home, CH = Chardonnay etc.) are accepted as the
+            # equivalent of the full word so a typed-in real name still
+            # finds the abbreviated row.
+            SHORT_FORMS = {
+                "home": ["hm"],
+                "homes": ["hm"],
+                "chardonnay": ["ch", "chard"],
+                "cabernet": ["cab"],
+                "merlot": ["mer"],
+                "moscato": ["mos"],
+                "sauvignon": ["sauv"],
+                "pinot": ["pin"],
+                "reserve": ["res", "rsv"],
+                "vineyards": ["vyd", "vnyd"],
+                "vineyard": ["vyd", "vnyd"],
+                "winery": ["wnry"],
+            }
+            tokens = [t for t in q.lower().split() if t]
+            if tokens:
+                def hits(it, tok):
+                    hay = " ".join([
+                        (it.get("product_name") or "").lower(),
+                        (it.get("brand") or "").lower(),
+                        str(it.get("upc") or "").lower(),
+                        str(it.get("rip_number") or "").lower(),
+                    ])
+                    if tok in hay:
+                        return True
+                    for short in SHORT_FORMS.get(tok, ()):
+                        if short in hay:
+                            return True
+                    return False
+                items = [i for i in items if all(hits(i, t) for t in tokens)]
 
         if min_savings is not None:
             items = [i for i in items if (i["rip_save_per_case"] or 0) >= min_savings]

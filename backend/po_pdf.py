@@ -180,28 +180,34 @@ def build_po_pdf(data: dict) -> bytes:
     head = [Paragraph(t, _HEAD) for t in
             ["#", "Description", "UPC", "Size", "Pk", "Cases", "Btls", "Case Cost", "Line Total"]]
     table_rows = [head]
-    # group_rows tracks which row indexes are RIP-group headers, so the
+    # group_rows tracks which row indexes are deal-group headers, so the
     # zebra-stripe + alignment logic below skips them.
     group_rows: list[int] = []
-    prior_rip = "__sentinel__"
+    prior_key = "__sentinel__"
     for ln in data.get("lines", []):
-        cur_rip = ln.get("rip_code")
-        cur_label = str(cur_rip) if cur_rip else None
-        prior_label = None if prior_rip in (None, "__sentinel__") else str(prior_rip)
-        if cur_label != prior_label or prior_rip == "__sentinel__":
-            if cur_label:
+        cc = ln.get("combo_code") or None
+        rc = ln.get("rip_code") or None
+        cur_key = (f"combo:{cc}" if cc else (f"rip:{rc}" if rc else "none"))
+        if cur_key != prior_key:
+            if cur_key.startswith("combo:"):
                 group_rows.append(len(table_rows))
                 table_rows.append([
-                    Paragraph(f"— RIP {cur_label} · grouped rebate —", _LABEL),
+                    Paragraph(f"— Combo #{cc} · bundle priced together —", _LABEL),
                     "", "", "", "", "", "", "", "",
                 ])
-            elif prior_rip != "__sentinel__":
+            elif cur_key.startswith("rip:"):
                 group_rows.append(len(table_rows))
                 table_rows.append([
-                    Paragraph("— No RIP rebate —", _LABEL),
+                    Paragraph(f"— RIP {rc} · grouped rebate —", _LABEL),
                     "", "", "", "", "", "", "", "",
                 ])
-        prior_rip = cur_rip
+            elif prior_key != "__sentinel__":
+                group_rows.append(len(table_rows))
+                table_rows.append([
+                    Paragraph("— No deal grouping —", _LABEL),
+                    "", "", "", "", "", "", "", "",
+                ])
+        prior_key = cur_key
 
         desc = [Paragraph(ln.get("description", ""), _CELL)]
         if ln.get("rip_note"):
@@ -366,30 +372,38 @@ def build_po_html(data: dict) -> str:
     )
 
     body_rows = []
-    prior_rip = "__sentinel__"
+    prior_key = "__sentinel__"
     for i, ln in enumerate(data.get("lines", []), start=1):
-        # RIP group header: inserted whenever the rip_code changes between
-        # consecutive lines (lines were pre-sorted in _gather_po so they
-        # cluster). Header is a single colourful row spanning every column.
-        cur_rip = ln.get("rip_code")
-        cur_label = str(cur_rip) if cur_rip else None
-        prior_label = str(prior_rip) if prior_rip not in (None, "__sentinel__") else (None if prior_rip is None else None)
-        if cur_label != prior_label or prior_rip == "__sentinel__":
-            if cur_label:
+        # Group header: combos take priority over RIPs, then untied. A header
+        # row is inserted whenever the group key changes between lines (lines
+        # were pre-sorted in _gather_po so they cluster). The header spans the
+        # whole table and is colour-coded by group kind.
+        cc = ln.get("combo_code") or None
+        rc = ln.get("rip_code") or None
+        cur_key = (f"combo:{cc}" if cc else (f"rip:{rc}" if rc else "none"))
+        if cur_key != prior_key:
+            if cur_key.startswith("combo:"):
+                body_rows.append(
+                    f'<tr><td colspan="9" style="padding:6px 8px;background:#fff7ed;'
+                    f'border-top:1px solid #f59e0b;border-bottom:1px solid {_LINE};'
+                    f'font-size:11px;font-weight:700;color:#b45309;letter-spacing:.3px">'
+                    f'\U0001f381 Combo #{_e(cc)} · bundle priced together</td></tr>'
+                )
+            elif cur_key.startswith("rip:"):
                 body_rows.append(
                     f'<tr><td colspan="9" style="padding:6px 8px;background:#eff6ff;'
                     f'border-top:1px solid {_BLUE};border-bottom:1px solid {_LINE};'
                     f'font-size:11px;font-weight:700;color:{_BLUE};letter-spacing:.3px">'
-                    f'\U0001f517 RIP {_e(cur_label)} · grouped rebate</td></tr>'
+                    f'\U0001f517 RIP {_e(rc)} · grouped rebate</td></tr>'
                 )
-            elif prior_rip != "__sentinel__":
+            elif prior_key != "__sentinel__":
                 body_rows.append(
                     f'<tr><td colspan="9" style="padding:6px 8px;background:{_ZEBRA};'
                     f'border-top:1px solid {_LINE};border-bottom:1px solid {_LINE};'
                     f'font-size:11px;font-weight:700;color:{_MUTED};letter-spacing:.3px">'
-                    f'No RIP rebate</td></tr>'
+                    f'No deal grouping</td></tr>'
                 )
-        prior_rip = cur_rip
+        prior_key = cur_key
 
         bg = _ZEBRA if i % 2 == 0 else "#ffffff"
         td = (f'style="padding:6px;border-bottom:1px solid {_LINE};font-size:12px;'

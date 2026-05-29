@@ -653,16 +653,24 @@ def _gather_po(con, order: dict, user: dict, revision: int | None = None) -> tup
             "case_cost": _num(l.get("case_cost")),
             "line_total": amt,
             "rip_note": rip_note,
-            # Surface rip_code so the email + PDF can sub-group lines that
-            # share a RIP rebate, matching the cart's "Group by RIP" view.
+            # Surface rip_code + combo_code so the email + PDF can sub-group
+            # lines that share a deal (combo bundle or RIP rebate), matching
+            # the cart's grouping view.
             "rip_code": l.get("rip_code"),
+            "combo_code": l.get("combo_code"),
         })
-    # Sort so RIP-tied lines cluster (by code), then everything without a RIP
-    # follows. Within each RIP group, lines keep their original order.
-    pdf_lines.sort(key=lambda x: (
-        0 if x.get("rip_code") else 1,
-        str(x.get("rip_code") or ""),
-    ))
+    # Sort: combos first (by code), then RIPs (by code), then everything else.
+    # Combos take priority because they're hard requirements; lose a line and
+    # the bundle price collapses. Within each group, lines keep insertion order.
+    def _group_key(x):
+        cc = x.get("combo_code")
+        rc = x.get("rip_code")
+        if cc:
+            return (0, str(cc))
+        if rc:
+            return (1, str(rc))
+        return (2, "")
+    pdf_lines.sort(key=_group_key)
 
     buyer_name = store.get("name") or urow.get("full_name") or urow.get("email") or "Buyer"
     po_data = {

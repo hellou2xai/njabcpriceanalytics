@@ -2592,6 +2592,36 @@ tr:hover .row-menu-btn { opacity: 1; }
 .rip-member-sub { font-size: 11.5px; color: var(--text-muted); }
 .rip-member-price { min-width: 140px; text-align: right; font-size: 13px; }
 
+/* Catalog "Group by Case Mix RIP" banner — same shape as the RIP Products
+   banner so the cross-page experience is consistent: chip, products
+   count, tier ladder, live progress, Add-all-to-cart button. */
+.catalog-rip-banner > .catalog-rip-banner-cell {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+}
+.catalog-rip-banner-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px;
+  font-size: 13px;
+}
+.catalog-rip-banner-code {
+  font-size: 11px; font-weight: 800; letter-spacing: 0.4px;
+  padding: 3px 9px; border-radius: 10px; white-space: nowrap;
+}
+.catalog-rip-banner-products {
+  font-size: 11.5px; color: var(--text-muted); font-weight: 600;
+}
+.catalog-rip-banner-tiers {
+  display: inline-flex; flex-wrap: wrap; gap: 4px 10px; align-items: center;
+}
+.catalog-rip-banner-tier { font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.catalog-rip-banner-progress {
+  font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 6px;
+}
+.catalog-rip-banner-progress.tone-reached { background: color-mix(in srgb, var(--green) 18%, transparent); color: var(--green); }
+.catalog-rip-banner-progress.tone-pending { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.catalog-rip-banner-progress.tone-gap     { background: color-mix(in srgb, var(--text-muted) 12%, transparent); color: var(--text-muted); }
+.catalog-rip-banner-add { margin-left: auto; }
+
 .rip-better-next-pill,
 .rip-better-this-pill,
 .rip-better-same-pill {

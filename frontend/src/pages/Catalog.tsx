@@ -158,6 +158,7 @@ export default function Catalog() {
               updateQty={updateQty}
               sortControls={{ sort, order, onSort: (c) => handleSort(c) }}
               comboLink={comboLink}
+              groupByRip={!!filters.groupByRip}
             />
           )}
 

@@ -1,5 +1,7 @@
-import { Fragment, useMemo } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Plus, Check } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import FavoriteButton from './FavoriteButton';
 import ProductThumb from './ProductThumb';
 import AddToCartButton from './AddToCartButton';
@@ -7,6 +9,7 @@ import AddToListButton from './AddToListButton';
 import { RowMenuButton } from './ContextMenu';
 import MonthEffectiveSparkline from './MonthEffectiveSparkline';
 import { distributorName } from '../lib/distributors';
+import { cart as cartApi } from '../lib/api';
 import type { Product, CatalogTier } from '../lib/api';
 
 // ---- shared cart state (localStorage) ----
@@ -109,6 +112,11 @@ interface Props {
   // When true, show an "Introduced" column (the edition the item first appeared
   // in). Used by the New Items screen; the main catalog leaves it off.
   showIntroduced?: boolean;
+  // When true, the items list is server-sorted by rip_group_code and we render
+  // a banner row above each cluster: rebate code, tier ladder, cart-aware
+  // "X cases in cart · Y more for next tier" progress, and an Add-all-to-cart
+  // button that drops 1 case of every unique product in the cluster.
+  groupByRip?: boolean;
 }
 
 /**
@@ -116,7 +124,138 @@ interface Props {
  * DISC/RIP tier sub-rows ("Buy N = $X", save/case, price-after, ROI). Used by
  * the Catalog screen and the Order Analysis screen so they render identically.
  */
-export default function CatalogTable({ items, open, cart, updateQty, sortControls, comboLink, showIntroduced }: Props) {
+export default function CatalogTable({ items, open, cart, updateQty, sortControls, comboLink, showIntroduced, groupByRip }: Props) {
+  // Live server cart, used by the per-group banner's progress message and
+  // by "Add all to cart" so adds reflect immediately. react-query dedupes
+  // this with the parent's cart query if any.
+  const { data: cartData } = useQuery({
+    queryKey: ['cart'],
+    queryFn: cartApi.get,
+    refetchOnWindowFocus: true,
+    refetchInterval: 15000,
+  });
+  const qc = useQueryClient();
+  const cartByKey = useMemo(() => {
+    const m = new Map<string, { cases: number; units: number }>();
+    for (const it of (cartData?.items ?? [])) {
+      const upc = (it.upc ?? '').toString().replace(/^0+/, '');
+      const k = `${it.wholesaler}|${upc}|${(it.unit_volume ?? '').toString()}`;
+      const prev = m.get(k) ?? { cases: 0, units: 0 };
+      m.set(k, { cases: prev.cases + (it.qty_cases || 0), units: prev.units + (it.qty_units || 0) });
+    }
+    return m;
+  }, [cartData]);
+  const addAllMut = useMutation({
+    mutationFn: async (products: { product_name: string; wholesaler: string; upc?: string; unit_volume?: string }[]) => {
+      for (const p of products) {
+        try {
+          await cartApi.add({ product_name: p.product_name, wholesaler: p.wholesaler,
+            upc: p.upc, unit_volume: p.unit_volume, qty_cases: 1, qty_units: 0 });
+        } catch { /* keep going on partial failures */ }
+      }
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['cart'] }); },
+  });
+  const [addedFlash, setAddedFlash] = useState<string | null>(null);
+
+  // Precompute per-cluster banner metadata when groupByRip is on. Cluster
+  // boundaries are the points where rip_group_code changes between
+  // consecutive items in the server-sorted list, so a Map keyed by the
+  // cluster's first-row index lets the render loop look it up in O(1).
+  type RipBanner = {
+    code: string;
+    products: { product_name: string; wholesaler: string; upc?: string; unit_volume?: string; cartKey: string }[];
+    tiers: { qty: number; unit: string; amount: number; isCases: boolean }[];
+    progressUnit: 'case' | 'btl';
+    casesInCart: number;
+    bottlesInCart: number;
+  };
+  const normUnit = (s?: string | null): 'case' | 'btl' => {
+    const x = (s ?? '').toLowerCase();
+    if (x === 'b' || x.startsWith('btl') || x.startsWith('bottle')) return 'btl';
+    return 'case';
+  };
+  const ripBanners = useMemo(() => {
+    const out = new Map<number, RipBanner>();
+    if (!groupByRip) return out;
+    let i = 0;
+    while (i < items.length) {
+      const code = (items[i].rip_group_code ?? '').toString();
+      if (!code) { i++; continue; }
+      let j = i;
+      while (j < items.length && (items[j].rip_group_code ?? '').toString() === code) j++;
+      const productMap = new Map<string, RipBanner['products'][number]>();
+      const tierMap = new Map<string, RipBanner['tiers'][number]>();
+      let unitVotes = { case: 0, btl: 0 };
+      for (let k = i; k < j; k++) {
+        const it = items[k];
+        const upc = (it.upc ?? '').toString().replace(/^0+/, '');
+        const pKey = `${it.wholesaler}|${it.product_name}|${it.unit_volume ?? ''}`;
+        if (!productMap.has(pKey)) {
+          productMap.set(pKey, {
+            product_name: it.product_name,
+            wholesaler: it.wholesaler,
+            upc: it.upc ?? undefined,
+            unit_volume: it.unit_volume ?? undefined,
+            cartKey: `${it.wholesaler}|${upc}|${(it.unit_volume ?? '').toString()}`,
+          });
+        }
+        for (const t of (it.tiers ?? [])) {
+          if (t.source !== 'rip') continue;
+          const u = normUnit(t.unit);
+          unitVotes[u]++;
+          const tKey = `${t.qty}|${u}`;
+          const prev = tierMap.get(tKey);
+          if (!prev || t.amount > prev.amount) {
+            tierMap.set(tKey, { qty: t.qty, unit: t.unit, amount: t.amount, isCases: u === 'case' });
+          }
+        }
+      }
+      const progressUnit: 'case' | 'btl' = unitVotes.btl > unitVotes.case ? 'btl' : 'case';
+      let casesInCart = 0, bottlesInCart = 0;
+      for (const p of productMap.values()) {
+        const cv = cartByKey.get(p.cartKey);
+        if (cv) { casesInCart += cv.cases; bottlesInCart += cv.units; }
+      }
+      out.set(i, {
+        code,
+        products: [...productMap.values()],
+        tiers: [...tierMap.values()].sort((a, b) => a.qty - b.qty),
+        progressUnit,
+        casesInCart,
+        bottlesInCart,
+      });
+      i = j;
+    }
+    return out;
+  }, [groupByRip, items, cartByKey]);
+  function bannerProgress(b: RipBanner): { text: string; tone: 'gap' | 'pending' | 'reached' } | null {
+    if (b.tiers.length === 0) return null;
+    const have = b.progressUnit === 'case' ? b.casesInCart : b.bottlesInCart;
+    const unitWord = b.progressUnit === 'case' ? 'case' : 'bottle';
+    const reached = b.tiers.filter(t => have >= t.qty);
+    const ahead = b.tiers.filter(t => have < t.qty);
+    if (reached.length > 0 && ahead.length === 0) {
+      const top = reached[reached.length - 1];
+      return { text: `✓ Top tier reached: ${have} ${unitWord}${have === 1 ? '' : 's'} · $${top.amount.toFixed(2)} rebate locked`, tone: 'reached' };
+    }
+    if (reached.length > 0) {
+      const top = reached[reached.length - 1];
+      const next = ahead[0];
+      return {
+        text: `${have} ${unitWord}${have === 1 ? '' : 's'} in cart · $${top.amount.toFixed(2)} earned · ${next.qty - have} more for $${next.amount.toFixed(2)}`,
+        tone: 'pending',
+      };
+    }
+    const next = ahead[0];
+    if (have === 0) {
+      return { text: `Nothing in cart yet · buy ${next.qty} ${unitWord}${next.qty === 1 ? '' : 's'} for $${next.amount.toFixed(2)} rebate`, tone: 'gap' };
+    }
+    return {
+      text: `${have} ${unitWord}${have === 1 ? '' : 's'} in cart · ${next.qty - have} more for $${next.amount.toFixed(2)} rebate`,
+      tone: 'gap',
+    };
+  }
   // Palette assignment for "Group by RIP" coloured row bands. Built once
   // per items snapshot in order of appearance so adjacent SQL-clustered
   // groups always get visually distinct slots (no hash collisions). We feed
@@ -174,8 +313,64 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                   background: `linear-gradient(90deg, ${ripColour.tint} 0, transparent 240px)` }
               : {};
             const showMismatch = !!item.rip_cpl_mismatch && !!ripGroupCode;
+            // Per-cluster banner when groupByRip is on: shows the chip, the
+            // tier ladder, a cart-aware progress message and an Add-all-to-
+            // cart button. Only renders on the first row of each cluster.
+            const banner = groupByRip ? ripBanners.get(rowIdx) : undefined;
+            const bannerColour = banner ? ripPalette.get(banner.code) ?? null : null;
+            const bannerProg = banner ? bannerProgress(banner) : null;
+            const totalColumns = showIntroduced ? 10 : 9;
             return (
               <Fragment key={reactKey}>
+                {banner && (
+                  <tr className="catalog-rip-banner"
+                      style={bannerColour ? { background: bannerColour.tint } : undefined}>
+                    <td colSpan={totalColumns} className="catalog-rip-banner-cell"
+                        style={bannerColour ? { borderLeft: `5px solid ${bannerColour.stripe}` } : undefined}>
+                      <div className="catalog-rip-banner-row">
+                        <span className="catalog-rip-banner-code"
+                              style={bannerColour
+                                ? { background: bannerColour.stripe, color: '#fff' }
+                                : undefined}>
+                          🔗 RIP {banner.code}
+                        </span>
+                        <span className="catalog-rip-banner-products">
+                          {banner.products.length} product{banner.products.length === 1 ? '' : 's'}
+                        </span>
+                        {banner.tiers.length > 0 && (
+                          <span className="catalog-rip-banner-tiers">
+                            {banner.tiers.map((t, i) => (
+                              <span key={i} className="catalog-rip-banner-tier"
+                                    style={bannerColour ? { color: bannerColour.text } : undefined}>
+                                Buy {t.qty} {t.isCases ? 'cs' : 'btl'} = <strong>${t.amount.toFixed(2)}</strong>
+                              </span>
+                            ))}
+                          </span>
+                        )}
+                        {bannerProg && (
+                          <span className={`catalog-rip-banner-progress tone-${bannerProg.tone}`}>
+                            {bannerProg.text}
+                          </span>
+                        )}
+                        <button
+                          className="btn btn-sm catalog-rip-banner-add"
+                          disabled={addAllMut.isPending}
+                          onClick={e => {
+                            e.stopPropagation();
+                            addAllMut.mutate(banner.products);
+                            setAddedFlash(banner.code);
+                            setTimeout(() => setAddedFlash(null), 1600);
+                          }}
+                          title={`Add 1 case of each of the ${banner.products.length} products in this RIP group to your cart`}
+                        >
+                          {addedFlash === banner.code
+                            ? (<><Check size={13} /> Added</>)
+                            : (<><Plus size={13} /> Add all to cart</>)}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )}
                 <tr className={`catalog-row-main${ripGroupCode ? ' has-rip-group' : ''}`}
                     style={ripBandStyle}
                     data-ctx=""

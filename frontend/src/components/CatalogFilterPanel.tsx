@@ -156,6 +156,28 @@ export default function CatalogFilterPanel({
   trackedOnly, onTrackedChange,
   collapsed = false, onToggleCollapsed,
 }: Props) {
+  // Publish the rendered height of the toolbar as a CSS custom property
+  // so the catalog table header (which is also sticky) can park just
+  // below it. The toolbar wraps onto multiple lines as the viewport
+  // narrows or more pills get added, so a static `top: 56px` would
+  // leave the column headers half-hidden in those cases.
+  const toolbarRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const node = toolbarRef.current;
+    if (!node) return;
+    const publish = () => {
+      const h = Math.ceil(node.getBoundingClientRect().height);
+      document.documentElement.style.setProperty('--catalog-filter-toolbar-h', `${h}px`);
+    };
+    publish();
+    const ro = new ResizeObserver(publish);
+    ro.observe(node);
+    window.addEventListener('resize', publish);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', publish);
+    };
+  }, []);
   const [priceMinInput, setPriceMinInput] = useState(filters.priceMin?.toString() ?? '');
   const [priceMaxInput, setPriceMaxInput] = useState(filters.priceMax?.toString() ?? '');
   const [brandSearch, setBrandSearch] = useState('');
@@ -234,7 +256,7 @@ export default function CatalogFilterPanel({
   };
 
   return (
-    <aside className={`catalog-filter-toolbar ${collapsed ? 'is-collapsed' : ''}`}>
+    <aside ref={toolbarRef} className={`catalog-filter-toolbar ${collapsed ? 'is-collapsed' : ''}`}>
       <div className="catalog-filter-toolbar-row">
         <button
           type="button"

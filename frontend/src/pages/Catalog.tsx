@@ -39,6 +39,18 @@ export default function Catalog() {
     return typeof window === 'undefined' || window.innerWidth > 1023;
   });
   const toggleFilters = () => setShowFilters(s => { localStorage.setItem('lpb_catalog_filters_open', String(!s)); return !s; });
+  // Display preference: show / hide the three Pro teaser columns
+  // (Time to Sell, Suggested Qty, Quantity Justification). Defaults
+  // ON so a new visitor sees the upgrade preview; persisted in
+  // localStorage so a return visit honours their last choice.
+  const [showPro, setShowPro] = useState<boolean>(() => {
+    const stored = localStorage.getItem('lpb_catalog_show_pro');
+    return stored === null ? true : stored !== 'false';
+  });
+  const onShowProChange = (v: boolean) => {
+    setShowPro(v);
+    localStorage.setItem('lpb_catalog_show_pro', String(v));
+  };
 
   const setCart = useCallback((update: CartState | ((p: CartState) => CartState)) => {
     setCartState(prev => {
@@ -150,6 +162,8 @@ export default function Catalog() {
         facets={facets}
         trackedOnly={trackedOnly}
         onTrackedChange={(v) => { setTrackedOnly(v); setPage(0); }}
+        showPro={showPro}
+        onShowProChange={onShowProChange}
         collapsed={!showFilters}
         onToggleCollapsed={toggleFilters}
       />
@@ -169,6 +183,7 @@ export default function Catalog() {
               sortControls={{ sort, order, onSort: (c) => handleSort(c) }}
               comboLink={comboLink}
               groupByRip={!!filters.groupByRip}
+              showProColumns={showPro}
             />
           )}
 

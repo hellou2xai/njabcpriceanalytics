@@ -137,6 +137,10 @@ interface Props {
   facets?: CatalogFacets;
   trackedOnly?: boolean;
   onTrackedChange?: (v: boolean) => void;
+  // Display preference: show / hide the three Pro teaser columns. On
+  // by default; persisted by the parent (Catalog.tsx) in localStorage.
+  showPro?: boolean;
+  onShowProChange?: (v: boolean) => void;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
 }
@@ -154,6 +158,7 @@ interface Props {
 export default function CatalogFilterPanel({
   filters, onChange, items, facets,
   trackedOnly, onTrackedChange,
+  showPro, onShowProChange,
   collapsed = false, onToggleCollapsed,
 }: Props) {
   // Publish the rendered height of the toolbar as a CSS custom property
@@ -351,6 +356,25 @@ export default function CatalogFilterPanel({
               />
               <span>Price Increase</span>
             </label>
+            {/* Display toggle for the three Pro teaser columns (Time to
+                Sell, Suggested Qty, Quantity Justification). On by
+                default so a new visitor sees the upgrade preview; the
+                buyer can hide it if they want a denser table. Choice
+                is persisted by the parent in localStorage. */}
+            {onShowProChange && (
+              <label
+                className={`tracked-toggle ${showPro ? 'is-active' : ''}`}
+                data-tour="filter-show-pro"
+                title="Show or hide the three Pro teaser columns (Time to Sell, Suggested Qty, Quantity Justification). On by default."
+              >
+                <input
+                  type="checkbox"
+                  checked={!!showPro}
+                  onChange={() => onShowProChange(!showPro)}
+                />
+                <span>Show Pro Features</span>
+              </label>
+            )}
 
             <FilterDropdown
               title="Deals"

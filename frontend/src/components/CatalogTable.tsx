@@ -118,6 +118,11 @@ interface Props {
   // "X cases in cart · Y more for next tier" progress, and an Add-all-to-cart
   // button that drops 1 case of every unique product in the cluster.
   groupByRip?: boolean;
+  // Display preference: when false, hide the three Pro teaser columns
+  // (Time to Sell, Suggested Qty, Quantity Justification) and shrink
+  // every colSpan / totalColumns by 3 to keep layout in sync. The
+  // Catalog page persists the choice in localStorage.
+  showProColumns?: boolean;
 }
 
 /**
@@ -125,7 +130,11 @@ interface Props {
  * DISC/RIP tier sub-rows ("Buy N = $X", save/case, price-after, ROI). Used by
  * the Catalog screen and the Order Analysis screen so they render identically.
  */
-export default function CatalogTable({ items, open, cart, updateQty, sortControls, comboLink, showIntroduced, groupByRip }: Props) {
+export default function CatalogTable({ items, open, cart, updateQty, sortControls, comboLink, showIntroduced, groupByRip, showProColumns = true }: Props) {
+  // Pro columns add 3 cells per row. Centralise the bump so every
+  // colSpan / totalColumns stays in step when the buyer toggles them
+  // off.
+  const proColSpan = showProColumns ? 3 : 0;
   // Live server cart, used by the per-group banner's progress message and
   // by "Add all to cart" so adds reflect immediately. react-query dedupes
   // this with the parent's cart query if any.
@@ -371,19 +380,24 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
             <th {...headSort('product_name')}>Product{sortIcon('product_name')}</th>
             {/* Pro placeholders. Live preview of the POS-integrated buying
                 suggestion + justification, shown as a teaser on every row
-                so the value of the upgrade is visible while browsing. */}
-            <th className="catalog-pro-th" title="Pro feature: takes the Case + Btl quantity you're adding to cart, divides by your store's real sales velocity from POS, and shows how long that stock will take to sell through. Updates live as you edit Case / Btl. Pick Day / Week / Month for the unit.">
-              <span className="catalog-pro-badge">Pro</span>
-              Time to Sell
-            </th>
-            <th className="catalog-pro-th" title="Pro feature: connects to your POS to recommend how much to buy based on your real sales velocity and on-hand stock.">
-              <span className="catalog-pro-badge">Pro</span>
-              Suggested Qty
-            </th>
-            <th className="catalog-pro-th" title="Pro feature: explains the suggested quantity using your store's sales history and current inventory.">
-              <span className="catalog-pro-badge">Pro</span>
-              Quantity Justification
-            </th>
+                so the value of the upgrade is visible while browsing.
+                Hidden when the buyer toggles "Show Pro Features" off. */}
+            {showProColumns && (
+              <>
+                <th className="catalog-pro-th" title="Depending on the Case + Btl quantity you're adding to cart, this calculates how long that stock will take to sell through at your store's real sales velocity from POS. Updates live as you edit Case / Btl. Pick Day / Week / Month to switch the time unit.">
+                  <span className="catalog-pro-badge">Pro</span>
+                  Time to Sell
+                </th>
+                <th className="catalog-pro-th" title="Pro feature: connects to your POS to recommend how much to buy based on your real sales velocity and on-hand stock.">
+                  <span className="catalog-pro-badge">Pro</span>
+                  Suggested Qty
+                </th>
+                <th className="catalog-pro-th" title="Pro feature: explains the suggested quantity using your store's sales history and current inventory.">
+                  <span className="catalog-pro-badge">Pro</span>
+                  Quantity Justification
+                </th>
+              </>
+            )}
             <th>Distributor</th>
             <th>Type</th>
             {/* Size column dropped: Size and Bottles-per-Case are surfaced
@@ -427,9 +441,9 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
             const banner = groupByRip ? ripBanners.get(rowIdx) : undefined;
             const bannerColour = banner ? ripPalette.get(banner.code) ?? null : null;
             const bannerProg = banner ? bannerProgress(banner) : null;
-            // +3 for the Pro placeholder columns (Time to Sell + Suggested
-            // Qty + Justification) that sit between Product and Distributor.
-            const totalColumns = showIntroduced ? 13 : 12;
+            // Base 10 columns + 1 optional Introduced + the Pro block
+            // (0 or 3) depending on showProColumns.
+            const totalColumns = (showIntroduced ? 10 : 9) + proColSpan;
             return (
               <Fragment key={reactKey}>
                 {banner && (
@@ -749,9 +763,11 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                       justification. Placeholder copy until POS
                       integration is live. The Pro badge lives only on the
                       column header (no per-row repeat). Each cell still
-                      carries a hover tooltip and a value-prop sticker. */}
+                      carries a hover tooltip and a value-prop sticker.
+                      Hidden as a block when "Show Pro Features" is off. */}
+                  {showProColumns && (<>
                   <td className="catalog-pro-cell" data-label="Time to Sell"
-                      title="Pro feature: takes the Case + Btl quantity you're adding to cart, divides by your store's real sales velocity from POS, and shows how long that stock will take to sell through. Updates live as you edit Case / Btl. Pick Day / Week / Month for the unit.">
+                      title="Depending on the Case + Btl quantity you're adding to cart, this calculates how long that stock will take to sell through at your store's real sales velocity from POS. Updates live as you edit Case / Btl. Pick Day / Week / Month to switch the time unit.">
                     <div className="catalog-pro-body">
                       <div className="catalog-pro-value">
                         XX <span className="catalog-pro-unit">{ttsUnit === 'day' ? 'days' : ttsUnit === 'week' ? 'weeks' : 'months'}</span>
@@ -796,6 +812,7 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                       <span className="catalog-pro-savings">Eliminates guess-work buying</span>
                     </div>
                   </td>
+                  </>)}
                   <td data-label="Distributor"><span className="cell-distributor-badge">{distributorName(item.wholesaler)}</span></td>
                   <td data-label="Type">{item.product_type}</td>
                   {/* Size column dropped: surfaced in the product cell. */}
@@ -852,11 +869,9 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                           are LEFT-aligned, so the description sits
                           directly beneath the chip with their left edges
                           flush. */}
-                      {/* +3 from the Pro placeholder columns (Time to Sell
-                          + Suggested Qty + Justification) that sit between
-                          Product and Distributor; tier sub-rows skip across
-                          them. */}
-                      <td colSpan={showIntroduced ? 9 : 8} className="card-title-cell catalog-tier-sub-cell">
+                      {/* Tier sub-row spans Product + (optional) Introduced +
+                          Distributor + Type, plus the Pro block when shown. */}
+                      <td colSpan={(showIntroduced ? 6 : 5) + proColSpan} className="card-title-cell catalog-tier-sub-cell">
                         {/* Tier sub-cell is a flex row: the order block sits
                             on the LEFT (only on the FIRST tier row, so it
                             shows once per product even when several tiers
@@ -922,7 +937,7 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
             );
           })}
           {items.length === 0 && (
-            <tr><td colSpan={showIntroduced ? 13 : 12} className="empty">No products</td></tr>
+            <tr><td colSpan={(showIntroduced ? 10 : 9) + proColSpan} className="empty">No products</td></tr>
           )}
         </tbody>
       </table>

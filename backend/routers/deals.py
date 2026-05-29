@@ -1226,6 +1226,7 @@ def get_rip_products(
     min_savings: Optional[float] = None,
     min_gp: Optional[float] = None,
     tier_unit: Optional[str] = None,   # 'case' | 'btl'
+    size: Optional[str] = None,        # exact unit_volume match e.g. '1.5L', '750ML'
     new_next: bool = False,
     source: Optional[str] = None,
     sort: str = Query("rip_save_per_case", description="Sort field"),
@@ -1387,6 +1388,16 @@ def get_rip_products(
 
         if tier_unit in ("case", "btl"):
             items = [i for i in items if _norm_unit(i.get("rip_unit")) == tier_unit]
+
+        if size:
+            # Exact unit_volume match — the buyer picks a size from the dropdown
+            # (1.5L, 750ML, ...) and we filter to just that pack. Case-insensitive
+            # and whitespace-tolerant so "750 ML" matches "750ML".
+            sz_norm = size.strip().lower().replace(" ", "")
+            items = [
+                i for i in items
+                if (i.get("unit_volume") or "").strip().lower().replace(" ", "") == sz_norm
+            ]
 
         if new_next:
             items = [i for i in items

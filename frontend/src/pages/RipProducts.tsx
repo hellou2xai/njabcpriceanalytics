@@ -80,6 +80,7 @@ export default function RipProducts() {
   const [minSave, setMinSave] = useState('');
   const [minGp, setMinGp] = useState('');
   const [tierUnit, setTierUnit] = useState('');
+  const [size, setSize] = useState('');
   const [newNext, setNewNext] = useState(false);
   const [sort, setSort] = useState('rip_save_per_case');
   const [order, setOrder] = useState<'asc' | 'desc'>('desc');
@@ -112,7 +113,7 @@ export default function RipProducts() {
   };
 
   const { data, isLoading } = useQuery({
-    queryKey: ['rip-products', q, ripCode, wholesaler, productType, source, minSave, minGp, tierUnit, newNext, sort, order, page, limit],
+    queryKey: ['rip-products', q, ripCode, wholesaler, productType, source, minSave, minGp, tierUnit, size, newNext, sort, order, page, limit],
     queryFn: () => deals.ripProducts({
       q: q || undefined,
       rip_code: ripCode || undefined,
@@ -122,11 +123,36 @@ export default function RipProducts() {
       min_savings: minSave ? parseFloat(minSave) : undefined,
       min_gp: minGp ? parseFloat(minGp) : undefined,
       tier_unit: tierUnit || undefined,
+      size: size || undefined,
       new_next: newNext || undefined,
       sort, order, limit,
       offset: page * limit,
     }),
   });
+
+  // Distinct sizes for the Size filter — derived from the currently-loaded
+  // page so the options reflect what is actually selectable right now
+  // (cheap: same cap as the page size). Sorted ML-ascending so 100ML reads
+  // before 750ML before 1.75L.
+  const sizeOptions = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const it of (data?.items ?? [])) {
+      const v = (it.unit_volume ?? '').toString().trim();
+      if (!v) continue;
+      m.set(v, (m.get(v) ?? 0) + 1);
+    }
+    const toMl = (s: string): number => {
+      const x = s.toUpperCase().trim();
+      const num = parseFloat(x);
+      if (Number.isNaN(num)) return Number.MAX_SAFE_INTEGER;
+      if (/L\b|LITER|LTR/.test(x)) return num * 1000;
+      if (/OZ/.test(x)) return num * 29.5735;
+      return num; // assume ML
+    };
+    return [...m.entries()]
+      .sort((a, b) => toMl(a[0]) - toMl(b[0]))
+      .map(([v, n]) => ({ value: v, label: v, count: n }));
+  }, [data?.items]);
 
   const { data: categories } = useQuery({
     queryKey: ['categories', wholesaler],
@@ -540,6 +566,15 @@ export default function RipProducts() {
       onChange: v => { setTierUnit(v); setPage(0); },
     },
     {
+      type: 'select',
+      key: 'size',
+      title: 'Size',
+      placeholder: 'All sizes',
+      options: sizeOptions,
+      value: size,
+      onChange: v => { setSize(v); setPage(0); },
+    },
+    {
       type: 'pills',
       key: 'new_next',
       title: 'Availability',
@@ -554,7 +589,7 @@ export default function RipProducts() {
 
   const resetFilters = () => {
     setQ(''); setRipCode(''); setWholesaler(''); setProductType(''); setSource(''); setMinSave('');
-    setMinGp(''); setTierUnit(''); setNewNext(false);
+    setMinGp(''); setTierUnit(''); setSize(''); setNewNext(false);
     setPage(0);
   };
 

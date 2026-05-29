@@ -2633,7 +2633,11 @@ tr:hover .row-menu-btn { opacity: 1; }
 .catalog-rip-banner-progress.tone-reached { background: color-mix(in srgb, var(--green) 18%, transparent); color: var(--green); }
 .catalog-rip-banner-progress.tone-pending { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
 .catalog-rip-banner-progress.tone-gap     { background: color-mix(in srgb, var(--text-muted) 12%, transparent); color: var(--text-muted); }
-.catalog-rip-banner-add { margin-left: auto; }
+/* Banner button sits inline after the "N products" count and tier ladder,
+   not pushed to the right edge: the empty space between the metadata and
+   the button confused users about whether the button belonged to the
+   group at all. */
+.catalog-rip-banner-add { margin-left: 4px; }
 
 .rip-better-next-pill,
 .rip-better-this-pill,

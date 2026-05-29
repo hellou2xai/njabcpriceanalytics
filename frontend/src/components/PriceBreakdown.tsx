@@ -192,7 +192,7 @@ export default function PriceBreakdown({ sides }: { sides: BreakdownSide[] }) {
           ))}
 
           <tr className="pb-total">
-            <td className="pb-label">You pay</td>
+            <td className="pb-label">Price after RIP</td>
             {sides.map((s, i) => (
               <Cell key={s.label} value={s.effective} pack={s.pack} tone={compare && i === winIdx && !tie ? 'pb-win' : ''} />
             ))}

@@ -2461,6 +2461,25 @@ tr:hover .row-menu-btn { opacity: 1; }
   color: var(--text-muted);
   margin-top: 2px;
 }
+/* All-editions breakdown stickers: "Best deal" on the cheapest edition row,
+   "+$X vs best" on the others, so the buyer can see at a glance which month
+   wins without scanning the column. */
+.ed-best-pill, .ed-vs-best-pill {
+  display: inline-block; padding: 1px 7px; border-radius: 10px;
+  font-size: 10px; font-weight: 700; letter-spacing: .2px;
+  white-space: nowrap;
+}
+.ed-best-pill {
+  background: color-mix(in srgb, var(--green) 18%, transparent);
+  color: var(--green);
+  border: 1px solid color-mix(in srgb, var(--green) 45%, transparent);
+}
+.ed-vs-best-pill {
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
 /* Two-point sparkline (this month -> next month) shown next to each RIP
    Products row's product name. Tooltip lists every option per month. */
 .rip-month-spark {

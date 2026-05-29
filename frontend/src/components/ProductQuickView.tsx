@@ -311,7 +311,7 @@ function QuickViewModal({
               const hasStory = sides.some(s => s.list - s.effective > 0.01);
               if (!hasStory && !compareWith && !monthMode) return null;
               const wfColors = ['#6366f1', '#0ea5e9'];
-              const headerNote = monthMode ? 'this month vs next month — list → discount → RIP → you pay' : 'current edition — list → discount → RIP → you pay';
+              const headerNote = monthMode ? 'this month vs next month — list → discount → RIP → price after RIP' : 'current edition — list → discount → RIP → price after RIP';
               // Shared Y ceiling so paired waterfalls are visually comparable
               // (List is the tallest bar in each). Round up to a tidy number.
               const rawMax = Math.max(...sides.map(s => s.list), 0);
@@ -333,11 +333,162 @@ function QuickViewModal({
                     ))}
                   </div>
                   <div className="pb-wf-legend">
-                    <span><i style={{ background: '#2e9e6e' }} /> Total (list / you pay)</span>
+                    <span><i style={{ background: '#2e9e6e' }} /> Total (list / price after RIP)</span>
                     <span><i style={{ background: '#e0695a' }} /> Reduction (discount / RIP)</span>
                   </div>
                   <PriceBreakdown sides={sides} />
                 </>
+              );
+            })()}
+
+            {breakdown && breakdown.editions.length > 0 && (() => {
+              type RowWithWs = (typeof breakdown.editions[number]) & { _ws: string };
+              const rows: RowWithWs[] = breakdown.editions.map(e => ({ ...e, _ws: wholesaler }));
+              if (compareWith && breakdownB) {
+                rows.push(...breakdownB.editions.map(e => ({ ...e, _ws: compareWith.wholesaler })));
+              }
+              const sortVal = (e: RowWithWs): string | number => {
+                switch (bSort.key) {
+                  case 'vintage': return e.vintage ?? '';
+                  case 'distributor': return e._ws;
+                  case 'frontline_case_price': return e.frontline_case_price;
+                  case 'best_discount_per_case': return e.best_discount_per_case;
+                  case 'best_rip_per_case': return e.best_rip_per_case;
+                  case 'effective': return e.effective_case_price ?? e.frontline_case_price;
+                  case 'total_save_per_case': return e.total_save_per_case;
+                  default: return e.edition;
+                }
+              };
+              const dir = bSort.dir === 'asc' ? 1 : -1;
+              rows.sort((a, b) => {
+                const va = sortVal(a), vb = sortVal(b);
+                let c = typeof va === 'number' && typeof vb === 'number'
+                  ? va - vb
+                  : String(va).localeCompare(String(vb));
+                if (c === 0) c = a.edition.localeCompare(b.edition) || a._ws.localeCompare(b._ws) || String(a.vintage ?? '').localeCompare(String(b.vintage ?? ''));
+                return c * dir;
+              });
+              // Wine/sparkling reuse one UPC across vintages — surface it so a
+              // price difference between editions is read as a vintage change,
+              // not a real move.
+              const showVintage = rows.some(r => r.vintage);
+              // Cheapest effective price across all editions so each row can
+              // wear a "Best deal" sticker (or a "+$X vs best" indicator) and
+              // the buyer can spot at a glance whether this month or next
+              // month wins without scanning the column manually.
+              const effOf = (e: typeof rows[number]) => e.effective_case_price ?? e.frontline_case_price;
+              const bestEff = rows.length ? Math.min(...rows.map(effOf)) : 0;
+              return (
+              <>
+                <h4>All Editions Breakdown <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>(click a header to sort)</span></h4>
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="breakdown-table breakdown-sortable">
+                    <thead>
+                      <tr>
+                        <th onClick={() => toggleSort('edition')}>Edition{sortArrow('edition')}</th>
+                        {showVintage && <th onClick={() => toggleSort('vintage')}>Vintage{sortArrow('vintage')}</th>}
+                        {compareWith && <th onClick={() => toggleSort('distributor')}>Distributor{sortArrow('distributor')}</th>}
+                        <th className="right" onClick={() => toggleSort('frontline_case_price')}>Case Price{sortArrow('frontline_case_price')}</th>
+                        <th className="right" onClick={() => toggleSort('best_discount_per_case')}>Best Disc{sortArrow('best_discount_per_case')}</th>
+                        <th className="right" onClick={() => toggleSort('best_rip_per_case')}>RIP/Case{sortArrow('best_rip_per_case')}</th>
+                        <th className="right" onClick={() => toggleSort('effective')}>Effective{sortArrow('effective')}</th>
+                        <th className="right" onClick={() => toggleSort('total_save_per_case')}>Save/Case{sortArrow('total_save_per_case')}</th>
+                        <th>Discount Tiers</th>
+                        <th>RIP Tiers</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map(e => (
+                        <tr key={e.edition + '|' + e._ws + '|' + e.upc + '|' + (e.vintage ?? '')}>
+                          <td>{monthLabel(e.edition)}</td>
+                          {showVintage && <td>{e.vintage ?? '—'}</td>}
+                          {compareWith && (
+                            <td>
+                              <span className="cell-distributor-badge">{distributorName(e._ws)}</span>
+                            </td>
+                          )}
+                          <td className="right">${e.frontline_case_price.toFixed(2)}</td>
+                          <td className="right">
+                            {e.best_discount_per_case > 0
+                              ? <span className="text-green">${e.best_discount_per_case.toFixed(2)}</span>
+                              : <span className="text-muted">&mdash;</span>}
+                          </td>
+                          <td className="right">
+                            {e.best_rip_per_case > 0
+                              ? <span className="text-green">${e.best_rip_per_case.toFixed(2)}</span>
+                              : <span className="text-muted">&mdash;</span>}
+                          </td>
+                          <td className="right" style={{ fontWeight: 600 }}>
+                            ${(e.effective_case_price ?? e.frontline_case_price).toFixed(2)}
+                            {(() => {
+                              // Derive pack (btl/cs) from this edition's own list prices.
+                              const pack = e.frontline_unit_price && e.frontline_unit_price > 0
+                                ? e.frontline_case_price / e.frontline_unit_price : 0;
+                              const eff = e.effective_case_price ?? e.frontline_case_price;
+                              return pack > 1
+                                ? <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>${(eff / pack).toFixed(2)}/btl</div>
+                                : null;
+                            })()}
+                            {(() => {
+                              // Sticker so the buyer can tell at a glance whether
+                              // this edition is the cheapest, or by how much it
+                              // misses the best one. Tolerance of 1c shields us
+                              // from float rounding.
+                              if (rows.length < 2) return null;
+                              const eff = effOf(e);
+                              if (eff <= bestEff + 0.01) {
+                                return (
+                                  <div style={{ marginTop: 3 }}>
+                                    <span className="ed-best-pill" title="Cheapest effective price across all editions">★ Best deal</span>
+                                  </div>
+                                );
+                              }
+                              return (
+                                <div style={{ marginTop: 3 }}>
+                                  <span className="ed-vs-best-pill" title={`Best effective is $${bestEff.toFixed(2)}/cs in another edition`}>
+                                    +${(eff - bestEff).toFixed(2)} vs best
+                                  </span>
+                                </div>
+                              );
+                            })()}
+                          </td>
+                          <td className="right">
+                            {e.total_save_per_case > 0
+                              ? <span className="text-green font-bold">${e.total_save_per_case.toFixed(2)}</span>
+                              : <span className="text-muted">&mdash;</span>}
+                          </td>
+                          <td>
+                            {e.discount_tiers.length === 0
+                              ? <span className="text-muted">&mdash;</span>
+                              : (
+                                <div className="catalog-tier-badges">
+                                  {e.discount_tiers.map((t, i) => (
+                                    <span key={i} className="source-badge source-discount">
+                                      {compactTier(t.qty, t.unit, t.amount)}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                          </td>
+                          <td>
+                            {e.rip_tiers.length === 0
+                              ? <span className="text-muted">&mdash;</span>
+                              : (
+                                <div className="catalog-tier-badges">
+                                  {e.rip_tiers.map((t, i) => (
+                                    <span key={i} className="source-badge source-rip">
+                                      {compactTier(t.qty, t.unit, t.amount)}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
               );
             })()}
 
@@ -448,129 +599,6 @@ function QuickViewModal({
                     </table>
                   </div>
                 </>
-              );
-            })()}
-
-            {breakdown && breakdown.editions.length > 0 && (() => {
-              type RowWithWs = (typeof breakdown.editions[number]) & { _ws: string };
-              const rows: RowWithWs[] = breakdown.editions.map(e => ({ ...e, _ws: wholesaler }));
-              if (compareWith && breakdownB) {
-                rows.push(...breakdownB.editions.map(e => ({ ...e, _ws: compareWith.wholesaler })));
-              }
-              const sortVal = (e: RowWithWs): string | number => {
-                switch (bSort.key) {
-                  case 'vintage': return e.vintage ?? '';
-                  case 'distributor': return e._ws;
-                  case 'frontline_case_price': return e.frontline_case_price;
-                  case 'best_discount_per_case': return e.best_discount_per_case;
-                  case 'best_rip_per_case': return e.best_rip_per_case;
-                  case 'effective': return e.effective_case_price ?? e.frontline_case_price;
-                  case 'total_save_per_case': return e.total_save_per_case;
-                  default: return e.edition;
-                }
-              };
-              const dir = bSort.dir === 'asc' ? 1 : -1;
-              rows.sort((a, b) => {
-                const va = sortVal(a), vb = sortVal(b);
-                let c = typeof va === 'number' && typeof vb === 'number'
-                  ? va - vb
-                  : String(va).localeCompare(String(vb));
-                if (c === 0) c = a.edition.localeCompare(b.edition) || a._ws.localeCompare(b._ws) || String(a.vintage ?? '').localeCompare(String(b.vintage ?? ''));
-                return c * dir;
-              });
-              // Wine/sparkling reuse one UPC across vintages — surface it so a
-              // price difference between editions is read as a vintage change,
-              // not a real move.
-              const showVintage = rows.some(r => r.vintage);
-              return (
-              <>
-                <h4>All Editions Breakdown <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>(click a header to sort)</span></h4>
-                <div style={{ overflowX: 'auto' }}>
-                  <table className="breakdown-table breakdown-sortable">
-                    <thead>
-                      <tr>
-                        <th onClick={() => toggleSort('edition')}>Edition{sortArrow('edition')}</th>
-                        {showVintage && <th onClick={() => toggleSort('vintage')}>Vintage{sortArrow('vintage')}</th>}
-                        {compareWith && <th onClick={() => toggleSort('distributor')}>Distributor{sortArrow('distributor')}</th>}
-                        <th className="right" onClick={() => toggleSort('frontline_case_price')}>Case Price{sortArrow('frontline_case_price')}</th>
-                        <th className="right" onClick={() => toggleSort('best_discount_per_case')}>Best Disc{sortArrow('best_discount_per_case')}</th>
-                        <th className="right" onClick={() => toggleSort('best_rip_per_case')}>RIP/Case{sortArrow('best_rip_per_case')}</th>
-                        <th className="right" onClick={() => toggleSort('effective')}>Effective{sortArrow('effective')}</th>
-                        <th className="right" onClick={() => toggleSort('total_save_per_case')}>Save/Case{sortArrow('total_save_per_case')}</th>
-                        <th>Discount Tiers</th>
-                        <th>RIP Tiers</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.map(e => (
-                        <tr key={e.edition + '|' + e._ws + '|' + e.upc + '|' + (e.vintage ?? '')}>
-                          <td>{monthLabel(e.edition)}</td>
-                          {showVintage && <td>{e.vintage ?? '—'}</td>}
-                          {compareWith && (
-                            <td>
-                              <span className="cell-distributor-badge">{distributorName(e._ws)}</span>
-                            </td>
-                          )}
-                          <td className="right">${e.frontline_case_price.toFixed(2)}</td>
-                          <td className="right">
-                            {e.best_discount_per_case > 0
-                              ? <span className="text-green">${e.best_discount_per_case.toFixed(2)}</span>
-                              : <span className="text-muted">&mdash;</span>}
-                          </td>
-                          <td className="right">
-                            {e.best_rip_per_case > 0
-                              ? <span className="text-green">${e.best_rip_per_case.toFixed(2)}</span>
-                              : <span className="text-muted">&mdash;</span>}
-                          </td>
-                          <td className="right" style={{ fontWeight: 600 }}>
-                            ${(e.effective_case_price ?? e.frontline_case_price).toFixed(2)}
-                            {(() => {
-                              // Derive pack (btl/cs) from this edition's own list prices.
-                              const pack = e.frontline_unit_price && e.frontline_unit_price > 0
-                                ? e.frontline_case_price / e.frontline_unit_price : 0;
-                              const eff = e.effective_case_price ?? e.frontline_case_price;
-                              return pack > 1
-                                ? <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>${(eff / pack).toFixed(2)}/btl</div>
-                                : null;
-                            })()}
-                          </td>
-                          <td className="right">
-                            {e.total_save_per_case > 0
-                              ? <span className="text-green font-bold">${e.total_save_per_case.toFixed(2)}</span>
-                              : <span className="text-muted">&mdash;</span>}
-                          </td>
-                          <td>
-                            {e.discount_tiers.length === 0
-                              ? <span className="text-muted">&mdash;</span>
-                              : (
-                                <div className="catalog-tier-badges">
-                                  {e.discount_tiers.map((t, i) => (
-                                    <span key={i} className="source-badge source-discount">
-                                      {compactTier(t.qty, t.unit, t.amount)}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                          </td>
-                          <td>
-                            {e.rip_tiers.length === 0
-                              ? <span className="text-muted">&mdash;</span>
-                              : (
-                                <div className="catalog-tier-badges">
-                                  {e.rip_tiers.map((t, i) => (
-                                    <span key={i} className="source-badge source-rip">
-                                      {compactTier(t.qty, t.unit, t.amount)}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </>
               );
             })()}
 

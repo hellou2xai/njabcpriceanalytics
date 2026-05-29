@@ -34,7 +34,7 @@ export default function PriceWaterfall({ list, afterDiscount, effective, height 
   ];
   if (aDisc > 0) steps.push({ name: 'Discount', base: afterDiscount, bar: aDisc, total: false, label: `(${money(aDisc)})`, kind: 'CPL discount', full: aDisc });
   if (rip > 0) steps.push({ name: 'RIP', base: effective, bar: rip, total: false, label: `(${money(rip)})`, kind: 'RIP rebate', full: rip });
-  steps.push({ name: 'You pay', base: 0, bar: effective, total: true, label: money(effective), kind: 'You pay', full: effective });
+  steps.push({ name: 'Price after RIP', base: 0, bar: effective, total: true, label: money(effective), kind: 'Price after RIP', full: effective });
 
   // Totals labeled above the bar; decreases labeled below (in parentheses).
   const renderLabel = (props: { x?: number; y?: number; width?: number; height?: number; index?: number }) => {

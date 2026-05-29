@@ -11,6 +11,7 @@ import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
 import PromotionsToolbar from '../components/PromotionsToolbar';
 import PromotionsTable, { type PromotionRow } from '../components/PromotionsTable';
 import MonthEffectiveSparkline from '../components/MonthEffectiveSparkline';
+import { buildSparkProps } from '../lib/promotionsSparkline';
 import { useProductQuickView } from '../components/ProductQuickView';
 import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
 
@@ -321,30 +322,14 @@ function MoverCard({ d, isDrop, open }: { d: PriceMover; isDrop: boolean; open: 
 
       <div className="deal-card-spark" onClick={(e) => e.stopPropagation()}>
         {/* Same this-month vs next-month sparkline + popover as the
-            Catalog row. Price-mover items already carry both editions
-            and their effective + frontline prices so the sparkline
-            renders two dots and the popover shows Frontline / Best
-            for both months side by side. Tier ladders aren't on the
-            payload, so the popover's discount / RIP sections stay
-            empty — that part needs a backend join to surface. */}
-        <MonthEffectiveSparkline
-          curr={{
-            edition: d.cur_edition ?? d.edition ?? null,
-            frontline: d.frontline_case_price ?? null,
-            afterDiscount: null,
-            discountTiers: [],
-            ripTiers: [],
-            bestEff: d.case_price ?? d.effective_case_price ?? null,
-          }}
-          next={{
-            edition: d.next_edition ?? null,
-            frontline: d.frontline_next_case_price ?? null,
-            afterDiscount: null,
-            discountTiers: [],
-            ripTiers: [],
-            bestEff: d.next_case_price ?? null,
-          }}
-        />
+            Catalog row. buildSparkProps consults the row's
+            headline_period so movers that qualified on prev→cur
+            (rather than cur→next) plot THAT transition — fixes the
+            "flat sparkline tagged as Price Drop" the user flagged.
+            tiers + next_tiers are attached by the backend's
+            attach_promotion_tiers so the popover now lights up the
+            full Discount / RIP / Best breakdown. */}
+        <MonthEffectiveSparkline {...buildSparkProps(d)} />
         <span className="text-muted" style={{ fontSize: 11 }}>Edition {fmtEdition(d.edition)}</span>
       </div>
 

@@ -301,6 +301,17 @@ export interface BlurbGenerateResult {
 
 export interface TimeSensitiveDeal {
   wholesaler: string;
+  // Edition (YYYY-MM) the deal applies to; surfaced by the API so the
+  // card's MonthEffectiveSparkline popover can label its two months.
+  edition?: string | null;
+  // Full Discount + RIP tier ladder for this month and next, attached by
+  // the backend via attach_promotion_tiers so the popover renders the
+  // same Frontline / Discount / RIP / Best breakdown the Catalog row uses.
+  tiers?: CatalogTier[];
+  next_tiers?: CatalogTier[];
+  // Next-edition headline figures from the same Catalog enrichment path.
+  next_case_price?: number | null;
+  next_effective_case_price?: number | null;
   product_name: string;
   product_type: string | null;
   unit_volume: string | null;
@@ -979,6 +990,9 @@ export interface PriceMover {
   frontline_cur_delta_pct?: number | null;
   frontline_next_delta?: number | null;
   frontline_next_delta_pct?: number | null;
+  // Tier ladders for this month and next, attached by attach_promotion_tiers.
+  tiers?: CatalogTier[];
+  next_tiers?: CatalogTier[];
 }
 
 export interface LifecycleEvent {

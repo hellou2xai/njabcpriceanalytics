@@ -657,6 +657,78 @@ def _attach_dup_upc(con, src, records):
         rec["dup_upc"] = False
 
 
+def attach_promotion_tiers(con, records):
+    """Public entry-point for the Promotions endpoints (Time-Sensitive Deals,
+    Major Discounts, Price Drops / Increases). Takes records from any
+    promotion-flavoured query — they don't have to carry the CPL discount /
+    RIP columns — and ends with each record carrying the same ``tiers`` and
+    ``next_tiers`` arrays the Catalog row uses, so the cards can render the
+    same MonthEffectiveSparkline popover (Frontline / Discount tiers / RIP
+    tiers / Best for both months).
+
+    Steps:
+      1. For every record that's missing the CPL discount + RIP columns,
+         look them up by (wholesaler, edition, upc) in one batch.
+      2. Hand the augmented records to _attach_discount_rip_tiers (current
+         month) and _attach_next_tiers (next edition).
+
+    Pass-through if records is empty. Records with no upc / no edition are
+    left as-is (they'd never have a tier ladder anyway).
+    """
+    if not records:
+        return
+    src = read_parquet(con, "cpl_enriched")
+
+    needed = (
+        "frontline_unit_price", "rip_code",
+        "discount_1_qty", "discount_1_amt",
+        "discount_2_qty", "discount_2_amt",
+        "discount_3_qty", "discount_3_amt",
+        "discount_4_qty", "discount_4_amt",
+        "discount_5_qty", "discount_5_amt",
+    )
+
+    # Collect the rows we actually need to enrich (skip ones already carrying
+    # the columns, e.g. records coming straight from a catalog SELECT).
+    todo = [r for r in records if r.get("upc") and r.get("edition")
+            and any(c not in r for c in needed)]
+    if todo:
+        keys = sorted({(r["wholesaler"], r["edition"], str(r["upc"]))
+                       for r in todo})
+        ph_keys = ", ".join(f"($w{i}, $e{i}, $u{i})" for i in range(len(keys)))
+        params = {}
+        for i, (w, e, u) in enumerate(keys):
+            params[f"w{i}"], params[f"e{i}"], params[f"u{i}"] = w, e, u
+        col_list = ", ".join(("wholesaler", "edition", "upc",) + needed)
+        df = con.execute(
+            f"SELECT {col_list} FROM {src} "
+            f"WHERE (wholesaler, edition, CAST(upc AS VARCHAR)) IN ({ph_keys})",
+            params,
+        ).fetchdf()
+        lookup: dict = {}
+        for _, nr in df.iterrows():
+            d = dict(nr)
+            lookup[(d["wholesaler"], d["edition"], str(d["upc"]))] = d
+        for r in todo:
+            extras = lookup.get((r["wholesaler"], r["edition"], str(r["upc"]))) or {}
+            for col in needed:
+                if col not in r:
+                    val = extras.get(col)
+                    # Replace NaN with None so downstream `if amt is None`
+                    # checks behave (pandas reads NaNs into floats).
+                    if isinstance(val, float) and math.isnan(val):
+                        val = None
+                    r[col] = val
+
+    # `rip_group_code` is only relevant for the Catalog's group_by_rip path;
+    # set it to None so _attach_discount_rip_tiers falls back to `rip_code`.
+    for r in records:
+        r.setdefault("rip_group_code", None)
+
+    _attach_discount_rip_tiers(con, records)
+    _attach_next_tiers(con, records)
+
+
 @router.get("/search")
 def search_products(
     q: str = Query("", description="Search term"),

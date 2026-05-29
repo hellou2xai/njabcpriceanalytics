@@ -197,6 +197,10 @@ def get_top_discounts(
             u = r.get("upc")
             un = str(u).lstrip("0") if u else ""
             r["ai_blurb"] = blurb_map.get((r.get("wholesaler"), un, r.get("edition")))
+        # Attach the Discount + RIP tier ladder for THIS month and next month,
+        # so the card's MonthEffectiveSparkline popover shows the full ladder.
+        from backend.routers.catalog import attach_promotion_tiers
+        attach_promotion_tiers(con, records)
         return records
 
 
@@ -598,6 +602,10 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
             dte = r["days_to_expire"]
             out.append({
                 "wholesaler": r["wholesaler"],
+                # Edition kept on the output so attach_promotion_tiers can
+                # look the row up in cpl_enriched for the CPL discount + RIP
+                # columns (it isn't surfaced on the card UI).
+                "edition": r["edition"],
                 "product_name": r["product_name"],
                 "product_type": _str(r["product_type"]),
                 "unit_volume": _str(r["unit_volume"]),
@@ -621,6 +629,12 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
 
         # Add product images (Go-UPC enrichment) for the card view.
         attach_enrichment_image(con, out)
+        # Attach the full Discount + RIP tier ladder for THIS month and
+        # next month, same shape the Catalog row uses, so the card's
+        # MonthEffectiveSparkline popover can show Frontline / Discount /
+        # RIP / Best for both months side by side.
+        from backend.routers.catalog import attach_promotion_tiers
+        attach_promotion_tiers(con, out)
         return out
 
 

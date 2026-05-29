@@ -1000,6 +1000,10 @@ export interface RipPromo {
 }
 
 export interface RipProduct {
+  /** Every RIP code this UPC qualifies under per the RIP sheet (a UPC stacked
+   * across multiple rebates carries all of them). Sorted ascending so the
+   * chip cluster reads stable. */
+  rip_codes?: string[];
   wholesaler: string; upc: string;
   rip_number: string | null;
   product_name: string; product_type: string;

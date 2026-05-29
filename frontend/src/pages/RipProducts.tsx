@@ -1,7 +1,7 @@
 import { Fragment, useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { deals, catalog, cart as cartApi } from '../lib/api';
-import { Plus, Check } from 'lucide-react';
+import { Plus, Check, X } from 'lucide-react';
 import FavoriteButton from '../components/FavoriteButton';
 import ProductThumb from '../components/ProductThumb';
 import { RowMenuButton } from '../components/ContextMenu';
@@ -71,6 +71,76 @@ function betterMonth(curr?: number | null, next?: number | null): { label: strin
   return c > n ? { label: 'This Month', variant: 'this' } : { label: 'Next Month', variant: 'next' };
 }
 
+/**
+ * Popup that lists every product included in a single RIP code, opened by
+ * clicking the RIP chip on a row. Reuses /api/catalog/rip-siblings (no
+ * exclude_upc so the modal shows the full member list, not just the
+ * "other" siblings).
+ */
+function RipMembersModal({
+  wholesaler, ripCode, onClose,
+}: { wholesaler: string; ripCode: string; onClose: () => void }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['rip-siblings-modal', wholesaler, ripCode],
+    queryFn: () => catalog.ripSiblings(wholesaler, ripCode),
+  });
+  const items = data?.items ?? [];
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal rip-members-modal" onClick={e => e.stopPropagation()}>
+        <button className="modal-close" onClick={onClose} aria-label="Close">
+          <X size={18} />
+        </button>
+        <h3 style={{ marginTop: 0, marginBottom: 4 }}>
+          <span className="rip-code-badge">🔗 RIP {ripCode}</span>
+          <span style={{ fontSize: 13, color: 'var(--text-muted)', marginLeft: 10, fontWeight: 400 }}>
+            ({wholesaler})
+          </span>
+        </h3>
+        <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 0 }}>
+          {isLoading
+            ? 'Loading…'
+            : `${items.length} product${items.length === 1 ? '' : 's'} must be purchased together (any mix of these UPCs) to qualify for this rebate.`}
+        </p>
+        {!isLoading && items.length === 0 && (
+          <p className="text-muted" style={{ marginTop: 12 }}>No products listed under this RIP.</p>
+        )}
+        <div className="rip-members-list">
+          {items.map((p, idx) => {
+            const eff = p.effective_case_price ?? p.frontline_case_price ?? null;
+            const list = p.frontline_case_price ?? null;
+            const save = p.total_savings_per_case ?? null;
+            return (
+              <div key={`${p.upc}|${idx}`} className="rip-member-row">
+                <span className="rip-member-meta">
+                  <strong>{p.product_name}</strong>
+                  <span className="rip-member-sub">
+                    {[p.unit_volume, p.unit_qty ? `${p.unit_qty} btl/cs` : null, p.upc]
+                      .filter(Boolean).join(' · ')}
+                  </span>
+                </span>
+                <span className="rip-member-price">
+                  {eff != null && (
+                    <span className="text-green font-bold">${eff.toFixed(2)}/cs</span>
+                  )}
+                  {list != null && eff != null && eff < list - 0.005 && (
+                    <span className="text-muted" style={{ textDecoration: 'line-through', marginLeft: 6, fontWeight: 400 }}>
+                      ${list.toFixed(2)}
+                    </span>
+                  )}
+                  {save != null && save > 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>save ${save.toFixed(2)}/cs</div>
+                  )}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function RipProducts() {
   const [q, setQ] = useState('');
   const [ripCode, setRipCode] = useState('');
@@ -82,6 +152,8 @@ export default function RipProducts() {
   const [tierUnit, setTierUnit] = useState('');
   const [size, setSize] = useState('');
   const [newNext, setNewNext] = useState(false);
+  // Open RIP-members popup: { wholesaler, rip_code } when set, null when closed.
+  const [ripModal, setRipModal] = useState<{ wholesaler: string; ripCode: string } | null>(null);
   const [sort, setSort] = useState('rip_save_per_case');
   const [order, setOrder] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(0);
@@ -919,7 +991,35 @@ export default function RipProducts() {
                     <td data-label="Size">{isFirstForProduct ? item.unit_volume : ''}</td>
                     <td data-label="RIP #">
                       {isFirstForProduct
-                        ? (code ? <span className="rip-code-badge">{code}</span> : <span className="text-muted">—</span>)
+                        ? (() => {
+                          // Render one clickable chip per RIP code this UPC
+                          // qualifies under. Falls back to the single
+                          // rip_number when rip_codes is empty (e.g. an
+                          // orphan with no enrichment). Click any chip to
+                          // open the products-in-this-RIP popup.
+                          const codes = (item.rip_codes && item.rip_codes.length > 0)
+                            ? item.rip_codes
+                            : (code ? [code] : []);
+                          if (codes.length === 0) return <span className="text-muted">—</span>;
+                          return (
+                            <span className="rip-code-chip-cluster">
+                              {codes.map(rc => (
+                                <button
+                                  key={rc}
+                                  type="button"
+                                  className="rip-code-badge rip-code-chip"
+                                  title={`Show every product included in RIP ${rc}`}
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    setRipModal({ wholesaler: item.wholesaler, ripCode: rc });
+                                  }}
+                                >
+                                  {rc}
+                                </button>
+                              ))}
+                            </span>
+                          );
+                        })()
                         : ''}
                     </td>
                     <td data-label="Incentive" style={{ borderRight: '1px solid var(--border)' }}>
@@ -996,6 +1096,13 @@ export default function RipProducts() {
         <span>Page {page + 1} of {Math.max(1, Math.ceil((data?.total ?? 0) / limit))}</span>
         <button disabled={(page + 1) * limit >= (data?.total ?? 0)} onClick={() => setPage(p => p + 1)}>Next</button>
       </div>
+      {ripModal && (
+        <RipMembersModal
+          wholesaler={ripModal.wholesaler}
+          ripCode={ripModal.ripCode}
+          onClose={() => setRipModal(null)}
+        />
+      )}
     </div>
     </FilterSidebar>
   );

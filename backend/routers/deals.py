@@ -855,6 +855,25 @@ def _build_rip_items(con, wholesaler=None, product_type=None, q="", rip_code=Non
                 deduped.append(t)
             rip_lookup[k] = deduped
 
+        # Map (wholesaler, normalised UPC) -> sorted list of every RIP code
+        # this UPC qualifies under in the RIP sheet (across both target
+        # editions). Drives the per-row "all RIP codes" chip cluster on the
+        # UI: clicking any chip opens the products-in-this-RIP popup.
+        upc_to_rip_codes: dict[tuple[str, str], list[str]] = {}
+        for (rc, ws_, ed_, upc_) in rip_lookup.keys():
+            rc_s = str(rc).strip()
+            if not rc_s or rc_s.lower() in ("0", "none", "nan"):
+                continue
+            un = str(upc_).lstrip("0")
+            if not un:
+                continue
+            key = (ws_, un)
+            existing = upc_to_rip_codes.setdefault(key, [])
+            if rc_s not in existing:
+                existing.append(rc_s)
+        for key in upc_to_rip_codes:
+            upc_to_rip_codes[key].sort()
+
         # 4. Index by (wholesaler, upc) -> {curr, next, meta}; prefer next-edition metadata
         product_map = {}
         for _, p in products_df.iterrows():
@@ -1013,6 +1032,9 @@ def _build_rip_items(con, wholesaler=None, product_type=None, q="", rip_code=Non
                     # The real RIP number tied to this UPC's value (ignores the
                     # '0' stub a product carries in a month its RIP lapses).
                     "rip_number": _real_code((curr or {}).get("rip_code"), (nxt or {}).get("rip_code")),
+                    # Every RIP code this UPC qualifies under in the RIP
+                    # sheet (a UPC stacked across 5 rebates shows all 5).
+                    "rip_codes": list(upc_to_rip_codes.get((ws, str(meta["upc"]).lstrip("0")), [])),
                 }
 
                 if tp["curr"] and curr and curr.get("case_price") is not None:
@@ -1185,6 +1207,7 @@ def _build_rip_items(con, wholesaler=None, product_type=None, q="", rip_code=Non
                         "has_discount": False,
                         "discount_pct": 0,
                         "needs_rep_verify": True,
+                        "rip_codes": list(upc_to_rip_codes.get((ws_, upc_norm), [])),
                     }
                     items.append(row)
 

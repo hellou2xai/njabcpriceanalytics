@@ -2692,11 +2692,16 @@ tr:hover .row-menu-btn { opacity: 1; }
   padding: 8px 12px;
   min-width: 180px;
   max-width: 260px;
+  /* Stretch the inner body so the savings sticker can pin to the bottom
+     and line up across both Pro cells regardless of how much copy each
+     one carries (Suggested Qty has 2 lines, Justification has 4 + divider). */
+  height: 1px;          /* anchor for the body's height: 100% */
 }
 .catalog-pro-body {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  height: 100%;
 }
 /* Header-only Pro chip. Per-row badges were removed; the column title
    carries the badge so the buyer sees the upgrade tag once per scroll. */
@@ -2772,6 +2777,11 @@ tr:hover .row-menu-btn { opacity: 1; }
 .catalog-pro-savings {
   display: inline-flex;
   align-self: flex-start;
+  /* Push the sticker to the bottom of the cell so the Suggested Qty
+     and Quantity Justification stickers line up on the same baseline
+     across the row, even though their cell bodies have different
+     line counts. */
+  margin-top: auto;
   padding: 2px 7px;
   font-size: 10px;
   font-weight: 700;

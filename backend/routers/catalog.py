@@ -439,18 +439,28 @@ def _attach_discount_rip_tiers(con, records):
                 "roi_pct": round(amt_f / cp * 100, 2) if cp > 0 else 0.0,
             })
 
-        # Best applicable per-case discount at a given case qty (Cases unit only).
-        # Discount tiers are mutually exclusive — you get the highest-amount
-        # tier whose minimum qty you've met.
-        def _best_disc_at_cases(n: int) -> float:
+        # Best applicable per-case discount when the buyer commits to
+        # `cases_bought` cases of this SKU. Considers BOTH discount tier
+        # flavours: case-unit tiers qualify when cases_bought >= d.qty, and
+        # bottle-unit tiers qualify when the equivalent bottle count
+        # (cases_bought × pack) >= d.qty. Discount tiers are mutually
+        # exclusive — the highest-amount qualifying tier wins.
+        def _best_disc_at(cases_bought: float) -> float:
             best = 0.0
+            bottles_bought = cases_bought * uq
             for d in disc:
-                if d["unit"].lower().startswith("case") and d["qty"] <= n and d["amount"] > best:
+                is_btl = _is_bottle_unit(d["unit"])
+                threshold = float(d["qty"])
+                ok = (bottles_bought >= threshold) if is_btl else (cases_bought >= threshold)
+                if ok and d["amount"] > best:
                     best = d["amount"]
             return best
 
         # RIP tiers (dedup by qty+unit+amount). RIPs STACK with the applicable
-        # case discount, so the effective price subtracts both.
+        # case discount (case-unit RIP) or with whatever case-equivalent
+        # discount the bottle-unit RIP threshold also clears — buying 60 btl
+        # at pack 12 means you've also bought 5 cs, so a 5cs-threshold case
+        # discount applies on top of the bottle RIP.
         rips_raw = _lookup_rips(rec)
         seen = set()
         rips = []
@@ -462,8 +472,14 @@ def _attach_discount_rip_tiers(con, records):
             # Bottle-unit RIPs are per-bottle → ×pack to get per-case.
             is_bottle = _is_bottle_unit(t["unit"])
             rip_per_case = round(_rip_per_case(t["amount"], t["qty"], t["unit"], uq), 2)
-            is_case_unit = not is_bottle
-            disc_at_qty = _best_disc_at_cases(t["qty"]) if is_case_unit else 0.0
+            # Case-equivalent of the RIP qty so we can look up the best
+            # stackable discount. For a case RIP that's t.qty cases; for a
+            # bottle RIP it's t.qty/pack cases (whole-pack purchase).
+            if is_bottle:
+                eq_cases = (float(t["qty"]) / uq) if uq > 0 else 0.0
+            else:
+                eq_cases = float(t["qty"])
+            disc_at_qty = _best_disc_at(eq_cases)
             combined_save = round(rip_per_case + disc_at_qty, 2)
             up_price = float(rec.get("frontline_unit_price") or 0)
             bundle_cost = _rip_bundle_cost(t["qty"], t["unit"], cp, up_price)

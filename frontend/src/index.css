@@ -2696,6 +2696,17 @@ tr:hover .row-menu-btn { opacity: 1; }
    the button confused users about whether the button belonged to the
    group at all. */
 .catalog-rip-banner-add { margin-left: 4px; }
+/* Reset sits right after the primary Add-All button. Disabled state is a
+   plain ghost (no muted background) so the button reads as available-on-
+   demand rather than a permanent fixture. */
+.catalog-rip-banner-reset {
+  margin-left: 4px;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.catalog-rip-banner-reset:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 
 /* ---- Add All Case Mix to Cart: confirmation modal ----
    Pops when the user clicks the banner button but some or all products in

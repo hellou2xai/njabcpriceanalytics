@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Check } from 'lucide-react';
+import { Plus, Check, X } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import FavoriteButton from './FavoriteButton';
 import ProductThumb from './ProductThumb';
@@ -481,6 +481,36 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                             ? (<><Check size={13} /> Added</>)
                             : (<><Plus size={13} /> Add All Case Mix to Cart</>)}
                         </button>
+                        {/* Reset clears every typed Case/Btl value across the
+                            products in this RIP cluster, so the buyer can
+                            start the rebate basket over without scrolling
+                            row by row. Greyed out when nothing's typed; the
+                            count of products affected lives in the title. */}
+                        {(() => {
+                          const typedProducts = banner.products.filter(p => {
+                            const q = cart[p.stepperKey];
+                            return q && (q.cases > 0 || q.units > 0);
+                          });
+                          const hasTyped = typedProducts.length > 0;
+                          return (
+                            <button
+                              className="btn btn-sm btn-secondary catalog-rip-banner-reset"
+                              disabled={!hasTyped}
+                              onClick={e => {
+                                e.stopPropagation();
+                                for (const p of typedProducts) {
+                                  updateQty(p.stepperKey, 'cases', 0);
+                                  updateQty(p.stepperKey, 'units', 0);
+                                }
+                              }}
+                              title={hasTyped
+                                ? `Clear typed Case / Btl quantities on ${typedProducts.length} product${typedProducts.length === 1 ? '' : 's'} in this Case Mix.`
+                                : 'Nothing typed yet on this Case Mix.'}
+                            >
+                              <X size={13} /> Reset
+                            </button>
+                          );
+                        })()}
                       </div>
                     </td>
                   </tr>

@@ -195,8 +195,7 @@ export default function CatalogFilterPanel({
   const dealsActiveCount =
     (filters.hasRip !== undefined ? 1 : 0) +
     (filters.hasDiscount !== undefined ? 1 : 0) +
-    (filters.inCombo ? 1 : 0) +
-    (filters.groupByRip ? 1 : 0);
+    (filters.inCombo ? 1 : 0);
   const priceActiveCount =
     (filters.priceMin !== undefined ? 1 : 0) +
     (filters.priceMax !== undefined ? 1 : 0);
@@ -248,6 +247,48 @@ export default function CatalogFilterPanel({
                 <TrackedOnlyToggle enabled={!!trackedOnly} onChange={onTrackedChange} />
               </div>
             )}
+            {/* Group-by-Case-Mix-RIP used to live inside the Deals dropdown,
+                but it's a view mode (changes how rows are clustered), not a
+                facet filter — so it gets its own toggle pill next to the
+                Favorites toggle where it's discoverable. */}
+            <label
+              className={`tracked-toggle ${filters.groupByRip ? 'is-active' : ''}`}
+              data-tour="filter-group-rip"
+              title="Cluster products that share a RIP rebate (from the RIP sheet) and colour-band each group"
+            >
+              <input
+                type="checkbox"
+                checked={filters.groupByRip === true}
+                onChange={() => onChange({ ...filters, groupByRip: filters.groupByRip ? undefined : true })}
+              />
+              <span>Group by Case Mix RIP</span>
+            </label>
+            {/* Quick-access shortcuts for the two most common deal filters.
+                The Deals dropdown still has the full Has/No pair for each. */}
+            <label
+              className={`tracked-toggle ${filters.hasRip === true ? 'is-active' : ''}`}
+              data-tour="filter-rip-only"
+              title="Show only products that carry a RIP rebate"
+            >
+              <input
+                type="checkbox"
+                checked={filters.hasRip === true}
+                onChange={() => onChange({ ...filters, hasRip: filters.hasRip === true ? undefined : true })}
+              />
+              <span>Has RIP</span>
+            </label>
+            <label
+              className={`tracked-toggle ${filters.hasDiscount === true ? 'is-active' : ''}`}
+              data-tour="filter-discount-only"
+              title="Show only products with an active CPL discount tier"
+            >
+              <input
+                type="checkbox"
+                checked={filters.hasDiscount === true}
+                onChange={() => onChange({ ...filters, hasDiscount: filters.hasDiscount === true ? undefined : true })}
+              />
+              <span>Has Discount</span>
+            </label>
 
             <FilterDropdown
               title="Deals"
@@ -282,12 +323,6 @@ export default function CatalogFilterPanel({
                   <input type="checkbox" checked={filters.inCombo === true}
                     onChange={() => onChange({ ...filters, inCombo: filters.inCombo ? undefined : true })} />
                   <span>In combo</span><span className="filter-facet-count">{comboCount}</span>
-                </label>
-                <label className="filter-checkbox"
-                  title="Cluster products that share a RIP rebate (from the RIP sheet) and colour-band each group">
-                  <input type="checkbox" checked={filters.groupByRip === true}
-                    onChange={() => onChange({ ...filters, groupByRip: filters.groupByRip ? undefined : true })} />
-                  <span>Group by Case Mix RIP</span>
                 </label>
               </div>
             </FilterDropdown>

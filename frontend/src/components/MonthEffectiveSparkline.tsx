@@ -69,7 +69,7 @@ function MonthBlock({ label, b }: { label: string; b: MonthBreakdown }) {
 
           {hasDiscTiers && b.frontline != null && (
             <>
-              <tr className="mes-section"><td colSpan={2}>Discount</td></tr>
+              <tr className="mes-section"><td colSpan={2}><span className="mes-section-pill is-discount">Discount</span></td></tr>
               {sortedDisc.map((t, i) => {
                 const save = b.frontline! - t.eff;
                 const isBest = t.eff === bestDiscEff;
@@ -88,7 +88,7 @@ function MonthBlock({ label, b }: { label: string; b: MonthBreakdown }) {
           )}
           {showDiscSummary && (
             <>
-              <tr className="mes-section"><td colSpan={2}>Discount</td></tr>
+              <tr className="mes-section"><td colSpan={2}><span className="mes-section-pill is-discount">Discount</span></td></tr>
               <tr className="mes-row-best">
                 <td>applied</td>
                 <td className="mes-num">
@@ -102,7 +102,7 @@ function MonthBlock({ label, b }: { label: string; b: MonthBreakdown }) {
 
           {b.ripTiers.length > 0 && ripVsDisc != null && (
             <>
-              <tr className="mes-section"><td colSpan={2}>RIP {hasDiscTiers || showDiscSummary ? '(stacks)' : ''}</td></tr>
+              <tr className="mes-section"><td colSpan={2}><span className="mes-section-pill is-rip">RIP {hasDiscTiers || showDiscSummary ? '(stacks)' : ''}</span></td></tr>
               {sortedRip.map((t, i) => {
                 const save = ripVsDisc - t.eff;
                 const isBest = t.eff === bestRipEff;
@@ -166,7 +166,20 @@ export default function MonthEffectiveSparkline({ curr, next }: Props) {
           <text x={W - PAD - 2} y={H - 1} fontSize="9" fill="#6b7280" textAnchor="end">{labN}</text>
         </svg>
         <span className="mes-val" style={{ color: colour }}>
-          ${(nextEff ?? currEff ?? 0).toFixed(0)}
+          {/* Show the signed dollar delta between This and Next month so the
+              user reads the *change*, not just the next-month price. Falls
+              back to the absolute next/current price when only one edition
+              is present and a delta isn't computable. */}
+          {(() => {
+            if (currEff != null && nextEff != null) {
+              const d = nextEff - currEff;
+              if (Math.abs(d) >= 0.5) {
+                return `${d > 0 ? '+' : '−'}$${Math.abs(d).toFixed(0)}`;
+              }
+              return 'flat';
+            }
+            return `$${(nextEff ?? currEff ?? 0).toFixed(0)}`;
+          })()}
           {goingDown && ' ↓'}{goingUp && ' ↑'}
         </span>
       </span>

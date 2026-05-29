@@ -2531,10 +2531,22 @@ tr:hover .row-menu-btn { opacity: 1; }
 /* Per-tier rows show: "Buy N cs   -$X = $Y" so the buyer reads the
    reduction AND the resulting price. The save amount is muted-red, the
    result is bold, the small arrow is grey. The row that wins each
-   section gets a subtle green background. */
-.mes-section td { padding-top: 6px; font-size: 10.5px; font-weight: 700;
-                  text-transform: uppercase; letter-spacing: .35px;
-                  color: var(--text-muted); }
+   section gets a subtle green background.
+
+   Section dividers ("Discount" / "RIP (stacks)") render as inline sticker
+   badges instead of plain muted text — at the popover's tiny font size
+   the previous styling washed out and users complained the headers were
+   hard to read. The pill background lifts them off the row and gives
+   each section a clear colour identity (amber = discount, indigo = RIP). */
+.mes-section td { padding: 8px 0 4px; background: none; }
+.mes-section td > .mes-section-pill {
+  display: inline-block; font-size: 10px; font-weight: 800;
+  text-transform: uppercase; letter-spacing: .5px;
+  padding: 2px 8px; border-radius: 999px; line-height: 1.5;
+  border: 1px solid transparent;
+}
+.mes-section-pill.is-discount { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+.mes-section-pill.is-rip      { background: #e0e7ff; color: #3730a3; border-color: #c7d2fe; }
 .mes-num { white-space: nowrap; }
 .mes-save { color: var(--red); font-weight: 600; }
 .mes-arrow { color: var(--text-muted); margin: 0 2px; }

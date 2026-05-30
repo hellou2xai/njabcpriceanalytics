@@ -113,12 +113,79 @@ def _t_price_history(con, args):
             "history": rows.to_dict(orient="records")}
 
 
+def _t_price_details(con, args):
+    """Full alcohol-retail pricing breakdown for one product: frontline case &
+    bottle price, discount tiers, RIP tiers, effective price, bottles/case, and
+    the last 3 editions of price history. The assistant auto-attaches a price
+    waterfall + a 3-month history chart from this."""
+    match = (args.get("match") or "").strip()
+    view = {"categories": [args["category"]] if args.get("category") else [],
+            "divisions": [args["distributor"]] if args.get("distributor") else []}
+    prods = _resolve_products(con, view, match, "first", 1)
+    if not prods:
+        return {"error": "no product matched"}
+    p = prods[0]
+    from backend.routers.catalog import get_product_detail
+    detail = get_product_detail(p["wholesaler"], p["product_name"], upc=p.get("upc"),
+                                unit_volume=p.get("unit_volume"), unit_qty=p.get("unit_qty"),
+                                vintage=p.get("vintage"))
+    prod = detail.get("product") or {}
+    hist = con.execute(
+        "SELECT edition, frontline_case_price, effective_case_price FROM cpl_enriched "
+        "WHERE wholesaler = ? AND product_name = ? ORDER BY edition DESC LIMIT 3",
+        [p["wholesaler"], p["product_name"]],
+    ).fetchdf()
+    history = list(reversed(hist.to_dict(orient="records")))
+    # Next-month price for a plain-English buy-now-vs-wait recommendation.
+    nxt = con.execute(
+        "SELECT edition, effective_case_price, frontline_case_price FROM cpl_enriched "
+        "WHERE wholesaler = ? AND product_name = ? AND edition > ? ORDER BY edition LIMIT 1",
+        [p["wholesaler"], p["product_name"], _current_ym()],
+    ).fetchdf()
+    this_eff = prod.get("effective_case_price")
+    next_eff = None
+    next_edition = None
+    if len(nxt):
+        nrow = nxt.iloc[0]
+        next_edition = nrow["edition"]
+        next_eff = _clean(nrow["effective_case_price"])
+        if next_eff is None:
+            next_eff = _clean(nrow["frontline_case_price"])
+        next_eff = float(next_eff) if next_eff is not None else None
+    if this_eff is None:
+        rec = "Pricing unavailable."
+    elif next_eff is None:
+        rec = f"Buy now — ${this_eff:.2f}/cs today; it isn't on next month's price sheet (may be gone)."
+    elif abs(this_eff - next_eff) < 0.01:
+        rec = f"No rush — ${this_eff:.2f}/cs holds the same next month."
+    elif next_eff > this_eff:
+        rec = f"Buy now — ${this_eff:.2f}/cs today rises to ${next_eff:.2f}/cs next month (save ${next_eff - this_eff:.2f}/cs)."
+    else:
+        rec = f"Consider waiting — drops from ${this_eff:.2f}/cs to ${next_eff:.2f}/cs next month (save ${this_eff - next_eff:.2f}/cs)."
+    return {
+        "product_name": p["product_name"], "wholesaler": p["wholesaler"],
+        "unit_volume": p.get("unit_volume"), "vintage": p.get("vintage"),
+        "bottles_per_case": prod.get("unit_qty"),
+        "frontline_case_price": prod.get("frontline_case_price"),
+        "frontline_bottle_price": prod.get("frontline_unit_price"),
+        "best_case_price_after_discount": prod.get("best_case_price"),
+        "effective_case_price": this_eff,
+        "next_month_case_effective": next_eff,
+        "next_edition": next_edition,
+        "best_buy_recommendation": rec,
+        "discount_tiers": detail.get("discount_tiers") or [],
+        "rip_tiers": detail.get("rip_tiers") or [],
+        "price_history_3mo": history,
+    }
+
+
 _DATA_TOOLS = {
     "category_breakdown": (_t_category_breakdown, "Product counts and average case price per category (current edition)."),
     "distributor_breakdown": (_t_distributor_breakdown, "Per-distributor product counts, avg case price, and #with RIP/discount."),
     "deal_counts": (_t_deal_counts, "Totals: products, #with RIP, #with discount, #closeouts."),
     "top_products": (_t_top_products, "Resolve matching products. Args: match, category, distributor, has_rip, has_discount, price_min, price_max, order_by(cheapest|expensive), limit."),
     "price_history": (_t_price_history, "Price history across editions for the product matching `match`."),
+    "price_details": (_t_price_details, "FULL price breakdown for ONE product (call this for any 'price'/'pricing'/'cost'/'deal' question about a specific product): frontline case & bottle price, discount tiers, RIP tiers, effective price, bottles/case, 3-month history."),
 }
 
 
@@ -190,6 +257,11 @@ _SYSTEM = (
     "to the user as interactive cards with Add to Cart / Add to List / Favorite buttons, so you don't "
     "need to repeat every product in prose; summarize instead. "
     "When the user asks to add to cart, set quantity, favorite, or build a list, call perform_action. "
+    "For ANY question about a specific product's price/pricing/cost/deal, call price_details and present, "
+    "in this order: frontline case price AND per-bottle price (with bottles/case), discount tiers, RIP tiers, "
+    "and the effective price — use a compact markdown table for the tiers. State the best_buy_recommendation "
+    "verbatim as plain English (buy now vs wait). A price waterfall and a 3-month history chart are attached "
+    "automatically, so reference them rather than re-listing the numbers. "
     "Confirm what you did in the prose. Be concise and concrete with dollars."
 )
 
@@ -229,6 +301,7 @@ def ask(question: str, history: list | None = None) -> dict:
     actions_out: list = []
     products_out: list = []
     seen_products: set = set()
+    price_detail_result: dict | None = None
 
     def _collect(items):
         # Accumulate any product dicts a tool surfaced so the UI can render them
@@ -285,6 +358,9 @@ def ask(question: str, history: list | None = None) -> dict:
                             _collect(out)
                         elif isinstance(out, dict) and out.get("product"):
                             _collect([{**out, "product_name": out.get("product")}])
+                        if b.name == "price_details" and isinstance(out, dict) and not out.get("error"):
+                            price_detail_result = out
+                            _collect([out])   # also show the product as a card
                     else:
                         out = {"error": "unknown tool"}
                     results.append({"type": "tool_result", "tool_use_id": b.id,
@@ -296,6 +372,9 @@ def ask(question: str, history: list | None = None) -> dict:
             break
 
     charts = _extract_charts(final_text)
+    # Deterministically attach the alcohol-retail price visuals when a price
+    # breakdown was fetched, so they always appear (not model-dependent).
+    charts = _price_charts(price_detail_result) + charts
     answer = _strip_charts(final_text) or "Done."
     return {
         "answer": answer,
@@ -305,6 +384,44 @@ def ask(question: str, history: list | None = None) -> dict:
         "usage": {"input_tokens": total_in, "output_tokens": total_out,
                   "model": model, "cost_usd": _cost_usd(model, total_in, total_out), "enabled": True},
     }
+
+
+def _num(v):
+    try:
+        f = float(v)
+        return round(f, 2) if f == f else None  # drop NaN
+    except (TypeError, ValueError):
+        return None
+
+
+def _price_charts(pd: dict | None) -> list:
+    """Build the price waterfall + 3-month history charts from a price_details
+    result, so every price question gets the alcohol-retail visuals."""
+    if not pd:
+        return []
+    out = []
+    fr = _num(pd.get("frontline_case_price"))
+    bd = _num(pd.get("best_case_price_after_discount"))
+    eff = _num(pd.get("effective_case_price"))
+    labels, vals = [], []
+    if fr is not None:
+        labels.append("List"); vals.append(fr)
+    if bd is not None and (fr is None or abs(bd - fr) > 0.001):
+        labels.append("After Discount"); vals.append(bd)
+    if eff is not None:
+        labels.append("After RIP / Effective"); vals.append(eff)
+    if len(vals) >= 2:
+        out.append({"type": "bar", "title": f"Price waterfall — {pd.get('product_name')} ($/case)",
+                    "labels": labels, "series": [{"name": "$/case", "data": vals}]})
+    hist = pd.get("price_history_3mo") or []
+    if len(hist) >= 2:
+        out.append({"type": "line", "title": "3-month price history ($/case)",
+                    "labels": [str(r.get("edition")) for r in hist],
+                    "series": [
+                        {"name": "List", "data": [_num(r.get("frontline_case_price")) or 0 for r in hist]},
+                        {"name": "Effective", "data": [_num(r.get("effective_case_price")) or 0 for r in hist]},
+                    ]})
+    return out
 
 
 def _extract_charts(text: str) -> list:

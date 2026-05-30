@@ -87,6 +87,14 @@ if mcp:
             return _eng._t_price_history(con, {"match": match})
 
     @mcp.tool()
+    def price_details(match: str) -> dict:
+        """Full alcohol-retail price breakdown for one product: frontline case &
+        bottle price, discount tiers, RIP tiers, effective price, bottles/case,
+        3-month history, and a plain-English buy-now-vs-next-month recommendation."""
+        with get_duckdb() as con:
+            return _eng._t_price_details(con, {"match": match})
+
+    @mcp.tool()
     def category_breakdown() -> list:
         """Product counts and average case price per category (current edition)."""
         with get_duckdb() as con:

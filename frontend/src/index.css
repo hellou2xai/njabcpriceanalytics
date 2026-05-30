@@ -134,7 +134,7 @@ body {
   padding: 1px 6px; border-radius: 10px; margin-left: auto;
 }
 
-.main-content { flex: 1; padding: 24px 32px; overflow-x: auto; }
+.main-content { flex: 1; padding: 24px 32px; overflow-x: auto; margin-right: var(--global-dock-w, 0px); transition: margin-right 0.16s ease; }
 
 /* App shell (desktop): pin the whole layout to the viewport and let only the
    content area scroll. This keeps the left nav and any in-page sidebar/filter
@@ -4558,20 +4558,36 @@ tr:hover .row-menu-btn { opacity: 1; }
   border: none; box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4);
 }
 .global-assistant-fab:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(37, 99, 235, 0.5); }
-.global-assistant-scrim { position: fixed; inset: 0; z-index: 1255; background: rgba(15, 23, 42, 0.28); }
-.global-assistant-drawer {
-  position: fixed; top: 0; right: 0; z-index: 1260;
-  width: min(420px, 100vw); height: 100vh;
-  display: flex; flex-direction: column;
-  box-shadow: -8px 0 30px rgba(15, 23, 42, 0.22);
-  animation: ga-slide-in 0.18s ease-out;
+
+/* Docked, resizable assistant: shrinks the page (content reflows) instead of
+   covering it. .main-content reads --global-dock-w to leave room. */
+.global-dock {
+  position: fixed; top: 0; right: 0; height: 100vh; z-index: 1080;
+  display: flex; background: var(--surface); border-left: 1px solid var(--border);
+  box-shadow: -8px 0 24px rgba(15, 23, 42, 0.10);
 }
-@keyframes ga-slide-in { from { transform: translateX(24px); opacity: 0.6; } to { transform: translateX(0); opacity: 1; } }
-/* Make the embedded panel fill the drawer instead of acting as a sticky column. */
-.global-assistant-drawer .ai-assistant-panel {
-  position: static; flex: 1 1 auto; width: 100%; max-height: none; height: 100%;
-  border: 0; border-radius: 0; box-shadow: none;
+.global-dock .assistant-chat { flex: 1 1 auto; min-width: 0; padding: 8px 12px 4px; }
+.global-dock-resizer {
+  flex: 0 0 8px; align-self: stretch; cursor: col-resize; touch-action: none;
+  display: flex; align-items: center; justify-content: center;
+  margin-left: -4px;   /* sit on the dock's left edge */
 }
+.global-dock-resizer:hover .ai-resizer-grip,
+.global-dock-resizer:active .ai-resizer-grip { background: var(--accent); height: 72px; }
+@media (max-width: 760px) {
+  /* On small screens the dock overlays full-width (no room to push). */
+  .global-dock { width: 100vw !important; z-index: 1300; }
+}
+
+/* The assistant chat fills whatever container holds it (page or dock). */
+.assistant-chat { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.celar-page > .assistant-chat { flex: 1 1 auto; }
+.celar-head-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; border-radius: 7px; cursor: pointer;
+  background: transparent; border: 1px solid transparent; color: var(--text-muted);
+}
+.celar-head-btn:hover { background: var(--bg); border-color: var(--border); color: var(--text); }
 
 /* Model chip + Pro upsell nudges (shown every 4th question) */
 .ai-model-chip {

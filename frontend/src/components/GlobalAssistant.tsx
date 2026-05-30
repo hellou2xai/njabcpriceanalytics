@@ -1,60 +1,70 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Sparkles } from 'lucide-react';
-import AiAssistantPanel from './AiAssistantPanel';
-import { assistant } from '../lib/api';
-import type { AssistantResponse } from '../lib/api';
-import { useAssistantActions, describeActions } from '../lib/useAssistantActions';
+import AssistantChat from './AssistantChat';
 
-// App-wide AI assistant: a floating launcher on every page that opens an OVERLAY
-// drawer (slides over content — never reflows the page). Uses the Celar engine,
-// so it answers questions AND performs actions (cart / favorites / lists) from
-// anywhere. Memory + per-answer cost come from the shared panel.
-const SUGGESTIONS = [
-  'Cheapest tequila with a RIP rebate',
-  'Add 2 cases of the cheapest prosecco to my cart',
-  'Save the cheapest cabernet to favorites',
-  'Which distributor has the most discounts?',
-];
+// App-wide AI assistant as an ADJUSTABLE, DOCKED side panel: opening it shrinks
+// the page (the screen output adjusts around it) rather than covering content,
+// and a drag handle resizes it. Open state + width persist. Available on every
+// page; the dedicated page and font sandbox have their own assistant UI.
+const MIN_W = 320, MAX_W = 760;
 
 export default function GlobalAssistant() {
-  const [open, setOpen] = useState(false);
-  const { runActions } = useAssistantActions();
   const location = useLocation();
+  const [open, setOpen] = useState<boolean>(() => localStorage.getItem('global_dock_open') === 'true');
+  const [width, setWidth] = useState<number>(() => {
+    const n = parseInt(localStorage.getItem('global_dock_w') ?? '', 10);
+    return Number.isFinite(n) ? Math.min(MAX_W, Math.max(MIN_W, n)) : 400;
+  });
+  const resize = useRef<{ startX: number; startW: number } | null>(null);
 
-  // The dedicated full page and the font sandbox have their own assistant UI;
-  // don't stack a second one there.
-  if (location.pathname === '/assistant' || location.pathname === '/admin/catalog-font-test') {
-    return null;
+  const suppressed = location.pathname === '/assistant' || location.pathname === '/admin/catalog-font-test';
+
+  // Push the page: publish the dock width as a CSS var the main content reads.
+  useEffect(() => {
+    const w = open && !suppressed ? `${width}px` : '0px';
+    document.documentElement.style.setProperty('--global-dock-w', w);
+    return () => { document.documentElement.style.setProperty('--global-dock-w', '0px'); };
+  }, [open, width, suppressed]);
+
+  useEffect(() => { localStorage.setItem('global_dock_open', String(open)); }, [open]);
+  useEffect(() => { localStorage.setItem('global_dock_w', String(width)); }, [width]);
+
+  const onResizeDown = useCallback((e: React.PointerEvent) => {
+    resize.current = { startX: e.clientX, startW: width };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    document.body.style.cursor = 'col-resize'; document.body.style.userSelect = 'none';
+  }, [width]);
+  const onResizeMove = useCallback((e: React.PointerEvent) => {
+    const r = resize.current; if (!r) return;
+    // Panel is docked on the RIGHT edge: dragging the handle left widens it.
+    setWidth(Math.min(MAX_W, Math.max(MIN_W, r.startW + (r.startX - e.clientX))));
+  }, []);
+  const onResizeUp = useCallback((e: React.PointerEvent) => {
+    resize.current = null;
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* */ }
+    document.body.style.cursor = ''; document.body.style.userSelect = '';
+  }, []);
+
+  if (suppressed) return null;
+
+  if (!open) {
+    return (
+      <button className="global-assistant-fab" onClick={() => setOpen(true)}
+              title="Ask Celar AI Assistant" aria-label="Open Celar AI Assistant">
+        <Sparkles size={20} />
+      </button>
+    );
   }
 
   return (
-    <>
-      {!open && (
-        <button className="global-assistant-fab" onClick={() => setOpen(true)}
-                title="Ask Celar AI Assistant" aria-label="Open Celar AI Assistant">
-          <Sparkles size={20} />
-        </button>
-      )}
-      {open && (
-        <>
-          <div className="global-assistant-scrim" onClick={() => setOpen(false)} />
-          <div className="global-assistant-drawer">
-            <AiAssistantPanel<AssistantResponse>
-              title="Celar AI Assistant"
-              subtitle="Ask anything — or have me add to cart, favorites or a list."
-              placeholder="Ask or speak…"
-              storageKey="global_assistant"
-              open
-              onOpenChange={(v) => setOpen(v)}
-              suggestions={SUGGESTIONS}
-              send={(question, history) => assistant.ask(question, history)}
-              onApply={(res) => { if (res.actions?.length) runActions(res.actions); }}
-              describeResult={(res) => describeActions(res.actions)}
-            />
-          </div>
-        </>
-      )}
-    </>
+    <div className="global-dock" style={{ width }}>
+      <div className="global-dock-resizer" role="separator" aria-orientation="vertical"
+           aria-label="Resize assistant" title="Drag to resize"
+           onPointerDown={onResizeDown} onPointerMove={onResizeMove} onPointerUp={onResizeUp}>
+        <span className="ai-resizer-grip" />
+      </div>
+      <AssistantChat onClose={() => setOpen(false)} />
+    </div>
   );
 }

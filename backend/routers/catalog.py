@@ -2924,19 +2924,32 @@ def get_product_breakdown(
         src = read_parquet(con, "cpl_enriched")
         rip_src = read_parquet(con, "rip")
 
+        # The canonical SKU identity is
+        #   (wholesaler, product_name, unit_volume, unit_qty_norm, vintage_norm)
+        # — NOT UPC. Allied (and others) reissue the same product under a new
+        # UPC between editions (e.g. W TURK RUS 13Y 6P UPC 119440782 in
+        # May -> 721059003094 in June), so a strict UPC filter would split a
+        # single SKU's timeline at the boundary where the UPC changed. UPC is
+        # passed in as a hint but not enforced; vintage + unit_qty + size are
+        # the real keys, mirroring the price_changes derive partition and
+        # the analytics slot key so modal + page row agree.
         where = ["wholesaler = $wholesaler", "product_name = $product_name"]
         params = {"wholesaler": wholesaler, "product_name": product_name}
-        if upc:
-            where.append("upc = $upc")
-            params["upc"] = upc
         if unit_volume:
             where.append("unit_volume = $unit_volume")
             params["unit_volume"] = unit_volume
         if unit_qty:
-            where.append("TRY_CAST(unit_qty AS DOUBLE) = TRY_CAST($uq AS DOUBLE)")
+            # Normalise both sides ('12' / '12.0' / 12 / 12.0 -> '12') so the
+            # int<->float round-trip in the monthly Excel doesn't break the
+            # match. Mirrors the uq_key used in derive.py and analytics.py.
+            where.append(
+                "regexp_replace(TRIM(CAST(unit_qty AS VARCHAR)), '\\.0+$', '') = "
+                "regexp_replace(TRIM(CAST($uq AS VARCHAR)), '\\.0+$', '')"
+            )
             params["uq"] = unit_qty
         if vintage:
-            where.append(f"({_vintage_norm_sql('vintage')}) = $vnorm")
+            where.append(f"({_vintage_norm_sql('vintage')}) IS NOT DISTINCT FROM "
+                         f"({_vintage_norm_sql('$vnorm')})")
             params["vnorm"] = vintage
 
         rows = con.execute(f"""

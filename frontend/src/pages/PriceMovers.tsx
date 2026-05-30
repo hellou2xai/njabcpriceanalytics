@@ -288,12 +288,12 @@ function MoverCard({ d, isDrop, open }: { d: PriceMover; isDrop: boolean; open: 
          onClick={(e) => {
            const t = e.target as HTMLElement;
            if (t.closest('button, a, input, label, .deal-card-actions, .add-to-list-menu, .row-menu-btn, .ctx-menu')) return;
-           open(d.product_name, d.wholesaler, undefined, { upc: d.upc ?? undefined, unitVolume: d.unit_volume ?? undefined });
+           open(d.product_name, d.wholesaler, undefined, { upc: d.upc ?? undefined, unitVolume: d.unit_volume ?? undefined, unitQty: d.unit_qty ?? undefined, vintage: d.vintage ?? undefined });
          }}
          onKeyDown={(e) => {
            if (e.key === 'Enter' || e.key === ' ') {
              e.preventDefault();
-             open(d.product_name, d.wholesaler, undefined, { upc: d.upc ?? undefined, unitVolume: d.unit_volume ?? undefined });
+             open(d.product_name, d.wholesaler, undefined, { upc: d.upc ?? undefined, unitVolume: d.unit_volume ?? undefined, unitQty: d.unit_qty ?? undefined, vintage: d.vintage ?? undefined });
            }
          }}>
       <div className="deal-card-head">

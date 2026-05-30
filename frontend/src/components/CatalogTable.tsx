@@ -558,7 +558,7 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                     data-ctx-wholesaler={item.wholesaler}
                     data-ctx-upc={item.upc}
                     data-ctx-volume={item.unit_volume}
-                    onClick={() => open(item.product_name, item.wholesaler, undefined, { upc: item.upc, unitVolume: item.unit_volume })}>
+                    onClick={() => open(item.product_name, item.wholesaler, undefined, { upc: item.upc, unitVolume: item.unit_volume, unitQty: item.unit_qty ?? undefined, vintage: (item.vintage as string | null | undefined) ?? undefined })}>
                   <td className="card-actions-cell" onClick={e => e.stopPropagation()}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
                       <FavoriteButton productName={item.product_name} wholesaler={item.wholesaler}

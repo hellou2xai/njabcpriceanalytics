@@ -12,6 +12,7 @@ import FeedbackWidget, { BetaBadge } from './components/FeedbackWidget';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Catalog from './pages/Catalog';
+import CatalogFontTest from './pages/CatalogFontTest';
 import NewItems from './pages/NewItems';
 import HowToGuide from './pages/HowToGuide';
 import Tours from './pages/Tours';
@@ -105,6 +106,7 @@ function AuthenticatedApp() {
           <Route element={<Layout />}>
             <Route path="/" element={<Dashboard />} />
             <Route path="/catalog" element={<Catalog />} />
+            <Route path="/admin/catalog-font-test" element={<CatalogFontTest />} />
             <Route path="/new-items" element={<NewItems />} />
             <Route path="/how-to-guide" element={<HowToGuide />} />
             <Route path="/tours" element={<Tours />} />

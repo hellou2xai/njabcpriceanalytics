@@ -4155,3 +4155,65 @@ tr:hover .row-menu-btn { opacity: 1; }
   .pro-drill-table { font-size: 12px; }
   .pro-cash-row { grid-template-columns: 80px 1fr 80px; }
 }
+
+/* =====================================================================
+   Test For Font Catalog (admin sandbox) — larger, more readable type.
+   EVERYTHING here is scoped under .font-test-catalog so the production
+   Catalog page is untouched. The shared CatalogTable hardcodes a lot of
+   small 10–13px sizes (some as inline styles), so we lift both the
+   class-based sizes and the inline ones (via [style*=...] overrides).
+   ===================================================================== */
+.font-test-catalog { font-size: 16px; }
+
+.font-test-banner {
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  color: var(--text);
+  border-radius: var(--radius-sm, 6px);
+  padding: 10px 14px; margin-bottom: 14px; font-size: 14px; line-height: 1.45;
+}
+
+/* Page chrome */
+.font-test-catalog .orders-header h2 { font-size: 30px; }
+.font-test-catalog .search-bar input { font-size: 16px; padding: 12px 16px; }
+.font-test-catalog .search-count { font-size: 15px; }
+.font-test-catalog .toolbar,
+.font-test-catalog .pagination { font-size: 15px; }
+.font-test-catalog .pagination button { font-size: 15px; padding: 8px 16px; }
+
+/* Table body + headers */
+.font-test-catalog .catalog-table { font-size: 15px; }
+.font-test-catalog .catalog-table th { font-size: 13px; padding: 10px 12px; }
+.font-test-catalog .catalog-table td { padding: 12px 12px; }
+
+/* Product name (set inline as font-weight:600 in CatalogTable) */
+.font-test-catalog .catalog-table .card-title-cell div[style*="font-weight: 600"] { font-size: 18px; line-height: 1.3; }
+
+/* Identifier / fine-print lines */
+.font-test-catalog .catalog-product-spec { font-size: 14px; }
+.font-test-catalog .cell-distributor-badge { font-size: 13px; padding: 3px 8px; }
+.font-test-catalog .tag { font-size: 12px !important; }
+.font-test-catalog .source-badge,
+.font-test-catalog .rip-tier-badge,
+.font-test-catalog .catalog-rip-group-badge { font-size: 12px; }
+
+/* Lift the inline 10px / 11px fine print (UPC line, $/btl sub-prices,
+   tier counts, save-per-bottle, stepper labels). React serialises these
+   to "font-size: 10px"; cover the no-space form too just in case. */
+.font-test-catalog .catalog-table [style*="font-size: 11px"],
+.font-test-catalog .catalog-table [style*="font-size:11px"],
+.font-test-catalog .catalog-table [style*="font-size: 11.5px"] { font-size: 13.5px !important; }
+.font-test-catalog .catalog-table [style*="font-size: 10px"],
+.font-test-catalog .catalog-table [style*="font-size:10px"] { font-size: 13px !important; }
+
+/* Order controls */
+.font-test-catalog .qty-stepper > span { font-size: 13px !important; width: 36px !important; }
+.font-test-catalog .qty-stepper input,
+.font-test-catalog .qty-stepper button { font-size: 15px; }
+.font-test-catalog .btn { font-size: 14px; }
+
+/* Pro teaser cells */
+.font-test-catalog .catalog-pro-value { font-size: 16px; }
+.font-test-catalog .catalog-pro-sub,
+.font-test-catalog .catalog-pro-kv,
+.font-test-catalog .catalog-pro-savings { font-size: 12.5px; }

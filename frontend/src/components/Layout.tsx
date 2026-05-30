@@ -34,6 +34,7 @@ const NAV_GROUPS: {
     header: 'Catalog',
     items: [
       { path: '/catalog', label: 'Catalog', icon: Package },
+      { path: '/admin/catalog-font-test', label: 'Test For Font Catalog', icon: Package, adminOnly: true },
       { path: '/rip-products', label: 'RIP Products', icon: BadgeDollarSign, adminOnly: true },
       { path: '/new-items', label: 'New Items', icon: Sparkles },
       { path: '/combos', label: 'Combos', icon: Combine },

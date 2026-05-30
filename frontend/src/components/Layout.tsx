@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   LayoutDashboard, Package, ShoppingCart, Bell, Star, Menu, X, Combine,
   Sun, Moon, LogOut, BadgeDollarSign, ClipboardList, LayoutGrid,
-  ChevronLeft, ChevronRight, StickyNote, UserCog, Settings, Shield, Sparkles, BookOpen, ListTodo,
+  ChevronLeft, ChevronRight, ChevronDown, StickyNote, UserCog, Settings, Shield, Sparkles, BookOpen, ListTodo,
   Activity, Clock, Percent, Compass, ArrowDownRight, ArrowUpRight,
 } from 'lucide-react';
 import { alerts as alertsApi, orders as ordersApi, cart as cartApi } from '../lib/api';
@@ -114,6 +114,18 @@ export default function Layout() {
   // Desktop: fully hide the left nav (distinct from collapse-to-icons).
   const [navHidden, setNavHidden] = useState(() => localStorage.getItem('lpb_nav_hidden') === 'true');
   useEffect(() => { localStorage.setItem('lpb_nav_hidden', String(navHidden)); }, [navHidden]);
+
+  // Per-section collapse (like Apollo): click a group header to fold its items.
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('lpb_nav_groups_collapsed') || '[]')); }
+    catch { return new Set(); }
+  });
+  const toggleGroup = (header: string) => setCollapsedGroups(prev => {
+    const next = new Set(prev);
+    next.has(header) ? next.delete(header) : next.add(header);
+    localStorage.setItem('lpb_nav_groups_collapsed', JSON.stringify([...next]));
+    return next;
+  });
 
   const { theme, toggle: toggleTheme } = useTheme();
   const location = useLocation();
@@ -237,10 +249,20 @@ export default function Layout() {
           {NAV_GROUPS.map(group => {
             const items = group.items.filter(it => !it.adminOnly || user?.is_admin);
             if (items.length === 0) return null;
+            // Per-section fold (only meaningful when the nav shows labels).
+            const groupCollapsed = !sidebarCollapsed && collapsedGroups.has(group.header);
             return (
-              <div className="nav-group" key={group.header}>
-                {!sidebarCollapsed && <div className="nav-group-header">{group.header}</div>}
-                {items.map(({ path, label, icon: Icon, adminOnly }) => (
+              <div className={`nav-group${groupCollapsed ? ' group-collapsed' : ''}`} key={group.header}>
+                {!sidebarCollapsed && (
+                  <button type="button" className="nav-group-header"
+                          onClick={() => toggleGroup(group.header)}
+                          aria-expanded={!groupCollapsed}>
+                    <span>{group.header}</span>
+                    <ChevronDown size={14}
+                      className={`nav-group-chevron${groupCollapsed ? ' is-collapsed' : ''}`} />
+                  </button>
+                )}
+                {!groupCollapsed && items.map(({ path, label, icon: Icon, adminOnly }) => (
                   path === '/tours' ? (
                     <div key={path} className="nav-tours-wrap">
                       <Link

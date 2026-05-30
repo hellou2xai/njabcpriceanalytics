@@ -112,7 +112,13 @@ body {
 .nav-group-header {
   font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
   color: var(--text-muted); padding: 12px 18px 4px;
+  /* Clickable section toggle (collapse/expand its items) */
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  width: 100%; background: none; border: none; cursor: pointer; text-align: left;
 }
+.nav-group-header:hover { color: var(--text); }
+.nav-group-chevron { flex-shrink: 0; transition: transform 0.15s ease; opacity: 0.7; }
+.nav-group-chevron.is-collapsed { transform: rotate(-90deg); }
 .nav-group + .nav-group { margin-top: 2px; }
 /* Collapsed: hide the text headers, separate groups with a divider instead. */
 .sidebar.collapsed .nav-group + .nav-group { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 6px; }

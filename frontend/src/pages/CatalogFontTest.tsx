@@ -10,7 +10,8 @@ import CatalogFilterPanel, {
   emptyCatalogFilters,
 } from '../components/CatalogFilterPanel';
 import type { CatalogFilters } from '../components/CatalogFilterPanel';
-import type { Product } from '../lib/api';
+import AiAssistantPanel from '../components/AiAssistantPanel';
+import type { Product, CatalogAiResponse } from '../lib/api';
 
 /**
  * Test For Font Catalog (admin-only sandbox).
@@ -130,6 +131,30 @@ export default function CatalogFontTest() {
   };
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / limit));
 
+  // The AI assistant returns the same knobs the catalog already supports; apply
+  // them to page state so the existing query re-runs and the screen reflects
+  // the answer. null/undefined from the API clears that filter.
+  const applyAiResult = useCallback((res: CatalogAiResponse) => {
+    setQ(res.q ?? '');
+    const f = res.filters ?? {};
+    setFilters({
+      ...emptyCatalogFilters,
+      hasRip: f.hasRip ?? undefined,
+      hasDiscount: f.hasDiscount ?? undefined,
+      inCombo: f.inCombo || undefined,
+      priceTrend: f.priceTrend ?? undefined,
+      divisions: f.divisions ?? [],
+      categories: f.categories ?? [],
+      brands: f.brands ?? [],
+      sizes: f.sizes ?? [],
+      priceMin: f.priceMin ?? undefined,
+      priceMax: f.priceMax ?? undefined,
+    });
+    if (res.sort) setSort(res.sort);
+    if (res.order) setOrder(res.order);
+    setPage(0);
+  }, []);
+
   return (
     <div className="page font-test-catalog">
       <div className="font-test-banner">
@@ -172,26 +197,42 @@ export default function CatalogFontTest() {
         <RowLimitSelect value={limit} onChange={v => { setLimit(v); setPage(0); }} />
       </div>
 
-      <div className="catalog-layout catalog-layout--full">
-        <div className="catalog-results">
-          {isLoading ? <p>Loading...</p> : (
-            <CatalogTable
-              items={items as Product[]}
-              open={open}
-              cart={cart}
-              updateQty={updateQty}
-              sortControls={{ sort, order, onSort: (c) => handleSort(c) }}
-              comboLink={comboLink}
-              groupByRip={!!filters.groupByRip}
-              showProColumns={showPro}
-            />
-          )}
+      <div className="catalog-with-assistant">
+        <div className="catalog-layout catalog-layout--full">
+          <div className="catalog-results">
+            {isLoading ? <p>Loading...</p> : (
+              <CatalogTable
+                items={items as Product[]}
+                open={open}
+                cart={cart}
+                updateQty={updateQty}
+                sortControls={{ sort, order, onSort: (c) => handleSort(c) }}
+                comboLink={comboLink}
+                groupByRip={!!filters.groupByRip}
+                showProColumns={showPro}
+              />
+            )}
 
-          <div className="pagination">
-            <button disabled={page === 0} onClick={() => setPage(p => p - 1)}>Prev</button>
-            <span>Page {page + 1} of {totalPages}</span>
-            <button disabled={(page + 1) * limit >= (data?.total ?? 0)} onClick={() => setPage(p => p + 1)}>Next</button>
+            <div className="pagination">
+              <button disabled={page === 0} onClick={() => setPage(p => p - 1)}>Prev</button>
+              <span>Page {page + 1} of {totalPages}</span>
+              <button disabled={(page + 1) * limit >= (data?.total ?? 0)} onClick={() => setPage(p => p + 1)}>Next</button>
+            </div>
           </div>
+
+          <AiAssistantPanel<CatalogAiResponse>
+            title="Catalog Assistant"
+            subtitle="Ask a question — the catalog below updates to match."
+            placeholder="e.g. wine under $150 with a RIP rebate"
+            suggestions={[
+              'Cheapest tequila at Allied',
+              'Wine under $150 with a RIP rebate',
+              'Spirits on discount, biggest savings first',
+              "What's dropping in price next month?",
+            ]}
+            send={(question) => catalog.aiQuery(question)}
+            onApply={applyAiResult}
+          />
         </div>
       </div>
     </div>

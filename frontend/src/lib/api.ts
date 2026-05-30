@@ -81,7 +81,40 @@ export const catalog = {
     request<{ edition: string | null; rip_code: string; items: Product[] }>(
       `/api/catalog/rip-siblings/${encodeURIComponent(wholesaler)}/${encodeURIComponent(ripCode)}${qs(opts ?? {})}`
     ),
+  aiQuery: (question: string) =>
+    request<CatalogAiResponse>('/api/catalog/ai-query', {
+      method: 'POST',
+      body: JSON.stringify({ question }),
+    }),
 };
+
+// Token + dollar accounting returned with every AI assistant answer.
+export interface AiUsage {
+  input_tokens: number;
+  output_tokens: number;
+  model: string;
+  cost_usd: number;
+  enabled: boolean;
+}
+export interface CatalogAiResponse {
+  answer: string;
+  q: string;
+  filters: {
+    hasRip?: boolean | null;
+    hasDiscount?: boolean | null;
+    inCombo?: boolean;
+    priceTrend?: 'drop' | 'increase' | null;
+    divisions: string[];
+    categories: string[];
+    brands: string[];
+    sizes: string[];
+    priceMin?: number | null;
+    priceMax?: number | null;
+  };
+  sort: 'product_name' | 'frontline_case_price' | 'effective_case_price';
+  order: 'asc' | 'desc';
+  usage: AiUsage;
+}
 
 // ---- Web price search (retail pricing from nearby stores) ----
 export interface WebSearchResult {

@@ -3301,3 +3301,23 @@ def _classify_trend(prices: list) -> str:
     elif recent < prev:
         return "falling"
     return "stable"
+
+
+from pydantic import BaseModel
+
+
+class CatalogAiQueryBody(BaseModel):
+    question: str
+
+
+@router.post("/ai-query")
+def catalog_ai_query(body: CatalogAiQueryBody):
+    """Natural-language catalog assistant. Maps the buyer's question to catalog
+    filters (+ a short answer and the token/dollar cost of the call) so the page
+    can re-run its normal search and the screen output reflects the answer.
+
+    Token-optimized by design: ONE tool-use round-trip translates the question
+    into filter params; the catalog rows never enter the model context, the
+    DuckDB query does the data work. See backend/ai_catalog_query.py."""
+    from backend import ai_catalog_query
+    return ai_catalog_query.answer_question(body.question)

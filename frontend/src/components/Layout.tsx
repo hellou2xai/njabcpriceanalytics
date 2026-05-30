@@ -12,6 +12,7 @@ import WhatsAppShareButton from './WhatsAppShare';
 import { useAuth } from '../contexts/AuthContext';
 import DataRefreshBar from './DataRefreshBar';
 import CartFab from './CartFab';
+import GlobalAssistant from './GlobalAssistant';
 import WelcomeTourPrompt from './WelcomeTourPrompt';
 import { useOrderAnalysis } from '../contexts/OrderAnalysisContext';
 import { useActivityTracker } from '../lib/activityTracker';
@@ -26,6 +27,7 @@ const NAV_GROUPS: {
     items: [
       { path: '/tours', label: 'Guided Tour', icon: Compass },
       { path: '/how-to-guide', label: 'How To Guide', icon: BookOpen },
+      { path: '/assistant', label: 'Celar AI Assistant', icon: Sparkles },
       { path: '/', label: 'Dashboard', icon: LayoutDashboard },
       { path: '/alerts', label: 'Alerts', icon: Bell },
     ],
@@ -306,6 +308,7 @@ export default function Layout() {
           page content. Drops are remembered across reloads; a plain click
           still opens the cart. */}
       <CartFab cartCount={cartCount} />
+      <GlobalAssistant />
 
       <main className="main-content">
         <Outlet />

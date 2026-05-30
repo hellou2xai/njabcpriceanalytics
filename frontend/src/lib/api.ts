@@ -91,6 +91,27 @@ export const catalog = {
 // One prior turn of a conversation, sent back to the assistant for memory.
 export interface AiChatTurn { role: 'user' | 'assistant'; content: string }
 
+// ---- Celar AI Assistant (full page): Q&A + charts + actions ----
+export interface AssistantChart {
+  type: 'bar' | 'line' | 'pie';
+  title?: string;
+  labels: (string | number)[];
+  series: { name?: string; data: number[] }[];
+}
+export interface AssistantResponse {
+  answer: string;             // markdown (chart fences already stripped server-side)
+  charts: AssistantChart[];
+  actions: CatalogAiAction[];
+  usage: AiUsage;
+}
+export const assistant = {
+  ask: (question: string, history?: AiChatTurn[]) =>
+    request<AssistantResponse>('/api/assistant/ask', {
+      method: 'POST',
+      body: JSON.stringify({ question, history }),
+    }),
+};
+
 // Token + dollar accounting returned with every AI assistant answer.
 export interface AiUsage {
   input_tokens: number;

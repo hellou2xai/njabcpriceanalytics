@@ -52,6 +52,16 @@ interface Props<R extends AiAnswerBase> {
 const fmtCost = (usd: number) =>
   usd === 0 ? '$0.00' : usd < 0.01 ? `$${usd.toFixed(5)}` : `$${usd.toFixed(4)}`;
 
+// Short, friendly model name for the per-answer cost line.
+export const modelLabel = (m?: string | null): string => {
+  if (!m) return '';
+  const s = m.toLowerCase();
+  if (s.includes('haiku')) return 'Haiku';
+  if (s.includes('sonnet')) return 'Sonnet';
+  if (s.includes('opus')) return 'Opus';
+  return m;
+};
+
 /**
  * Reusable AI chat assistant panel. Page-agnostic: drop it onto any screen,
  * give it a `send` function (its backend) and an `onApply` callback (what to do
@@ -238,7 +248,7 @@ export default function AiAssistantPanel<R extends AiAnswerBase>({
               {m.usage && (
                 <div className="ai-msg-usage" title={`Model: ${m.usage.model}`}>
                   {m.usage.enabled
-                    ? <>↑ {m.usage.input_tokens.toLocaleString()} · ↓ {m.usage.output_tokens.toLocaleString()} tokens · <strong>{fmtCost(m.usage.cost_usd)}</strong></>
+                    ? <>↑ {m.usage.input_tokens.toLocaleString()} · ↓ {m.usage.output_tokens.toLocaleString()} · <strong>{fmtCost(m.usage.cost_usd)}</strong> · <span className="ai-model-chip">{modelLabel(m.usage.model)}</span></>
                     : <>keyword fallback · no tokens · $0.00</>}
                 </div>
               )}
@@ -254,6 +264,15 @@ export default function AiAssistantPanel<R extends AiAnswerBase>({
         )}
       </div>
 
+      {(() => {
+        const qCount = messages.filter(m => m.role === 'user').length;
+        return qCount > 0 && qCount % 4 === 0 ? (
+          <div className="ai-pro-nudge">
+            💡 For store-specific answers — your real sell-through, on-hand stock and suggested order
+            quantities — turn on <strong>Pro</strong>. Add it to your question for tailored buying guidance.
+          </div>
+        ) : null;
+      })()}
       {listening && <div className="ai-assistant-listening">● Listening… speak now</div>}
       {voiceError && !listening && <div className="ai-assistant-voice-error">{voiceError}</div>}
       <form className="ai-assistant-input" onSubmit={e => { e.preventDefault(); ask(input); }}>

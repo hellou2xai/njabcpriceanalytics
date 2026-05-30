@@ -50,7 +50,7 @@ export default function CatalogFontTest() {
   const toggleFilters = () => setShowFilters(s => { localStorage.setItem('lpb_catalog_font_filters_open', String(!s)); return !s; });
   const [showPro, setShowPro] = useState<boolean>(() => {
     const stored = localStorage.getItem('lpb_catalog_show_pro');
-    return stored === null ? true : stored !== 'false';
+    return stored === null ? false : stored !== 'false';   // Pro teaser columns OFF by default
   });
   const onShowProChange = (v: boolean) => {
     setShowPro(v);

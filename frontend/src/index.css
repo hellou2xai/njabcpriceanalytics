@@ -4559,6 +4559,20 @@ tr:hover .row-menu-btn { opacity: 1; }
   border: 0; border-radius: 0; box-shadow: none;
 }
 
+/* Model chip + Pro upsell nudges (shown every 4th question) */
+.ai-model-chip {
+  display: inline-block; padding: 0 6px; border-radius: 999px; font-size: 10px; font-weight: 600;
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--accent);
+}
+.ai-pro-nudge, .celar-pro-nudge {
+  margin: 0 0 8px; padding: 9px 12px; font-size: 12.5px; line-height: 1.45; border-radius: 9px;
+  color: var(--text);
+  background: color-mix(in srgb, #f59e0b 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, #f59e0b 32%, var(--border));
+}
+.ai-pro-nudge { margin: 0 14px 8px; }
+.ai-pro-nudge strong, .celar-pro-nudge strong { color: #b45309; }
+
 /* Admin AI Usage summary cards */
 .ai-usage-cards { display: flex; gap: 12px; flex-wrap: wrap; margin: 6px 0 18px; }
 .ai-usage-card {

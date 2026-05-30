@@ -25,6 +25,14 @@ function getSpeechRecognition(): (new () => SpeechRec) | null {
 }
 
 const fmtCost = (usd: number) => (usd === 0 ? '$0.00' : usd < 0.01 ? `$${usd.toFixed(5)}` : `$${usd.toFixed(4)}`);
+const modelLabel = (m?: string | null): string => {
+  if (!m) return '';
+  const s = m.toLowerCase();
+  if (s.includes('haiku')) return 'Haiku';
+  if (s.includes('sonnet')) return 'Sonnet';
+  if (s.includes('opus')) return 'Opus';
+  return m;
+};
 
 const SUGGESTIONS = [
   'Break down the catalog by category with a chart',
@@ -154,7 +162,7 @@ export default function CelarAssistant() {
               {m.usage && (
                 <div className="celar-usage" title={`Model: ${m.usage.model}`}>
                   {m.usage.enabled
-                    ? <>↑ {m.usage.input_tokens.toLocaleString()} · ↓ {m.usage.output_tokens.toLocaleString()} tokens · <strong>{fmtCost(m.usage.cost_usd)}</strong></>
+                    ? <>↑ {m.usage.input_tokens.toLocaleString()} · ↓ {m.usage.output_tokens.toLocaleString()} · <strong>{fmtCost(m.usage.cost_usd)}</strong> · <span className="ai-model-chip">{modelLabel(m.usage.model)}</span></>
                     : <>assistant offline · $0.00</>}
                 </div>
               )}
@@ -171,6 +179,15 @@ export default function CelarAssistant() {
       </div>
 
       <div className="celar-composer-wrap">
+        {(() => {
+          const qCount = messages.filter(m => m.role === 'user').length;
+          return qCount > 0 && qCount % 4 === 0 ? (
+            <div className="celar-pro-nudge">
+              💡 For store-specific answers — your real sell-through, on-hand stock and suggested order
+              quantities — turn on <strong>Pro</strong>. Mention it in your question for tailored buying guidance.
+            </div>
+          ) : null;
+        })()}
         {voiceError && !listening && <div className="celar-voice-error">{voiceError}</div>}
         {listening && <div className="celar-listening">● Listening… speak now</div>}
         <form className="celar-composer" onSubmit={e => { e.preventDefault(); ask(input); }}>

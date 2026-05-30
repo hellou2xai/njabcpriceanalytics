@@ -212,7 +212,14 @@ def ask(question: str, history: list | None = None) -> dict:
     if client is None:
         return _fallback(question)
 
+    # Route to the cheapest capable model, and prompt-cache the (large) system +
+    # tools block so the agentic loop doesn't re-bill it every turn.
+    from backend.model_router import choose_model
+    model = choose_model(question)
     tools = _tool_specs()
+    if tools:
+        tools[-1] = {**tools[-1], "cache_control": {"type": "ephemeral"}}
+    system_blocks = [{"type": "text", "text": _SYSTEM, "cache_control": {"type": "ephemeral"}}]
     messages = _history_messages(history) + [{"role": "user", "content": question}]
     total_in = total_out = 0
     final_text = ""
@@ -222,7 +229,7 @@ def ask(question: str, history: list | None = None) -> dict:
         for _ in range(_MAX_TURNS):
             try:
                 resp = client.messages.create(
-                    model=_MODEL, max_tokens=2000, system=_SYSTEM, tools=tools, messages=messages,
+                    model=model, max_tokens=1500, system=system_blocks, tools=tools, messages=messages,
                 )
             except Exception as e:
                 out = _fallback(question)
@@ -268,7 +275,7 @@ def ask(question: str, history: list | None = None) -> dict:
         "charts": charts,
         "actions": actions_out,
         "usage": {"input_tokens": total_in, "output_tokens": total_out,
-                  "model": _MODEL, "cost_usd": _cost_usd(_MODEL, total_in, total_out), "enabled": True},
+                  "model": model, "cost_usd": _cost_usd(model, total_in, total_out), "enabled": True},
     }
 
 

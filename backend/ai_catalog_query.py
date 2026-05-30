@@ -324,7 +324,7 @@ def _history_messages(history: list | None) -> list:
     """Sanitise prior turns into Claude message dicts for multi-turn memory.
     Accepts [{role:'user'|'assistant', content:str}, ...]; keeps the last ~10."""
     out: list = []
-    for h in (history or [])[-10:]:
+    for h in (history or [])[-6:]:
         role = h.get("role") if isinstance(h, dict) else None
         content = h.get("content") if isinstance(h, dict) else None
         if role in ("user", "assistant") and isinstance(content, str) and content.strip():
@@ -346,12 +346,19 @@ def answer_question(question: str, history: list | None = None) -> dict:
         return _fallback(question)
 
     dists, cats, sizes = _facets()
+    # Catalog filter extraction is a simple single-tool task -> always Haiku
+    # (cheapest). Prompt-cache the system + tool so the repeated boilerplate
+    # isn't re-billed at full rate on every question.
+    from backend.model_router import HAIKU
+    model = HAIKU
+    tool = _tool(dists, cats, sizes)
+    tool["cache_control"] = {"type": "ephemeral"}
     try:
         msg = client.messages.create(
-            model=_MODEL,
-            max_tokens=900,
-            system=_SYSTEM,
-            tools=[_tool(dists, cats, sizes)],
+            model=model,
+            max_tokens=700,
+            system=[{"type": "text", "text": _SYSTEM, "cache_control": {"type": "ephemeral"}}],
+            tools=[tool],
             tool_choice={"type": "tool", "name": "set_catalog_view"},
             messages=_history_messages(history) + [{"role": "user", "content": question}],
         )
@@ -381,8 +388,8 @@ def answer_question(question: str, history: list | None = None) -> dict:
         "usage": {
             "input_tokens": in_tok,
             "output_tokens": out_tok,
-            "model": _MODEL,
-            "cost_usd": _cost_usd(_MODEL, in_tok, out_tok),
+            "model": model,
+            "cost_usd": _cost_usd(model, in_tok, out_tok),
             "enabled": True,
         },
     }

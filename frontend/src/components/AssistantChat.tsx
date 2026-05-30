@@ -41,11 +41,14 @@ function getSpeechRecognition(): (new () => SpeechRec) | null {
   return (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition || null;
 }
 
+// Predetermined high-value prompts — all fully answerable from ABC pricing data.
 const DEFAULT_SUGGESTIONS = [
-  'Break down the catalog by category with a chart',
-  'Which distributor has the most products with a RIP rebate?',
-  'Show the price history of Caymus Cabernet',
-  'Add 2 cases of the cheapest prosecco to my cart',
+  'Show wine under $150 with a RIP rebate',
+  'Cheapest tequila — and which distributor has it',
+  'Compare Tito’s 1.75L pricing across all distributors',
+  'Full price breakdown with discount & RIP tiers for Caymus Cabernet',
+  'What deals are ending this month?',
+  'Which products drop in price next month?',
 ];
 
 interface Props {

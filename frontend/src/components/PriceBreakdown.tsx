@@ -104,10 +104,30 @@ export default function PriceBreakdown({ sides }: { sides: BreakdownSide[] }) {
   let winIdx = 0;
   sides.forEach((s, i) => { if (s.effective < sides[winIdx].effective) winIdx = i; });
   const others = sides.filter((_, i) => i !== winIdx);
-  const runnerUp = others.length ? Math.min(...others.map(s => s.effective)) : sides[winIdx].effective;
-  const gap = runnerUp - sides[winIdx].effective;
-  const tie = compare && gap < 0.01;
-  const pctLess = runnerUp > 0 ? (gap / runnerUp) * 100 : 0;
+  // Identify EVERY side that ties at the winning price (within 1 cent),
+  // and the WORST side so the "best buy" narrative reads "X cheaper
+  // than the worst", which is the spread the buyer actually cares
+  // about — not the spread vs the next-closest side.
+  const tol = 0.01;
+  const tiedAtBestIdx = sides
+    .map((s, i) => ({ s, i }))
+    .filter(({ s }) => Math.abs(s.effective - sides[winIdx].effective) < tol)
+    .map(({ i }) => i);
+  const worstEff = sides.reduce((a, c) => c.effective > a ? c.effective : a, sides[0].effective);
+  const worstIdx = sides.findIndex(s => Math.abs(s.effective - worstEff) < tol);
+  // "Tie" now means EVERY side is within tol of the winner. With Apr $24,
+  // May $24, Jun $145.08 in the user's K JACK CHARD card, the partial
+  // tie (Apr=May=$24, Jun=$145) used to read "Same effective cost
+  // either way" because the old check looked at min(others) only. Now
+  // it falls to the Best-buy banner that names BOTH tied-at-best sides
+  // and quotes the gap vs the worst side.
+  const tie = compare && (worstEff - sides[winIdx].effective) < tol;
+  const gap = worstEff - sides[winIdx].effective;
+  const pctLess = worstEff > 0 ? (gap / worstEff) * 100 : 0;
+  const bestLabel = tiedAtBestIdx.length > 1
+    ? tiedAtBestIdx.map(i => sides[i].label).join(' / ')
+    : sides[winIdx].label;
+  const worstLabel = worstIdx >= 0 ? sides[worstIdx].label : (others[0]?.label ?? '');
 
   const disc = mergeTiers(sides, s => s.discountTiers, discKey, discLabel, t => t.amount_per_case);
   const rip = mergeTiers(sides, s => s.ripTiers, ripKey, ripLabel, t => t.per_case_savings);
@@ -119,12 +139,12 @@ export default function PriceBreakdown({ sides }: { sides: BreakdownSide[] }) {
       {compare && (
         <div className={`pb-banner ${tie ? 'pb-banner-tie' : ''}`}>
           {tie ? (
-            <span>Same effective cost — <strong>{m(sides[winIdx].effective)}/case</strong> either way</span>
+            <span>Same effective cost — <strong>{m(sides[winIdx].effective)}/case</strong> across all months</span>
           ) : (
             <span>
-              ✓ Best buy: <strong>{sides[winIdx].label}</strong> — <strong>{m(sides[winIdx].effective)}/case</strong>
+              ✓ Best buy: <strong>{bestLabel}</strong> — <strong>{m(sides[winIdx].effective)}/case</strong>
               {sides[winIdx].pack > 1 && <span className="pb-banner-sub"> ({m(sides[winIdx].effective / sides[winIdx].pack)}/btl)</span>}
-              <span className="pb-banner-sub"> · {m(gap)} cheaper than {others[0].label} ({pctLess.toFixed(0)}% less)</span>
+              <span className="pb-banner-sub"> · {m(gap)} cheaper than {worstLabel} ({pctLess.toFixed(0)}% less)</span>
             </span>
           )}
         </div>

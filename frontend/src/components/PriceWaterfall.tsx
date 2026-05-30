@@ -34,7 +34,14 @@ export default function PriceWaterfall({ list, afterDiscount, effective, height 
   ];
   if (aDisc > 0) steps.push({ name: 'Discount', base: afterDiscount, bar: aDisc, total: false, label: `(${money(aDisc)})`, kind: 'CPL discount', full: aDisc });
   if (rip > 0) steps.push({ name: 'RIP', base: effective, bar: rip, total: false, label: `(${money(rip)})`, kind: 'RIP rebate', full: rip });
-  steps.push({ name: 'Price after RIP', base: 0, bar: effective, total: true, label: money(effective), kind: 'Price after RIP', full: effective });
+  // Final bar label adapts to which reductions actually applied. The
+  // previous hard-coded "Price after RIP" was misleading on rows that
+  // only had a CPL discount (rip = 0) — the user's K JACK CHARD VINT RES
+  // LOW CALORIE card showed "Price after RIP" with no RIP in the data.
+  const finalName = rip > 0 ? 'Price after RIP'
+                  : aDisc > 0 ? 'Price after discount'
+                  : 'List';
+  steps.push({ name: finalName, base: 0, bar: effective, total: true, label: money(effective), kind: finalName, full: effective });
 
   // Totals labeled above the bar; decreases labeled below (in parentheses).
   const renderLabel = (props: { x?: number; y?: number; width?: number; height?: number; index?: number }) => {

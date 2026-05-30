@@ -568,9 +568,9 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                   </td>
                   <td className="card-title-cell">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <ProductThumb src={item.image_url} alt={item.product_name} size={64} />
+                      <ProductThumb src={item.image_url} alt={item.product_name} size={48} />
                       <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ fontWeight: 600 }}>{item.product_name}</div>
+                        <div className="cat-name">{item.product_name}</div>
                         {/* Identifier line per Provi-style layout: Size and
                             bottles-per-case sit right under the name so the
                             buyer reads the SKU shape (1L, 12 btl/cs) at a
@@ -583,7 +583,7 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                             ? <> · {item.unit_qty} btl/cs</>
                             : null}
                         </div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                        <div className="cat-ident">
                           {item.upc}
                           {item.vintage != null && String(item.vintage) !== '0' && String(item.vintage).trim() !== '' && (
                             <span className="tag" style={{ marginLeft: 6, fontSize: 10 }}
@@ -821,11 +821,11 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                   )}
                   <td className="right" data-label="Case / Btl" style={{ fontWeight: 600 }}>
                     ${item.frontline_case_price.toFixed(2)}
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>${item.frontline_unit_price.toFixed(2)}/btl</div>
+                    <div className="cat-subprice">${item.frontline_unit_price.toFixed(2)}/btl</div>
                   </td>
                   <td data-label="Tier">
                     {hasTiers
-                      ? <span className="text-muted" style={{ fontSize: 11 }}>{tiers.length} tier{tiers.length !== 1 ? 's' : ''} below</span>
+                      ? <span className="text-muted cat-tier-note">{tiers.length} tier{tiers.length !== 1 ? 's' : ''} below</span>
                       : <span className="text-muted">&mdash;</span>}
                   </td>
                   <td className="right" data-label="Save"><span className="text-muted">&mdash;</span></td>
@@ -834,7 +834,7 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                     {(() => {
                       const uq = Number(item.unit_qty);
                       return uq > 0
-                        ? <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>${(item.effective_case_price / uq).toFixed(2)}/btl</div>
+                        ? <div className="cat-subprice">${(item.effective_case_price / uq).toFixed(2)}/btl</div>
                         : null;
                     })()}
                   </td>
@@ -915,13 +915,13 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                       <td className="right" data-label="Save">
                         <span className="text-green font-bold">{fmt(t.save_per_case)}</span>
                         {t.save_per_bottle != null && (
-                          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{fmt(t.save_per_bottle)}/btl</div>
+                          <div className="cat-subprice">{fmt(t.save_per_bottle)}/btl</div>
                         )}
                       </td>
                       <td className="right font-bold" data-label="Eff">
                         {fmt(t.price_after)}
                         {t.btl_price_after != null && (
-                          <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>{fmt(t.btl_price_after)}/btl</div>
+                          <div className="cat-subprice">{fmt(t.btl_price_after)}/btl</div>
                         )}
                       </td>
                       <td className="right" data-label="ROI">

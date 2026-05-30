@@ -11,6 +11,7 @@ import { alerts as alertsApi, orders as ordersApi, cart as cartApi } from '../li
 import WhatsAppShareButton from './WhatsAppShare';
 import { useAuth } from '../contexts/AuthContext';
 import DataRefreshBar from './DataRefreshBar';
+import CartFab from './CartFab';
 import WelcomeTourPrompt from './WelcomeTourPrompt';
 import { useOrderAnalysis } from '../contexts/OrderAnalysisContext';
 import { useActivityTracker } from '../lib/activityTracker';
@@ -299,29 +300,10 @@ export default function Layout() {
           </button>
         </div>
       </aside>
-      {/* Cart: always visible, top-right, with a live item count. */}
-      <Link
-        to="/cart"
-        title="Cart"
-        aria-label="Cart"
-        className={`cart-fab ${location.pathname === '/cart' ? 'active' : ''}`}
-        style={{
-          position: 'fixed', top: 72, right: 18, zIndex: 1200,
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          width: 42, height: 42, borderRadius: 21,
-          background: 'var(--blue, #1f4e8c)', color: '#fff',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.18)', textDecoration: 'none',
-        }}
-      >
-        <ShoppingCart size={20} />
-        {cartCount > 0 && (
-          <span style={{
-            position: 'absolute', top: -4, right: -4, minWidth: 18, height: 18,
-            padding: '0 4px', borderRadius: 9, background: '#e23b3b', color: '#fff',
-            fontSize: 11, fontWeight: 700, lineHeight: '18px', textAlign: 'center',
-          }}>{cartCount}</span>
-        )}
-      </Link>
+      {/* Cart: always visible and draggable so it never permanently blocks
+          page content. Drops are remembered across reloads; a plain click
+          still opens the cart. */}
+      <CartFab cartCount={cartCount} />
 
       <main className="main-content">
         <Outlet />

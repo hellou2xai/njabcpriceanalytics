@@ -201,6 +201,15 @@ def _extract_modal_fields(page: Page, data: CardData) -> None:
         modal.locator(".pb-table").first.wait_for(state="visible", timeout=5000)
     except PWTimeout:
         data.scrape_error = (data.scrape_error + " | pb-table not rendered").strip(" |")
+    # The price-movers modal loads three months in parallel (prev/this/next),
+    # and the table renders progressively. Wait until the "This month" column
+    # header is present so we don't grab a transient single-column view.
+    try:
+        modal.locator(".pb-table thead th", has_text=re.compile(r"This month", re.IGNORECASE)).first.wait_for(state="visible", timeout=5000)
+    except PWTimeout:
+        # Single-month products don't get a "This month" header — that's OK,
+        # extraction falls back to column 1 which is the only value column.
+        pass
 
     modal_text = _safe_text(modal)
     data.modal_text_dump = modal_text[:1500]

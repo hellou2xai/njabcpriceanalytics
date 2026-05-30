@@ -4234,15 +4234,27 @@ tr:hover .row-menu-btn { opacity: 1; }
    capped-height scroll box so the bottom scrollbar is reachable without
    scrolling to the end of a very tall table, and the header sticks to the
    box top. */
+/* Fill the viewport height so there's no dead space below the table: the
+   results column matches the assistant's height, the table flexes to fill it,
+   and pagination is pinned at the bottom (right above the always-visible
+   horizontal scrollbar). */
+.font-test-catalog .catalog-with-assistant:has(.ai-assistant-panel) .catalog-results {
+  position: sticky; top: 70px;
+  height: calc(100vh - 90px);
+  display: flex; flex-direction: column; min-height: 0;
+}
 .font-test-catalog .catalog-with-assistant:has(.ai-assistant-panel) .catalog-table-wrap {
+  flex: 1 1 auto; min-height: 0;
   overflow-x: scroll;            /* force the horizontal track to always show */
   overflow-y: auto;
-  max-height: calc(100vh - 210px);
   scrollbar-gutter: stable;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm, 6px);
   scrollbar-width: auto;                       /* Firefox: show normal scrollbars */
   scrollbar-color: var(--text-muted) var(--surface);
+}
+.font-test-catalog .catalog-with-assistant:has(.ai-assistant-panel) .pagination {
+  flex: 0 0 auto; margin: 0; padding-top: 10px;
 }
 .font-test-catalog .catalog-with-assistant:has(.ai-assistant-panel) .catalog-table th {
   top: 0;   /* header sticks to the scroll box, not the page toolbar */
@@ -4414,8 +4426,8 @@ tr:hover .row-menu-btn { opacity: 1; }
 
 .ai-assistant-input { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--border); background: var(--surface); align-items: flex-end; }
 .ai-assistant-input textarea {
-  flex: 1 1 auto; resize: none; font-family: inherit; font-size: 14px; line-height: 1.4;
-  min-height: 40px; max-height: 120px;
+  flex: 1 1 auto; resize: vertical; font-family: inherit; font-size: 14px; line-height: 1.4;
+  min-height: 42px; max-height: 320px;
   padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px;
   background: var(--bg); color: var(--text);
 }

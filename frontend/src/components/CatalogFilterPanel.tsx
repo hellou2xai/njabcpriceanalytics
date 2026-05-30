@@ -141,6 +141,10 @@ interface Props {
   // by default; persisted by the parent (Catalog.tsx) in localStorage.
   showPro?: boolean;
   onShowProChange?: (v: boolean) => void;
+  // Display preference: show / hide the AI Catalog Assistant panel. When this
+  // handler is provided a "Show AI Chat" toggle appears in the toolbar.
+  showAiChat?: boolean;
+  onShowAiChatChange?: (v: boolean) => void;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
 }
@@ -159,6 +163,7 @@ export default function CatalogFilterPanel({
   filters, onChange, items, facets,
   trackedOnly, onTrackedChange,
   showPro, onShowProChange,
+  showAiChat, onShowAiChatChange,
   collapsed = false, onToggleCollapsed,
 }: Props) {
   // Publish the rendered height of the toolbar as a CSS custom property
@@ -373,6 +378,20 @@ export default function CatalogFilterPanel({
                   onChange={() => onShowProChange(!showPro)}
                 />
                 <span>Show Pro Features</span>
+              </label>
+            )}
+
+            {onShowAiChatChange && (
+              <label
+                className={`tracked-toggle ${showAiChat ? 'is-active' : ''}`}
+                title="Show or hide the AI Catalog Assistant chat panel. On by default."
+              >
+                <input
+                  type="checkbox"
+                  checked={!!showAiChat}
+                  onChange={() => onShowAiChatChange(!showAiChat)}
+                />
+                <span>Show AI Chat</span>
               </label>
             )}
 

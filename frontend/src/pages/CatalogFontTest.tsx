@@ -286,6 +286,8 @@ export default function CatalogFontTest() {
         onTrackedChange={(v) => { setTrackedOnly(v); setPage(0); }}
         showPro={showPro}
         onShowProChange={onShowProChange}
+        showAiChat={panelOpen}
+        onShowAiChatChange={setPanelOpen}
         collapsed={!showFilters}
         onToggleCollapsed={toggleFilters}
       />

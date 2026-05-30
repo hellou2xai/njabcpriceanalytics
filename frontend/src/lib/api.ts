@@ -96,6 +96,25 @@ export interface AiUsage {
   cost_usd: number;
   enabled: boolean;
 }
+// A product the assistant resolved server-side for an action to act on.
+export interface CatalogAiProduct {
+  product_name: string;
+  wholesaler: string;
+  upc?: string | null;
+  unit_volume?: string | null;
+  unit_qty?: string | null;
+  vintage?: string | null;
+  effective_case_price?: number | null;
+}
+export type CatalogAiActionType = 'add_to_cart' | 'update_quantity' | 'add_to_favorites' | 'add_to_list';
+export interface CatalogAiAction {
+  type: CatalogAiActionType;
+  cases: number;
+  bottles: number;
+  list_name?: string | null;
+  products: CatalogAiProduct[];
+  note?: string | null;
+}
 export interface CatalogAiResponse {
   answer: string;
   q: string;
@@ -113,6 +132,7 @@ export interface CatalogAiResponse {
   };
   sort: 'product_name' | 'frontline_case_price' | 'effective_case_price';
   order: 'asc' | 'desc';
+  actions: CatalogAiAction[];
   usage: AiUsage;
 }
 

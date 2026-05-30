@@ -1,6 +1,15 @@
-import { useRef, useState, useEffect } from 'react';
-import { Sparkles, Send, AlertCircle } from 'lucide-react';
+import { useRef, useState, useEffect, useCallback } from 'react';
+import { Sparkles, Send, AlertCircle, PanelRightClose, PanelRightOpen, Trash2, Mic, MicOff } from 'lucide-react';
 import type { AiUsage } from '../lib/api';
+
+// Minimal typing for the Web Speech API (not in lib.dom for all targets).
+type SpeechRec = { lang: string; interimResults: boolean; continuous: boolean;
+  start: () => void; stop: () => void; onresult: ((e: any) => void) | null;
+  onerror: (() => void) | null; onend: (() => void) | null };
+function getSpeechRecognition(): (new () => SpeechRec) | null {
+  if (typeof window === 'undefined') return null;
+  return (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition || null;
+}
 
 // Any AI answer the panel can render must carry a human-readable `answer` and
 // token/cost `usage`. Everything page-specific (e.g. catalog filters) rides
@@ -14,6 +23,7 @@ interface ChatMsg {
   role: 'user' | 'assistant';
   text: string;
   usage?: AiUsage;
+  chips?: string[];
   error?: boolean;
 }
 
@@ -22,11 +32,17 @@ interface Props<R extends AiAnswerBase> {
   send: (question: string) => Promise<R>;
   /** Apply the structured answer to the page (filter the screen, etc.). */
   onApply?: (result: R) => void;
+  /** Optional: short labels describing what the answer applied, shown as chips. */
+  describeResult?: (result: R) => string[];
   title?: string;
   subtitle?: string;
   placeholder?: string;
   /** Example prompts shown before the first message. */
   suggestions?: string[];
+  /** Show the collapse control + remember open/closed state. Default true. */
+  collapsible?: boolean;
+  /** localStorage namespace for the open/closed preference. */
+  storageKey?: string;
 }
 
 const fmtCost = (usd: number) =>
@@ -35,16 +51,27 @@ const fmtCost = (usd: number) =>
 /**
  * Reusable AI chat assistant panel. Page-agnostic: drop it onto any screen,
  * give it a `send` function (its backend) and an `onApply` callback (what to do
- * with the answer). It owns the conversation UI, the loading state, and the
- * per-message + running token/cost accounting.
+ * with the answer). It owns the conversation UI, collapse/expand, the loading
+ * state, and the per-message + running token/cost accounting.
  */
 export default function AiAssistantPanel<R extends AiAnswerBase>({
-  send, onApply, title = 'AI Assistant', subtitle, placeholder = 'Ask a question…', suggestions = [],
+  send, onApply, describeResult,
+  title = 'AI Assistant', subtitle, placeholder = 'Ask a question…', suggestions = [],
+  collapsible = true, storageKey = 'ai_assistant',
 }: Props<R>) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState<boolean>(() => {
+    if (!collapsible) return true;
+    return localStorage.getItem(`${storageKey}_open`) !== 'false';
+  });
   const listRef = useRef<HTMLDivElement>(null);
+
+  const setOpenPersist = useCallback((v: boolean) => {
+    setOpen(v);
+    try { localStorage.setItem(`${storageKey}_open`, String(v)); } catch { /* quota */ }
+  }, [storageKey]);
 
   // Running session totals across every answer in this panel.
   const totalIn = messages.reduce((s, m) => s + (m.usage?.input_tokens ?? 0), 0);
@@ -63,7 +90,8 @@ export default function AiAssistantPanel<R extends AiAnswerBase>({
     setBusy(true);
     try {
       const res = await send(q);
-      setMessages(m => [...m, { role: 'assistant', text: res.answer, usage: res.usage }]);
+      const chips = describeResult?.(res) ?? [];
+      setMessages(m => [...m, { role: 'assistant', text: res.answer, usage: res.usage, chips }]);
       onApply?.(res);
     } catch (e) {
       setMessages(m => [...m, {
@@ -75,22 +103,84 @@ export default function AiAssistantPanel<R extends AiAnswerBase>({
     }
   };
 
+  // ---- Voice input (Web Speech API). Mic hidden when unsupported. ----
+  const [listening, setListening] = useState(false);
+  const recogRef = useRef<SpeechRec | null>(null);
+  const voiceSupported = !!getSpeechRecognition();
+
+  const toggleVoice = () => {
+    if (busy) return;
+    const SR = getSpeechRecognition();
+    if (!SR) return;
+    if (listening) { recogRef.current?.stop(); return; }
+    const rec = new SR();
+    rec.lang = 'en-US'; rec.interimResults = true; rec.continuous = false;
+    let finalText = '';
+    rec.onresult = (e: any) => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) finalText += t; else interim += t;
+      }
+      setInput((finalText + interim).trim());
+    };
+    rec.onerror = () => setListening(false);
+    rec.onend = () => {
+      setListening(false);
+      const t = finalText.trim();
+      if (t) ask(t);   // hands-free: speak, then auto-send
+    };
+    recogRef.current = rec;
+    setListening(true);
+    try { rec.start(); } catch { setListening(false); }
+  };
+
+  // Collapsed: a slim, sticky rail that re-opens the panel.
+  if (collapsible && !open) {
+    return (
+      <button className="ai-assistant-rail" onClick={() => setOpenPersist(true)}
+              aria-label={`Open ${title}`} title={`Open ${title}`}>
+        <PanelRightOpen size={18} />
+        <span className="ai-assistant-rail-label"><Sparkles size={13} /> {title}</span>
+      </button>
+    );
+  }
+
   return (
     <aside className="ai-assistant-panel" aria-label={title}>
       <div className="ai-assistant-head">
-        <div className="ai-assistant-title">
-          <Sparkles size={16} /> <span>{title}</span>
+        <div className="ai-assistant-head-top">
+          <div className="ai-assistant-title">
+            <span className="ai-assistant-spark"><Sparkles size={15} /></span>
+            <span>{title}</span>
+          </div>
+          <div className="ai-assistant-actions">
+            {messages.length > 0 && (
+              <button type="button" className="ai-assistant-iconbtn" title="Clear conversation"
+                      aria-label="Clear conversation" onClick={() => setMessages([])}>
+                <Trash2 size={15} />
+              </button>
+            )}
+            {collapsible && (
+              <button type="button" className="ai-assistant-iconbtn" title="Hide assistant"
+                      aria-label="Hide assistant" onClick={() => setOpenPersist(false)}>
+                <PanelRightClose size={16} />
+              </button>
+            )}
+          </div>
         </div>
         {subtitle && <div className="ai-assistant-subtitle">{subtitle}</div>}
         <div className="ai-assistant-totals" title="Tokens and estimated cost spent in this conversation">
-          Session: {(totalIn + totalOut).toLocaleString()} tokens · {fmtCost(totalCost)}
+          <span className="ai-assistant-totals-dot" /> {(totalIn + totalOut).toLocaleString()} tokens · {fmtCost(totalCost)} this session
         </div>
       </div>
 
       <div className="ai-assistant-messages" ref={listRef}>
         {messages.length === 0 && (
           <div className="ai-assistant-empty">
-            <p>Ask in plain English and I’ll change the screen to match.</p>
+            <div className="ai-assistant-empty-icon"><Sparkles size={22} /></div>
+            <p className="ai-assistant-empty-lead">Ask in plain English</p>
+            <p className="ai-assistant-empty-sub">I’ll update the screen to match your question.</p>
             {suggestions.length > 0 && (
               <div className="ai-assistant-suggestions">
                 {suggestions.map(s => (
@@ -106,13 +196,22 @@ export default function AiAssistantPanel<R extends AiAnswerBase>({
 
         {messages.map((m, i) => (
           <div key={i} className={`ai-msg ai-msg-${m.role}${m.error ? ' ai-msg-error' : ''}`}>
-            {m.error && <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 2 }} />}
+            {m.role === 'assistant' && (
+              <span className="ai-msg-avatar" aria-hidden="true">
+                {m.error ? <AlertCircle size={14} /> : <Sparkles size={13} />}
+              </span>
+            )}
             <div className="ai-msg-body">
               <div className="ai-msg-text">{m.text}</div>
+              {m.chips && m.chips.length > 0 && (
+                <div className="ai-msg-chips">
+                  {m.chips.map((c, ci) => <span key={ci} className="ai-chip">{c}</span>)}
+                </div>
+              )}
               {m.usage && (
                 <div className="ai-msg-usage" title={`Model: ${m.usage.model}`}>
                   {m.usage.enabled
-                    ? <>↑ {m.usage.input_tokens.toLocaleString()} in · ↓ {m.usage.output_tokens.toLocaleString()} out · <strong>{fmtCost(m.usage.cost_usd)}</strong></>
+                    ? <>↑ {m.usage.input_tokens.toLocaleString()} · ↓ {m.usage.output_tokens.toLocaleString()} tokens · <strong>{fmtCost(m.usage.cost_usd)}</strong></>
                     : <>keyword fallback · no tokens · $0.00</>}
                 </div>
               )}
@@ -122,22 +221,32 @@ export default function AiAssistantPanel<R extends AiAnswerBase>({
 
         {busy && (
           <div className="ai-msg ai-msg-assistant">
+            <span className="ai-msg-avatar" aria-hidden="true"><Sparkles size={13} /></span>
             <div className="ai-msg-body"><div className="ai-typing"><span /><span /><span /></div></div>
           </div>
         )}
       </div>
 
+      {listening && <div className="ai-assistant-listening">● Listening… speak now</div>}
       <form className="ai-assistant-input" onSubmit={e => { e.preventDefault(); ask(input); }}>
         <textarea
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(input); } }}
-          placeholder={placeholder}
-          rows={2}
+          placeholder={listening ? 'Listening…' : placeholder}
+          rows={1}
           disabled={busy}
         />
-        <button type="submit" className="btn btn-sm" disabled={busy || !input.trim()} aria-label="Send">
-          <Send size={15} />
+        {voiceSupported && (
+          <button type="button" className={`ai-assistant-mic${listening ? ' is-listening' : ''}`}
+                  onClick={toggleVoice} disabled={busy}
+                  aria-label={listening ? 'Stop voice input' : 'Start voice input'}
+                  title={listening ? 'Stop voice input' : 'Speak your request'}>
+            {listening ? <MicOff size={16} /> : <Mic size={16} />}
+          </button>
+        )}
+        <button type="submit" className="ai-assistant-send" disabled={busy || !input.trim()} aria-label="Send" title="Send">
+          <Send size={16} />
         </button>
       </form>
     </aside>

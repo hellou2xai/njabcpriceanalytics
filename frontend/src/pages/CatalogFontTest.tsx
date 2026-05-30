@@ -1,7 +1,8 @@
 import { useState, useMemo, useCallback } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { catalog, deals } from '../lib/api';
+import { catalog, deals, cart as cartApi, watchlist, lists as listsApi } from '../lib/api';
+import { distributorName } from '../lib/distributors';
 import WholesalerFilter from '../components/WholesalerFilter';
 import RowLimitSelect from '../components/RowLimitSelect';
 import { useProductQuickView } from '../components/ProductQuickView';
@@ -11,7 +12,7 @@ import CatalogFilterPanel, {
 } from '../components/CatalogFilterPanel';
 import type { CatalogFilters } from '../components/CatalogFilterPanel';
 import AiAssistantPanel from '../components/AiAssistantPanel';
-import type { Product, CatalogAiResponse } from '../lib/api';
+import type { Product, CatalogAiResponse, CatalogAiAction } from '../lib/api';
 
 /**
  * Test For Font Catalog (admin-only sandbox).
@@ -130,10 +131,51 @@ export default function CatalogFontTest() {
     setPage(0);
   };
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / limit));
+  const qc = useQueryClient();
+
+  // Execute the human-style actions the assistant planned (add to cart / set
+  // quantity / favorite / add to list). The backend already resolved each
+  // action to concrete products, so we just call the same APIs the buttons do.
+  const runAiActions = useCallback(async (actions: CatalogAiAction[]) => {
+    for (const a of actions) {
+      try {
+        if (a.type === 'add_to_cart' || a.type === 'update_quantity') {
+          for (const p of a.products) {
+            await cartApi.add({
+              product_name: p.product_name, wholesaler: p.wholesaler,
+              upc: p.upc ?? undefined, unit_volume: p.unit_volume ?? undefined,
+              qty_cases: a.cases || 0, qty_units: a.bottles || 0,
+            });
+          }
+        } else if (a.type === 'add_to_favorites') {
+          for (const p of a.products) {
+            await watchlist.add({
+              product_name: p.product_name, wholesaler: p.wholesaler,
+              upc: p.upc ?? undefined, unit_volume: p.unit_volume ?? undefined,
+            });
+          }
+        } else if (a.type === 'add_to_list') {
+          const name = (a.list_name || 'AI List').trim();
+          const existing = await listsApi.list();
+          let target = existing.find(l => l.name.toLowerCase() === name.toLowerCase());
+          if (!target) target = await listsApi.create(name);
+          for (const p of a.products) {
+            await listsApi.addItem(target.id, {
+              product_name: p.product_name, wholesaler: p.wholesaler,
+              upc: p.upc ?? undefined, unit_volume: p.unit_volume ?? undefined,
+            });
+          }
+        }
+      } catch { /* keep going on partial failures */ }
+    }
+    qc.invalidateQueries({ queryKey: ['cart'] });
+    qc.invalidateQueries({ queryKey: ['watchlist'] });
+    qc.invalidateQueries({ queryKey: ['lists'] });
+  }, [qc]);
 
   // The AI assistant returns the same knobs the catalog already supports; apply
   // them to page state so the existing query re-runs and the screen reflects
-  // the answer. null/undefined from the API clears that filter.
+  // the answer, then run any actions it planned.
   const applyAiResult = useCallback((res: CatalogAiResponse) => {
     setQ(res.q ?? '');
     const f = res.filters ?? {};
@@ -153,6 +195,31 @@ export default function CatalogFontTest() {
     if (res.sort) setSort(res.sort);
     if (res.order) setOrder(res.order);
     setPage(0);
+    if (res.actions?.length) runAiActions(res.actions);
+  }, [runAiActions]);
+
+  // Chips summarising what the assistant did (actions first, then filters).
+  const describeAiResult = useCallback((res: CatalogAiResponse): string[] => {
+    const chips: string[] = [];
+    for (const a of res.actions ?? []) {
+      const names = a.products.map(p => p.product_name);
+      const label = names.length === 1 ? names[0] : `${names.length} items`;
+      if (a.type === 'add_to_cart') chips.push(`🛒 ${label}${a.cases ? ` ×${a.cases}cs` : ''}${a.bottles ? ` ×${a.bottles}btl` : ''}`);
+      else if (a.type === 'update_quantity') chips.push(`✏️ ${label} → ${a.cases}cs / ${a.bottles}btl`);
+      else if (a.type === 'add_to_favorites') chips.push(`⭐ ${label}`);
+      else if (a.type === 'add_to_list') chips.push(`📋 ${a.list_name ?? 'List'} (+${a.products.length})`);
+      if (a.note) chips.push(`⚠ ${a.note}`);
+    }
+    const f = res.filters ?? {};
+    if (res.q) chips.push(`“${res.q}”`);
+    (f.categories ?? []).forEach(c => chips.push(c));
+    (f.divisions ?? []).forEach(d => chips.push(distributorName(d)));
+    if (f.hasRip) chips.push('RIP rebate');
+    if (f.hasDiscount) chips.push('On discount');
+    if (f.priceMax != null) chips.push(`≤ $${f.priceMax}`);
+    if (f.priceMin != null) chips.push(`≥ $${f.priceMin}`);
+    if (res.sort === 'effective_case_price') chips.push(res.order === 'asc' ? 'Cheapest first' : 'Priciest first');
+    return chips;
   }, []);
 
   return (
@@ -222,16 +289,19 @@ export default function CatalogFontTest() {
 
           <AiAssistantPanel<CatalogAiResponse>
             title="Catalog Assistant"
-            subtitle="Ask a question — the catalog below updates to match."
-            placeholder="e.g. wine under $150 with a RIP rebate"
+            subtitle="Ask or speak — I filter the catalog and can add to cart, favorites or lists."
+            placeholder="e.g. add 2 cases of the cheapest tequila to my cart"
+            storageKey="catalog_ai"
             suggestions={[
-              'Cheapest tequila at Allied',
               'Wine under $150 with a RIP rebate',
-              'Spirits on discount, biggest savings first',
-              "What's dropping in price next month?",
+              'Cheapest tequila at Allied',
+              'Add 2 cases of the cheapest prosecco to my cart',
+              'Save the cheapest cabernet to favorites',
+              'Make a list called Holiday Picks with 5 sparkling wines',
             ]}
             send={(question) => catalog.aiQuery(question)}
             onApply={applyAiResult}
+            describeResult={describeAiResult}
           />
         </div>
       </div>

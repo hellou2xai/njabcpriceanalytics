@@ -1,37 +1,39 @@
-"""AI catalog assistant — turn a natural-language question into catalog filters.
+"""AI catalog assistant — natural-language filtering AND actions.
 
-The "Test For Font Catalog" page has a chat panel on the right. A retailer types a
-question ("show me wine under $150 with a RIP rebate", "cheapest tequila at Allied",
-"what's dropping in price next month") and Claude maps it to the SAME knobs the
-catalog already supports (free-text query, category, distributor, size, price
-range, has-RIP / has-discount / in-combo flags, price trend, sort). The page then
-re-runs its normal search with those filters, so the screen output depends on the
-answer.
+The "Test For Font Catalog" page has a chat panel on the right. A retailer types
+(or speaks) a request and Claude does one of two things, via a single tool call:
 
-Real data only: the valid distributor slugs and product categories are read from
-the live cache so the model can only pick values that exist. Tokens + dollar cost
-of every call are returned so the UI can show what each answer cost.
+  1. Filters/sorts the catalog (the SCREEN view): "show me wine under $150 with a
+     RIP rebate", "cheapest tequila at Allied".
+  2. Performs an ACTION a human would: add to cart, update quantity, add to
+     favorites, or add to a list — "add 2 cases of Patron Silver to my cart",
+     "save the cheapest cabernet to favorites", "make a list called Holiday Picks
+     with 5 sparkling wines".
+
+Token-optimized by design: ONE tool-use round-trip. The model never sees catalog
+rows — it returns filter knobs + an action plan with a product `match`, and the
+BACKEND resolves the concrete products from DuckDB (real data) so the frontend can
+execute deterministically against the cart / watchlist / lists APIs.
 
 Activates when ANTHROPIC_API_KEY is set; otherwise a deterministic keyword
-fallback keeps the feature working (no tokens, no cost).
+fallback keeps filtering working (no tokens, no cost). Every call reports input/
+output tokens, the model, and the USD cost.
 """
 from __future__ import annotations
 
+import math
 import os
 import re
+from datetime import date
 
 from backend.db import get_duckdb
 
 _MODEL = os.getenv("CELR_CATALOG_AI_MODEL", os.getenv("CELR_SEARCH_AI_MODEL", "claude-sonnet-4-6"))
 
-# USD per 1,000,000 tokens. Matched by substring against the model id; falls back
-# to Sonnet pricing for anything unrecognised so cost is never reported as $0
-# for a real call.
-_PRICING = {
-    "opus":   (15.0, 75.0),
-    "sonnet": (3.0, 15.0),
-    "haiku":  (1.0, 5.0),
-}
+# USD per 1,000,000 tokens, matched by substring against the model id.
+_PRICING = {"opus": (15.0, 75.0), "sonnet": (3.0, 15.0), "haiku": (1.0, 5.0)}
+
+_ACTION_TYPES = ("add_to_cart", "update_quantity", "add_to_favorites", "add_to_list")
 
 
 def _price_for(model: str) -> tuple[float, float]:
@@ -59,6 +61,11 @@ def _client_or_none():
 
 def enabled() -> bool:
     return _client_or_none() is not None
+
+
+def _current_ym() -> str:
+    t = date.today()
+    return f"{t.year:04d}-{t.month:02d}"
 
 
 def _facets() -> tuple[list[str], list[str], list[str]]:
@@ -93,23 +100,39 @@ def _empty_filters() -> dict:
 def _tool(dists: list[str], cats: list[str], sizes: list[str]) -> dict:
     return {
         "name": "set_catalog_view",
-        "description": "Filter and sort the wholesale liquor catalog to answer the user's question.",
+        "description": "Filter/sort the wholesale liquor catalog and optionally perform actions (cart, favorites, lists) to fulfil the buyer's request.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "answer": {"type": "string", "description": "One or two short sentences telling the buyer what the catalog is now showing and why. Plain prose, no markdown."},
-                "q": {"type": "string", "description": "Free-text search terms: brand or product keywords (e.g. 'tequila anejo', 'caymus'). Empty string if none."},
-                "categories": {"type": "array", "items": {"type": "string", "enum": cats}, "description": "Product categories to include."},
-                "distributors": {"type": "array", "items": {"type": "string", "enum": dists}, "description": "Distributor slugs to include."},
-                "sizes": {"type": "array", "items": {"type": "string", "enum": sizes}, "description": "Bottle sizes to include."},
-                "has_rip": {"type": "boolean", "description": "True to show only products with a RIP rebate."},
-                "has_discount": {"type": "boolean", "description": "True to show only products with a case discount."},
-                "in_combo": {"type": "boolean", "description": "True to show only products in a combo/bundle."},
-                "price_trend": {"type": "string", "enum": ["drop", "increase"], "description": "'drop' = effective price falls next month; 'increase' = rises next month."},
-                "price_min": {"type": "number", "description": "Minimum frontline case price in dollars."},
-                "price_max": {"type": "number", "description": "Maximum frontline case price in dollars."},
+                "answer": {"type": "string", "description": "One or two short sentences confirming what you did. Plain prose, no markdown."},
+                "q": {"type": "string", "description": "Free-text search terms: brand or product keywords. Empty string if none."},
+                "categories": {"type": "array", "items": {"type": "string", "enum": cats}},
+                "distributors": {"type": "array", "items": {"type": "string", "enum": dists}},
+                "sizes": {"type": "array", "items": {"type": "string", "enum": sizes}},
+                "has_rip": {"type": "boolean"},
+                "has_discount": {"type": "boolean"},
+                "in_combo": {"type": "boolean"},
+                "price_trend": {"type": "string", "enum": ["drop", "increase"]},
+                "price_min": {"type": "number"},
+                "price_max": {"type": "number"},
                 "sort": {"type": "string", "enum": ["product_name", "frontline_case_price", "effective_case_price"]},
-                "order": {"type": "string", "enum": ["asc", "desc"], "description": "Use 'asc' with effective_case_price for 'cheapest', 'desc' for 'most expensive' or 'biggest'."},
+                "order": {"type": "string", "enum": ["asc", "desc"]},
+                "actions": {
+                    "type": "array",
+                    "description": "Actions to perform when the buyer asks to DO something (add to cart, set quantity, favorite, add to a list). Leave empty for pure browse/filter requests.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "type": {"type": "string", "enum": list(_ACTION_TYPES)},
+                            "match": {"type": "string", "description": "Product brand/keywords identifying which product(s) to act on (e.g. 'patron silver', 'caymus cabernet')."},
+                            "which": {"type": "string", "enum": ["cheapest", "most_expensive", "first", "all"], "description": "Which matches to act on. 'all' acts on up to 10 matches. Default 'first'."},
+                            "cases": {"type": "number", "description": "Case quantity for add_to_cart / update_quantity."},
+                            "bottles": {"type": "number", "description": "Bottle quantity for add_to_cart / update_quantity."},
+                            "list_name": {"type": "string", "description": "Target list name for add_to_list (created if missing)."},
+                        },
+                        "required": ["type"],
+                    },
+                },
             },
             "required": ["answer"],
         },
@@ -118,14 +141,14 @@ def _tool(dists: list[str], cats: list[str], sizes: list[str]) -> dict:
 
 _SYSTEM = (
     "You are a buying assistant for an independent US liquor store, embedded in a wholesale "
-    "catalog screen. Translate the buyer's question into catalog filters by calling the "
-    "set_catalog_view tool. Only use category/distributor/size values from the provided enums. "
-    "Put brand names or product keywords in `q`. For 'cheapest' sort by effective_case_price asc; "
-    "for 'best deal' / 'biggest discount' prefer has_discount or has_rip and sort effective_case_price asc. "
-    "Map 'on sale'/'discount' to has_discount, 'rebate'/'RIP' to has_rip, 'bundle'/'combo' to in_combo, "
-    "'cheaper next month' to price_trend drop, 'going up' to price_trend increase. Always fill `answer` "
-    "with a short, concrete sentence describing what the screen now shows. If the question is vague, make a "
-    "reasonable choice and say so in `answer`."
+    "catalog screen. Call set_catalog_view to (a) filter/sort the catalog and (b) perform actions "
+    "the buyer asks for. Only use category/distributor/size values from the enums. Put brand/product "
+    "keywords in `q` (for the screen) and in each action's `match` (to find the product to act on). "
+    "Map: 'add to cart' -> add_to_cart (default 1 case if no qty given); 'set/change quantity' -> "
+    "update_quantity; 'favorite'/'save'/'watch' -> add_to_favorites; 'make/add to a list' -> add_to_list "
+    "with list_name. For 'cheapest' use which=cheapest; for 'add all ...' use which=all. Always set the "
+    "view filters to reflect the products involved so the screen shows them, and write a short concrete "
+    "`answer` describing what you did."
 )
 
 
@@ -152,8 +175,104 @@ def _to_filters(args: dict) -> dict:
     return f
 
 
+def _clean(v):
+    if v is None or (isinstance(v, float) and math.isnan(v)):
+        return None
+    return v
+
+
+def _resolve_products(con, view: dict, match: str, which: str, cap: int) -> list[dict]:
+    """Resolve concrete catalog products (current edition per wholesaler) matching
+    `match` + the view filters, ordered by `which`. Real-data lookup so the
+    frontend can act on exact (wholesaler, upc, unit_volume) rows."""
+    where = ["1=1"]
+    params = {"cym": _current_ym()}
+    for i, t in enumerate(t for t in re.split(r"\s+", (match or "").strip()) if t):
+        params[f"m{i}"] = f"%{t}%"
+        where.append(f"(UPPER(c.product_name) LIKE UPPER(${'m'+str(i)}) OR UPPER(COALESCE(c.brand,'')) LIKE UPPER(${'m'+str(i)}))")
+    for i, cat in enumerate(view.get("categories") or []):
+        params[f"cat{i}"] = cat
+    if view.get("categories"):
+        where.append("c.product_type IN (" + ", ".join(f"$cat{i}" for i in range(len(view['categories']))) + ")")
+    for i, d in enumerate(view.get("divisions") or []):
+        params[f"d{i}"] = d
+    if view.get("divisions"):
+        where.append("c.wholesaler IN (" + ", ".join(f"$d{i}" for i in range(len(view['divisions']))) + ")")
+    if view.get("priceMin") is not None:
+        params["pmin"] = view["priceMin"]; where.append("c.frontline_case_price >= $pmin")
+    if view.get("priceMax") is not None:
+        params["pmax"] = view["priceMax"]; where.append("c.frontline_case_price <= $pmax")
+    if view.get("hasRip"):
+        where.append("c.has_rip = true")
+    if view.get("hasDiscount"):
+        where.append("c.has_discount = true")
+    order = {
+        "cheapest": "c.effective_case_price ASC NULLS LAST",
+        "most_expensive": "c.effective_case_price DESC NULLS LAST",
+        "first": "c.product_name ASC",
+    }.get(which, "c.product_name ASC")
+    sql = f"""
+        WITH cur AS (
+          SELECT wholesaler, COALESCE(MAX(CASE WHEN edition <= $cym THEN edition END), MAX(edition)) AS ed
+          FROM cpl_enriched GROUP BY wholesaler
+        )
+        SELECT c.product_name, c.wholesaler, c.upc, c.unit_volume, c.unit_qty, c.vintage,
+               c.effective_case_price, c.frontline_case_price
+        FROM cpl_enriched c JOIN cur ON c.wholesaler = cur.wholesaler AND c.edition = cur.ed
+        WHERE {' AND '.join(where)}
+        ORDER BY {order}
+        LIMIT {int(cap)}
+    """
+    try:
+        rows = con.execute(sql, params).fetchdf()
+    except Exception:
+        return []
+    out = []
+    for _, r in rows.iterrows():
+        out.append({
+            "product_name": _clean(r["product_name"]),
+            "wholesaler": _clean(r["wholesaler"]),
+            "upc": None if _clean(r["upc"]) is None else str(r["upc"]),
+            "unit_volume": _clean(r["unit_volume"]),
+            "unit_qty": None if _clean(r["unit_qty"]) is None else str(r["unit_qty"]),
+            "vintage": None if _clean(r["vintage"]) is None else str(r["vintage"]),
+            "effective_case_price": (float(r["effective_case_price"])
+                                     if _clean(r["effective_case_price"]) is not None else None),
+        })
+    return out
+
+
+def _resolve_actions(raw_actions: list, view: dict, default_match: str) -> list[dict]:
+    if not raw_actions:
+        return []
+    out: list[dict] = []
+    with get_duckdb() as con:
+        for a in raw_actions[:8]:
+            atype = a.get("type")
+            if atype not in _ACTION_TYPES:
+                continue
+            which = a.get("which") if a.get("which") in ("cheapest", "most_expensive", "first", "all") else "first"
+            cap = 10 if which == "all" else 1
+            match = (a.get("match") or default_match or "").strip()
+            prods = _resolve_products(con, view, match, which, cap)
+            cases = int(a["cases"]) if isinstance(a.get("cases"), (int, float)) else 0
+            bottles = int(a["bottles"]) if isinstance(a.get("bottles"), (int, float)) else 0
+            if atype in ("add_to_cart", "update_quantity") and cases == 0 and bottles == 0:
+                cases = 1  # sensible default when the buyer didn't say a number
+            out.append({
+                "type": atype,
+                "cases": cases,
+                "bottles": bottles,
+                "list_name": (str(a.get("list_name")).strip() or None) if a.get("list_name") else None,
+                "products": prods,
+                "note": None if prods else "No matching product found in the current catalog.",
+            })
+    return out
+
+
 def _fallback(question: str) -> dict:
-    """Deterministic keyword mapping used when the AI is unavailable. No tokens."""
+    """Deterministic keyword mapping when the AI is unavailable. No tokens.
+    Actions need real understanding, so the fallback only filters (no actions)."""
     ql = (question or "").lower()
     f = _empty_filters()
     sort, order = "product_name", "asc"
@@ -188,25 +307,25 @@ def _fallback(question: str) -> dict:
         sort, order = "effective_case_price", "asc"
     elif "expensive" in ql or "highest" in ql or "premium" in ql:
         sort, order = "effective_case_price", "desc"
-    # Leftover words become the free-text query (strip the structured keywords).
     q_terms = re.sub(r"[^a-z0-9 ]", " ", ql)
     stop = set("show me the all with under over less than more for at on in of to and a an "
                "products product catalog cheapest cheap discount discounts deal deals sale "
-               "rip rebate combo bundle next month price prices drop increase".split())
+               "rip rebate combo bundle next month price prices drop increase add cart favorite "
+               "favorites list".split())
     q = " ".join(w for w in q_terms.split() if w not in stop and not w.isdigit())
-    answer = "AI is offline, so I matched your question with keyword rules. " \
-             "Set ANTHROPIC_API_KEY for full natural-language understanding."
-    return {"answer": answer, "q": q.strip(), "filters": f, "sort": sort, "order": order,
+    return {"answer": "AI is offline, so I matched your question with keyword rules (filtering only — "
+                      "actions like add-to-cart need the AI). Set ANTHROPIC_API_KEY for full features.",
+            "q": q.strip(), "filters": f, "sort": sort, "order": order, "actions": [],
             "usage": {"input_tokens": 0, "output_tokens": 0, "model": "keyword-fallback",
                       "cost_usd": 0.0, "enabled": False}}
 
 
 def answer_question(question: str) -> dict:
-    """Map a NL question to catalog filters + a short answer + token/cost usage."""
+    """Map a NL question to catalog filters + actions + a short answer + usage."""
     question = (question or "").strip()
     if not question:
-        return {"answer": "Ask me what you're looking for — e.g. 'wine under $150 with a RIP rebate'.",
-                "q": "", "filters": _empty_filters(), "sort": "product_name", "order": "asc",
+        return {"answer": "Ask me what you're looking for — e.g. 'add 2 cases of the cheapest tequila to my cart'.",
+                "q": "", "filters": _empty_filters(), "sort": "product_name", "order": "asc", "actions": [],
                 "usage": {"input_tokens": 0, "output_tokens": 0, "model": "none", "cost_usd": 0.0, "enabled": enabled()}}
 
     client = _client_or_none()
@@ -214,13 +333,12 @@ def answer_question(question: str) -> dict:
         return _fallback(question)
 
     dists, cats, sizes = _facets()
-    tool = _tool(dists, cats, sizes)
     try:
         msg = client.messages.create(
             model=_MODEL,
-            max_tokens=600,
+            max_tokens=900,
             system=_SYSTEM,
-            tools=[tool],
+            tools=[_tool(dists, cats, sizes)],
             tool_choice={"type": "tool", "name": "set_catalog_view"},
             messages=[{"role": "user", "content": question}],
         )
@@ -235,14 +353,18 @@ def answer_question(question: str) -> dict:
             args = block.input or {}
             break
 
+    filters = _to_filters(args)
+    actions = _resolve_actions(args.get("actions") or [], filters, str(args.get("q") or ""))
+
     in_tok = getattr(msg.usage, "input_tokens", 0) or 0
     out_tok = getattr(msg.usage, "output_tokens", 0) or 0
     return {
         "answer": str(args.get("answer") or "Updated the catalog to match your question.").strip(),
         "q": str(args.get("q") or "").strip(),
-        "filters": _to_filters(args),
+        "filters": filters,
         "sort": args.get("sort") if args.get("sort") in ("product_name", "frontline_case_price", "effective_case_price") else "product_name",
         "order": args.get("order") if args.get("order") in ("asc", "desc") else "asc",
+        "actions": actions,
         "usage": {
             "input_tokens": in_tok,
             "output_tokens": out_tok,

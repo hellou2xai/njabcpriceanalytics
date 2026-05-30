@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { MessageSquarePlus, X, Bug, Lightbulb } from 'lucide-react';
 import { feedback } from '../lib/api';
 
@@ -8,7 +8,21 @@ export function BetaBadge() {
   return <div className="beta-badge" title="This app is in beta">BETA</div>;
 }
 
-// Floating "Feedback" button on every page. The user types a note; their
+// ---- Draggable position for the Feedback FAB ----
+const FAB_W = 124, FAB_H = 40, MARGIN = 16, DRAG_THRESHOLD = 4;
+const POS_KEY = 'feedback_fab_pos';
+interface Pos { x: number; y: number }
+
+function clampPos(x: number, y: number): Pos {
+  const maxX = Math.max(MARGIN, window.innerWidth - FAB_W - MARGIN);
+  const maxY = Math.max(MARGIN, window.innerHeight - FAB_H - MARGIN);
+  return { x: Math.min(Math.max(MARGIN, x), maxX), y: Math.min(Math.max(MARGIN, y), maxY) };
+}
+// Default: bottom-LEFT (per request), replacing the old bottom-right anchor.
+function defaultPos(): Pos { return clampPos(MARGIN, window.innerHeight - FAB_H - MARGIN); }
+
+// Floating "Feedback" button on every page. Draggable (drop anywhere, position
+// is remembered); a plain click opens the form. The user types a note; their
 // account, the current page, and the browser are attached automatically.
 export default function FeedbackWidget() {
   const [open, setOpen] = useState(false);
@@ -17,6 +31,49 @@ export default function FeedbackWidget() {
   const [sending, setSending] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [pos, setPos] = useState<Pos | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const drag = useRef<{ startX: number; startY: number; baseX: number; baseY: number; moved: boolean } | null>(null);
+
+  useEffect(() => {
+    let initial: Pos | null = null;
+    try {
+      const raw = localStorage.getItem(POS_KEY);
+      if (raw) { const p = JSON.parse(raw); if (typeof p?.x === 'number' && typeof p?.y === 'number') initial = p; }
+    } catch { /* ignore */ }
+    const start = initial ?? defaultPos();
+    setPos(clampPos(start.x, start.y));
+  }, []);
+  useEffect(() => {
+    const onResize = () => setPos(p => (p ? clampPos(p.x, p.y) : p));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  const onPointerDown = useCallback((e: React.PointerEvent) => {
+    if (!pos) return;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    drag.current = { startX: e.clientX, startY: e.clientY, baseX: pos.x, baseY: pos.y, moved: false };
+  }, [pos]);
+  const onPointerMove = useCallback((e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d) return;
+    const dx = e.clientX - d.startX, dy = e.clientY - d.startY;
+    if (!d.moved && Math.hypot(dx, dy) > DRAG_THRESHOLD) { d.moved = true; setDragging(true); }
+    if (d.moved) setPos(clampPos(d.baseX + dx, d.baseY + dy));
+  }, []);
+  const onPointerUp = useCallback((e: React.PointerEvent) => {
+    const d = drag.current;
+    drag.current = null;
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* */ }
+    if (d && !d.moved) {
+      setOpen(true);   // a tap that never moved = a click
+    } else if (d?.moved) {
+      setPos(p => { if (p) { try { localStorage.setItem(POS_KEY, JSON.stringify(p)); } catch { /* */ } } return p; });
+    }
+    setDragging(false);
+  }, []);
 
   const submit = async () => {
     const msg = message.trim();
@@ -40,18 +97,31 @@ export default function FeedbackWidget() {
     }
   };
 
+  if (!pos) return null;
+
   if (!open) {
     return (
-      <button className="feedback-fab" onClick={() => setOpen(true)}
-              title="Submit a bug or improvement suggestion">
+      <button
+        className="feedback-fab"
+        style={{ left: pos.x, top: pos.y, right: 'auto', bottom: 'auto', cursor: dragging ? 'grabbing' : 'grab', touchAction: 'none' }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        title="Drag to move · click to submit a bug or suggestion">
         <MessageSquarePlus size={18} />
         <span>Feedback</span>
       </button>
     );
   }
 
+  // Anchor the panel to wherever the FAB was dropped: left-aligned with it,
+  // growing upward from its bottom edge, clamped to the viewport.
+  const panelLeft = Math.max(MARGIN, Math.min(pos.x, window.innerWidth - 330 - MARGIN));
+  const panelBottom = Math.max(MARGIN, window.innerHeight - (pos.y + FAB_H));
+
   return (
-    <div className="feedback-panel" role="dialog" aria-label="Submit feedback">
+    <div className="feedback-panel" role="dialog" aria-label="Submit feedback"
+         style={{ left: panelLeft, bottom: panelBottom, right: 'auto', top: 'auto' }}>
       <div className="feedback-panel-head">
         <strong>Submit a bug or suggestion</strong>
         <button className="feedback-close" onClick={() => setOpen(false)} aria-label="Close">

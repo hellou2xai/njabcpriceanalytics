@@ -341,7 +341,7 @@ export default function CatalogFontTest() {
               'Save the cheapest cabernet to favorites',
               'Make a list called Holiday Picks with 5 sparkling wines',
             ]}
-            send={(question) => catalog.aiQuery(question)}
+            send={(question, history) => catalog.aiQuery(question, history)}
             onApply={applyAiResult}
             describeResult={describeAiResult}
           />

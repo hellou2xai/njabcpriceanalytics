@@ -443,6 +443,25 @@ def init_user_db():
             generated_at  text DEFAULT {NOW_UTC},
             PRIMARY KEY (wholesaler, upc, edition)
         )""",
+        # AI assistant usage log: one row per question asked to ANY assistant
+        # surface (catalog sidebar, Celar full page, etc.). Powers the per-answer
+        # cost shown in the UI and the admin "AI Usage" rollup (tokens + $ per
+        # user over a date range). user_id is SET NULL on delete so history
+        # survives account removal; user_email keeps the label.
+        f"""CREATE TABLE IF NOT EXISTS ai_usage_log (
+            id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            user_id integer REFERENCES users(id) ON DELETE SET NULL,
+            user_email text,
+            surface text,
+            question text,
+            model text,
+            input_tokens integer DEFAULT 0,
+            output_tokens integer DEFAULT 0,
+            cost_usd double precision DEFAULT 0,
+            created_at text DEFAULT {NOW_UTC}
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_ai_usage_user ON ai_usage_log(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_ai_usage_created ON ai_usage_log(created_at)",
     ]
     with get_pg() as con:
         for s in stmts:

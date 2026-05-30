@@ -81,12 +81,15 @@ export const catalog = {
     request<{ edition: string | null; rip_code: string; items: Product[] }>(
       `/api/catalog/rip-siblings/${encodeURIComponent(wholesaler)}/${encodeURIComponent(ripCode)}${qs(opts ?? {})}`
     ),
-  aiQuery: (question: string) =>
+  aiQuery: (question: string, history?: AiChatTurn[]) =>
     request<CatalogAiResponse>('/api/catalog/ai-query', {
       method: 'POST',
-      body: JSON.stringify({ question }),
+      body: JSON.stringify({ question, history }),
     }),
 };
+
+// One prior turn of a conversation, sent back to the assistant for memory.
+export interface AiChatTurn { role: 'user' | 'assistant'; content: string }
 
 // Token + dollar accounting returned with every AI assistant answer.
 export interface AiUsage {
@@ -330,7 +333,27 @@ export const admin = {
   reloadPricing: () => request<{ status: string; counts: Record<string, number> }>('/api/admin/reload-pricing', { method: 'POST' }),
   generateBlurbs: (limit = 50) =>
     request<BlurbGenerateResult>(`/api/admin/blurbs/generate?limit=${limit}`, { method: 'POST' }),
+  aiUsage: (params?: { from_date?: string; to_date?: string }) =>
+    request<AiUsageReport>(`/api/admin/ai-usage${qs(params ?? {})}`),
 };
+
+export interface AiUsageRow {
+  user_email: string;
+  questions: number;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  cost_usd: number;
+}
+export interface AiUsageRecent {
+  created_at: string; user_email: string; surface: string; question: string;
+  model: string | null; input_tokens: number; output_tokens: number; cost_usd: number;
+}
+export interface AiUsageReport {
+  per_user: AiUsageRow[];
+  totals: { questions?: number; input_tokens?: number; output_tokens?: number; total_tokens?: number; cost_usd?: number };
+  recent: AiUsageRecent[];
+}
 
 export interface BlurbGenerateResult {
   key_present: boolean;

@@ -320,8 +320,21 @@ def _fallback(question: str) -> dict:
                       "cost_usd": 0.0, "enabled": False}}
 
 
-def answer_question(question: str) -> dict:
-    """Map a NL question to catalog filters + actions + a short answer + usage."""
+def _history_messages(history: list | None) -> list:
+    """Sanitise prior turns into Claude message dicts for multi-turn memory.
+    Accepts [{role:'user'|'assistant', content:str}, ...]; keeps the last ~10."""
+    out: list = []
+    for h in (history or [])[-10:]:
+        role = h.get("role") if isinstance(h, dict) else None
+        content = h.get("content") if isinstance(h, dict) else None
+        if role in ("user", "assistant") and isinstance(content, str) and content.strip():
+            out.append({"role": role, "content": content.strip()[:4000]})
+    return out
+
+
+def answer_question(question: str, history: list | None = None) -> dict:
+    """Map a NL question to catalog filters + actions + a short answer + usage.
+    `history` carries prior turns so the assistant remembers the conversation."""
     question = (question or "").strip()
     if not question:
         return {"answer": "Ask me what you're looking for — e.g. 'add 2 cases of the cheapest tequila to my cart'.",
@@ -340,7 +353,7 @@ def answer_question(question: str) -> dict:
             system=_SYSTEM,
             tools=[_tool(dists, cats, sizes)],
             tool_choice={"type": "tool", "name": "set_catalog_view"},
-            messages=[{"role": "user", "content": question}],
+            messages=_history_messages(history) + [{"role": "user", "content": question}],
         )
     except Exception as e:
         out = _fallback(question)

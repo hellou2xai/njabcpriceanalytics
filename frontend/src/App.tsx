@@ -39,6 +39,7 @@ import Onboarding from './pages/Onboarding';
 import Configuration from './pages/Configuration';
 import Admin from './pages/Admin';
 import AdminActivity from './pages/AdminActivity';
+import AdminAiUsage from './pages/AdminAiUsage';
 import QA from './pages/QA';
 import OrderAnalysis from './pages/OrderAnalysis';
 import Cart from './pages/Cart';
@@ -132,6 +133,7 @@ function AuthenticatedApp() {
             <Route path="/configuration" element={<Configuration />} />
             <Route path="/admin" element={<Admin />} />
             <Route path="/admin/activity" element={<AdminActivity />} />
+            <Route path="/admin/ai-usage" element={<AdminAiUsage />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/qa" element={<QA />} />
             <Route path="/cart" element={<Cart />} />

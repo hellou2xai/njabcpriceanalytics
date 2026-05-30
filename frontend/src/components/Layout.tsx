@@ -67,6 +67,7 @@ const NAV_GROUPS: {
       { path: '/more', label: 'Addnl Pages', icon: LayoutGrid, adminOnly: true },
       { path: '/admin', label: 'Admin', icon: Shield, adminOnly: true },
       { path: '/admin/activity', label: 'Activity', icon: Activity, adminOnly: true },
+      { path: '/admin/ai-usage', label: 'AI Usage', icon: Sparkles, adminOnly: true },
     ],
   },
 ];

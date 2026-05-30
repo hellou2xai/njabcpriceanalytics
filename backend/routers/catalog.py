@@ -3308,16 +3308,19 @@ from pydantic import BaseModel
 
 class CatalogAiQueryBody(BaseModel):
     question: str
+    history: Optional[list] = None   # prior [{role, content}] turns for memory
 
 
 @router.post("/ai-query")
-def catalog_ai_query(body: CatalogAiQueryBody):
+def catalog_ai_query(body: CatalogAiQueryBody, user: Optional[dict] = Depends(get_optional_user)):
     """Natural-language catalog assistant. Maps the buyer's question to catalog
-    filters (+ a short answer and the token/dollar cost of the call) so the page
-    can re-run its normal search and the screen output reflects the answer.
+    filters + actions (+ a short answer and the token/dollar cost of the call)
+    so the page can re-run its search and the screen reflects the answer.
 
     Token-optimized by design: ONE tool-use round-trip translates the question
-    into filter params; the catalog rows never enter the model context, the
-    DuckDB query does the data work. See backend/ai_catalog_query.py."""
-    from backend import ai_catalog_query
-    return ai_catalog_query.answer_question(body.question)
+    into filter/action params; the catalog rows never enter the model context.
+    `history` gives multi-turn memory; usage is logged for the admin rollup."""
+    from backend import ai_catalog_query, ai_usage
+    res = ai_catalog_query.answer_question(body.question, body.history)
+    ai_usage.log_usage(user, "catalog", body.question, res.get("usage"))
+    return res

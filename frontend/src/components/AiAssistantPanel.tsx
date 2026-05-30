@@ -28,8 +28,8 @@ interface ChatMsg {
 }
 
 interface Props<R extends AiAnswerBase> {
-  /** How to get an answer for a question. Page supplies its own endpoint. */
-  send: (question: string) => Promise<R>;
+  /** How to get an answer. Receives the question and prior turns (for memory). */
+  send: (question: string, history: { role: 'user' | 'assistant'; content: string }[]) => Promise<R>;
   /** Apply the structured answer to the page (filter the screen, etc.). */
   onApply?: (result: R) => void;
   /** Optional: short labels describing what the answer applied, shown as chips. */
@@ -93,10 +93,15 @@ export default function AiAssistantPanel<R extends AiAnswerBase>({
     const q = question.trim();
     if (!q || busy) return;
     setInput('');
+    // Build conversation history from prior turns so the assistant remembers
+    // context (memory). Errors are excluded; capped to recent turns server-side.
+    const history = messages
+      .filter(m => !m.error)
+      .map(m => ({ role: m.role, content: m.text }));
     setMessages(m => [...m, { role: 'user', text: q }]);
     setBusy(true);
     try {
-      const res = await send(q);
+      const res = await send(q, history);
       const chips = describeResult?.(res) ?? [];
       setMessages(m => [...m, { role: 'assistant', text: res.answer, usage: res.usage, chips }]);
       onApply?.(res);
@@ -112,34 +117,49 @@ export default function AiAssistantPanel<R extends AiAnswerBase>({
 
   // ---- Voice input (Web Speech API). Mic hidden when unsupported. ----
   const [listening, setListening] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const recogRef = useRef<SpeechRec | null>(null);
+  const transcriptRef = useRef('');   // accumulate across result events
   const voiceSupported = !!getSpeechRecognition();
 
   const toggleVoice = () => {
     if (busy) return;
     const SR = getSpeechRecognition();
-    if (!SR) return;
-    if (listening) { recogRef.current?.stop(); return; }
+    if (!SR) { setVoiceError('Voice input is not supported in this browser. Try Chrome or Edge.'); return; }
+    if (listening) { try { recogRef.current?.stop(); } catch { /* */ } return; }
+    setVoiceError(null);
+    transcriptRef.current = '';
     const rec = new SR();
     rec.lang = 'en-US'; rec.interimResults = true; rec.continuous = false;
-    let finalText = '';
     rec.onresult = (e: any) => {
-      let interim = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
+      let finalText = '', interim = '';
+      for (let i = 0; i < e.results.length; i++) {
         const t = e.results[i][0].transcript;
         if (e.results[i].isFinal) finalText += t; else interim += t;
       }
-      setInput((finalText + interim).trim());
+      transcriptRef.current = (finalText || interim).trim();
+      setInput(transcriptRef.current);
     };
-    rec.onerror = () => setListening(false);
+    rec.onerror = (e: any) => {
+      const err = e?.error || '';
+      setVoiceError(
+        err === 'not-allowed' || err === 'service-not-allowed'
+          ? 'Microphone access is blocked. Allow mic permission for this site (address-bar icon), then try again.'
+          : err === 'no-speech' ? "Didn't catch that — tap the mic and speak again."
+          : err === 'audio-capture' ? 'No microphone found.'
+          : 'Voice input failed. Please type instead.'
+      );
+      setListening(false);
+    };
     rec.onend = () => {
       setListening(false);
-      const t = finalText.trim();
+      const t = transcriptRef.current.trim();
       if (t) ask(t);   // hands-free: speak, then auto-send
     };
     recogRef.current = rec;
     setListening(true);
-    try { rec.start(); } catch { setListening(false); }
+    try { rec.start(); }
+    catch { setListening(false); setVoiceError('Could not start voice input. Please type instead.'); }
   };
 
   // Collapsed: a slim, sticky rail that re-opens the panel.
@@ -235,6 +255,7 @@ export default function AiAssistantPanel<R extends AiAnswerBase>({
       </div>
 
       {listening && <div className="ai-assistant-listening">● Listening… speak now</div>}
+      {voiceError && !listening && <div className="ai-assistant-voice-error">{voiceError}</div>}
       <form className="ai-assistant-input" onSubmit={e => { e.preventDefault(); ask(input); }}>
         <textarea
           value={input}

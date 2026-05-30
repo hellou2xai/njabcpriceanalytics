@@ -4423,6 +4423,22 @@ tr:hover .row-menu-btn { opacity: 1; }
 }
 .ai-assistant-listening::first-letter { animation: ai-rec-blink 1s steps(1) infinite; }
 @keyframes ai-rec-blink { 50% { opacity: 0.2; } }
+.ai-assistant-voice-error {
+  padding: 7px 14px; font-size: 12px; line-height: 1.4; color: var(--red, #dc2626);
+  background: color-mix(in srgb, var(--red, #dc2626) 8%, var(--surface));
+  border-top: 1px solid var(--border);
+}
+
+/* Admin AI Usage summary cards */
+.ai-usage-cards { display: flex; gap: 12px; flex-wrap: wrap; margin: 6px 0 18px; }
+.ai-usage-card {
+  flex: 1 1 160px; display: flex; flex-direction: column; gap: 4px;
+  padding: 14px 16px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius, 10px);
+}
+.ai-usage-card span { font-size: 12px; color: var(--text-muted); }
+.ai-usage-card strong { font-size: 22px; }
+.ai-usage-card--cost strong { color: var(--green, #16a34a); }
 
 .ai-assistant-input { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--border); background: var(--surface); align-items: flex-end; }
 .ai-assistant-input textarea {

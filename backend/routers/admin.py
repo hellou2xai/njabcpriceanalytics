@@ -5,7 +5,9 @@ Access is restricted by require_admin (email in ADMIN_EMAILS). For now that is
 the owner; set ADMIN_EMAILS on the server to add more.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from backend.pg import get_pg
 from backend.auth import require_admin, _is_admin
@@ -154,3 +156,53 @@ def reload_pricing_admin(user: dict = Depends(require_admin)):
     with get_duckdb() as con:
         counts = {t: con.execute(f"SELECT count(*) FROM {t}").fetchone()[0] for t in ALL_TABLES}
     return {"status": "reloaded", "counts": counts}
+
+
+@router.get("/ai-usage")
+def ai_usage(
+    from_date: Optional[str] = Query(None, description="YYYY-MM-DD inclusive"),
+    to_date: Optional[str] = Query(None, description="YYYY-MM-DD inclusive"),
+    user: dict = Depends(require_admin),
+):
+    """AI assistant usage rollup for admins: per-user question count, tokens and
+    USD cost over a date range, plus overall totals and the most recent questions.
+    Dates are matched against created_at (UTC text 'YYYY-MM-DD HH:MM:SS')."""
+    where, params = [], []
+    if from_date:
+        where.append("created_at >= %s"); params.append(f"{from_date} 00:00:00")
+    if to_date:
+        where.append("created_at <= %s"); params.append(f"{to_date} 23:59:59")
+    wc = (" WHERE " + " AND ".join(where)) if where else ""
+    with get_pg() as con:
+        per_user = con.execute(
+            f"""SELECT COALESCE(user_email, '(anonymous)') AS user_email,
+                       COUNT(*) AS questions,
+                       COALESCE(SUM(input_tokens), 0) AS input_tokens,
+                       COALESCE(SUM(output_tokens), 0) AS output_tokens,
+                       COALESCE(SUM(input_tokens + output_tokens), 0) AS total_tokens,
+                       COALESCE(SUM(cost_usd), 0) AS cost_usd
+                FROM ai_usage_log{wc}
+                GROUP BY 1 ORDER BY cost_usd DESC""",
+            params,
+        ).fetchall()
+        totals = con.execute(
+            f"""SELECT COUNT(*) AS questions,
+                       COALESCE(SUM(input_tokens), 0) AS input_tokens,
+                       COALESCE(SUM(output_tokens), 0) AS output_tokens,
+                       COALESCE(SUM(input_tokens + output_tokens), 0) AS total_tokens,
+                       COALESCE(SUM(cost_usd), 0) AS cost_usd
+                FROM ai_usage_log{wc}""",
+            params,
+        ).fetchone()
+        recent = con.execute(
+            f"""SELECT created_at, COALESCE(user_email, '(anonymous)') AS user_email,
+                       surface, question, model, input_tokens, output_tokens, cost_usd
+                FROM ai_usage_log{wc}
+                ORDER BY created_at DESC LIMIT 200""",
+            params,
+        ).fetchall()
+    return {
+        "per_user": [dict(r) for r in per_user],
+        "totals": dict(totals) if totals else {},
+        "recent": [dict(r) for r in recent],
+    }

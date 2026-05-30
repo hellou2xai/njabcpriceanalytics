@@ -137,18 +137,22 @@ export default function MonthEffectiveSparkline({ curr, next }: Props) {
   const nextEff = next.bestEff;
   if (currEff == null && nextEff == null) return null;
 
-  const W = 140, H = 36, PAD = 5;
+  // Layout reserves a clear label band at the BOTTOM so the month names never
+  // sit behind the line. The plot (line + dots) lives in the upper area only.
+  const W = 140, H = 42, PAD = 5, PLOT_BOTTOM = 23;
   const values: number[] = [];
   if (currEff != null) values.push(currEff);
   if (nextEff != null) values.push(nextEff);
   const min = Math.min(...values);
   const max = Math.max(...values);
   const range = Math.max(max - min, 0.01);
-  const y = (v: number) => H - PAD - ((v - min) / range) * (H - 2 * PAD);
-  const x0 = PAD + 22, x1 = W - PAD - 4;
+  const y = (v: number) => PLOT_BOTTOM - ((v - min) / range) * (PLOT_BOTTOM - PAD);
+  const x0 = PAD + 22, x1 = W - PAD - 22;
   const goingDown = currEff != null && nextEff != null && nextEff < currEff - 0.005;
   const goingUp   = currEff != null && nextEff != null && nextEff > currEff + 0.005;
-  const colour = goingDown ? '#16a34a' : goingUp ? '#dc2626' : '#6b7280';
+  // BUYER's perspective: price rising next month -> buy NOW (green);
+  // price falling next month -> wait, don't buy now (red); flat -> grey.
+  const colour = goingUp ? '#16a34a' : goingDown ? '#dc2626' : '#6b7280';
 
   const monC = fmtMonth(curr.edition);
   const monN = fmtMonth(next.edition);
@@ -164,8 +168,10 @@ export default function MonthEffectiveSparkline({ curr, next }: Props) {
           )}
           {currEff != null && <circle cx={x0} cy={y(currEff)} r={3} fill={colour} />}
           {nextEff != null && <circle cx={x1} cy={y(nextEff)} r={3} fill={colour} />}
-          <text x={2} y={H - 1} fontSize="9" fill="#6b7280">{labC}</text>
-          <text x={W - PAD - 2} y={H - 1} fontSize="9" fill="#6b7280" textAnchor="end">{labN}</text>
+          {/* Month labels in a dedicated bottom band — regular weight, not faded,
+              and clear of the line above. */}
+          <text x={2} y={H - 5} fontSize="11" fontWeight="400" fill="var(--text-muted, #475569)">{labC}</text>
+          <text x={W - 2} y={H - 5} fontSize="11" fontWeight="400" fill="var(--text-muted, #475569)" textAnchor="end">{labN}</text>
         </svg>
         <span className="mes-val" style={{ color: colour }}>
           {/* Show the signed dollar delta between This and Next month so the

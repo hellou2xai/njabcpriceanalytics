@@ -3,18 +3,25 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Sparkles, Send, Mic, MicOff, AlertCircle, Trash2 } from 'lucide-react';
 import { assistant } from '../lib/api';
-import type { AssistantChart as ChartSpec, AiUsage, CatalogAiAction } from '../lib/api';
+import type { AssistantChart as ChartSpec, AiUsage, CatalogAiAction, CatalogAiProduct } from '../lib/api';
 import AssistantChart from '../components/AssistantChart';
+import AddToCartButton from '../components/AddToCartButton';
+import AddToListButton from '../components/AddToListButton';
+import FavoriteButton from '../components/FavoriteButton';
+import { distributorName } from '../lib/distributors';
 import { useAssistantActions, describeActions } from '../lib/useAssistantActions';
 
 interface Msg {
   role: 'user' | 'assistant';
   text: string;
   charts?: ChartSpec[];
+  products?: CatalogAiProduct[];
   chips?: string[];
   usage?: AiUsage;
   error?: boolean;
 }
+
+const money = (v?: number | null) => (v == null ? '—' : `$${Number(v).toFixed(2)}`);
 
 type SpeechRec = { lang: string; interimResults: boolean; continuous: boolean;
   start: () => void; stop: () => void; onresult: ((e: any) => void) | null;
@@ -66,7 +73,7 @@ export default function CelarAssistant() {
     try {
       const res = await assistant.ask(q, history);
       const chips = describeActions(res.actions as CatalogAiAction[]);
-      setMessages(m => [...m, { role: 'assistant', text: res.answer, charts: res.charts, chips, usage: res.usage }]);
+      setMessages(m => [...m, { role: 'assistant', text: res.answer, charts: res.charts, products: res.products, chips, usage: res.usage }]);
       if (res.actions?.length) runActions(res.actions);
     } catch (e) {
       setMessages(m => [...m, { role: 'assistant', error: true, text: `Sorry — that request failed (${e instanceof Error ? e.message : 'unknown error'}).` }]);
@@ -156,6 +163,32 @@ export default function CelarAssistant() {
                 ? <div className="celar-md"><ReactMarkdown remarkPlugins={[remarkGfm]}>{m.text}</ReactMarkdown></div>
                 : <div className="celar-usertext">{m.text}</div>}
               {m.charts?.map((c, ci) => <AssistantChart key={ci} spec={c} />)}
+              {m.products && m.products.length > 0 && (
+                <div className="celar-products">
+                  {m.products.map((p, pi) => (
+                    <div key={pi} className="celar-product-card">
+                      <div className="celar-product-main">
+                        <div className="celar-product-name">{p.product_name}</div>
+                        <div className="celar-product-sub">
+                          {[p.unit_volume, distributorName(p.wholesaler), p.vintage && p.vintage !== '0' ? `Vintage ${p.vintage}` : null]
+                            .filter(Boolean).join(' · ')}
+                        </div>
+                        <div className="celar-product-price">
+                          <strong>{money(p.effective_case_price ?? p.frontline_case_price)}</strong>/cs
+                          {p.frontline_case_price != null && p.effective_case_price != null && p.effective_case_price < p.frontline_case_price && (
+                            <span className="celar-product-was">{money(p.frontline_case_price)}</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="celar-product-actions">
+                        <FavoriteButton productName={p.product_name} wholesaler={p.wholesaler} upc={p.upc ?? undefined} unitVolume={p.unit_volume ?? undefined} />
+                        <AddToCartButton productName={p.product_name} wholesaler={p.wholesaler} upc={p.upc ?? undefined} unitVolume={p.unit_volume ?? undefined} qtyCases={1} qtyUnits={0} />
+                        <AddToListButton productName={p.product_name} wholesaler={p.wholesaler} upc={p.upc ?? undefined} unitVolume={p.unit_volume ?? undefined} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
               {m.chips && m.chips.length > 0 && (
                 <div className="celar-chips">{m.chips.map((c, ci) => <span key={ci} className="ai-chip">{c}</span>)}</div>
               )}

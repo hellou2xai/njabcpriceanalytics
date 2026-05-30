@@ -186,6 +186,9 @@ _SYSTEM = (
     "When a distribution or comparison helps, include ONE chart as a fenced code block exactly like:\n"
     "```chart\n{\"type\":\"bar\",\"title\":\"...\",\"labels\":[...],\"series\":[{\"name\":\"...\",\"data\":[...]}]}\n```\n"
     "type is bar|line|pie; use real numbers from the tools. Keep charts small (<=12 points). "
+    "When the user wants to SEE or pick specific products, call top_products — those results are shown "
+    "to the user as interactive cards with Add to Cart / Add to List / Favorite buttons, so you don't "
+    "need to repeat every product in prose; summarize instead. "
     "When the user asks to add to cart, set quantity, favorite, or build a list, call perform_action. "
     "Confirm what you did in the prose. Be concise and concrete with dollars."
 )
@@ -195,7 +198,7 @@ def _fallback(question: str) -> dict:
     return {
         "answer": ("**Celar AI Assistant is offline.** Set a valid `ANTHROPIC_API_KEY` to enable "
                    "natural-language answers, charts and actions. Your question was logged."),
-        "charts": [], "actions": [],
+        "charts": [], "actions": [], "products": [],
         "usage": {"input_tokens": 0, "output_tokens": 0, "model": "offline", "cost_usd": 0.0, "enabled": False},
     }
 
@@ -205,7 +208,7 @@ def ask(question: str, history: list | None = None) -> dict:
     if not question:
         return {"answer": "Ask me anything about your catalog — pricing, deals, distributors, or say "
                           "‘add 2 cases of the cheapest prosecco to my cart’.",
-                "charts": [], "actions": [],
+                "charts": [], "actions": [], "products": [],
                 "usage": {"input_tokens": 0, "output_tokens": 0, "model": "none", "cost_usd": 0.0, "enabled": enabled()}}
 
     client = _client_or_none()
@@ -224,6 +227,22 @@ def ask(question: str, history: list | None = None) -> dict:
     total_in = total_out = 0
     final_text = ""
     actions_out: list = []
+    products_out: list = []
+    seen_products: set = set()
+
+    def _collect(items):
+        # Accumulate any product dicts a tool surfaced so the UI can render them
+        # as actionable cards (Add to Cart / List / Favorite). Deduped.
+        for p in (items or []):
+            if not isinstance(p, dict) or not p.get("product_name"):
+                continue
+            key = (p.get("wholesaler"), str(p.get("upc") or ""), p.get("product_name"), p.get("unit_volume"))
+            if key in seen_products:
+                continue
+            seen_products.add(key)
+            products_out.append({k: p.get(k) for k in
+                                 ("product_name", "wholesaler", "upc", "unit_volume", "unit_qty",
+                                  "vintage", "effective_case_price", "frontline_case_price")})
 
     with get_duckdb() as con:
         for _ in range(_MAX_TURNS):
@@ -253,11 +272,19 @@ def ask(question: str, history: list | None = None) -> dict:
                         continue
                     if b.name == "perform_action":
                         out = _do_action(con, b.input or {}, actions_out)
+                        # Surface the acted-on products as cards too.
+                        if actions_out:
+                            _collect(actions_out[-1].get("products"))
                     elif b.name in _DATA_TOOLS:
                         try:
                             out = _DATA_TOOLS[b.name][0](con, b.input or {})
                         except Exception as e:
                             out = {"error": f"{type(e).__name__}"}
+                        # top_products / price_history surface concrete products.
+                        if isinstance(out, list):
+                            _collect(out)
+                        elif isinstance(out, dict) and out.get("product"):
+                            _collect([{**out, "product_name": out.get("product")}])
                     else:
                         out = {"error": "unknown tool"}
                     results.append({"type": "tool_result", "tool_use_id": b.id,
@@ -274,6 +301,7 @@ def ask(question: str, history: list | None = None) -> dict:
         "answer": answer,
         "charts": charts,
         "actions": actions_out,
+        "products": products_out[:24],
         "usage": {"input_tokens": total_in, "output_tokens": total_out,
                   "model": model, "cost_usd": _cost_usd(model, total_in, total_out), "enabled": True},
     }

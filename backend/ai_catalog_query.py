@@ -238,6 +238,8 @@ def _resolve_products(con, view: dict, match: str, which: str, cap: int) -> list
             "vintage": None if _clean(r["vintage"]) is None else str(r["vintage"]),
             "effective_case_price": (float(r["effective_case_price"])
                                      if _clean(r["effective_case_price"]) is not None else None),
+            "frontline_case_price": (float(r["frontline_case_price"])
+                                     if _clean(r["frontline_case_price"]) is not None else None),
         })
     return out
 

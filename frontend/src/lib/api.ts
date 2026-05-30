@@ -102,6 +102,7 @@ export interface AssistantResponse {
   answer: string;             // markdown (chart fences already stripped server-side)
   charts: AssistantChart[];
   actions: CatalogAiAction[];
+  products: CatalogAiProduct[];   // surfaced products, rendered as actionable cards
   usage: AiUsage;
 }
 export const assistant = {

@@ -12,14 +12,16 @@ router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 class AskBody(BaseModel):
     question: str
     history: Optional[list] = None   # prior [{role, content}] turns for memory
+    page: Optional[str] = None       # screen the user is on (tool prioritization)
 
 
 @router.post("/ask")
 def ask(body: AskBody, user: Optional[dict] = Depends(get_optional_user)):
     """Answer a question with markdown + optional charts + resolved actions, plus
-    token/$ usage. Multi-turn via `history`; every call is logged for the admin
-    AI-usage rollup."""
+    token/$ usage. Multi-turn via `history`; `page` tells the assistant which
+    screen the user is on so it prioritizes relevant tools (and enables the
+    signed-in user's cart/favorites/lists/orders tools). Logged for the rollup."""
     from backend import assistant as engine, ai_usage
-    res = engine.ask(body.question, body.history)
+    res = engine.ask(body.question, body.history, user=user, page=body.page)
     ai_usage.log_usage(user, "celar", body.question, res.get("usage"))
     return res

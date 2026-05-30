@@ -179,13 +179,148 @@ def _t_price_details(con, args):
     }
 
 
+def _t_compare_distributors(con, args):
+    """Side-by-side comparison of ONE product across every distributor that
+    carries it. `match` may be a UPC or a product name (we resolve the UPC),
+    then list each distributor's case/effective price, savings, RIP/discount."""
+    match = (args.get("match") or "").strip()
+    if not match:
+        return {"error": "provide a UPC or product name in `match`"}
+    compact = match.replace(" ", "").replace("-", "")
+    if compact.isdigit() and len(compact) >= 6:
+        upc_norm = compact.lstrip("0")
+        name_hint = None
+    else:
+        prods = _resolve_products(con, {}, match, "first", 1)
+        if not prods:
+            return {"error": "no product matched"}
+        upc_norm = str(prods[0].get("upc") or "").lstrip("0")
+        name_hint = prods[0].get("product_name")
+    if not upc_norm:
+        return {"error": "matched product has no UPC to compare across distributors"}
+    cym = _current_ym()
+    try:
+        rows = con.execute(
+            f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<='{cym}' GROUP BY wholesaler) "
+            "SELECT c.wholesaler, c.product_name, c.unit_volume, c.unit_qty, c.upc, c.vintage, "
+            "c.frontline_case_price, c.effective_case_price, c.total_savings_per_case, c.has_rip, c.has_discount "
+            "FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
+            "WHERE LTRIM(CAST(c.upc AS VARCHAR),'0') = ? "
+            "ORDER BY c.effective_case_price ASC NULLS LAST", [upc_norm]).fetchdf()
+    except Exception as e:
+        return {"error": f"{type(e).__name__}"}
+    recs = rows.to_dict(orient="records")
+    return {"upc": upc_norm, "product": name_hint or (recs[0]["product_name"] if recs else None),
+            "distributor_count": len(recs), "comparison": recs}
+
+
 _DATA_TOOLS = {
     "category_breakdown": (_t_category_breakdown, "Product counts and average case price per category (current edition)."),
+    "compare_distributors": (_t_compare_distributors, "Side-by-side price comparison of ONE product across all distributors carrying it. `match` = UPC or product name (UPC is resolved). Returns each distributor's case/effective price + savings; shown as a table and the rows as add-to-cart cards."),
     "distributor_breakdown": (_t_distributor_breakdown, "Per-distributor product counts, avg case price, and #with RIP/discount."),
     "deal_counts": (_t_deal_counts, "Totals: products, #with RIP, #with discount, #closeouts."),
     "top_products": (_t_top_products, "Resolve matching products. Args: match, category, distributor, has_rip, has_discount, price_min, price_max, order_by(cheapest|expensive), limit."),
     "price_history": (_t_price_history, "Price history across editions for the product matching `match`."),
     "price_details": (_t_price_details, "FULL price breakdown for ONE product (call this for any 'price'/'pricing'/'cost'/'deal' question about a specific product): frontline case & bottle price, discount tiers, RIP tiers, effective price, bottles/case, 3-month history."),
+}
+
+
+# --------------------------- context tools (deals + user data) ---------------
+# These take (con, args, ctx); ctx carries user_id for user-specific reads.
+
+def _t_find_deals(con, args, ctx):
+    kind = (args.get("kind") or "discount").lower()
+    cap = min(int(args.get("limit") or 10), 25)
+    cym = _current_ym()
+    base = (f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched "
+            f"WHERE edition<='{cym}' GROUP BY wholesaler) "
+            "SELECT c.product_name, c.wholesaler, c.upc, c.unit_volume, c.unit_qty, c.vintage, "
+            "c.effective_case_price, c.frontline_case_price, c.total_savings_per_case "
+            "FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed WHERE ")
+    if kind in ("clearance", "closeout"):
+        cond = "c.has_closeout = true ORDER BY c.total_savings_per_case DESC NULLS LAST"
+    elif kind in ("time_sensitive", "time-sensitive", "ending", "expiring"):
+        cond = "c.to_date IS NOT NULL AND CAST(c.to_date AS DATE) >= CURRENT_DATE ORDER BY CAST(c.to_date AS DATE) ASC"
+    else:
+        cond = "c.has_discount = true ORDER BY c.total_savings_per_case DESC NULLS LAST"
+    try:
+        return con.execute(base + cond + f" LIMIT {cap}").fetchdf().to_dict(orient="records")
+    except Exception as e:
+        return {"error": f"{type(e).__name__}"}
+
+
+def _t_price_movers(con, args, ctx):
+    direction = (args.get("direction") or "drop").lower()
+    trend = "drop" if direction in ("drop", "down", "falling", "decrease") else "increase"
+    cap = min(int(args.get("limit") or 10), 25)
+    cym = _current_ym()
+    try:
+        return con.execute(
+            f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<='{cym}' GROUP BY wholesaler) "
+            "SELECT c.product_name, c.wholesaler, c.upc, c.unit_volume, c.unit_qty, c.vintage, "
+            "c.effective_case_price, c.frontline_case_price FROM cpl_enriched c "
+            "JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
+            f"WHERE c.price_trend = ? LIMIT {cap}", [trend]).fetchdf().to_dict(orient="records")
+    except Exception:
+        return {"error": "price-trend data unavailable in this build"}
+
+
+def _t_get_cart(con, args, ctx):
+    uid = ctx.get("user_id")
+    if not uid:
+        return {"error": "user not signed in"}
+    from backend.pg import get_pg
+    with get_pg() as pg:
+        rows = pg.execute(
+            "SELECT product_name, wholesaler, qty_cases, qty_units FROM cart_items "
+            "WHERE user_id=%s AND COALESCE(saved_for_later,0)=0 ORDER BY product_name", (uid,)).fetchall()
+    return {"count": len(rows), "items": [dict(r) for r in rows]}
+
+
+def _t_get_favorites(con, args, ctx):
+    uid = ctx.get("user_id")
+    if not uid:
+        return {"error": "user not signed in"}
+    from backend.pg import get_pg
+    with get_pg() as pg:
+        rows = pg.execute(
+            "SELECT product_name, wholesaler, unit_volume FROM watchlist WHERE user_id=%s ORDER BY product_name",
+            (uid,)).fetchall()
+    return {"count": len(rows), "items": [dict(r) for r in rows]}
+
+
+def _t_get_lists(con, args, ctx):
+    uid = ctx.get("user_id")
+    if not uid:
+        return {"error": "user not signed in"}
+    from backend.pg import get_pg
+    with get_pg() as pg:
+        rows = pg.execute(
+            "SELECT l.name, COUNT(li.id) AS items FROM lists l "
+            "LEFT JOIN list_items li ON li.list_id=l.id WHERE l.user_id=%s GROUP BY l.name ORDER BY l.name",
+            (uid,)).fetchall()
+    return {"lists": [dict(r) for r in rows]}
+
+
+def _t_get_orders(con, args, ctx):
+    uid = ctx.get("user_id")
+    if not uid:
+        return {"error": "user not signed in"}
+    from backend.pg import get_pg
+    with get_pg() as pg:
+        rows = pg.execute(
+            "SELECT id, name, status, created_at FROM orders WHERE user_id=%s ORDER BY created_at DESC LIMIT 10",
+            (uid,)).fetchall()
+    return {"orders": [dict(r) for r in rows]}
+
+
+_CTX_TOOLS = {
+    "find_deals": (_t_find_deals, "Promotions: products on deal. Args: kind (time_sensitive|discount|clearance), limit. Shown as cards."),
+    "price_movers": (_t_price_movers, "Products whose effective price changes next month. Args: direction (drop|increase), limit. Shown as cards."),
+    "get_cart": (_t_get_cart, "The signed-in user's current cart items + quantities."),
+    "get_favorites": (_t_get_favorites, "The signed-in user's favorited products."),
+    "get_lists": (_t_get_lists, "The signed-in user's saved lists and item counts."),
+    "get_orders": (_t_get_orders, "The signed-in user's 10 most recent orders."),
 }
 
 
@@ -202,6 +337,13 @@ def _tool_specs() -> list:
     for name, (_fn, desc) in _DATA_TOOLS.items():
         specs.append({"name": name, "description": desc,
                       "input_schema": {"type": "object", "properties": common_props}})
+    # Context tools (deals + the signed-in user's cart/favorites/lists/orders).
+    ctx_props = {**common_props,
+                 "kind": {"type": "string", "enum": ["time_sensitive", "discount", "clearance"]},
+                 "direction": {"type": "string", "enum": ["drop", "increase"]}}
+    for name, (_fn, desc) in _CTX_TOOLS.items():
+        specs.append({"name": name, "description": desc,
+                      "input_schema": {"type": "object", "properties": ctx_props}})
     # Action tools
     specs.append({
         "name": "perform_action",
@@ -262,7 +404,10 @@ _SYSTEM = (
     "and the effective price — use a compact markdown table for the tiers. State the best_buy_recommendation "
     "verbatim as plain English (buy now vs wait). A price waterfall and a 3-month history chart are attached "
     "automatically, so reference them rather than re-listing the numbers. "
-    "Confirm what you did in the prose. Be concise and concrete with dollars."
+    "Confirm what you did in the prose. Be concise and concrete with dollars. "
+    "Other tools: compare_distributors (one product across all distributors, by UPC or name — show a "
+    "table + a bar chart of effective price by distributor), find_deals (time_sensitive|discount|clearance), "
+    "price_movers (drop|increase), and the signed-in user's get_cart / get_favorites / get_lists / get_orders."
 )
 
 
@@ -275,7 +420,7 @@ def _fallback(question: str) -> dict:
     }
 
 
-def ask(question: str, history: list | None = None) -> dict:
+def ask(question: str, history: list | None = None, user: dict | None = None, page: str | None = None) -> dict:
     question = (question or "").strip()
     if not question:
         return {"answer": "Ask me anything about your catalog — pricing, deals, distributors, or say "
@@ -287,6 +432,8 @@ def ask(question: str, history: list | None = None) -> dict:
     if client is None:
         return _fallback(question)
 
+    ctx = {"user_id": (user or {}).get("id")}
+
     # Route to the cheapest capable model, and prompt-cache the (large) system +
     # tools block so the agentic loop doesn't re-bill it every turn.
     from backend.model_router import choose_model
@@ -294,7 +441,12 @@ def ask(question: str, history: list | None = None) -> dict:
     tools = _tool_specs()
     if tools:
         tools[-1] = {**tools[-1], "cache_control": {"type": "ephemeral"}}
+    # Cache the big static system block; append a small dynamic page hint so the
+    # model prioritizes tools relevant to the screen the user is on.
     system_blocks = [{"type": "text", "text": _SYSTEM, "cache_control": {"type": "ephemeral"}}]
+    if page:
+        system_blocks.append({"type": "text", "text":
+            f"The user is currently on the '{page}' screen — prioritize tools and answers relevant to it."})
     messages = _history_messages(history) + [{"role": "user", "content": question}]
     total_in = total_out = 0
     final_text = ""
@@ -348,6 +500,13 @@ def ask(question: str, history: list | None = None) -> dict:
                         # Surface the acted-on products as cards too.
                         if actions_out:
                             _collect(actions_out[-1].get("products"))
+                    elif b.name in _CTX_TOOLS:
+                        try:
+                            out = _CTX_TOOLS[b.name][0](con, b.input or {}, ctx)
+                        except Exception as e:
+                            out = {"error": f"{type(e).__name__}"}
+                        if isinstance(out, list):   # find_deals / price_movers -> cards
+                            _collect(out)
                     elif b.name in _DATA_TOOLS:
                         try:
                             out = _DATA_TOOLS[b.name][0](con, b.input or {})
@@ -358,6 +517,9 @@ def ask(question: str, history: list | None = None) -> dict:
                             _collect(out)
                         elif isinstance(out, dict) and out.get("product"):
                             _collect([{**out, "product_name": out.get("product")}])
+                        # compare_distributors -> each distributor row as a card.
+                        if isinstance(out, dict) and isinstance(out.get("comparison"), list):
+                            _collect(out["comparison"])
                         if b.name == "price_details" and isinstance(out, dict) and not out.get("error"):
                             price_detail_result = out
                             _collect([out])   # also show the product as a card

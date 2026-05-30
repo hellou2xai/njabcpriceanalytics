@@ -20,6 +20,18 @@ export default function GlobalAssistant() {
 
   const suppressed = location.pathname === '/assistant' || location.pathname === '/admin/catalog-font-test';
 
+  // Friendly label for the current screen so the assistant prioritizes the
+  // right tools (e.g. Orders -> get_orders, Promotions -> find_deals).
+  const PAGE_LABELS: Record<string, string> = {
+    '/': 'Dashboard', '/catalog': 'Catalog', '/new-items': 'New Items', '/combos': 'Combos',
+    '/time-sensitive': 'Time-Sensitive Deals', '/major-discounts': 'Major Discounts',
+    '/price-drops': 'Price Drops', '/price-increases': 'Price Increases',
+    '/watchlist': 'Favorites', '/lists': 'Lists', '/orders': 'Orders', '/cart': 'Cart',
+    '/analytics': 'Analytics', '/todo': 'To-Do', '/notes': 'Notes', '/alerts': 'Alerts',
+  };
+  const pageLabel = PAGE_LABELS[location.pathname]
+    ?? (location.pathname.startsWith('/orders/') ? 'Order detail' : undefined);
+
   // Push the page: publish the dock width as a CSS var the main content reads.
   useEffect(() => {
     const w = open && !suppressed ? `${width}px` : '0px';
@@ -64,7 +76,8 @@ export default function GlobalAssistant() {
            onPointerDown={onResizeDown} onPointerMove={onResizeMove} onPointerUp={onResizeUp}>
         <span className="ai-resizer-grip" />
       </div>
-      <AssistantChat onClose={() => setOpen(false)} />
+      <AssistantChat onClose={() => setOpen(false)} pageContext={pageLabel}
+        subtitle={pageLabel ? `On ${pageLabel} — ask, compare, or act on products.` : undefined} />
     </div>
   );
 }

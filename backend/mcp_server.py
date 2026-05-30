@@ -112,6 +112,19 @@ if mcp:
         with get_duckdb() as con:
             return _eng._t_deal_counts(con, {})
 
+    @mcp.tool()
+    def compare_distributors(match: str) -> dict:
+        """Side-by-side comparison of ONE product across all distributors that
+        carry it. `match` may be a UPC or a product name (UPC is resolved)."""
+        with get_duckdb() as con:
+            return _eng._t_compare_distributors(con, {"match": match})
+
+    @mcp.tool()
+    def find_deals(kind: str = "discount", limit: int = 10) -> list:
+        """Products on deal. kind: time_sensitive | discount | clearance."""
+        with get_duckdb() as con:
+            return _eng._t_find_deals(con, {"kind": kind, "limit": limit}, {})
+
     # --------------------------- action tools ---------------------------
 
     @mcp.tool()

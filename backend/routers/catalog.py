@@ -1591,7 +1591,16 @@ def get_product_detail(
             extra_filters.append("AND TRY_CAST(unit_qty AS DOUBLE) = TRY_CAST($uq AS DOUBLE)")
             params["uq"] = unit_qty
         if vintage:
-            extra_filters.append(f"AND ({_vintage_norm_sql('vintage')}) = $vnorm")
+            # Normalise BOTH sides: the caller passes the RAW vintage as stored
+            # on the source row (a 2-digit '20', a float '2018.0', or 'NV'),
+            # while the column is normalised to a 4-digit year. Comparing the
+            # normalised column against the raw param made a '20' caller miss a
+            # '2020'-normalised row, so the detail 404'd and the modal hung on
+            # "Loading…". Mirror /product-breakdown: normalise the param too.
+            extra_filters.append(
+                f"AND ({_vintage_norm_sql('vintage')}) "
+                f"IS NOT DISTINCT FROM ({_vintage_norm_sql('$vnorm')})"
+            )
             params["vnorm"] = vintage
         if edition:
             edition_filter = "AND edition = $edition"
@@ -3244,7 +3253,11 @@ def get_price_history(
             where.append("TRY_CAST(unit_qty AS DOUBLE) = TRY_CAST($uq AS DOUBLE)")
             params["uq"] = unit_qty
         if vintage:
-            where.append(f"({_vintage_norm_sql('vintage')}) = $vnorm")
+            # Normalise both sides (see /product detail): a raw 2-digit '20'
+            # caller must still match the '2020'-normalised history rows, else
+            # the price chart silently shows nothing.
+            where.append(f"({_vintage_norm_sql('vintage')}) IS NOT DISTINCT FROM "
+                         f"({_vintage_norm_sql('$vnorm')})")
             params["vnorm"] = vintage
 
         df = con.execute(f"""

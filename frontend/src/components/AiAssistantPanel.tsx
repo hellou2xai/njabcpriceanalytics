@@ -43,6 +43,10 @@ interface Props<R extends AiAnswerBase> {
   collapsible?: boolean;
   /** localStorage namespace for the open/closed preference. */
   storageKey?: string;
+  /** Controlled open state. When provided, the parent owns show/hide (e.g. to
+   *  coordinate a resize splitter); otherwise the panel manages it internally. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 const fmtCost = (usd: number) =>
@@ -57,21 +61,24 @@ const fmtCost = (usd: number) =>
 export default function AiAssistantPanel<R extends AiAnswerBase>({
   send, onApply, describeResult,
   title = 'AI Assistant', subtitle, placeholder = 'Ask a question…', suggestions = [],
-  collapsible = true, storageKey = 'ai_assistant',
+  collapsible = true, storageKey = 'ai_assistant', open: openProp, onOpenChange,
 }: Props<R>) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
-  const [open, setOpen] = useState<boolean>(() => {
+  const [internalOpen, setInternalOpen] = useState<boolean>(() => {
     if (!collapsible) return true;
     return localStorage.getItem(`${storageKey}_open`) !== 'false';
   });
+  const isControlled = openProp !== undefined;
+  const open = isControlled ? !!openProp : internalOpen;
   const listRef = useRef<HTMLDivElement>(null);
 
   const setOpenPersist = useCallback((v: boolean) => {
-    setOpen(v);
+    if (isControlled) { onOpenChange?.(v); return; }   // parent owns the state
+    setInternalOpen(v);
     try { localStorage.setItem(`${storageKey}_open`, String(v)); } catch { /* quota */ }
-  }, [storageKey]);
+  }, [isControlled, onOpenChange, storageKey]);
 
   // Running session totals across every answer in this panel.
   const totalIn = messages.reduce((s, m) => s + (m.usage?.input_tokens ?? 0), 0);

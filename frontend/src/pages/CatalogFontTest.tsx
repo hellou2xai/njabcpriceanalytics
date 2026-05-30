@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { catalog, deals, cart as cartApi, watchlist, lists as listsApi } from '../lib/api';
@@ -133,6 +133,36 @@ export default function CatalogFontTest() {
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / limit));
   const qc = useQueryClient();
 
+  // ---- Resizable / collapsible assistant panel ----
+  const PANEL_MIN = 320, PANEL_MAX = 760;
+  const [panelOpen, setPanelOpen] = useState<boolean>(() => localStorage.getItem('catalog_ai_open') !== 'false');
+  const [panelWidth, setPanelWidth] = useState<number>(() => {
+    const n = parseInt(localStorage.getItem('catalog_ai_w') ?? '', 10);
+    return Number.isFinite(n) ? Math.min(PANEL_MAX, Math.max(PANEL_MIN, n)) : 400;
+  });
+  useEffect(() => { localStorage.setItem('catalog_ai_open', String(panelOpen)); }, [panelOpen]);
+  useEffect(() => { localStorage.setItem('catalog_ai_w', String(panelWidth)); }, [panelWidth]);
+  const resizeRef = useRef<{ startX: number; startW: number } | null>(null);
+  const onResizeDown = (e: React.PointerEvent) => {
+    resizeRef.current = { startX: e.clientX, startW: panelWidth };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+  const onResizeMove = (e: React.PointerEvent) => {
+    const r = resizeRef.current;
+    if (!r) return;
+    // Panel is on the RIGHT, so dragging the handle left widens it.
+    const next = Math.min(PANEL_MAX, Math.max(PANEL_MIN, r.startW - (e.clientX - r.startX)));
+    setPanelWidth(next);
+  };
+  const onResizeUp = (e: React.PointerEvent) => {
+    resizeRef.current = null;
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* */ }
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  };
+
   // Execute the human-style actions the assistant planned (add to cart / set
   // quantity / favorite / add to list). The backend already resolved each
   // action to concrete products, so we just call the same APIs the buttons do.
@@ -264,7 +294,7 @@ export default function CatalogFontTest() {
         <RowLimitSelect value={limit} onChange={v => { setLimit(v); setPage(0); }} />
       </div>
 
-      <div className="catalog-with-assistant">
+      <div className="catalog-with-assistant" style={{ ['--ai-panel-w' as string]: `${panelWidth}px` } as React.CSSProperties}>
         <div className="catalog-layout catalog-layout--full">
           <div className="catalog-results">
             {isLoading ? <p>Loading...</p> : (
@@ -287,7 +317,17 @@ export default function CatalogFontTest() {
             </div>
           </div>
 
+          {panelOpen && (
+            <div className="ai-resizer" role="separator" aria-orientation="vertical"
+                 aria-label="Resize assistant panel" title="Drag to resize"
+                 onPointerDown={onResizeDown} onPointerMove={onResizeMove} onPointerUp={onResizeUp}>
+              <span className="ai-resizer-grip" />
+            </div>
+          )}
+
           <AiAssistantPanel<CatalogAiResponse>
+            open={panelOpen}
+            onOpenChange={setPanelOpen}
             title="Catalog Assistant"
             subtitle="Ask or speak — I filter the catalog and can add to cart, favorites or lists."
             placeholder="e.g. add 2 cases of the cheapest tequila to my cart"

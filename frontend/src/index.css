@@ -4270,8 +4270,25 @@ tr:hover .row-menu-btn { opacity: 1; }
    Drop <AiAssistantPanel> on a screen and these styles render the chat,
    the per-answer token/cost line, and the running session total.
    ===================================================================== */
+/* Draggable splitter between the catalog and the assistant. Width lives in the
+   --ai-panel-w variable on .catalog-with-assistant so dragging it resizes both
+   panels (catalog grows as the chat shrinks and vice-versa). */
+.ai-resizer {
+  flex: 0 0 10px; align-self: stretch; position: sticky; top: 70px;
+  height: calc(100vh - 90px);
+  cursor: col-resize; touch-action: none;
+  display: flex; align-items: center; justify-content: center;
+}
+.ai-resizer-grip {
+  width: 4px; height: 46px; border-radius: 3px; background: var(--border);
+  transition: background .12s, height .12s;
+}
+.ai-resizer:hover .ai-resizer-grip,
+.ai-resizer:active .ai-resizer-grip { background: var(--accent); height: 72px; }
+@media (max-width: 1100px) { .ai-resizer { display: none; } }
+
 .ai-assistant-panel {
-  flex: 0 0 388px;
+  flex: 0 0 var(--ai-panel-w, 400px);
   align-self: stretch;
   position: sticky;
   top: 70px;

@@ -36,8 +36,6 @@ const NAV_GROUPS: {
     header: 'Catalog',
     items: [
       { path: '/catalog', label: 'Catalog', icon: Package },
-      { path: '/admin/catalog-font-test', label: 'Test For Font Catalog', icon: Package, adminOnly: true },
-      { path: '/rip-products', label: 'RIP Products', icon: BadgeDollarSign, adminOnly: true },
       { path: '/new-items', label: 'New Items', icon: Sparkles },
       { path: '/combos', label: 'Combos', icon: Combine },
     ],
@@ -49,7 +47,6 @@ const NAV_GROUPS: {
       { path: '/major-discounts', label: 'Major Discounts', icon: Percent },
       { path: '/price-drops', label: 'Price Drops', icon: ArrowDownRight },
       { path: '/price-increases', label: 'Price Increases', icon: ArrowUpRight },
-      { path: '/#tile=top-discounts', label: 'Top Discounts', icon: Percent, adminOnly: true },
     ],
   },
   {
@@ -66,10 +63,20 @@ const NAV_GROUPS: {
     header: 'Setup',
     items: [
       { path: '/configuration', label: 'Configuration', icon: Settings },
-      { path: '/more', label: 'Addnl Pages', icon: LayoutGrid, adminOnly: true },
+    ],
+  },
+  // All admin-only screens grouped in one place. The whole section renders only
+  // for admins (every item is adminOnly, so non-admins get an empty -> hidden group).
+  {
+    header: 'Admin',
+    items: [
       { path: '/admin', label: 'Admin', icon: Shield, adminOnly: true },
-      { path: '/admin/activity', label: 'Activity', icon: Activity, adminOnly: true },
       { path: '/admin/ai-usage', label: 'AI Usage', icon: Sparkles, adminOnly: true },
+      { path: '/admin/activity', label: 'Activity', icon: Activity, adminOnly: true },
+      { path: '/rip-products', label: 'RIP Products', icon: BadgeDollarSign, adminOnly: true },
+      { path: '/#tile=top-discounts', label: 'Top Discounts', icon: Percent, adminOnly: true },
+      { path: '/more', label: 'Addnl Pages', icon: LayoutGrid, adminOnly: true },
+      { path: '/admin/catalog-font-test', label: 'Test For Font Catalog', icon: Package, adminOnly: true },
     ],
   },
 ];

@@ -40,3 +40,9 @@ tests/golden/after*/
 # One-off analysis scripts kept locally.
 analyze_*.py
 backend.log
+
+# Local Postgres dumps (Render -> celr_dev sync backups; not for the repo).
+backups/
+
+# Playwright validation runs write timestamped xlsx here; output is per-run.
+tests/playwright/results/

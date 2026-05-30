@@ -362,7 +362,18 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
 .modal-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,0.6);
   display: flex; align-items: center; justify-content: center; z-index: 100;
+  /* Centre in the area NOT covered by the docked assistant, so the modal isn't
+     hidden behind it when the chat is open. (0 when the dock is closed.) */
+  right: var(--global-dock-w, 0);
 }
+/* Draggable handle for the product modal (drag to move it out of the way). */
+.modal-drag-handle {
+  position: absolute; top: 6px; left: 50%; transform: translateX(-50%);
+  display: inline-flex; align-items: center; gap: 6px; z-index: 2;
+  padding: 3px 12px; border-radius: 0 0 8px 8px; cursor: move; user-select: none;
+  font-size: 11px; color: var(--text-muted); background: var(--bg); border: 1px solid var(--border); border-top: none;
+}
+.modal-drag-handle:hover { color: var(--accent); border-color: var(--accent); }
 .modal {
   background: var(--surface); border-radius: 12px; padding: 24px;
   width: 90%; max-width: 95vw;

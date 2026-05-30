@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Trash2 } from 'lucide-react';
 import { catalog, notes } from '../lib/api';
@@ -91,6 +91,25 @@ function QuickViewModal({
   compareWith?: CompareSide;
   onClose: () => void;
 }) {
+  // Draggable modal: offset from its centered position. Lets the user pull it
+  // clear of the docked assistant (or anything else) instead of being overlapped.
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<{ sx: number; sy: number; bx: number; by: number } | null>(null);
+  useEffect(() => { setDragOffset({ x: 0, y: 0 }); }, [productName, wholesaler]);  // recenter on new product
+  const onDragDown = (e: React.PointerEvent) => {
+    dragRef.current = { sx: e.clientX, sy: e.clientY, bx: dragOffset.x, by: dragOffset.y };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onDragMove = (e: React.PointerEvent) => {
+    const d = dragRef.current;
+    if (!d) return;
+    setDragOffset({ x: d.bx + (e.clientX - d.sx), y: d.by + (e.clientY - d.sy) });
+  };
+  const onDragUp = (e: React.PointerEvent) => {
+    dragRef.current = null;
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* */ }
+  };
+
   const { data: detail } = useQuery({
     queryKey: ['product-detail', wholesaler, productName, upc, unitVolume, unitQty, vintage, months?.curr],
     queryFn: () => catalog.product(wholesaler, productName, { edition: months?.curr, upc, unit_volume: unitVolume, unit_qty: unitQty, vintage }),
@@ -209,7 +228,12 @@ function QuickViewModal({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()} onKeyDown={e => e.key === 'Escape' && onClose()}>
+      <div className="modal" onClick={e => e.stopPropagation()} onKeyDown={e => e.key === 'Escape' && onClose()}
+           style={{ transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)` }}>
+        <div className="modal-drag-handle" title="Drag to move"
+             onPointerDown={onDragDown} onPointerMove={onDragMove} onPointerUp={onDragUp}>
+          ⠿ drag
+        </div>
         <button className="modal-close" onClick={onClose}>✕</button>
 
         {!p ? <p>Loading...</p> : (

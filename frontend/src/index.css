@@ -3512,7 +3512,7 @@ tr:hover .row-menu-btn { opacity: 1; }
 .beta-badge {
   position: fixed;
   top: 8px;
-  right: 10px;
+  left: 10px;
   z-index: 1200;
   pointer-events: none;            /* never blocks clicks underneath */
   padding: 2px 8px;

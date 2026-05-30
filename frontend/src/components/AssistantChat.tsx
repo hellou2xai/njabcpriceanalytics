@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Sparkles, Send, Mic, MicOff, AlertCircle, Trash2, PanelRightClose } from 'lucide-react';
@@ -66,6 +67,7 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const { runActions } = useAssistantActions();
+  const navigate = useNavigate();
   const listRef = useRef<HTMLDivElement>(null);
 
   const totalIn = messages.reduce((s, m) => s + (m.usage?.input_tokens ?? 0), 0);
@@ -86,7 +88,16 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
     try {
       const res = await assistant.ask(q, history, pageContext);
       const chips = describeActions(res.actions as CatalogAiAction[]);
-      setMessages(m => [...m, { role: 'assistant', text: res.answer, charts: res.charts, products: res.products, chips, usage: res.usage }]);
+      // If the assistant drove the screen, navigate there and keep the chat
+      // to its one-line confirmation (no product dump in the panel).
+      const drove = !!res.screen?.path;
+      setMessages(m => [...m, {
+        role: 'assistant', text: res.answer,
+        charts: drove ? [] : res.charts,
+        products: drove ? [] : res.products,
+        chips, usage: res.usage,
+      }]);
+      if (drove) navigate(res.screen!.path);
       if (res.actions?.length) runActions(res.actions);
     } catch (e) {
       setMessages(m => [...m, { role: 'assistant', error: true, text: `Sorry — that request failed (${e instanceof Error ? e.message : 'unknown error'}).` }]);
@@ -120,9 +131,16 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
     };
     rec.onerror = (e: any) => {
       const err = e?.error || '';
-      setVoiceError(err === 'not-allowed' || err === 'service-not-allowed'
-        ? 'Microphone blocked. Allow mic permission for this site, then try again.'
-        : err === 'no-speech' ? "Didn't catch that — tap the mic and speak again." : 'Voice input failed.');
+      if (err === 'aborted') { setListening(false); return; }  // user/restart — not an error
+      setVoiceError(
+        err === 'not-allowed' || err === 'service-not-allowed'
+          ? 'Microphone is blocked. Click the address-bar mic/site icon, allow the microphone for this site, then try again.'
+          : err === 'no-speech' ? "Didn't catch that — tap the mic and speak again."
+          : err === 'audio-capture' ? 'No microphone detected. Check your mic, then try again.'
+          : err === 'network' ? 'Voice recognition needs an internet connection — check your network and retry.'
+          : err === 'language-not-supported' ? 'This browser build does not support the speech language.'
+          : `Voice input unavailable (${err || 'unknown'}). You can type instead.`
+      );
       setListening(false);
     };
     rec.onend = () => { setListening(false); const t = transcriptRef.current.trim(); if (t) ask(t); };

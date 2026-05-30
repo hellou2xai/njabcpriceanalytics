@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { catalog, deals } from '../lib/api';
@@ -51,6 +51,30 @@ export default function Catalog() {
     setShowPro(v);
     localStorage.setItem('lpb_catalog_show_pro', String(v));
   };
+
+  // Apply filters from the URL whenever it changes — this is how the AI
+  // assistant "shows results on screen": it navigates to /catalog?…filters and
+  // the catalog reflects them (even if we're already on this page).
+  useEffect(() => {
+    const csv = (k: string) => (params.get(k)?.split(',').filter(Boolean) ?? []);
+    setQ(params.get('q') ?? '');
+    setWholesaler(params.get('wholesaler') ?? '');
+    setFilters({
+      ...emptyCatalogFilters,
+      hasRip: params.get('hasRip') === '1' ? true : undefined,
+      hasDiscount: params.get('hasDiscount') === '1' ? true : undefined,
+      categories: csv('categories'),
+      divisions: csv('divisions'),
+      sizes: csv('sizes'),
+      priceMin: params.get('priceMin') ? parseFloat(params.get('priceMin')!) : undefined,
+      priceMax: params.get('priceMax') ? parseFloat(params.get('priceMax')!) : undefined,
+    });
+    const sp = params.get('sort');
+    if (sp === 'product_name' || sp === 'frontline_case_price' || sp === 'effective_case_price') setSort(sp);
+    setOrder(params.get('order') === 'desc' ? 'desc' : 'asc');
+    setPage(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params]);
 
   const setCart = useCallback((update: CartState | ((p: CartState) => CartState)) => {
     setCartState(prev => {

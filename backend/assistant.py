@@ -358,6 +358,26 @@ def _tool_specs() -> list:
             "list_name": {"type": "string"},
         }, "required": ["type"]},
     })
+    # Drive the on-screen view (navigate + filter the page on the left) instead
+    # of dumping product lists in the chat.
+    specs.append({
+        "name": "show_on_screen",
+        "description": ("Show results on the SCREEN (the page to the left of the chat) instead of listing them "
+                        "in chat. Use for any 'show me / find / list / filter' request that a page can display. "
+                        "Pick the best route and filters; reply with a ONE-LINE confirmation."),
+        "input_schema": {"type": "object", "properties": {
+            "route": {"type": "string", "enum": list(_SCREEN_ROUTES.keys())},
+            "q": {"type": "string", "description": "Free-text search (brand/product keywords)."},
+            "categories": {"type": "array", "items": {"type": "string"}},
+            "distributors": {"type": "array", "items": {"type": "string"}},
+            "sizes": {"type": "array", "items": {"type": "string"}},
+            "has_rip": {"type": "boolean"}, "has_discount": {"type": "boolean"},
+            "price_min": {"type": "number"}, "price_max": {"type": "number"},
+            "sort": {"type": "string", "enum": ["product_name", "frontline_case_price", "effective_case_price"]},
+            "order": {"type": "string", "enum": ["asc", "desc"]},
+            "label": {"type": "string", "description": "Short human label of what's being shown."},
+        }, "required": ["route"]},
+    })
     return specs
 
 
@@ -387,11 +407,55 @@ def _do_action(con, args, actions_out) -> dict:
             "cases": cases, "bottles": bottles}
 
 
+_SCREEN_ROUTES = {
+    "catalog": "/catalog", "time_sensitive": "/time-sensitive", "major_discounts": "/major-discounts",
+    "price_drops": "/price-drops", "price_increases": "/price-increases", "clearance": "/clearance",
+    "combos": "/combos", "new_items": "/new-items", "favorites": "/watchlist", "lists": "/lists",
+    "orders": "/orders", "cart": "/cart",
+}
+
+
+def _build_screen(args: dict) -> dict:
+    """Turn a show_on_screen tool call into a navigable path (+ catalog filters
+    encoded as query params the pages already read) and a short label."""
+    from urllib.parse import urlencode
+    route = (args.get("route") or "catalog").lower()
+    base = _SCREEN_ROUTES.get(route, "/catalog")
+    q: dict = {}
+    if args.get("q"):
+        q["q"] = args["q"]
+    if base == "/catalog":
+        if isinstance(args.get("categories"), list) and args["categories"]:
+            q["categories"] = ",".join(str(c) for c in args["categories"])
+        if isinstance(args.get("distributors"), list) and args["distributors"]:
+            q["divisions"] = ",".join(str(d) for d in args["distributors"])
+        if isinstance(args.get("sizes"), list) and args["sizes"]:
+            q["sizes"] = ",".join(str(s) for s in args["sizes"])
+        if args.get("has_rip") is True:
+            q["hasRip"] = "1"
+        if args.get("has_discount") is True:
+            q["hasDiscount"] = "1"
+        if isinstance(args.get("price_min"), (int, float)):
+            q["priceMin"] = str(args["price_min"])
+        if isinstance(args.get("price_max"), (int, float)):
+            q["priceMax"] = str(args["price_max"])
+        if args.get("sort") in ("product_name", "frontline_case_price", "effective_case_price"):
+            q["sort"] = args["sort"]
+        if args.get("order") in ("asc", "desc"):
+            q["order"] = args["order"]
+    path = base + ("?" + urlencode(q) if q else "")
+    return {"path": path, "label": (args.get("label") or "your request").strip()}
+
+
 _SYSTEM = (
     "You are Celar AI Assistant for an independent US liquor store, working inside a wholesale "
-    "pricing app. Answer questions about the catalog (pricing, deals, RIP rebates, distributors, "
-    "categories) using the data tools — never invent numbers; call tools to get them. Then reply in "
-    "clear GitHub-flavored MARKDOWN: short headings, bullet lists, and compact tables where useful. "
+    "pricing app. You sit in a side panel; the PAGE is to your left. "
+    "DECIDE FIRST: if the user wants to SEE/find/list/filter products or deals that a page can show, call "
+    "show_on_screen (pick the route + filters) and reply with ONLY a one-line confirmation like "
+    "'Showing wine under $150 with a RIP rebate on the left.' — do NOT list the products in chat. "
+    "Use the chat window to ANSWER only things a screen can't show: analysis, comparisons, totals, "
+    "explanations, price breakdowns, recommendations. For those, use the data tools — never invent "
+    "numbers — and reply in clear GitHub-flavored MARKDOWN: short headings, bullet lists, compact tables. "
     "When a distribution or comparison helps, include ONE chart as a fenced code block exactly like:\n"
     "```chart\n{\"type\":\"bar\",\"title\":\"...\",\"labels\":[...],\"series\":[{\"name\":\"...\",\"data\":[...]}]}\n```\n"
     "type is bar|line|pie; use real numbers from the tools. Keep charts small (<=12 points). "
@@ -454,6 +518,7 @@ def ask(question: str, history: list | None = None, user: dict | None = None, pa
     products_out: list = []
     seen_products: set = set()
     price_detail_result: dict | None = None
+    screen_out: dict | None = None
 
     def _collect(items):
         # Accumulate any product dicts a tool surfaced so the UI can render them
@@ -495,7 +560,10 @@ def ask(question: str, history: list | None = None, user: dict | None = None, pa
                 for b in resp.content:
                     if getattr(b, "type", "") != "tool_use":
                         continue
-                    if b.name == "perform_action":
+                    if b.name == "show_on_screen":
+                        screen_out = _build_screen(b.input or {})
+                        out = {"ok": True, "path": screen_out["path"]}
+                    elif b.name == "perform_action":
                         out = _do_action(con, b.input or {}, actions_out)
                         # Surface the acted-on products as cards too.
                         if actions_out:
@@ -543,6 +611,7 @@ def ask(question: str, history: list | None = None, user: dict | None = None, pa
         "charts": charts,
         "actions": actions_out,
         "products": products_out[:24],
+        "screen": screen_out,
         "usage": {"input_tokens": total_in, "output_tokens": total_out,
                   "model": model, "cost_usd": _cost_usd(model, total_in, total_out), "enabled": True},
     }

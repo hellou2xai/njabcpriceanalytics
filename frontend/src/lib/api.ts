@@ -103,6 +103,9 @@ export interface AssistantResponse {
   charts: AssistantChart[];
   actions: CatalogAiAction[];
   products: CatalogAiProduct[];   // surfaced products, rendered as actionable cards
+  // When set, the assistant drove the SCREEN: navigate here (page shows the data)
+  // and keep the chat message to a one-line confirmation.
+  screen?: { path: string; label: string } | null;
   usage: AiUsage;
 }
 export const assistant = {

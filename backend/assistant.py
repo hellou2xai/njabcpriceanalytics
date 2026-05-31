@@ -35,7 +35,7 @@ from backend.ai_catalog_query import (
 from backend import pricing as _pricing
 from backend import rip_utils as _rip   # canonical case/bottle RIP unit math
 
-_ACTION_TYPES =("add_to_cart", "update_quantity", "add_to_favorites", "add_to_list")
+_ACTION_TYPES =("add_to_cart", "update_quantity", "add_to_favorites", "add_to_list", "swap_distributor")
 _MAX_TURNS = 6
 # Stocking-deal floor used by the "best deals" ranker by default. A row whose
 # effective_case_price is below this fraction of frontline (e.g. a 100%-off
@@ -1183,6 +1183,92 @@ def _t_get_orders(con, args, ctx):
     return {"orders": [dict(r) for r in rows]}
 
 
+def _t_analyze_cart(con, args, ctx):
+    """Deep analysis of the user's CART, FAVORITES, or a LIST: per item, compare
+    its effective case price against every distributor carrying the SAME UPC and
+    flag where another distributor is cheaper, with per-case and quantity-weighted
+    savings + a total. Grounds 'is anyone cheaper / should I swap distributors'."""
+    uid = ctx.get("user_id")
+    if not uid:
+        return {"error": "user not signed in"}
+    source = (args.get("source") or "cart").lower()
+    from backend.pg import get_pg
+    items = []
+    with get_pg() as pg:
+        if source in ("favorites", "favourites", "watchlist", "wishlist", "wish list"):
+            source = "favorites"
+            rows = pg.execute(
+                "SELECT product_name, wholesaler, upc, unit_volume FROM watchlist WHERE user_id=%s", (uid,)).fetchall()
+            items = [{**dict(r), "qty_cases": 1, "qty_units": 0} for r in rows]
+        elif source in ("list", "lists"):
+            source = "list"
+            ln = (args.get("list_name") or "").strip()
+            if ln:
+                rows = pg.execute(
+                    "SELECT li.product_name, li.wholesaler, li.upc, li.unit_volume FROM list_items li "
+                    "JOIN lists l ON li.list_id=l.id WHERE l.user_id=%s AND lower(l.name)=lower(%s)", (uid, ln)).fetchall()
+            else:
+                rows = pg.execute(
+                    "SELECT li.product_name, li.wholesaler, li.upc, li.unit_volume FROM list_items li "
+                    "JOIN lists l ON li.list_id=l.id WHERE l.user_id=%s", (uid,)).fetchall()
+            items = [{**dict(r), "qty_cases": 1, "qty_units": 0} for r in rows]
+        else:
+            source = "cart"
+            rows = pg.execute(
+                "SELECT product_name, wholesaler, upc, unit_volume, qty_cases, qty_units FROM cart_items "
+                "WHERE user_id=%s AND COALESCE(saved_for_later,0)=0", (uid,)).fetchall()
+            items = [dict(r) for r in rows]
+    if not items:
+        return {"source": source, "item_count": 0, "note": f"Your {source} is empty."}
+
+    def _norm(u):
+        return str(u or "").lstrip("0")
+    upcs = sorted({_norm(it["upc"]) for it in items if _norm(it["upc"])})
+    pricing, by_upc = {}, {}
+    if upcs:
+        ph = ", ".join("?" for _ in upcs)
+        try:
+            df = con.execute(
+                "WITH latest AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched GROUP BY wholesaler) "
+                "SELECT LTRIM(CAST(c.upc AS VARCHAR),'0') un, c.wholesaler, c.product_name, c.effective_case_price eff "
+                "FROM cpl_enriched c JOIN latest l ON c.wholesaler=l.wholesaler AND c.edition=l.ed "
+                f"WHERE LTRIM(CAST(c.upc AS VARCHAR),'0') IN ({ph}) AND c.effective_case_price IS NOT NULL", upcs).fetchdf()
+            for _, r in df.iterrows():
+                un = str(r["un"])
+                try:
+                    eff = float(r["eff"])
+                except (TypeError, ValueError):
+                    continue
+                if eff != eff:
+                    continue
+                pricing[(r["wholesaler"], un)] = eff
+                by_upc.setdefault(un, []).append((r["wholesaler"], round(eff, 2)))
+        except Exception:
+            pass
+
+    out_items, total_save, cheaper_count = [], 0.0, 0
+    for it in items:
+        un = _norm(it["upc"])
+        cur_eff = pricing.get((it["wholesaler"], un))
+        alts = sorted(by_upc.get(un, []), key=lambda x: x[1])
+        qty = (it.get("qty_cases") or 0) or 1
+        entry = {"product_name": it.get("product_name"), "current_distributor": it.get("wholesaler"),
+                 "current_effective_case": round(cur_eff, 2) if cur_eff is not None else None,
+                 "qty_cases": it.get("qty_cases"), "upc": un or None,
+                 "also_at": [w for (w, _e) in alts if w != it.get("wholesaler")]}
+        if alts and cur_eff is not None and alts[0][1] < cur_eff - 0.01 and alts[0][0] != it.get("wholesaler"):
+            save = round(cur_eff - alts[0][1], 2)
+            entry.update({"cheaper_distributor": alts[0][0], "cheaper_effective_case": alts[0][1],
+                          "savings_per_case": save, "savings_for_qty": round(save * qty, 2)})
+            total_save += save * qty
+            cheaper_count += 1
+        out_items.append(entry)
+    return {"source": source, "item_count": len(items),
+            "cheaper_elsewhere_count": cheaper_count,
+            "total_potential_savings": round(total_save, 2),
+            "items": out_items}
+
+
 _CTX_TOOLS = {
     "find_deals": (_t_find_deals, "Promotions: products on deal. Args: kind (time_sensitive|discount|clearance), limit. Shown as cards."),
     "price_movers": (_t_price_movers, "Products whose effective price changes next month. Args: direction (drop|increase), limit. Shown as cards."),
@@ -1190,6 +1276,7 @@ _CTX_TOOLS = {
     "get_favorites": (_t_get_favorites, "The signed-in user's favorited products."),
     "get_lists": (_t_get_lists, "The signed-in user's saved lists and item counts."),
     "get_orders": (_t_get_orders, "The signed-in user's 10 most recent orders."),
+    "analyze_cart": (_t_analyze_cart, "DEEP analysis of the user's cart / favorites / a list (source: cart|favorites|list, optional list_name): per item it compares the effective case price to EVERY distributor carrying the same UPC and flags where another is cheaper, with per-case + quantity-weighted savings and a total. Use for 'analyze my cart/wishlist', 'is anyone cheaper', 'where can I save', 'should I swap distributors'. After it, offer to swap via perform_action(type=swap_distributor)."),
 }
 
 
@@ -1220,16 +1307,21 @@ def _tool_specs() -> list:
     # Action tools
     specs.append({
         "name": "perform_action",
-        "description": ("Perform a user action: add_to_cart, update_quantity, add_to_favorites, add_to_list. "
-                        "Resolves the product(s) by `match`+`which`. To add/act on an ENTIRE RIP Case Mix "
-                        "(e.g. 'add all the case mix to cart', 'add all these'), pass `rip_code`=<the code> "
-                        "(optionally `distributor`) — it resolves EVERY product sharing that code, not just "
-                        "one. `cases`/`bottles` apply to each (default 1 case each)."),
+        "description": ("Perform a user action: add_to_cart, update_quantity, add_to_favorites, add_to_list, "
+                        "swap_distributor. Resolves the product(s) by `match`+`which`. To add/act on an ENTIRE "
+                        "RIP Case Mix (e.g. 'add all the case mix to cart', 'add all these'), pass "
+                        "`rip_code`=<the code> (optionally `distributor`) — it resolves EVERY product sharing "
+                        "that code. swap_distributor REPLACES the user's cart items from `from_distributor` "
+                        "with the SAME products (matched by UPC) at `to_distributor`, preserving quantities — "
+                        "pass `rip_code` to limit it to one Case Mix, else it swaps every line from that "
+                        "distributor. Use for 'swap/replace/move <X> to <distributor>'."),
         "input_schema": {"type": "object", "properties": {
             "type": {"type": "string", "enum": list(_ACTION_TYPES)},
             "match": {"type": "string"},
             "which": {"type": "string", "enum": ["cheapest", "most_expensive", "first", "all"]},
-            "rip_code": {"type": "string", "description": "Add/act on EVERY product in this RIP code's Case Mix."},
+            "rip_code": {"type": "string", "description": "Scope add/swap to this RIP code's Case Mix."},
+            "from_distributor": {"type": "string", "description": "swap_distributor: distributor to move OUT of."},
+            "to_distributor": {"type": "string", "description": "swap_distributor: distributor to move INTO."},
             "category": {"type": "string"}, "distributor": {"type": "string"},
             "has_rip": {"type": "boolean"}, "has_discount": {"type": "boolean"},
             "cases": {"type": "number"}, "bottles": {"type": "number"},
@@ -1294,6 +1386,21 @@ def _do_action(con, args, actions_out) -> dict:
     atype = args.get("type")
     if atype not in _ACTION_TYPES:
         return {"error": "unknown action"}
+    # Distributor swap: replace cart items from one distributor with the same
+    # products (by UPC) at another. Carries no products — the frontend calls the
+    # /api/cart/swap-distributor endpoint, which resolves equivalents + edits the
+    # user's cart server-side. Optional rip_code scopes it to one Case Mix.
+    if atype == "swap_distributor":
+        frm = (args.get("from_distributor") or args.get("distributor") or "").strip()
+        to = (args.get("to_distributor") or "").strip()
+        code = str(args.get("rip_code") or "").strip()
+        code = code if code not in ("", "0", "None", "nan") else None
+        action = {"type": "swap_distributor", "cases": 0, "bottles": 0, "list_name": None,
+                  "products": [], "from_distributor": frm or None, "to_distributor": to or None,
+                  "rip_code": code,
+                  "note": None if (frm and to) else "Need both a from- and a to-distributor to swap."}
+        actions_out.append(action)
+        return {"swap": {"from": frm, "to": to, "rip_code": code}}
     which = args.get("which") if args.get("which") in ("cheapest", "most_expensive", "first", "all") else "first"
     cap = 10 if which == "all" else 1
     view = {
@@ -1633,6 +1740,15 @@ _SYSTEM = (
     "Other tools: compare_distributors (one product across all distributors, by UPC or name — show a "
     "table + a bar chart of effective price by distributor), find_deals (time_sensitive|discount|clearance), "
     "price_movers (drop|increase), and the signed-in user's get_cart / get_favorites / get_lists / get_orders. "
+    "CART / LIST INSIGHTS + DISTRIBUTOR SWAP: for 'analyze my cart / wishlist / list', 'is anyone cheaper', "
+    "'where can I save', 'should I switch distributors' — call analyze_cart (source: cart|favorites|list, "
+    "optional list_name). Present a per-item table (product, current distributor + effective $/cs, cheaper "
+    "distributor + $/cs, $ saved per case and for the quantity) and the TOTAL potential savings, then OFFER to "
+    "swap. When the user agrees, or says 'swap/replace/move <X> to <distributor>', call "
+    "perform_action(type=swap_distributor, from_distributor=<current>, to_distributor=<target>, "
+    "rip_code=<code if it's a Case Mix>) — it replaces those cart lines with the same products (matched by "
+    "UPC) at the target distributor, keeping quantities, in one step. Confirm what swapped and flag anything "
+    "the target doesn't carry. "
     "VALUE-INSIGHT tools (use these for the matching intents): best_one_case_rip — 'best 1-case RIP deals', "
     "rebates worth taking on a single case (no bulk needed); present a ranked list with the per-case rebate at "
     "one case and note it equals the bulk per-case value. deal_360 — the FULL picture for ONE item ('deal 360', "

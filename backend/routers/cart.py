@@ -60,6 +60,13 @@ class FromComboIn(BaseModel):
     qty: int = 1   # how many of the bundle to add (multiplies each component's cases)
 
 
+class SwapDistributorIn(BaseModel):
+    from_distributor: str
+    to_distributor: str
+    rip_code: Optional[str] = None        # limit the swap to one RIP code's case mix
+    upcs: Optional[list[str]] = None       # or to a specific set of (normalized) UPCs
+
+
 def _default_rep_for(con, user_id: int, wholesaler: str):
     """Return the rep id when the distributor has exactly one rep, else None."""
     reps = con.execute(
@@ -311,6 +318,94 @@ def remove_cart_item(item_id: int, user: dict = Depends(get_current_user)):
     with get_pg() as con:
         con.execute("DELETE FROM cart_items WHERE id=%s AND user_id=%s", (item_id, user["id"]))
     return {"status": "removed"}
+
+
+@router.post("/swap-distributor")
+def swap_distributor(body: SwapDistributorIn, user: dict = Depends(get_current_user)):
+    """One-command distributor swap: for the user's active cart, replace items from
+    one distributor with the SAME products (matched by UPC) at another distributor,
+    preserving each line's quantities. Works for a whole RIP case mix (pass
+    rip_code), a specific UPC set (pass upcs), or every item from the distributor
+    (pass neither). Atomic per item: the new line is added, then the old removed.
+
+    Matching is by NORMALIZED UPC — the same product is listed under different
+    names per distributor, so this is the only reliable swap key."""
+    frm = (body.from_distributor or "").strip()
+    to = (body.to_distributor or "").strip()
+    if not frm or not to:
+        raise HTTPException(400, "from_distributor and to_distributor are required")
+    if frm.lower() == to.lower():
+        return {"swapped": [], "not_carried": [], "skipped_no_upc": [],
+                "message": "Source and target distributor are the same — nothing to swap."}
+
+    def _norm(u):
+        return str(u or "").lstrip("0")
+
+    # 1) Active cart lines from the FROM distributor.
+    with get_pg() as con:
+        rows = con.execute(
+            "SELECT id, product_name, wholesaler, upc, unit_volume, qty_cases, qty_units "
+            "FROM cart_items WHERE user_id=%s AND COALESCE(saved_for_later,0)=0 "
+            "AND LOWER(wholesaler)=LOWER(%s)", (user["id"], frm)).fetchall()
+    items = [dict(r) for r in rows]
+    if not items:
+        return {"swapped": [], "not_carried": [], "skipped_no_upc": [],
+                "message": f"No active {frm} items in your cart to swap."}
+
+    # Optional scope: a RIP code's case mix, or an explicit UPC set.
+    limit_upcs = None
+    if body.rip_code:
+        with get_duckdb() as dcon:
+            ru = dcon.execute(
+                "SELECT DISTINCT LTRIM(CAST(upc AS VARCHAR),'0') un FROM rip "
+                "WHERE CAST(rip_code AS VARCHAR)=?", [str(body.rip_code)]).fetchall()
+        limit_upcs = {str(r[0]) for r in ru if r[0]}
+    elif body.upcs:
+        limit_upcs = {_norm(u) for u in body.upcs}
+    targets = [it for it in items if (limit_upcs is None or _norm(it["upc"]) in limit_upcs)]
+
+    # 2) Resolve the TO-distributor equivalent for each UPC (latest edition).
+    upcs = sorted({_norm(it["upc"]) for it in targets if _norm(it["upc"])})
+    to_map: dict = {}
+    if upcs:
+        with get_duckdb() as dcon:
+            ph = ", ".join("?" for _ in upcs)
+            df = dcon.execute(
+                "WITH latest AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched GROUP BY wholesaler) "
+                "SELECT LTRIM(CAST(c.upc AS VARCHAR),'0') un, c.product_name, c.wholesaler, "
+                "CAST(c.upc AS VARCHAR) upc, c.unit_volume "
+                "FROM cpl_enriched c JOIN latest l ON c.wholesaler=l.wholesaler AND c.edition=l.ed "
+                f"WHERE LOWER(c.wholesaler)=LOWER(?) AND LTRIM(CAST(c.upc AS VARCHAR),'0') IN ({ph})",
+                [to] + upcs).fetchdf()
+            for _, r in df.iterrows():
+                to_map.setdefault(str(r["un"]), {
+                    "product_name": r["product_name"], "wholesaler": r["wholesaler"],
+                    "upc": str(r["upc"]), "unit_volume": r["unit_volume"]})
+
+    # 3) Swap each matched line: add the equivalent (same qty), then drop the old.
+    swapped, not_carried, no_upc = [], [], []
+    with get_pg() as con:
+        for it in targets:
+            un = _norm(it["upc"])
+            if not un:
+                no_upc.append(it["product_name"]); continue
+            tgt = to_map.get(un)
+            if not tgt:
+                not_carried.append(it["product_name"]); continue
+            rep_id = _default_rep_for(con, user["id"], tgt["wholesaler"])
+            _insert_cart_item(con, user["id"], {
+                "product_name": tgt["product_name"], "wholesaler": tgt["wholesaler"],
+                "upc": tgt["upc"], "unit_volume": tgt["unit_volume"],
+                "qty_cases": it["qty_cases"], "qty_units": it["qty_units"],
+            }, rep_id)
+            con.execute("DELETE FROM cart_items WHERE id=%s AND user_id=%s", (it["id"], user["id"]))
+            swapped.append({"from": it["product_name"], "to": tgt["product_name"]})
+
+    parts = [f"Swapped {len(swapped)} item{'s' if len(swapped) != 1 else ''} from {frm} to {to}."]
+    if not_carried:
+        parts.append(f"{len(not_carried)} not carried by {to} (left as-is).")
+    return {"swapped": swapped, "not_carried": not_carried, "skipped_no_upc": no_upc,
+            "from_distributor": frm, "to_distributor": to, "message": " ".join(parts)}
 
 
 @router.post("/clear")

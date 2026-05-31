@@ -28,6 +28,15 @@ export function useAssistantActions() {
               upc: p.upc ?? undefined, unit_volume: p.unit_volume ?? undefined,
             });
           }
+        } else if (a.type === 'swap_distributor') {
+          if (a.from_distributor && a.to_distributor) {
+            await cartApi.swapDistributor({
+              from_distributor: a.from_distributor,
+              to_distributor: a.to_distributor,
+              rip_code: a.rip_code ?? undefined,
+              upcs: a.swap_upcs ?? undefined,
+            });
+          }
         } else if (a.type === 'add_to_list') {
           const name = (a.list_name || 'AI List').trim();
           const existing = await listsApi.list();
@@ -62,6 +71,7 @@ export function describeActions(actions: CatalogAiAction[] | undefined): string[
     else if (a.type === 'update_quantity') chips.push(`✏️ ${label} → ${a.cases}cs / ${a.bottles}btl`);
     else if (a.type === 'add_to_favorites') chips.push(`⭐ ${label}`);
     else if (a.type === 'add_to_list') chips.push(`📋 ${a.list_name ?? 'List'} (+${a.products.length})`);
+    else if (a.type === 'swap_distributor') chips.push(`🔁 Swap ${a.from_distributor ?? '?'} → ${a.to_distributor ?? '?'}${a.rip_code ? ` (RIP ${a.rip_code})` : ''}`);
     if (a.note) chips.push(`⚠ ${a.note}`);
   }
   return chips;

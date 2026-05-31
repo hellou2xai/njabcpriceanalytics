@@ -171,7 +171,7 @@ export interface CatalogAiProduct {
   discount_tiers?: AssistantTier[];
   rip_tiers?: AssistantTier[];
 }
-export type CatalogAiActionType = 'add_to_cart' | 'update_quantity' | 'add_to_favorites' | 'add_to_list';
+export type CatalogAiActionType = 'add_to_cart' | 'update_quantity' | 'add_to_favorites' | 'add_to_list' | 'swap_distributor';
 export interface CatalogAiAction {
   type: CatalogAiActionType;
   cases: number;
@@ -179,6 +179,11 @@ export interface CatalogAiAction {
   list_name?: string | null;
   products: CatalogAiProduct[];
   note?: string | null;
+  // swap_distributor only: replace cart items from one distributor with the other.
+  from_distributor?: string | null;
+  to_distributor?: string | null;
+  rip_code?: string | null;
+  swap_upcs?: string[] | null;
 }
 export interface CatalogAiResponse {
   answer: string;
@@ -628,6 +633,11 @@ export const cart = {
   update: (id: number, data: { qty_cases?: number; qty_units?: number; sales_rep_id?: number | null; saved_for_later?: boolean; notes?: string }) =>
     request(`/api/cart/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   remove: (id: number) => request(`/api/cart/${id}`, { method: 'DELETE' }),
+  // One-command distributor swap: replace cart items from one distributor with
+  // the same products (matched by UPC) at another, preserving quantities.
+  swapDistributor: (body: { from_distributor: string; to_distributor: string; rip_code?: string; upcs?: string[] }) =>
+    request<{ swapped: { from: string; to: string }[]; not_carried: string[]; skipped_no_upc: string[]; message: string }>(
+      '/api/cart/swap-distributor', { method: 'POST', body: JSON.stringify(body) }),
   // Bulk flip saved_for_later on N lines in one round-trip. Powers
   // "Save all for later" / "Move all to cart" on RIP group headers.
   bulkSaveForLater: (ids: number[], saved: boolean) =>

@@ -1422,6 +1422,93 @@ def _t_cart_timing(con, args, ctx):
             "note": "BUY NOW = rises or vanishes next edition; WAIT = drops next edition."}
 
 
+def _t_cart_rip_tiers(con, args, ctx):
+    """Cart-wide RIP tier maximizer: sum the cart's case (and bottle) quantity per
+    RIP code across the Case Mix, find the tier currently reached and the NEXT
+    tier, and report how many MORE cases/bottles unlock it and the extra rebate —
+    cart-wide 'found money'."""
+    uid = ctx.get("user_id")
+    if not uid:
+        return {"error": "user not signed in"}
+    from backend.pg import get_pg
+    with get_pg() as pg:
+        rows = pg.execute(
+            "SELECT product_name, wholesaler, upc, qty_cases, qty_units FROM cart_items "
+            "WHERE user_id=%s AND COALESCE(saved_for_later,0)=0", (uid,)).fetchall()
+    items = [dict(r) for r in rows]
+    if not items:
+        return {"item_count": 0, "note": "Your cart is empty."}
+
+    def _norm(u):
+        return str(u or "").lstrip("0")
+    upcs = sorted({_norm(it["upc"]) for it in items if _norm(it["upc"])})
+    meta = {}   # (wholesaler, un) -> (rip_code, pack)
+    if upcs:
+        ph = ", ".join("?" for _ in upcs)
+        try:
+            df = con.execute(
+                "WITH latest AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched GROUP BY wholesaler) "
+                "SELECT c.wholesaler, LTRIM(CAST(c.upc AS VARCHAR),'0') un, CAST(c.rip_code AS VARCHAR) rc, c.unit_qty uq "
+                "FROM cpl_enriched c JOIN latest l ON c.wholesaler=l.wholesaler AND c.edition=l.ed "
+                f"WHERE LTRIM(CAST(c.upc AS VARCHAR),'0') IN ({ph})", upcs).fetchdf()
+            for _, r in df.iterrows():
+                rc = str(r["rc"]).strip() if r["rc"] is not None else ""
+                try:
+                    pack = float(r["uq"])
+                    pack = 0.0 if pack != pack else pack
+                except (TypeError, ValueError):
+                    pack = 0.0
+                meta[(r["wholesaler"], str(r["un"]))] = (rc, pack)
+        except Exception:
+            pass
+
+    groups = {}   # (wholesaler, code) -> {cases, bottles, products:set}
+    for it in items:
+        rc, pack = meta.get((it["wholesaler"], _norm(it["upc"])), ("", 0.0))
+        if not rc or rc.lower() in ("", "0", "none", "nan"):
+            continue
+        cases = (it.get("qty_cases") or 0)
+        bottles = cases * pack + (it.get("qty_units") or 0)
+        g = groups.setdefault((it["wholesaler"], rc), {"cases": 0.0, "bottles": 0.0, "products": set()})
+        g["cases"] += cases
+        g["bottles"] += bottles
+        if it.get("product_name"):
+            g["products"].add(it["product_name"])
+
+    out = []
+    for (ws, code), g in groups.items():
+        _desc, tiers = _rip_tiers_for(con, code, ws)
+        if not tiers:
+            continue
+        # cases-equivalent sort so the ladder is in ascending commitment order
+        meta_pack = next((p for (_w, _u), (_rc, p) in meta.items() if _rc == code and p), 0.0)
+        tiers_sorted = sorted(tiers, key=lambda t: (t["qty"] / meta_pack if (meta_pack and _rip.normalize_unit(t.get("unit")) == "bottle") else t["qty"]))
+        reached_amt, next_tier = 0.0, None
+        for t in tiers_sorted:
+            is_btl = _rip.normalize_unit(t.get("unit")) == "bottle"
+            have = g["bottles"] if is_btl else g["cases"]
+            if have >= t["qty"]:
+                reached_amt = max(reached_amt, t["amount"])
+            elif next_tier is None:
+                need = t["qty"] - have
+                next_tier = {"buy_qty": t["qty"], "unit": "bottles" if is_btl else "cases",
+                             "more_needed": round(need, 1),
+                             "more_cases_equiv": round(need / meta_pack, 1) if (is_btl and meta_pack) else round(need, 1),
+                             "rebate": round(t["amount"], 2),
+                             "extra_rebate_vs_current": round(t["amount"] - reached_amt, 2)}
+        out.append({"rip_code": code, "distributor": ws,
+                    "in_cart_cases": round(g["cases"], 1), "in_cart_bottles": round(g["bottles"], 1),
+                    "current_rebate": round(reached_amt, 2) or 0,
+                    "next_tier": next_tier,
+                    "case_mix_in_cart": sorted(g["products"])[:8]})
+    out.sort(key=lambda x: (x["next_tier"] or {}).get("extra_rebate_vs_current", 0), reverse=True)
+    actionable = [o for o in out if o["next_tier"]]
+    return {"item_count": len(items), "rip_codes_in_cart": len(out),
+            "tiers": out,
+            "note": (f"{len(actionable)} rebate(s) have a reachable next tier — buy a few more to unlock extra $."
+                     if actionable else "No reachable next tier — you're at the top of each rebate you carry.")}
+
+
 _CTX_TOOLS = {
     "find_deals": (_t_find_deals, "Promotions: products on deal. Args: kind (time_sensitive|discount|clearance), limit. Shown as cards."),
     "price_movers": (_t_price_movers, "Products whose effective price changes next month. Args: direction (drop|increase), limit. Shown as cards."),
@@ -1432,6 +1519,7 @@ _CTX_TOOLS = {
     "analyze_cart": (_t_analyze_cart, "DEEP analysis of the user's cart / favorites / a list (source: cart|favorites|list, optional list_name): per item it compares the effective case price to EVERY distributor carrying the same UPC and flags where another is cheaper, with per-case + quantity-weighted savings and a total. Use for 'analyze my cart/wishlist', 'is anyone cheaper', 'where can I save', 'should I swap distributors'. After it, offer to swap via perform_action(type=swap_distributor)."),
     "optimize_cart": (_t_optimize_cart, "ORDER OPTIMIZER for the user's cart: the cheapest sourcing PLAN — per line picks the lowest effective-price distributor for that UPC, groups the wins into (from->to) distributor swaps with $ saved, and gives current vs optimized cart total. Use for 'optimize my cart', 'make my order cheaper', 'cheapest way to buy this'. Present current vs optimized total + the grouped swaps, then offer to apply each via perform_action(type=swap_distributor)."),
     "cart_timing": (_t_cart_timing, "BUY-NOW-vs-WAIT sweep of the whole cart: per line compares this edition's effective price to next edition's and flags BUY NOW (rises or drops off next month) vs WAIT (falls next month), with the $ impact per line and totals. Use for 'should I buy now or wait', 'scan my cart for timing', 'what's going up next month'."),
+    "cart_rip_tiers": (_t_cart_rip_tiers, "Cart-wide RIP tier maximizer: sums the cart's case/bottle quantity per RIP code (the Case Mix), shows the tier reached and the NEXT tier, and how many MORE cases/bottles unlock it + the extra rebate. Use for 'am I close to any rebate tiers', 'how do I hit the next RIP tier', 'maximize my rebates'."),
 }
 
 
@@ -1902,6 +1990,9 @@ _SYSTEM = (
     "BUY-NOW-vs-WAIT (cart-wide): for 'should I buy now or wait', 'scan my cart for timing', 'what's rising "
     "next month' — call cart_timing. Present a BUY NOW list (lines that rise or drop off next edition, with $ "
     "at risk) and a WAIT list (lines that fall next edition, with $ to save by waiting), plus the totals. "
+    "RIP TIER MAXIMIZER (cart-wide): for 'am I close to a rebate tier', 'how do I hit the next RIP tier', "
+    "'maximize my rebates' — call cart_rip_tiers. For each RIP code in the cart show cases in cart, the next "
+    "tier, how many MORE cases/bottles unlock it, and the extra rebate; lead with the biggest extra-$ wins. "
     "CART / LIST INSIGHTS + DISTRIBUTOR SWAP: for 'analyze my cart / wishlist / list', 'is anyone cheaper', "
     "'where can I save', 'should I switch distributors' — call analyze_cart (source: cart|favorites|list, "
     "optional list_name). Present a per-item table (product, current distributor + effective $/cs, cheaper "

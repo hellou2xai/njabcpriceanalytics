@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { cart as cartApi, watchlist, lists as listsApi } from './api';
 import type { CatalogAiAction } from './api';
+import { useDialog } from '../components/Dialog';
 
 // Executes the human-style actions an assistant resolved (add to cart / set
 // quantity / favorite / add to list) against the same APIs the buttons use.
@@ -9,6 +10,7 @@ import type { CatalogAiAction } from './api';
 // behaviour is identical everywhere.
 export function useAssistantActions() {
   const qc = useQueryClient();
+  const { confirm } = useDialog();
 
   const runActions = useCallback(async (actions: CatalogAiAction[] | undefined) => {
     for (const a of actions ?? []) {
@@ -30,6 +32,23 @@ export function useAssistantActions() {
           }
         } else if (a.type === 'swap_distributor') {
           if (a.from_distributor && a.to_distributor) {
+            // Confirm before a swap — it removes and re-adds cart lines. Count the
+            // affected source lines so the prompt is concrete.
+            let n = 0;
+            try {
+              const c = await cartApi.get();
+              n = (c.items ?? []).filter(it => !it.saved_for_later
+                && (it.wholesaler ?? '').toLowerCase() === a.from_distributor!.toLowerCase()).length;
+            } catch { /* fall back to a generic count */ }
+            const scope = a.rip_code ? ` in the RIP ${a.rip_code} case mix` : '';
+            const ok = await confirm({
+              title: `Swap ${a.from_distributor} → ${a.to_distributor}?`,
+              message: `This replaces ${n ? `${n} ` : 'your '}${a.from_distributor} cart item${n === 1 ? '' : 's'}${scope} `
+                + `with the same products at ${a.to_distributor}, keeping quantities. `
+                + `Anything ${a.to_distributor} doesn't carry stays as-is.`,
+              confirmText: 'Swap', cancelText: 'Keep as-is',
+            });
+            if (!ok) continue;
             await cartApi.swapDistributor({
               from_distributor: a.from_distributor,
               to_distributor: a.to_distributor,
@@ -56,7 +75,7 @@ export function useAssistantActions() {
       qc.invalidateQueries({ queryKey: ['watchlist'] });
       qc.invalidateQueries({ queryKey: ['lists'] });
     }
-  }, [qc]);
+  }, [qc, confirm]);
 
   return { runActions };
 }

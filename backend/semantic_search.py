@@ -85,6 +85,55 @@ def ensure_fts_index(con_pg) -> bool:
         return False
 
 
+def _voyage_upcs(con_pg, query: str, limit: int) -> Optional[list[tuple[str, float]]]:
+    """Return (UPC, score) pairs ranked by pgvector cosine similarity against
+    Voyage embeddings. Returns None when the engine isn't available (no key,
+    no embeddings table, no rows) so the caller can fall back to FTS."""
+    try:
+        from backend.voyage_embed import voyage_available, embed_query, _format_vec_literal
+    except Exception:
+        return None
+    if not voyage_available():
+        return None
+    try:
+        cur = con_pg.cursor()
+        # Confirm the embeddings table exists and has at least one row.
+        cur.execute(
+            "SELECT COUNT(*) FROM information_schema.tables "
+            "WHERE table_name = 'product_embeddings'"
+        )
+        if not cur.fetchone()[0]:
+            return None
+        cur.execute("SELECT COUNT(*) FROM product_embeddings")
+        if not cur.fetchone()[0]:
+            return None
+    except Exception as e:
+        log.warning("Voyage path probe failed: %s", e)
+        return None
+    try:
+        qvec = embed_query(query)
+    except Exception as e:
+        log.warning("Voyage query embed failed - falling back to FTS: %s", e)
+        return None
+    try:
+        cur = con_pg.cursor()
+        cur.execute(
+            """
+            SELECT upc, 1 - (vec <=> %s::vector) AS score
+            FROM product_embeddings
+            ORDER BY vec <=> %s::vector
+            LIMIT %s
+            """,
+            (_format_vec_literal(qvec), _format_vec_literal(qvec),
+             int(limit) * 3),
+        )
+        rows = cur.fetchall()
+        return [(str(u), float(s)) for u, s in rows if u]
+    except Exception as e:
+        log.warning("pgvector query failed - falling back to FTS: %s", e)
+        return None
+
+
 def _fts_upcs(con_pg, query: str, limit: int) -> list[tuple[str, float]]:
     """Return (UPC, score) pairs ranked by Postgres FTS relevance."""
     cur = con_pg.cursor()
@@ -145,11 +194,21 @@ def semantic_search(
     q = (query or "").strip()
     if not q or con_pg is None or con_duck is None:
         return []
-    try:
-        upcs_scored = _fts_upcs(con_pg, q, limit)
-    except Exception as e:
-        log.warning("FTS lookup failed: %s", e)
-        return []
+    # Engine selection: prefer Voyage vector search when available + indexed,
+    # fall back to Postgres FTS otherwise. Same return shape from both paths.
+    upcs_scored: list[tuple[str, float]] = []
+    voyage_hits = _voyage_upcs(con_pg, q, limit)
+    if voyage_hits is not None and voyage_hits:
+        upcs_scored = voyage_hits
+        engine = "voyage"
+    else:
+        try:
+            upcs_scored = _fts_upcs(con_pg, q, limit)
+            engine = "fts"
+        except Exception as e:
+            log.warning("FTS lookup failed: %s", e)
+            return []
+    log.debug("semantic_search engine=%s hits=%d q=%r", engine, len(upcs_scored), q)
     if not upcs_scored:
         return []
 

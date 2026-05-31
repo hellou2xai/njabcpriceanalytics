@@ -259,16 +259,42 @@ def _t_rip_lookup(con, args):
 
     def _code_detail(rc, ws=None):
         desc, tiers = _rip_tiers_for(con, rc, ws)
+        # Augment each tier with per-case (or per-bottle) savings + flag the best.
+        best_amt = max((t["amount"] for t in tiers), default=0.0)
+        for t in tiers:
+            u = (t.get("unit") or "").lower()
+            t["unit_short"] = "btl" if ("btl" in u or "bottle" in u) else "cs"
+            t["per_unit_savings"] = round(t["amount"] / t["qty"], 2) if t.get("qty") else None
+            t["best"] = bool(best_amt > 0 and t["amount"] == best_amt)
+        # The real Case Mix: products that share this RIP code (from the RIP sheet,
+        # joined to the catalogue for names/prices). These are what the retailer
+        # mixes to reach a tier.
+        members, member_count = [], 0
         try:
-            cnt = con.execute(
-                f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<='{cym}' GROUP BY wholesaler) "
-                "SELECT COUNT(DISTINCT c.product_name) n FROM cpl_enriched c "
-                "JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
-                "WHERE CAST(c.rip_code AS VARCHAR) = ?", [str(rc)]).fetchone()
-            pc = int(cnt[0]) if cnt else 0
+            w2 = ["CAST(rip_code AS VARCHAR) = ?"]
+            pr: list = [str(rc)]
+            if ws:
+                w2.append("wholesaler = ?")
+                pr.append(ws)
+            df = con.execute(
+                f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<='{cym}' GROUP BY wholesaler), "
+                f"ripupc AS (SELECT DISTINCT wholesaler, LTRIM(CAST(upc AS VARCHAR),'0') un FROM rip "
+                f"WHERE {' AND '.join(w2)} AND edition<='{cym}') "
+                "SELECT DISTINCT c.product_name, c.unit_volume, c.frontline_case_price, c.effective_case_price "
+                "FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
+                "JOIN ripupc r ON r.wholesaler=c.wholesaler AND r.un=LTRIM(CAST(c.upc AS VARCHAR),'0') "
+                "ORDER BY c.frontline_case_price NULLS LAST LIMIT 25", pr).fetchdf()
+            for _, m in df.iterrows():
+                cp = m["frontline_case_price"]
+                members.append({"product_name": m["product_name"], "unit_volume": m["unit_volume"],
+                                "case_price": float(cp) if cp is not None and cp == cp else None})
+            member_count = len(members)
         except Exception:
-            pc = 0
-        return {"rip_code": rc, "wholesaler": ws, "description": desc, "tiers": tiers, "product_count": pc}
+            pass
+        return {"rip_code": rc, "wholesaler": ws, "description": desc, "tiers": tiers,
+                "best_rebate": best_amt or None, "member_count": member_count,
+                "member_count_note": "25+ (showing first 25)" if member_count == 25 else None,
+                "case_mix_members": members}
 
     # By explicit code.
     if code and code not in ("0", "None", "nan"):
@@ -335,7 +361,7 @@ def _t_rip_lookup(con, args):
             for c in codes_sorted:
                 all_codes.add((c, r["wholesaler"]))
 
-    code_details = [_code_detail(c, ws) for c, ws in sorted(all_codes)][:40]
+    code_details = [_code_detail(c, ws) for c, ws in sorted(all_codes)[:15]]
     note = None
     if not all_codes:
         note = f"Found {len(matched)} product(s) matching '{match}', but none have a RIP rebate this month."
@@ -506,6 +532,7 @@ def _tool_specs() -> list:
             "price_min": {"type": "number"}, "price_max": {"type": "number"},
             "sort": {"type": "string", "enum": ["product_name", "frontline_case_price", "effective_case_price"]},
             "order": {"type": "string", "enum": ["asc", "desc"]},
+            "group_by_rip": {"type": "boolean", "description": "Catalog only: group products into Case-Mix RIP clusters with tier ladders + Add-All-to-Cart. Use for 'show RIP / Case Mix' requests."},
             "label": {"type": "string", "description": "Short human label of what's being shown."},
         }, "required": ["route"]},
     })
@@ -574,6 +601,8 @@ def _build_screen(args: dict) -> dict:
             q["sort"] = args["sort"]
         if args.get("order") in ("asc", "desc"):
             q["order"] = args["order"]
+        if args.get("group_by_rip") is True:
+            q["group_by_rip"] = "1"   # group products into Case-Mix RIP clusters
     path = base + ("?" + urlencode(q) if q else "")
     return {"path": path, "label": (args.get("label") or "your request").strip()}
 
@@ -604,10 +633,18 @@ _SYSTEM = (
     "verbatim as plain English (buy now vs wait). A price waterfall and a 3-month history chart are attached "
     "automatically, so reference them rather than re-listing the numbers. "
     "Confirm what you did in the prose. Be concise and concrete with dollars. "
-    "For any 'what RIP / rebate / RIP code' question about a brand or product (e.g. 'RIP codes for "
-    "Sutter Home'), call rip_lookup with the name. Note: a single UPC can have MULTIPLE RIP codes and "
-    "DIFFERENT DISTRIBUTORS use DIFFERENT codes — present the results grouped BY DISTRIBUTOR (use the "
-    "by_distributor map), list each code's tiers, and say plainly if there's no RIP this month. "
+    "RIP REBATES are the retailer's bread and butter — treat them as a priority. A RIP is a rebate that "
+    "qualifies on COMBINED quantity across all products sharing a RIP code ('Case Mix'): buy the tier's "
+    "quantity (cases or bottles) mixed across those products and get the bundle $ rebate, which STACKS on "
+    "top of any CPL discount. A single UPC can carry MULTIPLE RIP codes, and DIFFERENT DISTRIBUTORS use "
+    "DIFFERENT codes. "
+    "To EXPLAIN rebates (what codes, tiers, best rebate, which products to mix), call rip_lookup with the "
+    "brand/product name (or a code) and answer in chat: group BY DISTRIBUTOR (by_distributor map); for "
+    "each code show its tier ladder with per-case savings, mark the BEST rebate, and list the Case Mix "
+    "members the buyer can combine; say plainly if there is no RIP this month. "
+    "To SHOW the rebate products on the grid so the buyer can ACT, call show_on_screen with route=catalog, "
+    "q=<brand>, group_by_rip=true — the catalog then clusters products into Case-Mix groups with tier "
+    "ladders, live 'X more for the next tier' progress, and an Add-All-Case-Mix-to-Cart button. "
     "Other tools: compare_distributors (one product across all distributors, by UPC or name — show a "
     "table + a bar chart of effective price by distributor), find_deals (time_sensitive|discount|clearance), "
     "price_movers (drop|increase), and the signed-in user's get_cart / get_favorites / get_lists / get_orders."

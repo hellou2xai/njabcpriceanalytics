@@ -63,6 +63,7 @@ export default function Catalog() {
       ...emptyCatalogFilters,
       hasRip: params.get('hasRip') === '1' ? true : undefined,
       hasDiscount: params.get('hasDiscount') === '1' ? true : undefined,
+      groupByRip: params.get('group_by_rip') === '1' || undefined,
       categories: csv('categories'),
       divisions: csv('divisions'),
       sizes: csv('sizes'),

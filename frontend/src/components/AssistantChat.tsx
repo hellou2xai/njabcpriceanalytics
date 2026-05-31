@@ -41,15 +41,10 @@ function getSpeechRecognition(): (new () => SpeechRec) | null {
   return (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition || null;
 }
 
-// Predetermined high-value prompts — all fully answerable from ABC pricing data.
-const DEFAULT_SUGGESTIONS = [
-  'Show wine under $150 with a RIP rebate',
-  'Cheapest tequila — and which distributor has it',
-  'Compare Tito’s 1.75L pricing across all distributors',
-  'Full price breakdown with discount & RIP tiers for Caymus Cabernet',
-  'What deals are ending this month?',
-  'Which products drop in price next month?',
-];
+// No prepopulated prompts by default — the empty state shows a generic
+// capabilities message instead. Per-screen suggestion chips can be passed in
+// later via the `suggestions` prop.
+const DEFAULT_SUGGESTIONS: string[] = [];
 
 interface Props {
   subtitle?: string;
@@ -185,12 +180,18 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
           <div className="celar-empty">
             <div className="celar-empty-icon"><Sparkles size={28} /></div>
             <h3>How can I help?</h3>
-            <p>Ask in plain English or use the mic. I’ll answer with formatted text, charts, and can add to your cart, favorites or lists.</p>
-            <div className="celar-suggestions">
-              {suggestions.map(s => (
-                <button key={s} className="celar-suggestion" onClick={() => ask(s)} disabled={busy}>{s}</button>
-              ))}
-            </div>
+            <p>
+              I work with your catalog pricing data. I can search and filter products, compare prices
+              across distributors, break down discounts and RIP rebates, surface deals and price trends,
+              and act on results — add to cart, favorites or lists. Ask in plain English, or use the mic.
+            </p>
+            {suggestions.length > 0 && (
+              <div className="celar-suggestions">
+                {suggestions.map(s => (
+                  <button key={s} className="celar-suggestion" onClick={() => ask(s)} disabled={busy}>{s}</button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

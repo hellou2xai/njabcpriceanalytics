@@ -334,13 +334,6 @@ export default function CatalogFontTest() {
             subtitle="Ask or speak — I filter the catalog and can add to cart, favorites or lists."
             placeholder="e.g. add 2 cases of the cheapest tequila to my cart"
             storageKey="catalog_ai"
-            suggestions={[
-              'Wine under $150 with a RIP rebate',
-              'Cheapest tequila at Allied',
-              'Add 2 cases of the cheapest prosecco to my cart',
-              'Save the cheapest cabernet to favorites',
-              'Make a list called Holiday Picks with 5 sparkling wines',
-            ]}
             send={(question, history) => catalog.aiQuery(question, history)}
             onApply={applyAiResult}
             describeResult={describeAiResult}

@@ -619,8 +619,10 @@ _SYSTEM = (
     "Your PRIMARY job is to surface value in that grid. DEFAULT TO THE GRID: for ANY request that can be "
     "shown as a filtered/sorted list of products or deals — find, show, list, cheapest, on discount, "
     "with RIP, under $X, by category/distributor/size, ending soon, dropping next month — ALWAYS call "
-    "show_on_screen (pick the route + filters) and reply with ONLY a one-line confirmation like "
-    "'Showing wine under $150 with a RIP rebate on the left.' Never list those products in chat. "
+    "show_on_screen (pick the route + filters) and reply with ONLY a one-line confirmation that ends by "
+    "offering more help, e.g. 'Showing wine under $150 with a RIP rebate on the left. Anything else I can "
+    "help with?'. Never list those products in chat. The goal on EVERY screen is: show the data on the "
+    "main screen first, then ask how else you can help. "
     "Use the CHAT WINDOW only for genuinely CONVERSATIONAL questions that a product grid cannot represent: "
     "why/how explanations, recommendations, totals/counts, category or distributor breakdowns, a single "
     "product's full price breakdown, or a head-to-head distributor comparison. For those, use the data "
@@ -638,9 +640,12 @@ _SYSTEM = (
     "and the effective price — use a compact markdown table for the tiers. State the best_buy_recommendation "
     "verbatim as plain English (buy now vs wait). A price waterfall and a 3-month history chart are attached "
     "automatically, so reference them rather than re-listing the numbers. "
-    "A user message that is just a number (6+ digits) is a UPC/barcode — pass it as `match` to "
-    "price_details / compare_distributors / rip_lookup (they resolve products by UPC), or to "
-    "show_on_screen's q to filter the grid by that barcode. "
+    "A user message that is just a number (6+ digits) is a UPC/barcode. To LOCATE that product, call "
+    "show_on_screen with route=catalog and q=<upc>. If it returns found:true, reply exactly like "
+    "'Showing the product on screen. Anything else I can help with?'. If it returns found:false, reply "
+    "'Product not found. Anything else I can help with?' and do NOT claim you showed anything. "
+    "(For price/RIP/comparison details on a UPC, pass it as `match` to price_details / "
+    "compare_distributors / rip_lookup instead.) "
     "Confirm what you did in the prose. Be concise and concrete with dollars. "
     "RIP REBATES are the retailer's bread and butter — treat them as a priority. A RIP is a rebate that "
     "qualifies on COMBINED quantity across all products sharing a RIP code ('Case Mix'): buy the tier's "
@@ -746,8 +751,28 @@ def ask(question: str, history: list | None = None, user: dict | None = None, pa
                     if getattr(b, "type", "") != "tool_use":
                         continue
                     if b.name == "show_on_screen":
-                        screen_out = _build_screen(b.input or {})
-                        out = {"ok": True, "path": screen_out["path"]}
+                        si = b.input or {}
+                        sc = _build_screen(si)
+                        # If the request targets a specific UPC, verify it exists
+                        # so we can say "showing it" vs "product not found" (and
+                        # not navigate to an empty screen on a bad barcode).
+                        q = (si.get("q") or "").strip()
+                        compact = re.sub(r"[\s\-]", "", q)
+                        if compact.isdigit() and len(compact) >= 6:
+                            try:
+                                hit = _resolve_products(con, {}, q, "first", 1)
+                            except Exception:
+                                hit = []
+                            if hit:
+                                screen_out = sc
+                                out = {"ok": True, "found": True, "path": sc["path"],
+                                       "product": hit[0].get("product_name")}
+                            else:
+                                out = {"ok": False, "found": False,
+                                       "message": f"No product found for UPC {q}."}
+                        else:
+                            screen_out = sc
+                            out = {"ok": True, "path": sc["path"]}
                     elif b.name == "perform_action":
                         out = _do_action(con, b.input or {}, actions_out)
                         # Surface the acted-on products as cards too.

@@ -94,6 +94,64 @@ total_savings_per_case     = LEAST(frontline - best_case + best_rip_amt, frontli
 at the frontline price (because a buyer can never save more than the
 sticker).
 
+### 2.3.1 Partial-month (time-sensitive) exclusion rule
+
+A discount or RIP whose validity window is NOT a full calendar month is a
+TIME-SENSITIVE deal. Those are excluded from every pricing column in
+`cpl_enriched`. They live only on `/api/deals/time-sensitive` (which
+reads RAW `cpl` and applies its own filter).
+
+**Window classification** — mirror of
+`backend/routers/deals.py::_window_is_time_sensitive` inverted:
+
+```
+full-window =
+  (from_date IS NULL OR to_date IS NULL)                          -- evergreen
+  OR (
+    EXTRACT('day' FROM from_date) = 1
+    AND to_date = LAST_DAY(to_date)                               -- whole month(s)
+  )
+```
+
+Anything else (5 Apr → 22 Apr, single-day 16 Apr → 16 Apr, etc.) is
+PARTIAL-window.
+
+**What gets excluded** (`derive.py::build_cpl_enriched`):
+- `best_rip_amt` — the `rip_per_code_upc` and `rip_per_code` CTEs filter out
+  RIP source rows with partial windows. A partial-window RIP code does not
+  contribute to any SKU's `best_rip_amt`.
+- `effective_case_price` — when the CPL row's own window is partial, the
+  `best_case_price` (CPL-discounted price) is replaced with `frontline_case_price`
+  in the formula. Result: the CPL discount is dropped, RIP layer is already
+  filtered to full-window-only above.
+- `has_discount` — false for partial-window CPL rows regardless of
+  `discount_1_amt`. So a 5-Apr-only liquidation doesn't crowd the Major
+  Discounts ranker.
+- `discount_pct` — 0 for partial-window CPL rows.
+- `total_savings_per_case` — contains only the RIP portion for partial-window
+  CPL rows; their CPL discount is excluded.
+
+**What stays unchanged**:
+- The CPL row's `discount_1_qty`..`discount_5_amt`, `from_date`, `to_date`,
+  `closeout_permit`, `rip_code` columns are intact. The Time-Sensitive Deals
+  endpoint reads them directly.
+- The RIP sheet's source rows are intact in the rip parquet; tier-ladder
+  rendering still surfaces them (so a buyer sees the promo exists), just
+  annotated as time-sensitive by `pricing.attach_tiers`.
+- `has_rip` — true if any RIP code matched (including partial-window ones in
+  the rip parquet), so the catalog's "Has RIP" filter still finds rows that
+  carry a time-sensitive RIP. (Their `effective_case_price` doesn't reflect
+  it, however.)
+
+**Rebuild required**: any change to this rule requires regenerating
+`cpl_enriched.parquet`:
+```
+python -c "from nj_abc_parser.derive import build_all; build_all()"
+PRICING_SOURCE=parquet python -c "from backend.pricing_cache import build_pricing_cache; build_pricing_cache()"
+```
+On Render, the next monthly ETL (or a manual run + reload-pricing endpoint
+hit) does this.
+
 ### 2.4 Next-month preview
 
 ```sql

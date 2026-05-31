@@ -321,6 +321,20 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
         "ELSE NULL END"
     )
 
+    # Full-window predicate: a discount/RIP row is "full-window" when it has
+    # no dates (evergreen) OR when its from_date is the 1st of a month AND
+    # to_date is the last day of a month. Anything else (e.g. 5 Apr - 22 Apr)
+    # is a TIME-SENSITIVE / partial-month deal and is EXCLUDED from
+    # effective_case_price + total_savings_per_case + has_discount per the
+    # foundation rule. Partial-month deals still appear on the Time-Sensitive
+    # Deals page (which reads raw cpl) and as annotated tiers on the modal.
+    # Mirrors backend.routers.deals._window_is_time_sensitive inverted.
+    full_window = lambda f, t: (  # noqa: E731 - helper, used in f-string SQL
+        f"({f} IS NULL OR {t} IS NULL OR ("
+        f"EXTRACT('day' FROM {f}) = 1 AND {t} = LAST_DAY({t})"
+        f"))"
+    )
+
     df = con.execute(f"""
         WITH rip_per_code_upc AS (
             -- Best savings keyed by (wholesaler, edition, rip_code, upc).
@@ -330,6 +344,10 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
             -- which lives on the CPL row, not here — so emit the case-unit best
             -- (already per case) and the bottle-unit best (per bottle) separately
             -- and combine them after the join below.
+            -- TIME-SENSITIVE FILTER: only count RIP rows whose validity window
+            -- is full-month-or-null. Partial-window RIPs are deals you might
+            -- catch but the catalog's "always-on effective price" can't assume
+            -- — they belong to /api/deals/time-sensitive.
             SELECT
                 wholesaler, edition, rip_code, upc,
                 MAX(GREATEST(
@@ -346,13 +364,14 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
                 )) AS best_bottle_per_bottle
             FROM read_parquet('{pdir}/rip/**/data.parquet', hive_partitioning=true, union_by_name=true)
             WHERE rip_code IS NOT NULL
+              AND {full_window('from_date', 'to_date')}
             GROUP BY wholesaler, edition, rip_code, upc
         ),
         rip_per_code AS (
             -- Code-level fallback. Some wholesalers (e.g. Fedway) anchor
             -- a RIP to a stub UPC like '812066000000' for the whole product
             -- line, so we still apply the RIP via the code when the strict
-            -- UPC match misses.
+            -- UPC match misses. Same time-sensitive filter applies.
             SELECT
                 wholesaler, edition, rip_code,
                 MAX(GREATEST(
@@ -369,6 +388,7 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
                 )) AS best_bottle_per_bottle
             FROM read_parquet('{pdir}/rip/**/data.parquet', hive_partitioning=true, union_by_name=true)
             WHERE rip_code IS NOT NULL
+              AND {full_window('from_date', 'to_date')}
             GROUP BY wholesaler, edition, rip_code
         ),
         -- Some wholesalers (Fedway) cram multiple rip codes into one cell
@@ -430,32 +450,61 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
         enriched AS (
             SELECT
                 * EXCLUDE (best_rip_amt, rn),
-                -- Effective price: best case price minus RIP savings (capped at 0)
+                -- Tag whether THIS CPL row's window is full-month (or null).
+                -- A partial-window CPL row (e.g. 5 Apr - 22 Apr) is a time-
+                -- sensitive deal; its discount is excluded from effective
+                -- price + savings + has_discount per the foundation rule.
+                {full_window('from_date', 'to_date')} AS cpl_full_window,
+                -- Effective price: best case price minus RIP savings (capped at 0).
+                -- When the CPL row is partial-window, use frontline_case_price as
+                -- the discount base (drop the CPL discount); the RIP layer is
+                -- already filtered to full-window-only above.
                 GREATEST(
-                    ROUND(COALESCE(best_case_price, frontline_case_price)
-                          - COALESCE(best_rip_amt, 0), 2),
+                    ROUND(
+                        (CASE
+                            WHEN {full_window('from_date', 'to_date')}
+                                THEN COALESCE(best_case_price, frontline_case_price)
+                            ELSE frontline_case_price
+                         END)
+                        - COALESCE(best_rip_amt, 0),
+                    2),
                     0
                 ) AS effective_case_price,
                 COALESCE(best_rip_amt, 0) AS rip_savings,
-                -- Flags
-                CASE WHEN discount_1_amt IS NOT NULL AND discount_1_amt > 0
-                     THEN true ELSE false END AS has_discount,
+                -- Flags. has_discount is true ONLY when the CPL row is full-window
+                -- AND the discount tier is non-zero — so a partial-month "$0/cs"
+                -- liquidation doesn't dominate the Major Discounts ranker.
+                CASE
+                    WHEN discount_1_amt IS NOT NULL AND discount_1_amt > 0
+                         AND {full_window('from_date', 'to_date')}
+                    THEN true ELSE false
+                END AS has_discount,
                 CASE WHEN best_rip_amt IS NOT NULL AND best_rip_amt > 0
                      THEN true ELSE false END AS has_rip,
                 CASE WHEN closeout_permit IS NOT NULL AND closeout_permit != ''
                      THEN true ELSE false END AS has_closeout,
-                -- Savings percentage (discount tiers only, not RIP)
+                -- Savings percentage (discount tiers only, not RIP). Partial-
+                -- window rows report zero CPL savings.
                 ROUND(
-                    CASE WHEN frontline_case_price > 0
-                    THEN ((frontline_case_price - COALESCE(best_case_price, frontline_case_price))
-                          / frontline_case_price) * 100
-                    ELSE 0 END, 2
+                    CASE
+                        WHEN frontline_case_price > 0 AND {full_window('from_date', 'to_date')}
+                            THEN ((frontline_case_price - COALESCE(best_case_price, frontline_case_price))
+                                  / frontline_case_price) * 100
+                        ELSE 0
+                    END, 2
                 ) AS discount_pct,
-                -- Total potential savings per case (discount + RIP, capped at frontline price)
+                -- Total potential savings per case (discount + RIP, capped at
+                -- frontline). Partial-window CPL rows contribute the RIP portion
+                -- only; their discount portion is excluded.
                 LEAST(
-                    ROUND(frontline_case_price
-                          - COALESCE(best_case_price, frontline_case_price)
-                          + COALESCE(best_rip_amt, 0), 2),
+                    ROUND(
+                        (CASE
+                            WHEN {full_window('from_date', 'to_date')}
+                                THEN (frontline_case_price - COALESCE(best_case_price, frontline_case_price))
+                            ELSE 0
+                         END)
+                        + COALESCE(best_rip_amt, 0),
+                    2),
                     frontline_case_price
                 ) AS total_savings_per_case
             FROM joined

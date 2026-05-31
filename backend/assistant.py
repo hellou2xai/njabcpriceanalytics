@@ -1756,6 +1756,60 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
         return {"answer": f"Product not found for UPC {upc}. Anything else I can help with?",
                 "charts": [], "actions": [], "products": [], "screen": None, "usage": zero}
 
+    # Deterministic "add the WHOLE case mix to cart" fast-path. A weaker model
+    # (Haiku) won't reliably pass rip_code to perform_action — it falls back to a
+    # name lookup per SKU that misses 15 of 16 — so when the user clearly wants the
+    # entire Case Mix added, resolve the RIP code from the message (or the most
+    # recent assistant turn) and add every member ourselves, no model call needed.
+    _ql = question.lower()
+    _add_all = (bool(re.search(r"\badd\b", _ql)) and
+                bool(re.search(r"\b(case\s*mix|all of (these|them)|all these|all members|all the skus|every (sku|member|item))\b", _ql)))
+    if _add_all:
+        code = None
+        m = re.search(r"\b(?:rip\s*(?:code)?\s*[:#]?\s*)?(\d{5,6})\b", question)
+        if m:
+            code = m.group(1)
+        if not code and history:
+            for msg in reversed(history):
+                if (msg or {}).get("role") == "assistant":
+                    mm = (re.search(r"\bcode\s*`?(\d{5,6})`?", str(msg.get("content") or ""))
+                          or re.search(r"\bRIP\s*`?(\d{5,6})`?", str(msg.get("content") or "")))
+                    if mm:
+                        code = mm.group(1)
+                        break
+        if code:
+            cases = 1
+            qm = re.search(r"(\d+)\s*(?:case|cs)\b", _ql) or re.search(r"\bqty\s*(\d+)", _ql)
+            if qm:
+                try:
+                    cases = max(1, int(qm.group(1)))
+                except ValueError:
+                    cases = 1
+            try:
+                with get_duckdb() as con:
+                    mix = _rip_case_mix_products(con, code)
+            except Exception:
+                mix = []
+            if mix:
+                products, seen = [], set()
+                for p in mix:
+                    key = (p.get("wholesaler"), str(p.get("upc") or ""), p.get("product_name"))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    products.append({k: p.get(k) for k in
+                                     ("product_name", "wholesaler", "upc", "unit_volume", "unit_qty",
+                                      "vintage", "effective_case_price", "frontline_case_price")})
+                action = {"type": "add_to_cart", "cases": cases, "bottles": 0,
+                          "list_name": None, "products": products, "note": None}
+                zero = {"input_tokens": 0, "output_tokens": 0, "model": "rule", "cost_usd": 0.0, "enabled": enabled()}
+                return _json_safe({
+                    "answer": f"Added all **{len(products)} Case-Mix products** (RIP {code}) to your cart at "
+                              f"{cases} case{'s' if cases != 1 else ''} each. Anything else I can help with?",
+                    "charts": [], "actions": [action], "products": products[:24], "screen": None,
+                    "usage": zero,
+                })
+
     client = _client_or_none()
     if client is None:
         return _fallback(question)

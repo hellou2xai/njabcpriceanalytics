@@ -2580,6 +2580,10 @@ tr:hover .row-menu-btn { opacity: 1; }
 }
 .mes-summary-list { margin: 0; padding-left: 16px; list-style: disc; }
 .mes-summary-list li { line-height: 1.45; }
+/* Critical-difference lines — best-price gap, tier present in only one month,
+   tier value differs between months — bolded so the eye finds them. "Same"
+   confirmation lines stay normal weight. */
+.mes-summary-important { font-weight: 700; color: var(--text); }
 .mes-popover::after {
   content: ''; position: absolute; top: 100%; left: 50%;
   transform: translateX(-50%);

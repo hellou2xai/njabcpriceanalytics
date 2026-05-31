@@ -196,50 +196,54 @@ function ComparisonSummary({
   const dollars = (n: number) => `$${Math.abs(n).toFixed(2)}`;
   const csList = (qs: number[]) => qs.map(q => `${q}cs`).join(' / ');
 
-  const lines: string[] = [];
+  // Each line tagged as `important` when it's a CRITICAL difference the buyer
+  // must act on (best-price gap, tier present in only one month, tier value
+  // differs). Same-both-months and zero-gap lines are confirmation noise; we
+  // still render them for completeness but in normal weight. The CSS renders
+  // important lines in bold so the eye finds them.
+  type Line = { text: string; important: boolean };
+  const lines: Line[] = [];
 
   // Headline: best price difference between the two months.
   if (curr.bestEff != null && next.bestEff != null) {
     const d = curr.bestEff - next.bestEff;
     if (Math.abs(d) < 0.01) {
-      lines.push(`Best price is the same both months: ${dollars(curr.bestEff)}/cs.`);
+      lines.push({ text: `Best price is the same both months: ${dollars(curr.bestEff)}/cs.`, important: false });
     } else if (d < 0) {
-      lines.push(`${labC} is ${dollars(d)}/cs cheaper than ${labN} at best price.`);
+      lines.push({ text: `${labC} is ${dollars(d)}/cs cheaper than ${labN} at best price.`, important: true });
     } else {
-      lines.push(`${labN} is ${dollars(d)}/cs cheaper than ${labC} at best price.`);
+      lines.push({ text: `${labN} is ${dollars(d)}/cs cheaper than ${labC} at best price.`, important: true });
     }
   }
 
   // RIP differences usually carry the buy decision, so render those before
   // discount differences. Same-qty tiers are grouped into one line each.
-  const ripLines: string[] = [];
-  if (rip.same.length) ripLines.push(`Buy ${csList(rip.same)}: same RIP both months.`);
+  if (rip.same.length) lines.push({ text: `Buy ${csList(rip.same)}: same RIP both months.`, important: false });
   for (const d of rip.differs) {
     const better = d.cur < d.nxt ? labC : labN;
     const gap = Math.abs(d.cur - d.nxt);
-    ripLines.push(`Buy ${d.qty}cs: ${better} is ${dollars(gap)}/cs cheaper on RIP.`);
+    lines.push({ text: `Buy ${d.qty}cs: ${better} is ${dollars(gap)}/cs cheaper on RIP.`, important: true });
   }
-  if (rip.onlyCur.length) ripLines.push(`RIP tier${rip.onlyCur.length > 1 ? 's' : ''} ${csList(rip.onlyCur)}: only in ${labC}.`);
-  if (rip.onlyNxt.length) ripLines.push(`RIP tier${rip.onlyNxt.length > 1 ? 's' : ''} ${csList(rip.onlyNxt)}: only in ${labN}.`);
+  if (rip.onlyCur.length) lines.push({ text: `RIP tier${rip.onlyCur.length > 1 ? 's' : ''} ${csList(rip.onlyCur)}: only in ${labC}.`, important: true });
+  if (rip.onlyNxt.length) lines.push({ text: `RIP tier${rip.onlyNxt.length > 1 ? 's' : ''} ${csList(rip.onlyNxt)}: only in ${labN}.`, important: true });
 
-  const discLines: string[] = [];
-  if (disc.same.length) discLines.push(`Buy ${csList(disc.same)}: same discount both months.`);
+  if (disc.same.length) lines.push({ text: `Buy ${csList(disc.same)}: same discount both months.`, important: false });
   for (const d of disc.differs) {
     const better = d.cur < d.nxt ? labC : labN;
     const gap = Math.abs(d.cur - d.nxt);
-    discLines.push(`Buy ${d.qty}cs: ${better} discount is ${dollars(gap)}/cs better.`);
+    lines.push({ text: `Buy ${d.qty}cs: ${better} discount is ${dollars(gap)}/cs better.`, important: true });
   }
-  if (disc.onlyCur.length) discLines.push(`Discount tier${disc.onlyCur.length > 1 ? 's' : ''} ${csList(disc.onlyCur)}: only in ${labC}.`);
-  if (disc.onlyNxt.length) discLines.push(`Discount tier${disc.onlyNxt.length > 1 ? 's' : ''} ${csList(disc.onlyNxt)}: only in ${labN}.`);
-
-  lines.push(...ripLines, ...discLines);
+  if (disc.onlyCur.length) lines.push({ text: `Discount tier${disc.onlyCur.length > 1 ? 's' : ''} ${csList(disc.onlyCur)}: only in ${labC}.`, important: true });
+  if (disc.onlyNxt.length) lines.push({ text: `Discount tier${disc.onlyNxt.length > 1 ? 's' : ''} ${csList(disc.onlyNxt)}: only in ${labN}.`, important: true });
 
   if (lines.length === 0) return null;
   return (
     <div className="mes-summary">
       <div className="mes-summary-head">What it means</div>
       <ul className="mes-summary-list">
-        {lines.map((l, i) => <li key={i}>{l}</li>)}
+        {lines.map((l, i) => (
+          <li key={i} className={l.important ? 'mes-summary-important' : undefined}>{l.text}</li>
+        ))}
       </ul>
     </div>
   );

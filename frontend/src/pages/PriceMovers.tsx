@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowDownRight, ArrowUpRight } from 'lucide-react';
 import { analytics, watchlist, type PriceMover } from '../lib/api';
@@ -51,8 +52,11 @@ export default function PriceMovers({ direction }: Props) {
   const title = isDrop ? 'Price Drops' : 'Price Increases';
 
   const { open } = useProductQuickView();
+  const [params] = useSearchParams();
   const [wholesaler, setWholesaler] = useState('');
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState(params.get('q') ?? '');
+  // The assistant can filter this page in place by pushing ?q=<term|upc>.
+  useEffect(() => { const u = params.get('q'); if (u !== null) setQ(u); }, [params]);
   const [productType, setProductType] = useState('');
   const [minChange, setMinChange] = useState('');     // min ABS % change
   const [minDollar, setMinDollar] = useState('');     // min ABS $ change per case
@@ -100,7 +104,11 @@ export default function PriceMovers({ direction }: Props) {
     let res: PriceMover[] = data ?? [];
     if (q) {
       const ql = q.toLowerCase();
-      res = res.filter(i => i.product_name.toLowerCase().includes(ql) || (i.brand ?? '').toLowerCase().includes(ql));
+      const qd = q.replace(/\D/g, '');                 // digits only -> UPC search
+      res = res.filter(i =>
+        i.product_name.toLowerCase().includes(ql) ||
+        (i.brand ?? '').toLowerCase().includes(ql) ||
+        (qd.length >= 6 && String(i.upc ?? '').replace(/^0+/, '').includes(qd.replace(/^0+/, ''))));
     }
     if (productType) res = res.filter(i => i.product_type === productType);
     if (sizes.length > 0) {

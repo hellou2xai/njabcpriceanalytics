@@ -76,7 +76,7 @@ export default function GlobalAssistant() {
            onPointerDown={onResizeDown} onPointerMove={onResizeMove} onPointerUp={onResizeUp}>
         <span className="ai-resizer-grip" />
       </div>
-      <AssistantChat onClose={() => setOpen(false)} pageContext={pageLabel}
+      <AssistantChat onClose={() => setOpen(false)} pageContext={pageLabel} pagePath={location.pathname}
         subtitle={pageLabel ? `On ${pageLabel} — ask, compare, or act on products.` : undefined} />
     </div>
   );

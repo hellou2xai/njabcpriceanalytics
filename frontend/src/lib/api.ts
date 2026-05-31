@@ -109,10 +109,10 @@ export interface AssistantResponse {
   usage: AiUsage;
 }
 export const assistant = {
-  ask: (question: string, history?: AiChatTurn[], page?: string) =>
+  ask: (question: string, history?: AiChatTurn[], page?: string, pagePath?: string) =>
     request<AssistantResponse>('/api/assistant/ask', {
       method: 'POST',
-      body: JSON.stringify({ question, history, page }),
+      body: JSON.stringify({ question, history, page, page_path: pagePath }),
     }),
 };
 

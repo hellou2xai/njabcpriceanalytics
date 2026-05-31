@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Percent } from 'lucide-react';
 import { deals, watchlist, type Product } from '../lib/api';
@@ -26,8 +27,11 @@ function fmtEdition(ed?: string | null): string {
 
 export default function MajorDiscounts() {
   const { open } = useProductQuickView();
+  const [params] = useSearchParams();
   const [wholesaler, setWholesaler] = useState('');
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState(params.get('q') ?? '');
+  // The assistant can filter this page in place by pushing ?q=<term|upc>.
+  useEffect(() => { const u = params.get('q'); if (u !== null) setQ(u); }, [params]);
   const [productType, setProductType] = useState('');
   const [minSave, setMinSave] = useState('');
   const [minDiscount, setMinDiscount] = useState('');
@@ -69,7 +73,11 @@ export default function MajorDiscounts() {
     let res: Product[] = data ?? [];
     if (q) {
       const ql = q.toLowerCase();
-      res = res.filter(i => i.product_name.toLowerCase().includes(ql) || (i.brand ?? '').toLowerCase().includes(ql));
+      { const qd = q.replace(/\D/g, '');
+        res = res.filter(i =>
+          i.product_name.toLowerCase().includes(ql) ||
+          (i.brand ?? '').toLowerCase().includes(ql) ||
+          (qd.length >= 6 && String(i.upc ?? '').replace(/^0+/, '').includes(qd.replace(/^0+/, '')))); }
     }
     if (productType) res = res.filter(i => i.product_type === productType);
     if (size) res = res.filter(i => (i.unit_volume ?? '').toLowerCase().includes(size.toLowerCase()));

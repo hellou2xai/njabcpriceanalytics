@@ -53,6 +53,8 @@ interface Props {
   onClose?: () => void;
   /** Current screen label, sent so the assistant prioritizes relevant tools. */
   pageContext?: string;
+  /** Current screen route, so a UPC filters this page in place (not Catalog). */
+  pagePath?: string;
 }
 
 /**
@@ -60,7 +62,7 @@ interface Props {
  * cards, voice, multi-turn memory, per-answer model + cost. Shared by the
  * dedicated page and the dockable side panel so formatting is identical.
  */
-export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTIONS, onClose, pageContext }: Props) {
+export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTIONS, onClose, pageContext, pagePath }: Props) {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -84,7 +86,7 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
     setMessages(m => [...m, { role: 'user', text: q }]);
     setBusy(true);
     try {
-      const res = await assistant.ask(q, history, pageContext);
+      const res = await assistant.ask(q, history, pageContext, pagePath);
       const chips = describeActions(res.actions as CatalogAiAction[]);
       // If the assistant drove the screen, navigate there and keep the chat
       // to its one-line confirmation (no product dump in the panel).

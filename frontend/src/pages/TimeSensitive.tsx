@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { deals, watchlist, type TimeSensitiveDeal } from '../lib/api';
 import { ContextMenuProvider } from '../components/ContextMenu';
@@ -41,8 +42,11 @@ function fmtDateRange(from?: string | null, to?: string | null): string {
 
 export default function TimeSensitive() {
   const { open } = useProductQuickView();
+  const [params] = useSearchParams();
   const [wholesaler, setWholesaler] = useState('');
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState(params.get('q') ?? '');
+  // The assistant can filter this page in place by pushing ?q=<term|upc>.
+  useEffect(() => { const u = params.get('q'); if (u !== null) setQ(u); }, [params]);
   const [productType, setProductType] = useState('');
   const [validity, setValidity] = useState('');     // '' | 'ends-this-month' | 'next-month' | 'this-week'
   const [minSave, setMinSave] = useState('');
@@ -87,7 +91,11 @@ export default function TimeSensitive() {
     else res = res.filter(i => (i.days_to_expire ?? 0) < 0);
     if (q) {
       const ql = q.toLowerCase();
-      res = res.filter(i => i.product_name.toLowerCase().includes(ql) || (i.brand ?? '').toLowerCase().includes(ql));
+      { const qd = q.replace(/\D/g, '');
+        res = res.filter(i =>
+          i.product_name.toLowerCase().includes(ql) ||
+          (i.brand ?? '').toLowerCase().includes(ql) ||
+          (qd.length >= 6 && String(i.upc ?? '').replace(/^0+/, '').includes(qd.replace(/^0+/, '')))); }
     }
     if (productType) res = res.filter(i => i.product_type === productType);
     if (size) res = res.filter(i => (i.unit_volume ?? '').toLowerCase().includes(size.toLowerCase()));

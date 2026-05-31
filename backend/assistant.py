@@ -578,6 +578,10 @@ _SCREEN_ROUTES = {
     "orders": "/orders", "cart": "/cart",
 }
 
+# Pages whose grid filters in place by a ?q= search term/UPC. A UPC typed on one
+# of these stays on the page (filters it); elsewhere it falls back to the catalog.
+_Q_FILTER_PATHS = {"/catalog", "/price-increases", "/price-drops", "/time-sensitive", "/major-discounts"}
+
 # Per-screen scope: each page's assistant only helps with THAT page's subject.
 # Keyed by the page label the frontend sends. Catalog is the broad browse view;
 # the rest are narrow. Unknown pages fall back to the general scope.
@@ -706,7 +710,8 @@ def _fallback(question: str) -> dict:
     }
 
 
-def ask(question: str, history: list | None = None, user: dict | None = None, page: str | None = None) -> dict:
+def ask(question: str, history: list | None = None, user: dict | None = None,
+        page: str | None = None, page_path: str | None = None) -> dict:
     question = (question or "").strip()
     if not question:
         return {"answer": "Ask me anything about your catalog — pricing, deals, distributors, or say "
@@ -731,10 +736,13 @@ def ask(question: str, history: list | None = None, user: dict | None = None, pa
         except Exception:
             hit = []
         zero = {"input_tokens": 0, "output_tokens": 0, "model": "rule", "cost_usd": 0.0, "enabled": enabled()}
+        # Stay on the current page when it filters by ?q; otherwise use the catalog.
+        base = page_path if (page_path in _Q_FILTER_PATHS) else "/catalog"
         if hit:
-            return {"answer": f"Showing **{hit[0].get('product_name')}** on screen. Anything else I can help with?",
+            here = " here" if base != "/catalog" or page == "Catalog" else " in the catalog"
+            return {"answer": f"Showing **{hit[0].get('product_name')}**{here}. Anything else I can help with?",
                     "charts": [], "actions": [], "products": [],
-                    "screen": {"path": f"/catalog?q={upc}", "label": hit[0].get("product_name") or upc},
+                    "screen": {"path": f"{base}?q={upc}", "label": hit[0].get("product_name") or upc},
                     "usage": zero}
         return {"answer": f"Product not found for UPC {upc}. Anything else I can help with?",
                 "charts": [], "actions": [], "products": [], "screen": None, "usage": zero}

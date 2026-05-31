@@ -153,9 +153,12 @@ def _parse_pct(text: str) -> float | None:
 
 
 def _parse_vintage(text: str) -> str:
+    """Card body may concatenate "Vintage 2024" directly into adjacent text
+    (e.g. "· Vintage 2024MayJun+$61"); capture only the digits so the tiebreak
+    against API row vintages still matches."""
     if not text:
         return ""
-    m = re.search(r"Vintage\s+(\S+)", text)
+    m = re.search(r"Vintage\s+(\d+)", text)
     return m.group(1) if m else ""
 
 
@@ -449,8 +452,9 @@ def _index_api(rows: list[dict]) -> dict[tuple, dict]:
 
 
 def _api_lookup(api_idx: dict[tuple, dict], data: CardData) -> dict | None:
-    """Card has wholesaler+upc+volume from data-ctx; vintage from sub-text.
-    unit_qty isn't a card attribute, so match by the fields we know."""
+    """Card has wholesaler+upc+volume+product_name from data-ctx; vintage from
+    body text. UPC '0' is shared across many unrelated SKUs, so the
+    product_name filter is essential to disambiguate."""
     candidates = [
         cand for cand_key, cand in api_idx.items()
         if cand_key[0] == data.wholesaler and cand_key[1] == data.upc
@@ -458,9 +462,16 @@ def _api_lookup(api_idx: dict[tuple, dict], data: CardData) -> dict | None:
     ]
     if not candidates:
         return None
+    # Narrow by exact product_name first; this is the only way to tell apart
+    # SKUs that share UPC '0' (unknown UPC) within a wholesaler.
+    if data.product_name:
+        named = [c for c in candidates if (c.get("product_name") or "") == data.product_name]
+        if named:
+            candidates = named
     if data.vintage:
+        norm = _norm_int_str(data.vintage)
         for c in candidates:
-            if (c.get("vintage") or "") == data.vintage:
+            if _norm_int_str(c.get("vintage")) == norm:
                 return c
     return candidates[0]
 

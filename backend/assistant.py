@@ -304,12 +304,18 @@ def _t_rip_lookup(con, args):
     if not match:
         return {"error": "Provide a product/brand name (match) or a rip_code."}
 
-    # 1) Match products by name/brand (current edition per distributor).
+    # 1) Match products by UPC (6+ digit barcode) or by name/brand.
     where = ["1=1"]
     params: dict = {}
-    for i, t in enumerate(t for t in re.split(r"\s+", match) if t):
-        params[f"m{i}"] = f"%{t}%"
-        where.append(f"(UPPER(c.product_name) LIKE UPPER(${'m'+str(i)}) OR UPPER(COALESCE(c.brand,'')) LIKE UPPER(${'m'+str(i)}))")
+    _compact = re.sub(r"[\s\-]", "", match)
+    if _compact.isdigit() and len(_compact) >= 6:
+        params["upc_n"] = _compact.lstrip("0") or _compact
+        params["upc_raw"] = f"%{_compact}%"
+        where.append("(LTRIM(CAST(c.upc AS VARCHAR), '0') = $upc_n OR CAST(c.upc AS VARCHAR) LIKE $upc_raw)")
+    else:
+        for i, t in enumerate(t for t in re.split(r"\s+", match) if t):
+            params[f"m{i}"] = f"%{t}%"
+            where.append(f"(UPPER(c.product_name) LIKE UPPER(${'m'+str(i)}) OR UPPER(COALESCE(c.brand,'')) LIKE UPPER(${'m'+str(i)}))")
     try:
         rows = con.execute(
             f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<='{cym}' GROUP BY wholesaler) "
@@ -632,6 +638,9 @@ _SYSTEM = (
     "and the effective price — use a compact markdown table for the tiers. State the best_buy_recommendation "
     "verbatim as plain English (buy now vs wait). A price waterfall and a 3-month history chart are attached "
     "automatically, so reference them rather than re-listing the numbers. "
+    "A user message that is just a number (6+ digits) is a UPC/barcode — pass it as `match` to "
+    "price_details / compare_distributors / rip_lookup (they resolve products by UPC), or to "
+    "show_on_screen's q to filter the grid by that barcode. "
     "Confirm what you did in the prose. Be concise and concrete with dollars. "
     "RIP REBATES are the retailer's bread and butter — treat them as a priority. A RIP is a rebate that "
     "qualifies on COMBINED quantity across all products sharing a RIP code ('Case Mix'): buy the tier's "

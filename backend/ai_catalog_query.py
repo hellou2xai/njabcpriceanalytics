@@ -187,9 +187,18 @@ def _resolve_products(con, view: dict, match: str, which: str, cap: int) -> list
     frontend can act on exact (wholesaler, upc, unit_volume) rows."""
     where = ["1=1"]
     params = {"cym": _current_ym()}
-    for i, t in enumerate(t for t in re.split(r"\s+", (match or "").strip()) if t):
-        params[f"m{i}"] = f"%{t}%"
-        where.append(f"(UPPER(c.product_name) LIKE UPPER(${'m'+str(i)}) OR UPPER(COALESCE(c.brand,'')) LIKE UPPER(${'m'+str(i)}))")
+    # A mostly-numeric match of 6+ digits is a UPC/barcode, not a name — match it
+    # against the upc column (leading zeros normalised) instead of the name, so
+    # "812147022384" resolves the product. Otherwise AND the name/brand tokens.
+    _compact = re.sub(r"[\s\-]", "", (match or ""))
+    if _compact.isdigit() and len(_compact) >= 6:
+        params["upc_n"] = _compact.lstrip("0") or _compact
+        params["upc_raw"] = f"%{_compact}%"
+        where.append("(LTRIM(CAST(c.upc AS VARCHAR), '0') = $upc_n OR CAST(c.upc AS VARCHAR) LIKE $upc_raw)")
+    else:
+        for i, t in enumerate(t for t in re.split(r"\s+", (match or "").strip()) if t):
+            params[f"m{i}"] = f"%{t}%"
+            where.append(f"(UPPER(c.product_name) LIKE UPPER(${'m'+str(i)}) OR UPPER(COALESCE(c.brand,'')) LIKE UPPER(${'m'+str(i)}))")
     for i, cat in enumerate(view.get("categories") or []):
         params[f"cat{i}"] = cat
     if view.get("categories"):

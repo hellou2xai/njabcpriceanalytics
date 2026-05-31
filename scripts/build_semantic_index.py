@@ -81,6 +81,10 @@ def main() -> None:
                     help="Cap the number of rows for a smoke run")
     ap.add_argument("--model", default=os.getenv("VOYAGE_EMBED_MODEL", "voyage-3"),
                     help="Voyage model id (default: voyage-3, 1024 dims)")
+    ap.add_argument("--batch-size", type=int, default=64,
+                    help="Inputs per Voyage call (default 64; Voyage hard cap 128)")
+    ap.add_argument("--pause", type=float, default=0.0,
+                    help="Seconds to sleep between batches. Use 2-3 if Voyage 429s persist")
     args = ap.parse_args()
 
     if not os.getenv("VOYAGE_API_KEY"):
@@ -102,6 +106,8 @@ def main() -> None:
             only_missing=not args.all,
             limit=args.limit,
             model=args.model,
+            batch_size=args.batch_size,
+            pause_between_batches=args.pause,
         )
         print()
         print(f"Done: {result}")

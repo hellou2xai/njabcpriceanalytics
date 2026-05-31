@@ -42,8 +42,11 @@ def voyage_available() -> bool:
     return bool(os.getenv("VOYAGE_API_KEY"))
 
 
-def _post(payload: dict, *, retries: int = 4) -> dict:
-    """POST one batch to Voyage. Retries on 429/5xx with exponential backoff."""
+def _post(payload: dict, *, retries: int = 3, timeout: float = 30.0) -> dict:
+    """POST one batch to Voyage. Retries on 429/5xx with exponential backoff.
+
+    Tightened defaults: 30s socket timeout (was 60), 3 retries (was 4). At
+    the prior settings a single bad batch could burn 15 minutes silently."""
     import urllib.request
     import urllib.error
     import json
@@ -64,7 +67,7 @@ def _post(payload: dict, *, retries: int = 4) -> dict:
     delay = 1.0
     for attempt in range(retries):
         try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             code = e.code
@@ -80,7 +83,7 @@ def _post(payload: dict, *, retries: int = 4) -> dict:
             except Exception:
                 msg = str(e)
             raise RuntimeError(f"Voyage HTTP {code}: {msg}") from e
-        except urllib.error.URLError as e:
+        except (urllib.error.URLError, TimeoutError) as e:
             log.warning("Voyage URL error (attempt %d/%d): %s", attempt + 1, retries, e)
             time.sleep(delay); delay *= 2
     raise RuntimeError("Voyage request failed after retries")
@@ -154,6 +157,7 @@ def index_enrichment(
     only_missing: bool = True,
     model: str = VOYAGE_DEFAULT_MODEL,
     limit: Optional[int] = None,
+    pause_between_batches: float = 0.0,
 ) -> dict:
     """Embed enrichment rows and upsert them into product_embeddings.
 
@@ -171,12 +175,20 @@ def index_enrichment(
     if not voyage_available():
         return {"error": "VOYAGE_API_KEY not set", "embedded": 0}
     cur = con_pg.cursor()
-    # Pull enrichment rows that need embedding. Skip rows with no useful text.
+    # Pull enrichment rows that need embedding. Skip rows with no useful text
+    # — status='not_found' / 'error' rows have no description / brand / region
+    # and would be skipped anyway after the per-row blob check, but pulling
+    # them wastes cycles iterating empty batches. Filter at the SQL level.
     base = """
         SELECT pe.upc, pe.name, pe.brand, pe.description, pe.region,
                pe.category, pe.category_path
         FROM product_enrichment pe
         WHERE pe.upc IS NOT NULL AND pe.upc != ''
+          AND (
+              (pe.name IS NOT NULL AND pe.name != '')
+              OR (pe.brand IS NOT NULL AND pe.brand != '')
+              OR (pe.description IS NOT NULL AND pe.description != '')
+          )
     """
     if only_missing:
         base += """
@@ -243,9 +255,16 @@ def index_enrichment(
             )
             embedded += 1
         con_pg.commit()
-        if bi % 10 == 0 or bi == total_batches:
+        # Log every 5 batches so progress is visible from the Monitor stream.
+        if bi % 5 == 0 or bi == total_batches:
             log.info("  batch %d/%d - embedded %d / candidates %d",
                      bi, total_batches, embedded, len(rows))
+        # Pace between batches to stay under Voyage's per-minute caps. At
+        # Tier 1 this can be 0; on a freshly-upgraded account that hasn't
+        # fully propagated, 2-3 seconds keeps us well below any plausible
+        # TPM ceiling without making the run unreasonably long.
+        if pause_between_batches > 0 and bi < total_batches:
+            time.sleep(pause_between_batches)
     return {"embedded": embedded, "skipped_empty": skipped_empty,
             "failed_batches": failed_batches, "candidate_rows": len(rows),
             "model": model}

@@ -46,3 +46,8 @@ backups/
 
 # Playwright validation runs write timestamped xlsx here; output is per-run.
 tests/playwright/results/
+
+# Side-car process logs (Voyage indexing progress etc). Synced via OneDrive
+# so any signed-in PC can read them; no value in committing the snapshots.
+process logs/
+to_be_tested_after_code_change/

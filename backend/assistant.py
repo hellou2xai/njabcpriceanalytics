@@ -395,6 +395,27 @@ def _ml_of(vol):
     return num
 
 
+def _age_years(name):
+    """Best-effort age statement for a spirit from its name (12, 18, 21YR ...).
+    An age statement is a distinct product the way a vintage is for wine, so we
+    surface it. Prefers an explicit YR/Y/YO suffix; falls back to a bare 8–50
+    number that isn't a pack/volume token."""
+    if not name:
+        return None
+    s = str(name).upper()
+    m = re.search(r"\b(\d{1,2})\s*(?:YR|YRS|YO|YEARS?)\b", s)
+    if m:
+        try:
+            return int(m.group(1))
+        except ValueError:
+            return None
+    for m in re.finditer(r"\b(\d{1,2})\b(?!\s*(?:P\b|PK|PACK|ML|L\b|OZ|%|/))", s):
+        n = int(m.group(1))
+        if 8 <= n <= 50:
+            return n
+    return None
+
+
 def _t_best_one_case_rip(con, args):
     """Best 'buy just ONE case' RIP rebates: rebates whose per-case value buying a
     single case is essentially the same as buying in bulk (e.g. 30 cases), so a
@@ -585,6 +606,60 @@ def _t_deal_360(con, args):
     core["has_time_sensitive"] = bool(ts)
     core["combo_deals"] = combos
     core["has_combo"] = bool(combos)
+
+    # --- Alcohol-specific identity: brand, category, size (+ml), and the
+    # age/vintage that make two otherwise-identical labels DIFFERENT products
+    # (vintage for wine, age statement like 12/18YR for spirits). ---
+    pname = core.get("product_name")
+    brand = category = None
+    if ws and pname:
+        try:
+            mr = con.execute(
+                "SELECT ANY_VALUE(brand) b, ANY_VALUE(product_type) t FROM cpl_enriched "
+                "WHERE wholesaler=? AND product_name=?", [ws, pname]).fetchone()
+            if mr:
+                brand, category = mr[0], mr[1]
+        except Exception:
+            pass
+    core["brand"] = brand
+    core["category"] = category
+    core["size"] = core.get("unit_volume")
+    core["size_ml"] = round(_ml_of(core.get("unit_volume")), 1) if _ml_of(core.get("unit_volume")) else None
+    core["age_years"] = _age_years(pname)         # spirits age statement
+    # vintage already on core for wine
+    core["price_after_rip_case"] = core.get("effective_case_price")
+
+    try:
+        bpc = float(core.get("bottles_per_case") or 0)
+    except (TypeError, ValueError):
+        bpc = 0.0
+    def _btl(case):
+        c = _num(case)
+        return round(c / bpc, 2) if (c is not None and bpc) else None
+    core["price_after_rip_bottle"] = _btl(core.get("effective_case_price"))
+
+    # --- Last / current / upcoming month price insight (case AND bottle). ---
+    hist = core.get("price_history_3mo") or []
+    current = {
+        "edition": hist[-1]["edition"] if hist else None,
+        "list_case": core.get("frontline_case_price"),
+        "effective_case": core.get("effective_case_price"),
+        "list_bottle": core.get("frontline_bottle_price"),
+        "effective_bottle": _btl(core.get("effective_case_price")),
+    }
+    last_month = None
+    if len(hist) >= 2:
+        h = hist[-2]
+        lc = _num(h.get("effective_case_price"))
+        last_month = {"edition": h.get("edition"),
+                      "list_case": _num(h.get("frontline_case_price")),
+                      "effective_case": lc, "effective_bottle": _btl(lc)}
+    next_month = None
+    ne_ed = core.get("next_edition")
+    if ne_ed and str(ne_ed) != str(current.get("edition")):
+        ne = core.get("next_month_case_effective")
+        next_month = {"edition": ne_ed, "effective_case": ne, "effective_bottle": _btl(ne)}
+    core["months"] = {"last": last_month, "current": current, "upcoming": next_month}
     return core
 
 
@@ -840,7 +915,7 @@ _DATA_TOOLS = {
     "price_history": (_t_price_history, "Price history across editions for the product matching `match`."),
     "price_details": (_t_price_details, "FULL price breakdown for ONE product (call this for any 'price'/'pricing'/'cost'/'deal' question about a specific product): frontline case & bottle price, discount tiers, RIP tiers, effective price, bottles/case, 3-month history."),
     "best_one_case_rip": (_t_best_one_case_rip, "BEST 'buy just one case' RIP rebates — rebates whose per-case value at a SINGLE case is essentially the same as buying in bulk (e.g. 30 cases), so a small buyer isn't penalised. Ranked by per-case rebate at 1 case. Optional: distributor, limit. Use for 'best 1 case RIP deal', 'RIP deals worth it on one case', 'no-bulk RIP rebates'."),
-    "deal_360": (_t_deal_360, "DEAL 360 for ONE item: every pricing angle side by side — frontline, CPL discount tiers, RIP rebate tiers, any time-sensitive (dated, sub-month) promo window, and combo memberships — THIS month vs next, with a buy-now-vs-wait recommendation. Use when the user wants the full picture / 'which deal makes most sense' / 'deal 360' for a product."),
+    "deal_360": (_t_deal_360, "COMPREHENSIVE alcohol pricing for ONE item — use for ANY product price/pricing/cost/deal/'tell me about' question. Returns size (+ml) & bottles/case, case AND bottle price, vintage (wine) + age_years (spirits), CPL discount tiers, RIP code+tiers+best rebate, price_after_rip (case & bottle), time-sensitive windows, combo deals, and a months map (last/current/upcoming case & bottle prices) with buy-now-vs-wait. Auto-attaches waterfall + last->now->next line charts."),
     "size_value": (_t_size_value, "SIZE / VALUE efficiency for a brand/product: effective price per BOTTLE and per LITER (after discounts + RIP) across every size, ranked by best value-per-litre, plus near-free UPSIZE opportunities (e.g. when 750ML and 1L cost almost the same per bottle). Use for 'best value size', 'price per liter', '750 vs 1L', 'is the bigger bottle worth it'."),
     "rip_tier_gap": (_t_rip_tier_gap, "'Almost there' RIP tier gap for a brand/product (or rip_code), given optional cases the buyer plans (`have`): the rebate tier ladder, how many MORE cases reach each tier, the incremental rebate for stretching, and the next tier to aim for. Use for 'how close am I to the next rebate', 'worth buying more to hit the tier'."),
     "distributor_arbitrage": (_t_distributor_arbitrage, "Catalog-wide cross-distributor arbitrage: same product (UPC) sold by 2+ distributors, ranked by how much cheaper the cheapest is vs the dearest (effective case price). Optional category, min_savings_pct. Use for 'where can I save by switching distributor', 'biggest price gaps between distributors'."),
@@ -1214,11 +1289,17 @@ _SYSTEM = (
     "to the user as interactive cards with Add to Cart / Add to List / Favorite buttons, so you don't "
     "need to repeat every product in prose; summarize instead. "
     "When the user asks to add to cart, set quantity, favorite, or build a list, call perform_action. "
-    "For ANY question about a specific product's price/pricing/cost/deal, call price_details and present, "
-    "in this order: frontline case price AND per-bottle price (with bottles/case), discount tiers, RIP tiers, "
-    "and the effective price — use a compact markdown table for the tiers. State the best_buy_recommendation "
-    "verbatim as plain English (buy now vs wait). A price waterfall and a 3-month history chart are attached "
-    "automatically, so reference them rather than re-listing the numbers. "
+    "For ANY question about a specific product's price/pricing/cost/deal/'tell me about', call deal_360 (the "
+    "comprehensive tool) and give a THOROUGH, alcohol-specific answer — never a one-line reply. Your prose MUST "
+    "state ALL of these specifics (not just the charts): the SIZE (e.g. 750ML) and bottles/case; the CASE price "
+    "AND the per-BOTTLE price; for WINE the VINTAGE, and for SPIRITS the AGE STATEMENT (12/18/21YR — a different "
+    "age is a different product, like a vintage); the CPL discount tiers; the RIP rebate (code, tiers, best "
+    "rebate) and the PRICE AFTER RIP (effective) per case AND per bottle; and the LAST month / CURRENT month / "
+    "UPCOMING month prices from `months` with whether to buy now or wait. Use compact markdown tables for the "
+    "tiers and the 3-month figures. A price waterfall (List -> After Discount -> After RIP) and a last->now->next "
+    "line chart are attached automatically — reference them, but STILL state the key numbers in the text. State "
+    "best_buy_recommendation verbatim. Be comprehensive: a buyer should not have to ask a follow-up for the size, "
+    "bottle price, age/vintage, rebate, or next-month outlook. "
     "A user message that is just a number (6+ digits) is a UPC/barcode. To LOCATE that product, call "
     "show_on_screen with route=catalog and q=<upc>. If it returns found:true, reply exactly like "
     "'Showing the product on screen. Anything else I can help with?'. If it returns found:false, reply "
@@ -1518,12 +1599,22 @@ def _price_charts(pd: dict | None) -> list:
         out.append({"type": "bar", "title": f"Price waterfall — {pd.get('product_name')} ($/case)",
                     "labels": labels, "series": [{"name": "$/case", "data": vals}]})
     hist = pd.get("price_history_3mo") or []
-    if len(hist) >= 2:
-        out.append({"type": "line", "title": "3-month price history ($/case)",
-                    "labels": [str(r.get("edition")) for r in hist],
+    labels_h = [str(r.get("edition")) for r in hist]
+    list_h = [_num(r.get("frontline_case_price")) or 0 for r in hist]
+    eff_h = [_num(r.get("effective_case_price")) or 0 for r in hist]
+    # Extend the trend into NEXT month when we know it, so the line shows
+    # last → current → upcoming (the buyer's "should I wait?" picture).
+    if (pd.get("next_edition") and _num(pd.get("next_month_case_effective")) is not None
+            and (not labels_h or str(pd.get("next_edition")) != labels_h[-1])):
+        labels_h = labels_h + [str(pd.get("next_edition"))]
+        eff_h = eff_h + [_num(pd.get("next_month_case_effective"))]
+        list_h = list_h + [eff_h[-1]]   # no separate next-month list; mirror effective
+    if len(labels_h) >= 2:
+        out.append({"type": "line", "title": "Price trend ($/case): last → now → next",
+                    "labels": labels_h,
                     "series": [
-                        {"name": "List", "data": [_num(r.get("frontline_case_price")) or 0 for r in hist]},
-                        {"name": "Effective", "data": [_num(r.get("effective_case_price")) or 0 for r in hist]},
+                        {"name": "List", "data": list_h},
+                        {"name": "Effective (after RIP)", "data": eff_h},
                     ]})
     return out
 

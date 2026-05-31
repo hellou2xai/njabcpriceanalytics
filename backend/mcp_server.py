@@ -11,10 +11,14 @@ Run standalone (stdio transport, e.g. for Claude Desktop):
     python -m backend.mcp_server
 
 Tools
-  read:   search_products, product_detail, price_history,
-          category_breakdown, distributor_breakdown, deal_summary
-  action: add_to_cart, add_to_list, add_to_favorites
-          (require user_email; resolve the product, then write to Postgres)
+  read:    search_products, product_detail, price_history, price_details,
+           category_breakdown, distributor_breakdown, deal_summary,
+           compare_distributors, find_deals, rip_lookup
+  insight: alcohol_price_360 (comprehensive per-item pricing + charts),
+           size_value, best_one_case_rip, rip_tier_gap, distributor_arbitrage,
+           best_gp_deals, closeouts
+  action:  add_to_cart, add_to_list, add_to_favorites
+           (require user_email; resolve the product, then write to Postgres)
 """
 from __future__ import annotations
 
@@ -131,6 +135,68 @@ if mcp:
         Returns the code(s), each rebate's tiers + description, and product count."""
         with get_duckdb() as con:
             return _eng._t_rip_lookup(con, {"match": match, "rip_code": rip_code})
+
+    @mcp.tool()
+    def alcohol_price_360(match: str) -> dict:
+        """COMPREHENSIVE alcohol pricing for ONE product — the everything view.
+        Returns: size (+ size_ml) and bottles_per_case; case price AND per-bottle
+        price; vintage (wine) and age_years (spirits — a 12 vs 18yr is a different
+        product); CPL discount tiers; RIP code + tiers + best rebate; price after
+        RIP per case AND per bottle; any dated time-sensitive promo window; combo
+        deals; and a `months` map with LAST / CURRENT / UPCOMING month case & bottle
+        prices plus a buy-now-vs-wait recommendation. Includes ready-to-plot `charts`
+        (a List->After Discount->After RIP waterfall and a last->now->next line)."""
+        with get_duckdb() as con:
+            d = _eng._t_deal_360(con, {"match": match})
+            if isinstance(d, dict) and not d.get("error"):
+                d["charts"] = _eng._price_charts(d)
+            return _eng._json_safe(d)
+
+    @mcp.tool()
+    def size_value(match: str) -> dict:
+        """Size/value efficiency for a brand: effective price per BOTTLE and per
+        LITER (after discounts+RIP) across every size, ranked by value-per-litre,
+        with near-free upsize flags (e.g. 750ML vs 1L costing almost the same)."""
+        with get_duckdb() as con:
+            return _eng._json_safe(_eng._t_size_value(con, {"match": match}))
+
+    @mcp.tool()
+    def best_one_case_rip(distributor: str = "", limit: int = 12) -> list:
+        """Best 'buy just ONE case' RIP rebates — full per-case value on a single
+        case (no bulk commitment), ranked by per-case rebate at one case."""
+        with get_duckdb() as con:
+            return _eng._json_safe(_eng._t_best_one_case_rip(con, {"distributor": distributor, "limit": limit}))
+
+    @mcp.tool()
+    def rip_tier_gap(match: str = "", rip_code: str = "", have: int = 0) -> dict:
+        """'Almost there' RIP tier ladder for a brand/code: how many MORE cases
+        unlock each rebate tier and the incremental rebate (pass `have` = cases
+        already planned)."""
+        with get_duckdb() as con:
+            return _eng._json_safe(_eng._t_rip_tier_gap(con, {"match": match, "rip_code": rip_code, "have": have}))
+
+    @mcp.tool()
+    def distributor_arbitrage(category: str = "", min_savings_pct: float = 0, limit: int = 15) -> list:
+        """Catalog-wide cross-distributor arbitrage: same product (UPC) sold by 2+
+        distributors, ranked by how much cheaper the cheapest is vs the dearest."""
+        with get_duckdb() as con:
+            return _eng._json_safe(_eng._t_distributor_arbitrage(
+                con, {"category": category, "min_savings_pct": min_savings_pct, "limit": limit}))
+
+    @mcp.tool()
+    def best_gp_deals(category: str = "", distributor: str = "", min_pct: float = 0, limit: int = 12) -> list:
+        """Best gross-profit deals ranked by GP% (savings vs list). Optional
+        category, distributor, min_pct."""
+        with get_duckdb() as con:
+            return _eng._json_safe(_eng._t_best_gp_deals(
+                con, {"category": category, "distributor": distributor, "min_pct": min_pct, "limit": limit}))
+
+    @mcp.tool()
+    def closeouts(category: str = "", distributor: str = "", limit: int = 15) -> list:
+        """Closeout / last-chance buys being cleared this edition (won't return next
+        month), ranked by savings."""
+        with get_duckdb() as con:
+            return _eng._json_safe(_eng._t_closeouts(con, {"category": category, "distributor": distributor, "limit": limit}))
 
     # --------------------------- action tools ---------------------------
 

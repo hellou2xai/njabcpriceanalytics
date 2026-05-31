@@ -402,7 +402,7 @@ def _t_best_one_case_rip(con, args):
     cym = _current_ym()
     cap = min(int(args.get("limit") or 12), 25)
     dist = (args.get("distributor") or "").strip()
-    where = ["CAST(r.rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan')", "r.upc IS NOT NULL"]
+    where = ["CAST(r.rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan')"]
     params = [cym, cym]
     if dist:
         where.append("LOWER(r.wholesaler) = LOWER(?)")
@@ -427,13 +427,20 @@ def _t_best_one_case_rip(con, args):
                    cpl.frontline_case_price, cpl.effective_case_price
             FROM rip r
             JOIN rcur ON r.wholesaler=rcur.wholesaler AND r.edition=rcur.ed
+            -- Join by UPC only when it's a REAL barcode (>=10 digits). Placeholder
+            -- upcs like '1' (e.g. the FAUST/FAVIA rebate row) would otherwise
+            -- collide with any product whose upc also normalises to '1'. Rows
+            -- whose upc doesn't join fall back to a name lookup below.
             LEFT JOIN cpl ON cpl.w=r.wholesaler AND cpl.un=LTRIM(CAST(r.upc AS VARCHAR),'0')
+                         AND LENGTH(LTRIM(CAST(r.upc AS VARCHAR),'0')) >= 10
             WHERE {' AND '.join(where)}
         """, params).fetchdf()
     except Exception as e:
         return {"error": f"{type(e).__name__}"}
 
-    deals, seen = [], set()
+    # First pass: keep rows that genuinely qualify as a 1-case rebate, with the
+    # computed numbers, so we can rank before doing any (costlier) name lookups.
+    cands = []
     for _, row in df.iterrows():
         cts = []   # (qty, amount, per_case) for CASE-unit tiers only
         for j in (1, 2, 3, 4):
@@ -457,26 +464,66 @@ def _t_best_one_case_rip(con, args):
         # per-case rebate is within ~10% of the best per-case rebate at any quantity.
         if best_pc <= 0 or rebate_at_1 < 0.9 * best_pc:
             continue
+        cands.append((rebate_at_1, best_pc, row))
+    cands.sort(key=lambda c: c[0], reverse=True)
+
+    deals, seen, name_cache, name_lookups = [], set(), {}, 0
+    for rebate_at_1, best_pc, row in cands:
+        if len(deals) >= cap:
+            break
         pname = row.get("product_name")
-        if not pname or (isinstance(pname, float) and pname != pname):
+        upc = row.get("un")
+        eff = _num(row.get("effective_case_price"))
+        fr = _num(row.get("frontline_case_price"))
+        unit_volume = row.get("unit_volume")
+        # No UPC match (placeholder/short upc on the rebate row) -> resolve the
+        # product by the rebate's NAME (rip_description) instead, so the rebate
+        # still maps to the right product rather than being dropped. Cached +
+        # capped so we never run unbounded per-row lookups.
+        if (not pname or (isinstance(pname, float) and pname != pname)):
+            descr = row.get("descr")
+            descr = str(descr).strip() if descr is not None and str(descr) != "nan" else ""
+            if not descr or name_lookups >= 60:
+                continue
+            if descr not in name_cache:
+                name_lookups += 1
+                try:
+                    hit = _resolve_products(con, {}, descr, "first", 1)
+                except Exception:
+                    hit = []
+                name_cache[descr] = hit[0] if hit else None
+            hp = name_cache[descr]
+            if not hp:
+                continue
+            pname = hp.get("product_name")
+            upc = str(hp.get("upc") or "").lstrip("0") or upc
+            eff = _num(hp.get("effective_case_price"))
+            fr = _num(hp.get("frontline_case_price"))
+            unit_volume = hp.get("unit_volume") or unit_volume
+            if not pname:
+                continue
+        # Sanity guard: a per-case rebate can't exceed the case price itself — if
+        # it does, the rebate row is bad data or mis-joined, so drop it rather
+        # than show a nonsensical "$1,000 rebate on an $80 case".
+        case_price = fr or eff
+        if case_price is not None and rebate_at_1 > case_price:
             continue
-        key = (row.get("wholesaler"), row.get("un"), row.get("rip_code"))
+        key = (row.get("wholesaler"), upc or pname, row.get("rip_code"))
         if key in seen:
             continue
         seen.add(key)
         descr = row.get("descr")
         deals.append({
             "product_name": pname, "wholesaler": row.get("wholesaler"),
-            "upc": row.get("un"), "unit_volume": row.get("unit_volume"),
+            "upc": upc, "unit_volume": unit_volume,
             "rip_code": row.get("rip_code"),
             "rip_description": str(descr) if descr is not None and str(descr) != "nan" else None,
             "rebate_per_case_at_1": round(rebate_at_1, 2),
             "best_per_case_any_qty": round(best_pc, 2),
-            "effective_case_price": _num(row.get("effective_case_price")),
-            "frontline_case_price": _num(row.get("frontline_case_price")),
+            "effective_case_price": eff,
+            "frontline_case_price": fr,
             "note": f"${rebate_at_1:.2f}/case rebate on a SINGLE case — same per-case value as buying in bulk.",
         })
-    deals.sort(key=lambda d: d["rebate_per_case_at_1"], reverse=True)
     return deals[:cap]
 
 

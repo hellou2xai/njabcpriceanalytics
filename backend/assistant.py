@@ -246,47 +246,18 @@ def _rip_tiers_for(con, code, ws=None):
 
 
 def _t_rip_lookup(con, args):
-    """RIP rebate lookup. Give a brand/product name (e.g. 'sutter home') OR a RIP
-    code. Returns the RIP code(s), each rebate's tiers + description, how many
-    products share it, and a few example products."""
+    """RIP rebate lookup by brand/product NAME or a RIP code.
+
+    Handles the real-data facts that (a) the SAME UPC can qualify under MULTIPLE
+    RIP codes, and (b) different DISTRIBUTORS use different codes — by reading the
+    full set of codes per (distributor, UPC) from the RIP sheet, not just the one
+    code on the catalog row. Returns matched products (each with all its codes),
+    a by-distributor code map, and per-code tiers + description + product count."""
     cym = _current_ym()
     code = str(args.get("rip_code") or "").strip()
     match = (args.get("match") or "").strip()
-    codes: list[tuple[str, str | None]] = []
-    matched: list[dict] = []
 
-    if code and code not in ("0", "None", "nan"):
-        codes = [(code, None)]
-    elif match:
-        where = ["1=1"]
-        params: dict = {}   # cym is inlined below; don't pass unused params
-        for i, t in enumerate(t for t in re.split(r"\s+", match) if t):
-            params[f"m{i}"] = f"%{t}%"
-            where.append(f"(UPPER(c.product_name) LIKE UPPER(${'m'+str(i)}) OR UPPER(COALESCE(c.brand,'')) LIKE UPPER(${'m'+str(i)}))")
-        try:
-            rows = con.execute(
-                f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<='{cym}' GROUP BY wholesaler) "
-                "SELECT c.wholesaler, c.product_name, c.unit_volume, CAST(c.rip_code AS VARCHAR) AS rip_code, c.has_rip "
-                "FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
-                f"WHERE {' AND '.join(where)} LIMIT 200", params).fetchdf()
-        except Exception as e:
-            return {"error": f"{type(e).__name__}"}
-        if rows.empty:
-            return {"error": f"No products matched '{match}'."}
-        seen = set()
-        for _, r in rows.iterrows():
-            rc = str(r["rip_code"] or "").strip()
-            valid = rc not in ("", "0", "None", "nan")
-            matched.append({"product_name": r["product_name"], "wholesaler": r["wholesaler"],
-                            "unit_volume": r["unit_volume"], "rip_code": rc if valid else None})
-            if valid and (rc, r["wholesaler"]) not in seen:
-                seen.add((rc, r["wholesaler"]))
-                codes.append((rc, r["wholesaler"]))
-    else:
-        return {"error": "Provide a product/brand name (match) or a rip_code."}
-
-    code_details = []
-    for rc, ws in codes:
+    def _code_detail(rc, ws=None):
         desc, tiers = _rip_tiers_for(con, rc, ws)
         try:
             cnt = con.execute(
@@ -294,22 +265,87 @@ def _t_rip_lookup(con, args):
                 "SELECT COUNT(DISTINCT c.product_name) n FROM cpl_enriched c "
                 "JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
                 "WHERE CAST(c.rip_code AS VARCHAR) = ?", [str(rc)]).fetchone()
-            product_count = int(cnt[0]) if cnt else 0
+            pc = int(cnt[0]) if cnt else 0
         except Exception:
-            product_count = 0
-        code_details.append({"rip_code": rc, "wholesaler": ws, "description": desc,
-                             "tiers": tiers, "product_count": product_count})
+            pc = 0
+        return {"rip_code": rc, "wholesaler": ws, "description": desc, "tiers": tiers, "product_count": pc}
 
+    # By explicit code.
+    if code and code not in ("0", "None", "nan"):
+        return {"query": code, "matched_count": 0, "matched_products": [],
+                "by_distributor": {}, "rip_codes": [_code_detail(code)], "note": None}
+
+    if not match:
+        return {"error": "Provide a product/brand name (match) or a rip_code."}
+
+    # 1) Match products by name/brand (current edition per distributor).
+    where = ["1=1"]
+    params: dict = {}
+    for i, t in enumerate(t for t in re.split(r"\s+", match) if t):
+        params[f"m{i}"] = f"%{t}%"
+        where.append(f"(UPPER(c.product_name) LIKE UPPER(${'m'+str(i)}) OR UPPER(COALESCE(c.brand,'')) LIKE UPPER(${'m'+str(i)}))")
+    try:
+        rows = con.execute(
+            f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<='{cym}' GROUP BY wholesaler) "
+            "SELECT c.wholesaler, c.product_name, c.unit_volume, CAST(c.upc AS VARCHAR) AS upc, "
+            "CAST(c.rip_code AS VARCHAR) AS cpl_rip "
+            "FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
+            f"WHERE {' AND '.join(where)} LIMIT 300", params).fetchdf()
+    except Exception as e:
+        return {"error": f"{type(e).__name__}"}
+    if rows.empty:
+        return {"error": f"No products matched '{match}'."}
+
+    # 2) Full set of RIP codes per (distributor, normalized UPC) from the RIP sheet
+    #    — a UPC can appear under several codes, and codes differ by distributor.
+    keys = sorted({(r["wholesaler"], (str(r["upc"]) or "").lstrip("0"))
+                   for _, r in rows.iterrows() if (str(r["upc"]) or "").lstrip("0")})
+    upc_codes: dict = {}
+    if keys:
+        ph = ", ".join(f"($w{i}, $u{i})" for i in range(len(keys)))
+        kp: dict = {}
+        for i, (w, u) in enumerate(keys):
+            kp[f"w{i}"], kp[f"u{i}"] = w, u
+        try:
+            rr = con.execute(
+                "SELECT DISTINCT wholesaler, LTRIM(CAST(upc AS VARCHAR),'0') AS un, CAST(rip_code AS VARCHAR) AS rip_code "
+                f"FROM rip WHERE edition <= '{cym}' "
+                "AND CAST(rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan') "
+                f"AND (wholesaler, LTRIM(CAST(upc AS VARCHAR),'0')) IN ({ph})", kp).fetchdf()
+            for _, r in rr.iterrows():
+                upc_codes.setdefault((r["wholesaler"], r["un"]), set()).add(str(r["rip_code"]).strip())
+        except Exception:
+            pass
+
+    # 3) Attach all codes per product + a by-distributor roll-up.
+    matched: list[dict] = []
+    by_dist: dict = {}
+    all_codes: set = set()
+    for _, r in rows.iterrows():
+        un = (str(r["upc"]) or "").lstrip("0")
+        codes = set(upc_codes.get((r["wholesaler"], un), set()))
+        cpl = str(r["cpl_rip"] or "").strip()
+        if cpl not in ("", "0", "None", "nan"):
+            codes.add(cpl)
+        codes_sorted = sorted(codes)
+        matched.append({"product_name": r["product_name"], "wholesaler": r["wholesaler"],
+                        "unit_volume": r["unit_volume"], "upc": un or None, "rip_codes": codes_sorted})
+        if codes_sorted:
+            by_dist.setdefault(r["wholesaler"], set()).update(codes_sorted)
+            for c in codes_sorted:
+                all_codes.add((c, r["wholesaler"]))
+
+    code_details = [_code_detail(c, ws) for c, ws in sorted(all_codes)][:40]
     note = None
-    if match and not codes:
+    if not all_codes:
         note = f"Found {len(matched)} product(s) matching '{match}', but none have a RIP rebate this month."
-    return {"query": code or match, "matched_count": len(matched),
-            "matched_products": matched[:25], "rip_codes": code_details, "note": note}
+    return {"query": match, "matched_count": len(matched), "matched_products": matched[:25],
+            "by_distributor": {k: sorted(v) for k, v in by_dist.items()}, "rip_codes": code_details, "note": note}
 
 
 _DATA_TOOLS = {
     "category_breakdown": (_t_category_breakdown, "Product counts and average case price per category (current edition)."),
-    "rip_lookup": (_t_rip_lookup, "RIP rebate lookup by brand/product NAME (e.g. 'sutter home') or by a RIP code. Returns the RIP code(s), each rebate's tiers + description, product count, and example products. Use for any 'what RIP / rebate / RIP code' question."),
+    "rip_lookup": (_t_rip_lookup, "RIP rebate lookup by brand/product NAME (e.g. 'sutter home') or by a RIP code. A UPC can have MULTIPLE codes and codes differ BY DISTRIBUTOR; returns matched products (each with all its codes), a by_distributor code map, and per-code tiers + description + product count. Use for any 'what RIP / rebate / RIP code' question."),
     "compare_distributors": (_t_compare_distributors, "Side-by-side price comparison of ONE product across all distributors carrying it. `match` = UPC or product name (UPC is resolved). Returns each distributor's case/effective price + savings; shown as a table and the rows as add-to-cart cards."),
     "distributor_breakdown": (_t_distributor_breakdown, "Per-distributor product counts, avg case price, and #with RIP/discount."),
     "deal_counts": (_t_deal_counts, "Totals: products, #with RIP, #with discount, #closeouts."),
@@ -569,8 +605,9 @@ _SYSTEM = (
     "automatically, so reference them rather than re-listing the numbers. "
     "Confirm what you did in the prose. Be concise and concrete with dollars. "
     "For any 'what RIP / rebate / RIP code' question about a brand or product (e.g. 'RIP codes for "
-    "Sutter Home'), call rip_lookup with the name — it returns the code(s), tiers and product count; "
-    "present them as a short table and say plainly if there's no RIP this month. "
+    "Sutter Home'), call rip_lookup with the name. Note: a single UPC can have MULTIPLE RIP codes and "
+    "DIFFERENT DISTRIBUTORS use DIFFERENT codes — present the results grouped BY DISTRIBUTOR (use the "
+    "by_distributor map), list each code's tiers, and say plainly if there's no RIP this month. "
     "Other tools: compare_distributors (one product across all distributors, by UPC or name — show a "
     "table + a bar chart of effective price by distributor), find_deals (time_sensitive|discount|clearance), "
     "price_movers (drop|increase), and the signed-in user's get_cart / get_favorites / get_lists / get_orders."

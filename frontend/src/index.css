@@ -4571,6 +4571,19 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 .celar-product-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 
 .celar-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
+
+/* In-chat hyperlink that opens the filtered target page (catalog, discounts,
+   etc.). Replaces the auto-navigation that used to kick the user off /celar. */
+.celar-screen-link { margin: 10px 0 4px; }
+.celar-screen-link-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: 999px;
+  background: var(--accent); color: #fff;
+  font-size: 13px; font-weight: 600;
+  text-decoration: none;
+}
+.celar-screen-link-btn:hover { filter: brightness(1.08); text-decoration: none; }
+
 .celar-usage { margin: 8px 0 6px; padding-top: 6px; border-top: 1px dashed var(--border); font-size: 11px; color: var(--text-muted); }
 .celar-usage strong { color: var(--green, #16a34a); }
 

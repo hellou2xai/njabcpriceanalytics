@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Sparkles, Send, Mic, MicOff, AlertCircle, Trash2, PanelRightClose } from 'lucide-react';
@@ -26,7 +26,13 @@ interface Msg {
   awaitingCount?: boolean;
   screenBase?: string;   // pathname (no query) the count must belong to
   navTs?: number;        // when we navigated; ignore counts reported before this
+  // Surfaced on standalone Assistant page: the chat stays put and renders a
+  // hyperlink the user clicks to open the result on the target page.
+  screenPath?: string;
+  screenLabel?: string;
 }
+
+const CONVOS_KEY = 'celar_convos_v1';
 
 const money = (v?: number | null) => (v == null ? '—' : `$${Number(v).toFixed(2)}`);
 const fmtCost = (usd: number) => (usd === 0 ? '$0.00' : usd < 0.01 ? `$${usd.toFixed(5)}` : `$${usd.toFixed(4)}`);
@@ -73,7 +79,21 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
   // page path (falls back to the label / 'global'). Switching pages shows that
   // page's own thread, and the history sent to the model is that page's only.
   const pageKey = pagePath || pageContext || 'global';
-  const [convos, setConvos] = useState<Record<string, Msg[]>>({});
+  // Persist conversations to localStorage so the thread survives the user
+  // clicking through to a results page and back. Hydrate lazily on mount.
+  const [convos, setConvos] = useState<Record<string, Msg[]>>(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      const raw = window.localStorage.getItem(CONVOS_KEY);
+      return raw ? (JSON.parse(raw) as Record<string, Msg[]>) : {};
+    } catch { return {}; }
+  });
+  // Persist on every change. Quick-and-dirty: localStorage call is synchronous
+  // but the messages array is small (per-page transcripts), so it's fine.
+  useEffect(() => {
+    try { window.localStorage.setItem(CONVOS_KEY, JSON.stringify(convos)); }
+    catch { /* quota or private mode — silently drop */ }
+  }, [convos]);
   const messages = convos[pageKey] ?? [];
   const setMessages = useCallback((u: Msg[] | ((prev: Msg[]) => Msg[])) => {
     setConvos(c => ({ ...c, [pageKey]: typeof u === 'function' ? (u as (p: Msg[]) => Msg[])(c[pageKey] ?? []) : u }));
@@ -124,18 +144,28 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
     try {
       const res = await assistant.ask(q, history, pageContext, pagePath);
       const chips = describeActions(res.actions as CatalogAiAction[]);
-      // If the assistant drove the screen, navigate there and keep the chat
-      // to its one-line confirmation (no product dump in the panel).
       const drove = !!res.screen?.path;
       const screenBase = drove ? res.screen!.path.split('?')[0] : undefined;
+      // Standalone (dedicated /celar page) = no pagePath. There we DO NOT
+      // auto-navigate; we keep the user in the chat and surface a hyperlink
+      // on the message that opens the filtered target page when clicked.
+      // The docked side panel keeps its in-place behaviour (auto-navigate,
+      // which on that mode is a same-page URL filter swap).
+      const isStandalone = !pagePath;
       setMessages(m => [...m, {
         role: 'assistant', text: res.answer,
         charts: drove ? [] : res.charts,
         products: drove ? [] : res.products,
         chips, usage: res.usage,
-        awaitingCount: drove, screenBase, navTs: drove ? Date.now() : undefined,
+        // awaitingCount needs an actual navigation to fire — only set in the
+        // docked case where we do navigate.
+        awaitingCount: drove && !isStandalone,
+        screenBase,
+        navTs: drove && !isStandalone ? Date.now() : undefined,
+        screenPath: drove ? res.screen!.path : undefined,
+        screenLabel: drove ? res.screen!.label : undefined,
       }]);
-      if (drove) navigate(res.screen!.path);
+      if (drove && !isStandalone) navigate(res.screen!.path);
       if (res.actions?.length) runActions(res.actions);
     } catch (e) {
       setMessages(m => [...m, { role: 'assistant', error: true, text: `Sorry — that request failed (${e instanceof Error ? e.message : 'unknown error'}).` }]);
@@ -269,6 +299,13 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+              {m.screenPath && (
+                <div className="celar-screen-link">
+                  <Link to={m.screenPath} className="celar-screen-link-btn">
+                    Open {m.screenLabel || 'result'} →
+                  </Link>
                 </div>
               )}
               {m.chips && m.chips.length > 0 && (

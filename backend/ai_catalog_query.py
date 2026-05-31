@@ -352,6 +352,13 @@ def _enrich_products_with_tiers(con, products: list[dict]) -> None:
     # Attach tiers on the row dicts first (one batched call), then copy the
     # tier arrays back onto the slim product dicts.
     pricing.attach_tiers(con, rows)
+    # Also attach NEXT edition's tier ladder so the assistant's table can draw the
+    # same this-month -> next-month pricing sparkline the Catalog/Promotions pages
+    # use (with its popover). Best-effort: the chat never breaks if this fails.
+    try:
+        pricing.attach_next_tiers(con, rows)
+    except Exception:
+        pass
     for p in products:
         ws = p.get("wholesaler"); upc = str(p.get("upc") or "")
         vol = p.get("unit_volume") or ""; uq = str(p.get("unit_qty") or "")
@@ -368,6 +375,14 @@ def _enrich_products_with_tiers(con, products: list[dict]) -> None:
         p["discount_tiers"] = [t for t in tiers if t.get("source") == "discount"]
         p["rip_tiers"] = [t for t in tiers if t.get("source") == "rip"]
         p["edition"] = match.get("edition")
+        # Next-month data for the sparkline (next tier ladder + next effective).
+        p["next_tiers"] = match.get("next_tiers") or []
+        ne = match.get("next_effective_case_price")
+        try:
+            ne = float(ne)
+            p["next_effective_case_price"] = None if ne != ne else ne
+        except (TypeError, ValueError):
+            p["next_effective_case_price"] = None
 
 
 def _resolve_actions(raw_actions: list, view: dict, default_match: str) -> list[dict]:

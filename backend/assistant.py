@@ -2647,11 +2647,14 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
             "find_deals, price_movers, deal_360, compare_distributors, "
             "rip_lookup) to get real numbers; (2) call show_on_screen so the "
             "user gets a hyperlink to the filtered Catalog page; (3) reply "
-            "with the actual DATA inline in the chat — a concise markdown "
-            "summary AND, when 3+ products are returned, a short comparison "
-            "table (product, distributor, size, vintage, frontline /cs, "
-            "effective /cs, savings). Phrase results as 'Found N matches. "
-            "Top picks:' or 'Here are the cheapest X:' — NEVER as 'Showing "
+            "with a concise PROSE summary of the picks. DO NOT hand-format the "
+            "products as a markdown table — the app AUTOMATICALLY renders the "
+            "returned products as an interactive table (clickable names that open "
+            "the product modal + a this->next pricing sparkline per row), so a "
+            "markdown table would just duplicate it. Just summarize the top picks "
+            "in words (e.g. 'Found N matches — the cheapest is X at $Y/cs; Z also "
+            "stands out') and let the table show the detail. Phrase as 'Found N "
+            "matches. Top picks:' or 'Here are the cheapest X:' — NEVER 'Showing "
             "X on [anything]'. Surface the hyperlink as 'Open full list in "
             "Catalog ->' at the end. End with one offer to help further. "
             "SEMANTIC FILTERS on the data tools: top_products, price_movers and "
@@ -2831,14 +2834,18 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
     # same set the chat shows. Cap at 12 rows — that's all the table is sized
     # for; the user can hit the Catalog hyperlink for the full set.
     products_final = products_out[:24]
-    if len(products_final) >= 3:
+    if products_final:
+        # Enrich EVERY surfaced product with its discount/RIP tiers + next-month
+        # tiers so any tabular product view renders the rich interactive format
+        # (clickable name -> modal + this->next pricing sparkline), not just the
+        # 3+ comparison table.
         try:
             from backend.ai_catalog_query import _enrich_products_with_tiers
             with get_duckdb() as _con:
                 _enrich_products_with_tiers(_con, products_final)
         except Exception:
             pass  # never fail the answer over enrichment
-        if screen_out is None:
+        if len(products_final) >= 3 and screen_out is None:
             # Normalise UPCs and drop blanks/zeros — a product missing a UPC
             # would otherwise put a stray empty string in the comma-separated
             # list and the catalog filter would think the user wanted an

@@ -1,15 +1,21 @@
 import { Link } from 'react-router-dom';
-import type { CatalogAiProduct, AssistantTier } from '../lib/api';
+import type { CatalogAiProduct, AssistantTier, CatalogTier } from '../lib/api';
 import { distributorName } from '../lib/distributors';
 import AddToCartButton from './AddToCartButton';
 import AddToListButton from './AddToListButton';
 import FavoriteButton from './FavoriteButton';
+import MonthEffectiveSparkline from './MonthEffectiveSparkline';
+import { buildSparkProps } from '../lib/promotionsSparkline';
+import { useProductQuickView } from './ProductQuickView';
 
 interface Props {
   products: CatalogAiProduct[];
   /** Catalog deep-link to the same set of UPCs the table shows. Optional. */
   screenPath?: string;
   screenLabel?: string;
+  /** Standalone Ask page: product names open the Product Modal and a this->next
+   *  pricing sparkline (same popover as the Catalog) is shown per row. */
+  standalone?: boolean;
 }
 
 const money = (v?: number | null) => (v == null ? '—' : `$${Number(v).toFixed(2)}`);
@@ -38,7 +44,8 @@ function tierChip(t: AssistantTier): string {
  * tiers and all RIP tiers. Below the table, a deep-link opens the same set
  * in the Catalog (filtered by exact UPCs).
  */
-export default function AssistantComparisonTable({ products, screenPath, screenLabel }: Props) {
+export default function AssistantComparisonTable({ products, screenPath, screenLabel, standalone }: Props) {
+  const { open } = useProductQuickView();
   return (
     <div className="celar-compare-wrap">
       <div className="celar-compare-scroll">
@@ -52,6 +59,7 @@ export default function AssistantComparisonTable({ products, screenPath, screenL
               <th className="right">Frontline /cs</th>
               <th className="right">Effective /cs</th>
               <th className="right">Save</th>
+              {standalone && <th>Trend</th>}
               <th>Discount tiers</th>
               <th>RIP tiers</th>
               <th></th>
@@ -62,15 +70,35 @@ export default function AssistantComparisonTable({ products, screenPath, screenL
               const savingsPct = fmtSavingsPct(p.frontline_case_price, p.effective_case_price);
               const disc = p.discount_tiers ?? [];
               const rips = p.rip_tiers ?? [];
+              const openModal = () => open(p.product_name, p.wholesaler, undefined, {
+                upc: p.upc ?? undefined, unitVolume: p.unit_volume ?? undefined,
+                unitQty: p.unit_qty ?? undefined, vintage: (p.vintage as string | null) ?? undefined,
+              });
               return (
                 <tr key={`${p.wholesaler}-${p.upc ?? p.product_name}-${i}`}>
-                  <td className="celar-compare-name">{p.product_name}</td>
+                  <td className="celar-compare-name">
+                    {standalone
+                      ? <button type="button" className="celar-compare-namelink" onClick={openModal}>{p.product_name}</button>
+                      : p.product_name}
+                  </td>
                   <td>{distributorName(p.wholesaler)}</td>
                   <td>{p.unit_volume ?? '—'}</td>
                   <td>{p.vintage && p.vintage !== '0' ? p.vintage : '—'}</td>
                   <td className="right">{money(p.frontline_case_price)}</td>
                   <td className="right"><strong>{money(p.effective_case_price)}</strong></td>
                   <td className="right">{savingsPct ?? '—'}</td>
+                  {standalone && (
+                    <td className="celar-compare-spark">
+                      <MonthEffectiveSparkline {...buildSparkProps({
+                        edition: p.edition,
+                        frontline_case_price: p.frontline_case_price,
+                        effective_case_price: p.effective_case_price,
+                        next_effective_case_price: p.next_effective_case_price,
+                        tiers: (p.tiers ?? []) as unknown as CatalogTier[],
+                        next_tiers: (p.next_tiers ?? []) as unknown as CatalogTier[],
+                      })} />
+                    </td>
+                  )}
                   <td>
                     {disc.length === 0 ? <span className="celar-compare-empty">—</span> : (
                       <div className="celar-compare-chips">

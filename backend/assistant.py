@@ -250,33 +250,54 @@ def _t_compare_distributors(con, args):
 
 
 def _rip_tiers_for(con, code, ws=None):
-    """(description, [tiers]) for a RIP code from the rip sheet. ws optional."""
-    where = ["CAST(rip_code AS VARCHAR) = ?"]
-    params = [str(code)]
+    """(description, [tiers]) for a RIP code. A code's FULL tier ladder is split
+    across MULTIPLE rip rows — each row holds up to 4 tier slots, and a code spans
+    several UPCs/rows — so we read ALL rows for the code in its latest edition and
+    UNION their tiers. (Reading a single row dropped tiers such as the
+    '3 Cases -> $108' rung on Anteel code 100027.) Tiers are deduped by
+    (unit, qty, amount) and sorted by rebate amount."""
+    cym = _current_ym()
+    base = ["CAST(rip_code AS VARCHAR) = ?"]
+    bp = [str(code)]
     if ws:
-        where.append("wholesaler = ?")
-        params.append(ws)
+        base.append("wholesaler = ?")
+        bp.append(ws)
     try:
+        med = con.execute(
+            f"SELECT MAX(edition) FROM rip WHERE {' AND '.join(base)} AND edition <= ?", bp + [cym]).fetchone()
+        ed = med[0] if med and med[0] else None
+        if not ed:
+            return None, []
         df = con.execute(
             "SELECT rip_description, rip_unit_1, rip_qty_1, rip_amt_1, rip_unit_2, rip_qty_2, rip_amt_2, "
             "rip_unit_3, rip_qty_3, rip_amt_3, rip_unit_4, rip_qty_4, rip_amt_4 "
-            f"FROM rip WHERE {' AND '.join(where)} LIMIT 1", params).fetchdf()
+            f"FROM rip WHERE {' AND '.join(base)} AND edition = ? LIMIT 1000", bp + [ed]).fetchdf()
     except Exception:
         return None, []
     if df.empty:
         return None, []
-    r = df.iloc[0]
-    tiers = []
-    for j in range(1, 5):
-        amt, qty, unit = r.get(f"rip_amt_{j}"), r.get(f"rip_qty_{j}"), r.get(f"rip_unit_{j}")
-        try:
-            a, q = float(amt), float(qty)
-        except (TypeError, ValueError):
-            continue
-        if a == a and q == q and a > 0 and q > 0:
-            tiers.append({"qty": int(q), "unit": (str(unit) if unit and str(unit) != "nan" else "Cases"), "amount": round(a, 2)})
-    desc = r.get("rip_description")
-    return (str(desc) if desc is not None and str(desc) != "nan" else None), tiers
+    desc, seen, tiers = None, set(), []
+    for _, r in df.iterrows():
+        if desc is None:
+            d = r.get("rip_description")
+            if d is not None and str(d) != "nan":
+                desc = str(d)
+        for j in range(1, 5):
+            amt, qty, unit = r.get(f"rip_amt_{j}"), r.get(f"rip_qty_{j}"), r.get(f"rip_unit_{j}")
+            try:
+                a, q = float(amt), float(qty)
+            except (TypeError, ValueError):
+                continue
+            if a != a or q != q or a <= 0 or q <= 0:
+                continue
+            u = str(unit) if unit and str(unit) != "nan" else "Cases"
+            key = (u, int(q), round(a, 2))
+            if key in seen:
+                continue
+            seen.add(key)
+            tiers.append({"qty": int(q), "unit": u, "amount": round(a, 2)})
+    tiers.sort(key=lambda t: t["amount"])
+    return desc, tiers
 
 
 def _t_rip_lookup(con, args):

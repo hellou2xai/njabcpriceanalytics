@@ -1711,6 +1711,79 @@ def _t_cart_rip_tiers(con, args, ctx):
                      if actionable else "No reachable next tier — you're at the top of each rebate you carry.")}
 
 
+def _t_edition_changes(con, args, ctx):
+    """EDITION-DROP DIGEST: what changed in the latest CPL edition vs the prior one
+    — new items, new/lost discounts, new closeouts (from item_lifecycle) and the
+    biggest effective price drops/increases (from price_changes). focus='all' (def)
+    or 'favorites'/'cart' to restrict to the signed-in user's products."""
+    focus = (args.get("focus") or "all").lower()
+    cap = min(int(args.get("limit") or 8), 25)
+    focus_upcs = None
+    if focus in ("favorites", "favourites", "watchlist", "wishlist", "cart"):
+        uid = ctx.get("user_id")
+        if not uid:
+            return {"error": "user not signed in"}
+        from backend.pg import get_pg
+        with get_pg() as pg:
+            if focus == "cart":
+                rows = pg.execute("SELECT upc FROM cart_items WHERE user_id=%s AND COALESCE(saved_for_later,0)=0", (uid,)).fetchall()
+            else:
+                focus = "favorites"
+                rows = pg.execute("SELECT upc FROM watchlist WHERE user_id=%s", (uid,)).fetchall()
+        focus_upcs = {str(r["upc"]).lstrip("0") for r in rows if r.get("upc")}
+        if not focus_upcs:
+            return {"focus": focus, "focus_item_count": 0, "note": f"Your {focus} is empty — nothing to focus on."}
+    ed_row = con.execute("SELECT MAX(edition) FROM item_lifecycle").fetchone()
+    ed = ed_row[0] if ed_row else None
+    if not ed:
+        return {"note": "No edition-change data available."}
+
+    def _fc(col="upc"):
+        if focus_upcs is None:
+            return "", []
+        if not focus_upcs:
+            return "AND 1=0", []
+        ph = ", ".join("?" for _ in focus_upcs)
+        return f"AND LTRIM(CAST({col} AS VARCHAR),'0') IN ({ph})", list(focus_upcs)
+
+    fc, fp = _fc()
+    counts = {}
+    for (et,) in con.execute(f"SELECT event_type FROM item_lifecycle WHERE edition=? {fc}", [ed] + fp).fetchall():
+        counts[et] = counts.get(et, 0) + 1
+
+    def _clean_rows(df):
+        return _json_safe(df.to_dict(orient="records"))
+
+    def _sample(et):
+        return _clean_rows(con.execute(
+            "SELECT wholesaler, product_name, CAST(upc AS VARCHAR) upc, unit_volume, product_type, curr_price "
+            f"FROM item_lifecycle WHERE edition=? AND event_type=? {fc} LIMIT {cap}", [ed, et] + fp).fetchdf())
+
+    fc2, fp2 = _fc()
+    drops = _clean_rows(con.execute(
+        "SELECT wholesaler, product_name, CAST(upc AS VARCHAR) upc, unit_volume, "
+        "prev_effective_case_price AS prev, effective_case_price AS now, effective_delta AS delta, effective_delta_pct AS pct "
+        f"FROM price_changes WHERE edition=? AND effective_delta < -0.01 {fc2} ORDER BY effective_delta ASC LIMIT {cap}",
+        [ed] + fp2).fetchdf())
+    ups = _clean_rows(con.execute(
+        "SELECT wholesaler, product_name, CAST(upc AS VARCHAR) upc, unit_volume, "
+        "prev_effective_case_price AS prev, effective_case_price AS now, effective_delta AS delta, effective_delta_pct AS pct "
+        f"FROM price_changes WHERE edition=? AND effective_delta > 0.01 {fc2} ORDER BY effective_delta DESC LIMIT {cap}",
+        [ed] + fp2).fetchdf())
+    n_up = con.execute(f"SELECT COUNT(*) FROM price_changes WHERE edition=? AND effective_delta > 0.01 {fc2}", [ed] + fp2).fetchone()[0]
+    n_down = con.execute(f"SELECT COUNT(*) FROM price_changes WHERE edition=? AND effective_delta < -0.01 {fc2}", [ed] + fp2).fetchone()[0]
+
+    return {"edition": ed, "focus": focus,
+            "focus_item_count": (len(focus_upcs) if focus_upcs is not None else None),
+            "summary": {"new_items": counts.get("new_item", 0), "new_discounts": counts.get("new_discount", 0),
+                        "lost_discounts": counts.get("lost_discount", 0), "new_closeouts": counts.get("new_clearance", 0),
+                        "price_increases": int(n_up), "price_drops": int(n_down)},
+            "top_price_drops": drops, "top_price_increases": ups,
+            "new_items": _sample("new_item"), "new_discounts": _sample("new_discount"),
+            "lost_discounts": _sample("lost_discount"), "new_closeouts": _sample("new_clearance"),
+            "note": "Latest-edition changes" + (f" affecting your {focus}" if focus_upcs is not None else "") + "."}
+
+
 _CTX_TOOLS = {
     "find_deals": (_t_find_deals, "Promotions: products on deal. Args: kind (time_sensitive|discount|clearance), limit. Shown as cards."),
     "price_movers": (_t_price_movers, "Products whose effective price changes next month. Args: direction (drop|increase), limit. Shown as cards."),
@@ -1722,6 +1795,7 @@ _CTX_TOOLS = {
     "optimize_cart": (_t_optimize_cart, "ORDER OPTIMIZER for the user's cart: the cheapest sourcing PLAN — per line picks the lowest effective-price distributor for that UPC, groups the wins into (from->to) distributor swaps with $ saved, and gives current vs optimized cart total. Use for 'optimize my cart', 'make my order cheaper', 'cheapest way to buy this'. Present current vs optimized total + the grouped swaps, then offer to apply each via perform_action(type=swap_distributor)."),
     "cart_timing": (_t_cart_timing, "BUY-NOW-vs-WAIT sweep of the whole cart: per line compares this edition's effective price to next edition's and flags BUY NOW (rises or drops off next month) vs WAIT (falls next month), with the $ impact per line and totals. Use for 'should I buy now or wait', 'scan my cart for timing', 'what's going up next month'."),
     "cart_rip_tiers": (_t_cart_rip_tiers, "Cart-wide RIP tier maximizer: sums the cart's case/bottle quantity per RIP code (the Case Mix), shows the tier reached and the NEXT tier, and how many MORE cases/bottles unlock it + the extra rebate. Use for 'am I close to any rebate tiers', 'how do I hit the next RIP tier', 'maximize my rebates'."),
+    "edition_changes": (_t_edition_changes, "EDITION-DROP DIGEST: what changed in the latest CPL edition vs prior — counts + samples of new items, new/lost discounts, new closeouts, and the biggest effective price drops/increases. focus='all' (default) or 'favorites'/'cart' to restrict to the user's products. Use for 'what changed this month/edition', 'what's new', 'what changed on my favorites'."),
 }
 
 
@@ -2235,7 +2309,10 @@ _SYSTEM = (
     "optional category/distributor, rank_by gp|savings); present the basket, total spend, total savings and "
     "remaining budget, then offer to add it all to cart. "
     "dated_deal_reminders — 'what deals start or end soon', 'short-window/expiring deals this week': pass "
-    "within_days (default 7); present them tagged Starts/Ends in N days, soonest first."
+    "within_days (default 7); present them tagged Starts/Ends in N days, soonest first. "
+    "edition_changes — 'what changed this month/edition', 'what's new', 'what changed on my favorites/cart': "
+    "pass focus all|favorites|cart; present a digest — new items, new/lost discounts, new closeouts, and the "
+    "biggest effective price drops/increases (counts + top examples)."
 )
 
 

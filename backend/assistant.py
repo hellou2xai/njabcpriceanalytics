@@ -1417,6 +1417,29 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
             system_blocks.append({"type": "text", "text":
                 f"The user is on the '{page}' screen. Stay here and keep answers relevant to it; do not "
                 f"navigate away unless they explicitly ask."})
+    if not page_path:
+        # Standalone Celar Assistant page (no grid on the side). The default
+        # "one-line confirmation" rule assumes the filtered grid is visible
+        # next to the chat — here it isn't, so the user gets a thin reply.
+        # Override: still call show_on_screen so a hyperlink is surfaced, but
+        # ALSO answer in prose with a real summary (top 3-5 items, counts,
+        # price range) so the chat is useful even before the user clicks
+        # through. Use the matching data tool first (top_products / find_deals
+        # / price_movers / etc.) to ground the summary in actual rows — never
+        # invent numbers.
+        system_blocks.append({"type": "text", "text":
+            "STANDALONE ASSISTANT PAGE: the user is on the dedicated /celar "
+            "page with NO grid visible. For show-on-screen-style requests "
+            "(find/show/list/cheapest/etc.) you MUST: (1) call the relevant "
+            "data tool (top_products, find_deals, price_movers, deal_360, "
+            "compare_distributors, rip_lookup) to get real numbers; "
+            "(2) call show_on_screen so the user gets a hyperlink to the "
+            "filtered page; (3) reply with a CONCISE prose summary "
+            "(3-6 sentences or a short markdown list) covering the top "
+            "matches, count, and price range. Do NOT use the docked-mode "
+            "'Showing X on the left. Anything else?' template — the chat "
+            "is the only view the user has. End with a single offer to "
+            "help further."})
     messages = _history_messages(history) + [{"role": "user", "content": question}]
     total_in = total_out = 0
     final_text = ""

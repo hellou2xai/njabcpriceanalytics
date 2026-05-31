@@ -152,10 +152,13 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
       // The docked side panel keeps its in-place behaviour (auto-navigate,
       // which on that mode is a same-page URL filter swap).
       const isStandalone = !pagePath;
+      // On standalone, keep the charts + product cards so the user sees the
+      // actual data on /celar (there's no grid alongside). Docked mode keeps
+      // the lean one-line confirmation since the page itself shows the data.
       setMessages(m => [...m, {
         role: 'assistant', text: res.answer,
-        charts: drove ? [] : res.charts,
-        products: drove ? [] : res.products,
+        charts: drove && !isStandalone ? [] : res.charts,
+        products: drove && !isStandalone ? [] : res.products,
         chips, usage: res.usage,
         // awaitingCount needs an actual navigation to fire — only set in the
         // docked case where we do navigate.

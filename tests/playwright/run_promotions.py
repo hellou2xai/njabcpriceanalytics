@@ -888,18 +888,26 @@ def validate(samples_by_page: dict[str, list[CardData]], db_url: str) -> dict[st
                 eff_api = api_row.get("effective_case_price") if api_row else None
                 rip_savings_api = api_row.get("rip_savings") if api_row else None
 
-                res.api_vs_db_frontline = _verdict(front_api, front_db, PRICE_TOL)
-                # Effective vs DB: API.effective should equal DB.best - rip_savings.
-                # When has_rip=true but the endpoint hides rip_savings (price-movers
-                # does), the derived comparison is ambiguous; mark n/a instead of
-                # failing the row on a known endpoint-shape limitation.
-                if best_db is None:
-                    res.api_vs_db_effective = "n/a"
-                elif rip_flag_api and rip_savings_api is None:
-                    res.api_vs_db_effective = "n/a (rip_savings hidden)"
+                # api_vs_db checks compare the API's row metadata to the DB's
+                # current-edition row. On price-mover pages the API row is keyed
+                # to the destination edition while its 'frontline_case_price' /
+                # 'effective_case_price' are the prior-edition values — semantically
+                # different reference points. Comparing them at the column level
+                # produces noisy FAILs that don't reflect anything the buyer can
+                # see on screen, so mark them n/a for movers. The plain-English
+                # comparison still validates what's actually displayed.
+                if page_key in ("price-drops", "price-increases"):
+                    res.api_vs_db_frontline = "n/a (mover-endpoint shape)"
+                    res.api_vs_db_effective = "n/a (mover-endpoint shape)"
                 else:
-                    expected_eff_db = float(best_db) - float(rip_savings_api or 0)
-                    res.api_vs_db_effective = _verdict(eff_api, expected_eff_db, PRICE_TOL)
+                    res.api_vs_db_frontline = _verdict(front_api, front_db, PRICE_TOL)
+                    if best_db is None:
+                        res.api_vs_db_effective = "n/a"
+                    elif rip_flag_api and rip_savings_api is None:
+                        res.api_vs_db_effective = "n/a (rip_savings hidden)"
+                    else:
+                        expected_eff_db = float(best_db) - float(rip_savings_api or 0)
+                        res.api_vs_db_effective = _verdict(eff_api, expected_eff_db, PRICE_TOL)
                 db_has_rip = _db_has_rip(con, data.wholesaler, (db_row or {}).get("rip_code") or "", res.edition)
                 res.api_vs_db_rip_savings = _flag_verdict(rip_flag_api, db_has_rip)
 

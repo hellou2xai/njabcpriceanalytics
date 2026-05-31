@@ -4,8 +4,9 @@
  * the sparkline reveals a structured popover with Frontline -> After Discount
  * -> RIP Tiers for both months side by side. Hover target is the entire
  * coloured chip so it's easy to land on; the popover renders above the chip
- * with a small arrow tail.
+ * with a small arrow tail (or flips below when there isn't room above).
  */
+import { useRef, useState } from 'react';
 
 export interface RipTier {
   qty: number;
@@ -263,6 +264,21 @@ function ComparisonSummary({
 export default function MonthEffectiveSparkline({ curr, next }: Props) {
   const currEff = curr.bestEff;
   const nextEff = next.bestEff;
+  // The popover renders above the chip by default. If the chip sits near the
+  // top of the viewport (e.g. the catalog has only one result), the popover
+  // would overflow the top of the screen and the user only sees the bottom
+  // half. On hover we measure the chip's bounding rect and flip the popover
+  // BELOW when there isn't ~360px of room above. Pure-CSS solutions (anchor
+  // positioning, popover API) don't have wide enough support yet.
+  const wrapRef = useRef<HTMLSpanElement | null>(null);
+  const [placeBelow, setPlaceBelow] = useState(false);
+  const onWrapEnter = () => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const ROOM_NEEDED = 360;   // generous min height for the two-column popover
+    setPlaceBelow(rect.top < ROOM_NEEDED);
+  };
   if (currEff == null && nextEff == null) return null;
 
   // Layout reserves a clear label band at the BOTTOM so the month names never
@@ -288,7 +304,7 @@ export default function MonthEffectiveSparkline({ curr, next }: Props) {
   const labN = monN.split(' ')[0] || '–';
 
   return (
-    <span className="mes-wrap">
+    <span className={`mes-wrap${placeBelow ? ' mes-wrap-below' : ''}`} ref={wrapRef} onMouseEnter={onWrapEnter}>
       <span className="mes-chip">
         <svg width={W} height={H} aria-hidden>
           {currEff != null && nextEff != null && (

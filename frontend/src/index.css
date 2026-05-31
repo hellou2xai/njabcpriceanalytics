@@ -2562,8 +2562,25 @@ tr:hover .row-menu-btn { opacity: 1; }
   border: 1px solid var(--border); border-radius: 8px;
   box-shadow: 0 10px 32px rgba(0,0,0,0.18);
   padding: 10px 12px; min-width: 320px; max-width: 460px;
+  /* Cap height to the viewport so a tall popover (lots of tiers + summary)
+     never overflows offscreen; internal scroll if content exceeds. */
+  max-height: 85vh; overflow-y: auto;
   opacity: 0; pointer-events: none;
   transition: opacity 0.12s ease;
+}
+/* When the chip sits near the top of the viewport (catalog with one row,
+   first row in a large table, etc.), the JS measures and flips the popover
+   BELOW so it never overflows past the top of the screen. */
+.mes-wrap-below .mes-popover {
+  bottom: auto;
+  top: calc(100% + 8px);
+}
+.mes-wrap-below .mes-popover::after {
+  /* Arrow points UP at the chip when popover is rendered below. */
+  top: auto; bottom: 100%;
+  border-top-color: transparent;
+  border-bottom-color: var(--surface);
+  filter: drop-shadow(0 -1px 0 var(--border));
 }
 /* The two month blocks themselves are still rendered side-by-side. */
 .mes-blocks { display: flex; gap: 14px; }

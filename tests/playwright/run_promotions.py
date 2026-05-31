@@ -173,8 +173,11 @@ def _extract_card_fields(card_el, data: CardData) -> None:
     data.upc = (card_el.get_attribute("data-ctx-upc") or "").lstrip("0")
     data.product_name = card_el.get_attribute("data-ctx-product") or ""
     data.unit_volume = card_el.get_attribute("data-ctx-volume") or ""
-    sub_text = _safe_text(card_el.locator(".deal-card-sub").first)
-    data.vintage = _parse_vintage(sub_text)
+    # Vintage label location depends on the page component: TimeSensitive
+    # renders it in .deal-card-sub, PriceMovers renders it in .deal-card-meta,
+    # and other variants exist. Scan the whole card body so we pick it up no
+    # matter where; tightens the api_row tiebreak for multi-vintage SKUs.
+    data.vintage = _parse_vintage(_safe_text(card_el))
     data.card_now_price = _parse_money(_safe_text(card_el.locator(".deal-now").first))
     data.card_was_price = _parse_money(_safe_text(card_el.locator(".deal-was").first))
     save_text = _safe_text(card_el.locator(".deal-save").first)

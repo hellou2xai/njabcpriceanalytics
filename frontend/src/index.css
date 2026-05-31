@@ -2614,6 +2614,7 @@ tr:hover .row-menu-btn { opacity: 1; }
 .mes-block-head {
   font-size: 11px; font-weight: 700; text-transform: uppercase;
   letter-spacing: .3px; color: var(--text-muted); margin-bottom: 4px;
+  text-align: center;
 }
 .mes-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .mes-table td { padding: 2px 0; vertical-align: top; }

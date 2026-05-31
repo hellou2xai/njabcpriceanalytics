@@ -1646,6 +1646,38 @@ def _auto_table_products(screen_args: dict) -> list:
                                  exclude_stocking=True)
 
 
+def _format_rip_md(rl) -> str:
+    """Render a rip_lookup result as a markdown RIP analysis (per distributor +
+    code, the FULL tier ladder, best rebate marked, Case Mix members). Used as the
+    standalone-page safety net so a rebate question always shows the tier ladder
+    even when the model only drove the grid."""
+    if not isinstance(rl, dict):
+        return ""
+    codes = rl.get("rip_codes") or []
+    if not codes:
+        return rl.get("note") or ""
+    out = [f"**🏷️ RIP rebates — {rl.get('query', 'this product')}**"]
+    for c in codes[:6]:
+        ws = (c.get("wholesaler") or "").title()
+        head = f"**{ws} · code {c.get('rip_code')}**"
+        if c.get("description"):
+            head += f" — {c['description']}"
+        out.append("\n" + head)
+        tiers = c.get("tiers") or []
+        if tiers:
+            out.append("\n| Buy | Rebate | Per unit |\n|---|---|---|")
+            for t in tiers:
+                pu = t.get("per_unit_savings")
+                pu_txt = f"${pu:.2f}/{t.get('unit_short', 'cs')}" if isinstance(pu, (int, float)) else "—"
+                best = " ✅ best" if t.get("best") else ""
+                out.append(f"| {t.get('qty')} {t.get('unit')} | ${float(t.get('amount') or 0):.2f} | {pu_txt}{best} |")
+        mems = [m.get("product_name") for m in (c.get("case_mix_members") or []) if m.get("product_name")]
+        if mems:
+            extra = "…" if len(mems) > 6 else ""
+            out.append(f"\n*Case Mix (combine any of these to hit a tier): {', '.join(mems[:6])}{extra}*")
+    return "\n".join(out)
+
+
 def ask(question: str, history: list | None = None, user: dict | None = None,
         page: str | None = None, page_path: str | None = None,
         page_query: str | None = None) -> dict:
@@ -1908,6 +1940,29 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                 _collect(_auto_table_products(screen_args))   # deduped into products_out
             except Exception:
                 pass  # never fail the answer over the auto-table
+        # RIP NET: a rebate question on the standalone page must show the full tier
+        # ladder, not just a link + product card. If the model didn't already put a
+        # tier table in its reply, build one deterministically from rip_lookup so
+        # the analysis always appears (the model often only drives the grid here).
+        ql = question.lower()
+        if any(k in ql for k in ("rip", "rebate")):
+            has_ladder = ("| buy " in answer.lower()) or ("per unit" in answer.lower()) \
+                or ("/cs" in answer.lower() and "tier" in answer.lower())
+            if not has_ladder:
+                term = (screen_args or {}).get("q") if screen_args else None
+                if not term:
+                    m = re.search(r"\b(?:for|of|about|on)\s+(.+)$", question, re.I)
+                    term = (m.group(1) if m else "").strip()
+                    term = re.sub(r"\b(rip|rebate|details?|analysis|code|tiers?)\b", " ", term, flags=re.I).strip()
+                if term:
+                    try:
+                        with get_duckdb() as _con:
+                            _rl = _t_rip_lookup(_con, {"match": term})
+                        _md = _format_rip_md(_rl)
+                        if _md:
+                            answer = _md if (not answer or answer == "Done.") else answer.rstrip() + "\n\n" + _md
+                    except Exception:
+                        pass  # never fail the answer over the RIP net
     # Multi-product answers (3+ products) get enriched with tier ladders so
     # the frontend can render a side-by-side comparison table, and a Catalog
     # deep-link is built by exact UPCs so "Open in Catalog ->" lands on the

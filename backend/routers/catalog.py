@@ -544,6 +544,7 @@ def search_products(
     categories: Optional[str] = None,       # comma-separated product types
     brands: Optional[str] = None,           # comma-separated brands
     sizes: Optional[str] = None,            # comma-separated unit volumes
+    upcs: Optional[str] = Query(None, description="Comma-separated UPCs (leading-zero-normalised); restricts the grid to exactly these SKUs. Used by Celar Assistant 'Open in Catalog' links."),
     tracked_only: bool = Query(False, description="If true, only return products on the watchlist"),
     sort: str = Query("product_name", description="Sort field"),
     order: str = Query("asc", description="asc or desc"),
@@ -643,6 +644,19 @@ def search_products(
         # bottle stored as "25.33OZ". COALESCE keeps it working if the cache
         # predates the unit_volume_std column.
         _in_filter(where, params, "COALESCE(unit_volume_std, unit_volume)", sizes, "size_")
+        # Exact-UPC restriction used by Celar Assistant deep-links — locks
+        # the grid to the same SKUs the chat surfaced. Leading zeros are
+        # normalised on BOTH sides so "020585000475" and "20585000475"
+        # match the same product.
+        if upcs:
+            vals = [u.strip().lstrip("0") for u in upcs.split(",") if u.strip()]
+            if vals:
+                keys = []
+                for i, v in enumerate(vals):
+                    k = f"upc_{i}"
+                    params[k] = v
+                    keys.append(f"${k}")
+                where.append(f"LTRIM(CAST(upc AS VARCHAR), '0') IN ({', '.join(keys)})")
 
         # Restrict to watchlisted products across ALL editions/pages (server-side
         # so tracked items aren't hidden by pagination). Match on (name, wholesaler).

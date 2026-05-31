@@ -10,6 +10,7 @@ import AddToCartButton from './AddToCartButton';
 import AddToListButton from './AddToListButton';
 import FavoriteButton from './FavoriteButton';
 import AiRatingWidget from './AiRatingWidget';
+import AssistantComparisonTable from './AssistantComparisonTable';
 import { distributorName } from '../lib/distributors';
 import { useAssistantActions, describeActions } from '../lib/useAssistantActions';
 import { useResultCount } from '../lib/resultCount';
@@ -279,7 +280,18 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
                 ? <div className="celar-md"><ReactMarkdown remarkPlugins={[remarkGfm]}>{m.text}</ReactMarkdown></div>
                 : <div className="celar-usertext">{m.text}</div>}
               {m.charts?.map((c, ci) => <AssistantChart key={ci} spec={c} />)}
-              {m.products && m.products.length > 0 && (
+              {m.products && m.products.length >= 3 ? (
+                // 3+ products: render the full decision-pack comparison table
+                // (product, distributor, size, vintage, list /cs, eff /cs,
+                // savings %, every CPL tier, every RIP tier, row actions) AND
+                // the Catalog deep-link at the bottom. The "Open ... in Catalog"
+                // link below is suppressed because the table renders its own.
+                <AssistantComparisonTable
+                  products={m.products}
+                  screenPath={m.screenPath}
+                  screenLabel={m.screenLabel}
+                />
+              ) : m.products && m.products.length > 0 ? (
                 <div className="celar-products">
                   {m.products.map((p, pi) => (
                     <div key={pi} className="celar-product-card">
@@ -304,8 +316,10 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
                     </div>
                   ))}
                 </div>
-              )}
-              {m.screenPath && (
+              ) : null}
+              {/* 1–2 product results still get the legacy single-link footer.
+                  The 3+ branch above renders its own footer inside the table. */}
+              {m.screenPath && !(m.products && m.products.length >= 3) && (
                 <div className="celar-screen-link">
                   <Link to={m.screenPath} className="celar-screen-link-btn">
                     Open {m.screenLabel || 'result'} →

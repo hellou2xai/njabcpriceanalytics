@@ -17,6 +17,9 @@ export default function Catalog() {
   const [params] = useSearchParams();
   const [q, setQ] = useState(params.get('q') ?? '');
   const [wholesaler, setWholesaler] = useState(params.get('wholesaler') ?? '');
+  // Exact-UPC lock used by Celar Assistant "Open in Catalog" deep-links —
+  // the grid shows ONLY the same SKUs the chat surfaced.
+  const [upcs, setUpcs] = useState(params.get('upcs') ?? '');
   const [sort, setSort] = useState<'product_name' | 'frontline_case_price' | 'effective_case_price'>('product_name');
   const [order, setOrder] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(0);
@@ -60,6 +63,7 @@ export default function Catalog() {
     const csv = (k: string) => (params.get(k)?.split(',').filter(Boolean) ?? []);
     setQ(params.get('q') ?? '');
     setWholesaler(params.get('wholesaler') ?? '');
+    setUpcs(params.get('upcs') ?? '');
     setFilters({
       ...emptyCatalogFilters,
       hasRip: params.get('hasRip') === '1' ? true : undefined,
@@ -116,7 +120,7 @@ export default function Catalog() {
   const filterKey = JSON.stringify(filters);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['catalog', q, wholesaler, sort, order, page, limit, trackedOnly, filterKey],
+    queryKey: ['catalog', q, wholesaler, sort, order, page, limit, trackedOnly, filterKey, upcs],
     queryFn: () => catalog.search({
       q,
       wholesaler: wholesaler || undefined,
@@ -125,6 +129,7 @@ export default function Catalog() {
       ...filterParams,
       tracked_only: trackedOnly || undefined,
       include_tiers: true,
+      upcs: upcs || undefined,
     }),
   });
 

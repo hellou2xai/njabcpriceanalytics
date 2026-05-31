@@ -144,6 +144,19 @@ export interface AiUsage {
   enabled: boolean;
 }
 // A product the assistant resolved server-side for an action to act on.
+// When the assistant returns 3+ products, the backend enriches each row with
+// `discount_tiers` / `rip_tiers` / `tiers` so the chat can render a full
+// side-by-side comparison table. Frontline price is included so the table
+// can show list/effective/savings columns.
+export interface AssistantTier {
+  source: 'discount' | 'rip';
+  qty: number;
+  unit: string;
+  amount: number;
+  save_per_case?: number | null;
+  price_after?: number | null;
+  description?: string | null;
+}
 export interface CatalogAiProduct {
   product_name: string;
   wholesaler: string;
@@ -152,6 +165,11 @@ export interface CatalogAiProduct {
   unit_qty?: string | null;
   vintage?: string | null;
   effective_case_price?: number | null;
+  frontline_case_price?: number | null;
+  edition?: string | null;
+  tiers?: AssistantTier[];
+  discount_tiers?: AssistantTier[];
+  rip_tiers?: AssistantTier[];
 }
 export type CatalogAiActionType = 'add_to_cart' | 'update_quantity' | 'add_to_favorites' | 'add_to_list';
 export interface CatalogAiAction {

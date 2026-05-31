@@ -253,6 +253,83 @@ def _resolve_products(con, view: dict, match: str, which: str, cap: int) -> list
     return out
 
 
+def _enrich_products_with_tiers(con, products: list[dict]) -> None:
+    """Attach CPL discount + RIP tier ladders to resolved products in place.
+
+    The slim shape returned by `_resolve_products` is enough to render cards
+    but the comparison-table view (3+ products) wants the full decision pack:
+    every discount tier and every RIP tier per row. This re-fetches the
+    matching `cpl_enriched` rows (one query, bulk) and runs the canonical
+    `pricing.attach_tiers` helper so the math is identical to the modal.
+
+    Adds `tiers` (combined, sorted), `discount_tiers`, `rip_tiers` and
+    `edition` to each product dict. Quietly no-ops on empty input or query
+    failure — the chat never breaks if enrichment fails."""
+    if not products:
+        return
+    from backend import pricing
+    # Pull the full row for each (wholesaler, upc, unit_volume, vintage, unit_qty)
+    # tuple. We use the current edition per wholesaler so the tiers we attach
+    # are the ones the user actually sees on the page.
+    cym = _current_ym()
+    ws_set = sorted({p.get("wholesaler") for p in products if p.get("wholesaler")})
+    upc_set = sorted({str(p.get("upc") or "") for p in products if p.get("upc")})
+    if not ws_set or not upc_set:
+        return
+    ws_ph = ", ".join(f"$ws_{i}" for i in range(len(ws_set)))
+    upc_ph = ", ".join(f"$u_{i}" for i in range(len(upc_set)))
+    params = {"cym": cym}
+    for i, v in enumerate(ws_set):
+        params[f"ws_{i}"] = v
+    for i, v in enumerate(upc_set):
+        params[f"u_{i}"] = v
+    try:
+        rows = con.execute(f"""
+            WITH cur AS (
+              SELECT wholesaler, COALESCE(MAX(CASE WHEN edition <= $cym THEN edition END),
+                                          MAX(edition)) AS ed
+              FROM cpl_enriched GROUP BY wholesaler
+            )
+            SELECT c.* FROM cpl_enriched c
+            JOIN cur ON c.wholesaler = cur.wholesaler AND c.edition = cur.ed
+            WHERE c.wholesaler IN ({ws_ph})
+              AND c.upc IN ({upc_ph})
+        """, params).fetchdf().to_dict(orient="records")
+    except Exception:
+        return
+    # Index by (wholesaler, upc, unit_volume, unit_qty) for stable matching;
+    # fall back to (wholesaler, upc, unit_volume) when unit_qty isn't in
+    # the resolved dict.
+    idx_full: dict = {}
+    idx_vol: dict = {}
+    idx_upc: dict = {}
+    for r in rows:
+        ws = r.get("wholesaler"); upc = str(r.get("upc") or "")
+        vol = r.get("unit_volume") or ""; uq = str(r.get("unit_qty") or "")
+        idx_full[(ws, upc, vol, uq)] = r
+        idx_vol.setdefault((ws, upc, vol), r)
+        idx_upc.setdefault((ws, upc), r)
+    # Attach tiers on the row dicts first (one batched call), then copy the
+    # tier arrays back onto the slim product dicts.
+    pricing.attach_tiers(con, rows)
+    for p in products:
+        ws = p.get("wholesaler"); upc = str(p.get("upc") or "")
+        vol = p.get("unit_volume") or ""; uq = str(p.get("unit_qty") or "")
+        match = (idx_full.get((ws, upc, vol, uq))
+                 or idx_vol.get((ws, upc, vol))
+                 or idx_upc.get((ws, upc)))
+        if not match:
+            p.setdefault("tiers", [])
+            p.setdefault("discount_tiers", [])
+            p.setdefault("rip_tiers", [])
+            continue
+        tiers = match.get("tiers") or []
+        p["tiers"] = tiers
+        p["discount_tiers"] = [t for t in tiers if t.get("source") == "discount"]
+        p["rip_tiers"] = [t for t in tiers if t.get("source") == "rip"]
+        p["edition"] = match.get("edition")
+
+
 def _resolve_actions(raw_actions: list, view: dict, default_match: str) -> list[dict]:
     if not raw_actions:
         return []

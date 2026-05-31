@@ -1568,11 +1568,41 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
     # breakdown was fetched, so they always appear (not model-dependent).
     charts = _price_charts(price_detail_result) + charts
     answer = _strip_charts(final_text) or "Done."
+    # Multi-product answers (3+ products) get enriched with tier ladders so
+    # the frontend can render a side-by-side comparison table, and a Catalog
+    # deep-link is built by exact UPCs so "Open in Catalog ->" lands on the
+    # same set the chat shows. Cap at 12 rows — that's all the table is sized
+    # for; the user can hit the Catalog hyperlink for the full set.
+    products_final = products_out[:24]
+    if len(products_final) >= 3:
+        try:
+            from backend.ai_catalog_query import _enrich_products_with_tiers
+            with get_duckdb() as _con:
+                _enrich_products_with_tiers(_con, products_final)
+        except Exception:
+            pass  # never fail the answer over enrichment
+        if screen_out is None:
+            # Normalise UPCs and drop blanks/zeros — a product missing a UPC
+            # would otherwise put a stray empty string in the comma-separated
+            # list and the catalog filter would think the user wanted an
+            # empty UPC. Sort + dedupe so the link is deterministic.
+            upcs = sorted({
+                str(p.get("upc")).lstrip("0")
+                for p in products_final
+                if p.get("upc") and str(p.get("upc")).strip("0").strip()
+            })
+            if upcs:
+                upc_csv = ",".join(upcs)
+                screen_out = {
+                    "path": f"/catalog?upcs={upc_csv}",
+                    "label": f"these {len(products_final)} products in Catalog",
+                }
+        products_final = products_final[:12]
     return _json_safe({
         "answer": answer,
         "charts": charts,
         "actions": actions_out,
-        "products": products_out[:24],
+        "products": products_final,
         "screen": screen_out,
         "usage": {"input_tokens": total_in, "output_tokens": total_out,
                   "model": model, "cost_usd": _cost_usd(model, total_in, total_out), "enabled": True},

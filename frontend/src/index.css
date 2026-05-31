@@ -4588,6 +4588,65 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 
 .celar-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
 
+/* Comparison table the assistant renders inline when 3+ products come back.
+   Shows the full decision pack — product, distributor, size, vintage, list /cs,
+   effective /cs, savings %, every CPL discount tier, every RIP tier, row
+   actions — and a Catalog deep-link at the bottom. */
+.celar-compare-wrap { margin: 12px 0 4px; }
+.celar-compare-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+.celar-compare-table {
+  width: 100%; border-collapse: collapse;
+  font-size: 12.5px; color: var(--text);
+}
+.celar-compare-table thead th {
+  text-align: left; padding: 8px 10px;
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg));
+  border-bottom: 1px solid var(--border);
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .3px; color: var(--text-muted);
+  white-space: nowrap;
+}
+.celar-compare-table tbody td {
+  padding: 8px 10px; border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.celar-compare-table tbody tr:last-child td { border-bottom: none; }
+.celar-compare-table .right { text-align: right; white-space: nowrap; }
+.celar-compare-name { font-weight: 600; min-width: 160px; max-width: 240px; }
+.celar-compare-empty { color: var(--text-muted); font-size: 11.5px; }
+.celar-compare-chips { display: flex; flex-direction: column; gap: 3px; }
+.celar-compare-chip {
+  display: inline-block; padding: 2px 7px; border-radius: 999px;
+  font-size: 10.5px; line-height: 1.3; white-space: nowrap;
+}
+.celar-compare-chip-disc {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.celar-compare-chip-rip {
+  background: color-mix(in srgb, var(--green, #16a34a) 12%, transparent);
+  color: var(--green, #16a34a);
+  border: 1px solid color-mix(in srgb, var(--green, #16a34a) 22%, transparent);
+}
+.celar-compare-actions { display: inline-flex; gap: 4px; }
+.celar-compare-link { margin-top: 10px; }
+.celar-compare-link-btn {
+  display: inline-block; padding: 6px 12px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg));
+  color: var(--accent); text-decoration: none; font-weight: 600;
+  font-size: 12.5px; border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.celar-compare-link-btn:hover {
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg));
+}
+
 /* In-chat hyperlink that opens the filtered target page (catalog, discounts,
    etc.). Replaces the auto-navigation that used to kick the user off /celar. */
 .celar-screen-link { margin: 10px 0 4px; }

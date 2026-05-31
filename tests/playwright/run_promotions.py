@@ -527,12 +527,21 @@ def _db_lookup_by_api(con: psycopg.Connection, api_row: dict) -> dict | None:
 
 
 def _db_has_rip(con: psycopg.Connection, wholesaler: str, rip_code: str, edition: str) -> bool:
-    """Cheap presence check: a RIP row exists in `rip` for this code+edition."""
-    if not rip_code or rip_code == "0":
+    """Cheap presence check: a RIP row exists in `rip` for this code+edition.
+
+    cpl_enriched.rip_code is often a space-separated list when a SKU qualifies
+    for multiple RIP programs at once (e.g. '10404 70001'). Split on whitespace
+    so any one of the listed codes counts as present."""
+    if not rip_code:
         return False
+    codes = [c for c in str(rip_code).split() if c and c != "0"]
+    if not codes:
+        return False
+    placeholders = ",".join(["%s"] * len(codes))
     row = con.execute(
-        "SELECT 1 FROM rip WHERE wholesaler = %s AND rip_code = %s AND edition = %s LIMIT 1",
-        (wholesaler, rip_code, edition),
+        f"SELECT 1 FROM rip WHERE wholesaler = %s AND edition = %s "
+        f"AND rip_code IN ({placeholders}) LIMIT 1",
+        (wholesaler, edition, *codes),
     ).fetchone()
     return row is not None
 

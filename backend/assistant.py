@@ -33,8 +33,9 @@ from backend.ai_catalog_query import (
 # Canonical pricing helpers — every "best deal" / tier / ranking question
 # must read from here, not from inline SQL. See backend/FOUNDATION.md.
 from backend import pricing as _pricing
+from backend import rip_utils as _rip   # canonical case/bottle RIP unit math
 
-_ACTION_TYPES = ("add_to_cart", "update_quantity", "add_to_favorites", "add_to_list")
+_ACTION_TYPES =("add_to_cart", "update_quantity", "add_to_favorites", "add_to_list")
 _MAX_TURNS = 6
 # Stocking-deal floor used by the "best deals" ranker by default. A row whose
 # effective_case_price is below this fraction of frontline (e.g. a 100%-off
@@ -449,10 +450,32 @@ def _age_years(name):
     return None
 
 
+def _rip_per_case_tiers(tier_tuples, pack):
+    """[(per_case, qty_in_unit, unit_norm)] for each positive RIP tier. Unit math
+    goes through rip_utils so a BOTTLE tier is converted to per-case via `pack`
+    (bottles/case) exactly as every other surface does — see FOUNDATION.md §4.1."""
+    out = []
+    for u, q, a in tier_tuples:
+        try:
+            qf, af = float(q), float(a)
+        except (TypeError, ValueError):
+            continue
+        if qf != qf or af != af or qf <= 0 or af <= 0:
+            continue
+        pc = _rip.rip_per_case(af, qf, u, pack)
+        if pc <= 0:
+            continue
+        out.append((round(pc, 2), qf, _rip.normalize_unit(u)))
+    return out
+
+
 def _t_best_one_case_rip(con, args):
     """Best 'buy just ONE case' RIP rebates: rebates whose per-case value buying a
     single case is essentially the same as buying in bulk (e.g. 30 cases), so a
-    small buyer isn't penalised. Ranked by the per-case rebate at one case."""
+    small buyer isn't penalised. Counts BOTH case-unit tiers (qty<=1 case) and
+    bottle-unit tiers (qty<=pack, i.e. reachable with one case's worth of bottles),
+    with bottle rebates converted to per-case. Ranked by per-case rebate at one
+    case."""
     cym = _current_ym()
     cap = min(int(args.get("limit") or 12), 25)
     dist = (args.get("distributor") or "").strip()
@@ -492,37 +515,43 @@ def _t_best_one_case_rip(con, args):
     except Exception as e:
         return {"error": f"{type(e).__name__}"}
 
-    # First pass: keep rows that genuinely qualify as a 1-case rebate, with the
-    # computed numbers, so we can rank before doing any (costlier) name lookups.
-    cands = []
-    for _, row in df.iterrows():
-        cts = []   # (qty, amount, per_case) for CASE-unit tiers only
-        for j in (1, 2, 3, 4):
-            u, q, a = row.get(f"u{j}"), row.get(f"q{j}"), row.get(f"a{j}")
-            try:
-                q, a = float(q), float(a)
-            except (TypeError, ValueError):
-                continue
-            if q != q or a != a or q <= 0 or a <= 0:
-                continue
-            if u and "case" in str(u).lower():
-                cts.append((q, a, a / q))
-        if not cts:
-            continue
-        ones = [pc for (q, _a, pc) in cts if q <= 1]   # rebate available buying 1 case
+    def _eval(tt, pack):
+        """(rebate_at_1, best_per_case) for these tiers bought as ONE case, or None
+        if it doesn't qualify as a flat 1-case rebate. Case tiers qualify at
+        qty<=1 case; bottle tiers at qty<=pack bottles (one case's worth)."""
+        pcs = _rip_per_case_tiers(tt, pack)
+        if not pcs:
+            return None
+        ones = []
+        for pc, qf, norm in pcs:
+            if norm == "bottle":
+                if pack and qf <= pack:
+                    ones.append(pc)
+            elif qf <= 1:                       # case or implicit-case tier
+                ones.append(pc)
         if not ones:
-            continue
+            return None
         rebate_at_1 = max(ones)
-        best_pc = max(pc for (_q, _a, pc) in cts)
-        # "no significant difference between 1 case and 30 cases" => the single-case
+        best_pc = max(pc for pc, _q, _n in pcs)
+        # "no significant difference between 1 case and 30 cases": the single-case
         # per-case rebate is within ~10% of the best per-case rebate at any quantity.
         if best_pc <= 0 or rebate_at_1 < 0.9 * best_pc:
+            return None
+        return rebate_at_1, best_pc
+
+    # Pass 1: provisional ranking (pack from the UPC join when present; no-join
+    # rows are refined after the name lookup in pass 2).
+    cands = []
+    for _, row in df.iterrows():
+        tt = [(row.get(f"u{j}"), row.get(f"q{j}"), row.get(f"a{j}")) for j in (1, 2, 3, 4)]
+        res = _eval(tt, _num(row.get("unit_qty")))
+        if res is None:
             continue
-        cands.append((rebate_at_1, best_pc, row))
+        cands.append((res[0], tt, row))
     cands.sort(key=lambda c: c[0], reverse=True)
 
     deals, seen, name_cache, name_lookups = [], set(), {}, 0
-    for rebate_at_1, best_pc, row in cands:
+    for _prov, tt, row in cands:
         if len(deals) >= cap:
             break
         pname = row.get("product_name")
@@ -530,6 +559,7 @@ def _t_best_one_case_rip(con, args):
         eff = _num(row.get("effective_case_price"))
         fr = _num(row.get("frontline_case_price"))
         unit_volume = row.get("unit_volume")
+        pack = _num(row.get("unit_qty"))
         # No UPC match (placeholder/short upc on the rebate row) -> resolve the
         # product by the rebate's NAME (rip_description) instead, so the rebate
         # still maps to the right product rather than being dropped. Cached +
@@ -554,11 +584,17 @@ def _t_best_one_case_rip(con, args):
             eff = _num(hp.get("effective_case_price"))
             fr = _num(hp.get("frontline_case_price"))
             unit_volume = hp.get("unit_volume") or unit_volume
+            pack = _num(hp.get("unit_qty")) or pack
             if not pname:
                 continue
+        # Recompute bottle-aware with the now-known pack (a name-resolved row's
+        # bottle tiers need it to convert to per-case).
+        res = _eval(tt, pack)
+        if res is None:
+            continue
+        rebate_at_1, best_pc = res
         # Sanity guard: a per-case rebate can't exceed the case price itself — if
-        # it does, the rebate row is bad data or mis-joined, so drop it rather
-        # than show a nonsensical "$1,000 rebate on an $80 case".
+        # it does, the rebate row is bad data or mis-joined, so drop it.
         case_price = fr or eff
         if case_price is not None and rebate_at_1 > case_price:
             continue
@@ -578,6 +614,7 @@ def _t_best_one_case_rip(con, args):
             "frontline_case_price": fr,
             "note": f"${rebate_at_1:.2f}/case rebate on a SINGLE case — same per-case value as buying in bulk.",
         })
+    deals.sort(key=lambda d: d["rebate_per_case_at_1"], reverse=True)
     return deals[:cap]
 
 
@@ -755,17 +792,19 @@ def _t_size_value(con, args):
 
 def _t_rip_tier_gap(con, args):
     """'Almost there' RIP tier gap: for a brand/product (or RIP code) and how many
-    cases the buyer already plans, show the rebate tier ladder, how many MORE
-    cases reach each tier, the incremental rebate for stretching, and the next
-    tier to aim for."""
+    cases the buyer already plans, show the rebate tier ladder (BOTH case and
+    bottle tiers, bottle rebates converted to per-case), how many MORE cases/
+    bottles reach each tier, and the next tier to aim for."""
     code = str(args.get("rip_code") or "").strip()
     match = (args.get("match") or "").strip()
     try:
         have = float(args.get("have") if args.get("have") is not None else args.get("current_cases") or 0)
     except (TypeError, ValueError):
         have = 0.0
+    cym = _current_ym()
     ws = None
     members = []
+    pack = None
     if code and code not in ("0", "None", "nan"):
         desc, traw = _rip_tiers_for(con, code)
         tiers = [{"qty": t["qty"], "unit": t["unit"], "amount": t["amount"]} for t in traw]
@@ -783,32 +822,66 @@ def _t_rip_tier_gap(con, args):
         code, ws, desc = chosen.get("rip_code"), chosen.get("wholesaler"), chosen.get("description")
         tiers = chosen.get("tiers") or []
         members = chosen.get("case_mix_members") or []
+        hit = _resolve_products(con, {}, match, "first", 1)
+        if hit:
+            pack = _num(hit[0].get("unit_qty"))
+    # bottles/case needed to convert bottle tiers and bottle thresholds to cases.
+    if pack is None and code:
+        try:
+            prow = con.execute(
+                "WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<=? GROUP BY wholesaler), "
+                "ripupc AS (SELECT DISTINCT wholesaler, LTRIM(CAST(upc AS VARCHAR),'0') un FROM rip "
+                "WHERE CAST(rip_code AS VARCHAR)=? AND edition<=?) "
+                "SELECT ANY_VALUE(c.unit_qty) FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
+                "JOIN ripupc r ON r.wholesaler=c.wholesaler AND r.un=LTRIM(CAST(c.upc AS VARCHAR),'0')",
+                [cym, str(code), cym]).fetchone()
+            if prow:
+                pack = _num(prow[0])
+        except Exception:
+            pass
 
-    case_tiers = sorted(
-        [t for t in tiers if "case" in (str(t.get("unit") or "")).lower()],
-        key=lambda t: t["qty"])
-    ladder, prev_qty, prev_amt, next_tier = [], 0, 0.0, None
-    for t in case_tiers:
-        q, a = t["qty"], t["amount"]
-        need = max(0.0, q - have)
+    def _ck(t):   # cases-equivalent commitment, for ordering the ladder
+        q = _num(t.get("qty")) or 0
+        return q / pack if (_rip.normalize_unit(t.get("unit")) == "bottle" and pack) else q
+    valid = [t for t in tiers if _num(t.get("qty")) and _num(t.get("amount"))]
+    valid.sort(key=_ck)
+    ladder, next_tier = [], None
+    for t in valid:
+        norm = _rip.normalize_unit(t.get("unit"))
+        q, a = float(t["qty"]), float(t["amount"])
+        per_case = _rip.rip_per_case(a, q, t.get("unit"), pack)
+        if norm == "bottle":
+            unit_label = "bottles"
+            have_in_unit = have * pack if pack else None
+            more = max(0.0, q - have_in_unit) if have_in_unit is not None else None
+            more_cases = round(more / pack, 1) if (more is not None and pack) else None
+        else:
+            unit_label = "cases"
+            have_in_unit = have
+            more = max(0.0, q - have)
+            more_cases = round(more, 1)
         ladder.append({
-            "buy_cases": q, "rebate": round(a, 2), "per_case": round(a / q, 2) if q else None,
-            "more_cases_needed": int(need),
-            "extra_cases_vs_prev_tier": int(q - prev_qty),
-            "extra_rebate_vs_prev_tier": round(a - prev_amt, 2),
+            "buy_qty": q, "unit": unit_label, "rebate": round(a, 2),
+            "per_case": round(per_case, 2),
+            "more_needed": (round(more, 1) if more is not None else None),
+            "more_cases_equiv": more_cases,
         })
-        if next_tier is None and have < q:
-            next_tier = {"buy_cases": q, "rebate": round(a, 2), "more_cases_needed": int(need)}
-        prev_qty, prev_amt = q, a
-    if not case_tiers:
-        note = "This rebate has no case-based tier (it's bottle-based) — see rip_lookup for the bottle ladder."
+        if next_tier is None and have_in_unit is not None and have_in_unit < q:
+            next_tier = {"buy_qty": q, "unit": unit_label, "rebate": round(a, 2),
+                         "more_needed": round(more, 1) if more is not None else None,
+                         "more_cases_equiv": more_cases}
+    if not ladder:
+        note = f"No usable rebate tiers found for '{match or code}'."
     elif next_tier:
-        note = (f"With {have:.0f} case(s) planned, buy {next_tier['more_cases_needed']} more "
-                f"to unlock the ${next_tier['rebate']:.2f} rebate.")
+        mc = next_tier.get("more_cases_equiv")
+        more_txt = (f"{next_tier['more_needed']:.0f} more {next_tier['unit']}"
+                    + (f" (~{mc:.0f} case(s))" if (next_tier['unit'] == 'bottles' and mc) else ""))
+        note = (f"With {have:.0f} case(s) planned, buy {more_txt} to unlock the "
+                f"${next_tier['rebate']:.2f} rebate.")
     else:
         note = f"With {have:.0f} case(s) you're already at the top tier."
     return {"rip_code": code, "wholesaler": ws, "description": desc, "cases_planned": have,
-            "tier_ladder": ladder, "next_tier": next_tier,
+            "bottles_per_case": pack, "tier_ladder": ladder, "next_tier": next_tier,
             "case_mix_members": members[:15], "note": note}
 
 

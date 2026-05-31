@@ -34,5 +34,9 @@ def ask(body: AskBody, user: Optional[dict] = Depends(get_optional_user)):
             "charts": [], "actions": [], "products": [], "screen": None,
             "usage": {"input_tokens": 0, "output_tokens": 0, "model": "error", "cost_usd": 0.0, "enabled": True},
         }
-    ai_usage.log_usage(user, "celar", body.question, res.get("usage"))
+    try:
+        ai_usage.log_usage(user, "celar", body.question, res.get("usage"))
+    except Exception:
+        import logging
+        logging.getLogger("assistant").exception("ai_usage.log_usage failed")
     return res

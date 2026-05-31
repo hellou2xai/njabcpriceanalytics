@@ -977,7 +977,7 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
     # breakdown was fetched, so they always appear (not model-dependent).
     charts = _price_charts(price_detail_result) + charts
     answer = _strip_charts(final_text) or "Done."
-    return {
+    return _json_safe({
         "answer": answer,
         "charts": charts,
         "actions": actions_out,
@@ -985,7 +985,33 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
         "screen": screen_out,
         "usage": {"input_tokens": total_in, "output_tokens": total_out,
                   "model": model, "cost_usd": _cost_usd(model, total_in, total_out), "enabled": True},
-    }
+    })
+
+
+def _json_safe(v):
+    """Coerce numpy/pandas scalars and NaN/Inf into plain JSON-serializable
+    Python values. Product fields flow straight from pandas .to_dict(), so they
+    can be numpy.int64 (e.g. unit_qty) which FastAPI's JSON encoder can't
+    serialize — that surfaced as a 500 on any answer that returned product cards.
+    Recurses through dicts/lists so the whole response is safe."""
+    import math
+    if isinstance(v, dict):
+        return {k: _json_safe(x) for k, x in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_json_safe(x) for x in v]
+    if v is None or isinstance(v, (bool, str)):
+        return v
+    # numpy / pandas scalars expose .item() -> native Python scalar.
+    if hasattr(v, "item") and not isinstance(v, (int, float)):
+        try:
+            v = v.item()
+        except Exception:
+            return str(v)
+    if isinstance(v, float):
+        return v if math.isfinite(v) else None
+    if isinstance(v, int):
+        return v
+    return str(v)
 
 
 def _num(v):

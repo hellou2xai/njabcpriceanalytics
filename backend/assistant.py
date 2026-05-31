@@ -631,6 +631,11 @@ _SYSTEM = (
     "offering more help, e.g. 'Showing wine under $150 with a RIP rebate on the left. Anything else I can "
     "help with?'. Never list those products in chat. The goal on EVERY screen is: show the data on the "
     "main screen first, then ask how else you can help. "
+    "CRITICAL: do NOT switch the user to a different page. If their CURRENT screen already shows the kind "
+    "of data they asked about (Price Increases/Drops, Time-Sensitive, Major Discounts, etc.), keep them "
+    "there and just answer briefly — the grid already shows it. Reserve show_on_screen->/catalog for "
+    "general product searches/filters or a specific product/UPC that no current screen can display, or "
+    "when the user explicitly asks for the catalog. "
     "Use the CHAT WINDOW only for genuinely CONVERSATIONAL questions that a product grid cannot represent: "
     "why/how explanations, recommendations, totals/counts, category or distributor breakdowns, a single "
     "product's full price breakdown, or a head-to-head distributor comparison. For those, use the data "
@@ -733,7 +738,12 @@ def ask(question: str, history: list | None = None, user: dict | None = None, pa
     system_blocks = [{"type": "text", "text": _SYSTEM, "cache_control": {"type": "ephemeral"}}]
     if page:
         system_blocks.append({"type": "text", "text":
-            f"The user is currently on the '{page}' screen — prioritize tools and answers relevant to it."})
+            f"The user is currently on the '{page}' screen. STAY on this screen — do NOT navigate to a "
+            f"different page unless the user explicitly asks for it, or this screen genuinely cannot show "
+            f"what they want. If '{page}' already shows what they asked (e.g. they're on Price Increases "
+            f"asking about price increases), do NOT call show_on_screen — just answer briefly in chat; the "
+            f"grid is already showing it. Only navigate to /catalog for a general product search/filter or "
+            f"a specific product/UPC lookup that this screen can't display."})
     messages = _history_messages(history) + [{"role": "user", "content": question}]
     total_in = total_out = 0
     final_text = ""

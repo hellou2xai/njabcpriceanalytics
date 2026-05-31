@@ -1489,29 +1489,64 @@ def _t_analyze_cart(con, args, ctx):
     def _norm(u):
         return str(u or "").lstrip("0")
     upcs = sorted({_norm(it["upc"]) for it in items if _norm(it["upc"])})
-    pricing, by_upc = {}, {}
+    pricing, by_upc, nextp, disc_map, pack_map = {}, {}, {}, {}, {}
     if upcs:
         ph = ", ".join("?" for _ in upcs)
         try:
             df = con.execute(
                 "WITH latest AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched GROUP BY wholesaler) "
-                "SELECT LTRIM(CAST(c.upc AS VARCHAR),'0') un, c.wholesaler, c.product_name, c.effective_case_price eff "
+                "SELECT LTRIM(CAST(c.upc AS VARCHAR),'0') un, c.wholesaler, c.product_name, "
+                "c.effective_case_price eff, c.next_effective_case_price nxt, c.unit_qty uq, "
+                "c.discount_1_qty d1q, c.discount_1_amt d1a, c.discount_2_qty d2q, c.discount_2_amt d2a, "
+                "c.discount_3_qty d3q, c.discount_3_amt d3a, c.discount_4_qty d4q, c.discount_4_amt d4a, "
+                "c.discount_5_qty d5q, c.discount_5_amt d5a "
                 "FROM cpl_enriched c JOIN latest l ON c.wholesaler=l.wholesaler AND c.edition=l.ed "
                 f"WHERE LTRIM(CAST(c.upc AS VARCHAR),'0') IN ({ph}) AND c.effective_case_price IS NOT NULL", upcs).fetchdf()
             for _, r in df.iterrows():
-                un = str(r["un"])
+                un = str(r["un"]); w = r["wholesaler"]
                 try:
                     eff = float(r["eff"])
                 except (TypeError, ValueError):
                     continue
                 if eff != eff:
                     continue
-                pricing[(r["wholesaler"], un)] = eff
-                by_upc.setdefault(un, []).append((r["wholesaler"], round(eff, 2)))
+                pricing[(w, un)] = eff
+                by_upc.setdefault(un, []).append((w, round(eff, 2)))
+                try:
+                    nv = float(r["nxt"])
+                    nextp[(w, un)] = None if nv != nv else nv
+                except (TypeError, ValueError):
+                    pass
+                try:
+                    pk = float(r["uq"])
+                    pack_map[(w, un)] = 0.0 if pk != pk else pk
+                except (TypeError, ValueError):
+                    pack_map[(w, un)] = 0.0
+                dts = []
+                for j in (1, 2, 3, 4, 5):
+                    try:
+                        amt = float(r[f"d{j}a"])
+                    except (TypeError, ValueError):
+                        continue
+                    if amt != amt or amt <= 0:
+                        continue
+                    qs = str(r[f"d{j}q"]) if r[f"d{j}q"] is not None else ""
+                    mnum = re.search(r"[0-9]+(?:\.[0-9]+)?", qs)
+                    if not mnum:
+                        continue
+                    qn = float(mnum.group(0))
+                    if qn <= 0:
+                        continue
+                    dts.append((qn, _rip.normalize_unit(qs) or "case", round(amt, 2)))
+                if dts:
+                    disc_map[(w, un)] = sorted(dts, key=lambda t: t[0])
         except Exception:
             pass
 
     out_items, total_save, cheaper_count = [], 0.0, 0
+    buy_now_total, wait_total, buy_now_n, wait_n = 0.0, 0.0, 0, 0
+    cur_total, opt_total = 0.0, 0.0
+    price_increase_warnings, disc_upgrades = [], []
     for it in items:
         un = _norm(it["upc"])
         cur_eff = pricing.get((it["wholesaler"], un))
@@ -1521,16 +1556,132 @@ def _t_analyze_cart(con, args, ctx):
                  "current_effective_case": round(cur_eff, 2) if cur_eff is not None else None,
                  "qty_cases": it.get("qty_cases"), "upc": un or None,
                  "also_at": [w for (w, _e) in alts if w != it.get("wholesaler")]}
+        if cur_eff is not None:
+            cur_total += cur_eff * qty
+            opt_total += (min(cur_eff, alts[0][1]) if alts else cur_eff) * qty
         if alts and cur_eff is not None and alts[0][1] < cur_eff - 0.01 and alts[0][0] != it.get("wholesaler"):
             save = round(cur_eff - alts[0][1], 2)
             entry.update({"cheaper_distributor": alts[0][0], "cheaper_effective_case": alts[0][1],
                           "savings_per_case": save, "savings_for_qty": round(save * qty, 2)})
             total_save += save * qty
             cheaper_count += 1
+        # Timing: is THIS month best, or is next month cheaper? (same UPC+distributor)
+        nxt = nextp.get((it["wholesaler"], un))
+        if cur_eff is not None:
+            entry["next_month_effective_case"] = round(nxt, 2) if nxt is not None else None
+            if nxt is None:
+                entry["timing"] = "BUY NOW"; entry["timing_reason"] = "not on next month's sheet — may be gone"
+            elif nxt > cur_eff + 0.01:
+                d = round(nxt - cur_eff, 2)
+                entry["timing"] = "BUY NOW"; entry["price_rises_next_month_per_case"] = d
+                entry["lock_in_savings_for_qty"] = round(d * qty, 2)
+                buy_now_total += d * qty; buy_now_n += 1
+                price_increase_warnings.append({
+                    "product_name": it.get("product_name"), "distributor": it.get("wholesaler"),
+                    "now": round(cur_eff, 2), "next_month": round(nxt, 2),
+                    "increase_per_case": d, "extra_cost_for_qty": round(d * qty, 2)})
+            elif nxt < cur_eff - 0.01:
+                d = round(cur_eff - nxt, 2)
+                entry["timing"] = "WAIT"; entry["price_drops_next_month_per_case"] = d
+                entry["save_by_waiting_for_qty"] = round(d * qty, 2)
+                wait_total += d * qty; wait_n += 1
+            else:
+                entry["timing"] = "HOLD (same next month)"
+        # CPL discount-tier upgrade: a deeper per-product discount tier exists at a
+        # higher qty than the buyer currently has (effective assumes the best tier,
+        # so this flags what they must BUY to actually realise it).
+        dts = disc_map.get((it["wholesaler"], un))
+        if dts:
+            pk = pack_map.get((it["wholesaler"], un), 0.0)
+            for (qn, unit, amt) in dts:
+                have = (qty * pk) if (unit == "bottle" and pk) else qty
+                if have < qn:
+                    need = qn - have
+                    up = {"buy_qty": qn, "unit": "bottles" if unit == "bottle" else "cases",
+                          "more_needed": round(need, 1),
+                          "more_cases_equiv": round(need / pk, 1) if (unit == "bottle" and pk) else round(need, 1),
+                          "discount_per_case": amt}
+                    entry["discount_tier_upgrade"] = up
+                    disc_upgrades.append({"product_name": it.get("product_name"),
+                                          "distributor": it.get("wholesaler"), **up})
+                    break
         out_items.append(entry)
+
+    # RIP tier upgrades across the item set (works for cart AND lists/favorites).
+    rip_upgrades = []
+    try:
+        rip_upgrades = [t for t in _rip_tier_plan(con, items) if t.get("next_tier")]
+    except Exception:
+        pass
+
+    cart_ws = sorted({(it.get("wholesaler") or "") for it in items if it.get("wholesaler")})
+    # Combo opportunities: cart products that are also part of a bundle.
+    combos = []
+    if upcs and cart_ws:
+        uph = ", ".join("?" for _ in upcs)
+        wph = ", ".join("?" for _ in cart_ws)
+        try:
+            cdf = con.execute(
+                "WITH latest AS (SELECT wholesaler, MAX(edition) ed FROM combo GROUP BY wholesaler) "
+                "SELECT cb.wholesaler, CAST(cb.combo_code AS VARCHAR) combo_code, "
+                "ANY_VALUE(cb.combo_pack_price) pack_price, ANY_VALUE(cb.total_savings) savings "
+                "FROM combo cb JOIN latest l ON cb.wholesaler=l.wholesaler AND cb.edition=l.ed "
+                f"WHERE LTRIM(CAST(cb.upc AS VARCHAR),'0') IN ({uph}) AND LOWER(cb.wholesaler) IN ({wph}) "
+                "GROUP BY 1, 2 ORDER BY savings DESC NULLS LAST LIMIT 10",
+                upcs + [w.lower() for w in cart_ws]).fetchdf()
+            for _, r in cdf.iterrows():
+                combos.append({"distributor": r["wholesaler"], "combo_code": r["combo_code"],
+                               "pack_price": _num(r["pack_price"]), "total_savings": _num(r["savings"])})
+        except Exception:
+            pass
+
+    # Expiring / closeout: cart lines on a closeout or a dated deal ending <=14 days.
+    expiring = []
+    if upcs and cart_ws:
+        uph = ", ".join("?" for _ in upcs)
+        wph = ", ".join("?" for _ in cart_ws)
+        try:
+            edf = con.execute(
+                "WITH latest AS (SELECT wholesaler, MAX(edition) ed FROM cpl GROUP BY wholesaler) "
+                "SELECT DISTINCT c.wholesaler, c.product_name, c.closeout_permit AS co, "
+                "CAST(c.to_date AS DATE) AS t, date_diff('day', CURRENT_DATE, CAST(c.to_date AS DATE)) AS ends_in "
+                "FROM cpl c JOIN latest l ON c.wholesaler=l.wholesaler AND c.edition=l.ed "
+                f"WHERE LTRIM(CAST(c.upc AS VARCHAR),'0') IN ({uph}) AND LOWER(c.wholesaler) IN ({wph}) "
+                "AND ((c.closeout_permit IS NOT NULL AND CAST(c.closeout_permit AS VARCHAR) NOT IN ('', '0', 'None', 'nan')) "
+                "OR (c.from_date IS NOT NULL AND c.to_date IS NOT NULL "
+                "AND NOT (EXTRACT(day FROM CAST(c.from_date AS DATE))=1 AND CAST(c.to_date AS DATE)=(date_trunc('month', CAST(c.to_date AS DATE)) + INTERVAL 1 MONTH - INTERVAL 1 DAY)) "
+                "AND CAST(c.to_date AS DATE) BETWEEN CURRENT_DATE AND CURRENT_DATE + 14))",
+                upcs + [w.lower() for w in cart_ws]).fetchdf()
+            for _, r in edf.iterrows():
+                co = r["co"]
+                is_co = co is not None and str(co).strip() not in ("", "0", "None", "nan")
+                ends = int(r["ends_in"]) if (r["ends_in"] == r["ends_in"] and r["ends_in"] is not None) else None
+                expiring.append({"product_name": r["product_name"], "distributor": r["wholesaler"],
+                                 "closeout": bool(is_co), "ends_in_days": ends,
+                                 "reason": "Closeout — buy before it's gone" if is_co
+                                           else (f"Dated deal ends in {ends} day(s)" if ends is not None else "Dated deal ending soon")})
+        except Exception:
+            pass
+
+    opportunities = (cheaper_count + buy_now_n + len(rip_upgrades) + len(disc_upgrades)
+                     + len(combos) + len(expiring))
     return {"source": source, "item_count": len(items),
-            "cheaper_elsewhere_count": cheaper_count,
-            "total_potential_savings": round(total_save, 2),
+            # Totals are TRUE effective (list − CPL discounts − best RIP), the same
+            # number the catalog/cart show.
+            "summary": {"current_effective_total": round(cur_total, 2),
+                        "optimized_effective_total": round(opt_total, 2),
+                        "distributor_savings": round(cur_total - opt_total, 2),
+                        "opportunities": opportunities,
+                        "fully_optimized": opportunities == 0},
+            "cheaper_distributor": {"count": cheaper_count, "total_savings": round(total_save, 2)},
+            "timing": {"buy_now_count": buy_now_n, "wait_count": wait_n,
+                       "buy_now_lock_in_total": round(buy_now_total, 2),
+                       "wait_savings_total": round(wait_total, 2)},
+            "price_increase_warnings": price_increase_warnings,
+            "rip_tier_upgrades": rip_upgrades,
+            "discount_tier_upgrades": disc_upgrades,
+            "combo_opportunities": combos,
+            "expiring_or_closeout": expiring,
             "items": out_items}
 
 
@@ -1687,26 +1838,14 @@ def _t_cart_timing(con, args, ctx):
             "note": "BUY NOW = rises or vanishes next edition; WAIT = drops next edition."}
 
 
-def _t_cart_rip_tiers(con, args, ctx):
-    """Cart-wide RIP tier maximizer: sum the cart's case (and bottle) quantity per
-    RIP code across the Case Mix, find the tier currently reached and the NEXT
-    tier, and report how many MORE cases/bottles unlock it and the extra rebate —
-    cart-wide 'found money'."""
-    uid = ctx.get("user_id")
-    if not uid:
-        return {"error": "user not signed in"}
-    from backend.pg import get_pg
-    with get_pg() as pg:
-        rows = pg.execute(
-            "SELECT product_name, wholesaler, upc, qty_cases, qty_units FROM cart_items "
-            "WHERE user_id=%s AND COALESCE(saved_for_later,0)=0", (uid,)).fetchall()
-    items = [dict(r) for r in rows]
-    if not items:
-        return {"item_count": 0, "note": "Your cart is empty."}
-
+def _rip_tier_plan(con, items):
+    """Sum case/bottle quantity per RIP code across a set of cart/list items and
+    return, per code, the tier reached + the next tier (more needed + extra
+    rebate). Shared by the cart RIP-tier maximizer and the smart cart/list
+    analysis so both work on any item set (cart, favorites, or a list)."""
     def _norm(u):
         return str(u or "").lstrip("0")
-    upcs = sorted({_norm(it["upc"]) for it in items if _norm(it["upc"])})
+    upcs = sorted({_norm(it["upc"]) for it in items if _norm(it.get("upc"))})
     meta = {}   # (wholesaler, un) -> (rip_code, pack)
     if upcs:
         ph = ", ".join("?" for _ in upcs)
@@ -1767,9 +1906,27 @@ def _t_cart_rip_tiers(con, args, ctx):
                     "next_tier": next_tier,
                     "case_mix_in_cart": sorted(g["products"])[:8]})
     out.sort(key=lambda x: (x["next_tier"] or {}).get("extra_rebate_vs_current", 0), reverse=True)
+    return out
+
+
+def _t_cart_rip_tiers(con, args, ctx):
+    """Cart-wide RIP tier maximizer: sum the cart's case (and bottle) quantity per
+    RIP code across the Case Mix, find the tier currently reached and the NEXT
+    tier, and report how many MORE cases/bottles unlock it and the extra rebate."""
+    uid = ctx.get("user_id")
+    if not uid:
+        return {"error": "user not signed in"}
+    from backend.pg import get_pg
+    with get_pg() as pg:
+        rows = pg.execute(
+            "SELECT product_name, wholesaler, upc, qty_cases, qty_units FROM cart_items "
+            "WHERE user_id=%s AND COALESCE(saved_for_later,0)=0", (uid,)).fetchall()
+    items = [dict(r) for r in rows]
+    if not items:
+        return {"item_count": 0, "note": "Your cart is empty."}
+    out = _rip_tier_plan(con, items)
     actionable = [o for o in out if o["next_tier"]]
-    return {"item_count": len(items), "rip_codes_in_cart": len(out),
-            "tiers": out,
+    return {"item_count": len(items), "rip_codes_in_cart": len(out), "tiers": out,
             "note": (f"{len(actionable)} rebate(s) have a reachable next tier — buy a few more to unlock extra $."
                      if actionable else "No reachable next tier — you're at the top of each rebate you carry.")}
 
@@ -1854,7 +2011,7 @@ _CTX_TOOLS = {
     "get_favorites": (_t_get_favorites, "The signed-in user's favorited products."),
     "get_lists": (_t_get_lists, "The signed-in user's saved lists and item counts."),
     "get_orders": (_t_get_orders, "The signed-in user's 10 most recent orders."),
-    "analyze_cart": (_t_analyze_cart, "DEEP analysis of the user's cart / favorites / a list (source: cart|favorites|list, optional list_name): per item it compares the effective case price to EVERY distributor carrying the same UPC and flags where another is cheaper, with per-case + quantity-weighted savings and a total. Use for 'analyze my cart/wishlist', 'is anyone cheaper', 'where can I save', 'should I swap distributors'. After it, offer to swap via perform_action(type=swap_distributor)."),
+    "analyze_cart": (_t_analyze_cart, "SMART, COMPREHENSIVE analysis of the user's cart / favorites / a list (source: cart|favorites|list, optional list_name) — the one-stop 'analyze my cart/list' report. Returns ALL of: summary (current vs optimized EFFECTIVE total [list − discounts − best RIP] + total savings); cheaper_distributor (same UPC cheaper elsewhere); timing (this vs next month → BUY NOW / WAIT); price_increase_warnings (lines rising next month); rip_tier_upgrades (buy more to unlock the next rebate, cart+lists); discount_tier_upgrades (deeper CPL discount at a higher qty); combo_opportunities; expiring_or_closeout (time-sensitive ending soon / closeouts). Use for 'analyze my cart', 'analyze my list(s)/wishlist', 'is anyone cheaper', 'buy now or wait', 'am I near a tier'."),
     "optimize_cart": (_t_optimize_cart, "ORDER OPTIMIZER for the user's cart: the cheapest sourcing PLAN — per line picks the lowest effective-price distributor for that UPC, groups the wins into (from->to) distributor swaps with $ saved, and gives current vs optimized cart total. Use for 'optimize my cart', 'make my order cheaper', 'cheapest way to buy this'. Present current vs optimized total + the grouped swaps, then offer to apply each via perform_action(type=swap_distributor)."),
     "cart_timing": (_t_cart_timing, "BUY-NOW-vs-WAIT sweep of the whole cart: per line compares this edition's effective price to next edition's and flags BUY NOW (rises or drops off next month) vs WAIT (falls next month), with the $ impact per line and totals. Use for 'should I buy now or wait', 'scan my cart for timing', 'what's going up next month'."),
     "cart_rip_tiers": (_t_cart_rip_tiers, "Cart-wide RIP tier maximizer: sums the cart's case/bottle quantity per RIP code (the Case Mix), shows the tier reached and the NEXT tier, and how many MORE cases/bottles unlock it + the extra rebate. Use for 'am I close to any rebate tiers', 'how do I hit the next RIP tier', 'maximize my rebates'."),
@@ -2341,9 +2498,16 @@ _SYSTEM = (
     "RIP TIER MAXIMIZER (cart-wide): for 'am I close to a rebate tier', 'how do I hit the next RIP tier', "
     "'maximize my rebates' — call cart_rip_tiers. For each RIP code in the cart show cases in cart, the next "
     "tier, how many MORE cases/bottles unlock it, and the extra rebate; lead with the biggest extra-$ wins. "
-    "CART / LIST INSIGHTS + DISTRIBUTOR SWAP: for 'analyze my cart / wishlist / list', 'is anyone cheaper', "
-    "'where can I save', 'should I switch distributors' — call analyze_cart (source: cart|favorites|list, "
-    "optional list_name). Present a per-item table (product, current distributor + effective $/cs, cheaper "
+    "SMART CART / LIST ANALYSIS: for 'analyze my cart', 'analyze my list(s)/wishlist', 'is anyone cheaper', "
+    "'where can I save', 'buy now or wait', 'am I near a tier' — call analyze_cart (source: cart|favorites|"
+    "list, optional list_name) and present a COMPLETE report with EVERY section it returns, as headed blocks: "
+    "(1) Summary — current vs optimized EFFECTIVE total (already net of CPL discounts + best RIP) and total $ "
+    "savings; (2) Cheaper distributor (per line + total); (3) Timing — this vs next month, BUY NOW / WAIT; "
+    "(4) Price-increase warnings (price_increase_warnings — flag clearly what rises next month, $ extra); "
+    "(5) RIP tier upgrades (buy more to unlock the next rebate); (6) Discount tier upgrades (deeper CPL "
+    "discount at a higher qty); (7) Combo opportunities; (8) Expiring / closeout (time-sensitive ending soon). "
+    "ALWAYS show all non-empty sections — never reduce it to just 'fully optimized'; if a section is empty say "
+    "so briefly. Then offer to act (swap, add). Present a per-item table (product, current distributor + effective $/cs, cheaper "
     "distributor + $/cs, $ saved per case and for the quantity) and the TOTAL potential savings, then OFFER to "
     "swap. When the user agrees, or says 'swap/replace/move <X> to <distributor>', call "
     "perform_action(type=swap_distributor, from_distributor=<current>, to_distributor=<target>, "

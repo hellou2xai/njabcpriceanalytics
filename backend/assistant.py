@@ -890,6 +890,30 @@ def _t_closeouts(con, args):
     )
 
 
+def _t_semantic_search(con, args):
+    """Free-text semantic catalog search over the enrichment corpus.
+
+    Layer #3 of the assistant's semantic stack. Use for descriptive phrases
+    that don't map cleanly to a structured region/varietal slot - 'old vine
+    zinfandel from a cool climate', 'high altitude napa cabernet', 'small-
+    producer natural orange wine'. Returns ranked product cards with a
+    relevance score so the answer can cite the top hits."""
+    from backend.semantic_search import semantic_search as _ss
+    from backend.pg import get_pg
+    q = (args.get("q") or args.get("query") or "").strip()
+    limit = int(args.get("limit") or 12)
+    pt = (args.get("product_type") or "").strip() or None
+    if not q:
+        return []
+    try:
+        with get_pg() as pg:
+            return _ss(pg, con, q, limit=limit, product_type=pt)
+    except Exception as e:
+        import logging
+        logging.getLogger("assistant").warning("semantic_search failed: %s", e)
+        return []
+
+
 _DATA_TOOLS = {
     "category_breakdown": (_t_category_breakdown, "Product counts and average case price per category (current edition)."),
     "rip_lookup": (_t_rip_lookup, "RIP rebate lookup by brand/product NAME (e.g. 'sutter home') or by a RIP code. A UPC can have MULTIPLE codes and codes differ BY DISTRIBUTOR; returns matched products (each with all its codes), a by_distributor code map, and per-code tiers + description + product count. Use for any 'what RIP / rebate / RIP code' question."),
@@ -906,6 +930,7 @@ _DATA_TOOLS = {
     "distributor_arbitrage": (_t_distributor_arbitrage, "Catalog-wide cross-distributor arbitrage: same product (UPC) sold by 2+ distributors, ranked by how much cheaper the cheapest is vs the dearest (effective case price). Optional category, min_savings_pct. Use for 'where can I save by switching distributor', 'biggest price gaps between distributors'."),
     "best_gp_deals": (_t_best_gp_deals, "Best gross-profit deals: products ranked by discount depth / GP% (savings vs list). Optional category, distributor, min_pct. Use for 'best margin deals', 'highest GP%', 'deepest discounts by percent'."),
     "closeouts": (_t_closeouts, "Closeout / last-chance buys being cleared this edition (won't return next month), ranked by savings. Optional category, distributor. Use for 'closeouts', 'last chance', 'what's being discontinued/cleared'."),
+    "semantic_search": (_t_semantic_search, "FREE-TEXT semantic search over the enrichment corpus. USE this for descriptive natural-language queries that DON'T map to a region/varietal slot — 'old vine zinfandel from a cool climate', 'small-producer natural orange wine', 'high altitude napa cabernet', 'biodynamic Burgundy', 'rare single barrel bourbon from kentucky', 'small batch japanese whisky'. Args: q (the user's phrase), limit (default 12), product_type (optional narrowing). Returns ranked product cards (product_name, wholesaler, upc, prices, score). Prefer region/varietal slots when they match; fall back to this for the long tail."),
 }
 
 
@@ -1293,6 +1318,15 @@ _SYSTEM = (
     "Reserve q ONLY for brand or producer name when no region/varietal exists for it (e.g. q='caymus' "
     "to find Caymus brand, q='sutter home' to find Sutter Home). If a user query maps to a known "
     "region or varietal, use those slots; q is the last resort. "
+    "SEMANTIC SEARCH (long tail): for descriptive natural-language queries that DON'T map cleanly to "
+    "the region or varietal vocabularies — 'biodynamic Burgundy', 'small-producer natural orange wine', "
+    "'rare cask-strength bourbons', 'elegant cool-climate pinots', 'high-altitude napa cabs from "
+    "specific producers' — call the semantic_search tool with q=<the user's phrase> first. It searches "
+    "the enrichment corpus (product descriptions, brand, region, category path) and returns ranked "
+    "matching products. Use its results to ground your answer and, if you want to drive the screen, "
+    "pass the returned UPCs as upcs=<comma-list> to show_on_screen so the catalog lands on exactly "
+    "those SKUs. The order of preference for any 'find me X' query is: (1) region+varietal slots if "
+    "they map, (2) semantic_search for descriptive phrases, (3) q as the last resort. "
     "CRITICAL: do NOT switch the user to a different page. If their CURRENT screen already shows the kind "
     "of data they asked about (Price Increases/Drops, Time-Sensitive, Major Discounts, etc.), keep them "
     "there and just answer briefly — the grid already shows it. Reserve show_on_screen->/catalog for "

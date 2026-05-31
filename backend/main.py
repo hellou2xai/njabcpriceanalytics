@@ -108,6 +108,16 @@ def startup():
             warm_pm_cache_async()
         except Exception as e:
             print(f"[startup] price-movers cache warm skipped: {e}")
+        # Ensure the FTS GIN index on product_enrichment exists so the
+        # semantic-search endpoint stays fast. Idempotent; no-op if the
+        # index is already present from a prior run.
+        try:
+            from backend.semantic_search import ensure_fts_index
+            from backend.pg import get_pg
+            with get_pg() as pg:
+                ensure_fts_index(pg)
+        except Exception as e:
+            print(f"[startup] semantic-search index ensure skipped: {e}")
     except Exception as e:
         # If the pricing tables aren't in Postgres yet (no ingestion run), the
         # cache builds lazily on the first request instead of blocking startup.

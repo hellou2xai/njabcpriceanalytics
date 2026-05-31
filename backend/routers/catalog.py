@@ -1100,6 +1100,30 @@ _VALID_UPC_SQL = (
 )
 
 
+@router.get("/semantic-search")
+def semantic_search(
+    q: str = Query(..., description="Free-text descriptive phrase, e.g. 'old vine zinfandel from California', 'single barrel bourbon', 'natural orange wine'."),
+    limit: int = Query(24, ge=1, le=100, description="Max product cards returned"),
+    product_type: Optional[str] = Query(None, description="Optional product_type narrowing (Wine, Spirits, Beer, ...)"),
+):
+    """Long-tail semantic catalog search.
+
+    Layer #3 of the assistant's semantic stack. Layers #1 (region) and #2
+    (varietal) handle structured filters; this endpoint catches free-text
+    descriptive phrases that don't map to a fixed taxonomy. Returns ranked
+    product cards in the same shape as /api/catalog/search items, plus a
+    `score` field for the UI to display.
+
+    Engine: Postgres FTS today. Will swap to pgvector + Voyage when
+    VOYAGE_API_KEY is set and the embedding index has been built — same
+    API contract."""
+    from backend.semantic_search import semantic_search as _ss
+    from backend.pg import get_pg
+    with get_pg() as pg, get_duckdb() as con:
+        rows = _ss(pg, con, q, limit=limit, product_type=product_type)
+    return {"q": q, "count": len(rows), "items": rows}
+
+
 @router.get("/new-items")
 def new_items(
     q: str = Query("", description="Search term"),

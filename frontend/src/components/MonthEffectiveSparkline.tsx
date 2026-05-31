@@ -7,7 +7,19 @@
  * with a small arrow tail.
  */
 
-export interface RipTier { qty: number; unit: string; eff: number; }
+export interface RipTier {
+  qty: number;
+  unit: string;
+  eff: number;
+  // RIP tiers only: the per-case rebate amount the RIP itself contributes
+  // at this tier (excluding the stacked CPL discount that auto-applies).
+  // When present, the popover shows this as the savings number for the row
+  // — that's what "this RIP tier saves" actually means. Without it the
+  // popover would fall back to (best-discount-price − this-tier-price),
+  // which produces a meaningless negative for early RIP tiers that don't
+  // beat the deepest CPL discount alone.
+  ripOnlySave?: number | null;
+}
 
 export interface MonthBreakdown {
   edition: string | null;
@@ -104,13 +116,23 @@ function MonthBlock({ label, short, b }: { label: string; short?: string; b: Mon
             <>
               <tr className="mes-section"><td colSpan={2}><span className="mes-section-pill is-rip">RIP {hasDiscTiers || showDiscSummary ? '(stacks)' : ''}</span></td></tr>
               {sortedRip.map((t, i) => {
-                const save = ripVsDisc - t.eff;
+                // The per-tier RIP rebate (canonical, from the backend) is
+                // the only correct delta for THIS row — that's what the RIP
+                // itself contributes. Falling back to (best-disc-price −
+                // this-eff) was the old bug: early RIP tiers don't beat the
+                // deepest CPL discount alone, so the diff came out negative
+                // and rendered as "−$−24" through the "−$X" template.
+                const save = (t.ripOnlySave != null && Number.isFinite(t.ripOnlySave))
+                  ? Number(t.ripOnlySave)
+                  : (ripVsDisc != null && b.frontline != null
+                      ? (b.frontline - t.eff) - (b.frontline - ripVsDisc)
+                      : 0);
                 const isBest = t.eff === bestRipEff;
                 return (
                   <tr key={`r${i}`} className={isBest ? 'mes-row-best' : ''}>
                     <td>{tierLabel(t)}</td>
                     <td className="mes-num">
-                      <span className="mes-save">−{dollars(save)}</span>
+                      <span className="mes-save">−{dollars(Math.max(0, save))}</span>
                       <span className="mes-arrow"> = </span>
                       <strong>{dollars(t.eff)}</strong>
                     </td>

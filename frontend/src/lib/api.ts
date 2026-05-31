@@ -946,6 +946,12 @@ export interface CatalogTier {
   unit: string;
   amount: number;
   save_per_case: number;
+  // RIP tiers only: the RIP rebate portion alone (without the stacked
+  // CPL discount that auto-applies at this qty). Used as the per-row
+  // savings figure shown in the popover so a 1cs RIP row shows the $6
+  // rebate, not "$6 + stacked discount − deepest discount".
+  rip_only_save_per_case?: number | null;
+  stacked_disc_per_case?: number | null;
   price_after: number | null;
   btl_price_after?: number | null;
   save_per_bottle?: number | null;

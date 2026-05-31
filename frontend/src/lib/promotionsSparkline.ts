@@ -67,7 +67,15 @@ function buildBlock(
       .map(t => ({ qty: t.qty, unit: t.unit, eff: t.price_after ?? 0 }))
       .filter(t => t.eff > 0),
     ripTiers: rip
-      .map(t => ({ qty: t.qty, unit: t.unit, eff: t.price_after ?? 0 }))
+      // Carry the canonical per-tier RIP rebate from the backend so the
+      // popover shows "this RIP saves $X" instead of an off-by-one delta
+      // against the deepest CPL discount.
+      .map(t => ({
+        qty: t.qty,
+        unit: t.unit,
+        eff: t.price_after ?? 0,
+        ripOnlySave: t.rip_only_save_per_case ?? null,
+      }))
       .filter(t => t.eff > 0),
     bestEff,
   };

@@ -3543,6 +3543,15 @@ tr:hover .row-menu-btn { opacity: 1; }
   opacity: 0.9;
   user-select: none;
 }
+/* In-app badge sits at the top of the main content, just right of the sidebar,
+   so it no longer overlaps the "CELR Retail Pricing Intelligence" logo. Tracks
+   the collapsed sidebar width via :has(). */
+.beta-badge.in-app { top: 14px; left: calc(var(--sidebar-w) + 16px); }
+body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-collapsed) + 16px); }
+@media (max-width: 768px) {
+  /* On mobile the sidebar overlays, so keep the badge in the corner. */
+  .beta-badge.in-app { left: 10px; top: 8px; }
+}
 
 /* ---- Feedback widget (floating, bottom-right) ---- */
 .feedback-fab {

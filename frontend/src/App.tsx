@@ -94,7 +94,7 @@ function AuthenticatedApp() {
   return (
     <DistributorProvider>
     <QueryClientProvider client={queryClient}>
-      <BetaBadge />
+      <BetaBadge inApp />
       <FeedbackWidget />
       <StoreGate>
       <OrderAnalysisProvider>

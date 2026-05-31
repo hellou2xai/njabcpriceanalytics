@@ -3,9 +3,11 @@ import { MessageSquarePlus, X, Bug, Lightbulb } from 'lucide-react';
 import { feedback } from '../lib/api';
 
 // Small, non-intrusive "BETA" sticker. pointer-events:none so it never blocks
-// anything underneath it.
-export function BetaBadge() {
-  return <div className="beta-badge" title="This app is in beta">BETA</div>;
+// anything underneath it. `inApp` shifts it to the top of the main content
+// (just right of the sidebar) so it doesn't sit on top of the logo; the public
+// landing badge stays in the top-left corner.
+export function BetaBadge({ inApp = false }: { inApp?: boolean }) {
+  return <div className={`beta-badge${inApp ? ' in-app' : ''}`} title="This app is in beta">BETA</div>;
 }
 
 // ---- Draggable position for the Feedback FAB ----

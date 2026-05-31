@@ -1197,11 +1197,16 @@ def _tool_specs() -> list:
     # Action tools
     specs.append({
         "name": "perform_action",
-        "description": "Perform a user action: add_to_cart, update_quantity, add_to_favorites, add_to_list. Resolves the product(s) by `match`+`which`.",
+        "description": ("Perform a user action: add_to_cart, update_quantity, add_to_favorites, add_to_list. "
+                        "Resolves the product(s) by `match`+`which`. To add/act on an ENTIRE RIP Case Mix "
+                        "(e.g. 'add all the case mix to cart', 'add all these'), pass `rip_code`=<the code> "
+                        "(optionally `distributor`) — it resolves EVERY product sharing that code, not just "
+                        "one. `cases`/`bottles` apply to each (default 1 case each)."),
         "input_schema": {"type": "object", "properties": {
             "type": {"type": "string", "enum": list(_ACTION_TYPES)},
             "match": {"type": "string"},
             "which": {"type": "string", "enum": ["cheapest", "most_expensive", "first", "all"]},
+            "rip_code": {"type": "string", "description": "Add/act on EVERY product in this RIP code's Case Mix."},
             "category": {"type": "string"}, "distributor": {"type": "string"},
             "has_rip": {"type": "boolean"}, "has_discount": {"type": "boolean"},
             "cases": {"type": "number"}, "bottles": {"type": "number"},
@@ -1236,6 +1241,32 @@ def _tool_specs() -> list:
     return specs
 
 
+def _rip_case_mix_products(con, code, ws=None, limit=80) -> list:
+    """Every product sharing a RIP code (the Case Mix) as cart-ready dicts. The
+    case mix is defined by the RIP sheet's UPCs for the code, joined to the latest
+    CPL edition for prices — so 'add all the case mix' adds ALL members, not just
+    the one the name search happened to resolve."""
+    cym = _current_ym()
+    w2 = ["CAST(rip_code AS VARCHAR) = ?"]
+    pr = [str(code)]
+    if ws:
+        w2.append("wholesaler = ?")
+        pr.append(ws)
+    try:
+        df = con.execute(
+            f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<='{cym}' GROUP BY wholesaler), "
+            f"ripupc AS (SELECT DISTINCT wholesaler, LTRIM(CAST(upc AS VARCHAR),'0') un FROM rip "
+            f"WHERE {' AND '.join(w2)} AND edition<='{cym}') "
+            "SELECT DISTINCT c.product_name, c.wholesaler, CAST(c.upc AS VARCHAR) AS upc, c.unit_volume, "
+            "c.unit_qty, c.vintage, c.effective_case_price, c.frontline_case_price "
+            "FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
+            "JOIN ripupc r ON r.wholesaler=c.wholesaler AND r.un=LTRIM(CAST(c.upc AS VARCHAR),'0') "
+            f"WHERE c.product_name IS NOT NULL ORDER BY c.product_name LIMIT {int(limit)}", pr).fetchdf()
+        return df.to_dict(orient="records")
+    except Exception:
+        return []
+
+
 def _do_action(con, args, actions_out) -> dict:
     atype = args.get("type")
     if atype not in _ACTION_TYPES:
@@ -1247,7 +1278,12 @@ def _do_action(con, args, actions_out) -> dict:
         "divisions": [args["distributor"]] if args.get("distributor") else [],
         "hasRip": args.get("has_rip"), "hasDiscount": args.get("has_discount"),
     }
-    prods = _resolve_products(con, view, args.get("match") or "", which, cap)
+    # Whole-Case-Mix action: a rip_code resolves EVERY member, not just one name.
+    rip_code = str(args.get("rip_code") or "").strip()
+    if rip_code and rip_code not in ("0", "None", "nan"):
+        prods = _rip_case_mix_products(con, rip_code, args.get("distributor"))
+    else:
+        prods = _resolve_products(con, view, args.get("match") or "", which, cap)
     cases = int(args["cases"]) if isinstance(args.get("cases"), (int, float)) else 0
     bottles = int(args["bottles"]) if isinstance(args.get("bottles"), (int, float)) else 0
     if atype in ("add_to_cart", "update_quantity") and cases == 0 and bottles == 0:
@@ -1516,6 +1552,10 @@ _SYSTEM = (
     "to the user as interactive cards with Add to Cart / Add to List / Favorite buttons, so you don't "
     "need to repeat every product in prose; summarize instead. "
     "When the user asks to add to cart, set quantity, favorite, or build a list, call perform_action. "
+    "ADD WHOLE CASE MIX: when the user says 'add all the case mix / add all these / add every member' right "
+    "after you showed a RIP's Case Mix, call perform_action with type=add_to_cart and rip_code=<that code> "
+    "(NOT match) — it resolves and adds EVERY product in the code's Case Mix at the given cases (default 1 "
+    "each). Do NOT add just one SKU by name; that's the wrong result for a Case-Mix add. "
     "For ANY question about a specific product's price/pricing/cost/deal/'tell me about', call deal_360 (the "
     "comprehensive tool) and give a THOROUGH, alcohol-specific answer — never a one-line reply. Your prose MUST "
     "state ALL of these specifics (not just the charts): the SIZE (e.g. 750ML) and bottles/case; the CASE price "

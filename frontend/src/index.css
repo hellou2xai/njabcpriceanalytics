@@ -3767,6 +3767,7 @@ tr:hover .row-menu-btn { opacity: 1; }
 .deal-urgency.urgency-warm  { background: #fef3c7; color: #b45309; }
 .deal-urgency.urgency-soon  { background: #dbeafe; color: #1d4ed8; }
 .deal-urgency.urgency-later { background: var(--surface-hover); color: var(--text-muted); }
+.deal-urgency.urgency-future { background: #ede9fe; color: #6d28d9; }   /* not yet started */
 
 .deal-card-price {
   display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 10px;

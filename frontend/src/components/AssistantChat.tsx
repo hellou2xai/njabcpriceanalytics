@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -63,7 +63,15 @@ interface Props {
  * dedicated page and the dockable side panel so formatting is identical.
  */
 export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTIONS, onClose, pageContext, pagePath }: Props) {
-  const [messages, setMessages] = useState<Msg[]>([]);
+  // Per-page chat memory: keep a SEPARATE conversation per screen, keyed by the
+  // page path (falls back to the label / 'global'). Switching pages shows that
+  // page's own thread, and the history sent to the model is that page's only.
+  const pageKey = pagePath || pageContext || 'global';
+  const [convos, setConvos] = useState<Record<string, Msg[]>>({});
+  const messages = convos[pageKey] ?? [];
+  const setMessages = useCallback((u: Msg[] | ((prev: Msg[]) => Msg[])) => {
+    setConvos(c => ({ ...c, [pageKey]: typeof u === 'function' ? (u as (p: Msg[]) => Msg[])(c[pageKey] ?? []) : u }));
+  }, [pageKey]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const { runActions } = useAssistantActions();

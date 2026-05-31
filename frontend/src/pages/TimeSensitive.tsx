@@ -34,6 +34,14 @@ function urgencyLabel(days: number | null | undefined): string {
   if (days === 1) return 'Ends tomorrow';
   return `Ends in ${days} days`;
 }
+// Days until a deal STARTS (>0 means it hasn't begun yet — a future deal).
+function daysUntilStart(from?: string | null): number | null {
+  if (!from) return null;
+  const f = new Date(from + 'T00:00:00');
+  if (isNaN(f.getTime())) return null;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  return Math.round((f.getTime() - today.getTime()) / 86400000);
+}
 function fmtDateRange(from?: string | null, to?: string | null): string {
   const f = (d?: string | null) => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
   if (from && to) return `${f(from)} to ${f(to)}`;
@@ -277,6 +285,10 @@ function DealCard({ d, open }: { d: TimeSensitiveDeal; open: (n: string, w: stri
   const effBtl = eff != null && uq > 1 ? eff / uq : null;
   const gp = fr && save ? (save / fr) * 100 : null;
   const urgency = urgencyClass(d.days_to_expire);
+  // A deal whose start date is still in the future hasn't begun — label it a
+  // "Future deal" rather than "Ends in N days" (which reads as already active).
+  const startsIn = daysUntilStart(d.from_date);
+  const isFuture = startsIn != null && startsIn > 0;
 
   return (
     <div className={`deal-card ${urgency}`} role="button" tabIndex={0}
@@ -313,8 +325,10 @@ function DealCard({ d, open }: { d: TimeSensitiveDeal; open: (n: string, w: stri
             <VintageSticker vintages={d.vintages_available} currentVintage={d.vintage as string | null} />
           </div>
         </div>
-        <span className={`deal-urgency ${urgency}`} title={fmtDateRange(d.from_date, d.to_date)}>
-          {urgencyLabel(d.days_to_expire)}
+        <span className={`deal-urgency ${isFuture ? 'urgency-future' : urgency}`} title={fmtDateRange(d.from_date, d.to_date)}>
+          {isFuture
+            ? (startsIn === 1 ? 'Future deal · starts tomorrow' : `Future deal · in ${startsIn} days`)
+            : urgencyLabel(d.days_to_expire)}
         </span>
       </div>
 
@@ -341,7 +355,7 @@ function DealCard({ d, open }: { d: TimeSensitiveDeal; open: (n: string, w: stri
         <MonthEffectiveSparkline
           {...buildSparkProps(d)}
         />
-        <span className="text-muted" style={{ fontSize: 11 }}>{fmtDateRange(d.from_date, d.to_date)}</span>
+        <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text)' }}>{fmtDateRange(d.from_date, d.to_date)}</span>
       </div>
 
       {d.ai_blurb && (

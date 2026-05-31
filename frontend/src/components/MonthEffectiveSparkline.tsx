@@ -5,8 +5,13 @@
  * -> RIP Tiers for both months side by side. Hover target is the entire
  * coloured chip so it's easy to land on; the popover renders above the chip
  * with a small arrow tail (or flips below when there isn't room above).
+ *
+ * Pinning + drag: clicking anywhere on the popover "pins" it so it stays
+ * visible after mouseleave AND becomes freely draggable to anywhere on the
+ * screen. A small X button in the header dismisses and resets to the
+ * default chip-anchored position.
  */
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 
 export interface RipTier {
   qty: number;
@@ -271,14 +276,65 @@ export default function MonthEffectiveSparkline({ curr, next }: Props) {
   // BELOW when there isn't ~360px of room above. Pure-CSS solutions (anchor
   // positioning, popover API) don't have wide enough support yet.
   const wrapRef = useRef<HTMLSpanElement | null>(null);
+  const popRef = useRef<HTMLSpanElement | null>(null);
   const [placeBelow, setPlaceBelow] = useState(false);
+  // Pinned + drag state. When pinned: popover stays visible after mouseleave,
+  // turns into a position-fixed floating panel at `pos`, draggable from
+  // anywhere on its body. dragOffset stores the cursor-to-panel offset at
+  // mousedown so the panel doesn't jump under the cursor.
+  const [pinned, setPinned] = useState(false);
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const dragRef = useRef<{ dx: number; dy: number } | null>(null);
+
   const onWrapEnter = () => {
+    if (pinned) return;
     const el = wrapRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
     const ROOM_NEEDED = 360;   // generous min height for the two-column popover
     setPlaceBelow(rect.top < ROOM_NEEDED);
   };
+
+  // On any mousedown inside the popover (except the close button), pin and
+  // start drag. We snapshot the panel's current screen position so the first
+  // mousemove can compute the new (x, y) as (clientX - dx, clientY - dy).
+  const onPopMouseDown = (e: React.MouseEvent<HTMLSpanElement>) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('.mes-popover-close')) return;
+    const el = popRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    dragRef.current = { dx: e.clientX - rect.left, dy: e.clientY - rect.top };
+    setPinned(true);
+    setPos({ x: rect.left, y: rect.top });
+    e.preventDefault();
+  };
+
+  useEffect(() => {
+    if (!pinned) return;
+    const onMove = (e: MouseEvent) => {
+      const d = dragRef.current;
+      if (!d) return;
+      setPos({ x: e.clientX - d.dx, y: e.clientY - d.dy });
+    };
+    const onUp = () => { dragRef.current = null; };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closePinned(); };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [pinned]);
+
+  const closePinned = () => {
+    setPinned(false);
+    setPos(null);
+    dragRef.current = null;
+  };
+
   if (currEff == null && nextEff == null) return null;
 
   // Layout reserves a clear label band at the BOTTOM so the month names never
@@ -303,8 +359,17 @@ export default function MonthEffectiveSparkline({ curr, next }: Props) {
   const labC = monC.split(' ')[0] || '–';
   const labN = monN.split(' ')[0] || '–';
 
+  // Build the popover style: anchored to chip by default; fixed at (pos.x,
+  // pos.y) once the user pins + drags. transform is cleared in fixed mode
+  // because the default centred translateX(-50%) belongs to the anchored
+  // mode only.
+  const popStyle: React.CSSProperties | undefined = pinned && pos
+    ? { position: 'fixed', left: pos.x, top: pos.y, transform: 'none', bottom: 'auto' }
+    : undefined;
+
   return (
-    <span className={`mes-wrap${placeBelow ? ' mes-wrap-below' : ''}`} ref={wrapRef} onMouseEnter={onWrapEnter}>
+    <span className={`mes-wrap${placeBelow ? ' mes-wrap-below' : ''}${pinned ? ' mes-wrap-pinned' : ''}`}
+          ref={wrapRef} onMouseEnter={onWrapEnter}>
       <span className="mes-chip">
         <svg width={W} height={H} aria-hidden>
           {currEff != null && nextEff != null && (
@@ -335,7 +400,16 @@ export default function MonthEffectiveSparkline({ curr, next }: Props) {
           {goingDown && ' ↓'}{goingUp && ' ↑'}
         </span>
       </span>
-      <span className="mes-popover" role="tooltip">
+      <span className={`mes-popover${pinned ? ' mes-popover-pinned' : ''}`}
+            role={pinned ? 'dialog' : 'tooltip'}
+            ref={popRef}
+            style={popStyle}
+            onMouseDown={onPopMouseDown}>
+        {pinned && (
+          <button type="button" className="mes-popover-close" aria-label="Close" title="Close (Esc)"
+                  onMouseDown={e => e.stopPropagation()}
+                  onClick={closePinned}>×</button>
+        )}
         <div className="mes-blocks">
           <MonthBlock label={monC || 'This month'} short={monC ? labC : undefined} b={curr} />
           <MonthBlock label={monN || 'Next month'} short={monN ? labN : undefined} b={next} />

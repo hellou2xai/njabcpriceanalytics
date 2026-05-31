@@ -2627,6 +2627,35 @@ tr:hover .row-menu-btn { opacity: 1; }
 }
 .mes-wrap:hover .mes-popover { opacity: 1; pointer-events: auto; }
 
+/* Pinned + draggable popover. After a click the popover detaches from the
+   chip anchor, becomes position: fixed at the cursor's pin point, and is
+   freely draggable from anywhere on its body. The X button closes it (also
+   reachable with Esc). Stays visible regardless of hover state. */
+.mes-wrap-pinned .mes-popover,
+.mes-popover-pinned {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  cursor: grab;
+  user-select: none;
+}
+.mes-popover-pinned:active { cursor: grabbing; }
+/* Hide the chip-anchor arrow when floating free — it points at the chip and
+   no longer makes sense once the panel has been moved. */
+.mes-popover-pinned::after { display: none; }
+.mes-popover-close {
+  position: absolute; top: 4px; right: 6px;
+  width: 22px; height: 22px;
+  background: transparent; border: none; cursor: pointer;
+  color: var(--text-muted); font-size: 18px; line-height: 1;
+  border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+}
+.mes-popover-close:hover { background: var(--border); color: var(--text); }
+/* Re-enable text selection on the actual data so the buyer can still copy a
+   number, even while the surrounding panel is draggable. */
+.mes-popover-pinned .mes-table,
+.mes-popover-pinned .mes-summary { user-select: text; }
+
 .mes-block { min-width: 150px; }
 .mes-block-head {
   font-size: 11px; font-weight: 700; text-transform: uppercase;

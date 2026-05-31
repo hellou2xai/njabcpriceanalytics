@@ -1073,6 +1073,102 @@ def _t_semantic_search(con, args):
     return rows
 
 
+def _btl_price(r):
+    """Effective per-bottle price for a catalogue row, or None."""
+    eff = _num(r.get("effective_case_price"))
+    try:
+        uq = float(r.get("unit_qty"))
+    except (TypeError, ValueError):
+        uq = None
+    return round(eff / uq, 2) if (eff is not None and uq) else None
+
+
+def _product_type_of(con, name, upc=None):
+    """Look up a product's category (product_type) from the catalogue."""
+    try:
+        un = str(upc or "").lstrip("0")
+        if un:
+            row = con.execute(
+                "WITH latest AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched GROUP BY wholesaler) "
+                "SELECT ANY_VALUE(c.product_type) FROM cpl_enriched c JOIN latest l "
+                "ON c.wholesaler=l.wholesaler AND c.edition=l.ed WHERE LTRIM(CAST(c.upc AS VARCHAR),'0')=?", [un]).fetchone()
+            if row and row[0]:
+                return str(row[0])
+        if name:
+            row = con.execute("SELECT ANY_VALUE(product_type) FROM cpl_enriched WHERE product_name=?", [name]).fetchone()
+            if row and row[0]:
+                return str(row[0])
+    except Exception:
+        pass
+    return None
+
+
+def _t_build_assortment(con, args):
+    """ASSORTMENT BUILDER: a curated, priced shortlist for a natural-language
+    brief ('by-the-glass cool-climate pinots under $18/btl', 'value bourbons for a
+    well'), honoring max_bottle_price / max_case_price. Uses semantic search, then
+    a structured varietal/region fallback. Returns product cards."""
+    q = (args.get("q") or args.get("query") or "").strip()
+    limit = min(int(args.get("limit") or 15), 40)
+    pt = (args.get("category") or args.get("product_type") or "").strip() or None
+    max_btl = _num(args.get("max_bottle_price"))
+    max_cs = _num(args.get("max_case_price"))
+    rows = _t_semantic_search(con, {"q": q, "limit": 60, "product_type": pt}) if q else []
+    if not rows:
+        view = {"categories": [pt] if pt else [], "varietal": args.get("varietal"), "region": args.get("region")}
+        rows = _resolve_products(con, view, q, "cheapest", 60, exclude_stocking=True)
+    out = []
+    for r in rows:
+        eff = _num(r.get("effective_case_price"))
+        btl = _btl_price(r)
+        if max_cs is not None and (eff is None or eff > max_cs):
+            continue
+        if max_btl is not None and (btl is None or btl > max_btl):
+            continue
+        out.append({k: r.get(k) for k in ("product_name", "wholesaler", "upc", "unit_volume", "unit_qty",
+                                          "vintage", "effective_case_price", "frontline_case_price")}
+                   | {"effective_bottle_price": btl})
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _t_find_substitute(con, args):
+    """SUBSTITUTION FINDER: given a product that's gone or too pricey (`match`),
+    the closest in-stock alternatives by style/category at a similar-or-lower
+    price. Returns ranked product cards."""
+    match = (args.get("match") or "").strip()
+    if not match:
+        return {"error": "name the product to replace in `match`"}
+    prods = _resolve_products(con, {}, match, "first", 1)
+    if not prods:
+        return {"error": f"no product matched '{match}'"}
+    p = prods[0]
+    eff = _num(p.get("effective_case_price"))
+    cat = _product_type_of(con, p.get("product_name"), p.get("upc"))
+    pun = str(p.get("upc") or "").lstrip("0")
+    ceil_cs = _num(args.get("max_case_price")) or (round(eff * 1.1, 2) if eff is not None else None)
+    rows = _t_semantic_search(con, {"q": match, "limit": 40, "product_type": cat}) or []
+    if not rows:
+        rows = _resolve_products(con, {"categories": [cat] if cat else []}, match, "cheapest", 40, exclude_stocking=True)
+    out = []
+    for r in rows:
+        run = str(r.get("upc") or "").lstrip("0")
+        if run and run == pun:
+            continue   # not the same product
+        reff = _num(r.get("effective_case_price"))
+        if ceil_cs is not None and (reff is None or reff > ceil_cs):
+            continue
+        out.append({k: r.get(k) for k in ("product_name", "wholesaler", "upc", "unit_volume", "unit_qty",
+                                          "vintage", "effective_case_price", "frontline_case_price")}
+                   | {"effective_bottle_price": _btl_price(r)})
+        if len(out) >= 12:
+            break
+    return {"replacing": p.get("product_name"), "category": cat,
+            "original_effective_case": round(eff, 2) if eff is not None else None,
+            "price_ceiling_case": ceil_cs, "alternatives": out}
+
+
 _DATA_TOOLS = {
     "category_breakdown": (_t_category_breakdown, "Product counts and average case price per category (current edition)."),
     "rip_lookup": (_t_rip_lookup, "RIP rebate lookup by brand/product NAME (e.g. 'sutter home') or by a RIP code. A UPC can have MULTIPLE codes and codes differ BY DISTRIBUTOR; returns matched products (each with all its codes), a by_distributor code map, and per-code tiers + description + product count. Use for any 'what RIP / rebate / RIP code' question."),
@@ -1089,6 +1185,8 @@ _DATA_TOOLS = {
     "distributor_arbitrage": (_t_distributor_arbitrage, "Catalog-wide cross-distributor arbitrage: same product (UPC) sold by 2+ distributors, ranked by how much cheaper the cheapest is vs the dearest (effective case price). Optional category, min_savings_pct. Use for 'where can I save by switching distributor', 'biggest price gaps between distributors'."),
     "best_gp_deals": (_t_best_gp_deals, "Best gross-profit deals: products ranked by discount depth / GP% (savings vs list). Optional category, distributor, min_pct. Use for 'best margin deals', 'highest GP%', 'deepest discounts by percent'."),
     "closeouts": (_t_closeouts, "Closeout / last-chance buys being cleared this edition (won't return next month), ranked by savings. Optional category, distributor. Use for 'closeouts', 'last chance', 'what's being discontinued/cleared'."),
+    "build_assortment": (_t_build_assortment, "ASSORTMENT BUILDER: a curated priced shortlist for a natural-language brief (q), honoring max_bottle_price / max_case_price (+ optional category/varietal/region). Use for 'build a by-the-glass list of cool-climate pinots under $18/btl', 'a value bourbon well', 'a sparkling list under $X'. Returns product cards."),
+    "find_substitute": (_t_find_substitute, "SUBSTITUTION FINDER: given a product that's gone or too pricey (match), the closest in-stock alternatives by style/category at a similar-or-lower price (optional max_case_price). Use for 'X is too expensive, what's a close swap', 'alternative to Y', 'something like Z but cheaper'."),
     "semantic_search": (_t_semantic_search, "FREE-TEXT semantic search over the enrichment corpus. USE this for descriptive natural-language queries that DON'T map to a region/varietal slot — 'old vine zinfandel from a cool climate', 'small-producer natural orange wine', 'high altitude napa cabernet', 'biodynamic Burgundy', 'rare single barrel bourbon from kentucky', 'small batch japanese whisky'. Args: q (the user's phrase), limit (default 12), product_type (optional narrowing). Returns ranked product cards (product_name, wholesaler, upc, prices, score). Prefer region/varietal slots when they match; fall back to this for the long tail."),
 }
 
@@ -2033,7 +2131,11 @@ _SYSTEM = (
     "distributor_arbitrage — 'where can I save by switching distributor' / 'biggest price gaps': ranked same-UPC "
     "price gaps across distributors; state buy-from-X-not-Y with the per-case saving. best_gp_deals — 'best margin "
     "/ highest GP% / deepest % off' deals, ranked by GP%. closeouts — 'closeouts / last chance / being cleared': "
-    "items leaving after this edition, ranked by savings — frame as buy-now-before-gone."
+    "items leaving after this edition, ranked by savings — frame as buy-now-before-gone. "
+    "build_assortment — 'build me a <brief> under $X/btl' / 'a value bourbon well' / 'a by-the-glass list': pass "
+    "q=<the brief> plus max_bottle_price / max_case_price (and category/varietal/region if clear); present the "
+    "curated picks. find_substitute — 'X is too pricey / gone, what's a close swap' / 'something like Y but "
+    "cheaper': pass match=<product>; present the closest in-stock alternatives at a similar-or-lower price."
 )
 
 
@@ -2415,9 +2517,12 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                             _collect(out)
                         elif isinstance(out, dict) and out.get("product"):
                             _collect([{**out, "product_name": out.get("product")}])
-                        # compare_distributors -> each distributor row as a card.
+                        # compare_distributors -> each distributor row as a card;
+                        # find_substitute -> each alternative as a card.
                         if isinstance(out, dict) and isinstance(out.get("comparison"), list):
                             _collect(out["comparison"])
+                        if isinstance(out, dict) and isinstance(out.get("alternatives"), list):
+                            _collect(out["alternatives"])
                         if b.name in ("price_details", "deal_360") and isinstance(out, dict) and not out.get("error"):
                             price_detail_result = out
                             _collect([out])   # also show the product as a card

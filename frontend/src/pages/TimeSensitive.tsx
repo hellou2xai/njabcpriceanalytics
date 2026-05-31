@@ -69,7 +69,7 @@ export default function TimeSensitive() {
   // The assistant can filter this page in place by pushing ?q=<term|upc>.
   useEffect(() => { const u = params.get('q'); if (u !== null) setQ(u); }, [params]);
   const [productType, setProductType] = useState('');
-  const [validity, setValidity] = useState('');     // '' | 'ends-this-month' | 'next-month' | 'this-week'
+  const [validity, setValidity] = useState('');     // '' | 'this-week' | 'ends-this-month' | 'next-month' | 'future'
   const [minSave, setMinSave] = useState('');
   const [minDiscount, setMinDiscount] = useState('');
   const [minGp, setMinGp] = useState('');
@@ -81,10 +81,9 @@ export default function TimeSensitive() {
   const [limit, setLimit] = useState(60);
   const [page, setPage] = useState(0);
 
-  const showPast = validity === 'past';
   const { data, isLoading } = useQuery({
-    queryKey: ['time-sensitive', wholesaler, showPast],
-    queryFn: () => deals.timeSensitive({ wholesaler: wholesaler || undefined, include_past: showPast || undefined, limit: 2000 }),
+    queryKey: ['time-sensitive', wholesaler],
+    queryFn: () => deals.timeSensitive({ wholesaler: wholesaler || undefined, limit: 2000 }),
   });
   const { data: wl } = useQuery({ queryKey: ['watchlist'], queryFn: watchlist.get, enabled: trackedOnly });
   // Category facet computed from the actual time-sensitive deals list, not
@@ -111,9 +110,10 @@ export default function TimeSensitive() {
 
   const items = useMemo(() => {
     let res: TimeSensitiveDeal[] = data ?? [];
-    // Defensive: hide past deals (days_to_expire < 0) unless the user explicitly
-    // asked for them via the "Past deals" validity filter.
-    if (!showPast) res = res.filter(i => (i.days_to_expire ?? 0) >= 0);
+    // Past deals are never relevant on this page — only current + upcoming.
+    res = res.filter(i => (i.days_to_expire ?? 0) >= 0);
+    // "Future Deals": only deals that haven't started yet (start date is ahead).
+    if (validity === 'future') res = res.filter(i => (daysUntilStart(i.from_date) ?? -1) > 0);
     else res = res.filter(i => (i.days_to_expire ?? 0) < 0);
     // A deal that runs the WHOLE calendar month isn't time-sensitive, so it is
     // EXCLUDED by default (and under the assistant's ?window=partial). Only an
@@ -189,11 +189,11 @@ export default function TimeSensitive() {
       value: productType, onChange: setProductType },
     { type: 'pills', key: 'validity', title: 'Deal validity', value: validity, onChange: setValidity,
       options: [
-        { value: '', label: 'All current' },
+        { value: '', label: 'All' },
         { value: 'this-week', label: 'Ends this week' },
         { value: 'ends-this-month', label: 'Ends this month' },
         { value: 'next-month', label: 'Continues next month' },
-        { value: 'past', label: 'Past deals' },
+        { value: 'future', label: 'Future Deals' },
       ] },
     { type: 'pills', key: 'min_save', title: 'Min saving / case', value: minSave, onChange: setMinSave,
       options: [

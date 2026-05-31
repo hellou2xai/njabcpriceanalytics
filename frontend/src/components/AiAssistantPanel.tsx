@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { Sparkles, Send, AlertCircle, PanelRightClose, PanelRightOpen, Trash2, Mic, MicOff } from 'lucide-react';
 import type { AiUsage } from '../lib/api';
+import AiRatingWidget from './AiRatingWidget';
 
 // Minimal typing for the Web Speech API (not in lib.dom for all targets).
 type SpeechRec = { lang: string; interimResults: boolean; continuous: boolean;
@@ -47,6 +48,8 @@ interface Props<R extends AiAnswerBase> {
    *  coordinate a resize splitter); otherwise the panel manages it internally. */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** Surface tag for AI rating logging (e.g. 'catalog'). */
+  ratingSurface?: string;
 }
 
 const fmtCost = (usd: number) =>
@@ -72,6 +75,7 @@ export default function AiAssistantPanel<R extends AiAnswerBase>({
   send, onApply, describeResult,
   title = 'AI Assistant', subtitle, placeholder = 'Ask a question…', suggestions = [],
   collapsible = true, storageKey = 'ai_assistant', open: openProp, onOpenChange,
+  ratingSurface,
 }: Props<R>) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState('');
@@ -251,6 +255,14 @@ export default function AiAssistantPanel<R extends AiAnswerBase>({
                     ? <>↑ {m.usage.input_tokens.toLocaleString()} · ↓ {m.usage.output_tokens.toLocaleString()} · <strong>{fmtCost(m.usage.cost_usd)}</strong> · <span className="ai-model-chip">{modelLabel(m.usage.model)}</span></>
                     : <>keyword fallback · no tokens · $0.00</>}
                 </div>
+              )}
+              {m.role === 'assistant' && !m.error && (
+                <AiRatingWidget
+                  surface={ratingSurface ?? (storageKey || 'panel')}
+                  question={i > 0 && messages[i - 1]?.role === 'user' ? messages[i - 1].text : undefined}
+                  answer={m.text}
+                  model={m.usage?.model}
+                />
               )}
             </div>
           </div>

@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Package, ShoppingCart, Bell, Star, Menu, X, Combine,
   Sun, Moon, LogOut, BadgeDollarSign, ClipboardList, LayoutGrid,
   ChevronLeft, ChevronRight, ChevronDown, StickyNote, UserCog, Settings, Shield, Sparkles, BookOpen, ListTodo,
-  Activity, Clock, Percent, Compass, ArrowDownRight, ArrowUpRight,
+  Activity, Clock, Percent, Compass, ArrowDownRight, ArrowUpRight, ThumbsUp,
 } from 'lucide-react';
 import { alerts as alertsApi, orders as ordersApi, cart as cartApi } from '../lib/api';
 import WhatsAppShareButton from './WhatsAppShare';
@@ -72,6 +72,7 @@ const NAV_GROUPS: {
     items: [
       { path: '/admin', label: 'Admin', icon: Shield, adminOnly: true },
       { path: '/admin/ai-usage', label: 'AI Usage', icon: Sparkles, adminOnly: true },
+      { path: '/admin/ai-feedback', label: 'AI Feedback', icon: ThumbsUp, adminOnly: true },
       { path: '/admin/activity', label: 'Activity', icon: Activity, adminOnly: true },
       { path: '/rip-products', label: 'RIP Products', icon: BadgeDollarSign, adminOnly: true },
       { path: '/discounts', label: 'Top Discounts', icon: Percent, adminOnly: true },

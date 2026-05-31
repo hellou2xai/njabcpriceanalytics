@@ -4603,6 +4603,64 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 .celar-mic:disabled, .celar-send:disabled { opacity: 0.45; cursor: default; }
 .celar-disclaimer { text-align: center; font-size: 11px; color: var(--text-muted); margin: 8px 0 2px; }
 
+/* AI rating widget (thumbs up/down + bad-rating popup) — sits at the bottom
+   of every assistant reply on Celar standalone, global dock, and the legacy
+   Catalog panel. Quiet styling so it never competes with the answer or the
+   cost line above. */
+.ai-rate {
+  position: relative;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--text-muted);
+}
+.ai-rate-label { margin-right: 2px; }
+.ai-rate-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; padding: 0;
+  background: transparent; border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text-muted); cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.ai-rate-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--accent); border-color: var(--accent); }
+.ai-rate-btn-bad:hover:not(:disabled) { background: color-mix(in srgb, var(--red, #dc2626) 12%, var(--surface)); color: var(--red, #dc2626); border-color: var(--red, #dc2626); }
+.ai-rate-btn:disabled { opacity: 0.45; cursor: default; }
+.ai-rate-done {
+  margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--border);
+  font-size: 11px; color: var(--green, #16a34a);
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.ai-rate-error { color: var(--red, #dc2626); font-size: 11px; margin-left: 6px; }
+
+.ai-rate-popup {
+  position: absolute; right: 0; bottom: calc(100% + 6px);
+  z-index: 1200;
+  width: min(340px, 90vw);
+  background: var(--surface, #fff);
+  border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+  padding: 12px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.ai-rate-popup-head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 13px; color: var(--text);
+}
+.ai-rate-popup-close {
+  background: none; border: none; color: var(--text-muted); cursor: pointer;
+  padding: 2px; border-radius: 4px;
+}
+.ai-rate-popup-close:hover { background: var(--border); color: var(--text); }
+.ai-rate-popup textarea {
+  width: 100%; resize: vertical; min-height: 64px;
+  padding: 8px 10px; font-size: 12.5px; font-family: inherit;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg, #fff); color: var(--text);
+}
+.ai-rate-popup textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.ai-rate-popup-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
 /* =====================================================================
    Catalog redesign — ONE consistent type scale + comfortable density.
    Retailers flagged mixed font sizes and wasted space; this unifies every

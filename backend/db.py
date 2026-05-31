@@ -462,6 +462,28 @@ def init_user_db():
         )""",
         "CREATE INDEX IF NOT EXISTS idx_ai_usage_user ON ai_usage_log(user_id)",
         "CREATE INDEX IF NOT EXISTS idx_ai_usage_created ON ai_usage_log(created_at)",
+        # AI assistant rating: one row per "good"/"bad" rating the user clicks on
+        # an assistant reply. surface tags which assistant ("celar", "catalog",
+        # ...). question + answer are stored verbatim so the admin can read the
+        # exchange without joining ai_usage_log. details is the free-text the
+        # user supplies when they rate "bad" (the popup).
+        f"""CREATE TABLE IF NOT EXISTS ai_feedback (
+            id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            user_id integer REFERENCES users(id) ON DELETE SET NULL,
+            user_email text,
+            surface text NOT NULL,
+            rating text NOT NULL CHECK (rating IN ('good', 'bad')),
+            question text,
+            answer text,
+            details text,
+            page text,
+            model text,
+            user_agent text,
+            created_at text DEFAULT {NOW_UTC}
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_ai_feedback_user ON ai_feedback(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_ai_feedback_created ON ai_feedback(created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_ai_feedback_rating ON ai_feedback(rating)",
     ]
     with get_pg() as con:
         for s in stmts:

@@ -116,6 +116,25 @@ export const assistant = {
     }),
 };
 
+// ---- AI assistant rating (thumbs up/down on each reply) ----
+export interface AiFeedbackIn {
+  surface: string;                 // 'celar' | 'global-dock' | 'catalog' | ...
+  rating: 'good' | 'bad';
+  question?: string;
+  answer?: string;
+  details?: string;                // user-typed reason on a Bad rating
+  page?: string;
+  model?: string;
+  user_agent?: string;
+}
+export const aiFeedback = {
+  submit: (body: AiFeedbackIn) =>
+    request<{ status: string }>('/api/ai-feedback', {
+      method: 'POST',
+      body: JSON.stringify({ ...body, user_agent: navigator.userAgent }),
+    }),
+};
+
 // Token + dollar accounting returned with every AI assistant answer.
 export interface AiUsage {
   input_tokens: number;
@@ -360,7 +379,35 @@ export const admin = {
     request<BlurbGenerateResult>(`/api/admin/blurbs/generate?limit=${limit}`, { method: 'POST' }),
   aiUsage: (params?: { from_date?: string; to_date?: string }) =>
     request<AiUsageReport>(`/api/admin/ai-usage${qs(params ?? {})}`),
+  aiFeedback: (params?: { from_date?: string; to_date?: string; rating?: 'good' | 'bad'; surface?: string }) =>
+    request<AiFeedbackReport>(`/api/ai-feedback/admin${qs(params ?? {})}`),
+  aiFeedbackDelete: (id: number) =>
+    request<{ status: string }>(`/api/ai-feedback/${id}`, { method: 'DELETE' }),
 };
+
+export interface AiFeedbackPerSurface {
+  surface: string;
+  good: number;
+  bad: number;
+  total: number;
+}
+export interface AiFeedbackRow {
+  id: number;
+  created_at: string;
+  user_email: string;
+  surface: string;
+  rating: 'good' | 'bad';
+  question: string | null;
+  answer: string | null;
+  details: string | null;
+  page: string | null;
+  model: string | null;
+}
+export interface AiFeedbackReport {
+  per_surface: AiFeedbackPerSurface[];
+  totals: { good?: number; bad?: number; total?: number };
+  recent: AiFeedbackRow[];
+}
 
 export interface AiUsageRow {
   user_email: string;

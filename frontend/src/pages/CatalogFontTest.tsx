@@ -334,6 +334,7 @@ export default function CatalogFontTest() {
             subtitle="Ask or speak — I filter the catalog and can add to cart, favorites or lists."
             placeholder="e.g. add 2 cases of the cheapest tequila to my cart"
             storageKey="catalog_ai"
+            ratingSurface="catalog"
             send={(question, history) => catalog.aiQuery(question, history)}
             onApply={applyAiResult}
             describeResult={describeAiResult}

@@ -9,6 +9,7 @@ import AssistantChart from './AssistantChart';
 import AddToCartButton from './AddToCartButton';
 import AddToListButton from './AddToListButton';
 import FavoriteButton from './FavoriteButton';
+import AiRatingWidget from './AiRatingWidget';
 import { distributorName } from '../lib/distributors';
 import { useAssistantActions, describeActions } from '../lib/useAssistantActions';
 import { useResultCount } from '../lib/resultCount';
@@ -321,6 +322,15 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
                     : <>assistant offline · $0.00</>}
                 </div>
               )}
+              {m.role === 'assistant' && !m.error && (
+                <AiRatingWidget
+                  surface={pagePath ? 'global-dock' : 'celar'}
+                  question={i > 0 && messages[i - 1]?.role === 'user' ? messages[i - 1].text : undefined}
+                  answer={m.text}
+                  model={m.usage?.model}
+                  page={pagePath}
+                />
+              )}
             </div>
           </div>
         ))}
@@ -359,7 +369,7 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
           )}
           <button type="submit" className="celar-send" disabled={busy || !input.trim()} aria-label="Send"><Send size={18} /></button>
         </form>
-        <p className="celar-disclaimer">Answers use your live catalog data. Cost is shown per message.</p>
+        <p className="celar-disclaimer">Answers use your live catalog data. Cost is shown per message. AI can make mistakes, please verify important information.</p>
       </div>
     </div>
   );

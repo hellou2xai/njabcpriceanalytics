@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowDownRight, ArrowUpRight } from 'lucide-react';
+import { useResultCount } from '../lib/resultCount';
 import { analytics, watchlist, type PriceMover } from '../lib/api';
 import { ContextMenuProvider, RowMenuButton } from '../components/ContextMenu';
 import FavoriteButton from '../components/FavoriteButton';
@@ -132,6 +133,13 @@ export default function PriceMovers({ direction }: Props) {
     }
     return res;
   }, [data, q, productType, sizes, hasRip, minChange, minDollar, trackedOnly, wl, sort]);
+
+  // Publish the matched-row count so the AI assistant echoes the exact number.
+  const { report } = useResultCount();
+  const { pathname } = useLocation();
+  useEffect(() => {
+    if (!isLoading) report(pathname, items.length);
+  }, [isLoading, items.length, pathname, report]);
 
   // Build the Size filter options from the data: every distinct
   // unit_volume that appears in the current movers, ranked by frequency

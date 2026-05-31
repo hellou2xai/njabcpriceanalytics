@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useLocation } from 'react-router-dom';
+import { useResultCount } from '../lib/resultCount';
 import { useQuery } from '@tanstack/react-query';
 import { deals, watchlist, type TimeSensitiveDeal } from '../lib/api';
 import { ContextMenuProvider } from '../components/ContextMenu';
@@ -114,8 +115,11 @@ export default function TimeSensitive() {
     // asked for them via the "Past deals" validity filter.
     if (!showPast) res = res.filter(i => (i.days_to_expire ?? 0) >= 0);
     else res = res.filter(i => (i.days_to_expire ?? 0) < 0);
-    if (windowFilter === 'partial') res = res.filter(i => !spansFullMonth(i.from_date, i.to_date));
-    else if (windowFilter === 'full') res = res.filter(i => spansFullMonth(i.from_date, i.to_date));
+    // A deal that runs the WHOLE calendar month isn't time-sensitive, so it is
+    // EXCLUDED by default (and under the assistant's ?window=partial). Only an
+    // explicit ?window=full surfaces those full-month promos.
+    if (windowFilter === 'full') res = res.filter(i => spansFullMonth(i.from_date, i.to_date));
+    else res = res.filter(i => !spansFullMonth(i.from_date, i.to_date));
     if (q) {
       const ql = q.toLowerCase();
       { const qd = q.replace(/\D/g, '');
@@ -164,6 +168,13 @@ export default function TimeSensitive() {
     }
     return res;
   }, [data, q, productType, size, hasRip, hasCloseout, minSave, minDiscount, minGp, validity, windowFilter, trackedOnly, wl, sort]);
+
+  // Publish the matched-row count so the AI assistant echoes the exact number.
+  const { report } = useResultCount();
+  const { pathname } = useLocation();
+  useEffect(() => {
+    if (!isLoading) report(pathname, items.length);
+  }, [isLoading, items.length, pathname, report]);
 
   const shown = items.slice(page * limit, (page + 1) * limit);
   const [view, setView] = useState<'cards' | 'table'>(() => (localStorage.getItem('ts-view') as 'cards' | 'table') || 'cards');

@@ -7,6 +7,7 @@ import { ContextMenuProvider } from './components/ContextMenu';
 import { WebPriceSearchProvider } from './components/WebPriceSearch';
 import { DistributorProvider } from './contexts/DistributorContext';
 import { OrderAnalysisProvider } from './contexts/OrderAnalysisContext';
+import { ResultCountProvider } from './lib/resultCount';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import FeedbackWidget, { BetaBadge } from './components/FeedbackWidget';
 import Layout from './components/Layout';
@@ -99,6 +100,7 @@ function AuthenticatedApp() {
       <StoreGate>
       <OrderAnalysisProvider>
       <ProductQuickViewProvider>
+      <ResultCountProvider>
       <BrowserRouter>
         <WebPriceSearchProvider>
         <ContextMenuProvider>
@@ -150,6 +152,7 @@ function AuthenticatedApp() {
         </ContextMenuProvider>
         </WebPriceSearchProvider>
       </BrowserRouter>
+      </ResultCountProvider>
       </ProductQuickViewProvider>
       </OrderAnalysisProvider>
       </StoreGate>

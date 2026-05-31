@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { useResultCount } from '../lib/resultCount';
 import { Percent } from 'lucide-react';
 import { deals, watchlist, type Product } from '../lib/api';
 import { ContextMenuProvider, RowMenuButton } from '../components/ContextMenu';
@@ -96,6 +97,13 @@ export default function MajorDiscounts() {
   }, [data, q, productType, size, hasRip, hasCloseout, minSave, trackedOnly, wl, sort]);
 
   const shown = items.slice(page * limit, (page + 1) * limit);
+
+  // Publish the matched-row count so the AI assistant echoes the exact number.
+  const { report } = useResultCount();
+  const { pathname } = useLocation();
+  useEffect(() => {
+    if (!isLoading) report(pathname, items.length);
+  }, [isLoading, items.length, pathname, report]);
 
   const sections: FilterSection[] = [
     { type: 'text', key: 'q', title: 'Search', placeholder: 'Product or brand', value: q, onChange: setQ },

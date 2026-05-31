@@ -11,6 +11,7 @@ import AddToListButton from './AddToListButton';
 import FavoriteButton from './FavoriteButton';
 import { distributorName } from '../lib/distributors';
 import { useAssistantActions, describeActions } from '../lib/useAssistantActions';
+import { useResultCount } from '../lib/resultCount';
 
 interface Msg {
   role: 'user' | 'assistant';
@@ -20,6 +21,11 @@ interface Msg {
   chips?: string[];
   usage?: AiUsage;
   error?: boolean;
+  // When the assistant drove the screen, we wait for the page to report how many
+  // rows matched and then splice that exact count into the message text.
+  awaitingCount?: boolean;
+  screenBase?: string;   // pathname (no query) the count must belong to
+  navTs?: number;        // when we navigated; ignore counts reported before this
 }
 
 const money = (v?: number | null) => (v == null ? '—' : `$${Number(v).toFixed(2)}`);
@@ -77,6 +83,7 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
   const { runActions } = useAssistantActions();
   const navigate = useNavigate();
   const listRef = useRef<HTMLDivElement>(null);
+  const { value: resultCount } = useResultCount();
 
   const totalIn = messages.reduce((s, m) => s + (m.usage?.input_tokens ?? 0), 0);
   const totalOut = messages.reduce((s, m) => s + (m.usage?.output_tokens ?? 0), 0);
@@ -85,6 +92,27 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages, busy]);
+
+  // When the page the assistant drove reports its matched-row count, splice the
+  // exact count into the confirmation message (so the chat and the grid always
+  // agree). Only patches a message still awaiting a count whose screen matches
+  // the report and whose navigation happened before the report.
+  useEffect(() => {
+    if (!resultCount) return;
+    setMessages(prev => {
+      let changed = false;
+      const next = prev.map(m => {
+        if (m.awaitingCount && m.screenBase === resultCount.path
+            && resultCount.ts >= (m.navTs ?? 0)) {
+          changed = true;
+          const n = resultCount.count.toLocaleString();
+          return { ...m, awaitingCount: false, text: `${m.text}\n\n**${n} result${resultCount.count === 1 ? '' : 's'} shown.**` };
+        }
+        return m;
+      });
+      return changed ? next : prev;
+    });
+  }, [resultCount, setMessages]);
 
   const ask = async (question: string) => {
     const q = question.trim();
@@ -99,11 +127,13 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
       // If the assistant drove the screen, navigate there and keep the chat
       // to its one-line confirmation (no product dump in the panel).
       const drove = !!res.screen?.path;
+      const screenBase = drove ? res.screen!.path.split('?')[0] : undefined;
       setMessages(m => [...m, {
         role: 'assistant', text: res.answer,
         charts: drove ? [] : res.charts,
         products: drove ? [] : res.products,
         chips, usage: res.usage,
+        awaitingCount: drove, screenBase, navTs: drove ? Date.now() : undefined,
       }]);
       if (drove) navigate(res.screen!.path);
       if (res.actions?.length) runActions(res.actions);

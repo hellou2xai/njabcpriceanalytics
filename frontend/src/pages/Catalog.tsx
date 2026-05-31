@@ -1,9 +1,10 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useLocation } from 'react-router-dom';
 import { catalog, deals } from '../lib/api';
 import WholesalerFilter from '../components/WholesalerFilter';
 import RowLimitSelect from '../components/RowLimitSelect';
+import { useResultCount } from '../lib/resultCount';
 import { useProductQuickView } from '../components/ProductQuickView';
 import CatalogTable, { loadCart, saveCart, type CartState } from '../components/CatalogTable';
 import CatalogFilterPanel, {
@@ -132,6 +133,15 @@ export default function Catalog() {
     queryFn: () => catalog.facets({ q, wholesaler: wholesaler || undefined, ...filterParams }),
   });
 
+  // Publish the matched-row count so the AI assistant can echo the exact same
+  // number when it drives this screen.
+  const { report } = useResultCount();
+  const { pathname } = useLocation();
+  const total = data?.total ?? 0;
+  useEffect(() => {
+    if (!isLoading) report(pathname, total);
+  }, [isLoading, total, pathname, report]);
+
   // Products that belong to a combo bundle → link to its details.
   const { data: comboIdx } = useQuery({ queryKey: ['combo-index'], queryFn: () => deals.comboIndex(), staleTime: 300_000 });
   const comboMap = useMemo(() => {
@@ -195,6 +205,9 @@ export default function Catalog() {
 
       <div className="toolbar">
         <RowLimitSelect value={limit} onChange={v => { setLimit(v); setPage(0); }} />
+        <span className="result-count-badge" title="Products matching the current filters">
+          {isLoading ? 'Fetching…' : `${total.toLocaleString()} result${total === 1 ? '' : 's'}`}
+        </span>
       </div>
 
       <div className="catalog-layout catalog-layout--full">

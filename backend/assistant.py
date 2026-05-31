@@ -598,6 +598,191 @@ def _t_size_value(con, args):
             "upsize_opportunities": upsize[:10]}
 
 
+def _t_rip_tier_gap(con, args):
+    """'Almost there' RIP tier gap: for a brand/product (or RIP code) and how many
+    cases the buyer already plans, show the rebate tier ladder, how many MORE
+    cases reach each tier, the incremental rebate for stretching, and the next
+    tier to aim for."""
+    code = str(args.get("rip_code") or "").strip()
+    match = (args.get("match") or "").strip()
+    try:
+        have = float(args.get("have") if args.get("have") is not None else args.get("current_cases") or 0)
+    except (TypeError, ValueError):
+        have = 0.0
+    ws = None
+    members = []
+    if code and code not in ("0", "None", "nan"):
+        desc, traw = _rip_tiers_for(con, code)
+        tiers = [{"qty": t["qty"], "unit": t["unit"], "amount": t["amount"]} for t in traw]
+    else:
+        if not match:
+            return {"error": "provide a brand/product `match` or a `rip_code`."}
+        rl = _t_rip_lookup(con, {"match": match})
+        if isinstance(rl, dict) and rl.get("error"):
+            return rl
+        codes = (rl or {}).get("rip_codes") or []
+        if not codes:
+            return {"query": match, "note": (rl or {}).get("note") or f"No RIP rebate found for '{match}'."}
+        codes.sort(key=lambda c: (c.get("best_rebate") or 0), reverse=True)
+        chosen = codes[0]
+        code, ws, desc = chosen.get("rip_code"), chosen.get("wholesaler"), chosen.get("description")
+        tiers = chosen.get("tiers") or []
+        members = chosen.get("case_mix_members") or []
+
+    case_tiers = sorted(
+        [t for t in tiers if "case" in (str(t.get("unit") or "")).lower()],
+        key=lambda t: t["qty"])
+    ladder, prev_qty, prev_amt, next_tier = [], 0, 0.0, None
+    for t in case_tiers:
+        q, a = t["qty"], t["amount"]
+        need = max(0.0, q - have)
+        ladder.append({
+            "buy_cases": q, "rebate": round(a, 2), "per_case": round(a / q, 2) if q else None,
+            "more_cases_needed": int(need),
+            "extra_cases_vs_prev_tier": int(q - prev_qty),
+            "extra_rebate_vs_prev_tier": round(a - prev_amt, 2),
+        })
+        if next_tier is None and have < q:
+            next_tier = {"buy_cases": q, "rebate": round(a, 2), "more_cases_needed": int(need)}
+        prev_qty, prev_amt = q, a
+    if not case_tiers:
+        note = "This rebate has no case-based tier (it's bottle-based) — see rip_lookup for the bottle ladder."
+    elif next_tier:
+        note = (f"With {have:.0f} case(s) planned, buy {next_tier['more_cases_needed']} more "
+                f"to unlock the ${next_tier['rebate']:.2f} rebate.")
+    else:
+        note = f"With {have:.0f} case(s) you're already at the top tier."
+    return {"rip_code": code, "wholesaler": ws, "description": desc, "cases_planned": have,
+            "tier_ladder": ladder, "next_tier": next_tier,
+            "case_mix_members": members[:15], "note": note}
+
+
+def _t_distributor_arbitrage(con, args):
+    """Catalog-wide cross-distributor arbitrage: same product (UPC) carried by 2+
+    distributors, ranked by how much cheaper the cheapest is vs the dearest
+    (effective case price). Surfaces 'buy this from X, not Y' opportunities."""
+    cym = _current_ym()
+    cap = min(int(args.get("limit") or 15), 30)
+    cat = (args.get("category") or "").strip()
+    try:
+        min_pct = float(args.get("min_savings_pct") or 0)
+    except (TypeError, ValueError):
+        min_pct = 0.0
+    where = ["c.effective_case_price IS NOT NULL", "c.effective_case_price > 0",
+             "c.upc IS NOT NULL", "LTRIM(CAST(c.upc AS VARCHAR),'0') NOT IN ('', '0')"]
+    params = [cym]
+    if cat:
+        where.append("UPPER(c.product_type) = UPPER(?)")
+        params.append(cat)
+    try:
+        df = con.execute(f"""
+            WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<=? GROUP BY wholesaler),
+                 base AS (SELECT LTRIM(CAST(c.upc AS VARCHAR),'0') AS un, c.wholesaler AS w,
+                                 ANY_VALUE(c.product_name) AS pn, ANY_VALUE(c.unit_volume) AS uv,
+                                 MIN(c.effective_case_price) AS eff
+                          FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed
+                          WHERE {' AND '.join(where)}
+                          GROUP BY 1, 2)
+            SELECT un, ANY_VALUE(pn) AS product_name, ANY_VALUE(uv) AS unit_volume,
+                   COUNT(DISTINCT w) AS distributors,
+                   MIN(eff) AS cheapest_price, MAX(eff) AS dearest_price,
+                   ARG_MIN(w, eff) AS cheapest_distributor, ARG_MAX(w, eff) AS dearest_distributor
+            FROM base GROUP BY un HAVING COUNT(DISTINCT w) >= 2
+        """, params).fetchdf()
+    except Exception as e:
+        return {"error": f"{type(e).__name__}"}
+    out = []
+    for _, r in df.iterrows():
+        cheap, dear = r["cheapest_price"], r["dearest_price"]
+        if cheap is None or dear is None or dear <= 0:
+            continue
+        savings = dear - cheap
+        pct = savings / dear * 100 if dear else 0
+        if savings <= 0.01 or pct < min_pct:
+            continue
+        out.append({
+            "product_name": r["product_name"], "upc": r["un"], "unit_volume": r["unit_volume"],
+            "wholesaler": r["cheapest_distributor"],         # cheapest source (for the card)
+            "effective_case_price": round(float(cheap), 2),  # buy-here price
+            "frontline_case_price": round(float(dear), 2),   # vs dearest (shown struck through)
+            "cheapest_distributor": r["cheapest_distributor"], "cheapest_price": round(float(cheap), 2),
+            "dearest_distributor": r["dearest_distributor"], "dearest_price": round(float(dear), 2),
+            "savings_per_case": round(float(savings), 2), "savings_pct": round(float(pct), 1),
+            "distributors": int(r["distributors"]),
+        })
+    out.sort(key=lambda d: d["savings_per_case"], reverse=True)
+    return out[:cap]
+
+
+def _t_best_gp_deals(con, args):
+    """Best gross-profit deals: products ranked by discount depth / GP% (savings
+    vs list price). Optional category, distributor, min_pct."""
+    cym = _current_ym()
+    cap = min(int(args.get("limit") or 12), 25)
+    cat = (args.get("category") or "").strip()
+    dist = (args.get("distributor") or "").strip()
+    try:
+        min_pct = float(args.get("min_pct") or 0)
+    except (TypeError, ValueError):
+        min_pct = 0.0
+    where = ["c.frontline_case_price IS NOT NULL", "c.frontline_case_price > 0",
+             "c.effective_case_price IS NOT NULL", "c.effective_case_price < c.frontline_case_price"]
+    params = [cym]
+    if cat:
+        where.append("UPPER(c.product_type) = UPPER(?)")
+        params.append(cat)
+    if dist:
+        where.append("LOWER(c.wholesaler) = LOWER(?)")
+        params.append(dist)
+    where.append("(c.frontline_case_price - c.effective_case_price) / c.frontline_case_price * 100 >= ?")
+    params.append(min_pct)
+    try:
+        df = con.execute(f"""
+            WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<=? GROUP BY wholesaler)
+            SELECT c.product_name, c.wholesaler, c.upc, c.unit_volume, c.unit_qty, c.vintage,
+                   c.frontline_case_price, c.effective_case_price, c.total_savings_per_case,
+                   ROUND((c.frontline_case_price - c.effective_case_price) / c.frontline_case_price * 100, 1) AS gp_pct
+            FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed
+            WHERE {' AND '.join(where)}
+            ORDER BY gp_pct DESC, total_savings_per_case DESC NULLS LAST
+            LIMIT {cap}
+        """, params).fetchdf()
+    except Exception as e:
+        return {"error": f"{type(e).__name__}"}
+    return df.to_dict(orient="records")
+
+
+def _t_closeouts(con, args):
+    """Closeout / last-chance buys: products being cleared (closeout flag) in the
+    current edition, ranked by savings — once gone they don't return next month."""
+    cym = _current_ym()
+    cap = min(int(args.get("limit") or 15), 30)
+    cat = (args.get("category") or "").strip()
+    dist = (args.get("distributor") or "").strip()
+    where = ["c.has_closeout = true"]
+    params = [cym]
+    if cat:
+        where.append("UPPER(c.product_type) = UPPER(?)")
+        params.append(cat)
+    if dist:
+        where.append("LOWER(c.wholesaler) = LOWER(?)")
+        params.append(dist)
+    try:
+        df = con.execute(f"""
+            WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<=? GROUP BY wholesaler)
+            SELECT c.product_name, c.wholesaler, c.upc, c.unit_volume, c.unit_qty, c.vintage,
+                   c.frontline_case_price, c.effective_case_price, c.total_savings_per_case,
+                   CAST(c.to_date AS VARCHAR) AS ends
+            FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed
+            WHERE {' AND '.join(where)}
+            ORDER BY c.total_savings_per_case DESC NULLS LAST
+            LIMIT {cap}
+        """, params).fetchdf()
+    except Exception as e:
+        return {"error": f"{type(e).__name__}"}
+    return df.to_dict(orient="records")
+
+
 _DATA_TOOLS = {
     "category_breakdown": (_t_category_breakdown, "Product counts and average case price per category (current edition)."),
     "rip_lookup": (_t_rip_lookup, "RIP rebate lookup by brand/product NAME (e.g. 'sutter home') or by a RIP code. A UPC can have MULTIPLE codes and codes differ BY DISTRIBUTOR; returns matched products (each with all its codes), a by_distributor code map, and per-code tiers + description + product count. Use for any 'what RIP / rebate / RIP code' question."),
@@ -610,6 +795,10 @@ _DATA_TOOLS = {
     "best_one_case_rip": (_t_best_one_case_rip, "BEST 'buy just one case' RIP rebates — rebates whose per-case value at a SINGLE case is essentially the same as buying in bulk (e.g. 30 cases), so a small buyer isn't penalised. Ranked by per-case rebate at 1 case. Optional: distributor, limit. Use for 'best 1 case RIP deal', 'RIP deals worth it on one case', 'no-bulk RIP rebates'."),
     "deal_360": (_t_deal_360, "DEAL 360 for ONE item: every pricing angle side by side — frontline, CPL discount tiers, RIP rebate tiers, any time-sensitive (dated, sub-month) promo window, and combo memberships — THIS month vs next, with a buy-now-vs-wait recommendation. Use when the user wants the full picture / 'which deal makes most sense' / 'deal 360' for a product."),
     "size_value": (_t_size_value, "SIZE / VALUE efficiency for a brand/product: effective price per BOTTLE and per LITER (after discounts + RIP) across every size, ranked by best value-per-litre, plus near-free UPSIZE opportunities (e.g. when 750ML and 1L cost almost the same per bottle). Use for 'best value size', 'price per liter', '750 vs 1L', 'is the bigger bottle worth it'."),
+    "rip_tier_gap": (_t_rip_tier_gap, "'Almost there' RIP tier gap for a brand/product (or rip_code), given optional cases the buyer plans (`have`): the rebate tier ladder, how many MORE cases reach each tier, the incremental rebate for stretching, and the next tier to aim for. Use for 'how close am I to the next rebate', 'worth buying more to hit the tier'."),
+    "distributor_arbitrage": (_t_distributor_arbitrage, "Catalog-wide cross-distributor arbitrage: same product (UPC) sold by 2+ distributors, ranked by how much cheaper the cheapest is vs the dearest (effective case price). Optional category, min_savings_pct. Use for 'where can I save by switching distributor', 'biggest price gaps between distributors'."),
+    "best_gp_deals": (_t_best_gp_deals, "Best gross-profit deals: products ranked by discount depth / GP% (savings vs list). Optional category, distributor, min_pct. Use for 'best margin deals', 'highest GP%', 'deepest discounts by percent'."),
+    "closeouts": (_t_closeouts, "Closeout / last-chance buys being cleared this edition (won't return next month), ranked by savings. Optional category, distributor. Use for 'closeouts', 'last chance', 'what's being discontinued/cleared'."),
 }
 
 
@@ -1012,7 +1201,13 @@ _SYSTEM = (
     "combo deals side by side in a markdown table, THIS month vs next, then state the recommendation. size_value — "
     "size/value efficiency for a brand ('best value size', 'price per liter', '750 vs 1L', 'is the bigger bottle "
     "worth it'): present effective price per bottle AND per litre across sizes, call out near-free upsizes from "
-    "upsize_opportunities (e.g. '1L is only 4% more per bottle than 750ML for 33% more liquid — buy the 1L')."
+    "upsize_opportunities (e.g. '1L is only 4% more per bottle than 750ML for 33% more liquid — buy the 1L'). "
+    "rip_tier_gap — 'how close am I to the next rebate tier' / 'worth buying more to hit the tier': show the tier "
+    "ladder and how many MORE cases unlock the next rebate (pass `have` if the user states cases planned). "
+    "distributor_arbitrage — 'where can I save by switching distributor' / 'biggest price gaps': ranked same-UPC "
+    "price gaps across distributors; state buy-from-X-not-Y with the per-case saving. best_gp_deals — 'best margin "
+    "/ highest GP% / deepest % off' deals, ranked by GP%. closeouts — 'closeouts / last chance / being cleared': "
+    "items leaving after this edition, ranked by savings — frame as buy-now-before-gone."
 )
 
 

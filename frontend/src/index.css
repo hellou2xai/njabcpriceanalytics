@@ -4510,17 +4510,20 @@ tr:hover .row-menu-btn { opacity: 1; }
 
 /* Actionable product cards the assistant surfaces (add to cart / list / fav) */
 .celar-products { display: flex; flex-direction: column; gap: 8px; margin: 12px 0 4px; }
+/* Stacked layout: name/price on top, actions below. In the narrow dock a
+   side-by-side layout squeezed the name to ~1 char wide, which (with the
+   bubble's overflow-wrap) broke it one letter per line. */
 .celar-product-card {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  display: flex; flex-direction: column; align-items: stretch; gap: 8px;
   padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg);
 }
 .celar-product-main { min-width: 0; }
-.celar-product-name { font-weight: 600; font-size: 13.5px; }
+.celar-product-name { font-weight: 600; font-size: 13.5px; line-height: 1.3; overflow-wrap: break-word; word-break: normal; }
 .celar-product-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
 .celar-product-price { font-size: 13px; margin-top: 3px; }
 .celar-product-price strong { color: var(--green, #16a34a); }
 .celar-product-was { text-decoration: line-through; color: var(--text-muted); margin-left: 6px; font-size: 11.5px; }
-.celar-product-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.celar-product-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 
 .celar-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
 .celar-usage { margin: 8px 0 6px; padding-top: 6px; border-top: 1px dashed var(--border); font-size: 11px; color: var(--text-muted); }

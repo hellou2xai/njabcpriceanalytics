@@ -154,6 +154,98 @@ function MonthBlock({ label, short, b }: { label: string; short?: string; b: Mon
   );
 }
 
+/**
+ * Plain-English comparison of the curr and next month tier ladders. Helps the
+ * buyer read the popover without doing math: which qtys are unchanged, which
+ * qty exists in only one month, and where the best price actually changed.
+ *
+ * Per tier qty (separately for discount and RIP), one of four classifications:
+ *   - same     : both months offer the same effective at this qty
+ *   - differs  : both months offer this qty, but eff differs (-> who wins, by $)
+ *   - only-cur : qty only exists in curr (-> only available this month)
+ *   - only-nxt : qty only exists in next (-> only available next month)
+ *
+ * Output is at most three short lines: (1) headline best-price comparison,
+ * (2) groups of "same" qtys, (3) any per-qty advantages. Pure prose so a
+ * buyer's eye doesn't have to map tier rows side-by-side.
+ */
+function ComparisonSummary({
+  curr, next, labC, labN,
+}: { curr: MonthBreakdown; next: MonthBreakdown; labC: string; labN: string }) {
+  type Buckets = { same: number[]; differs: { qty: number; cur: number; nxt: number }[]; onlyCur: number[]; onlyNxt: number[] };
+  const empty = (): Buckets => ({ same: [], differs: [], onlyCur: [], onlyNxt: [] });
+
+  function classify(curTiers: RipTier[], nxtTiers: RipTier[]): Buckets {
+    const cMap = new Map(curTiers.map(t => [t.qty, t.eff]));
+    const nMap = new Map(nxtTiers.map(t => [t.qty, t.eff]));
+    const qtys = Array.from(new Set([...cMap.keys(), ...nMap.keys()])).sort((a, b) => a - b);
+    const b = empty();
+    for (const q of qtys) {
+      const c = cMap.get(q), n = nMap.get(q);
+      if (c != null && n != null) {
+        if (Math.abs(c - n) < 0.01) b.same.push(q);
+        else b.differs.push({ qty: q, cur: c, nxt: n });
+      } else if (c != null) b.onlyCur.push(q);
+      else if (n != null) b.onlyNxt.push(q);
+    }
+    return b;
+  }
+
+  const disc = classify(curr.discountTiers ?? [], next.discountTiers ?? []);
+  const rip = classify(curr.ripTiers, next.ripTiers);
+  const dollars = (n: number) => `$${Math.abs(n).toFixed(2)}`;
+  const csList = (qs: number[]) => qs.map(q => `${q}cs`).join(' / ');
+
+  const lines: string[] = [];
+
+  // Headline: best price difference between the two months.
+  if (curr.bestEff != null && next.bestEff != null) {
+    const d = curr.bestEff - next.bestEff;
+    if (Math.abs(d) < 0.01) {
+      lines.push(`Best price is the same both months: ${dollars(curr.bestEff)}/cs.`);
+    } else if (d < 0) {
+      lines.push(`${labC} is ${dollars(d)}/cs cheaper than ${labN} at best price.`);
+    } else {
+      lines.push(`${labN} is ${dollars(d)}/cs cheaper than ${labC} at best price.`);
+    }
+  }
+
+  // RIP differences usually carry the buy decision, so render those before
+  // discount differences. Same-qty tiers are grouped into one line each.
+  const ripLines: string[] = [];
+  if (rip.same.length) ripLines.push(`Buy ${csList(rip.same)}: same RIP both months.`);
+  for (const d of rip.differs) {
+    const better = d.cur < d.nxt ? labC : labN;
+    const gap = Math.abs(d.cur - d.nxt);
+    ripLines.push(`Buy ${d.qty}cs: ${better} is ${dollars(gap)}/cs cheaper on RIP.`);
+  }
+  if (rip.onlyCur.length) ripLines.push(`RIP tier${rip.onlyCur.length > 1 ? 's' : ''} ${csList(rip.onlyCur)}: only in ${labC}.`);
+  if (rip.onlyNxt.length) ripLines.push(`RIP tier${rip.onlyNxt.length > 1 ? 's' : ''} ${csList(rip.onlyNxt)}: only in ${labN}.`);
+
+  const discLines: string[] = [];
+  if (disc.same.length) discLines.push(`Buy ${csList(disc.same)}: same discount both months.`);
+  for (const d of disc.differs) {
+    const better = d.cur < d.nxt ? labC : labN;
+    const gap = Math.abs(d.cur - d.nxt);
+    discLines.push(`Buy ${d.qty}cs: ${better} discount is ${dollars(gap)}/cs better.`);
+  }
+  if (disc.onlyCur.length) discLines.push(`Discount tier${disc.onlyCur.length > 1 ? 's' : ''} ${csList(disc.onlyCur)}: only in ${labC}.`);
+  if (disc.onlyNxt.length) discLines.push(`Discount tier${disc.onlyNxt.length > 1 ? 's' : ''} ${csList(disc.onlyNxt)}: only in ${labN}.`);
+
+  lines.push(...ripLines, ...discLines);
+
+  if (lines.length === 0) return null;
+  return (
+    <div className="mes-summary">
+      <div className="mes-summary-head">What it means</div>
+      <ul className="mes-summary-list">
+        {lines.map((l, i) => <li key={i}>{l}</li>)}
+      </ul>
+    </div>
+  );
+}
+
+
 export default function MonthEffectiveSparkline({ curr, next }: Props) {
   const currEff = curr.bestEff;
   const nextEff = next.bestEff;
@@ -214,8 +306,11 @@ export default function MonthEffectiveSparkline({ curr, next }: Props) {
         </span>
       </span>
       <span className="mes-popover" role="tooltip">
-        <MonthBlock label={monC || 'This month'} short={monC ? labC : undefined} b={curr} />
-        <MonthBlock label={monN || 'Next month'} short={monN ? labN : undefined} b={next} />
+        <div className="mes-blocks">
+          <MonthBlock label={monC || 'This month'} short={monC ? labC : undefined} b={curr} />
+          <MonthBlock label={monN || 'Next month'} short={monN ? labN : undefined} b={next} />
+        </div>
+        <ComparisonSummary curr={curr} next={next} labC={labC} labN={labN} />
       </span>
     </span>
   );

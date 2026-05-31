@@ -2556,14 +2556,30 @@ tr:hover .row-menu-btn { opacity: 1; }
 .mes-popover {
   position: absolute; left: 50%; bottom: calc(100% + 8px);
   transform: translateX(-50%); z-index: 100;
-  display: flex; gap: 14px;
+  /* Column-stack so the comparison summary sits below the two month blocks. */
+  display: flex; flex-direction: column; gap: 10px;
   background: var(--surface); color: var(--text);
   border: 1px solid var(--border); border-radius: 8px;
   box-shadow: 0 10px 32px rgba(0,0,0,0.18);
-  padding: 10px 12px; min-width: 320px;
+  padding: 10px 12px; min-width: 320px; max-width: 460px;
   opacity: 0; pointer-events: none;
   transition: opacity 0.12s ease;
 }
+/* The two month blocks themselves are still rendered side-by-side. */
+.mes-blocks { display: flex; gap: 14px; }
+/* Plain-English summary line below the blocks ("Buy 1cs/2cs: same RIP both months. ..."). */
+.mes-summary {
+  border-top: 1px dashed var(--border);
+  padding-top: 8px;
+  font-size: 11.5px;
+  color: var(--text);
+}
+.mes-summary-head {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .3px; color: var(--text-muted); margin-bottom: 4px;
+}
+.mes-summary-list { margin: 0; padding-left: 16px; list-style: disc; }
+.mes-summary-list li { line-height: 1.45; }
 .mes-popover::after {
   content: ''; position: absolute; top: 100%; left: 50%;
   transform: translateX(-50%);

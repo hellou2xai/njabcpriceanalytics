@@ -539,6 +539,7 @@ def _tool_specs() -> list:
             "sort": {"type": "string", "enum": ["product_name", "frontline_case_price", "effective_case_price"]},
             "order": {"type": "string", "enum": ["asc", "desc"]},
             "group_by_rip": {"type": "boolean", "description": "Catalog only: group products into Case-Mix RIP clusters with tier ladders + Add-All-to-Cart. Use for 'show RIP / Case Mix' requests."},
+            "window": {"type": "string", "enum": ["partial", "full"], "description": "Time-Sensitive route only: 'partial' = deals that do NOT start on the 1st and end on the last day of the month (true short-window deals); 'full' = full-calendar-month promos."},
             "label": {"type": "string", "description": "Short human label of what's being shown."},
         }, "required": ["route"]},
     })
@@ -632,6 +633,9 @@ def _build_screen(args: dict) -> dict:
             q["order"] = args["order"]
         if args.get("group_by_rip") is True:
             q["group_by_rip"] = "1"   # group products into Case-Mix RIP clusters
+    # Time-Sensitive: 'partial' = deals NOT spanning a full calendar month.
+    if args.get("window") in ("partial", "full"):
+        q["window"] = args["window"]
     path = base + ("?" + urlencode(q) if q else "")
     return {"path": path, "label": (args.get("label") or "your request").strip()}
 
@@ -659,6 +663,11 @@ _SYSTEM = (
     "there and just answer briefly — the grid already shows it. Reserve show_on_screen->/catalog for "
     "general product searches/filters or a specific product/UPC that no current screen can display, or "
     "when the user explicitly asks for the catalog. "
+    "MANDATORY: if a request can be expressed as a filtered list of the CURRENT screen's data, you MUST "
+    "call show_on_screen for that screen — answering such a 'show/filter/find' request only in chat is "
+    "WRONG. Examples on Time-Sensitive Deals: 'deals that don't begin and end on the 1st/last of the "
+    "month' (i.e. not full-calendar-month deals) -> show_on_screen(route=time_sensitive, window=partial); "
+    "'full-month promos' -> window=full; a brand/UPC -> q=<term>. Confirm in one line and offer more help. "
     "Use the CHAT WINDOW only for genuinely CONVERSATIONAL questions that a product grid cannot represent: "
     "why/how explanations, recommendations, totals/counts, category or distributor breakdowns, a single "
     "product's full price breakdown, or a head-to-head distributor comparison. For those, use the data "
@@ -852,10 +861,12 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                             screen_out = sc
                             out = {"ok": True, "path": sc["path"]}
                     elif b.name == "perform_action":
-                        out = _do_action(con, b.input or {}, actions_out)
-                        # Surface the acted-on products as cards too.
-                        if actions_out:
-                            _collect(actions_out[-1].get("products"))
+                        try:
+                            out = _do_action(con, b.input or {}, actions_out)
+                            if actions_out:   # surface the acted-on products as cards
+                                _collect(actions_out[-1].get("products"))
+                        except Exception as e:
+                            out = {"error": f"{type(e).__name__}"}
                     elif b.name in _CTX_TOOLS:
                         try:
                             out = _CTX_TOOLS[b.name][0](con, b.input or {}, ctx)

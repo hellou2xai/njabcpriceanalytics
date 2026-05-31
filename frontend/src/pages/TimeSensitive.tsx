@@ -39,6 +39,17 @@ function fmtDateRange(from?: string | null, to?: string | null): string {
   if (from && to) return `${f(from)} to ${f(to)}`;
   return f(from || to);
 }
+// True when a deal spans a full calendar month (starts on the 1st, ends on the
+// month's last day). The assistant's ?window=partial filter excludes these so
+// only genuinely short-window deals show.
+function spansFullMonth(from?: string | null, to?: string | null): boolean {
+  if (!from || !to) return false;
+  const f = new Date(from + 'T00:00:00'), t = new Date(to + 'T00:00:00');
+  if (isNaN(f.getTime()) || isNaN(t.getTime())) return false;
+  const lastDay = new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate();
+  return f.getDate() === 1 && t.getDate() === lastDay
+    && f.getFullYear() === t.getFullYear() && f.getMonth() === t.getMonth();
+}
 
 export default function TimeSensitive() {
   const { open } = useProductQuickView();
@@ -83,12 +94,19 @@ export default function TimeSensitive() {
       .sort((a, b) => b.count - a.count);
   }, [data]);
 
+  // Assistant-driven: ?window=partial keeps only deals that DON'T span a full
+  // calendar month (the genuinely short-window deals); ?window=full keeps the
+  // full-month promos.
+  const windowFilter = params.get('window');
+
   const items = useMemo(() => {
     let res: TimeSensitiveDeal[] = data ?? [];
     // Defensive: hide past deals (days_to_expire < 0) unless the user explicitly
     // asked for them via the "Past deals" validity filter.
     if (!showPast) res = res.filter(i => (i.days_to_expire ?? 0) >= 0);
     else res = res.filter(i => (i.days_to_expire ?? 0) < 0);
+    if (windowFilter === 'partial') res = res.filter(i => !spansFullMonth(i.from_date, i.to_date));
+    else if (windowFilter === 'full') res = res.filter(i => spansFullMonth(i.from_date, i.to_date));
     if (q) {
       const ql = q.toLowerCase();
       { const qd = q.replace(/\D/g, '');
@@ -136,7 +154,7 @@ export default function TimeSensitive() {
       default:     res = [...res].sort((a, b) => (a.days_to_expire ?? 999) - (b.days_to_expire ?? 999));
     }
     return res;
-  }, [data, q, productType, size, hasRip, hasCloseout, minSave, minDiscount, minGp, validity, trackedOnly, wl, sort]);
+  }, [data, q, productType, size, hasRip, hasCloseout, minSave, minDiscount, minGp, validity, windowFilter, trackedOnly, wl, sort]);
 
   const shown = items.slice(page * limit, (page + 1) * limit);
   const [view, setView] = useState<'cards' | 'table'>(() => (localStorage.getItem('ts-view') as 'cards' | 'table') || 'cards');

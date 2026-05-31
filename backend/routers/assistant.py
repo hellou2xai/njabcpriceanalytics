@@ -23,6 +23,16 @@ def ask(body: AskBody, user: Optional[dict] = Depends(get_optional_user)):
     screen the user is on so it prioritizes relevant tools (and enables the
     signed-in user's cart/favorites/lists/orders tools). Logged for the rollup."""
     from backend import assistant as engine, ai_usage
-    res = engine.ask(body.question, body.history, user=user, page=body.page, page_path=body.page_path)
+    try:
+        res = engine.ask(body.question, body.history, user=user, page=body.page, page_path=body.page_path)
+    except Exception as e:
+        # Never 500 the chat — degrade gracefully so the UI shows a message.
+        import logging
+        logging.getLogger("assistant").exception("assistant.ask failed: %s", e)
+        res = {
+            "answer": "Sorry — I couldn't complete that. Please try rephrasing your question.",
+            "charts": [], "actions": [], "products": [], "screen": None,
+            "usage": {"input_tokens": 0, "output_tokens": 0, "model": "error", "cost_usd": 0.0, "enabled": True},
+        }
     ai_usage.log_usage(user, "celar", body.question, res.get("usage"))
     return res

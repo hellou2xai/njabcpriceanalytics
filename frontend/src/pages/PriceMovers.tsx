@@ -10,6 +10,7 @@ import AddToListButton from '../components/AddToListButton';
 import ProductThumb from '../components/ProductThumb';
 import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
 import PromotionsToolbar from '../components/PromotionsToolbar';
+import PromotionsPager from '../components/PromotionsPager';
 import PromotionsTable, { type PromotionRow } from '../components/PromotionsTable';
 import MonthEffectiveSparkline from '../components/MonthEffectiveSparkline';
 import { buildSparkProps } from '../lib/promotionsSparkline';
@@ -240,6 +241,7 @@ export default function PriceMovers({ direction }: Props) {
               />
             )}
           </ContextMenuProvider>
+          <PromotionsPager page={page} total={items.length} limit={limit} onPageChange={setPage} view={view} />
         </div>
       </div>
     </div>
@@ -350,9 +352,12 @@ function MoverCard({ d, isDrop, open }: { d: PriceMover; isDrop: boolean; open: 
         </div>
       )}
 
+      {effBtl != null && (
+        <div className="deal-btl-now">{money(effBtl)}<span className="deal-unit">/btl</span><span className="deal-btl-tag">net</span></div>
+      )}
+
       <div className="deal-card-meta">
         {eff != null && <span>Net {money(eff)}/cs (after deals)</span>}
-        {effBtl != null && <span>· {money(effBtl)}/btl</span>}
         {d.has_rip && <span className="source-badge source-rip">RIP rebate stacks</span>}
         {d.vintage && !/^(0|0\.0+|na|n\/a|nv|none)$/i.test(String(d.vintage)) && (
           <span>· Vintage {String(d.vintage).replace(/\.0+$/, '')}</span>

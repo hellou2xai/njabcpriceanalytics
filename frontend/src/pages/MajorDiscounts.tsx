@@ -10,6 +10,7 @@ import AddToListButton from '../components/AddToListButton';
 import ProductThumb from '../components/ProductThumb';
 import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
 import PromotionsToolbar from '../components/PromotionsToolbar';
+import PromotionsPager from '../components/PromotionsPager';
 import PromotionsTable, { type PromotionRow } from '../components/PromotionsTable';
 import MonthEffectiveSparkline from '../components/MonthEffectiveSparkline';
 import { buildSparkProps } from '../lib/promotionsSparkline';
@@ -180,6 +181,7 @@ export default function MajorDiscounts() {
               />
             )}
           </ContextMenuProvider>
+          <PromotionsPager page={page} total={items.length} limit={limit} onPageChange={setPage} view={view} />
         </div>
       </div>
     </div>
@@ -235,9 +237,11 @@ function DiscountCard({ d, open }: { d: Product; open: (n: string, w: string, c?
           <span className="deal-save">Save <strong>{money(save)}/cs</strong>{pct ? ` · ${pct.toFixed(0)}% off` : ''}</span>
         )}
       </div>
+      {effBtl != null && (
+        <div className="deal-btl-now">{money(effBtl)}<span className="deal-unit">/btl</span><span className="deal-btl-tag">effective</span></div>
+      )}
 
       <div className="deal-card-meta">
-        {effBtl != null && <span>{money(effBtl)}/btl effective</span>}
         {d.has_rip && <span className="source-badge source-rip">RIP rebate stacks</span>}
         {d.has_closeout && <span className="tag tag-orange">Closeout</span>}
         {(d.discount_source && d.discount_source.length > 0) && (

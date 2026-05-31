@@ -603,12 +603,21 @@ _PAGE_SCOPE = {
 }
 
 
-def _build_screen(args: dict) -> dict:
+def _build_screen(args: dict, page_path: str | None = None) -> dict:
     """Turn a show_on_screen tool call into a navigable path (+ catalog filters
-    encoded as query params the pages already read) and a short label."""
+    encoded as query params the pages already read) and a short label.
+
+    STRICT no-leave: the docked assistant is scoped to its page and must NEVER
+    navigate the user away from it. When we know the current page (page_path is
+    set — i.e. the side-panel assistant), we IGNORE the model's chosen route and
+    pin the screen to the current page, carrying only the filters that page can
+    apply (the catalog takes the full filter set; the other grid pages take the
+    free-text ?q, and Time-Sensitive also takes ?window). page_path is only
+    omitted on the standalone Celar page, which is a full navigator."""
     from urllib.parse import urlencode
     route = (args.get("route") or "catalog").lower()
-    base = _SCREEN_ROUTES.get(route, "/catalog")
+    model_base = _SCREEN_ROUTES.get(route, "/catalog")
+    base = page_path if (page_path and page_path.startswith("/")) else model_base
     q: dict = {}
     if args.get("q"):
         q["q"] = args["q"]
@@ -634,7 +643,7 @@ def _build_screen(args: dict) -> dict:
         if args.get("group_by_rip") is True:
             q["group_by_rip"] = "1"   # group products into Case-Mix RIP clusters
     # Time-Sensitive: 'partial' = deals NOT spanning a full calendar month.
-    if args.get("window") in ("partial", "full"):
+    if base == "/time-sensitive" and args.get("window") in ("partial", "full"):
         q["window"] = args["window"]
     path = base + ("?" + urlencode(q) if q else "")
     return {"path": path, "label": (args.get("label") or "your request").strip()}
@@ -839,7 +848,7 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                         continue
                     if b.name == "show_on_screen":
                         si = b.input or {}
-                        sc = _build_screen(si)
+                        sc = _build_screen(si, page_path)
                         # If the request targets a specific UPC, verify it exists
                         # so we can say "showing it" vs "product not found" (and
                         # not navigate to an empty screen on a bad barcode).

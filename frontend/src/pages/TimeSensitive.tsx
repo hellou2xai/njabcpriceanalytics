@@ -10,6 +10,7 @@ import AddToListButton from '../components/AddToListButton';
 import ProductThumb from '../components/ProductThumb';
 import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
 import PromotionsToolbar from '../components/PromotionsToolbar';
+import PromotionsPager from '../components/PromotionsPager';
 import PromotionsTable, { type PromotionRow } from '../components/PromotionsTable';
 import MonthEffectiveSparkline from '../components/MonthEffectiveSparkline';
 import { buildSparkProps } from '../lib/promotionsSparkline';
@@ -270,6 +271,7 @@ export default function TimeSensitive() {
               />
             )}
           </ContextMenuProvider>
+          <PromotionsPager page={page} total={items.length} limit={limit} onPageChange={setPage} view={view} />
         </div>
       </div>
     </div>
@@ -340,9 +342,12 @@ function DealCard({ d, open }: { d: TimeSensitiveDeal; open: (n: string, w: stri
         )}
       </div>
 
+      {effBtl != null && (
+        <div className="deal-btl-now">${effBtl.toFixed(2)}<span className="deal-unit">/btl</span><span className="deal-btl-tag">effective</span></div>
+      )}
+
       <div className="deal-card-meta">
-        {effBtl != null && <span>${effBtl.toFixed(2)}/btl effective</span>}
-        {gp != null && <span>· GP {gp.toFixed(0)}%</span>}
+        {gp != null && <span>GP {gp.toFixed(0)}%</span>}
         {d.has_rip && <span className="source-badge source-rip">RIP rebate stacks</span>}
         {d.has_closeout && <span className="tag tag-orange">Closeout</span>}
       </div>

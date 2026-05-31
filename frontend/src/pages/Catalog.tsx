@@ -24,6 +24,10 @@ export default function Catalog() {
   // resolves to product-name tokens + enrichment description match and
   // auto-narrows product_type when implied (e.g. california -> Wine).
   const [region, setRegion] = useState(params.get('region') ?? '');
+  // Semantic varietal / style hint ("cabernet", "ipa", "bourbon", "single malt").
+  // Stacks with region for "California cabernets" / "Kentucky bourbon" style
+  // queries. Backend auto-narrows product_type too.
+  const [varietal, setVarietal] = useState(params.get('varietal') ?? '');
   const [sort, setSort] = useState<'product_name' | 'frontline_case_price' | 'effective_case_price'>('product_name');
   const [order, setOrder] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(0);
@@ -69,6 +73,7 @@ export default function Catalog() {
     setWholesaler(params.get('wholesaler') ?? '');
     setUpcs(params.get('upcs') ?? '');
     setRegion(params.get('region') ?? '');
+    setVarietal(params.get('varietal') ?? '');
     setFilters({
       ...emptyCatalogFilters,
       hasRip: params.get('hasRip') === '1' ? true : undefined,
@@ -125,7 +130,7 @@ export default function Catalog() {
   const filterKey = JSON.stringify(filters);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['catalog', q, wholesaler, sort, order, page, limit, trackedOnly, filterKey, upcs, region],
+    queryKey: ['catalog', q, wholesaler, sort, order, page, limit, trackedOnly, filterKey, upcs, region, varietal],
     queryFn: () => catalog.search({
       q,
       wholesaler: wholesaler || undefined,
@@ -136,6 +141,7 @@ export default function Catalog() {
       include_tiers: true,
       upcs: upcs || undefined,
       region: region || undefined,
+      varietal: varietal || undefined,
     }),
   });
 

@@ -546,6 +546,7 @@ def search_products(
     sizes: Optional[str] = None,            # comma-separated unit volumes
     upcs: Optional[str] = Query(None, description="Comma-separated UPCs (leading-zero-normalised); restricts the grid to exactly these SKUs. Used by Celar Assistant 'Open in Catalog' links."),
     region: Optional[str] = Query(None, description="Region / origin hint, e.g. 'california', 'napa', 'bordeaux', 'tuscany'. Filters by product name tokens + enrichment description. Auto-narrows product_type when the region implies a category (e.g. region=california auto-applies product_type=Wine if none is set)."),
+    varietal: Optional[str] = Query(None, description="Varietal / style hint, e.g. 'cabernet', 'pinot noir', 'ipa', 'bourbon', 'reposado', 'single malt'. Combine with region for queries like 'California cabernets' or 'Kentucky bourbon'."),
     tracked_only: bool = Query(False, description="If true, only return products on the watchlist"),
     sort: str = Query("product_name", description="Sort field"),
     order: str = Query("asc", description="asc or desc"),
@@ -627,6 +628,18 @@ def search_products(
                 params.update(region_params)
                 if region_auto_type and not product_type:
                     product_type = region_auto_type
+        # Semantic varietal / style filter. Stacks with region for queries
+        # like 'California cabernets' or 'Kentucky bourbon'. Auto-product_type
+        # again — region's narrowing wins if both set the same; varietal can
+        # add narrowing the region didn't supply (e.g. varietal=ipa -> Beer).
+        if varietal:
+            from backend.varietal_semantics import build_varietal_filter
+            v_clause, v_params, v_auto_type = build_varietal_filter(varietal)
+            if v_clause:
+                where.append(v_clause)
+                params.update(v_params)
+                if v_auto_type and not product_type:
+                    product_type = v_auto_type
         if product_type:
             where.append("product_type = $product_type")
             params["product_type"] = product_type

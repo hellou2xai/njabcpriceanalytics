@@ -1061,6 +1061,7 @@ def _tool_specs() -> list:
             "distributors": {"type": "array", "items": {"type": "string"}},
             "sizes": {"type": "array", "items": {"type": "string"}},
             "region": {"type": "string", "description": "Region / origin / geography filter. Pass a canonical region key (california, napa, sonoma, oregon, washington, bordeaux, burgundy, tuscany, piedmont, rioja, champagne, italy, france, spain, argentina, chile, australia, new zealand, germany, portugal, kentucky, scotland, ireland, japan, mexico) or a natural phrase the backend resolves (e.g. 'tuscan', 'bourbon', 'californian'). The backend filters by product-name tokens + enrichment description and AUTO-NARROWS to the implied product_type (e.g. region=california auto-applies product_type=Wine). USE THIS for any 'wines from X', 'X reds', 'X bourbons', 'X whiskies' question — do NOT pass the geography as q."},
+            "varietal": {"type": "string", "description": "Varietal / style filter (grape variety, spirit sub-type, beer style). Pass a canonical key (cabernet, merlot, pinot noir, syrah, malbec, zinfandel, sangiovese, nebbiolo, tempranillo, grenache, red blend, chardonnay, sauvignon blanc, pinot grigio, riesling, viognier, white blend, rose, prosecco, cava, sparkling, bourbon, rye, scotch, single malt, irish whiskey, japanese whisky, canadian whisky, tequila, blanco, reposado, anejo, mezcal, vodka, gin, rum, cognac, armagnac, ipa, lager, stout, sour, wheat beer) or a natural phrase ('cabernets', 'pinots', 'single malts', 'reposados', 'IPAs'). Stacks with region — for 'California cabernets' set region=california AND varietal=cabernet. Auto-narrows product_type too (varietal=ipa -> Beer). NEVER put grape names in q."},
             "has_rip": {"type": "boolean"}, "has_discount": {"type": "boolean"},
             "price_min": {"type": "number"}, "price_max": {"type": "number"},
             "sort": {"type": "string", "enum": ["product_name", "frontline_case_price", "effective_case_price"]},
@@ -1220,12 +1221,16 @@ def _build_screen(args: dict, page_path: str | None = None) -> dict:
             q["order"] = args["order"]
         if args.get("group_by_rip") is True:
             q["group_by_rip"] = "1"   # group products into Case-Mix RIP clusters
-        # Semantic region hint. The catalog backend resolves it via
-        # backend.region_semantics and auto-applies a product_type narrowing
-        # when implied (e.g. region=california -> product_type=Wine). The
-        # frontend Catalog page passes ?region= straight through to the API.
-        if isinstance(args.get("region"), str) and args["region"].strip():
-            q["region"] = args["region"].strip()
+    # Semantic hints — region + varietal — apply to ANY route. Today only
+    # /catalog actually consumes them server-side (via region_semantics /
+    # varietal_semantics), but the URL carries them on other routes too so
+    # those pages can adopt the same filters in a follow-up without changing
+    # the assistant. The frontend Catalog page reads ?region= and ?varietal=
+    # straight through to the API.
+    if isinstance(args.get("region"), str) and args["region"].strip():
+        q["region"] = args["region"].strip()
+    if isinstance(args.get("varietal"), str) and args["varietal"].strip():
+        q["varietal"] = args["varietal"].strip()
     # Time-Sensitive: 'partial' = deals NOT spanning a full calendar month.
     if base == "/time-sensitive" and args.get("window") in ("partial", "full"):
         q["window"] = args["window"]
@@ -1276,7 +1281,18 @@ _SYSTEM = (
     "germany, portugal, kentucky, scotland, ireland, japan, mexico. Natural phrasings like 'tuscan', "
     "'bourbon', 'californian', 'bordeaux reds' resolve automatically — pass them verbatim. The region "
     "filter auto-narrows product_type when implied (region=california means Wine; region=kentucky means "
-    "Spirits). Combine with q only for additional brand/varietal narrowing (e.g. region=napa, q='cabernet'). "
+    "Spirits). "
+    "VARIETAL / STYLE: for ANY query mentioning a grape variety, spirit sub-type or beer style — "
+    "'cabernet', 'pinot noir', 'chardonnay', 'IPAs', 'bourbon', 'single malt', 'reposado tequila', "
+    "'prosecco', 'merlot' — use the `varietal` arg. NEVER put grape names or spirit styles in q. "
+    "Combine with region to stack: 'California cabernets' is region=california + varietal=cabernet; "
+    "'Italian reds' is region=italy + varietal='red blend' (or omit varietal for any Italian red); "
+    "'Kentucky bourbon' is region=kentucky + varietal=bourbon (already implied by region, varietal "
+    "adds robustness). The varietal filter also auto-narrows product_type (varietal=ipa -> Beer, "
+    "varietal=reposado -> Spirits, varietal=prosecco -> Sparkling). "
+    "Reserve q ONLY for brand or producer name when no region/varietal exists for it (e.g. q='caymus' "
+    "to find Caymus brand, q='sutter home' to find Sutter Home). If a user query maps to a known "
+    "region or varietal, use those slots; q is the last resort. "
     "CRITICAL: do NOT switch the user to a different page. If their CURRENT screen already shows the kind "
     "of data they asked about (Price Increases/Drops, Time-Sensitive, Major Discounts, etc.), keep them "
     "there and just answer briefly — the grid already shows it. Reserve show_on_screen->/catalog for "

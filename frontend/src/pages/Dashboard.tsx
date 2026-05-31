@@ -172,9 +172,9 @@ export default function Dashboard() {
           <KPICard label="Clearance Items" value={kpis.clearance_items} color="#dc2626" icon={<TrendingDown size={20} />}
                    to="/clearance" title="Open the Clearance / Closeout list" />
           <KPICard label="Price Drops" value={kpis.price_drops} color="#16a34a" icon={<ArrowDownRight size={20} />}
-                   to="/analytics?tab=movers-down" title="Open Analytics — biggest price drops" />
+                   to="/price-drops" title="Open Price Drops" />
           <KPICard label="Price Increases" value={kpis.price_increases} color="#ea580c" icon={<ArrowUpRight size={20} />}
-                   to="/analytics?tab=movers-up" title="Open Analytics — biggest price increases" />
+                   to="/price-increases" title="Open Price Increases" />
           <KPICard label="Active RIPs" value={kpis.active_rips} color="#7c3aed" icon={<Zap size={20} />}
                    to="/catalog?hasRip=1" title="Open Catalog filtered to products with a RIP rebate" />
         </div>
@@ -290,8 +290,8 @@ function TimeSensitiveTile({ data, open }: { data: TimeSensitiveDeal[] | undefin
   };
   return (
     <DashboardTile
-      id="time-sensitive"
       title="Time-Sensitive Deals"
+      to="/time-sensitive"
       accent="#dc2626"
       count={active.length}
       countLabel="active deals"
@@ -369,6 +369,7 @@ function PriceDropsTile({ data, open }: { data: any[] | undefined; open: (n: str
   return (
     <DashboardTile
       title="Biggest Price Drops"
+      to="/price-drops"
       accent="#22c55e"
       count={(data ?? []).length}
       countLabel="products"
@@ -422,8 +423,8 @@ function TopDealsTile({ data, open }: { data: any[] | undefined; open: (n: strin
   });
   return (
     <DashboardTile
-      id="top-discounts"
       title="Top Discount Opportunities"
+      to="/major-discounts"
       accent="#10b981"
       count={(data ?? []).length}
       countLabel="products"

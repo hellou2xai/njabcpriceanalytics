@@ -74,7 +74,7 @@ const NAV_GROUPS: {
       { path: '/admin/ai-usage', label: 'AI Usage', icon: Sparkles, adminOnly: true },
       { path: '/admin/activity', label: 'Activity', icon: Activity, adminOnly: true },
       { path: '/rip-products', label: 'RIP Products', icon: BadgeDollarSign, adminOnly: true },
-      { path: '/#tile=top-discounts', label: 'Top Discounts', icon: Percent, adminOnly: true },
+      { path: '/discounts', label: 'Top Discounts', icon: Percent, adminOnly: true },
       { path: '/more', label: 'Addnl Pages', icon: LayoutGrid, adminOnly: true },
       { path: '/admin/catalog-font-test', label: 'Test For Font Catalog', icon: Package, adminOnly: true },
     ],

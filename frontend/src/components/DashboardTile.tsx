@@ -1,6 +1,6 @@
 import { useState, useEffect, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { X, Maximize2 } from 'lucide-react';
+import { X, Maximize2, ArrowUpRight } from 'lucide-react';
 import type { FilterState } from '../hooks/useTableFilters';
 import { distributorName } from '../lib/distributors';
 
@@ -12,15 +12,20 @@ interface TileProps {
   countLabel?: string;
   accent?: string;
   preview?: ReactNode;
-  modalContent: (close: () => void) => ReactNode;
+  // When `to` is set the tile is a LINK to that real page (e.g. a Promotions
+  // page) — clicking navigates there instead of opening an in-dashboard modal.
+  // The tile still shows the count + summary. `modalContent` is then optional.
+  to?: string;
+  modalContent?: (close: () => void) => ReactNode;
 }
 
 export function DashboardTile({
-  id, title, subtitle, count, countLabel, accent, preview, modalContent,
+  id, title, subtitle, count, countLabel, accent, preview, to, modalContent,
 }: TileProps) {
   const [open, setOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
+  const isLink = !!to;
 
   const close = () => {
     setOpen(false);
@@ -30,10 +35,11 @@ export function DashboardTile({
   };
 
   // A nav shortcut ("/#tile=<id>") opens this tile's modal directly — works both
-  // when arriving from another page and when already on the dashboard.
+  // when arriving from another page and when already on the dashboard. Skipped
+  // for link tiles, which navigate to a real page instead of opening a modal.
   useEffect(() => {
-    if (id && location.hash === `#tile=${id}`) setOpen(true);
-  }, [id, location.hash]);
+    if (!isLink && id && location.hash === `#tile=${id}`) setOpen(true);
+  }, [isLink, id, location.hash]);
 
   useEffect(() => {
     if (!open) return;
@@ -48,12 +54,15 @@ export function DashboardTile({
       <button
         type="button"
         className="dashboard-tile"
-        onClick={() => setOpen(true)}
+        onClick={() => (isLink ? navigate(to!) : setOpen(true))}
+        title={isLink ? `Open ${title}` : undefined}
         style={accent ? { borderLeftColor: accent } : undefined}
       >
         <div className="dashboard-tile-head">
           <span className="dashboard-tile-title">{title}</span>
-          <Maximize2 size={14} className="dashboard-tile-zoom" />
+          {isLink
+            ? <ArrowUpRight size={14} className="dashboard-tile-zoom" />
+            : <Maximize2 size={14} className="dashboard-tile-zoom" />}
         </div>
         {count !== undefined && (
           <div className="dashboard-tile-count" style={accent ? { color: accent } : undefined}>
@@ -64,7 +73,7 @@ export function DashboardTile({
         {subtitle && <div className="dashboard-tile-subtitle">{subtitle}</div>}
         {preview && <div className="dashboard-tile-preview">{preview}</div>}
       </button>
-      {open && (
+      {open && modalContent && (
         <div className="modal-overlay" onClick={close}>
           <div className="modal dashboard-tile-modal" onClick={e => e.stopPropagation()}>
             <button className="modal-close" onClick={close} aria-label="Close">

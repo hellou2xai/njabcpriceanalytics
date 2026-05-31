@@ -578,6 +578,25 @@ _SCREEN_ROUTES = {
     "orders": "/orders", "cart": "/cart",
 }
 
+# Per-screen scope: each page's assistant only helps with THAT page's subject.
+# Keyed by the page label the frontend sends. Catalog is the broad browse view;
+# the rest are narrow. Unknown pages fall back to the general scope.
+_PAGE_SCOPE = {
+    "Catalog": "the product catalog — searching/filtering products, prices, per-product price breakdowns, RIP rebates, comparing distributors, and the deals on those products",
+    "Price Increases": "products whose price went UP in the latest edition versus the prior one — finding, sorting, filtering and explaining those increases (and price detail on those products)",
+    "Price Drops": "products whose price went DOWN in the latest edition versus the prior one — finding, sorting, filtering and explaining those drops (and price detail on those products)",
+    "Time-Sensitive Deals": "deals that end on a specific date soon (time-sensitive promotions) and the products on them",
+    "Major Discounts": "the biggest case discounts and the products on them",
+    "Combos": "combo / bundle deals and their products",
+    "New Items": "products newly added in this edition",
+    "Favorites": "the products the user has saved to Favorites",
+    "Lists": "the user's saved product lists and their items",
+    "Orders": "the user's draft and past orders",
+    "Cart": "the user's current cart and its items",
+    "Dashboard": "the dashboard overview and its highlights",
+    "RIP Products": "products that carry RIP rebates and their Case-Mix groupings",
+}
+
 
 def _build_screen(args: dict) -> dict:
     """Turn a show_on_screen tool call into a navigable path (+ catalog filters
@@ -737,13 +756,21 @@ def ask(question: str, history: list | None = None, user: dict | None = None, pa
     # model prioritizes tools relevant to the screen the user is on.
     system_blocks = [{"type": "text", "text": _SYSTEM, "cache_control": {"type": "ephemeral"}}]
     if page:
-        system_blocks.append({"type": "text", "text":
-            f"The user is currently on the '{page}' screen. STAY on this screen — do NOT navigate to a "
-            f"different page unless the user explicitly asks for it, or this screen genuinely cannot show "
-            f"what they want. If '{page}' already shows what they asked (e.g. they're on Price Increases "
-            f"asking about price increases), do NOT call show_on_screen — just answer briefly in chat; the "
-            f"grid is already showing it. Only navigate to /catalog for a general product search/filter or "
-            f"a specific product/UPC lookup that this screen can't display."})
+        scope = _PAGE_SCOPE.get(page)
+        if scope:
+            system_blocks.append({"type": "text", "text":
+                f"SCREEN SCOPE — you are the assistant for the '{page}' screen and are SCOPED TO IT ONLY. "
+                f"Help only with: {scope}. Stay on this screen — do NOT navigate away. If this screen "
+                f"already shows what they asked, don't call show_on_screen; just answer briefly. If the user "
+                f"asks about something that belongs to a DIFFERENT screen (e.g. a general catalog search, "
+                f"orders, favorites) say in one line that it's handled on that other screen and offer to "
+                f"help within '{page}' instead — do not answer the off-screen request or switch pages. "
+                f"(You may still use price_details / rip_lookup / compare_distributors for detail on a "
+                f"product shown on THIS screen.)"})
+        else:
+            system_blocks.append({"type": "text", "text":
+                f"The user is on the '{page}' screen. Stay here and keep answers relevant to it; do not "
+                f"navigate away unless they explicitly ask."})
     messages = _history_messages(history) + [{"role": "user", "content": question}]
     total_in = total_out = 0
     final_text = ""

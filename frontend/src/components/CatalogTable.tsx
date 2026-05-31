@@ -735,17 +735,20 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                             frontline,
                             afterDiscount: bestDisc != null && Number.isFinite(bestDisc) ? bestDisc : null,
                             discountTiers: disc
-                              .map(t => ({ qty: t.qty, unit: t.unit, eff: t.price_after ?? 0 }))
+                              .map(t => ({ qty: t.qty, unit: t.unit, eff: t.price_after ?? 0, ts: !!t.is_time_sensitive }))
                               .filter(t => t.eff > 0),
                             // Carry through the backend's per-tier RIP rebate so
                             // the popover shows "this tier saves $X", not the
                             // off-by-one delta against the deepest CPL discount.
+                            // Plus the time-sensitive flag so partial-window
+                            // tiers render with a "TS" marker.
                             ripTiers: rip
                               .map(t => ({
                                 qty: t.qty,
                                 unit: t.unit,
                                 eff: t.price_after ?? 0,
                                 ripOnlySave: t.rip_only_save_per_case ?? null,
+                                ts: !!t.is_time_sensitive,
                               }))
                               .filter(t => t.eff > 0),
                             bestEff,

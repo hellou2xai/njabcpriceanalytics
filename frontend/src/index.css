@@ -2584,6 +2584,24 @@ tr:hover .row-menu-btn { opacity: 1; }
    tier value differs between months — bolded so the eye finds them. "Same"
    confirmation lines stay normal weight. */
 .mes-summary-important { font-weight: 700; color: var(--text); }
+
+/* Time-sensitive tier rows: the tier exists in the source data but
+   derive.py has EXCLUDED it from effective_case_price because its window
+   isn't a full calendar month. The buyer still sees the row in the ladder
+   (so the promo is visible) but rendered muted with a "TS" badge so it's
+   clear it's not factored into "May Best / Jun Best". */
+.mes-row-ts td { color: var(--text-muted); }
+.mes-row-ts .mes-save { opacity: 0.7; }
+.mes-ts-badge {
+  display: inline-block; margin-left: 6px;
+  padding: 0 5px; border-radius: 4px;
+  font-size: 9px; font-weight: 700; letter-spacing: .3px;
+  color: var(--orange, #d97706);
+  background: color-mix(in srgb, var(--orange, #d97706) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--orange, #d97706) 30%, transparent);
+  vertical-align: middle;
+  cursor: help;
+}
 .mes-popover::after {
   content: ''; position: absolute; top: 100%; left: 50%;
   transform: translateX(-50%);

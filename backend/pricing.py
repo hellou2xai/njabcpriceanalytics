@@ -162,6 +162,38 @@ def norm_vintage(v) -> Optional[str]:
 # discount list but want to ask "what's the saving at X cases?".
 # ---------------------------------------------------------------------------
 
+# Full-window predicate, Python mirror of derive.py's SQL CASE. A discount
+# or RIP whose window is partial-month is a TIME-SENSITIVE deal — the
+# foundation excludes those from effective_case_price; this helper tags the
+# corresponding tier in the modal/popover ladder so the UI can render them
+# distinctly (greyed / "TS" badge / etc.).
+def is_time_sensitive_window(from_date, to_date) -> bool:
+    """True when the (from_date, to_date) range is partial-month. Mirrors
+    backend.routers.deals._window_is_time_sensitive: NULL on either side =
+    NOT time-sensitive (evergreen). Both present and from.day==1, to ==
+    LAST_DAY(to) = NOT time-sensitive (full month or span of months). Else
+    time-sensitive."""
+    from datetime import date as _d
+    import calendar as _cal
+
+    def _p(v):
+        if v is None:
+            return None
+        if hasattr(v, 'year') and hasattr(v, 'month'):  # date / Timestamp / datetime
+            try:
+                return _d(v.year, v.month, v.day)
+            except Exception:
+                pass
+        try:
+            return _d.fromisoformat(str(v)[:10])
+        except (TypeError, ValueError):
+            return None
+    f, t = _p(from_date), _p(to_date)
+    if f is None or t is None:
+        return False
+    return not (f.day == 1 and t.day == _cal.monthrange(t.year, t.month)[1])
+
+
 def best_disc_at(disc_tiers: list[dict], cases_bought: float, pack: float) -> float:
     """Highest-amount qualifying CPL discount at `cases_bought` cases, given
     pack size `pack` (bottles per case). CPL tiers are mutually exclusive —
@@ -258,6 +290,7 @@ def attach_tiers(con, records) -> None:
             rp[f"ed_{i}"] = v
         rip_rows = con.execute(f"""
             SELECT rip_code, wholesaler, edition, upc, rip_description,
+                   from_date, to_date,
                    rip_unit_1, rip_qty_1, rip_amt_1,
                    rip_unit_2, rip_qty_2, rip_amt_2,
                    rip_unit_3, rip_qty_3, rip_amt_3,
@@ -268,6 +301,11 @@ def attach_tiers(con, records) -> None:
               AND edition IN ({ph_ed})
         """, rp).fetchdf()
         for _, r in rip_rows.iterrows():
+            # Time-sensitive flag for THIS RIP source row, attached to every
+            # tier it produces. The buyer sees the tier in the ladder either
+            # way, but the UI can render it distinctly. derive.py excludes
+            # these from best_rip_amt so they don't pollute effective price.
+            rip_ts = is_time_sensitive_window(r.get("from_date"), r.get("to_date"))
             tiers_here = []
             for j in range(1, 5):
                 amt = r.get(f"rip_amt_{j}")
@@ -285,6 +323,7 @@ def attach_tiers(con, records) -> None:
                     "unit": str(unit) if unit else "Cases",
                     "amount": af,
                     "description": str(r.get("rip_description") or "") or None,
+                    "is_time_sensitive": rip_ts,
                 })
             if not tiers_here:
                 continue
@@ -337,6 +376,12 @@ def attach_tiers(con, records) -> None:
     for rec in records:
         cp = float(rec.get("frontline_case_price") or 0)
         uq = _uq(rec)
+        # The CPL row's own (from_date, to_date) determines whether THIS row's
+        # discount tiers are time-sensitive. derive.py excludes those from
+        # effective_case_price + has_discount + total_savings_per_case; here
+        # we still surface them in the ladder so the buyer sees the promo
+        # exists, but tagged so the UI can render them distinctly.
+        cpl_ts = is_time_sensitive_window(rec.get("from_date"), rec.get("to_date"))
         # CPL discount tiers
         disc = []
         for i in range(1, 6):
@@ -368,6 +413,7 @@ def attach_tiers(con, records) -> None:
                 "btl_price_after": _btl_after(round(cp - amt_f, 2) if cp > 0 else None, uq),
                 "save_per_bottle": round(amt_f / uq, 2) if uq > 0 else None,
                 "roi_pct": round(amt_f / cp * 100, 2) if cp > 0 else 0.0,
+                "is_time_sensitive": cpl_ts,
             })
 
         # RIP tiers (dedup by qty+unit+amount). RIPs STACK with the applicable
@@ -410,6 +456,12 @@ def attach_tiers(con, records) -> None:
                 "roi_pct": round(combined_save / cp * 100, 2) if cp > 0 else 0.0,
                 "rip_only_roi_pct": round(t["amount"] / bundle_cost * 100, 2) if bundle_cost > 0 else 0.0,
                 "description": t.get("description"),
+                # RIP-source-row's window classification (carried through from
+                # the source-row scan above). True = this RIP code's validity
+                # is partial-month, so derive.py excluded it from best_rip_amt
+                # / effective_case_price. The buyer still sees it in the
+                # ladder, distinctly rendered.
+                "is_time_sensitive": bool(t.get("is_time_sensitive", False)),
             })
         rips.sort(key=lambda x: x["qty"])
         rec["tiers"] = disc + rips

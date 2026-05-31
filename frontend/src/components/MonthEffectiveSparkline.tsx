@@ -19,6 +19,10 @@ export interface RipTier {
   // which produces a meaningless negative for early RIP tiers that don't
   // beat the deepest CPL discount alone.
   ripOnlySave?: number | null;
+  // True when this tier's source row has a partial-month validity window
+  // (time-sensitive). Rendered with a small "TS" marker; derive.py has
+  // already excluded these from effective_case_price.
+  ts?: boolean;
 }
 
 export interface MonthBreakdown {
@@ -86,8 +90,11 @@ function MonthBlock({ label, short, b }: { label: string; short?: string; b: Mon
                 const save = b.frontline! - t.eff;
                 const isBest = t.eff === bestDiscEff;
                 return (
-                  <tr key={`d${i}`} className={isBest ? 'mes-row-best' : ''}>
-                    <td>{tierLabel(t)}</td>
+                  <tr key={`d${i}`} className={`${isBest ? 'mes-row-best' : ''} ${t.ts ? 'mes-row-ts' : ''}`}>
+                    <td>
+                      {tierLabel(t)}
+                      {t.ts && <span className="mes-ts-badge" title="Time-sensitive: window is not a full month. Not counted in effective price.">TS</span>}
+                    </td>
                     <td className="mes-num">
                       <span className="mes-save">−{dollars(save)}</span>
                       <span className="mes-arrow"> = </span>
@@ -129,8 +136,11 @@ function MonthBlock({ label, short, b }: { label: string; short?: string; b: Mon
                       : 0);
                 const isBest = t.eff === bestRipEff;
                 return (
-                  <tr key={`r${i}`} className={isBest ? 'mes-row-best' : ''}>
-                    <td>{tierLabel(t)}</td>
+                  <tr key={`r${i}`} className={`${isBest ? 'mes-row-best' : ''} ${t.ts ? 'mes-row-ts' : ''}`}>
+                    <td>
+                      {tierLabel(t)}
+                      {t.ts && <span className="mes-ts-badge" title="Time-sensitive: window is not a full month. Not counted in effective price.">TS</span>}
+                    </td>
                     <td className="mes-num">
                       <span className="mes-save">−{dollars(Math.max(0, save))}</span>
                       <span className="mes-arrow"> = </span>

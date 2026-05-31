@@ -64,17 +64,19 @@ function buildBlock(
     frontline,
     afterDiscount: bestDisc != null && Number.isFinite(bestDisc) ? bestDisc : null,
     discountTiers: disc
-      .map(t => ({ qty: t.qty, unit: t.unit, eff: t.price_after ?? 0 }))
+      .map(t => ({ qty: t.qty, unit: t.unit, eff: t.price_after ?? 0, ts: !!t.is_time_sensitive }))
       .filter(t => t.eff > 0),
     ripTiers: rip
       // Carry the canonical per-tier RIP rebate from the backend so the
       // popover shows "this RIP saves $X" instead of an off-by-one delta
-      // against the deepest CPL discount.
+      // against the deepest CPL discount. Plus the time-sensitive flag so
+      // partial-window tiers render with a "TS" marker in the popover.
       .map(t => ({
         qty: t.qty,
         unit: t.unit,
         eff: t.price_after ?? 0,
         ripOnlySave: t.rip_only_save_per_case ?? null,
+        ts: !!t.is_time_sensitive,
       }))
       .filter(t => t.eff > 0),
     bestEff,

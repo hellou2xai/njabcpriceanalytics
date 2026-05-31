@@ -383,6 +383,29 @@ def _t_rip_lookup(con, args):
     if rows.empty:
         return {"error": f"No products matched '{match}'."}
 
+    # 1b) Resolve by UPC across distributors. The SAME UPC is often listed under a
+    #     DIFFERENT product NAME per distributor (e.g. Fedway 'MALIBU DOLE VARIETY
+    #     8PK CANS' vs Allied 'MALIBU DOLE VAR 3X8', UPC 80432002803). A name match
+    #     alone misses the other distributors and wrongly looks "exclusive", so pull
+    #     in every distributor carrying the matched UPCs.
+    match_upcs = sorted({(str(r["upc"]) or "").lstrip("0")
+                         for _, r in rows.iterrows() if (str(r["upc"]) or "").lstrip("0")})
+    if match_upcs:
+        ph = ", ".join("?" for _ in match_upcs)
+        try:
+            more = con.execute(
+                f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<='{cym}' GROUP BY wholesaler) "
+                "SELECT c.wholesaler, c.product_name, c.unit_volume, CAST(c.upc AS VARCHAR) AS upc, "
+                "CAST(c.rip_code AS VARCHAR) AS cpl_rip "
+                "FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
+                f"WHERE LTRIM(CAST(c.upc AS VARCHAR),'0') IN ({ph})", match_upcs).fetchdf()
+            if not more.empty:
+                import pandas as _pd
+                rows = _pd.concat([rows, more], ignore_index=True).drop_duplicates(
+                    subset=["wholesaler", "upc", "product_name"])
+        except Exception:
+            pass
+
     # 2) Full set of RIP codes per (distributor, normalized UPC) from the RIP sheet
     #    — a UPC can appear under several codes, and codes differ by distributor.
     keys = sorted({(r["wholesaler"], (str(r["upc"]) or "").lstrip("0"))
@@ -1589,6 +1612,12 @@ _SYSTEM = (
     "quantity (cases or bottles) mixed across those products and get the bundle $ rebate, which STACKS on "
     "top of any CPL discount. A single UPC can carry MULTIPLE RIP codes, and DIFFERENT DISTRIBUTORS use "
     "DIFFERENT codes. "
+    "RESOLVE BY UPC FIRST, then by name. The SAME product (same UPC) is often listed under a DIFFERENT NAME "
+    "per distributor — e.g. UPC 80432002803 is 'MALIBU DOLE VARIETY 8PK CANS' on Fedway but 'MALIBU DOLE VAR "
+    "3X8' on Allied. So NEVER conclude a product is 'exclusive to' or 'not carried by' a distributor from a "
+    "NAME match. To answer who carries it / 'show me <distributor> too' / is it exclusive, use the UPC: "
+    "compare_distributors and rip_lookup already resolve by UPC and return EVERY distributor carrying that "
+    "UPC (under whatever name) — trust their by_distributor / comparison output, not the product name. "
     "Any question that ASKS ABOUT a rebate — 'RIP details', 'RIP analysis', 'show me the RIP', 'what's the "
     "RIP/rebate', 'RIP breakdown', 'rebate for <product>' — is an EXPLAIN request: ALWAYS get the data and "
     "present the full analysis. Call rip_lookup with the brand/product name (or a code) (or deal_360 for a "

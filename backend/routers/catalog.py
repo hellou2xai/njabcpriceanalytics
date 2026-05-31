@@ -150,21 +150,24 @@ def _display_name(code: str) -> str:
 
 
 def _in_filter(where, params, column, csv, prefix):
-    """Append a `column IN (...)` clause for a comma-separated multi-select value."""
+    """Append a `column IN (...)` clause for a comma-separated multi-select value.
+    Case-insensitive so a value supplied by the AI assistant (e.g. ?categories=
+    spirits) still matches the canonical 'Spirits' stored in the cache."""
     vals = [v.strip() for v in (csv or "").split(",") if v.strip()]
     if not vals:
         return
     keys = []
     for i, v in enumerate(vals):
         k = f"{prefix}{i}"
-        params[k] = v
+        params[k] = v.upper()
         keys.append(f"${k}")
-    where.append(f"{column} IN ({', '.join(keys)})")
+    where.append(f"UPPER(CAST({column} AS VARCHAR)) IN ({', '.join(keys)})")
 
 
 def _q_clause(q: str, extra_aliases: dict | None = None,
               name_col: str = "product_name", brand_col: str = "brand",
-              upc_col: str = "upc") -> tuple[str, dict, str]:
+              upc_col: str = "upc", enrich_table: str | None = None,
+              enrich_upc_expr: str | None = None) -> tuple[str, dict, str]:
     """Build the search predicate for a free-text query: returns (clause, params,
     relevance_expr).
 
@@ -174,12 +177,22 @@ def _q_clause(q: str, extra_aliases: dict | None = None,
     like "jw" or "henny" also accepts its full brand. The relevance_expr counts
     how many tokens match the NAME (not just the brand), so a name match (real
     Hennessy) ranks above a brand-only match (e.g. the Moet Hennessy portfolio).
-    An essentially-numeric query is matched against the UPC instead."""
+    An essentially-numeric query is matched against the UPC instead.
+
+    When ``enrich_table`` is given (the Go-UPC product_enrichment table), each
+    token may ALSO match the enriched description / category / category_path /
+    region for the same UPC — so a search like 'tequila' finds Spirits whose
+    NAME doesn't say tequila but whose enriched data does. ``enrich_upc_expr``
+    must be the fully-qualified outer UPC column (e.g. 'cpl_enriched.upc') so the
+    correlated subquery references the OUTER row, not the enrichment table's own
+    upc. Description matches do NOT raise relevance (name matches still rank
+    first)."""
     from backend.search_aliases import expansion_for
     tokens = [t for t in q.lower().split() if t]
     params: dict = {}
     counter = {"i": 0}
     token_clauses, rel_terms = [], []
+    _outer_upc = enrich_upc_expr or upc_col
     for tok in tokens:
         terms = [tok] + (expansion_for(tok, extra_aliases) or [])
         keys, subs = [], []
@@ -188,7 +201,17 @@ def _q_clause(q: str, extra_aliases: dict | None = None,
             counter["i"] += 1
             params[k] = f"%{term}%"
             keys.append(k)
-            subs.append(f"(UPPER({name_col}) LIKE UPPER(${k}) OR UPPER(COALESCE({brand_col},'')) LIKE UPPER(${k}))")
+            sub = f"UPPER({name_col}) LIKE UPPER(${k}) OR UPPER(COALESCE({brand_col},'')) LIKE UPPER(${k})"
+            if enrich_table:
+                sub += (
+                    f" OR EXISTS (SELECT 1 FROM {enrich_table} _pe "
+                    f"WHERE _pe.upc = LTRIM(CAST({_outer_upc} AS VARCHAR), '0') AND ("
+                    f"UPPER(COALESCE(_pe.description,'')) LIKE UPPER(${k}) "
+                    f"OR UPPER(COALESCE(_pe.category,'')) LIKE UPPER(${k}) "
+                    f"OR UPPER(COALESCE(_pe.category_path,'')) LIKE UPPER(${k}) "
+                    f"OR UPPER(COALESCE(_pe.region,'')) LIKE UPPER(${k}) "
+                    f"OR UPPER(COALESCE(_pe.name,'')) LIKE UPPER(${k})))")
+            subs.append(f"({sub})")
         token_clauses.append("(" + " OR ".join(subs) + ")")
         name_only = " OR ".join(f"UPPER({name_col}) LIKE UPPER(${k})" for k in keys)
         rel_terms.append(f"(CASE WHEN ({name_only}) THEN 1 ELSE 0 END)")
@@ -202,6 +225,26 @@ def _q_clause(q: str, extra_aliases: dict | None = None,
         params["q_upc2"] = f"%{digits_norm}%"
         return f"(({name_match}) OR {upc_col} LIKE $q_upc OR {upc_col} LIKE $q_upc2)", params, rel_expr
     return f"({name_match})", params, rel_expr
+
+
+_ENRICH_SEARCHABLE = None
+
+
+def _enrichment_searchable(con) -> bool:
+    """True once if the product_enrichment table exists and holds searchable
+    text (description/category), so free-text search can include it. Cached per
+    process; degrades to name/brand-only search if the table is absent/empty."""
+    global _ENRICH_SEARCHABLE
+    if _ENRICH_SEARCHABLE is None:
+        try:
+            n = con.execute(
+                "SELECT COUNT(*) FROM product_enrichment "
+                "WHERE COALESCE(description,'') <> '' OR COALESCE(category_path,'') <> '' "
+                "OR COALESCE(category,'') <> ''").fetchone()[0]
+            _ENRICH_SEARCHABLE = bool(n)
+        except Exception:
+            _ENRICH_SEARCHABLE = False
+    return _ENRICH_SEARCHABLE
 
 
 _BRAND_INITIALISMS = None
@@ -892,8 +935,14 @@ def search_products(
 
         q_clause_idx = None
         rel_expr = "0"
+        # Free-text search also looks inside the Go-UPC enrichment (description,
+        # category, region) so subtype queries like "tequila" — which is a
+        # Spirits product, not a category — still find matches.
+        _enr = "product_enrichment" if _enrichment_searchable(con) else None
+        _enr_upc = f"{src}.upc" if _enr else None
         if q:
-            clause, qp, rel_expr = _q_clause(q, _brand_initialisms(con, src))
+            clause, qp, rel_expr = _q_clause(q, _brand_initialisms(con, src),
+                                             enrich_table=_enr, enrich_upc_expr=_enr_upc)
             where.append(clause)
             q_clause_idx = len(where) - 1
             params.update(qp)
@@ -1138,7 +1187,8 @@ def search_products(
                 and any(ch.isalpha() for ch in q)):
             def _retry(fixed_q):
                 nonlocal where_clause, rel_expr
-                clause2, qp2, rel2 = _q_clause(fixed_q, _brand_initialisms(con, src))
+                clause2, qp2, rel2 = _q_clause(fixed_q, _brand_initialisms(con, src),
+                                               enrich_table=_enr, enrich_upc_expr=_enr_upc)
                 where[q_clause_idx] = clause2
                 rel_expr = rel2
                 # Drop the previous query params so none are left bound but unused

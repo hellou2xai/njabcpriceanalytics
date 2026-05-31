@@ -603,6 +603,49 @@ _PAGE_SCOPE = {
 }
 
 
+_CATEGORY_CACHE: dict = {}
+
+
+def _known_categories() -> dict:
+    """Canonical product_type values keyed by UPPER() for case-insensitive
+    lookup. In this data the catalog's 'category' is a BROAD product type
+    (Spirits, Wine, Beer, Cider, Seltzer, RTD, Sparkling, Vermouth, ...) — there
+    is no 'Tequila'/'Vodka'/'IPA'/'Chardonnay' category; those are subtypes that
+    live inside a category and are only findable by NAME. Cached for the process
+    lifetime (categories don't change between editions in practice)."""
+    if not _CATEGORY_CACHE:
+        try:
+            with get_duckdb() as con:
+                rows = con.execute(
+                    "SELECT DISTINCT product_type FROM cpl_enriched "
+                    "WHERE product_type IS NOT NULL").fetchall()
+            for (pt,) in rows:
+                if pt:
+                    _CATEGORY_CACHE[str(pt).upper()] = str(pt)
+        except Exception:
+            pass
+    return _CATEGORY_CACHE
+
+
+def _split_categories(values: list) -> tuple[list, list]:
+    """Split requested category values into (real categories, leftover terms).
+    A value that matches a known product_type (case-insensitively) is a real
+    category; anything else (e.g. 'tequila') is a subtype the grid can't filter
+    by, so we hand it back to be folded into the free-text search instead."""
+    known = _known_categories()
+    cats, leftover = [], []
+    for c in values:
+        s = str(c).strip()
+        if not s:
+            continue
+        canon = known.get(s.upper())
+        if canon:
+            cats.append(canon)
+        else:
+            leftover.append(s)
+    return cats, leftover
+
+
 def _build_screen(args: dict, page_path: str | None = None) -> dict:
     """Turn a show_on_screen tool call into a navigable path (+ catalog filters
     encoded as query params the pages already read) and a short label.
@@ -619,11 +662,19 @@ def _build_screen(args: dict, page_path: str | None = None) -> dict:
     model_base = _SCREEN_ROUTES.get(route, "/catalog")
     base = page_path if (page_path and page_path.startswith("/")) else model_base
     q: dict = {}
+    search_terms: list = []
     if args.get("q"):
-        q["q"] = args["q"]
+        search_terms.append(str(args["q"]).strip())
     if base == "/catalog":
         if isinstance(args.get("categories"), list) and args["categories"]:
-            q["categories"] = ",".join(str(c) for c in args["categories"])
+            # Smart category handling: keep real product-type categories, but
+            # fold subtypes the catalog can't filter by (tequila, vodka, IPA,
+            # chardonnay, ...) into the free-text search so the grid actually
+            # returns rows instead of "0 results".
+            cats, leftover = _split_categories(args["categories"])
+            if cats:
+                q["categories"] = ",".join(cats)
+            search_terms.extend(leftover)
         if isinstance(args.get("distributors"), list) and args["distributors"]:
             q["divisions"] = ",".join(str(d) for d in args["distributors"])
         if isinstance(args.get("sizes"), list) and args["sizes"]:
@@ -645,6 +696,12 @@ def _build_screen(args: dict, page_path: str | None = None) -> dict:
     # Time-Sensitive: 'partial' = deals NOT spanning a full calendar month.
     if base == "/time-sensitive" and args.get("window") in ("partial", "full"):
         q["window"] = args["window"]
+    # Free-text search: the model's q plus any subtype terms we folded out of the
+    # category filter (e.g. 'tequila'). Joined into one ?q the grid resolves
+    # against product name/brand/description.
+    terms = [t for t in search_terms if t]
+    if terms:
+        q["q"] = " ".join(dict.fromkeys(terms))   # de-dupe, preserve order
     path = base + ("?" + urlencode(q) if q else "")
     return {"path": path, "label": (args.get("label") or "your request").strip()}
 
@@ -667,6 +724,12 @@ _SYSTEM = (
     "offering more help, e.g. 'Showing wine under $150 with a RIP rebate on the left. Anything else I can "
     "help with?'. Never list those products in chat. The goal on EVERY screen is: show the data on the "
     "main screen first, then ask how else you can help. "
+    "CATEGORIES are BROAD product types only: Spirits, Wine, Beer, Cider, Seltzer, RTD, Sparkling, "
+    "Vermouth, Malt, Tea, FAB, Non-Alc (and a few more). SUBTYPES like tequila, vodka, bourbon, rum, "
+    "gin, scotch, chardonnay, cabernet, prosecco, IPA, lager are NOT categories — never put them in the "
+    "categories filter (it returns 0 results). Search them as free text instead: show_on_screen(q='tequila', "
+    "sort=effective_case_price, order=asc). The search looks inside the product name AND the enriched "
+    "description/category, so the subtype is found even when the name doesn't spell it out. "
     "CRITICAL: do NOT switch the user to a different page. If their CURRENT screen already shows the kind "
     "of data they asked about (Price Increases/Drops, Time-Sensitive, Major Discounts, etc.), keep them "
     "there and just answer briefly — the grid already shows it. Reserve show_on_screen->/catalog for "

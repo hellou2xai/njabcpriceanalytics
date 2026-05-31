@@ -1350,6 +1350,78 @@ def _t_optimize_cart(con, args, ctx):
                      if swap_list else "Your cart is already at the cheapest distributor pricing.")}
 
 
+def _t_cart_timing(con, args, ctx):
+    """BUY-NOW-vs-WAIT sweep of the user's cart: per line compare this edition's
+    effective case price to next edition's (next_effective_case_price) and flag
+    BUY NOW (price rises next month, or the item drops off next month's sheet) vs
+    WAIT (price falls next month), with the $ impact for the line's quantity."""
+    uid = ctx.get("user_id")
+    if not uid:
+        return {"error": "user not signed in"}
+    from backend.pg import get_pg
+    with get_pg() as pg:
+        rows = pg.execute(
+            "SELECT product_name, wholesaler, upc, qty_cases FROM cart_items "
+            "WHERE user_id=%s AND COALESCE(saved_for_later,0)=0", (uid,)).fetchall()
+    items = [dict(r) for r in rows]
+    if not items:
+        return {"item_count": 0, "note": "Your cart is empty."}
+
+    def _norm(u):
+        return str(u or "").lstrip("0")
+
+    def _fl(v):
+        try:
+            x = float(v)
+            return None if x != x else x
+        except (TypeError, ValueError):
+            return None
+    info = {}
+    upcs = sorted({_norm(it["upc"]) for it in items if _norm(it["upc"])})
+    if upcs:
+        ph = ", ".join("?" for _ in upcs)
+        try:
+            df = con.execute(
+                "WITH latest AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched GROUP BY wholesaler) "
+                "SELECT c.wholesaler, LTRIM(CAST(c.upc AS VARCHAR),'0') un, c.effective_case_price eff, "
+                "c.next_effective_case_price nxt "
+                "FROM cpl_enriched c JOIN latest l ON c.wholesaler=l.wholesaler AND c.edition=l.ed "
+                f"WHERE LTRIM(CAST(c.upc AS VARCHAR),'0') IN ({ph})", upcs).fetchdf()
+            for _, r in df.iterrows():
+                info[(r["wholesaler"], str(r["un"]))] = (_fl(r["eff"]), _fl(r["nxt"]))
+        except Exception:
+            pass
+
+    buy_now, wait, stable, bn_total, w_total = [], [], [], 0.0, 0.0
+    for it in items:
+        cur, nxt = info.get((it["wholesaler"], _norm(it["upc"])), (None, None))
+        qty = (it.get("qty_cases") or 0) or 1
+        e = {"product_name": it.get("product_name"), "distributor": it.get("wholesaler"), "qty_cases": qty,
+             "now_effective": round(cur, 2) if cur is not None else None,
+             "next_effective": round(nxt, 2) if nxt is not None else None}
+        if cur is None:
+            stable.append(e); continue
+        if nxt is None:
+            e["action"] = "BUY NOW"; e["reason"] = "not on next month's sheet — may be gone"
+            buy_now.append(e); continue
+        d = round(nxt - cur, 2)
+        if d > 0.01:
+            e["action"] = "BUY NOW"; e["increase_per_case"] = d; e["at_risk_for_qty"] = round(d * qty, 2)
+            bn_total += d * qty; buy_now.append(e)
+        elif d < -0.01:
+            e["action"] = "WAIT"; e["drop_per_case"] = round(-d, 2); e["save_by_waiting_for_qty"] = round(-d * qty, 2)
+            w_total += -d * qty; wait.append(e)
+        else:
+            e["action"] = "HOLD (same next month)"; stable.append(e)
+    return {"item_count": len(items),
+            "buy_now": sorted(buy_now, key=lambda x: x.get("at_risk_for_qty", 0), reverse=True),
+            "wait": sorted(wait, key=lambda x: x.get("save_by_waiting_for_qty", 0), reverse=True),
+            "stable_count": len(stable),
+            "buy_now_total_at_risk": round(bn_total, 2),
+            "wait_total_potential_savings": round(w_total, 2),
+            "note": "BUY NOW = rises or vanishes next edition; WAIT = drops next edition."}
+
+
 _CTX_TOOLS = {
     "find_deals": (_t_find_deals, "Promotions: products on deal. Args: kind (time_sensitive|discount|clearance), limit. Shown as cards."),
     "price_movers": (_t_price_movers, "Products whose effective price changes next month. Args: direction (drop|increase), limit. Shown as cards."),
@@ -1359,6 +1431,7 @@ _CTX_TOOLS = {
     "get_orders": (_t_get_orders, "The signed-in user's 10 most recent orders."),
     "analyze_cart": (_t_analyze_cart, "DEEP analysis of the user's cart / favorites / a list (source: cart|favorites|list, optional list_name): per item it compares the effective case price to EVERY distributor carrying the same UPC and flags where another is cheaper, with per-case + quantity-weighted savings and a total. Use for 'analyze my cart/wishlist', 'is anyone cheaper', 'where can I save', 'should I swap distributors'. After it, offer to swap via perform_action(type=swap_distributor)."),
     "optimize_cart": (_t_optimize_cart, "ORDER OPTIMIZER for the user's cart: the cheapest sourcing PLAN — per line picks the lowest effective-price distributor for that UPC, groups the wins into (from->to) distributor swaps with $ saved, and gives current vs optimized cart total. Use for 'optimize my cart', 'make my order cheaper', 'cheapest way to buy this'. Present current vs optimized total + the grouped swaps, then offer to apply each via perform_action(type=swap_distributor)."),
+    "cart_timing": (_t_cart_timing, "BUY-NOW-vs-WAIT sweep of the whole cart: per line compares this edition's effective price to next edition's and flags BUY NOW (rises or drops off next month) vs WAIT (falls next month), with the $ impact per line and totals. Use for 'should I buy now or wait', 'scan my cart for timing', 'what's going up next month'."),
 }
 
 
@@ -1826,6 +1899,9 @@ _SYSTEM = (
     "optimize_cart. Present the CURRENT vs OPTIMIZED cart total and total savings, then the recommended swaps "
     "grouped by (from -> to) distributor with $ saved each, and OFFER to apply them; on yes call "
     "perform_action(type=swap_distributor, from_distributor, to_distributor) per group. "
+    "BUY-NOW-vs-WAIT (cart-wide): for 'should I buy now or wait', 'scan my cart for timing', 'what's rising "
+    "next month' — call cart_timing. Present a BUY NOW list (lines that rise or drop off next edition, with $ "
+    "at risk) and a WAIT list (lines that fall next edition, with $ to save by waiting), plus the totals. "
     "CART / LIST INSIGHTS + DISTRIBUTOR SWAP: for 'analyze my cart / wishlist / list', 'is anyone cheaper', "
     "'where can I save', 'should I switch distributors' — call analyze_cart (source: cart|favorites|list, "
     "optional list_name). Present a per-item table (product, current distributor + effective $/cs, cheaper "

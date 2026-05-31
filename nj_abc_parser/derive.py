@@ -367,30 +367,12 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
               AND {full_window('from_date', 'to_date')}
             GROUP BY wholesaler, edition, rip_code, upc
         ),
-        rip_per_code AS (
-            -- Code-level fallback. Some wholesalers (e.g. Fedway) anchor
-            -- a RIP to a stub UPC like '812066000000' for the whole product
-            -- line, so we still apply the RIP via the code when the strict
-            -- UPC match misses. Same time-sensitive filter applies.
-            SELECT
-                wholesaler, edition, rip_code,
-                MAX(GREATEST(
-                    COALESCE(CASE WHEN rip_qty_1 > 0 AND LOWER(rip_unit_1) NOT LIKE 'b%' THEN rip_amt_1 / rip_qty_1 END, 0),
-                    COALESCE(CASE WHEN rip_qty_2 > 0 AND LOWER(rip_unit_2) NOT LIKE 'b%' THEN rip_amt_2 / rip_qty_2 END, 0),
-                    COALESCE(CASE WHEN rip_qty_3 > 0 AND LOWER(rip_unit_3) NOT LIKE 'b%' THEN rip_amt_3 / rip_qty_3 END, 0),
-                    COALESCE(CASE WHEN rip_qty_4 > 0 AND LOWER(rip_unit_4) NOT LIKE 'b%' THEN rip_amt_4 / rip_qty_4 END, 0)
-                )) AS best_case_per_case,
-                MAX(GREATEST(
-                    COALESCE(CASE WHEN rip_qty_1 > 0 AND LOWER(rip_unit_1) LIKE 'b%' THEN rip_amt_1 / rip_qty_1 END, 0),
-                    COALESCE(CASE WHEN rip_qty_2 > 0 AND LOWER(rip_unit_2) LIKE 'b%' THEN rip_amt_2 / rip_qty_2 END, 0),
-                    COALESCE(CASE WHEN rip_qty_3 > 0 AND LOWER(rip_unit_3) LIKE 'b%' THEN rip_amt_3 / rip_qty_3 END, 0),
-                    COALESCE(CASE WHEN rip_qty_4 > 0 AND LOWER(rip_unit_4) LIKE 'b%' THEN rip_amt_4 / rip_qty_4 END, 0)
-                )) AS best_bottle_per_bottle
-            FROM read_parquet('{pdir}/rip/**/data.parquet', hive_partitioning=true, union_by_name=true)
-            WHERE rip_code IS NOT NULL
-              AND {full_window('from_date', 'to_date')}
-            GROUP BY wholesaler, edition, rip_code
-        ),
+        -- NOTE: the previous code-level fallback (rip_per_code CTE) is
+        -- intentionally removed. The canonical rule is: a RIP applies to a
+        -- product ONLY when the RIP sheet has a row explicitly pairing this
+        -- product's UPC with the code. A stub-UPC row anchoring a RIP to
+        -- "all products under this code" is no longer treated as valid
+        -- applicability — it has to be an explicit (code, UPC) match.
         -- Some wholesalers (Fedway) cram multiple rip codes into one cell
         -- separated by whitespace, e.g. '10049 30017'. Split them so each
         -- code matches independently.
@@ -408,10 +390,12 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
             SELECT
                 cc.* EXCLUDE (single_code),
                 -- Combine per-case (case tiers) and per-bottle×pack (bottle tiers).
-                -- Prefer the exact-UPC RIP row (r1); fall back to code-level (r2).
+                -- Strict (code, UPC) join only — no code-level fallback. If the
+                -- RIP sheet doesn't explicitly list this UPC under the code,
+                -- no RIP applies for this product (best_rip_amt is 0).
                 GREATEST(
-                    COALESCE(r1.best_case_per_case, r2.best_case_per_case, 0),
-                    COALESCE(r1.best_bottle_per_bottle, r2.best_bottle_per_bottle, 0)
+                    COALESCE(r1.best_case_per_case, 0),
+                    COALESCE(r1.best_bottle_per_bottle, 0)
                         * COALESCE(TRY_CAST(cc.unit_qty AS DOUBLE), 1)
                 ) AS code_best_rip
             FROM cpl_codes cc
@@ -420,12 +404,6 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
                 AND cc.edition = r1.edition
                 AND cc.single_code = r1.rip_code
                 AND cc.upc = r1.upc
-                AND cc.single_code != ''
-                AND cc.single_code != '0'
-            LEFT JOIN rip_per_code r2
-                ON cc.wholesaler = r2.wholesaler
-                AND cc.edition = r2.edition
-                AND cc.single_code = r2.rip_code
                 AND cc.single_code != ''
                 AND cc.single_code != '0'
         ),

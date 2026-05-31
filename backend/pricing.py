@@ -264,6 +264,11 @@ def attach_tiers(con, records) -> None:
     # - and the tier sub-rows are expected to follow the cluster, not the CPL
     # side. When fan-out isn't in effect, both codes are usually the same and
     # de-duplication keeps the IN-list short.
+    # We collect (code, ws, ed, upc) triples instead of (code, ws, ed) because
+    # the canonical rule is: a RIP applies to a product ONLY when the RIP
+    # sheet has a row explicitly pairing this product's UPC with that code.
+    # Code-level fallback (matching any UPC under the code) is no longer
+    # valid — same rule derive.py uses.
     keys = []
     for rec in records:
         for fld in ("rip_code", "rip_group_code"):
@@ -272,8 +277,7 @@ def attach_tiers(con, records) -> None:
     uniq_codes = sorted({k[0] for k in keys})
     uniq_ws = sorted({k[1] for k in keys})
     uniq_ed = sorted({k[2] for k in keys})
-    rip_full: dict = {}    # (code, ws, ed, upc) -> [tiers]
-    rip_by_code: dict = {} # (code, ws, ed)    -> [tiers]  (fallback)
+    rip_full: dict = {}    # (code, ws, ed, upc) -> [tiers]  (the only valid match)
     if uniq_codes:
         # Pull all RIP rows matching any (code, ws, ed) on this page, then split
         # into per-UPC and code-level buckets so we can fall back when a
@@ -327,9 +331,7 @@ def attach_tiers(con, records) -> None:
                 })
             if not tiers_here:
                 continue
-            code_key = (str(r["rip_code"]), r["wholesaler"], r["edition"])
-            rip_by_code.setdefault(code_key, []).extend(tiers_here)
-            upc_key = (*code_key, str(r.get("upc") or ""))
+            upc_key = (str(r["rip_code"]), r["wholesaler"], r["edition"], str(r.get("upc") or ""))
             rip_full.setdefault(upc_key, []).extend(tiers_here)
 
     def _lookup_rips(rec):
@@ -344,10 +346,9 @@ def attach_tiers(con, records) -> None:
             for code in _split_codes(rec.get(fld)):
                 if code not in candidates:
                     candidates.append(code)
-        # Aggregate tiers across ALL matched codes (rather than returning the
-        # first match) — derive.py takes MAX across codes for the precomputed
-        # best_rip_amt, and the modal/popover should show every tier the buyer
-        # could actually clear. Per-tier de-dup happens downstream.
+        # Strict (code, ws, ed, upc) lookup ONLY. Codes whose RIP sheet doesn't
+        # explicitly list this product's UPC contribute nothing — code-level
+        # fallback was removed per the canonical rule.
         out: list[dict] = []
         ws, ed = rec["wholesaler"], rec["edition"]
         upc = str(rec.get("upc") or "")
@@ -355,11 +356,6 @@ def attach_tiers(con, records) -> None:
             upc_key = (rc, ws, ed, upc)
             if upc_key in rip_full:
                 out.extend(rip_full[upc_key])
-                continue   # prefer per-UPC over code-level for the same code
-            code_key = (rc, ws, ed)
-            tiers = rip_by_code.get(code_key, [])
-            if tiers:
-                out.extend(tiers)
         return out
 
     def _uq(rec) -> float:

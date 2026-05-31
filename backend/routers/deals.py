@@ -296,6 +296,27 @@ def get_combo_index():
         return {"items": items}
 
 
+def _window_is_time_sensitive(frm, to) -> bool:
+    """Same rule as a time-sensitive CPL line: the validity window is a SPECIFIC
+    range, not the whole calendar month (1st → last day). Used for combos too so
+    a dated combo promo is classified the same way a dated CPL deal is."""
+    import calendar as _cal
+    from datetime import date as _d
+
+    def _p(s):
+        if not s:
+            return None
+        try:
+            return _d.fromisoformat(str(s)[:10])
+        except (TypeError, ValueError):
+            return None
+    f, t = _p(frm), _p(to)
+    if not f or not t:
+        return False
+    last = _cal.monthrange(t.year, t.month)[1]
+    return not (f.day == 1 and t.day == last)
+
+
 @router.get("/combos")
 def get_combos(
     wholesaler: Optional[str] = None,
@@ -496,6 +517,9 @@ def get_combos(
                 "valid_from": base.get("from_date"), "valid_through": base.get("to_date"),
                 "next_valid_from": nxt.get("from_date") if nxt else None,
                 "next_valid_through": nxt.get("to_date") if nxt else None,
+                # A combo on a SPECIFIC date window (not the whole month) is
+                # time-sensitive, same rule as CPL lines.
+                "time_sensitive": _window_is_time_sensitive(base.get("from_date"), base.get("to_date")),
             })
 
         items.sort(key=lambda x: x["total_savings"] or 0, reverse=True)
@@ -548,53 +572,71 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
         if not conds:
             return []
 
-        # Two ways a row qualifies as time-sensitive:
-        #  (a) it has a specific from/to window that isn't the full calendar
-        #      month (the original definition), OR
-        #  (b) the CPL flags it as a CLOSEOUT — closeouts are inherently
-        #      time-sensitive (inventory disappears once cleared) regardless
-        #      of whether the sheet carries explicit dates for them.
-        # Closeouts without a to_date stay in even when include_past=False.
+        # A CPL line is TIME-SENSITIVE when its validity window (From/To dates)
+        # is a SPECIFIC range — i.e. it does NOT run the whole calendar month
+        # (1st → last day). Full-month rows are the regular monthly pricing.
+        #
+        # CRUCIAL: the dated promo windows live as SEPARATE rows in the RAW cpl
+        # (a product carries a full-month row AND, when it's on a dated deal, a
+        # sub-month row). The enriched cache dedupes those to one row per UPC and
+        # keeps the full-month one — which is why reading cpl_enriched here lost
+        # ~50+ dated Fedway deals/month. So we read the RAW cpl, take every
+        # sub-month line, and compute the deal price from frontline vs best.
+        craw = read_parquet(con, "cpl")
         active_clause = (
             "" if include_past
             else "AND (to_date IS NULL OR CAST(to_date AS DATE) >= CURRENT_DATE)"
         )
-        dated_window = (
-            "from_date IS NOT NULL AND to_date IS NOT NULL "
-            "AND NOT (EXTRACT(day FROM CAST(from_date AS DATE)) = 1 "
-            "AND CAST(to_date AS DATE) = (date_trunc('month', CAST(to_date AS DATE)) + INTERVAL 1 MONTH - INTERVAL 1 DAY))"
-        )
         rows = con.execute(f"""
-            SELECT wholesaler, edition, product_name, product_type, unit_volume, unit_qty, upc, brand,
-                   vintage,
-                   CAST(from_date AS DATE) AS from_date, CAST(to_date AS DATE) AS to_date,
-                   CASE WHEN to_date IS NULL THEN NULL
-                        ELSE date_diff('day', CURRENT_DATE, CAST(to_date AS DATE))
-                   END AS days_to_expire,
-                   frontline_case_price, effective_case_price, total_savings_per_case, discount_pct,
-                   rip_savings, has_rip, has_discount, has_closeout
-            FROM {src}
-            WHERE (({dated_window}) OR has_closeout = true)
-              {active_clause}
-              AND ({' OR '.join(conds)})
-            ORDER BY to_date ASC NULLS LAST, total_savings_per_case DESC NULLS LAST
+            WITH ce AS (   -- brand only lives on the enriched table
+                SELECT wholesaler, edition, CAST(upc AS VARCHAR) AS upc, ANY_VALUE(brand) AS brand
+                FROM {src} GROUP BY 1, 2, 3
+            ),
+            ranked AS (
+                SELECT wholesaler, edition, product_name, product_type, unit_volume, unit_qty,
+                       CAST(upc AS VARCHAR) AS upc, vintage,
+                       CAST(from_date AS DATE) AS from_date, CAST(to_date AS DATE) AS to_date,
+                       frontline_case_price,
+                       COALESCE(best_case_price, frontline_case_price) AS effective_case_price,
+                       rip_code, closeout_permit,
+                       ROW_NUMBER() OVER (
+                           -- product_name is in the key so placeholder upcs
+                           -- (Fedway has upc='0' rows) don't collapse distinct
+                           -- products that share the same window.
+                           PARTITION BY wholesaler, edition, CAST(upc AS VARCHAR), product_name,
+                                        CAST(from_date AS DATE), CAST(to_date AS DATE)
+                           ORDER BY COALESCE(best_case_price, frontline_case_price) ASC NULLS LAST
+                       ) AS rn
+                FROM {craw}
+                WHERE from_date IS NOT NULL AND to_date IS NOT NULL
+                  AND NOT (EXTRACT(day FROM CAST(from_date AS DATE)) = 1
+                           AND CAST(to_date AS DATE) = (date_trunc('month', CAST(to_date AS DATE)) + INTERVAL 1 MONTH - INTERVAL 1 DAY))
+                  {active_clause}
+                  AND ({' OR '.join(conds)})
+            )
+            SELECT r.wholesaler, r.edition, r.product_name, r.product_type, r.unit_volume, r.unit_qty,
+                   r.upc, ce.brand AS brand, r.vintage, r.from_date, r.to_date,
+                   CASE WHEN r.to_date IS NULL THEN NULL
+                        ELSE date_diff('day', CURRENT_DATE, r.to_date) END AS days_to_expire,
+                   r.frontline_case_price, r.effective_case_price,
+                   CASE WHEN r.frontline_case_price IS NOT NULL AND r.effective_case_price IS NOT NULL
+                             AND r.frontline_case_price > r.effective_case_price
+                        THEN r.frontline_case_price - r.effective_case_price ELSE NULL END AS total_savings_per_case,
+                   CASE WHEN r.frontline_case_price IS NOT NULL AND r.effective_case_price IS NOT NULL
+                             AND r.frontline_case_price > 0 AND r.frontline_case_price > r.effective_case_price
+                        THEN ROUND((r.frontline_case_price - r.effective_case_price) / r.frontline_case_price * 100, 2)
+                        ELSE NULL END AS discount_pct,
+                   CAST(NULL AS DOUBLE) AS rip_savings,
+                   (r.rip_code IS NOT NULL AND CAST(r.rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan')) AS has_rip,
+                   (r.effective_case_price IS NOT NULL AND r.frontline_case_price IS NOT NULL
+                        AND r.frontline_case_price > r.effective_case_price) AS has_discount,
+                   (r.closeout_permit IS NOT NULL AND CAST(r.closeout_permit AS VARCHAR) NOT IN ('', '0', 'None', 'nan')) AS has_closeout
+            FROM ranked r LEFT JOIN ce
+              ON ce.wholesaler = r.wholesaler AND ce.edition = r.edition AND ce.upc = r.upc
+            WHERE r.rn = 1
+            ORDER BY r.to_date ASC NULLS LAST, total_savings_per_case DESC NULLS LAST
             LIMIT {limit}
         """, params).fetchdf()
-
-        # Exclude products whose RIP carries into next month: a deal is only
-        # time-sensitive if it genuinely ends and does NOT recur next month.
-        rip_next = set()
-        try:
-            nx = con.execute(f"""
-                WITH nexted AS (SELECT wholesaler, MIN(CASE WHEN edition > $c THEN edition END) AS ned
-                                FROM {src} GROUP BY wholesaler)
-                SELECT DISTINCT e.wholesaler AS w, LTRIM(e.upc,'0') AS un
-                FROM {src} e JOIN nexted n ON e.wholesaler = n.wholesaler AND e.edition = n.ned
-                WHERE e.has_rip = true AND e.upc IS NOT NULL
-            """, {"c": current_ym}).fetchall()
-            rip_next = {(r[0], str(r[1])) for r in nx}
-        except Exception:
-            rip_next = set()
 
         # 60s in-process cached PG lookup (see _cached_deal_blurbs).
         blurb_map = _cached_deal_blurbs()
@@ -603,14 +645,9 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
         for _, r in rows.iterrows():
             u = _str(r["upc"])
             un = u.lstrip("0") if u else None
-            # Closeouts skip the "RIP recurs next month" exclusion: inventory
-            # being cleared is genuinely time-sensitive even when the SKU's
-            # rebate happens to carry into the next CPL.
-            if (not bool(r["has_closeout"])) and un and (r["wholesaler"], un) in rip_next:
-                continue
-            # Defensive guard: even if the SQL filter or a data quality issue lets
-            # a stale-to_date row through, skip anything genuinely in the past
-            # unless the caller explicitly asked for past deals.
+            # Defensive guard: even if a data quality issue lets a stale-to_date
+            # row through, skip anything genuinely in the past unless the caller
+            # explicitly asked for past deals.
             dte_raw = r["days_to_expire"]
             try:
                 dte_int = int(dte_raw) if dte_raw == dte_raw and dte_raw is not None else None

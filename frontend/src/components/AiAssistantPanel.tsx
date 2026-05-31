@@ -197,9 +197,9 @@ export default function AiAssistantPanel<R extends AiAnswerBase>({
           </div>
           <div className="ai-assistant-actions">
             {messages.length > 0 && (
-              <button type="button" className="ai-assistant-iconbtn" title="Clear conversation"
-                      aria-label="Clear conversation" onClick={() => setMessages([])}>
-                <Trash2 size={15} />
+              <button type="button" className="ai-assistant-iconbtn ai-assistant-clearchat" title="Clear chat"
+                      aria-label="Clear chat" onClick={() => setMessages([])}>
+                <Trash2 size={14} /> Clear chat
               </button>
             )}
             {collapsible && (

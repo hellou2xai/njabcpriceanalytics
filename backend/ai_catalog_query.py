@@ -224,6 +224,37 @@ def _resolve_products(con, view: dict, match: str, which: str, cap: int,
         where.append("c.has_rip = true")
     if view.get("hasDiscount"):
         where.append("c.has_discount = true")
+    # Semantic region + varietal filters — the SAME resolvers the catalog grid
+    # uses, so an inline chat table for "California wines" matches the grid and
+    # never surfaces ABSOLUT CALIFORNIA (a flavoured vodka) as a "California
+    # wine". They contribute a name-token / enrichment-description clause plus an
+    # auto product_type narrowing (region=california -> Wine). The user's own
+    # categories win; otherwise region's narrowing wins, then varietal's.
+    _auto_pt_applied = bool(view.get("categories"))
+    region_hint = (view.get("region") or "").strip()
+    if region_hint:
+        from backend.region_semantics import build_region_filter
+        rc, rp, rauto = build_region_filter(region_hint, name_col="c.product_name", upc_col="c.upc")
+        if rc:
+            where.append(rc); params.update(rp)
+            if rauto and not _auto_pt_applied:
+                params["r_auto_pt"] = rauto
+                where.append("c.product_type = $r_auto_pt"); _auto_pt_applied = True
+    varietal_hint = (view.get("varietal") or "").strip()
+    if varietal_hint:
+        from backend.varietal_semantics import build_varietal_filter
+        vc, vp, vauto = build_varietal_filter(varietal_hint, name_col="c.product_name", upc_col="c.upc")
+        if vc:
+            where.append(vc); params.update(vp)
+            if vauto and not _auto_pt_applied:
+                params["v_auto_pt"] = vauto
+                where.append("c.product_type = $v_auto_pt"); _auto_pt_applied = True
+    # Price-trend filter ('prices going up / down' in the latest edition).
+    _pt = (view.get("price_trend") or "").lower()
+    if _pt in ("increase", "up", "rising", "rise"):
+        where.append("c.price_trend = 'increase'")
+    elif _pt in ("drop", "down", "decrease", "falling", "fall"):
+        where.append("c.price_trend = 'drop'")
     order = {
         "cheapest": "c.effective_case_price ASC NULLS LAST",
         "most_expensive": "c.effective_case_price DESC NULLS LAST",

@@ -113,6 +113,10 @@ def _t_top_products(con, args):
         "divisions": [args["distributor"]] if args.get("distributor") else [],
         "hasRip": args.get("has_rip"), "hasDiscount": args.get("has_discount"),
         "priceMin": args.get("price_min"), "priceMax": args.get("price_max"),
+        # Semantic hints so 'California wines', 'Napa cabs', 'rising bourbons'
+        # resolve the same way the catalog grid does (not a naive name LIKE).
+        "region": args.get("region"), "varietal": args.get("varietal"),
+        "price_trend": args.get("price_trend"),
     }
     which = {"cheapest": "cheapest", "expensive": "most_expensive"}.get(args.get("order_by"), "cheapest")
     cap = min(int(args.get("limit") or 10), 25)
@@ -992,17 +996,23 @@ def _t_find_deals(con, args, ctx):
 
 
 def _t_price_movers(con, args, ctx):
-    direction = (args.get("direction") or "drop").lower()
-    trend = "drop" if direction in ("drop", "down", "falling", "decrease") else "increase"
+    """Products whose price is going up or down in the latest edition. Resolves
+    through _resolve_products so the SAME category / region / varietal / brand
+    filters the catalog uses apply here too — 'California wines going up' returns
+    California wines, not whatever spirits happen to be rising."""
+    direction = (args.get("direction") or args.get("price_trend") or "drop").lower()
+    trend = "increase" if direction in ("increase", "up", "rising", "rise") else "drop"
     cap = min(int(args.get("limit") or 10), 25)
-    cym = _current_ym()
+    view = {
+        "categories": [args["category"]] if args.get("category") else [],
+        "divisions": [args["distributor"]] if args.get("distributor") else [],
+        "region": args.get("region"), "varietal": args.get("varietal"),
+        "priceMin": args.get("price_min"), "priceMax": args.get("price_max"),
+        "price_trend": trend,
+    }
     try:
-        return con.execute(
-            f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<='{cym}' GROUP BY wholesaler) "
-            "SELECT c.product_name, c.wholesaler, c.upc, c.unit_volume, c.unit_qty, c.vintage, "
-            "c.effective_case_price, c.frontline_case_price FROM cpl_enriched c "
-            "JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
-            f"WHERE c.price_trend = ? LIMIT {cap}", [trend]).fetchdf().to_dict(orient="records")
+        return _resolve_products(con, view, args.get("match") or "", "cheapest", cap,
+                                 exclude_stocking=not bool(args.get("include_stocking_deals")))
     except Exception:
         return {"error": "price-trend data unavailable in this build"}
 
@@ -1076,6 +1086,9 @@ def _tool_specs() -> list:
         "order_by": {"type": "string", "enum": ["cheapest", "expensive"]},
         "limit": {"type": "number"},
         "rip_code": {"type": "string", "description": "A specific RIP rebate code (for rip_lookup)."},
+        "region": {"type": "string", "description": "Region / origin hint (california, napa, sonoma, bordeaux, tuscany, italy, france, spain, kentucky, scotland, mexico, ...). Use this for ANY geography query instead of putting the place name in `match` — `match='california'` wrongly matches ABSOLUT CALIFORNIA. Auto-narrows product_type (california -> Wine, kentucky -> Spirits)."},
+        "varietal": {"type": "string", "description": "Varietal / style hint (cabernet, pinot noir, chardonnay, prosecco, ipa, bourbon, single malt, reposado, ...). Use instead of `match` for grape/style queries; stacks with region ('California cabernets')."},
+        "price_trend": {"type": "string", "enum": ["increase", "drop"], "description": "Narrow to products whose price is going UP ('increase') or DOWN ('drop') in the latest edition. Combine with region/varietal/category, e.g. 'California wines going up' = region=california + price_trend=increase."},
     }
     for name, (_fn, desc) in _DATA_TOOLS.items():
         specs.append({"name": name, "description": desc,
@@ -1505,6 +1518,35 @@ def _scrub_standalone(text: str) -> str:
     return text
 
 
+def _auto_table_products(screen_args: dict) -> list:
+    """Resolve products for the standalone auto-table from a show_on_screen call.
+    Mirrors the filter the 'Open in Catalog' link uses (region / varietal /
+    category / price_trend / distributor / price / search) so the inline table
+    and the link show the SAME set. Returns [] on any problem."""
+    sa = screen_args or {}
+    route = (sa.get("route") or "").lower()
+    price_trend = sa.get("price_trend")
+    if not price_trend and route == "price_increases":
+        price_trend = "increase"
+    elif not price_trend and route == "price_drops":
+        price_trend = "drop"
+    cats = sa.get("categories") or []
+    real_cats, leftover = _split_categories(cats) if cats else ([], [])
+    match_terms = [t for t in ([sa.get("q")] + leftover) if t]
+    view = {
+        "categories": real_cats,
+        "divisions": sa.get("distributors") or [],
+        "region": sa.get("region"), "varietal": sa.get("varietal"),
+        "price_trend": price_trend,
+        "hasRip": sa.get("has_rip"), "hasDiscount": sa.get("has_discount"),
+        "priceMin": sa.get("price_min"), "priceMax": sa.get("price_max"),
+    }
+    which = "most_expensive" if sa.get("order") == "desc" else "cheapest"
+    with get_duckdb() as con:
+        return _resolve_products(con, view, " ".join(match_terms), which, 12,
+                                 exclude_stocking=True)
+
+
 def ask(question: str, history: list | None = None, user: dict | None = None,
         page: str | None = None, page_path: str | None = None,
         page_query: str | None = None) -> dict:
@@ -1608,7 +1650,17 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
             "effective /cs, savings). Phrase results as 'Found N matches. "
             "Top picks:' or 'Here are the cheapest X:' — NEVER as 'Showing "
             "X on [anything]'. Surface the hyperlink as 'Open full list in "
-            "Catalog ->' at the end. End with one offer to help further."})
+            "Catalog ->' at the end. End with one offer to help further. "
+            "SEMANTIC FILTERS on the data tools: top_products, price_movers and "
+            "find_deals now accept region= and varietal= (same vocabulary as "
+            "show_on_screen) and price_trend=increase|drop. For ANY geography or "
+            "grape/style query you MUST pass region=/varietal= (NOT match=, which "
+            "matches stray substrings like ABSOLUT CALIFORNIA). For 'prices going "
+            "up/down', pass price_trend, optionally with region/category, e.g. "
+            "'California wines going up' -> top_products(region=california, "
+            "price_trend=increase) or price_movers(region=california, "
+            "direction=increase). This returns the RIGHT products for the inline "
+            "table instead of unrelated spirits."})
     messages = _history_messages(history) + [{"role": "user", "content": question}]
     total_in = total_out = 0
     final_text = ""
@@ -1617,6 +1669,7 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
     seen_products: set = set()
     price_detail_result: dict | None = None
     screen_out: dict | None = None
+    screen_args: dict | None = None   # last show_on_screen filters (for the standalone auto-table)
 
     def _collect(items):
         # Accumulate any product dicts a tool surfaced so the UI can render them
@@ -1660,6 +1713,7 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                         continue
                     if b.name == "show_on_screen":
                         si = b.input or {}
+                        screen_args = si
                         sc = _build_screen(si, page_path, page_query)
                         # If the request targets a specific UPC, verify it exists
                         # so we can say "showing it" vs "product not found" (and
@@ -1730,6 +1784,16 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
         # Standalone page: no grid exists, so strip any "on the left/screen/page"
         # phrasing the model emitted regardless of the prompt instruction.
         answer = _scrub_standalone(answer)
+        # AUTO-TABLE: on the standalone page the model often just drives a screen
+        # (confirmation + link) and forgets to fetch products, so the user has to
+        # ask "show in table". If it drove a catalog-style screen but surfaced no
+        # products, populate the inline table deterministically from the SAME
+        # filters the link uses, so the table always appears without being asked.
+        if screen_out is not None and not products_out and screen_args is not None:
+            try:
+                _collect(_auto_table_products(screen_args))   # deduped into products_out
+            except Exception:
+                pass  # never fail the answer over the auto-table
     # Multi-product answers (3+ products) get enriched with tier ladders so
     # the frontend can render a side-by-side comparison table, and a Catalog
     # deep-link is built by exact UPCs so "Open in Catalog ->" lands on the

@@ -241,8 +241,9 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
             {(totalIn + totalOut).toLocaleString()} tokens · <strong>{fmtCost(totalCost)}</strong>
           </span>
           {messages.length > 0 && (
-            <button className="celar-head-btn" title="New chat" aria-label="New chat" onClick={() => setMessages([])}>
-              <Trash2 size={15} />
+            <button className="celar-head-btn celar-clear-chat" title="Clear chat"
+                    aria-label="Clear chat" onClick={() => setMessages([])}>
+              <Trash2 size={14} /> Clear chat
             </button>
           )}
           {onClose && (

@@ -150,6 +150,17 @@ def _format_vec_literal(vec: list[float]) -> str:
     return "[" + ",".join(f"{x:.7f}" for x in vec) + "]"
 
 
+def _connect():
+    """Open a fresh psycopg connection to the configured database. Used so the
+    indexer can grab a clean connection per batch — eliminates the Render-side
+    idle-timeout drops that kill long-lived connections mid-run."""
+    import psycopg
+    url = os.environ.get("RENDER_EXTERNAL_DATABASE_URL") or os.environ.get("DATABASE_URL")
+    if not url:
+        raise RuntimeError("no database URL")
+    return psycopg.connect(url, connect_timeout=10)
+
+
 def index_enrichment(
     con_pg,
     *,
@@ -174,11 +185,9 @@ def index_enrichment(
     """
     if not voyage_available():
         return {"error": "VOYAGE_API_KEY not set", "embedded": 0}
-    cur = con_pg.cursor()
-    # Pull enrichment rows that need embedding. Skip rows with no useful text
-    # — status='not_found' / 'error' rows have no description / brand / region
-    # and would be skipped anyway after the per-row blob check, but pulling
-    # them wastes cycles iterating empty batches. Filter at the SQL level.
+    # Initial fetch uses its OWN short-lived connection so the candidate
+    # cursor doesn't get hit by Render's idle-timeout drop. Once we have
+    # the row list in memory, batch-level upserts open their own.
     base = """
         SELECT pe.upc, pe.name, pe.brand, pe.description, pe.region,
                pe.category, pe.category_path
@@ -198,8 +207,10 @@ def index_enrichment(
         """
     if limit:
         base += f" LIMIT {int(limit)}"
-    cur.execute(base)
-    rows = cur.fetchall()
+    with _connect() as fetch_con:
+        fcur = fetch_con.cursor()
+        fcur.execute(base)
+        rows = fcur.fetchall()
     log.info("Indexing %d enrichment rows into product_embeddings", len(rows))
     embedded = 0
     skipped_empty = 0
@@ -236,25 +247,45 @@ def index_enrichment(
             log.warning("batch %d/%d FAILED (%d rows skipped this pass): %s",
                         bi, total_batches, len(texts), e)
             continue
-        # Bulk upsert. pgvector takes the vector as a text literal.
-        ucur = con_pg.cursor()
-        for upc, blob, vec in zip(upcs, texts, vecs):
-            if vec is None:
-                continue
-            ucur.execute(
-                """
-                INSERT INTO product_embeddings (upc, vec, model, text_blob, updated_at)
-                VALUES (%s, %s::vector, %s, %s, now())
-                ON CONFLICT (upc) DO UPDATE SET
-                    vec = EXCLUDED.vec,
-                    model = EXCLUDED.model,
-                    text_blob = EXCLUDED.text_blob,
-                    updated_at = now()
-                """,
-                (str(upc), _format_vec_literal(vec), model, blob),
-            )
-            embedded += 1
-        con_pg.commit()
+        # Fresh connection per batch. Render Postgres drops long-lived
+        # connections silently every ~30 min; opening per batch sidesteps
+        # the whole class of "server closed the connection unexpectedly"
+        # crashes. Overhead is ~50ms per batch — negligible vs the Voyage
+        # call. Retries twice on transient DB errors.
+        upsert_attempts = 0
+        while True:
+            try:
+                with _connect() as upsert_con:
+                    ucur = upsert_con.cursor()
+                    for upc, blob, vec in zip(upcs, texts, vecs):
+                        if vec is None:
+                            continue
+                        ucur.execute(
+                            """
+                            INSERT INTO product_embeddings (upc, vec, model, text_blob, updated_at)
+                            VALUES (%s, %s::vector, %s, %s, now())
+                            ON CONFLICT (upc) DO UPDATE SET
+                                vec = EXCLUDED.vec,
+                                model = EXCLUDED.model,
+                                text_blob = EXCLUDED.text_blob,
+                                updated_at = now()
+                            """,
+                            (str(upc), _format_vec_literal(vec), model, blob),
+                        )
+                        embedded += 1
+                    upsert_con.commit()
+                break
+            except Exception as e:
+                upsert_attempts += 1
+                if upsert_attempts >= 3:
+                    log.warning("batch %d/%d upsert failed after %d attempts: %s — skipping batch (rows will retry on next idempotent run)",
+                                bi, total_batches, upsert_attempts, e)
+                    # Roll back embedded count for the rows we attempted in this batch.
+                    embedded -= sum(1 for v in vecs if v is not None)
+                    break
+                log.warning("batch %d/%d upsert attempt %d failed (%s) — retrying",
+                            bi, total_batches, upsert_attempts, e)
+                time.sleep(1.0)
         # Log every 5 batches so progress is visible from the Monitor stream.
         if bi % 5 == 0 or bi == total_batches:
             log.info("  batch %d/%d - embedded %d / candidates %d",

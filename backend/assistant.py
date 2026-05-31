@@ -60,6 +60,12 @@ def _is_stocking_row(r: dict) -> bool:
         return False
 
 
+# Same-UPC price gaps larger than this ratio (dearest / cheapest) are almost
+# certainly bad source data (e.g. a $4,299 vs $120 row on the same barcode), not
+# a real arbitrage, so the arbitrage ranker drops them by default.
+_ARBITRAGE_MAX_RATIO = 8.0
+
+
 def _clean(v):
     if v is None or (isinstance(v, float) and math.isnan(v)):
         return None
@@ -976,6 +982,9 @@ def _t_distributor_arbitrage(con, args):
         savings = dear - cheap
         pct = savings / dear * 100 if dear else 0
         if savings <= 0.01 or pct < min_pct:
+            continue
+        # Anomaly guard: a same-UPC gap this extreme is bad data, not arbitrage.
+        if cheap > 0 and dear > cheap * _ARBITRAGE_MAX_RATIO and not args.get("include_anomalies"):
             continue
         out.append({
             "product_name": r["product_name"], "upc": r["un"], "unit_volume": r["unit_volume"],

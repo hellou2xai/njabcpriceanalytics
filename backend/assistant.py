@@ -1549,16 +1549,18 @@ _SYSTEM = (
     "quantity (cases or bottles) mixed across those products and get the bundle $ rebate, which STACKS on "
     "top of any CPL discount. A single UPC can carry MULTIPLE RIP codes, and DIFFERENT DISTRIBUTORS use "
     "DIFFERENT codes. "
-    "To EXPLAIN rebates (what codes, tiers, best rebate, which products to mix), call rip_lookup with the "
-    "brand/product name (or a code) and answer in chat: group BY DISTRIBUTOR (by_distributor map); for "
-    "each code show its tier ladder with per-case savings, mark the BEST rebate, and list the Case Mix "
-    "members the buyer can combine; say plainly if there is no RIP this month. List EVERY tier the tool "
-    "returns in the ladder table — a code can have many tiers (e.g. 3/6/12/20/33 cases) and they are split "
-    "across rows in the data; never truncate to just the first or 'best' tier, show the whole ladder in qty "
-    "order. "
-    "To SHOW the rebate products on the grid so the buyer can ACT, call show_on_screen with route=catalog, "
-    "q=<brand>, group_by_rip=true — the catalog then clusters products into Case-Mix groups with tier "
-    "ladders, live 'X more for the next tier' progress, and an Add-All-Case-Mix-to-Cart button. "
+    "Any question that ASKS ABOUT a rebate — 'RIP details', 'RIP analysis', 'show me the RIP', 'what's the "
+    "RIP/rebate', 'RIP breakdown', 'rebate for <product>' — is an EXPLAIN request: ALWAYS get the data and "
+    "present the full analysis. Call rip_lookup with the brand/product name (or a code) (or deal_360 for a "
+    "single product) and produce: group BY DISTRIBUTOR (by_distributor map); for each code its tier ladder "
+    "with per-case savings, the BEST rebate marked, and the Case Mix members to combine; say plainly if there "
+    "is no RIP this month. List EVERY tier the tool returns in the ladder table — a code can have many tiers "
+    "(e.g. 3/6/12/20/33 cases) and they are split across rows in the data; never truncate to the first or "
+    "'best' tier, show the whole ladder in qty order. NEVER reply with only a bare grid link and no tier "
+    "breakdown. (HOW you surface it follows your SURFACE rule below: standalone page -> the full analysis in "
+    "chat + a grid link; docked beside a grid -> you may ALSO refresh the grid via show_on_screen route=catalog, "
+    "q=<brand>, group_by_rip=true, which clusters products into Case-Mix groups with tier ladders, live 'X more "
+    "for the next tier' progress, and an Add-All-Case-Mix-to-Cart button.) "
     "Other tools: compare_distributors (one product across all distributors, by UPC or name — show a "
     "table + a bar chart of effective price by distributor), find_deals (time_sensitive|discount|clearance), "
     "price_movers (drop|increase), and the signed-in user's get_cart / get_favorites / get_lists / get_orders. "
@@ -1701,13 +1703,28 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
     # Cache the big static system block; append a small dynamic page hint so the
     # model prioritizes tools relevant to the screen the user is on.
     system_blocks = [{"type": "text", "text": _SYSTEM, "cache_control": {"type": "ephemeral"}}]
+    # CORE RULE — the defining behaviour difference between the two surfaces the
+    # assistant runs on. Everything else defers to this.
+    system_blocks.append({"type": "text", "text":
+        "CORE RULE — adapt to WHERE you are running (the SCREEN/STANDALONE block below says which):\n"
+        "(A) DOCKED beside a data grid (you are on a page screen): your primary job is to REFRESH THAT GRID. "
+        "For any show / find / filter / sort / 'with RIP' / 'on deal' / price-trend request, call show_on_screen "
+        "so the grid updates in place (a one-line confirmation in chat is enough). Use chat prose only for "
+        "genuinely conversational questions (why/how, totals & counts, one product's full breakdown, a "
+        "head-to-head comparison, a RIP tier explanation).\n"
+        "(B) STANDALONE chat page (no grid anywhere beside you): present the INFO & ANALYSIS in the chat FIRST "
+        "— call the data tools and show prose + compact tables + charts + product cards grounded in real rows — "
+        "and THEN add a link to open the relevant data grid. NEVER reply with only a grid link or a bare "
+        "one-liner here; the analysis is the answer, the grid link is a follow-up."})
     if page:
         scope = _PAGE_SCOPE.get(page)
         if scope:
             system_blocks.append({"type": "text", "text":
-                f"SCREEN SCOPE — you are the assistant for the '{page}' screen and are SCOPED TO IT ONLY. "
-                f"Help only with: {scope}. Stay on this screen — do NOT navigate away. If this screen "
-                f"already shows what they asked, don't call show_on_screen; just answer briefly. If the user "
+                f"SCREEN SCOPE — you are DOCKED beside the '{page}' data grid and are SCOPED TO IT ONLY. "
+                f"Help only with: {scope}. Stay on this screen — do NOT navigate away. Per the CORE RULE, for "
+                f"any show/find/filter/sort request REFRESH this grid by calling show_on_screen (even if it "
+                f"already shows similar data) so the buyer sees the updated result, with a one-line chat "
+                f"confirmation. If the user "
                 f"asks about something that belongs to a DIFFERENT screen (e.g. a general catalog search, "
                 f"orders, favorites) say in one line that it's handled on that other screen and offer to "
                 f"help within '{page}' instead — do not answer the off-screen request or switch pages. "

@@ -1073,6 +1073,66 @@ def _t_semantic_search(con, args):
     return rows
 
 
+def _t_combo_deals(con, args):
+    """COMBO / BUNDLE deals (a whole product type the other tools don't cover):
+    one row per combo with its pack price, total savings and component list, this
+    month vs next. Optional q (brand/keyword) and distributor. Use for 'what
+    combos / bundles are there', 'combo deals on X', 'is there a bundle for Y'."""
+    from backend.routers.deals import get_combos
+    try:
+        return get_combos(wholesaler=(args.get("distributor") or None),
+                          q=(args.get("q") or ""), limit=min(int(args.get("limit") or 15), 50))
+    except Exception as e:
+        return {"error": f"{type(e).__name__}"}
+
+
+def _t_category_distributor_compare(con, args):
+    """Which distributor is best for a whole CATEGORY: per distributor, the count,
+    average effective case price, and # with a discount / RIP for that category
+    (current edition). Use for 'who's cheapest for wine', 'best distributor for
+    spirits', 'compare distributors for tequila'."""
+    cat = (args.get("category") or "").strip()
+    if not cat:
+        return {"error": "provide a `category` (e.g. Wine, Spirits, Beer)"}
+    cym = _current_ym()
+    try:
+        df = con.execute(
+            f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<='{cym}' GROUP BY wholesaler) "
+            "SELECT c.wholesaler AS distributor, COUNT(*) AS products, "
+            "ROUND(AVG(c.effective_case_price), 2) AS avg_effective_case, "
+            "ROUND(MIN(c.effective_case_price), 2) AS cheapest_case, "
+            "SUM(CASE WHEN c.has_discount THEN 1 ELSE 0 END) AS with_discount, "
+            "SUM(CASE WHEN c.has_rip THEN 1 ELSE 0 END) AS with_rip "
+            "FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
+            "WHERE UPPER(c.product_type)=UPPER(?) AND c.effective_case_price IS NOT NULL "
+            "GROUP BY 1 ORDER BY avg_effective_case ASC NULLS LAST", [cat]).fetchdf()
+    except Exception as e:
+        return {"error": f"{type(e).__name__}"}
+    return {"category": cat, "by_distributor": _json_safe(df.to_dict(orient="records"))}
+
+
+def _t_deals_by_category(con, args):
+    """Which CATEGORIES have the most / deepest deals this edition: per category,
+    total products, # discounted, average discount %, # with RIP, # closeouts —
+    ranked by discounted count. Use for 'which category has the deepest deals',
+    'where are the most discounts', 'best category to buy on deal'."""
+    cym = _current_ym()
+    try:
+        df = con.execute(
+            f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<='{cym}' GROUP BY wholesaler) "
+            "SELECT c.product_type AS category, COUNT(*) AS products, "
+            "SUM(CASE WHEN c.has_discount THEN 1 ELSE 0 END) AS discounted, "
+            "ROUND(AVG(CASE WHEN c.has_discount THEN c.discount_pct END), 1) AS avg_discount_pct, "
+            "SUM(CASE WHEN c.has_rip THEN 1 ELSE 0 END) AS with_rip, "
+            "SUM(CASE WHEN c.has_closeout THEN 1 ELSE 0 END) AS closeouts "
+            "FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
+            "WHERE c.product_type IS NOT NULL "
+            "GROUP BY 1 ORDER BY discounted DESC NULLS LAST", []).fetchdf()
+    except Exception as e:
+        return {"error": f"{type(e).__name__}"}
+    return {"by_category": _json_safe(df.to_dict(orient="records"))}
+
+
 def _btl_price(r):
     """Effective per-bottle price for a catalogue row, or None."""
     eff = _num(r.get("effective_case_price"))
@@ -1282,6 +1342,9 @@ _DATA_TOOLS = {
     "find_substitute": (_t_find_substitute, "SUBSTITUTION FINDER: given a product that's gone or too pricey (match), the closest in-stock alternatives by style/category at a similar-or-lower price (optional max_case_price). Use for 'X is too expensive, what's a close swap', 'alternative to Y', 'something like Z but cheaper'."),
     "build_budget_basket": (_t_build_budget_basket, "BUDGET BASKET: build the best order that fits a $ budget (required `budget`), greedily from the top deals by GP% (rank_by='gp', default) or total savings (rank_by='savings'), optional category/distributor. Returns the basket + total spend, total savings, remaining. Use for 'build me a $5,000 order, best margins', 'fill a $2k tequila order with the deepest discounts'."),
     "dated_deal_reminders": (_t_dated_deal_reminders, "DATED-DEAL REMINDERS: dated (sub-month) promos whose window STARTS or ENDS within `within_days` (default 7), optional distributor — the easy-to-miss short windows, tagged 'Starts/Ends in N days'. Use for 'what deals start or end soon', 'any short-window deals this week', 'expiring deals'."),
+    "combo_deals": (_t_combo_deals, "COMBO / BUNDLE deals: one row per combo with pack price, total savings and components (this month vs next). Optional q (brand/keyword), distributor. Use for 'what combos/bundles are there', 'combo deals on X', 'is there a bundle for Y'."),
+    "category_distributor_compare": (_t_category_distributor_compare, "Which distributor is best for a whole CATEGORY (required `category`): per distributor count, avg + cheapest effective case price, # with discount/RIP. Use for 'who's cheapest for wine', 'best distributor for spirits'."),
+    "deals_by_category": (_t_deals_by_category, "Which CATEGORIES have the most/deepest deals this edition: per category total, # discounted, avg discount %, # RIP, # closeouts, ranked by discounted count. Use for 'which category has the deepest deals', 'where are the most discounts'."),
     "semantic_search": (_t_semantic_search, "FREE-TEXT semantic search over the enrichment corpus. USE this for descriptive natural-language queries that DON'T map to a region/varietal slot — 'old vine zinfandel from a cool climate', 'small-producer natural orange wine', 'high altitude napa cabernet', 'biodynamic Burgundy', 'rare single barrel bourbon from kentucky', 'small batch japanese whisky'. Args: q (the user's phrase), limit (default 12), product_type (optional narrowing). Returns ranked product cards (product_name, wholesaler, upc, prices, score). Prefer region/varietal slots when they match; fall back to this for the long tail."),
 }
 
@@ -2312,7 +2375,12 @@ _SYSTEM = (
     "within_days (default 7); present them tagged Starts/Ends in N days, soonest first. "
     "edition_changes — 'what changed this month/edition', 'what's new', 'what changed on my favorites/cart': "
     "pass focus all|favorites|cart; present a digest — new items, new/lost discounts, new closeouts, and the "
-    "biggest effective price drops/increases (counts + top examples)."
+    "biggest effective price drops/increases (counts + top examples). "
+    "combo_deals — 'what combos/bundles are there', 'bundle for X': pass q/distributor; present pack price + "
+    "total savings + components. category_distributor_compare — 'who's cheapest for <category>', 'best "
+    "distributor for wine': pass category; present per-distributor avg/cheapest effective + deal counts. "
+    "deals_by_category — 'which category has the most/deepest deals': categories ranked by discounted count "
+    "with avg discount %."
 )
 
 

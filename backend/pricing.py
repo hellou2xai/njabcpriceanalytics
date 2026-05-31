@@ -203,6 +203,28 @@ def attach_tiers(con, records) -> None:
         return
     rip_src = read_parquet(con, "rip")
 
+    # Some wholesalers (Fedway) pack multiple RIP codes into one CPL cell
+    # separated by whitespace, e.g. "10604 120001". derive.py UNNESTs the same
+    # field so the precomputed effective_case_price already accounts for both
+    # codes; the tier ladder must do the same so the modal/popover doesn't
+    # silently drop the half of the RIP that's stored under the second code.
+    def _split_codes(rc) -> list[str]:
+        if rc is None:
+            return []
+        s = str(rc).strip()
+        if not s or s in ("None", "nan", "0"):
+            return []
+        # Split on whitespace; drop blanks; preserve order; dedupe.
+        out, seen = [], set()
+        for part in s.split():
+            p = part.strip()
+            if not p or p in ("0", "None", "nan"):
+                continue
+            if p not in seen:
+                seen.add(p)
+                out.append(p)
+        return out
+
     # Collect rip lookup keys for this page in one query. We include BOTH the
     # CPL row's own rip_code AND the rip_group_code (the cluster membership
     # when group_by_rip fans a UPC across multiple RIPs). They can differ -
@@ -213,9 +235,8 @@ def attach_tiers(con, records) -> None:
     keys = []
     for rec in records:
         for fld in ("rip_code", "rip_group_code"):
-            rc = rec.get(fld)
-            if rc and str(rc) not in ("None", "nan", "0", ""):
-                keys.append((str(rc), rec["wholesaler"], rec["edition"]))
+            for code in _split_codes(rec.get(fld)):
+                keys.append((code, rec["wholesaler"], rec["edition"]))
     uniq_codes = sorted({k[0] for k in keys})
     uniq_ws = sorted({k[1] for k in keys})
     uniq_ed = sorted({k[2] for k in keys})
@@ -276,21 +297,31 @@ def attach_tiers(con, records) -> None:
         # Prefer the CLUSTER's code (rip_group_code) when present, so a row
         # fanned out under RIP A shows RIP A's tiers even if its CPL-side
         # rip_code points at RIP B. Fall back to the CPL rip_code so non-
-        # fanout views keep working unchanged.
+        # fanout views keep working unchanged. Both fields are split on
+        # whitespace so a multi-code cell like "10604 120001" looks up each
+        # code separately — same as derive.py.
         candidates: list[str] = []
         for fld in ("rip_group_code", "rip_code"):
-            v = str(rec.get(fld) or "")
-            if v and v not in ("None", "nan", "0", "") and v not in candidates:
-                candidates.append(v)
+            for code in _split_codes(rec.get(fld)):
+                if code not in candidates:
+                    candidates.append(code)
+        # Aggregate tiers across ALL matched codes (rather than returning the
+        # first match) — derive.py takes MAX across codes for the precomputed
+        # best_rip_amt, and the modal/popover should show every tier the buyer
+        # could actually clear. Per-tier de-dup happens downstream.
+        out: list[dict] = []
+        ws, ed = rec["wholesaler"], rec["edition"]
+        upc = str(rec.get("upc") or "")
         for rc in candidates:
-            upc_key = (rc, rec["wholesaler"], rec["edition"], str(rec.get("upc") or ""))
+            upc_key = (rc, ws, ed, upc)
             if upc_key in rip_full:
-                return rip_full[upc_key]
-            code_key = (rc, rec["wholesaler"], rec["edition"])
+                out.extend(rip_full[upc_key])
+                continue   # prefer per-UPC over code-level for the same code
+            code_key = (rc, ws, ed)
             tiers = rip_by_code.get(code_key, [])
             if tiers:
-                return tiers
-        return []
+                out.extend(tiers)
+        return out
 
     def _uq(rec) -> float:
         """Bottles per case (for per-bottle pricing). Defaults to 1."""

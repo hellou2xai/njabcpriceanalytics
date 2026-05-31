@@ -1269,6 +1269,87 @@ def _t_analyze_cart(con, args, ctx):
             "items": out_items}
 
 
+def _t_optimize_cart(con, args, ctx):
+    """ORDER OPTIMIZER: read the user's cart and produce the cheapest sourcing
+    plan — per line find the distributor with the lowest effective case price for
+    the same UPC, group the wins into (from -> to) distributor swaps, and total
+    current vs optimized cost. Generalistic (price-only) now; POS-ready: the
+    scoring will later weight optional velocity / on_hand / shelf_price signals
+    that are simply absent today."""
+    uid = ctx.get("user_id")
+    if not uid:
+        return {"error": "user not signed in"}
+    from backend.pg import get_pg
+    with get_pg() as pg:
+        rows = pg.execute(
+            "SELECT product_name, wholesaler, upc, unit_volume, qty_cases, qty_units FROM cart_items "
+            "WHERE user_id=%s AND COALESCE(saved_for_later,0)=0", (uid,)).fetchall()
+    items = [dict(r) for r in rows]
+    if not items:
+        return {"item_count": 0, "note": "Your cart is empty — nothing to optimize."}
+
+    def _norm(u):
+        return str(u or "").lstrip("0")
+    upcs = sorted({_norm(it["upc"]) for it in items if _norm(it["upc"])})
+    pricing, by_upc = {}, {}
+    if upcs:
+        ph = ", ".join("?" for _ in upcs)
+        try:
+            df = con.execute(
+                "WITH latest AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched GROUP BY wholesaler) "
+                "SELECT LTRIM(CAST(c.upc AS VARCHAR),'0') un, c.wholesaler, c.product_name, c.effective_case_price eff "
+                "FROM cpl_enriched c JOIN latest l ON c.wholesaler=l.wholesaler AND c.edition=l.ed "
+                f"WHERE LTRIM(CAST(c.upc AS VARCHAR),'0') IN ({ph}) AND c.effective_case_price IS NOT NULL "
+                "AND c.effective_case_price > 0", upcs).fetchdf()
+            for _, r in df.iterrows():
+                un = str(r["un"])
+                try:
+                    eff = float(r["eff"])
+                except (TypeError, ValueError):
+                    continue
+                if eff != eff:
+                    continue
+                pricing[(r["wholesaler"], un)] = eff
+                by_upc.setdefault(un, []).append((r["wholesaler"], round(eff, 2), r["product_name"]))
+        except Exception:
+            pass
+
+    swaps, by_item, cur_total, opt_total = {}, [], 0.0, 0.0
+    for it in items:
+        un = _norm(it["upc"])
+        qty = (it.get("qty_cases") or 0) or 1
+        cur_eff = pricing.get((it["wholesaler"], un))
+        alts = sorted(by_upc.get(un, []), key=lambda x: x[1])
+        cheapest = alts[0] if alts else None
+        if cur_eff is not None:
+            cur_total += cur_eff * qty
+        rec = None
+        if (cheapest and cur_eff is not None and cheapest[0] != it["wholesaler"]
+                and cheapest[1] < cur_eff - 0.01):
+            save = round((cur_eff - cheapest[1]) * qty, 2)
+            opt_total += cheapest[1] * qty
+            b = swaps.setdefault((it["wholesaler"], cheapest[0]),
+                                 {"from": it["wholesaler"], "to": cheapest[0], "items": [], "savings": 0.0})
+            b["items"].append({"product_name": it["product_name"], "to_product": cheapest[2],
+                               "qty_cases": qty, "savings": save})
+            b["savings"] += save
+            rec = {"swap_to": cheapest[0], "to_effective_case": cheapest[1], "savings_for_qty": save}
+        elif cur_eff is not None:
+            opt_total += cur_eff * qty
+        by_item.append({"product_name": it.get("product_name"), "current_distributor": it.get("wholesaler"),
+                        "current_effective_case": round(cur_eff, 2) if cur_eff is not None else None,
+                        "qty_cases": qty, "recommendation": rec})
+    swap_list = sorted(swaps.values(), key=lambda b: b["savings"], reverse=True)
+    for b in swap_list:
+        b["savings"] = round(b["savings"], 2)
+    return {"item_count": len(items),
+            "current_total": round(cur_total, 2), "optimized_total": round(opt_total, 2),
+            "total_savings": round(cur_total - opt_total, 2),
+            "recommended_swaps": swap_list, "by_item": by_item,
+            "note": ("Apply each with perform_action(type=swap_distributor, from_distributor, to_distributor)."
+                     if swap_list else "Your cart is already at the cheapest distributor pricing.")}
+
+
 _CTX_TOOLS = {
     "find_deals": (_t_find_deals, "Promotions: products on deal. Args: kind (time_sensitive|discount|clearance), limit. Shown as cards."),
     "price_movers": (_t_price_movers, "Products whose effective price changes next month. Args: direction (drop|increase), limit. Shown as cards."),
@@ -1277,6 +1358,7 @@ _CTX_TOOLS = {
     "get_lists": (_t_get_lists, "The signed-in user's saved lists and item counts."),
     "get_orders": (_t_get_orders, "The signed-in user's 10 most recent orders."),
     "analyze_cart": (_t_analyze_cart, "DEEP analysis of the user's cart / favorites / a list (source: cart|favorites|list, optional list_name): per item it compares the effective case price to EVERY distributor carrying the same UPC and flags where another is cheaper, with per-case + quantity-weighted savings and a total. Use for 'analyze my cart/wishlist', 'is anyone cheaper', 'where can I save', 'should I swap distributors'. After it, offer to swap via perform_action(type=swap_distributor)."),
+    "optimize_cart": (_t_optimize_cart, "ORDER OPTIMIZER for the user's cart: the cheapest sourcing PLAN — per line picks the lowest effective-price distributor for that UPC, groups the wins into (from->to) distributor swaps with $ saved, and gives current vs optimized cart total. Use for 'optimize my cart', 'make my order cheaper', 'cheapest way to buy this'. Present current vs optimized total + the grouped swaps, then offer to apply each via perform_action(type=swap_distributor)."),
 }
 
 
@@ -1740,6 +1822,10 @@ _SYSTEM = (
     "Other tools: compare_distributors (one product across all distributors, by UPC or name — show a "
     "table + a bar chart of effective price by distributor), find_deals (time_sensitive|discount|clearance), "
     "price_movers (drop|increase), and the signed-in user's get_cart / get_favorites / get_lists / get_orders. "
+    "ORDER OPTIMIZER: for 'optimize my cart', 'make my order cheaper', 'cheapest way to buy this' — call "
+    "optimize_cart. Present the CURRENT vs OPTIMIZED cart total and total savings, then the recommended swaps "
+    "grouped by (from -> to) distributor with $ saved each, and OFFER to apply them; on yes call "
+    "perform_action(type=swap_distributor, from_distributor, to_distributor) per group. "
     "CART / LIST INSIGHTS + DISTRIBUTOR SWAP: for 'analyze my cart / wishlist / list', 'is anyone cheaper', "
     "'where can I save', 'should I switch distributors' — call analyze_cart (source: cart|favorites|list, "
     "optional list_name). Present a per-item table (product, current distributor + effective $/cs, cheaper "

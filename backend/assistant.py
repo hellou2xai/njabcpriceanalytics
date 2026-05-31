@@ -30,9 +30,19 @@ from backend.ai_catalog_query import (
     _client_or_none, _cost_usd, _MODEL, _current_ym, _resolve_products,
     _history_messages, enabled,
 )
+# Canonical pricing helpers — every "best deal" / tier / ranking question
+# must read from here, not from inline SQL. See backend/FOUNDATION.md.
+from backend import pricing as _pricing
 
 _ACTION_TYPES = ("add_to_cart", "update_quantity", "add_to_favorites", "add_to_list")
 _MAX_TURNS = 6
+# Stocking-deal floor used by the "best deals" ranker by default. A row whose
+# effective_case_price is below this fraction of frontline (e.g. a 100%-off
+# free-with-purchase rebate at $0/cs) is excluded from the ranking — those
+# are real data points but they dominate naive savings-DESC sorts and aren't
+# what a buyer means by "best deal in the catalog". Override via the tool
+# arg `include_stocking_deals=True` when the user explicitly asks.
+_STOCKING_FLOOR_PCT = 0.10
 
 
 def _clean(v):
@@ -837,72 +847,47 @@ def _t_distributor_arbitrage(con, args):
 
 
 def _t_best_gp_deals(con, args):
-    """Best gross-profit deals: products ranked by discount depth / GP% (savings
-    vs list price). Optional category, distributor, min_pct."""
-    cym = _current_ym()
-    cap = min(int(args.get("limit") or 12), 25)
-    cat = (args.get("category") or "").strip()
-    dist = (args.get("distributor") or "").strip()
+    """Best gross-profit deals: products ranked by GP% (CPL+RIP savings vs list).
+    Delegates to pricing.rank_best_deals so the ranking is the SAME definition
+    every surface uses. Stocking-deal floor defaults to 10% — a 100%-off
+    liquidation no longer crowns the list. Pass include_stocking_deals=True
+    to opt back in; pass min_pct to require deeper savings still."""
+    include_stocking = bool(args.get("include_stocking_deals"))
+    floor = None if include_stocking else _STOCKING_FLOOR_PCT
+    rows = _pricing.rank_best_deals(
+        con,
+        kind="gp_pct",
+        min_effective_pct_of_frontline=floor,
+        category=(args.get("category") or "").strip() or None,
+        distributor=(args.get("distributor") or "").strip() or None,
+        limit=int(args.get("limit") or 12),
+    )
+    # Optional secondary filter — caller may want gp_pct >= N% on top of the
+    # stocking floor (e.g. "deals at least 20% off"). Applied after the SQL
+    # because the ranker already surfaces gp_pct in each row.
     try:
         min_pct = float(args.get("min_pct") or 0)
     except (TypeError, ValueError):
         min_pct = 0.0
-    where = ["c.frontline_case_price IS NOT NULL", "c.frontline_case_price > 0",
-             "c.effective_case_price IS NOT NULL", "c.effective_case_price < c.frontline_case_price"]
-    params = [cym]
-    if cat:
-        where.append("UPPER(c.product_type) = UPPER(?)")
-        params.append(cat)
-    if dist:
-        where.append("LOWER(c.wholesaler) = LOWER(?)")
-        params.append(dist)
-    where.append("(c.frontline_case_price - c.effective_case_price) / c.frontline_case_price * 100 >= ?")
-    params.append(min_pct)
-    try:
-        df = con.execute(f"""
-            WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<=? GROUP BY wholesaler)
-            SELECT c.product_name, c.wholesaler, c.upc, c.unit_volume, c.unit_qty, c.vintage,
-                   c.frontline_case_price, c.effective_case_price, c.total_savings_per_case,
-                   ROUND((c.frontline_case_price - c.effective_case_price) / c.frontline_case_price * 100, 1) AS gp_pct
-            FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed
-            WHERE {' AND '.join(where)}
-            ORDER BY gp_pct DESC, total_savings_per_case DESC NULLS LAST
-            LIMIT {cap}
-        """, params).fetchdf()
-    except Exception as e:
-        return {"error": f"{type(e).__name__}"}
-    return df.to_dict(orient="records")
+    if min_pct > 0:
+        rows = [r for r in rows if (r.get("gp_pct") or 0) >= min_pct]
+    return rows
 
 
 def _t_closeouts(con, args):
-    """Closeout / last-chance buys: products being cleared (closeout flag) in the
-    current edition, ranked by savings — once gone they don't return next month."""
-    cym = _current_ym()
-    cap = min(int(args.get("limit") or 15), 30)
-    cat = (args.get("category") or "").strip()
-    dist = (args.get("distributor") or "").strip()
-    where = ["c.has_closeout = true"]
-    params = [cym]
-    if cat:
-        where.append("UPPER(c.product_type) = UPPER(?)")
-        params.append(cat)
-    if dist:
-        where.append("LOWER(c.wholesaler) = LOWER(?)")
-        params.append(dist)
-    try:
-        df = con.execute(f"""
-            WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<=? GROUP BY wholesaler)
-            SELECT c.product_name, c.wholesaler, c.upc, c.unit_volume, c.unit_qty, c.vintage,
-                   c.frontline_case_price, c.effective_case_price, c.total_savings_per_case,
-                   CAST(c.to_date AS VARCHAR) AS ends
-            FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed
-            WHERE {' AND '.join(where)}
-            ORDER BY c.total_savings_per_case DESC NULLS LAST
-            LIMIT {cap}
-        """, params).fetchdf()
-    except Exception as e:
-        return {"error": f"{type(e).__name__}"}
-    return df.to_dict(orient="records")
+    """Closeout / last-chance buys, ranked by savings via pricing.rank_best_deals.
+    Stocking-deal floor defaults to 10% so a $0/cs 'free with purchase' clear
+    doesn't dominate. Pass include_stocking_deals=True to include those."""
+    include_stocking = bool(args.get("include_stocking_deals"))
+    floor = None if include_stocking else _STOCKING_FLOOR_PCT
+    return _pricing.rank_best_deals(
+        con,
+        kind="closeout",
+        min_effective_pct_of_frontline=floor,
+        category=(args.get("category") or "").strip() or None,
+        distributor=(args.get("distributor") or "").strip() or None,
+        limit=int(args.get("limit") or 15),
+    )
 
 
 _DATA_TOOLS = {
@@ -928,24 +913,28 @@ _DATA_TOOLS = {
 # These take (con, args, ctx); ctx carries user_id for user-specific reads.
 
 def _t_find_deals(con, args, ctx):
-    kind = (args.get("kind") or "discount").lower()
-    cap = min(int(args.get("limit") or 10), 25)
-    cym = _current_ym()
-    base = (f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched "
-            f"WHERE edition<='{cym}' GROUP BY wholesaler) "
-            "SELECT c.product_name, c.wholesaler, c.upc, c.unit_volume, c.unit_qty, c.vintage, "
-            "c.effective_case_price, c.frontline_case_price, c.total_savings_per_case "
-            "FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed WHERE ")
-    if kind in ("clearance", "closeout"):
-        cond = "c.has_closeout = true ORDER BY c.total_savings_per_case DESC NULLS LAST"
-    elif kind in ("time_sensitive", "time-sensitive", "ending", "expiring"):
-        cond = "c.to_date IS NOT NULL AND CAST(c.to_date AS DATE) >= CURRENT_DATE ORDER BY CAST(c.to_date AS DATE) ASC"
-    else:
-        cond = "c.has_discount = true ORDER BY c.total_savings_per_case DESC NULLS LAST"
-    try:
-        return con.execute(base + cond + f" LIMIT {cap}").fetchdf().to_dict(orient="records")
-    except Exception as e:
-        return {"error": f"{type(e).__name__}"}
+    """Deals by kind. Delegates to pricing.rank_best_deals so the ranking
+    is the canonical one every surface uses. Stocking-deal floor applies to
+    'discount' and 'clearance' kinds (overridable via include_stocking_deals).
+    'time_sensitive' doesn't apply the floor because dated promos are
+    naturally narrow."""
+    kind_raw = (args.get("kind") or "discount").lower()
+    limit = int(args.get("limit") or 10)
+    include_stocking = bool(args.get("include_stocking_deals"))
+    if kind_raw in ("clearance", "closeout"):
+        return _pricing.rank_best_deals(
+            con, kind="closeout",
+            min_effective_pct_of_frontline=None if include_stocking else _STOCKING_FLOOR_PCT,
+            limit=limit,
+        )
+    if kind_raw in ("time_sensitive", "time-sensitive", "ending", "expiring"):
+        return _pricing.rank_best_deals(con, kind="time_sensitive", limit=limit)
+    # Default: biggest savings.
+    return _pricing.rank_best_deals(
+        con, kind="savings",
+        min_effective_pct_of_frontline=None if include_stocking else _STOCKING_FLOOR_PCT,
+        limit=limit,
+    )
 
 
 def _t_price_movers(con, args, ctx):

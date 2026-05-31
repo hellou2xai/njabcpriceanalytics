@@ -20,6 +20,10 @@ export default function Catalog() {
   // Exact-UPC lock used by Celar Assistant "Open in Catalog" deep-links —
   // the grid shows ONLY the same SKUs the chat surfaced.
   const [upcs, setUpcs] = useState(params.get('upcs') ?? '');
+  // Semantic region hint ("california", "napa", "bordeaux"...) — backend
+  // resolves to product-name tokens + enrichment description match and
+  // auto-narrows product_type when implied (e.g. california -> Wine).
+  const [region, setRegion] = useState(params.get('region') ?? '');
   const [sort, setSort] = useState<'product_name' | 'frontline_case_price' | 'effective_case_price'>('product_name');
   const [order, setOrder] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(0);
@@ -64,6 +68,7 @@ export default function Catalog() {
     setQ(params.get('q') ?? '');
     setWholesaler(params.get('wholesaler') ?? '');
     setUpcs(params.get('upcs') ?? '');
+    setRegion(params.get('region') ?? '');
     setFilters({
       ...emptyCatalogFilters,
       hasRip: params.get('hasRip') === '1' ? true : undefined,
@@ -120,7 +125,7 @@ export default function Catalog() {
   const filterKey = JSON.stringify(filters);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['catalog', q, wholesaler, sort, order, page, limit, trackedOnly, filterKey, upcs],
+    queryKey: ['catalog', q, wholesaler, sort, order, page, limit, trackedOnly, filterKey, upcs, region],
     queryFn: () => catalog.search({
       q,
       wholesaler: wholesaler || undefined,
@@ -130,6 +135,7 @@ export default function Catalog() {
       tracked_only: trackedOnly || undefined,
       include_tiers: true,
       upcs: upcs || undefined,
+      region: region || undefined,
     }),
   });
 

@@ -545,6 +545,7 @@ def search_products(
     brands: Optional[str] = None,           # comma-separated brands
     sizes: Optional[str] = None,            # comma-separated unit volumes
     upcs: Optional[str] = Query(None, description="Comma-separated UPCs (leading-zero-normalised); restricts the grid to exactly these SKUs. Used by Celar Assistant 'Open in Catalog' links."),
+    region: Optional[str] = Query(None, description="Region / origin hint, e.g. 'california', 'napa', 'bordeaux', 'tuscany'. Filters by product name tokens + enrichment description. Auto-narrows product_type when the region implies a category (e.g. region=california auto-applies product_type=Wine if none is set)."),
     tracked_only: bool = Query(False, description="If true, only return products on the watchlist"),
     sort: str = Query("product_name", description="Sort field"),
     order: str = Query("asc", description="asc or desc"),
@@ -613,6 +614,19 @@ def search_products(
                     params[ed_key] = ed
                 if ed_conditions:
                     where.append(f"({' OR '.join(ed_conditions)})")
+        # Semantic region filter. Resolves a phrase like "california" to a
+        # set of product-name tokens + enrichment description terms, and
+        # auto-narrows product_type when the region implies one (so
+        # 'california' returns Wine, not vodka). The caller's explicit
+        # product_type wins if set.
+        if region:
+            from backend.region_semantics import build_region_filter
+            region_clause, region_params, region_auto_type = build_region_filter(region)
+            if region_clause:
+                where.append(region_clause)
+                params.update(region_params)
+                if region_auto_type and not product_type:
+                    product_type = region_auto_type
         if product_type:
             where.append("product_type = $product_type")
             params["product_type"] = product_type

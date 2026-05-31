@@ -1206,6 +1206,62 @@ def _t_build_budget_basket(con, args):
             "note": "Add all with perform_action(type=add_to_cart) on each, or refine the brief."}
 
 
+def _t_dated_deal_reminders(con, args):
+    """DATED-DEAL REMINDERS: dated (sub-month) promos whose window STARTS or ENDS
+    within `within_days` (default 7) of today — the easy-to-miss short windows.
+    Reads the already-ingested raw cpl (where the dated promo rows live). Returns
+    product cards tagged 'Starts in N days' / 'Ends in N days'."""
+    days = max(1, min(int(args.get("within_days") or 7), 31))
+    dist = (args.get("distributor") or "").strip()
+    where = [
+        "from_date IS NOT NULL", "to_date IS NOT NULL",
+        "NOT (EXTRACT(day FROM CAST(from_date AS DATE)) = 1 "
+        "AND CAST(to_date AS DATE) = (date_trunc('month', CAST(to_date AS DATE)) + INTERVAL 1 MONTH - INTERVAL 1 DAY))",
+        f"(CAST(to_date AS DATE) BETWEEN CURRENT_DATE AND CURRENT_DATE + {days} "
+        f"OR CAST(from_date AS DATE) BETWEEN CURRENT_DATE AND CURRENT_DATE + {days})",
+    ]
+    params = []
+    if dist:
+        where.append("LOWER(wholesaler) = LOWER(?)")
+        params.append(dist)
+    try:
+        df = con.execute(
+            "WITH latest AS (SELECT wholesaler, MAX(edition) ed FROM cpl GROUP BY wholesaler) "
+            "SELECT c.wholesaler, c.product_name, CAST(c.upc AS VARCHAR) upc, c.unit_volume, c.unit_qty, "
+            "CAST(c.from_date AS DATE) f, CAST(c.to_date AS DATE) t, "
+            "c.frontline_case_price fcp, c.best_case_price bcp, "
+            "date_diff('day', CURRENT_DATE, CAST(c.from_date AS DATE)) starts_in, "
+            "date_diff('day', CURRENT_DATE, CAST(c.to_date AS DATE)) ends_in "
+            "FROM cpl c JOIN latest l ON c.wholesaler=l.wholesaler AND c.edition=l.ed "
+            f"WHERE {' AND '.join(where)} ORDER BY t ASC LIMIT 200", params).fetchdf()
+    except Exception as e:
+        return {"error": f"{type(e).__name__}"}
+    seen, out = set(), []
+    for _, r in df.iterrows():
+        key = (r["wholesaler"], str(r["upc"]).lstrip("0"), str(r["f"]), str(r["t"]))
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            si, ei = int(r["starts_in"]), int(r["ends_in"])
+        except (TypeError, ValueError):
+            continue
+        if si > 0:
+            reminder = f"Starts in {si} day{'s' if si != 1 else ''}"
+        elif ei >= 0:
+            reminder = f"Ends in {ei} day{'s' if ei != 1 else ''}"
+        else:
+            continue
+        out.append({"product_name": r["product_name"], "wholesaler": r["wholesaler"],
+                    "upc": str(r["upc"]), "unit_volume": r["unit_volume"], "unit_qty": r["unit_qty"],
+                    "from": str(r["f"])[:10], "to": str(r["t"])[:10],
+                    "starts_in_days": max(si, 0), "ends_in_days": ei, "reminder": reminder,
+                    "effective_case_price": _num(r["bcp"]), "frontline_case_price": _num(r["fcp"])})
+        if len(out) >= 40:
+            break
+    return out
+
+
 _DATA_TOOLS = {
     "category_breakdown": (_t_category_breakdown, "Product counts and average case price per category (current edition)."),
     "rip_lookup": (_t_rip_lookup, "RIP rebate lookup by brand/product NAME (e.g. 'sutter home') or by a RIP code. A UPC can have MULTIPLE codes and codes differ BY DISTRIBUTOR; returns matched products (each with all its codes), a by_distributor code map, and per-code tiers + description + product count. Use for any 'what RIP / rebate / RIP code' question."),
@@ -1225,6 +1281,7 @@ _DATA_TOOLS = {
     "build_assortment": (_t_build_assortment, "ASSORTMENT BUILDER: a curated priced shortlist for a natural-language brief (q), honoring max_bottle_price / max_case_price (+ optional category/varietal/region). Use for 'build a by-the-glass list of cool-climate pinots under $18/btl', 'a value bourbon well', 'a sparkling list under $X'. Returns product cards."),
     "find_substitute": (_t_find_substitute, "SUBSTITUTION FINDER: given a product that's gone or too pricey (match), the closest in-stock alternatives by style/category at a similar-or-lower price (optional max_case_price). Use for 'X is too expensive, what's a close swap', 'alternative to Y', 'something like Z but cheaper'."),
     "build_budget_basket": (_t_build_budget_basket, "BUDGET BASKET: build the best order that fits a $ budget (required `budget`), greedily from the top deals by GP% (rank_by='gp', default) or total savings (rank_by='savings'), optional category/distributor. Returns the basket + total spend, total savings, remaining. Use for 'build me a $5,000 order, best margins', 'fill a $2k tequila order with the deepest discounts'."),
+    "dated_deal_reminders": (_t_dated_deal_reminders, "DATED-DEAL REMINDERS: dated (sub-month) promos whose window STARTS or ENDS within `within_days` (default 7), optional distributor — the easy-to-miss short windows, tagged 'Starts/Ends in N days'. Use for 'what deals start or end soon', 'any short-window deals this week', 'expiring deals'."),
     "semantic_search": (_t_semantic_search, "FREE-TEXT semantic search over the enrichment corpus. USE this for descriptive natural-language queries that DON'T map to a region/varietal slot — 'old vine zinfandel from a cool climate', 'small-producer natural orange wine', 'high altitude napa cabernet', 'biodynamic Burgundy', 'rare single barrel bourbon from kentucky', 'small batch japanese whisky'. Args: q (the user's phrase), limit (default 12), product_type (optional narrowing). Returns ranked product cards (product_name, wholesaler, upc, prices, score). Prefer region/varietal slots when they match; fall back to this for the long tail."),
 }
 
@@ -2176,7 +2233,9 @@ _SYSTEM = (
     "cheaper': pass match=<product>; present the closest in-stock alternatives at a similar-or-lower price. "
     "build_budget_basket — 'build me a $X order with the best margins / deepest discounts': pass budget (+ "
     "optional category/distributor, rank_by gp|savings); present the basket, total spend, total savings and "
-    "remaining budget, then offer to add it all to cart."
+    "remaining budget, then offer to add it all to cart. "
+    "dated_deal_reminders — 'what deals start or end soon', 'short-window/expiring deals this week': pass "
+    "within_days (default 7); present them tagged Starts/Ends in N days, soonest first."
 )
 
 

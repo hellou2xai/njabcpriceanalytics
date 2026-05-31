@@ -366,6 +366,41 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
      hidden behind it when the chat is open. (0 when the dock is closed.) */
   right: var(--global-dock-w, 0);
 }
+
+/* ---- App confirm/prompt dialog (replaces native window.confirm/prompt) ---- */
+.app-dialog-overlay {
+  position: fixed; inset: 0; background: rgba(15,23,42,0.55);
+  display: flex; align-items: center; justify-content: center; z-index: 4000;
+  padding: 16px; animation: appDialogFade 0.12s ease-out;
+}
+@keyframes appDialogFade { from { opacity: 0; } to { opacity: 1; } }
+.app-dialog {
+  position: relative; width: 100%; max-width: 440px;
+  background: var(--surface, #fff); color: var(--text, #0f172a);
+  border: 1px solid var(--border, #e2e8f0); border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.28); padding: 22px 22px 18px;
+  animation: appDialogPop 0.14s ease-out;
+}
+@keyframes appDialogPop { from { transform: translateY(8px) scale(0.98); opacity: 0; } to { transform: none; opacity: 1; } }
+.app-dialog-x {
+  position: absolute; top: 12px; right: 12px; background: none; border: 0;
+  color: var(--text-muted); cursor: pointer; padding: 4px; border-radius: 6px; line-height: 0;
+}
+.app-dialog-x:hover { background: var(--surface-2, #f1f5f9); color: var(--text); }
+.app-dialog-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.app-dialog-icon { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 999px; flex-shrink: 0; }
+.app-dialog-icon-danger { background: #fee2e2; color: #b91c1c; }
+.app-dialog-title { margin: 0; font-size: 16px; font-weight: 700; }
+.app-dialog-msg { font-size: 13.5px; color: var(--text-muted); line-height: 1.5; white-space: pre-line; margin: 2px 0 14px; }
+.app-dialog-input {
+  width: 100%; box-sizing: border-box; padding: 9px 11px; font-size: 14px;
+  border: 1px solid var(--border); border-radius: 8px; margin: 0 0 16px;
+  background: var(--bg, #fff); color: var(--text);
+}
+.app-dialog-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.app-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.btn-danger { background: #dc2626; border: 1px solid #dc2626; color: #fff; }
+.btn-danger:hover { filter: brightness(1.06); }
 /* Draggable handle for the product modal (drag to move it out of the way). */
 .modal-drag-handle {
   position: absolute; top: 6px; left: 50%; transform: translateX(-50%);

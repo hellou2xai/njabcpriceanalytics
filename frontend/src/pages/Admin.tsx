@@ -5,6 +5,7 @@ import { Trash2, RefreshCw, UserCheck, UserX, X, Activity, Sparkles } from 'luci
 import { admin, feedback, settings, share, type BlurbGenerateResult } from '../lib/api';
 import { setShareContentCache } from '../lib/share';
 import { useAuth } from '../contexts/AuthContext';
+import { useDialog } from '../components/Dialog';
 
 const fieldStyle: React.CSSProperties = {
   padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
@@ -151,6 +152,7 @@ function UserDetailModal({ id, onClose }: { id: number; onClose: () => void }) {
 
 export default function Admin() {
   const { user } = useAuth();
+  const { confirm } = useDialog();
   const isAdmin = !!user?.is_admin;
   const qc = useQueryClient();
   const [reloadMsg, setReloadMsg] = useState('');
@@ -342,8 +344,8 @@ export default function Admin() {
                   )}
                   <button className="btn-icon" title={u.is_admin ? 'Admins cannot be deleted here' : 'Delete user and all their data'}
                           disabled={u.id === user?.id || u.is_admin || deleteUserMut.isPending}
-                          onClick={() => {
-                            if (window.confirm(`Delete ${u.email} and all of their data? This cannot be undone.`)) {
+                          onClick={async () => {
+                            if (await confirm({ title: `Delete ${u.email}?`, message: 'This permanently removes the user and all of their data. This cannot be undone.', confirmText: 'Delete user', danger: true })) {
                               deleteUserMut.mutate(u.id);
                             }
                           }}>

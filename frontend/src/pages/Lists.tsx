@@ -6,6 +6,7 @@ import { ContextMenuProvider } from '../components/ContextMenu';
 import { useProductQuickView } from '../components/ProductQuickView';
 import ProductThumb from '../components/ProductThumb';
 import { distributorName } from '../lib/distributors';
+import { useDialog } from '../components/Dialog';
 
 const LIST_RIP_GROUP_KEY = 'celr_lists_group_by_rip';
 function ripHueLocal(code: string): number {
@@ -16,6 +17,7 @@ function ripHueLocal(code: string): number {
 
 export default function Lists() {
   const qc = useQueryClient();
+  const { confirm, promptText } = useDialog();
   const { open } = useProductQuickView();
   const { data: lists } = useQuery({ queryKey: ['lists'], queryFn: listsApi.list });
   const [activeId, setActiveId] = useState<number | null>(null);
@@ -114,7 +116,7 @@ export default function Lists() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <strong>My lists</strong>
             <button className="btn btn-secondary btn-sm" data-tour="lists-new" title="New list"
-              onClick={() => { const n = prompt('New list name'); if (n) createList.mutate(n); }}><Plus size={14} /></button>
+              onClick={async () => { const n = await promptText({ title: 'New list', placeholder: 'List name', confirmText: 'Create' }); if (n) createList.mutate(n); }}><Plus size={14} /></button>
           </div>
           {(lists ?? []).map(l => (
             <div key={l.id}
@@ -138,9 +140,9 @@ export default function Lists() {
                 <strong>{detail?.name}</strong>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button className="btn btn-secondary btn-sm" title="Rename"
-                    onClick={() => { const n = prompt('Rename list', detail?.name); if (n) renameList.mutate({ id: activeId, name: n }); }}><Pencil size={14} /></button>
+                    onClick={async () => { const n = await promptText({ title: 'Rename list', defaultValue: detail?.name, confirmText: 'Rename' }); if (n) renameList.mutate({ id: activeId, name: n }); }}><Pencil size={14} /></button>
                   <button className="btn btn-secondary btn-sm" title="Delete list"
-                    onClick={() => { if (confirm('Delete this list?')) deleteList.mutate(activeId); }}><Trash2 size={14} /></button>
+                    onClick={async () => { if (await confirm({ title: 'Delete this list?', message: 'The list and its saved items will be removed.', confirmText: 'Delete', danger: true })) deleteList.mutate(activeId); }}><Trash2 size={14} /></button>
                 </div>
               </div>
 

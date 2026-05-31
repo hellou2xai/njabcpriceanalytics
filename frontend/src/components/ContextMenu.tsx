@@ -6,6 +6,7 @@ import { watchlist, todos, lists as listsApi, cart as cartApi } from '../lib/api
 import { distributorName } from '../lib/distributors';
 import { useProductQuickView } from './ProductQuickView';
 import { useWebPriceSearch } from './WebPriceSearch';
+import { useDialog } from './Dialog';
 
 interface MenuProduct {
   product_name: string;
@@ -79,6 +80,7 @@ export function ContextMenuProvider({ children }: Props) {
   const [todoDraft, setTodoDraft] = useState<{ product: MenuProduct; source: string } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const qc = useQueryClient();
+  const { promptText } = useDialog();
   const location = useLocation();
   const { open } = useProductQuickView();
   const webSearch = useWebPriceSearch();
@@ -124,7 +126,7 @@ export function ContextMenuProvider({ children }: Props) {
   // Create a new list, then add this product to it.
   const createListAndAdd = useMutation({
     mutationFn: async () => {
-      const name = (typeof window !== 'undefined' && window.prompt('New list name')) || '';
+      const name = (await promptText({ title: 'New list', placeholder: 'List name', confirmText: 'Create' })) || '';
       if (!name.trim()) return;
       const created = await listsApi.create(name.trim());
       await listsApi.addItem(created.id, _prod());

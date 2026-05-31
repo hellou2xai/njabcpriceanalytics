@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ThumbsUp, ThumbsDown, Trash2 } from 'lucide-react';
 import { admin } from '../lib/api';
+import { useDialog } from '../components/Dialog';
 
 // Admin-only: every "good"/"bad" rating users have clicked on an AI assistant
 // reply, with the user's free-text reason on "bad" so the team can read what
@@ -15,6 +16,7 @@ function todayISO(offsetDays = 0): string {
 const num = (v?: number | null) => (Number(v) || 0).toLocaleString();
 
 export default function AdminAiFeedback() {
+  const { confirm } = useDialog();
   const [from, setFrom] = useState(todayISO(-29));
   const [to, setTo] = useState(todayISO(0));
   const [rating, setRating] = useState<'' | 'good' | 'bad'>('');
@@ -156,7 +158,7 @@ export default function AdminAiFeedback() {
                     </td>
                     <td>
                       <button className="btn btn-sm btn-secondary" title="Delete this rating"
-                              onClick={() => { if (confirm('Delete this rating?')) del.mutate(r.id); }}>
+                              onClick={async () => { if (await confirm({ title: 'Delete this rating?', confirmText: 'Delete', danger: true })) del.mutate(r.id); }}>
                         <Trash2 size={13} />
                       </button>
                     </td>

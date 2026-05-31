@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ListPlus, Check } from 'lucide-react';
 import { lists } from '../lib/api';
+import { useDialog } from './Dialog';
 
 interface Props {
   productName: string;
@@ -19,6 +20,7 @@ interface Props {
  */
 export default function AddToListButton({ productName, wholesaler, upc, unitVolume, comboCode }: Props) {
   const qc = useQueryClient();
+  const { promptText } = useDialog();
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const [flash, setFlash] = useState(false);
@@ -50,7 +52,7 @@ export default function AddToListButton({ productName, wholesaler, upc, unitVolu
   };
 
   const newList = async () => {
-    const name = window.prompt('Name for the new list:');
+    const name = await promptText({ title: 'New list', placeholder: 'List name', confirmText: 'Create' });
     if (!name || !name.trim()) return;
     const l = await lists.create(name.trim());
     await addTo(l.id);

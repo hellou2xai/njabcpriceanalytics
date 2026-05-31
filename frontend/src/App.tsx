@@ -8,6 +8,7 @@ import { WebPriceSearchProvider } from './components/WebPriceSearch';
 import { DistributorProvider } from './contexts/DistributorContext';
 import { OrderAnalysisProvider } from './contexts/OrderAnalysisContext';
 import { ResultCountProvider } from './lib/resultCount';
+import { DialogProvider } from './components/Dialog';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import FeedbackWidget, { BetaBadge } from './components/FeedbackWidget';
 import Layout from './components/Layout';
@@ -96,6 +97,7 @@ function AuthenticatedApp() {
   return (
     <DistributorProvider>
     <QueryClientProvider client={queryClient}>
+    <DialogProvider>
       <BetaBadge inApp />
       <FeedbackWidget />
       <StoreGate>
@@ -158,6 +160,7 @@ function AuthenticatedApp() {
       </ProductQuickViewProvider>
       </OrderAnalysisProvider>
       </StoreGate>
+    </DialogProvider>
     </QueryClientProvider>
     </DistributorProvider>
   );

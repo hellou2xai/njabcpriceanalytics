@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Trash2, Clock, Send, ShoppingCart, Plus, Search, ArrowUpFromLine, Eraser } from 'lucide-react';
 import { cart as cartApi, salesReps as repsApi, catalog, type CartItem, type Product } from '../lib/api';
 import ProductThumb from '../components/ProductThumb';
+import { useDialog } from '../components/Dialog';
 import { shortUnit } from '../components/CatalogTable';
 import { distributorName } from '../lib/distributors';
 
@@ -193,6 +194,7 @@ const RIP_GROUP_KEY = 'celr_cart_group_by_rip';
 
 export default function Cart() {
   const qc = useQueryClient();
+  const { confirm } = useDialog();
   const [result, setResult] = useState<string | null>(null);
   const [groupByRip, setGroupByRip] = useState<boolean>(() => localStorage.getItem(RIP_GROUP_KEY) === '1');
   const toggleGroupByRip = (on: boolean) => {
@@ -356,11 +358,14 @@ export default function Cart() {
             className="btn btn-secondary"
             disabled={active.length === 0 || clearActive.isPending}
             title="Remove every item in the cart. Saved-for-later items stay put."
-            onClick={() => {
+            onClick={async () => {
               const n = active.length;
-              const msg = `Clear all ${n} item${n === 1 ? '' : 's'} from the cart?\n\n`
-                + `This cannot be undone. Items you've Saved for later will remain.`;
-              if (window.confirm(msg)) {
+              const ok = await confirm({
+                title: `Clear all ${n} item${n === 1 ? '' : 's'} from the cart?`,
+                message: "This cannot be undone. Items you've Saved for later will remain.",
+                confirmText: 'Clear cart', danger: true,
+              });
+              if (ok) {
                 setResult(null);
                 clearActive.mutate();
               }

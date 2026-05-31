@@ -1169,6 +1169,43 @@ def _t_find_substitute(con, args):
             "price_ceiling_case": ceil_cs, "alternatives": out}
 
 
+def _t_build_budget_basket(con, args):
+    """BUDGET BASKET: build the best order that fits a $ budget. Greedily fills
+    from the top-ranked deals (by GP% or total savings, with the stocking floor
+    on) at 1 case each until the budget is reached. Optional category/distributor.
+    Returns the basket + total spend, total savings, and remaining budget."""
+    budget = _num(args.get("budget"))
+    if not budget or budget <= 0:
+        return {"error": "provide a positive `budget`"}
+    rank = (args.get("rank_by") or "gp").lower()
+    kind = "savings" if rank in ("savings", "save", "saving") else "gp_pct"
+    try:
+        rows = _pricing.rank_best_deals(
+            con, kind, category=(args.get("category") or None),
+            distributor=(args.get("distributor") or None),
+            min_effective_pct_of_frontline=_STOCKING_FLOOR_PCT, limit=300)
+    except Exception as e:
+        return {"error": f"{type(e).__name__}"}
+    basket, spent, saved = [], 0.0, 0.0
+    for r in rows:
+        eff = _num(r.get("effective_case_price"))
+        if eff is None or eff <= 0 or spent + eff > budget:
+            continue
+        basket.append({k: r.get(k) for k in ("product_name", "wholesaler", "upc", "unit_volume", "unit_qty",
+                                             "vintage", "effective_case_price", "frontline_case_price")}
+                      | {"cases": 1})
+        spent += eff
+        sv = _num(r.get("total_savings_per_case"))
+        if sv:
+            saved += sv
+        if spent >= budget * 0.985 or len(basket) >= 60:
+            break
+    return {"budget": round(budget, 2), "line_count": len(basket),
+            "total_spend": round(spent, 2), "total_savings": round(saved, 2),
+            "remaining": round(budget - spent, 2), "ranked_by": kind, "basket": basket,
+            "note": "Add all with perform_action(type=add_to_cart) on each, or refine the brief."}
+
+
 _DATA_TOOLS = {
     "category_breakdown": (_t_category_breakdown, "Product counts and average case price per category (current edition)."),
     "rip_lookup": (_t_rip_lookup, "RIP rebate lookup by brand/product NAME (e.g. 'sutter home') or by a RIP code. A UPC can have MULTIPLE codes and codes differ BY DISTRIBUTOR; returns matched products (each with all its codes), a by_distributor code map, and per-code tiers + description + product count. Use for any 'what RIP / rebate / RIP code' question."),
@@ -1187,6 +1224,7 @@ _DATA_TOOLS = {
     "closeouts": (_t_closeouts, "Closeout / last-chance buys being cleared this edition (won't return next month), ranked by savings. Optional category, distributor. Use for 'closeouts', 'last chance', 'what's being discontinued/cleared'."),
     "build_assortment": (_t_build_assortment, "ASSORTMENT BUILDER: a curated priced shortlist for a natural-language brief (q), honoring max_bottle_price / max_case_price (+ optional category/varietal/region). Use for 'build a by-the-glass list of cool-climate pinots under $18/btl', 'a value bourbon well', 'a sparkling list under $X'. Returns product cards."),
     "find_substitute": (_t_find_substitute, "SUBSTITUTION FINDER: given a product that's gone or too pricey (match), the closest in-stock alternatives by style/category at a similar-or-lower price (optional max_case_price). Use for 'X is too expensive, what's a close swap', 'alternative to Y', 'something like Z but cheaper'."),
+    "build_budget_basket": (_t_build_budget_basket, "BUDGET BASKET: build the best order that fits a $ budget (required `budget`), greedily from the top deals by GP% (rank_by='gp', default) or total savings (rank_by='savings'), optional category/distributor. Returns the basket + total spend, total savings, remaining. Use for 'build me a $5,000 order, best margins', 'fill a $2k tequila order with the deepest discounts'."),
     "semantic_search": (_t_semantic_search, "FREE-TEXT semantic search over the enrichment corpus. USE this for descriptive natural-language queries that DON'T map to a region/varietal slot — 'old vine zinfandel from a cool climate', 'small-producer natural orange wine', 'high altitude napa cabernet', 'biodynamic Burgundy', 'rare single barrel bourbon from kentucky', 'small batch japanese whisky'. Args: q (the user's phrase), limit (default 12), product_type (optional narrowing). Returns ranked product cards (product_name, wholesaler, upc, prices, score). Prefer region/varietal slots when they match; fall back to this for the long tail."),
 }
 
@@ -2135,7 +2173,10 @@ _SYSTEM = (
     "build_assortment — 'build me a <brief> under $X/btl' / 'a value bourbon well' / 'a by-the-glass list': pass "
     "q=<the brief> plus max_bottle_price / max_case_price (and category/varietal/region if clear); present the "
     "curated picks. find_substitute — 'X is too pricey / gone, what's a close swap' / 'something like Y but "
-    "cheaper': pass match=<product>; present the closest in-stock alternatives at a similar-or-lower price."
+    "cheaper': pass match=<product>; present the closest in-stock alternatives at a similar-or-lower price. "
+    "build_budget_basket — 'build me a $X order with the best margins / deepest discounts': pass budget (+ "
+    "optional category/distributor, rank_by gp|savings); present the basket, total spend, total savings and "
+    "remaining budget, then offer to add it all to cart."
 )
 
 
@@ -2523,6 +2564,8 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                             _collect(out["comparison"])
                         if isinstance(out, dict) and isinstance(out.get("alternatives"), list):
                             _collect(out["alternatives"])
+                        if isinstance(out, dict) and isinstance(out.get("basket"), list):
+                            _collect(out["basket"])
                         if b.name in ("price_details", "deal_360") and isinstance(out, dict) and not out.get("error"):
                             price_detail_result = out
                             _collect([out])   # also show the product as a card

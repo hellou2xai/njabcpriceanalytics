@@ -125,6 +125,13 @@ if mcp:
         with get_duckdb() as con:
             return _eng._t_find_deals(con, {"kind": kind, "limit": limit}, {})
 
+    @mcp.tool()
+    def rip_lookup(match: str = "", rip_code: str = "") -> dict:
+        """RIP rebate lookup by brand/product name (e.g. 'sutter home') or RIP code.
+        Returns the code(s), each rebate's tiers + description, and product count."""
+        with get_duckdb() as con:
+            return _eng._t_rip_lookup(con, {"match": match, "rip_code": rip_code})
+
     # --------------------------- action tools ---------------------------
 
     @mcp.tool()

@@ -44,12 +44,17 @@ class Region:
     `description_terms` are looser substrings searched inside the enrichment
     description field — useful when the name is opaque ("Schrader CCS 2018")
     but the description spells out "Napa Valley".
+    `category_path_terms` are matched against product_enrichment.category_path
+    (the structured Go-UPC taxonomy). Use this when a Region maps cleanly to
+    a Go-UPC category leaf — e.g. region=champagne always implies category
+    contains "Sparkling Wine" or similar.
     """
 
     key: str
     label: str
     tokens: tuple[str, ...]
     description_terms: tuple[str, ...] = field(default_factory=tuple)
+    category_path_terms: tuple[str, ...] = field(default_factory=tuple)
     auto_product_type: Optional[str] = None
 
 
@@ -151,6 +156,9 @@ _REGIONS: dict[str, Region] = {
         tokens=("CHAMPAGNE", "EPERNAY", "REIMS", "MONTAGNE DE REIMS",
                 "COTE DES BLANCS"),
         description_terms=("champagne",),
+        # Go-UPC sometimes routes champagne under either Wine or Sparkling
+        # depending on grocer source; both work as category_path leaves.
+        category_path_terms=("Champagne",),
         auto_product_type="Sparkling",
     ),
     "italy": Region(
@@ -236,6 +244,10 @@ _REGIONS: dict[str, Region] = {
         label="Kentucky",
         tokens=("KENTUCKY", "BOURBON",),
         description_terms=("kentucky bourbon", "kentucky straight"),
+        # Bourbon is American whiskey by definition; pin the category leaf so
+        # "region=kentucky" still matches brand-only product names that don't
+        # spell out KENTUCKY (e.g. BUFFALO TRACE, BLANTON'S, MAKER'S MARK).
+        category_path_terms=("Whiskey",),
         auto_product_type="Spirits",
     ),
     "scotland": Region(
@@ -244,6 +256,7 @@ _REGIONS: dict[str, Region] = {
         tokens=("SCOTCH", "SCOTLAND", "ISLAY", "SPEYSIDE", "HIGHLAND",
                 "LOWLAND", "CAMPBELTOWN"),
         description_terms=("scotch", "scotland", "islay", "speyside"),
+        category_path_terms=("Whiskey",),
         auto_product_type="Spirits",
     ),
     "ireland": Region(
@@ -251,6 +264,7 @@ _REGIONS: dict[str, Region] = {
         label="Ireland",
         tokens=("IRISH", "IRELAND", "JAMESON", "BUSHMILLS"),
         description_terms=("irish whiskey", "ireland"),
+        category_path_terms=("Whiskey",),
         auto_product_type="Spirits",
     ),
     "japan": Region(
@@ -259,6 +273,7 @@ _REGIONS: dict[str, Region] = {
         tokens=("JAPANESE", "JAPAN", "HAKUSHU", "HIBIKI",
                 "YAMAZAKI", "NIKKA", "SUNTORY"),
         description_terms=("japanese whisky", "japan"),
+        category_path_terms=("Whiskey",),
         auto_product_type="Spirits",
     ),
     "mexico": Region(
@@ -266,6 +281,7 @@ _REGIONS: dict[str, Region] = {
         label="Mexico",
         tokens=("MEXICAN", "MEXICO", "JALISCO", "OAXACA"),
         description_terms=("mexican", "tequila", "mezcal"),
+        category_path_terms=("Tequila",),
         auto_product_type="Spirits",
     ),
 }
@@ -348,19 +364,33 @@ def build_region_filter(
         return None, {}, None
     parts: list[str] = []
     params: dict = {}
+    rkey = region.key.replace(" ", "_").replace("-", "_")
     for i, tok in enumerate(region.tokens):
-        key = f"rgn_{region.key}_n_{i}"
+        key = f"rgn_{rkey}_n_{i}"
         params[key] = f"%{tok}%"
         parts.append(f"UPPER({name_col}) LIKE ${key}")
     if region.description_terms:
         # Subquery joining to product_enrichment by leading-zero-normalised UPC.
         for i, term in enumerate(region.description_terms):
-            key = f"rgn_{region.key}_d_{i}"
+            key = f"rgn_{rkey}_d_{i}"
             params[key] = f"%{term}%"
             parts.append(
                 f"EXISTS (SELECT 1 FROM product_enrichment pe "
                 f"WHERE LTRIM(CAST(pe.upc AS VARCHAR), '0') = LTRIM(CAST({upc_col} AS VARCHAR), '0') "
                 f"AND LOWER(COALESCE(pe.description, '')) LIKE ${key})"
+            )
+    if region.category_path_terms:
+        # Match against the Go-UPC structured category path. category_path is
+        # stored as a JSON-array text like
+        # '["Food, Beverages & Tobacco", "Beverages", ..., "Whiskey"]'
+        # so a substring match like '%"Whiskey"%' picks the leaf cleanly.
+        for i, term in enumerate(region.category_path_terms):
+            key = f"rgn_{rkey}_c_{i}"
+            params[key] = f'%"{term}"%'
+            parts.append(
+                f"EXISTS (SELECT 1 FROM product_enrichment pe "
+                f"WHERE LTRIM(CAST(pe.upc AS VARCHAR), '0') = LTRIM(CAST({upc_col} AS VARCHAR), '0') "
+                f"AND pe.category_path LIKE ${key})"
             )
     if not parts:
         return None, {}, None

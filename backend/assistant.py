@@ -682,6 +682,31 @@ def ask(question: str, history: list | None = None, user: dict | None = None, pa
                 "charts": [], "actions": [], "products": [],
                 "usage": {"input_tokens": 0, "output_tokens": 0, "model": "none", "cost_usd": 0.0, "enabled": enabled()}}
 
+    # Deterministic UPC fast-path: a message that is essentially just a barcode
+    # (with no price/compare/RIP intent) ALWAYS locates the product on the main
+    # screen — no model call, so it can't get answered in chat by mistake, and
+    # it works even when the AI is offline. Detail intents fall through to the
+    # model (which uses price_details / compare_distributors / rip_lookup).
+    _nospace = re.sub(r"[\s\-]", "", question)
+    _upc_m = re.search(r"\d{11,14}", _nospace)
+    _detail_kw = ("price", "cost", "compare", "rip", "rebate", "tier", "breakdown",
+                  "history", "margin", "detail", "waterfall", "best buy", "vs ")
+    if _upc_m and not any(k in question.lower() for k in _detail_kw):
+        upc = _upc_m.group(0)
+        try:
+            with get_duckdb() as con:
+                hit = _resolve_products(con, {}, upc, "first", 1)
+        except Exception:
+            hit = []
+        zero = {"input_tokens": 0, "output_tokens": 0, "model": "rule", "cost_usd": 0.0, "enabled": enabled()}
+        if hit:
+            return {"answer": f"Showing **{hit[0].get('product_name')}** on screen. Anything else I can help with?",
+                    "charts": [], "actions": [], "products": [],
+                    "screen": {"path": f"/catalog?q={upc}", "label": hit[0].get("product_name") or upc},
+                    "usage": zero}
+        return {"answer": f"Product not found for UPC {upc}. Anything else I can help with?",
+                "charts": [], "actions": [], "products": [], "screen": None, "usage": zero}
+
     client = _client_or_none()
     if client is None:
         return _fallback(question)

@@ -699,11 +699,13 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                               <QtyStepper label="Case" value={qty.cases} onChange={v => updateQty(cartKey, 'cases', v)} />
                               <QtyStepper label="Btl" value={qty.units} onChange={v => updateQty(cartKey, 'units', v)} />
                             </div>
-                            <AddToCartButton productName={item.product_name} wholesaler={item.wholesaler}
-                              upc={item.upc} unitVolume={item.unit_volume}
-                              qtyCases={qty.cases} qtyUnits={qty.units} />
-                            <AddToListButton productName={item.product_name} wholesaler={item.wholesaler}
-                              upc={item.upc} unitVolume={item.unit_volume} />
+                            <div className="catalog-order-actions">
+                              <AddToCartButton productName={item.product_name} wholesaler={item.wholesaler}
+                                upc={item.upc} unitVolume={item.unit_volume}
+                                qtyCases={qty.cases} qtyUnits={qty.units} />
+                              <AddToListButton productName={item.product_name} wholesaler={item.wholesaler}
+                                upc={item.upc} unitVolume={item.unit_volume} />
+                            </div>
                           </div>
                         )}
                       </div>
@@ -886,11 +888,13 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                                 <QtyStepper label="Case" value={qty.cases} onChange={v => updateQty(cartKey, 'cases', v)} />
                                 <QtyStepper label="Btl" value={qty.units} onChange={v => updateQty(cartKey, 'units', v)} />
                               </div>
-                              <AddToCartButton productName={item.product_name} wholesaler={item.wholesaler}
-                                upc={item.upc} unitVolume={item.unit_volume}
-                                qtyCases={qty.cases} qtyUnits={qty.units} />
-                              <AddToListButton productName={item.product_name} wholesaler={item.wholesaler}
-                                upc={item.upc} unitVolume={item.unit_volume} />
+                              <div className="catalog-order-actions">
+                                <AddToCartButton productName={item.product_name} wholesaler={item.wholesaler}
+                                  upc={item.upc} unitVolume={item.unit_volume}
+                                  qtyCases={qty.cases} qtyUnits={qty.units} />
+                                <AddToListButton productName={item.product_name} wholesaler={item.wholesaler}
+                                  upc={item.upc} unitVolume={item.unit_volume} />
+                              </div>
                               <span className="catalog-order-hint"
                                     title="Type any quantity. The best applicable tier from the ladder on the right is applied automatically.">
                                 best tier auto-applies

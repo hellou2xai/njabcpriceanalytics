@@ -593,6 +593,17 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
   padding: 5px 11px; font-size: 12px; line-height: 1.3; border-radius: 6px;
 }
 
+/* Stack the two order actions uniformly: Add to cart on top, Add to list below,
+   both the SAME width, sitting as one block next to the Case/Btl steppers (no
+   more side-by-side-vs-misaligned-wrap depending on row width). */
+.catalog-order-actions {
+  display: flex; flex-direction: column; gap: 5px; min-width: 132px;
+}
+.catalog-order-actions > .add-to-cart-btn,
+.catalog-order-actions > .add-to-list-btn {
+  width: 100%; justify-content: center;
+}
+
 /* Inline order action block: Case/Btl steppers + Add to cart + Add to list,
    used under each product row on Catalog, RIP Products, and Combos. Given a
    subtle surface tint + padding so the block reads as one cohesive action

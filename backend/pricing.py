@@ -416,16 +416,32 @@ def attach_tiers(con, records) -> None:
                 "is_time_sensitive": cpl_ts,
             })
 
-        # RIP tiers (dedup by qty+unit+amount). RIPs STACK with the applicable
-        # case discount (case-unit RIP) or with whatever case-equivalent
-        # discount the bottle-unit RIP threshold also clears - buying 60 btl
-        # at pack 12 means you've also bought 5 cs, so a 5cs-threshold case
-        # discount applies on top of the bottle RIP.
+        # RIP tiers. When a CPL row matches MULTIPLE RIP codes (e.g. fedway's
+        # "10604 120001"), each code can contribute its own ladder — including
+        # tiers at the same qty. derive.py keeps the BEST rebate per SKU via
+        # MAX(code_best_rip); the runtime tier ladder must do the same or the
+        # popover renders e.g. two "Buy 5 cs" rows with different amounts and
+        # confuses the buyer. Dedupe by (qty, unit) keeping the highest
+        # amount; non-time-sensitive rows win over time-sensitive ones at the
+        # same qty so partial-window noise doesn't shadow the real tier.
         rips_raw = _lookup_rips(rec)
+        best_by_qty: dict = {}
+        for t in rips_raw:
+            key = (t["qty"], (t["unit"] or "").lower())
+            cur = best_by_qty.get(key)
+            cur_ts = bool(cur and cur.get("is_time_sensitive"))
+            new_ts = bool(t.get("is_time_sensitive"))
+            replace = (
+                cur is None
+                or (cur_ts and not new_ts)
+                or (cur_ts == new_ts and float(t["amount"]) > float(cur["amount"]))
+            )
+            if replace:
+                best_by_qty[key] = t
         seen = set()
         rips = []
-        for t in rips_raw:
-            sig = (t["qty"], t["unit"].lower(), round(t["amount"], 2))
+        for t in best_by_qty.values():
+            sig = (t["qty"], (t["unit"] or "").lower(), round(t["amount"], 2))
             if sig in seen:
                 continue
             seen.add(sig)

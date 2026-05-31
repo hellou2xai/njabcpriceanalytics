@@ -786,16 +786,22 @@ def _build_plain_explanation(
                 f"Modal list {_fmt_money(data.modal_list_price)} ≠ DB list {_fmt_money(expected_modal_list)}"
             )
 
-    # 5. Modal "Price after RIP" vs the expected calendar-current effective.
-    #    For price-movers, "This month" in the modal = api_row.case_price
-    #    (the source-of-truth for the current edition's effective). For other
-    #    pages, it = expected_eff_db (the row's own edition is current).
+    # 5. Modal "Price after RIP" vs the value the card promised.
+    #    For price-movers the API exposes case_price; for the other pages it
+    #    exposes effective_case_price. Either is the exact number the card
+    #    shows, and the modal's "This month" column should match it. Comparing
+    #    against a DB-derived "best - rip_savings" instead introduced cents-
+    #    to-dollars false fails when the card's deal-edition differed from
+    #    the modal's calendar-current edition.
     if data.modal_opened and data.modal_effective_case is not None:
-        expected_modal_eff = api_row.get("case_price") if is_mover else expected_eff_db
+        if is_mover:
+            expected_modal_eff = api_row.get("case_price")
+        else:
+            expected_modal_eff = api_row.get("effective_case_price")
         if (expected_modal_eff is not None
                 and abs(data.modal_effective_case - expected_modal_eff) > PRICE_TOL):
             problems.append(
-                f"Modal final price {_fmt_money(data.modal_effective_case)} ≠ this-month effective {_fmt_money(expected_modal_eff)}"
+                f"Modal final price {_fmt_money(data.modal_effective_case)} ≠ card-promised final {_fmt_money(expected_modal_eff)}"
             )
 
     if not problems:
@@ -911,21 +917,23 @@ def validate(samples_by_page: dict[str, list[CardData]], db_url: str) -> dict[st
                 db_has_rip = _db_has_rip(con, data.wholesaler, (db_row or {}).get("rip_code") or "", res.edition)
                 res.api_vs_db_rip_savings = _flag_verdict(rip_flag_api, db_has_rip)
 
-                # For price-mover pages the modal's "This month" column shows
-                # the current calendar edition (one before api_row.edition).
-                # Compare against api_row.case_price / prior-edition list to
-                # avoid false fails when the destination edition has different
-                # numbers than the prior (this-month) one.
+                # Modal column-level checks: compare against what the card
+                # actually promises. For movers that's the API's prior-edition
+                # frontline + case_price (which the card shows as 'was'/'now');
+                # for other pages it's the row's effective + frontline.
                 is_mover_page = page_key in ("price-drops", "price-increases")
-                if data.modal_opened:
-                    modal_list_expected = (
-                        api_row.get("frontline_prev_case_price") if (is_mover_page and api_row) else front_db
-                    )
-                    modal_eff_expected = (
-                        api_row.get("case_price") if (is_mover_page and api_row) else eff_api
-                    )
+                if data.modal_opened and api_row:
+                    if is_mover_page:
+                        modal_list_expected = api_row.get("frontline_prev_case_price")
+                        modal_eff_expected = api_row.get("case_price")
+                    else:
+                        modal_list_expected = api_row.get("frontline_case_price")
+                        modal_eff_expected = api_row.get("effective_case_price")
                     res.modal_vs_db_list = _verdict(data.modal_list_price, modal_list_expected, PRICE_TOL)
                     res.modal_vs_api_effective = _verdict(data.modal_effective_case, modal_eff_expected, PRICE_TOL)
+                elif data.modal_opened:
+                    res.modal_vs_db_list = "n/a (no api row)"
+                    res.modal_vs_api_effective = "n/a (no api row)"
                 else:
                     res.modal_vs_db_list = "n/a (no modal)"
                     res.modal_vs_api_effective = "n/a (no modal)"

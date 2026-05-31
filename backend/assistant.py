@@ -45,6 +45,20 @@ _MAX_TURNS = 6
 _STOCKING_FLOOR_PCT = 0.10
 
 
+def _is_stocking_row(r: dict) -> bool:
+    """True for a $0 / near-free 'free-with-purchase' row: effective price is
+    below _STOCKING_FLOOR_PCT of frontline. Rows with no/zero frontline are NOT
+    treated as stocking (we can't judge them), so they pass through."""
+    try:
+        front = r.get("frontline_case_price")
+        eff = r.get("effective_case_price")
+        if front is None or eff is None or float(front) <= 0:
+            return False
+        return float(eff) < float(front) * _STOCKING_FLOOR_PCT
+    except (TypeError, ValueError):
+        return False
+
+
 def _clean(v):
     if v is None or (isinstance(v, float) and math.isnan(v)):
         return None
@@ -102,7 +116,12 @@ def _t_top_products(con, args):
     }
     which = {"cheapest": "cheapest", "expensive": "most_expensive"}.get(args.get("order_by"), "cheapest")
     cap = min(int(args.get("limit") or 10), 25)
-    prods = _resolve_products(con, view, args.get("match") or "", which, cap)
+    # Hide $0 free-with-purchase stocking rows by default (otherwise the
+    # 'cheapest' list is dominated by 100%-off liquidation rows like Beronia
+    # Rose). Opt back in with include_stocking_deals=True.
+    exclude_stocking = not bool(args.get("include_stocking_deals"))
+    prods = _resolve_products(con, view, args.get("match") or "", which, cap,
+                              exclude_stocking=exclude_stocking)
     return prods
 
 
@@ -802,6 +821,11 @@ def _t_distributor_arbitrage(con, args):
         min_pct = 0.0
     where = ["c.effective_case_price IS NOT NULL", "c.effective_case_price > 0",
              "c.upc IS NOT NULL", "LTRIM(CAST(c.upc AS VARCHAR),'0') NOT IN ('', '0')"]
+    # Exclude $0/near-free stocking rows so a free-with-purchase price doesn't
+    # manufacture a fake 'biggest gap' (unless the caller opts in).
+    if not bool(args.get("include_stocking_deals")):
+        where.append(f"(c.frontline_case_price IS NULL OR c.frontline_case_price <= 0 "
+                     f"OR c.effective_case_price >= c.frontline_case_price * {_STOCKING_FLOOR_PCT})")
     params = [cym]
     if cat:
         where.append("UPPER(c.product_type) = UPPER(?)")
@@ -907,11 +931,16 @@ def _t_semantic_search(con, args):
         return []
     try:
         with get_pg() as pg:
-            return _ss(pg, con, q, limit=limit, product_type=pt)
+            rows = _ss(pg, con, q, limit=limit, product_type=pt)
     except Exception as e:
         import logging
         logging.getLogger("assistant").warning("semantic_search failed: %s", e)
         return []
+    # Drop $0/near-free stocking rows so semantic matches don't surface a
+    # free-with-purchase row as '100% off' (unless the caller opts in).
+    if not bool(args.get("include_stocking_deals")):
+        rows = [r for r in (rows or []) if not _is_stocking_row(r)]
+    return rows
 
 
 _DATA_TOOLS = {
@@ -939,21 +968,21 @@ _DATA_TOOLS = {
 
 def _t_find_deals(con, args, ctx):
     """Deals by kind. Delegates to pricing.rank_best_deals so the ranking
-    is the canonical one every surface uses. Stocking-deal floor applies to
-    'discount' and 'clearance' kinds (overridable via include_stocking_deals).
-    'time_sensitive' doesn't apply the floor because dated promos are
-    naturally narrow."""
+    is the canonical one every surface uses. The stocking-deal floor applies to
+    EVERY kind (overridable via include_stocking_deals) so a $0 free-with-purchase
+    row never surfaces as '100% off'."""
     kind_raw = (args.get("kind") or "discount").lower()
     limit = int(args.get("limit") or 10)
     include_stocking = bool(args.get("include_stocking_deals"))
+    floor = None if include_stocking else _STOCKING_FLOOR_PCT
     if kind_raw in ("clearance", "closeout"):
         return _pricing.rank_best_deals(
-            con, kind="closeout",
-            min_effective_pct_of_frontline=None if include_stocking else _STOCKING_FLOOR_PCT,
-            limit=limit,
+            con, kind="closeout", min_effective_pct_of_frontline=floor, limit=limit,
         )
     if kind_raw in ("time_sensitive", "time-sensitive", "ending", "expiring"):
-        return _pricing.rank_best_deals(con, kind="time_sensitive", limit=limit)
+        return _pricing.rank_best_deals(
+            con, kind="time_sensitive", min_effective_pct_of_frontline=floor, limit=limit,
+        )
     # Default: biggest savings.
     return _pricing.rank_best_deals(
         con, kind="savings",
@@ -1092,6 +1121,7 @@ def _tool_specs() -> list:
             "sort": {"type": "string", "enum": ["product_name", "frontline_case_price", "effective_case_price"]},
             "order": {"type": "string", "enum": ["asc", "desc"]},
             "group_by_rip": {"type": "boolean", "description": "Catalog only: group products into Case-Mix RIP clusters with tier ladders + Add-All-to-Cart. Use for 'show RIP / Case Mix' requests."},
+            "price_trend": {"type": "string", "enum": ["increase", "drop"], "description": "Catalog only: narrow to products whose price is going UP ('increase') or DOWN ('drop') in the latest edition. Use for 'only show prices going up / rising / increasing' or 'prices dropping / falling'. Stays on the catalog and filters in place."},
             "window": {"type": "string", "enum": ["partial", "full"], "description": "Time-Sensitive route only: 'partial' = deals that do NOT start on the 1st and end on the last day of the month (true short-window deals); 'full' = full-calendar-month promos."},
             "label": {"type": "string", "description": "Short human label of what's being shown."},
         }, "required": ["route"]},
@@ -1199,7 +1229,8 @@ def _split_categories(values: list) -> tuple[list, list]:
     return cats, leftover
 
 
-def _build_screen(args: dict, page_path: str | None = None) -> dict:
+def _build_screen(args: dict, page_path: str | None = None,
+                  page_query: str | None = None) -> dict:
     """Turn a show_on_screen tool call into a navigable path (+ catalog filters
     encoded as query params the pages already read) and a short label.
 
@@ -1210,7 +1241,7 @@ def _build_screen(args: dict, page_path: str | None = None) -> dict:
     apply (the catalog takes the full filter set; the other grid pages take the
     free-text ?q, and Time-Sensitive also takes ?window). page_path is only
     omitted on the standalone Celar page, which is a full navigator."""
-    from urllib.parse import urlencode
+    from urllib.parse import urlencode, parse_qs
     route = (args.get("route") or "catalog").lower()
     model_base = _SCREEN_ROUTES.get(route, "/catalog")
     base = page_path if (page_path and page_path.startswith("/")) else model_base
@@ -1218,6 +1249,19 @@ def _build_screen(args: dict, page_path: str | None = None) -> dict:
     search_terms: list = []
     if args.get("q"):
         search_terms.append(str(args["q"]).strip())
+    # Follow-up composition: when already on the catalog and this call only
+    # REFINES (e.g. 'only show prices going up') without naming a new scope,
+    # carry forward the current scoping filters so 'California wines' then
+    # 'only show prices going up' stays California. Naming a new scope replaces.
+    sets_scope = bool(args.get("q") or args.get("region") or args.get("varietal")
+                      or args.get("categories") or args.get("distributors"))
+    if base == "/catalog" and page_query and not sets_scope:
+        prior = parse_qs(page_query.lstrip("?"))
+        for k in ("region", "varietal", "categories", "divisions", "sizes",
+                  "hasRip", "hasDiscount", "priceMin", "priceMax", "q",
+                  "group_by_rip"):
+            if prior.get(k):
+                q[k] = prior[k][0]
     if base == "/catalog":
         if isinstance(args.get("categories"), list) and args["categories"]:
             # Smart category handling: keep real product-type categories, but
@@ -1246,6 +1290,16 @@ def _build_screen(args: dict, page_path: str | None = None) -> dict:
             q["order"] = args["order"]
         if args.get("group_by_rip") is True:
             q["group_by_rip"] = "1"   # group products into Case-Mix RIP clusters
+        # 'prices going up / down' -> the catalog's price-trend filter. The
+        # grid reads ?price_increase=1 / ?price_drop=1 and narrows in place,
+        # so the user stays on the catalog instead of jumping to another page.
+        pt = (args.get("price_trend") or "").lower()
+        if pt in ("increase", "up", "rising", "rise"):
+            q["price_increase"] = "1"
+            q.pop("price_drop", None)
+        elif pt in ("drop", "down", "decrease", "falling", "fall"):
+            q["price_drop"] = "1"
+            q.pop("price_increase", None)
     # Semantic hints — region + varietal — apply to ANY route. Today only
     # /catalog actually consumes them server-side (via region_semantics /
     # varietal_semantics), but the URL carries them on other routes too so
@@ -1337,6 +1391,12 @@ _SYSTEM = (
     "WRONG. Examples on Time-Sensitive Deals: 'deals that don't begin and end on the 1st/last of the "
     "month' (i.e. not full-calendar-month deals) -> show_on_screen(route=time_sensitive, window=partial); "
     "'full-month promos' -> window=full; a brand/UPC -> q=<term>. Confirm in one line and offer more help. "
+    "PRICE TREND on the catalog: 'only show prices going up' / 'rising' / 'increasing' -> "
+    "show_on_screen(route=catalog, price_trend=increase); 'prices dropping' / 'falling' -> "
+    "price_trend=drop. FOLLOW-UPS COMPOSE: if the user already narrowed the catalog (e.g. 'California "
+    "wines') and then refines ('only show prices going up'), the prior region/varietal/category filter "
+    "is kept automatically as long as you do NOT pass a new q/region/varietal/category — just pass the "
+    "refinement (price_trend, has_discount, price_max, etc.). Do not restate the old scope. "
     "Use the CHAT WINDOW only for genuinely CONVERSATIONAL questions that a product grid cannot represent: "
     "why/how explanations, recommendations, totals/counts, category or distributor breakdowns, a single "
     "product's full price breakdown, or a head-to-head distributor comparison. For those, use the data "
@@ -1418,8 +1478,36 @@ def _fallback(question: str) -> dict:
     }
 
 
+# Phrases that LIE on the standalone /assistant page (there is NO grid there).
+# The system prompt asks the model to avoid them, but Haiku ignores it, so we
+# scrub deterministically: rewrite "on the page/screen/left" into the truthful
+# "in the Catalog" (there IS an Open-in-Catalog link below) or drop the claim.
+_STANDALONE_PHRASE_FIXES = [
+    (re.compile(r"\b(I'?ve|I have)\s+filtered\s+the\s+(page|grid|screen|catalog)\b", re.I), "Here are"),
+    (re.compile(r"\bthe\s+(catalog|page|grid|screen)\s+is\s+filtered\s+to\b", re.I), "here are"),
+    (re.compile(r"\bto the left\b", re.I), "in the Catalog"),
+    (re.compile(r"\bon the left\b", re.I), "in the Catalog"),
+    (re.compile(r"\bon the screen\b", re.I), "below"),
+    (re.compile(r"\bon the page\b", re.I), "in the Catalog"),
+    (re.compile(r"\bon the side\b", re.I), "in the Catalog"),
+    (re.compile(r"\bin the grid\b", re.I), "in the Catalog"),
+]
+
+
+def _scrub_standalone(text: str) -> str:
+    """Rewrite the 'on the left / on the page' phrasing the model sometimes emits
+    on the standalone /assistant page, where no grid exists. Deterministic because
+    a prompt instruction alone does not hold on the cheaper model."""
+    if not text:
+        return text
+    for pat, repl in _STANDALONE_PHRASE_FIXES:
+        text = pat.sub(repl, text)
+    return text
+
+
 def ask(question: str, history: list | None = None, user: dict | None = None,
-        page: str | None = None, page_path: str | None = None) -> dict:
+        page: str | None = None, page_path: str | None = None,
+        page_query: str | None = None) -> dict:
     question = (question or "").strip()
     if not question:
         return {"answer": "Ask me anything about your catalog — pricing, deals, distributors, or say "
@@ -1464,7 +1552,10 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
     # Route to the cheapest capable model, and prompt-cache the (large) system +
     # tools block so the agentic loop doesn't re-bill it every turn.
     from backend.model_router import choose_model
-    model = choose_model(question)
+    # Standalone /assistant page has no grid: it must produce real summaries and
+    # tables, which needs stronger instruction-following. Route its analytical /
+    # listing questions to Sonnet; docked mode keeps the cheap Haiku-first split.
+    model = choose_model(question, standalone=(not page_path))
     tools = _tool_specs()
     if tools:
         tools[-1] = {**tools[-1], "cache_control": {"type": "ephemeral"}}
@@ -1569,7 +1660,7 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                         continue
                     if b.name == "show_on_screen":
                         si = b.input or {}
-                        sc = _build_screen(si, page_path)
+                        sc = _build_screen(si, page_path, page_query)
                         # If the request targets a specific UPC, verify it exists
                         # so we can say "showing it" vs "product not found" (and
                         # not navigate to an empty screen on a bad barcode).
@@ -1635,6 +1726,10 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
     # breakdown was fetched, so they always appear (not model-dependent).
     charts = _price_charts(price_detail_result) + charts
     answer = _strip_charts(final_text) or "Done."
+    if not page_path:
+        # Standalone page: no grid exists, so strip any "on the left/screen/page"
+        # phrasing the model emitted regardless of the prompt instruction.
+        answer = _scrub_standalone(answer)
     # Multi-product answers (3+ products) get enriched with tier ladders so
     # the frontend can render a side-by-side comparison table, and a Catalog
     # deep-link is built by exact UPCs so "Open in Catalog ->" lands on the

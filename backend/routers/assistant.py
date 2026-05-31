@@ -14,6 +14,7 @@ class AskBody(BaseModel):
     history: Optional[list] = None   # prior [{role, content}] turns for memory
     page: Optional[str] = None       # screen label (scope + tool prioritization)
     page_path: Optional[str] = None  # screen route (so a UPC filters it in place)
+    page_query: Optional[str] = None  # current grid query string, so follow-ups compose filters
 
 
 @router.post("/ask")
@@ -24,7 +25,8 @@ def ask(body: AskBody, user: Optional[dict] = Depends(get_optional_user)):
     signed-in user's cart/favorites/lists/orders tools). Logged for the rollup."""
     from backend import assistant as engine, ai_usage
     try:
-        res = engine.ask(body.question, body.history, user=user, page=body.page, page_path=body.page_path)
+        res = engine.ask(body.question, body.history, user=user, page=body.page,
+                         page_path=body.page_path, page_query=body.page_query)
     except Exception as e:
         # Never 500 the chat — degrade gracefully so the UI shows a message.
         import logging

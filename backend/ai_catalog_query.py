@@ -181,11 +181,20 @@ def _clean(v):
     return v
 
 
-def _resolve_products(con, view: dict, match: str, which: str, cap: int) -> list[dict]:
+def _resolve_products(con, view: dict, match: str, which: str, cap: int,
+                      exclude_stocking: bool = False) -> list[dict]:
     """Resolve concrete catalog products (current edition per wholesaler) matching
     `match` + the view filters, ordered by `which`. Real-data lookup so the
-    frontend can act on exact (wholesaler, upc, unit_volume) rows."""
+    frontend can act on exact (wholesaler, upc, unit_volume) rows.
+
+    exclude_stocking: when True, drop $0/near-free 'free-with-purchase' rows
+    (effective price below 10% of frontline) so a 100%-off liquidation doesn't
+    masquerade as the cheapest product. Single-product lookups leave it False."""
     where = ["1=1"]
+    if exclude_stocking:
+        where.append("(c.frontline_case_price IS NULL OR c.frontline_case_price <= 0 "
+                     "OR c.effective_case_price IS NULL "
+                     "OR c.effective_case_price >= c.frontline_case_price * 0.10)")
     params = {"cym": _current_ym()}
     # A mostly-numeric match of 6+ digits is a UPC/barcode, not a name — match it
     # against the upc column (leading zeros normalised) instead of the name, so

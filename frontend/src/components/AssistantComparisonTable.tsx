@@ -15,6 +15,10 @@ interface Props {
 const money = (v?: number | null) => (v == null ? '—' : `$${Number(v).toFixed(2)}`);
 const fmtSavingsPct = (front?: number | null, eff?: number | null) => {
   if (front == null || eff == null || front <= 0) return null;
+  // A $0 / near-free row is a "free-with-purchase" stocking deal, not a normal
+  // discount. Showing "100% off" misreads the data, so don't render a % here
+  // (the backend already filters these out of browse/deal results).
+  if (eff <= 0 || eff < front * 0.1) return null;
   const pct = ((front - eff) / front) * 100;
   return pct > 0 ? `${pct.toFixed(0)}%` : null;
 };

@@ -79,6 +79,9 @@ export default function Catalog() {
       hasRip: params.get('hasRip') === '1' ? true : undefined,
       hasDiscount: params.get('hasDiscount') === '1' ? true : undefined,
       groupByRip: params.get('group_by_rip') === '1' || undefined,
+      // Assistant "only show prices going up / down" deep-links land here.
+      priceTrend: params.get('price_increase') === '1' ? 'increase'
+                : params.get('price_drop') === '1' ? 'drop' : undefined,
       categories: csv('categories'),
       divisions: csv('divisions'),
       sizes: csv('sizes'),

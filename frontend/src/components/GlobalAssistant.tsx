@@ -77,6 +77,7 @@ export default function GlobalAssistant() {
         <span className="ai-resizer-grip" />
       </div>
       <AssistantChat onClose={() => setOpen(false)} pageContext={pageLabel} pagePath={location.pathname}
+        pageQuery={location.search}
         subtitle={pageLabel ? `On ${pageLabel} — ask, compare, or act on products.` : undefined} />
     </div>
   );

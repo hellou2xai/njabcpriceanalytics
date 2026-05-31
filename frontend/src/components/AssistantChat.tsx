@@ -69,6 +69,9 @@ interface Props {
   pageContext?: string;
   /** Current screen route, so a UPC filters this page in place (not Catalog). */
   pagePath?: string;
+  /** Current grid query string (e.g. "?region=california"), so a follow-up
+   *  question composes filters instead of dropping the prior scope. */
+  pageQuery?: string;
 }
 
 /**
@@ -76,7 +79,7 @@ interface Props {
  * cards, voice, multi-turn memory, per-answer model + cost. Shared by the
  * dedicated page and the dockable side panel so formatting is identical.
  */
-export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTIONS, onClose, pageContext, pagePath }: Props) {
+export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTIONS, onClose, pageContext, pagePath, pageQuery }: Props) {
   // Per-page chat memory: keep a SEPARATE conversation per screen, keyed by the
   // page path (falls back to the label / 'global'). Switching pages shows that
   // page's own thread, and the history sent to the model is that page's only.
@@ -144,7 +147,7 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
     setMessages(m => [...m, { role: 'user', text: q }]);
     setBusy(true);
     try {
-      const res = await assistant.ask(q, history, pageContext, pagePath);
+      const res = await assistant.ask(q, history, pageContext, pagePath, pageQuery);
       const chips = describeActions(res.actions as CatalogAiAction[]);
       const drove = !!res.screen?.path;
       const screenBase = drove ? res.screen!.path.split('?')[0] : undefined;

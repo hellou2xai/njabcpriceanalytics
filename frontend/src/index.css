@@ -4579,7 +4579,10 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 /* =====================================================================
    Celar AI Assistant — full page (Claude-style conversation).
    ===================================================================== */
-.celar-page { display: flex; flex-direction: column; height: calc(100vh - 16px); max-width: 900px; margin: 0 auto; }
+/* Near full-width conversation (Claude/ChatGPT wide layout): fill the content
+   area with comfortable side padding, capped so it stays sane on ultra-wide
+   monitors. Was max-width:900px, which left big empty margins. */
+.celar-page { display: flex; flex-direction: column; height: calc(100vh - 16px); width: 100%; max-width: 1600px; margin: 0 auto; padding: 0 clamp(12px, 2vw, 40px); box-sizing: border-box; }
 .celar-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 6px 4px 12px; border-bottom: 1px solid var(--border); }
 .celar-head-title { display: flex; gap: 11px; align-items: center; }
 .celar-spark { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 10px; color: #fff; flex-shrink: 0;

@@ -24,8 +24,21 @@ _COMPLEX = (
 )
 
 
-def choose_model(question: str, *, force: str | None = None) -> str:
-    """Return the model id to use. `force` ('haiku'|'sonnet') overrides the heuristic."""
+# On the standalone /assistant page there is no grid, so the chat itself must
+# render summaries and comparison tables and follow the no-grid phrasing rules.
+# That needs stronger instruction-following, so any listing / discovery question
+# there goes to Sonnet (a bare UPC or greeting still stays on Haiku).
+_DISCOVERY = (
+    "show", "list", "find", "cheapest", "under $", "under ", "discount", "deal",
+    "deals", "rebate", "rip", "best", "top ", "wines", "wine", "compare", "which",
+    "lowest", "highest", "biggest",
+)
+
+
+def choose_model(question: str, *, force: str | None = None, standalone: bool = False) -> str:
+    """Return the model id to use. `force` ('haiku'|'sonnet') overrides the heuristic.
+    `standalone` lowers the bar for Sonnet on the dedicated /assistant page, where
+    the chat must produce reliable tables instead of just driving a grid."""
     if force == "haiku":
         return HAIKU
     if force == "sonnet":
@@ -37,5 +50,7 @@ def choose_model(question: str, *, force: str | None = None) -> str:
     if len(q) > 160 or q.count("?") > 1 or " and " in q and len(q) > 90:
         return SONNET
     if any(k in q for k in _COMPLEX):
+        return SONNET
+    if standalone and any(k in q for k in _DISCOVERY):
         return SONNET
     return HAIKU

@@ -35,7 +35,7 @@ from backend.ai_catalog_query import (
 from backend import pricing as _pricing
 from backend import rip_utils as _rip   # canonical case/bottle RIP unit math
 
-_ACTION_TYPES =("add_to_cart", "update_quantity", "add_to_favorites", "add_to_list", "swap_distributor", "submit_order")
+_ACTION_TYPES =("add_to_cart", "update_quantity", "add_to_favorites", "add_to_list", "swap_distributor", "submit_order", "reorder")
 _MAX_TURNS = 6
 # Stocking-deal floor used by the "best deals" ranker by default. A row whose
 # effective_case_price is below this fraction of frontline (e.g. a 100%-off
@@ -1460,6 +1460,54 @@ def _t_get_orders(con, args, ctx):
     return {"orders": [dict(r) for r in rows]}
 
 
+def _t_order_history(con, args, ctx):
+    """REORDER / ORDER HISTORY: the user's past orders WITH their line items, plus a
+    'frequently ordered' rollup. Powers 'reorder my last order', 'same as last
+    month', 'what do I usually buy'. To actually re-add an order to the cart, call
+    perform_action(type=reorder, order_id=<id>) — confirm first."""
+    uid = ctx.get("user_id")
+    if not uid:
+        return {"error": "user not signed in"}
+    from backend.pg import get_pg
+    cap = min(int(args.get("limit") or 6), 12)
+    oid = args.get("order_id")
+    with get_pg() as pg:
+        if oid:
+            heads = pg.execute(
+                "SELECT id, name, status, distributor, created_at FROM orders WHERE user_id=%s AND id=%s",
+                (uid, int(oid))).fetchall()
+        else:
+            heads = pg.execute(
+                "SELECT id, name, status, distributor, created_at FROM orders WHERE user_id=%s "
+                "ORDER BY created_at DESC LIMIT %s", (uid, cap)).fetchall()
+        heads = [dict(h) for h in heads]
+        if not heads:
+            return {"order_count": 0, "note": "You have no past orders yet."}
+        ids = [h["id"] for h in heads]
+        ph = ", ".join(["%s"] * len(ids))
+        lines = [dict(r) for r in pg.execute(
+            f"SELECT order_id, product_name, wholesaler, upc, unit_volume, qty_cases, qty_units "
+            f"FROM order_lines WHERE order_id IN ({ph})", tuple(ids)).fetchall()]
+    by_order: dict = {}
+    freq: dict = {}
+    for ln in lines:
+        by_order.setdefault(ln["order_id"], []).append({
+            "product_name": ln.get("product_name"), "distributor": ln.get("wholesaler"),
+            "size": ln.get("unit_volume"), "upc": str(ln.get("upc") or "").lstrip("0") or None,
+            "qty_cases": ln.get("qty_cases") or 0, "qty_units": ln.get("qty_units") or 0})
+        key = (ln.get("product_name"), ln.get("wholesaler"), ln.get("unit_volume"))
+        f = freq.setdefault(key, {"product_name": ln.get("product_name"), "distributor": ln.get("wholesaler"),
+                                  "size": ln.get("unit_volume"), "times_ordered": 0, "total_cases": 0.0})
+        f["times_ordered"] += 1
+        f["total_cases"] += (ln.get("qty_cases") or 0)
+    orders = [{**h, "lines": by_order.get(h["id"], []), "line_count": len(by_order.get(h["id"], []))}
+              for h in heads]
+    frequently_ordered = sorted(freq.values(), key=lambda x: (x["times_ordered"], x["total_cases"]), reverse=True)[:15]
+    return {"order_count": len(orders), "orders": orders,
+            "frequently_ordered": frequently_ordered,
+            "note": "Call perform_action(type=reorder, order_id=<id>) to re-add an order to the cart (confirm first)."}
+
+
 # --------------------------------------------------------------------------
 # Shared basket (cart / favorites / list) loading + edition-correct pricing.
 # Every cart/list analysis tool routes through these so they agree on (a) what
@@ -2194,7 +2242,8 @@ _CTX_TOOLS = {
     "get_cart": (_t_get_cart, "The signed-in user's current cart items + quantities."),
     "get_favorites": (_t_get_favorites, "The signed-in user's favorited products."),
     "get_lists": (_t_get_lists, "The signed-in user's saved lists and item counts."),
-    "get_orders": (_t_get_orders, "The signed-in user's 10 most recent orders."),
+    "get_orders": (_t_get_orders, "The signed-in user's 10 most recent orders (headers only)."),
+    "order_history": (_t_order_history, "REORDER / ORDER HISTORY: past orders WITH line items + a 'frequently ordered' rollup. Use for 'reorder my last order', 'same as last month', 'what do I usually buy/order', 'show my order history'. Pass order_id for one order. To re-add an order to the cart, then call perform_action(type=reorder, order_id=<id>) after confirming."),
     "analyze_cart": (_t_analyze_cart, "SMART, COMPREHENSIVE analysis of the user's cart / favorites / a list (source: cart|favorites|list, optional list_name) — the one-stop 'analyze my cart/list' report. Returns ALL of: summary (current vs optimized EFFECTIVE total [list − discounts − best RIP] + total savings); cheaper_distributor (same UPC cheaper elsewhere); timing (this vs next month → BUY NOW / WAIT, or HOLD if next month isn't published yet); price_movement (how each line changed vs LAST month — dropped/rose — always useful, the only forward signal before next month's sheet lands); price_increase_warnings (lines rising next month); rip_tier_upgrades (buy more to unlock the next rebate, cart+lists); discount_tier_upgrades (deeper CPL discount at a higher qty); combo_opportunities; expiring_or_closeout (time-sensitive ending soon / closeouts). Use for 'analyze my cart', 'analyze my list(s)/wishlist', 'is anyone cheaper', 'buy now or wait', 'am I near a tier'."),
     "optimize_cart": (_t_optimize_cart, "ORDER OPTIMIZER for the user's cart / favorites / a list (source: cart|favorites|list): the cheapest sourcing PLAN — per line picks the lowest effective-price distributor for that UPC, groups the wins into (from->to) distributor swaps with $ saved, and gives current vs optimized total. Use for 'optimize my cart/list', 'make my order cheaper', 'cheapest way to buy this'. Present current vs optimized total + the grouped swaps, then offer to apply each via perform_action(type=swap_distributor)."),
     "cart_timing": (_t_cart_timing, "BUY-NOW-vs-WAIT sweep of the user's cart / favorites / a list (source: cart|favorites|list): per line compares the current edition's effective price to the REAL next edition's and flags BUY NOW (rises or drops off next month) vs WAIT (falls next month), with $ impact + totals. If next month isn't published yet it says so (HOLD) instead of guessing. Use for 'should I buy now or wait', 'scan my cart/list for timing', 'what's going up next month'."),
@@ -2230,6 +2279,7 @@ def _tool_specs() -> list:
                             "description": "Which basket to analyze for cart tools (analyze_cart, optimize_cart, cart_timing, cart_rip_tiers). 'favorites' = wishlist/watchlist. Defaults to cart."},
                  "focus": {"type": "string", "enum": ["all", "mine", "favorites", "cart", "lists"],
                            "description": "edition_changes scope. 'mine' = the user's whole footprint (cart+favorites+lists+recent orders) — use for 'what changed for me'."},
+                 "order_id": {"type": "integer", "description": "order_history: fetch one specific past order by id."},
                  "list_name": {"type": "string", "description": "When source='list' (or focus='lists'), the list to target (omit for all of the user's lists)."}}
     for name, (_fn, desc) in _CTX_TOOLS.items():
         specs.append({"name": name, "description": desc,
@@ -2259,6 +2309,7 @@ def _tool_specs() -> list:
             "category": {"type": "string"}, "distributor": {"type": "string"},
             "has_rip": {"type": "boolean"}, "has_discount": {"type": "boolean"},
             "cases": {"type": "number"}, "bottles": {"type": "number"},
+            "order_id": {"type": "integer", "description": "reorder: the past order to copy back into the cart."},
             "list_name": {"type": "string"},
         }, "required": ["type"]},
     })
@@ -2348,6 +2399,18 @@ def _do_action(con, args, actions_out) -> dict:
         actions_out.append(action)
         return {"submit_order": True,
                 "note": "Will email the order to your sales rep(s) after you confirm."}
+    # Reorder: copy a past order's lines back into the cart. The frontend calls
+    # POST /api/cart/reorder with the order_id after a confirmation dialog.
+    if atype == "reorder":
+        try:
+            oid = int(args.get("order_id"))
+        except (TypeError, ValueError):
+            oid = None
+        action = {"type": "reorder", "cases": 0, "bottles": 0, "list_name": None,
+                  "products": [], "order_id": oid,
+                  "note": None if oid else "Need an order_id to reorder."}
+        actions_out.append(action)
+        return {"reorder": {"order_id": oid}}
     which = args.get("which") if args.get("which") in ("cheapest", "most_expensive", "first", "all") else "first"
     cap = 10 if which == "all" else 1
     view = {

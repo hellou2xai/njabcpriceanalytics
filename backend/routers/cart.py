@@ -44,6 +44,10 @@ class AssignRepIn(BaseModel):
     sales_rep_id: Optional[int] = None
 
 
+class ReorderIn(BaseModel):
+    order_id: int
+
+
 class FromListIn(BaseModel):
     list_id: int
     item_ids: Optional[list[int]] = None  # None/empty = every item in the list
@@ -627,3 +631,31 @@ def send_cart(user: dict = Depends(get_current_user)):
                         "lines": len(items), "emailed": res.get("emailed"), "to": res.get("to")})
 
     return {"sent": len(results), "orders": results, "skipped_no_rep": no_rep}
+
+
+@router.post("/reorder")
+def reorder(body: ReorderIn, user: dict = Depends(get_current_user)):
+    """Copy a past order's lines back into the active cart (re-resolving the sales
+    rep by distributor), so 'reorder my last order' / 'same as last month' works in
+    one step. Quantities are preserved; existing cart lines merge (qty adds)."""
+    with get_pg() as con:
+        owns = con.execute(
+            "SELECT name FROM orders WHERE id=%s AND user_id=%s", (body.order_id, user["id"])).fetchone()
+        if not owns:
+            return {"added": 0, "error": "Order not found."}
+        lines = [dict(r) for r in con.execute(
+            "SELECT product_name, wholesaler, upc, unit_volume, combo_code, qty_cases, qty_units "
+            "FROM order_lines WHERE order_id=%s", (body.order_id,)).fetchall()]
+        added = 0
+        for ln in lines:
+            if not ln.get("product_name") or not ln.get("wholesaler"):
+                continue
+            rep_id = _default_rep_for(con, user["id"], ln["wholesaler"])
+            _insert_cart_item(con, user["id"], {
+                "product_name": ln["product_name"], "wholesaler": ln["wholesaler"],
+                "upc": ln.get("upc"), "unit_volume": ln.get("unit_volume"),
+                "combo_code": ln.get("combo_code"),
+                "qty_cases": ln.get("qty_cases") or 0, "qty_units": ln.get("qty_units") or 0,
+            }, rep_id)
+            added += 1
+    return {"added": added, "order_name": owns["name"]}

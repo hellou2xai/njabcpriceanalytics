@@ -73,6 +73,17 @@ export function useAssistantActions() {
           });
           if (!ok) continue;
           await cartApi.send();
+        } else if (a.type === 'reorder') {
+          if (a.order_id != null) {
+            const ok = await confirm({
+              title: 'Reorder this order?',
+              message: 'This copies that order\'s items back into your cart (quantities preserved). '
+                + 'You can review and adjust before sending.',
+              confirmText: 'Add to cart', cancelText: 'Cancel',
+            });
+            if (!ok) continue;
+            await cartApi.reorder(a.order_id);
+          }
         } else if (a.type === 'add_to_list') {
           const name = (a.list_name || 'AI List').trim();
           const existing = await listsApi.list();
@@ -109,6 +120,7 @@ export function describeActions(actions: CatalogAiAction[] | undefined): string[
     else if (a.type === 'add_to_list') chips.push(`📋 ${a.list_name ?? 'List'} (+${a.products.length})`);
     else if (a.type === 'swap_distributor') chips.push(`🔁 Swap ${a.from_distributor ?? '?'} → ${a.to_distributor ?? '?'}${a.rip_code ? ` (RIP ${a.rip_code})` : ''}`);
     else if (a.type === 'submit_order') chips.push('📧 Send order to sales rep');
+    else if (a.type === 'reorder') chips.push('🔄 Reorder past order to cart');
     if (a.note) chips.push(`⚠ ${a.note}`);
   }
   return chips;

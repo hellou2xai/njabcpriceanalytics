@@ -187,6 +187,8 @@ export interface CatalogAiAction {
   to_distributor?: string | null;
   rip_code?: string | null;
   swap_upcs?: string[] | null;
+  // reorder only: the past order to copy back into the cart.
+  order_id?: number | null;
 }
 export interface CatalogAiResponse {
   answer: string;
@@ -656,6 +658,7 @@ export const cart = {
   fromCombo: (wholesaler: string, combo_code: string, qty = 1) =>
     request<{ added: number }>('/api/cart/from-combo', { method: 'POST', body: JSON.stringify({ wholesaler, combo_code, qty }) }),
   send: () => request<{ sent: number; skipped_no_rep: number; orders: { order_id: number; rep_name: string; lines: number; emailed: boolean; to: string | null }[] }>('/api/cart/send', { method: 'POST' }),
+  reorder: (order_id: number) => request<{ added: number; order_name?: string; error?: string }>('/api/cart/reorder', { method: 'POST', body: JSON.stringify({ order_id }) }),
 };
 
 export interface SubmitResult {

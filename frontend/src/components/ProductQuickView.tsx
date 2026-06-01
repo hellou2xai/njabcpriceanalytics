@@ -326,11 +326,10 @@ function QuickViewModal({
                         {side.product_name}
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, fontSize: 13 }}>
-                        <div><strong>Case:</strong> ${side.frontline_case_price?.toFixed(2)}</div>
-                        {Number(side.unit_qty) > 1 && <div><strong>Btl:</strong> ${side.frontline_unit_price?.toFixed(2)}</div>}
+                        <div><strong>Case (Btl) Cost:</strong> ${side.frontline_case_price?.toFixed(2)}{Number(side.unit_qty) > 1 ? <span className="text-muted" style={{ fontWeight: 400 }}> (${side.frontline_unit_price?.toFixed(2)}/btl)</span> : ''}</div>
                         <div><strong>Best Disc:</strong> {side.has_discount ? <span className="text-green">${side.total_savings_per_case}/cs</span> : '—'}</div>
                         <div>
-                          <strong>Effective:</strong>{' '}
+                          <strong>Case Cost after RIP:</strong>{' '}
                           <span className="text-green font-bold">
                             ${side.effective_case_price?.toFixed(2)}
                           </span>
@@ -342,10 +341,24 @@ function QuickViewModal({
               </div>
             ) : (
               <div className="detail-grid" style={{ marginTop: 12 }}>
-                <div><strong>Case Cost:</strong> ${p.frontline_case_price}{Number(p.unit_qty) > 1 ? <span className="text-muted" style={{ fontWeight: 400 }}> ({p.unit_qty} btl/cs)</span> : <span className="text-muted" style={{ fontWeight: 400 }}> (single unit)</span>}</div>
-                {Number(p.unit_qty) > 1 && <div><strong>Bottle Cost:</strong> ${p.frontline_unit_price}</div>}
+                {/* Frontline / list, bottle-first with case in parens. */}
+                <div><strong>Bottle (Case) Cost:</strong>{' '}
+                  {Number(p.unit_qty) > 1
+                    ? <>${p.frontline_unit_price}/btl <span className="text-muted" style={{ fontWeight: 400 }}>(${p.frontline_case_price}/cs)</span></>
+                    : <>${p.frontline_case_price} <span className="text-muted" style={{ fontWeight: 400 }}>(single unit)</span></>}
+                </div>
                 <div><strong>Best Discount:</strong> {p.has_discount ? <span className="text-green">${p.total_savings_per_case}/case</span> : '—'}</div>
-                <div><strong>Effective:</strong> ${p.effective_case_price}{Number(p.unit_qty) > 1 ? <span className="text-muted" style={{ fontWeight: 400 }}> (${(p.effective_case_price / Number(p.unit_qty)).toFixed(2)}/btl)</span> : ''}</div>
+                {/* Case cost after the case (CPL) discount, before RIP — highlighted. */}
+                {(() => {
+                  const caseAfterDisc = (p.best_case_price && p.best_case_price > 0) ? p.best_case_price : p.frontline_case_price;
+                  return (
+                    <div style={{ background: 'color-mix(in srgb, var(--accent) 10%, var(--bg))', padding: '3px 8px', borderRadius: 6 }}>
+                      <strong>Case Cost:</strong> ${caseAfterDisc}
+                      <span className="text-muted" style={{ fontWeight: 400 }}> (after 1-cs discount)</span>
+                    </div>
+                  );
+                })()}
+                <div><strong>Case Cost after RIP:</strong> ${p.effective_case_price}{Number(p.unit_qty) > 1 ? <span className="text-muted" style={{ fontWeight: 400 }}> (${(p.effective_case_price / Number(p.unit_qty)).toFixed(2)}/btl)</span> : ''}</div>
               </div>
             )}
 
@@ -540,7 +553,7 @@ function QuickViewModal({
                         <th className="right" onClick={() => toggleSort('frontline_case_price')}>Case Price{sortArrow('frontline_case_price')}</th>
                         <th className="right" onClick={() => toggleSort('best_discount_per_case')}>Best Disc{sortArrow('best_discount_per_case')}</th>
                         <th className="right" onClick={() => toggleSort('best_rip_per_case')}>RIP/Case{sortArrow('best_rip_per_case')}</th>
-                        <th className="right" onClick={() => toggleSort('effective')}>Effective{sortArrow('effective')}</th>
+                        <th className="right" onClick={() => toggleSort('effective')}>Case Cost after RIP{sortArrow('effective')}</th>
                         <th className="right" onClick={() => toggleSort('total_save_per_case')}>Save/Case{sortArrow('total_save_per_case')}</th>
                         <th>Discount Tiers</th>
                         <th>RIP Tiers</th>

@@ -189,6 +189,9 @@ export interface CatalogAiAction {
   swap_upcs?: string[] | null;
   // reorder only: the past order to copy back into the cart.
   order_id?: number | null;
+  // message_rep only: email a sales rep a free-text question.
+  rep_id?: number | null;
+  message?: string | null;
 }
 export interface CatalogAiResponse {
   answer: string;
@@ -783,6 +786,8 @@ export const salesReps = {
   update: (id: number, rep: Partial<Omit<SalesRep, 'id'>>) =>
     request(`/api/sales-reps/${id}`, { method: 'PUT', body: JSON.stringify(rep) }),
   remove: (id: number) => request(`/api/sales-reps/${id}`, { method: 'DELETE' }),
+  message: (id: number, message: string) =>
+    request<{ sent: boolean; rep_name?: string; to?: string; error?: string }>(`/api/sales-reps/${id}/message`, { method: 'POST', body: JSON.stringify({ message }) }),
 };
 
 export interface Division { id: number; name: string; distributor?: string | null }

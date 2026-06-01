@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { cart as cartApi, watchlist, lists as listsApi } from './api';
+import { cart as cartApi, watchlist, lists as listsApi, salesReps } from './api';
 import type { CatalogAiAction } from './api';
 import { useDialog } from '../components/Dialog';
 
@@ -84,6 +84,16 @@ export function useAssistantActions() {
             if (!ok) continue;
             await cartApi.reorder(a.order_id);
           }
+        } else if (a.type === 'message_rep') {
+          if (a.rep_id != null && a.message) {
+            const ok = await confirm({
+              title: 'Email your sales rep?',
+              message: `Send this message to your rep?\n\n"${a.message}"`,
+              confirmText: 'Send email', cancelText: 'Cancel',
+            });
+            if (!ok) continue;
+            await salesReps.message(a.rep_id, a.message);
+          }
         } else if (a.type === 'add_to_list') {
           const name = (a.list_name || 'AI List').trim();
           const existing = await listsApi.list();
@@ -121,6 +131,7 @@ export function describeActions(actions: CatalogAiAction[] | undefined): string[
     else if (a.type === 'swap_distributor') chips.push(`🔁 Swap ${a.from_distributor ?? '?'} → ${a.to_distributor ?? '?'}${a.rip_code ? ` (RIP ${a.rip_code})` : ''}`);
     else if (a.type === 'submit_order') chips.push('📧 Send order to sales rep');
     else if (a.type === 'reorder') chips.push('🔄 Reorder past order to cart');
+    else if (a.type === 'message_rep') chips.push('✉️ Message sales rep');
     if (a.note) chips.push(`⚠ ${a.note}`);
   }
   return chips;

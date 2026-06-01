@@ -35,7 +35,7 @@ from backend.ai_catalog_query import (
 from backend import pricing as _pricing
 from backend import rip_utils as _rip   # canonical case/bottle RIP unit math
 
-_ACTION_TYPES =("add_to_cart", "update_quantity", "add_to_favorites", "add_to_list", "swap_distributor", "submit_order", "reorder")
+_ACTION_TYPES =("add_to_cart", "update_quantity", "add_to_favorites", "add_to_list", "swap_distributor", "submit_order", "reorder", "message_rep")
 _MAX_TURNS = 6
 # Stocking-deal floor used by the "best deals" ranker by default. A row whose
 # effective_case_price is below this fraction of frontline (e.g. a 100%-off
@@ -1460,6 +1460,24 @@ def _t_get_orders(con, args, ctx):
     return {"orders": [dict(r) for r in rows]}
 
 
+def _t_get_sales_reps(con, args, ctx):
+    """The signed-in user's sales reps with contact info (name, distributor, email,
+    phone). Use to show who to follow up with after sending an order, or before
+    messaging a rep. To email a rep a question, use perform_action(type=message_rep,
+    rep_id=<id>, message=<text>)."""
+    uid = ctx.get("user_id")
+    if not uid:
+        return {"error": "user not signed in"}
+    from backend.pg import get_pg
+    with get_pg() as pg:
+        rows = pg.execute(
+            "SELECT id, name, distributor, division, email, phone FROM sales_reps WHERE user_id=%s ORDER BY name",
+            (uid,)).fetchall()
+    reps = [dict(r) for r in rows]
+    return {"count": len(reps), "sales_reps": reps,
+            "note": "No sales reps saved yet — add them in Sales Reps." if not reps else None}
+
+
 def _t_order_history(con, args, ctx):
     """REORDER / ORDER HISTORY: the user's past orders WITH their line items, plus a
     'frequently ordered' rollup. Powers 'reorder my last order', 'same as last
@@ -2350,6 +2368,7 @@ _CTX_TOOLS = {
     "get_favorites": (_t_get_favorites, "The signed-in user's favorited products."),
     "get_lists": (_t_get_lists, "The signed-in user's saved lists and item counts."),
     "get_orders": (_t_get_orders, "The signed-in user's 10 most recent orders (headers only)."),
+    "get_sales_reps": (_t_get_sales_reps, "The user's sales reps + contact (name, distributor, email, phone). Use to show who to follow up with after an order, look up a rep's phone/email, or before messaging a rep."),
     "order_history": (_t_order_history, "REORDER / ORDER HISTORY: past orders WITH line items + a 'frequently ordered' rollup. Use for 'reorder my last order', 'same as last month', 'what do I usually buy/order', 'show my order history'. Pass order_id for one order. To re-add an order to the cart, then call perform_action(type=reorder, order_id=<id>) after confirming."),
     "lapsed_items": (_t_lapsed_items, "WIN-BACK: products the user ORDERED before but not recently, flagged when attractive again NOW (on a CPL discount, has a RIP rebate, or price dropped this edition). Use for 'what have I stopped buying', 'win-back opportunities', 'anything I used to order worth grabbing'. Lead with the why-now reason + current effective price; offer to add to cart."),
     "analyze_cart": (_t_analyze_cart, "SMART, COMPREHENSIVE analysis of the user's cart / favorites / a list (source: cart|favorites|list, optional list_name) — the one-stop 'analyze my cart/list' report. Returns ALL of: summary (current vs optimized EFFECTIVE total [list − discounts − best RIP] + total savings); cheaper_distributor (same UPC cheaper elsewhere); timing (this vs next month → BUY NOW / WAIT, or HOLD if next month isn't published yet); price_movement (how each line changed vs LAST month — dropped/rose — always useful, the only forward signal before next month's sheet lands); price_increase_warnings (lines rising next month); rip_tier_upgrades (buy more to unlock the next rebate, cart+lists); discount_tier_upgrades (deeper CPL discount at a higher qty); duplicate_lines (the SAME UPC on multiple lines — likely a double-add to fix before ordering); combo_opportunities; expiring_or_closeout (time-sensitive ending soon / closeouts). Use for 'analyze my cart', 'analyze my list(s)/wishlist', 'is anyone cheaper', 'buy now or wait', 'am I near a tier'."),
@@ -2407,7 +2426,10 @@ def _tool_specs() -> list:
                         "submit_order SENDS the active cart as orders (one per sales rep) and EMAILS each rep. "
                         "It is irreversible from chat — ONLY call it after (a) you have run the pre-send review "
                         "(analyze_cart) and surfaced any mistakes, and (b) the user has explicitly confirmed "
-                        "they want to send. Use for 'send/submit/place my order', 'email this to my rep'."),
+                        "they want to send. Use for 'send/submit/place my order', 'email this to my rep'. "
+                        "message_rep emails a free-text question/message to a sales rep (rep_id from "
+                        "get_sales_reps, message=<text>) — use for 'ask my Fedway rep if X is in stock', "
+                        "'tell my rep ...'; confirm the recipient + message first."),
         "input_schema": {"type": "object", "properties": {
             "type": {"type": "string", "enum": list(_ACTION_TYPES)},
             "match": {"type": "string"},
@@ -2419,6 +2441,8 @@ def _tool_specs() -> list:
             "has_rip": {"type": "boolean"}, "has_discount": {"type": "boolean"},
             "cases": {"type": "number"}, "bottles": {"type": "number"},
             "order_id": {"type": "integer", "description": "reorder: the past order to copy back into the cart."},
+            "rep_id": {"type": "integer", "description": "message_rep: the sales rep (from get_sales_reps) to email."},
+            "message": {"type": "string", "description": "message_rep: the message/question to email the rep."},
             "list_name": {"type": "string"},
         }, "required": ["type"]},
     })
@@ -2520,6 +2544,19 @@ def _do_action(con, args, actions_out) -> dict:
                   "note": None if oid else "Need an order_id to reorder."}
         actions_out.append(action)
         return {"reorder": {"order_id": oid}}
+    # Message a sales rep by email. The frontend POSTs the message to
+    # /api/sales-reps/{id}/message after a confirmation dialog.
+    if atype == "message_rep":
+        try:
+            rid = int(args.get("rep_id"))
+        except (TypeError, ValueError):
+            rid = None
+        msg = (args.get("message") or "").strip()
+        action = {"type": "message_rep", "cases": 0, "bottles": 0, "list_name": None,
+                  "products": [], "rep_id": rid, "message": msg or None,
+                  "note": None if (rid and msg) else "Need a rep and a message to send."}
+        actions_out.append(action)
+        return {"message_rep": {"rep_id": rid, "has_message": bool(msg)}}
     which = args.get("which") if args.get("which") in ("cheapest", "most_expensive", "first", "all") else "first"
     cap = 10 if which == "all" else 1
     view = {
@@ -2931,7 +2968,10 @@ _SYSTEM = (
     "perform_action(type=submit_order) — this emails the order to their sales rep(s), one order per rep, and "
     "clears those items from the cart. NEVER submit without the pre-send review AND an explicit yes. After "
     "sending, report what went to which rep and flag any items skipped because no sales rep is assigned (tell "
-    "them to assign a rep and resend). If the cart is empty or nothing's priced, say so instead of submitting. "
+    "them to assign a rep and resend). ALWAYS close by reminding the buyer to FOLLOW UP with their sales rep to "
+    "confirm the order, and offer the rep's phone/email (get_sales_reps). The buyer can also have you email a "
+    "rep a question any time — perform_action(type=message_rep, rep_id, message) after confirming the recipient "
+    "and wording. If the cart is empty or nothing's priced, say so instead of submitting. "
     "VALUE-INSIGHT tools (use these for the matching intents): best_one_case_rip — 'best 1-case RIP deals', "
     "rebates worth taking on a single case (no bulk needed); present a ranked list with the per-case rebate at "
     "one case and note it equals the bulk per-case value. deal_360 — the FULL picture for ONE item ('deal 360', "

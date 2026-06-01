@@ -988,6 +988,37 @@ def list_sales_reps(user: dict = Depends(get_current_user)):
     return [dict(r) for r in rows]
 
 
+class RepMessageIn(BaseModel):
+    message: str
+
+
+@router.post("/sales-reps/{rep_id}/message")
+def message_sales_rep(rep_id: int, body: RepMessageIn, user: dict = Depends(get_current_user)):
+    """Email a free-text message/question to one of the user's sales reps. Reply-to
+    is the user so the rep can answer directly; the user is cc'd a copy. Powers
+    'ask my Fedway rep if X is in stock' from the assistant."""
+    msg = (body.message or "").strip()
+    if not msg:
+        return {"sent": False, "error": "Empty message."}
+    with get_pg() as con:
+        rep = con.execute(
+            "SELECT name, email, distributor FROM sales_reps WHERE id = %s AND user_id = %s",
+            (rep_id, user["id"])).fetchone()
+    if not rep:
+        return {"sent": False, "error": "Sales rep not found."}
+    if not rep.get("email"):
+        return {"sent": False, "error": f"No email on file for {rep['name']} — add one in Sales Reps."}
+    from backend import mailer
+    buyer = user.get("full_name") or user.get("name") or user.get("email") or "A CELR buyer"
+    safe = msg.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
+    html = mailer._layout(
+        f"Message from {buyer}",
+        f"<p>{safe}</p><p style='color:#888;font-size:13px'>Sent via CELR. Reply directly to reach {buyer}.</p>")
+    ok = mailer._send(rep["email"], f"Question from {buyer}", html,
+                      reply_to=user.get("email"), cc=[user["email"]] if user.get("email") else None)
+    return {"sent": bool(ok), "rep_name": rep["name"], "to": rep["email"]}
+
+
 @router.post("/sales-reps")
 def add_sales_rep(rep: SalesRepCreate, user: dict = Depends(get_current_user)):
     with get_pg() as con:

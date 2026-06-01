@@ -355,6 +355,7 @@ function QuickViewModal({
                   return (
                     <div style={{ background: 'color-mix(in srgb, var(--accent) 10%, var(--bg))', padding: '3px 8px', borderRadius: 6 }}>
                       <strong>Case Cost:</strong> ${caseAfterDisc}
+                      {Number(p.unit_qty) > 1 && <span className="text-muted" style={{ fontWeight: 400 }}> (${(caseAfterDisc / Number(p.unit_qty)).toFixed(2)}/btl)</span>}
                       <span className="text-muted" style={{ fontWeight: 400 }}> (after 1-cs discount)</span>
                     </div>
                   );

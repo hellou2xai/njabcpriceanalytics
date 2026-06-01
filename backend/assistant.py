@@ -535,15 +535,22 @@ def _t_rip_lookup(con, args):
             if ws:
                 cond += " AND wholesaler = ?"
                 sub.append(ws)
-            # 1. Canonical count - no LIMIT, no cpl join, same filter the catalog uses.
+            # 1. Canonical count = distinct catalog SKUs joined to the cluster's
+            # UPCs (no LIMIT). Same UPC + different vintage / pack size counts as
+            # separate items, so the AI's count agrees with the catalog page's
+            # row count rather than the RIP sheet's UPC count.
             pr_count: list = sub + sub
             try:
                 cnt_df = con.execute(
-                    f"WITH latest AS (SELECT MAX(edition) ed FROM rip WHERE {cond} AND edition<='{cym}') "
-                    f"SELECT COUNT(DISTINCT CAST(upc AS VARCHAR)) "
-                    f"FROM rip WHERE {cond} AND edition = (SELECT ed FROM latest) "
-                    "AND upc IS NOT NULL "
-                    "AND CAST(upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan')",
+                    f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<='{cym}' GROUP BY wholesaler), "
+                    f"ripupc AS (SELECT DISTINCT wholesaler, LTRIM(CAST(upc AS VARCHAR),'0') un FROM rip "
+                    f"WHERE {cond} AND edition = (SELECT MAX(edition) FROM rip WHERE {cond} AND edition<='{cym}')) "
+                    "SELECT COUNT(DISTINCT (LTRIM(CAST(c.upc AS VARCHAR),'0'), "
+                    "  COALESCE(CAST(c.vintage AS VARCHAR),''), "
+                    "  COALESCE(c.unit_volume,''), "
+                    "  COALESCE(CAST(c.unit_qty AS VARCHAR),''))) "
+                    "FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
+                    "JOIN ripupc r ON r.wholesaler=c.wholesaler AND r.un=LTRIM(CAST(c.upc AS VARCHAR),'0')",
                     pr_count).fetchone()
                 member_count = int(cnt_df[0]) if cnt_df and cnt_df[0] is not None else 0
             except Exception:

@@ -778,20 +778,38 @@ def search_products(
                       AND CAST(rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
                     GROUP BY wholesaler, edition, CAST(upc AS VARCHAR)
                 ),
-                -- Cluster size = number of distinct UPCs sharing each
-                -- (wholesaler, edition, rip_code) in the RIP sheet. Used to
-                -- order clusters biggest-first when group_by_rip is on.
+                -- Cluster size = number of distinct catalog SKUs sharing each
+                -- (wholesaler, edition, rip_code). User rule: same UPC + different
+                -- vintage (or pack size) is a DIFFERENT item, so we count distinct
+                -- (UPC, vintage, unit_volume, unit_qty) tuples from the live CPL,
+                -- not just distinct UPCs on the RIP sheet. Drives the biggest-
+                -- first ordering when group_by_rip is on, so the sort matches the
+                -- row count the user sees on the page.
                 rip_cluster_sizes AS (
-                    SELECT wholesaler AS rcs_wholesaler,
-                           edition    AS rcs_edition,
-                           CAST(rip_code AS VARCHAR) AS rcs_code,
-                           COUNT(DISTINCT CAST(upc AS VARCHAR)) AS cluster_members
-                    FROM {rip_src_cte}
-                    WHERE upc IS NOT NULL
-                      AND CAST(upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
-                      AND rip_code IS NOT NULL
-                      AND CAST(rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
-                    GROUP BY wholesaler, edition, CAST(rip_code AS VARCHAR)
+                    SELECT cls.wholesaler  AS rcs_wholesaler,
+                           cls.edition     AS rcs_edition,
+                           cls.rip_code    AS rcs_code,
+                           COUNT(DISTINCT (
+                               LTRIM(CAST(c.upc AS VARCHAR), '0'),
+                               COALESCE(CAST(c.vintage AS VARCHAR), ''),
+                               COALESCE(c.unit_volume, ''),
+                               COALESCE(CAST(c.unit_qty AS VARCHAR), '')
+                           )) AS cluster_members
+                    FROM (
+                        SELECT DISTINCT wholesaler, edition,
+                               CAST(rip_code AS VARCHAR) AS rip_code,
+                               LTRIM(CAST(upc AS VARCHAR), '0') AS upc_n
+                        FROM {rip_src_cte}
+                        WHERE upc IS NOT NULL
+                          AND CAST(upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
+                          AND rip_code IS NOT NULL
+                          AND CAST(rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
+                    ) cls
+                    JOIN {src} c
+                      ON c.wholesaler = cls.wholesaler
+                     AND c.edition    = cls.edition
+                     AND LTRIM(CAST(c.upc AS VARCHAR), '0') = cls.upc_n
+                    GROUP BY cls.wholesaler, cls.edition, cls.rip_code
                 ),
                 -- Fan rip_groups out by code so a UPC with N rebates emits N
                 -- rows. The LEFT JOIN below preserves UPCs that don't qualify

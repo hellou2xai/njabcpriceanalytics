@@ -519,6 +519,11 @@ def _t_rip_lookup(con, args):
         # The real Case Mix: products that share this RIP code (from the RIP sheet,
         # joined to the catalogue for names/prices). These are what the retailer
         # mixes to reach a tier.
+        # member_count is the CANONICAL Case-Mix size: distinct UPCs in the RIP
+        # sheet for this (wholesaler, edition, code), counted with the same
+        # filter the catalog uses. The members[] list below is just a sample for
+        # display (capped at 25 product cards). Don't conflate the two — earlier
+        # code used len(members) for the count, which always saturated at 25.
         members, member_count = [], 0
         try:
             # RIP codes are RECYCLED across editions — Fedway code 10265 was Jameson
@@ -530,7 +535,21 @@ def _t_rip_lookup(con, args):
             if ws:
                 cond += " AND wholesaler = ?"
                 sub.append(ws)
-            pr: list = sub + sub
+            # 1. Canonical count - no LIMIT, no cpl join, same filter the catalog uses.
+            pr_count: list = sub + sub
+            try:
+                cnt_df = con.execute(
+                    f"WITH latest AS (SELECT MAX(edition) ed FROM rip WHERE {cond} AND edition<='{cym}') "
+                    f"SELECT COUNT(DISTINCT CAST(upc AS VARCHAR)) "
+                    f"FROM rip WHERE {cond} AND edition = (SELECT ed FROM latest) "
+                    "AND upc IS NOT NULL "
+                    "AND CAST(upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan')",
+                    pr_count).fetchone()
+                member_count = int(cnt_df[0]) if cnt_df and cnt_df[0] is not None else 0
+            except Exception:
+                member_count = 0
+            # 2. Sample of member products for display (capped at 25).
+            pr_sample: list = sub + sub
             df = con.execute(
                 f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<='{cym}' GROUP BY wholesaler), "
                 f"ripupc AS (SELECT DISTINCT wholesaler, LTRIM(CAST(upc AS VARCHAR),'0') un FROM rip "
@@ -538,17 +557,21 @@ def _t_rip_lookup(con, args):
                 "SELECT DISTINCT c.product_name, c.unit_volume, c.frontline_case_price, c.effective_case_price "
                 "FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
                 "JOIN ripupc r ON r.wholesaler=c.wholesaler AND r.un=LTRIM(CAST(c.upc AS VARCHAR),'0') "
-                "ORDER BY c.frontline_case_price NULLS LAST LIMIT 25", pr).fetchdf()
+                "ORDER BY c.frontline_case_price NULLS LAST LIMIT 25", pr_sample).fetchdf()
             for _, m in df.iterrows():
                 cp = m["frontline_case_price"]
                 members.append({"product_name": m["product_name"], "unit_volume": m["unit_volume"],
                                 "case_price": float(cp) if cp is not None and cp == cp else None})
-            member_count = len(members)
+            # Defensive: if the count query failed but we have members, fall back
+            # to the sample length (still better than nothing).
+            if not member_count and members:
+                member_count = len(members)
         except Exception:
             pass
         return {"rip_code": rc, "wholesaler": ws, "description": desc, "tiers": tiers,
                 "best_rebate": best_amt or None, "member_count": member_count,
-                "member_count_note": "25+ (showing first 25)" if member_count == 25 else None,
+                "member_count_note": (f"{member_count} total, showing first 25"
+                                      if member_count > len(members) else None),
                 "case_mix_members": members}
 
     # By explicit code.

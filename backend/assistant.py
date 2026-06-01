@@ -1732,7 +1732,7 @@ def _t_analyze_cart(con, args, ctx):
     upcs = sorted({_norm(it["upc"]) for it in items if _norm(it["upc"])})
     # Canonical prev / current / next effective prices (shared edition logic).
     pricing, prev_rows, next_rows, next_edition_loaded = _eff_windows(con, upcs)
-    by_upc, disc_map, pack_map = {}, {}, {}
+    by_upc, disc_map, pack_map, front_map = {}, {}, {}, {}
     for (w, un), e in pricing.items():
         by_upc.setdefault(un, []).append((w, round(e, 2)))
     # Discount tiers + pack size for the SAME current edition (separate small query;
@@ -1746,6 +1746,7 @@ def _t_analyze_cart(con, args, ctx):
                 "COALESCE(MAX(CASE WHEN edition <= ? THEN edition END), MAX(edition)) ed "
                 "FROM cpl_enriched GROUP BY wholesaler) "
                 "SELECT LTRIM(CAST(c.upc AS VARCHAR),'0') un, c.wholesaler w, c.unit_qty uq, "
+                "c.frontline_case_price fl, "
                 "c.discount_1_qty d1q, c.discount_1_amt d1a, c.discount_2_qty d2q, c.discount_2_amt d2a, "
                 "c.discount_3_qty d3q, c.discount_3_amt d3a, c.discount_4_qty d4q, c.discount_4_amt d4a, "
                 "c.discount_5_qty d5q, c.discount_5_amt d5a "
@@ -1758,6 +1759,12 @@ def _t_analyze_cart(con, args, ctx):
                     pack_map[(w, un)] = 0.0 if pk != pk else pk
                 except (TypeError, ValueError):
                     pack_map[(w, un)] = 0.0
+                try:
+                    fv = float(r["fl"])
+                    if fv == fv:
+                        front_map[(w, un)] = fv
+                except (TypeError, ValueError):
+                    pass
                 dts = []
                 for j in (1, 2, 3, 4, 5):
                     try:
@@ -1781,7 +1788,7 @@ def _t_analyze_cart(con, args, ctx):
 
     out_items, total_save, cheaper_count = [], 0.0, 0
     buy_now_total, wait_total, buy_now_n, wait_n = 0.0, 0.0, 0, 0
-    cur_total, opt_total = 0.0, 0.0
+    cur_total, opt_total, list_total = 0.0, 0.0, 0.0
     price_increase_warnings, disc_upgrades, price_moves = [], [], []
     for it in items:
         un = _norm(it["upc"])
@@ -1805,9 +1812,17 @@ def _t_analyze_cart(con, args, ctx):
                  "qty_cases": it.get("qty_cases"), "qty_units": qbt or None,
                  "qty_label": qty_label, "upc": un or None,
                  "also_at": [w for (w, _e) in alts if w != it.get("wholesaler")]}
+        # List (frontline) price for the "you saved $X vs list" headline.
+        fl = front_map.get((it["wholesaler"], un))
+        if fl is not None:
+            entry["frontline_case"] = round(fl, 2)
+            if cur_eff is not None and fl > cur_eff + 0.01:
+                entry["saved_vs_list_per_case"] = round(fl - cur_eff, 2)
+                entry["saved_vs_list_for_qty"] = round((fl - cur_eff) * qty, 2)
         if cur_eff is not None:
             cur_total += cur_eff * qty
             opt_total += (min(cur_eff, alts[0][1]) if alts else cur_eff) * qty
+            list_total += (fl if fl is not None else cur_eff) * qty
         if alts and cur_eff is not None and alts[0][1] < cur_eff - 0.01 and alts[0][0] != it.get("wholesaler"):
             save = round(cur_eff - alts[0][1], 2)
             entry.update({"cheaper_distributor": alts[0][0], "cheaper_effective_case": alts[0][1],
@@ -1963,6 +1978,10 @@ def _t_analyze_cart(con, args, ctx):
             "summary": {"current_effective_total": round(cur_total, 2),
                         "optimized_effective_total": round(opt_total, 2),
                         "distributor_savings": round(cur_total - opt_total, 2),
+                        # The headline the buyer feels: list (frontline) total vs what
+                        # they actually pay after CPL discounts + best RIP.
+                        "list_total": round(list_total, 2),
+                        "saved_vs_list": round(list_total - cur_total, 2),
                         "opportunities": opportunities,
                         "fully_optimized": opportunities == 0,
                         # So the UI can say "next month not published yet" instead of
@@ -2875,8 +2894,9 @@ _SYSTEM = (
     "SMART CART / LIST ANALYSIS: for 'analyze my cart', 'analyze my list(s)/wishlist', 'is anyone cheaper', "
     "'where can I save', 'buy now or wait', 'am I near a tier' — call analyze_cart (source: cart|favorites|"
     "list, optional list_name) and present a COMPLETE report with EVERY section it returns, as headed blocks: "
-    "(1) Summary — current vs optimized EFFECTIVE total (already net of CPL discounts + best RIP) and total $ "
-    "savings; (2) Cheaper distributor (per line + total); (3) Timing — this vs next month, BUY NOW / WAIT (or "
+    "(1) Summary — LEAD with the money saved: 'You pay $X vs $Y list — you save $Z' (summary.saved_vs_list = "
+    "list_total − effective, the impact of CPL discounts + best RIP), then the optimized total and any extra "
+    "distributor savings still available; (2) Cheaper distributor (per line + total); (3) Timing — this vs next month, BUY NOW / WAIT (or "
     "HOLD if next_month_published is false); (4) This-month price movement (price_movement — what dropped / rose "
     "vs last month; ALWAYS show this, it's the only forward signal before next month's sheet lands); "
     "(5) Price-increase warnings (price_increase_warnings — flag clearly what rises next month, $ extra); "

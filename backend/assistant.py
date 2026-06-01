@@ -539,31 +539,50 @@ def _t_rip_lookup(con, args):
             # UPCs (no LIMIT). Same UPC + different vintage / pack size counts as
             # separate items, so the AI's count agrees with the catalog page's
             # row count rather than the RIP sheet's UPC count.
+            #
+            # Scope is strictly (edition, distributor, code). The ripupc CTE
+            # MUST drop blank/zero UPCs — without that, the RIP sheet's all-
+            # zeros placeholder row leaks in as un='' and the cpl join then
+            # matches every blank-UPC product in the catalog, bleeding
+            # unrelated brands into the cluster. Same filter on the cpl side
+            # is belt-and-braces against any rogue blank c.upc.
             pr_count: list = sub + sub
             try:
                 cnt_df = con.execute(
                     f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<='{cym}' GROUP BY wholesaler), "
                     f"ripupc AS (SELECT DISTINCT wholesaler, LTRIM(CAST(upc AS VARCHAR),'0') un FROM rip "
-                    f"WHERE {cond} AND edition = (SELECT MAX(edition) FROM rip WHERE {cond} AND edition<='{cym}')) "
+                    f"WHERE {cond} AND edition = (SELECT MAX(edition) FROM rip WHERE {cond} AND edition<='{cym}') "
+                    "  AND upc IS NOT NULL "
+                    "  AND CAST(upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan') "
+                    "  AND LTRIM(CAST(upc AS VARCHAR), '0') NOT IN ('', 'None', 'nan')) "
                     "SELECT COUNT(DISTINCT (LTRIM(CAST(c.upc AS VARCHAR),'0'), "
                     "  COALESCE(CAST(c.vintage AS VARCHAR),''), "
                     "  COALESCE(c.unit_volume,''), "
                     "  COALESCE(CAST(c.unit_qty AS VARCHAR),''))) "
                     "FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
-                    "JOIN ripupc r ON r.wholesaler=c.wholesaler AND r.un=LTRIM(CAST(c.upc AS VARCHAR),'0')",
+                    "JOIN ripupc r ON r.wholesaler=c.wholesaler AND r.un=LTRIM(CAST(c.upc AS VARCHAR),'0') "
+                    "WHERE c.upc IS NOT NULL "
+                    "  AND LTRIM(CAST(c.upc AS VARCHAR), '0') NOT IN ('', 'None', 'nan')",
                     pr_count).fetchone()
                 member_count = int(cnt_df[0]) if cnt_df and cnt_df[0] is not None else 0
             except Exception:
                 member_count = 0
-            # 2. Sample of member products for display (capped at 25).
+            # 2. Sample of member products for display (capped at 25). Same
+            # filters as the count query — otherwise the sample shows unrelated
+            # brands that happened to have a blank UPC in the catalog.
             pr_sample: list = sub + sub
             df = con.execute(
                 f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<='{cym}' GROUP BY wholesaler), "
                 f"ripupc AS (SELECT DISTINCT wholesaler, LTRIM(CAST(upc AS VARCHAR),'0') un FROM rip "
-                f"WHERE {cond} AND edition = (SELECT MAX(edition) FROM rip WHERE {cond} AND edition<='{cym}')) "
+                f"WHERE {cond} AND edition = (SELECT MAX(edition) FROM rip WHERE {cond} AND edition<='{cym}') "
+                "  AND upc IS NOT NULL "
+                "  AND CAST(upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan') "
+                "  AND LTRIM(CAST(upc AS VARCHAR), '0') NOT IN ('', 'None', 'nan')) "
                 "SELECT DISTINCT c.product_name, c.unit_volume, c.frontline_case_price, c.effective_case_price "
                 "FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
                 "JOIN ripupc r ON r.wholesaler=c.wholesaler AND r.un=LTRIM(CAST(c.upc AS VARCHAR),'0') "
+                "WHERE c.upc IS NOT NULL "
+                "  AND LTRIM(CAST(c.upc AS VARCHAR), '0') NOT IN ('', 'None', 'nan') "
                 "ORDER BY c.frontline_case_price NULLS LAST LIMIT 25", pr_sample).fetchdf()
             for _, m in df.iterrows():
                 cp = m["frontline_case_price"]
@@ -1126,9 +1145,14 @@ def _t_rip_tier_gap(con, args):
                 "WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<=? GROUP BY wholesaler), "
                 "ripupc AS (SELECT DISTINCT wholesaler, LTRIM(CAST(upc AS VARCHAR),'0') un FROM rip "
                 "WHERE CAST(rip_code AS VARCHAR)=? AND edition = "
-                "(SELECT MAX(edition) FROM rip WHERE CAST(rip_code AS VARCHAR)=? AND edition<=?)) "
+                "(SELECT MAX(edition) FROM rip WHERE CAST(rip_code AS VARCHAR)=? AND edition<=?) "
+                "  AND upc IS NOT NULL "
+                "  AND CAST(upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan') "
+                "  AND LTRIM(CAST(upc AS VARCHAR), '0') NOT IN ('', 'None', 'nan')) "
                 "SELECT ANY_VALUE(c.unit_qty) FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
-                "JOIN ripupc r ON r.wholesaler=c.wholesaler AND r.un=LTRIM(CAST(c.upc AS VARCHAR),'0')",
+                "JOIN ripupc r ON r.wholesaler=c.wholesaler AND r.un=LTRIM(CAST(c.upc AS VARCHAR),'0') "
+                "WHERE c.upc IS NOT NULL "
+                "  AND LTRIM(CAST(c.upc AS VARCHAR), '0') NOT IN ('', 'None', 'nan')",
                 [cym, str(code), str(code), cym]).fetchone()
             if prow:
                 pack = _num(prow[0])
@@ -2787,12 +2811,18 @@ def _rip_case_mix_products(con, code, ws=None, limit=80) -> list:
         df = con.execute(
             f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<='{cym}' GROUP BY wholesaler), "
             f"ripupc AS (SELECT DISTINCT wholesaler, LTRIM(CAST(upc AS VARCHAR),'0') un FROM rip "
-            f"WHERE {cond} AND edition = (SELECT MAX(edition) FROM rip WHERE {cond} AND edition<='{cym}')) "
+            f"WHERE {cond} AND edition = (SELECT MAX(edition) FROM rip WHERE {cond} AND edition<='{cym}') "
+            "  AND upc IS NOT NULL "
+            "  AND CAST(upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan') "
+            "  AND LTRIM(CAST(upc AS VARCHAR), '0') NOT IN ('', 'None', 'nan')) "
             "SELECT DISTINCT c.product_name, c.wholesaler, CAST(c.upc AS VARCHAR) AS upc, c.unit_volume, "
             "c.unit_qty, c.vintage, c.effective_case_price, c.frontline_case_price "
             "FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
             "JOIN ripupc r ON r.wholesaler=c.wholesaler AND r.un=LTRIM(CAST(c.upc AS VARCHAR),'0') "
-            f"WHERE c.product_name IS NOT NULL ORDER BY c.product_name LIMIT {int(limit)}", pr).fetchdf()
+            f"WHERE c.product_name IS NOT NULL "
+            "  AND c.upc IS NOT NULL "
+            "  AND LTRIM(CAST(c.upc AS VARCHAR), '0') NOT IN ('', 'None', 'nan') "
+            f"ORDER BY c.product_name LIMIT {int(limit)}", pr).fetchdf()
         return df.to_dict(orient="records")
     except Exception:
         return []

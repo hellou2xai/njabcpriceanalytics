@@ -1489,19 +1489,39 @@ def _t_analyze_cart(con, args, ctx):
     def _norm(u):
         return str(u or "").lstrip("0")
     upcs = sorted({_norm(it["upc"]) for it in items if _norm(it["upc"])})
-    pricing, by_upc, nextp, disc_map, pack_map = {}, {}, {}, {}, {}
+    pricing, by_upc, disc_map, pack_map = {}, {}, {}, {}
+    # next_rows[(w, un)] = list of (product_name_lower, unit_volume, effective) for
+    # the SAME UPC in NEXT month's edition. A single UPC can map to several SKUs
+    # (sizes/vintages), so we match on product + size in the loop, not blindly.
+    next_rows = {}
+    # Use the canonical "current" edition (latest one at or before this month) and
+    # the real next-month edition — NOT MAX(edition) / the stored next_effective
+    # column. When next month is already ingested, MAX(edition) would treat it as
+    # "current" and find no month after it, wrongly flagging everything BUY NOW.
+    cym = _pricing.current_yyyy_mm()
+    nym = _pricing.next_yyyy_mm()
+    # Is next month's sheet published yet? If not, "missing next-month row" means
+    # "we don't know yet" — never "may be gone" (that would wrongly say BUY NOW).
+    try:
+        next_edition_loaded = bool(con.execute(
+            "SELECT 1 FROM cpl_enriched WHERE edition = ? LIMIT 1", [nym]).fetchone())
+    except Exception:
+        next_edition_loaded = False
     if upcs:
         ph = ", ".join("?" for _ in upcs)
         try:
             df = con.execute(
-                "WITH latest AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched GROUP BY wholesaler) "
+                "WITH latest AS (SELECT wholesaler, "
+                "COALESCE(MAX(CASE WHEN edition <= ? THEN edition END), MAX(edition)) ed "
+                "FROM cpl_enriched GROUP BY wholesaler) "
                 "SELECT LTRIM(CAST(c.upc AS VARCHAR),'0') un, c.wholesaler, c.product_name, "
-                "c.effective_case_price eff, c.next_effective_case_price nxt, c.unit_qty uq, "
+                "c.effective_case_price eff, c.unit_qty uq, "
                 "c.discount_1_qty d1q, c.discount_1_amt d1a, c.discount_2_qty d2q, c.discount_2_amt d2a, "
                 "c.discount_3_qty d3q, c.discount_3_amt d3a, c.discount_4_qty d4q, c.discount_4_amt d4a, "
                 "c.discount_5_qty d5q, c.discount_5_amt d5a "
                 "FROM cpl_enriched c JOIN latest l ON c.wholesaler=l.wholesaler AND c.edition=l.ed "
-                f"WHERE LTRIM(CAST(c.upc AS VARCHAR),'0') IN ({ph}) AND c.effective_case_price IS NOT NULL", upcs).fetchdf()
+                f"WHERE LTRIM(CAST(c.upc AS VARCHAR),'0') IN ({ph}) AND c.effective_case_price IS NOT NULL",
+                [cym] + upcs).fetchdf()
             for _, r in df.iterrows():
                 un = str(r["un"]); w = r["wholesaler"]
                 try:
@@ -1512,11 +1532,6 @@ def _t_analyze_cart(con, args, ctx):
                     continue
                 pricing[(w, un)] = eff
                 by_upc.setdefault(un, []).append((w, round(eff, 2)))
-                try:
-                    nv = float(r["nxt"])
-                    nextp[(w, un)] = None if nv != nv else nv
-                except (TypeError, ValueError):
-                    pass
                 try:
                     pk = float(r["uq"])
                     pack_map[(w, un)] = 0.0 if pk != pk else pk
@@ -1540,8 +1555,45 @@ def _t_analyze_cart(con, args, ctx):
                     dts.append((qn, _rip.normalize_unit(qs) or "case", round(amt, 2)))
                 if dts:
                     disc_map[(w, un)] = sorted(dts, key=lambda t: t[0])
+            # Next month's effective price for the same UPCs (real next edition).
+            ndf = con.execute(
+                "SELECT LTRIM(CAST(upc AS VARCHAR),'0') un, wholesaler, product_name, unit_volume, "
+                "effective_case_price eff FROM cpl_enriched "
+                f"WHERE edition = ? AND LTRIM(CAST(upc AS VARCHAR),'0') IN ({ph}) "
+                "AND effective_case_price IS NOT NULL", [nym] + upcs).fetchdf()
+            for _, r in ndf.iterrows():
+                try:
+                    ne = float(r["eff"])
+                except (TypeError, ValueError):
+                    continue
+                if ne != ne:
+                    continue
+                next_rows.setdefault((r["wholesaler"], str(r["un"])), []).append(
+                    ((r["product_name"] or "").strip().lower(), (r["unit_volume"] or "").strip(), round(ne, 2)))
         except Exception:
             pass
+
+    def _next_eff(w, un, pname, uvol, cur):
+        """Best next-month effective for this exact cart line. Match the SAME UPC
+        on product name + size. When a UPC maps to several next-month SKUs (e.g. a
+        new vintage at a different price), pick the one CLOSEST to the current
+        price — that's the same SKU continuing — rather than a sibling listing."""
+        cand = next_rows.get((w, un))
+        if not cand:
+            return None
+        pl = (pname or "").strip().lower()
+        uv = (uvol or "").strip()
+        def _closest(rows):
+            if cur is None:
+                return rows[0][2]
+            return min(rows, key=lambda r: abs(r[2] - cur))[2]
+        exact = [r for r in cand if r[0] == pl and r[1] == uv]
+        if exact:
+            return _closest(exact)
+        byname = [r for r in cand if r[0] == pl]
+        if byname:
+            return _closest(byname)
+        return _closest(cand) if len(cand) == 1 else None
 
     out_items, total_save, cheaper_count = [], 0.0, 0
     buy_now_total, wait_total, buy_now_n, wait_n = 0.0, 0.0, 0, 0
@@ -1566,10 +1618,13 @@ def _t_analyze_cart(con, args, ctx):
             total_save += save * qty
             cheaper_count += 1
         # Timing: is THIS month best, or is next month cheaper? (same UPC+distributor)
-        nxt = nextp.get((it["wholesaler"], un))
+        nxt = _next_eff(it["wholesaler"], un, it.get("product_name"), it.get("unit_volume"), cur_eff)
         if cur_eff is not None:
             entry["next_month_effective_case"] = round(nxt, 2) if nxt is not None else None
-            if nxt is None:
+            if nxt is None and not next_edition_loaded:
+                # Next month's prices aren't published yet — we genuinely can't advise.
+                entry["timing"] = "HOLD"; entry["timing_reason"] = "next month's sheet not published yet"
+            elif nxt is None:
                 entry["timing"] = "BUY NOW"; entry["timing_reason"] = "not on next month's sheet — may be gone"
             elif nxt > cur_eff + 0.01:
                 d = round(nxt - cur_eff, 2)

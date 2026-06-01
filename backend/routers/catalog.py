@@ -198,7 +198,18 @@ def _q_clause(q: str, extra_aliases: dict | None = None,
             counter["i"] += 1
             params[k] = f"%{term}%"
             keys.append(k)
-            sub = f"UPPER({name_col}) LIKE UPPER(${k}) OR UPPER(COALESCE({brand_col},'')) LIKE UPPER(${k})"
+            # Also match the catalog row's size columns so queries like
+            # "Finlandia 1.75L" or "Bombay 750ML" find the right SKU even
+            # when the size isn't in the product name. unit_volume holds the
+            # raw value ("1.75L", "750ML"); unit_volume_std is the bucket
+            # ("750ML" also matches a row stored as "25.33OZ"). Volume hits
+            # don't bump relevance — only name matches do (rel_terms below).
+            sub = (
+                f"UPPER({name_col}) LIKE UPPER(${k}) "
+                f"OR UPPER(COALESCE({brand_col},'')) LIKE UPPER(${k}) "
+                f"OR UPPER(COALESCE(unit_volume,'')) LIKE UPPER(${k}) "
+                f"OR UPPER(COALESCE(unit_volume_std,'')) LIKE UPPER(${k})"
+            )
             if enrich_table:
                 sub += (
                     f" OR EXISTS (SELECT 1 FROM {enrich_table} _pe "

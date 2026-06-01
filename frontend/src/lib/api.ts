@@ -98,11 +98,23 @@ export interface AssistantChart {
   labels: (string | number)[];
   series: { name?: string; data: number[] }[];
 }
+export interface AssistantRipCluster {
+  rip_code: string;
+  wholesaler: string;
+  label: string;            // 'Allied RIP 112074'
+  member_count: number;     // distinct SKUs in the Case Mix
+  description?: string | null;
+}
+
 export interface AssistantResponse {
   answer: string;             // markdown (chart fences already stripped server-side)
   charts: AssistantChart[];
   actions: CatalogAiAction[];
   products: CatalogAiProduct[];   // surfaced products, rendered as actionable cards
+  // One entry per RIP cluster surfaced this turn. The chat renders an "Add
+  // Case Mix to Cart" button per cluster (the full member list is resolved
+  // server-side via cart.addByRip, not shipped in the response).
+  rip_clusters?: AssistantRipCluster[];
   // When set, the assistant drove the SCREEN: navigate here (page shows the data)
   // and keep the chat message to a one-line confirmation.
   screen?: { path: string; label: string } | null;
@@ -624,6 +636,22 @@ export interface CartItem {
   // RIP rebate code this line currently rolls up under (enriched from the
   // catalogue at GET time; null when the product has no RIP).
   rip_code?: string | null;
+  // Batch tagging: items added together as one send (a RIP cluster from the
+  // catalog or AI) share a batch_id and label. NULL = added as a single
+  // ungrouped product. See cart.addBatch().
+  batch_id?: string | null;
+  batch_label?: string | null;
+  batch_source?: string | null;
+}
+
+export interface CartBatchItemIn {
+  product_name: string;
+  wholesaler: string;
+  upc?: string | null;
+  unit_volume?: string | null;
+  combo_code?: string | null;
+  qty_cases?: number;
+  qty_units?: number;
 }
 
 export const lists = {
@@ -645,6 +673,19 @@ export const cart = {
   groupNote: (wholesaler: string, note: string) =>
     request('/api/cart/group-note', { method: 'POST', body: JSON.stringify({ wholesaler, note }) }),
   add: (item: Partial<CartItem>) => request('/api/cart', { method: 'POST', body: JSON.stringify(item) }),
+  // Add N items as ONE labelled batch. They stay grouped in the cart (a
+  // second send of the same cluster produces a separate batch instead of
+  // merging into the first). Returns the generated batch_id.
+  addBatch: (body: { batch_label: string; batch_source: string; items: CartBatchItemIn[] }) =>
+    request<{ added: number; batch_id: string; batch_label: string; batch_source: string }>(
+      '/api/cart/add-batch', { method: 'POST', body: JSON.stringify(body) }),
+  removeBatch: (batch_id: string) =>
+    request<{ removed: number; batch_id: string }>(`/api/cart/batch/${encodeURIComponent(batch_id)}`, { method: 'DELETE' }),
+  // Resolve a (wholesaler, rip_code) Case Mix server-side and add every
+  // member as one labelled batch. Used by the AI's per-cluster button.
+  addByRip: (body: { wholesaler: string; rip_code: string; qty_cases_per_item?: number }) =>
+    request<{ added: number; batch_id: string | null; batch_label: string; batch_source: string; message?: string }>(
+      '/api/cart/add-by-rip', { method: 'POST', body: JSON.stringify(body) }),
   update: (id: number, data: { qty_cases?: number; qty_units?: number; sales_rep_id?: number | null; saved_for_later?: boolean; notes?: string }) =>
     request(`/api/cart/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   remove: (id: number) => request(`/api/cart/${id}`, { method: 'DELETE' }),

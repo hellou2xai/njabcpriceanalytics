@@ -580,3 +580,22 @@ def init_user_db():
         ).fetchone()
         if not has_rev:
             con.execute("ALTER TABLE orders ADD COLUMN revision integer DEFAULT 0")
+        # Cart batches: when the user sends a RIP cluster or a Quick-Add group
+        # to the cart, all items in that send share a batch_id and a label.
+        # Default (single-product add) leaves these NULL = no batch.
+        for ddl in (
+            "ALTER TABLE cart_items ADD COLUMN IF NOT EXISTS batch_id text",
+            "ALTER TABLE cart_items ADD COLUMN IF NOT EXISTS batch_label text",
+            "ALTER TABLE cart_items ADD COLUMN IF NOT EXISTS batch_source text",
+        ):
+            con.execute(ddl)
+        # Swap the unique index so two SEPARATE batched sends of the same
+        # product stay as two rows (the user explicitly wants no mixing on
+        # send). NULL batch_id rows still collapse together via the COALESCE,
+        # preserving the upsert behaviour for single-product adds.
+        con.execute("DROP INDEX IF EXISTS idx_cart_user_item")
+        con.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_cart_user_item_batch "
+            "ON cart_items(user_id, product_name, wholesaler, unit_volume, "
+            "COALESCE(batch_id, ''))"
+        )

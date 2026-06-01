@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Trash2, Clock, Send, ShoppingCart, Plus, Search, ArrowUpFromLine, Eraser } from 'lucide-react';
 import { cart as cartApi, salesReps as repsApi, catalog, type CartItem, type Product } from '../lib/api';
@@ -196,6 +196,13 @@ export default function Cart() {
   const qc = useQueryClient();
   const { confirm } = useDialog();
   const [result, setResult] = useState<string | null>(null);
+  // Two view modes:
+  //   default ('batch') - cluster lines by the SEND BATCH they came in on, so
+  //     a Catalog Case Mix sent now and the AI's Case Mix sent later stay as
+  //     SEPARATE cards. Items added one-by-one ungrouped fall into "Loose".
+  //   'rip' - merge across batches by rip_code so the user can see total
+  //     exposure per rebate. Toggling is presentation only; batch_id stays in
+  //     the DB, so flipping back to 'batch' always restores the original sends.
   const [groupByRip, setGroupByRip] = useState<boolean>(() => localStorage.getItem(RIP_GROUP_KEY) === '1');
   const toggleGroupByRip = (on: boolean) => {
     setGroupByRip(on);
@@ -209,19 +216,9 @@ export default function Cart() {
   const active = items.filter(i => !i.saved_for_later);
   const saved = items.filter(i => i.saved_for_later);
 
-  // Auto-enable "Group by RIP" the moment the cart picks up any RIP-tied line,
-  // so adding a RIP deal from any page (RIP Products, Catalog, quick view, ...)
-  // immediately clusters it under its rebate code. The user can still uncheck
-  // the toggle to flatten the view; the explicit choice sticks.
-  const hasRipItem = useMemo(
-    () => items.some(i => i.rip_code && String(i.rip_code).trim()),
-    [items],
-  );
-  useEffect(() => {
-    if (hasRipItem && !groupByRip && localStorage.getItem(RIP_GROUP_KEY) === null) {
-      setGroupByRip(true);
-    }
-  }, [hasRipItem, groupByRip]);
+  // (Removed) auto-enable of "Group by RIP" on cart load. The default view
+  // now clusters lines by SEND BATCH so RIP sends already arrive grouped; the
+  // rip-merge toggle is opt-in for cross-batch exposure.
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['cart'] });
   const upd = useMutation({
@@ -401,9 +398,9 @@ export default function Cart() {
           </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}
-              title="Sub-group cart lines that share a RIP rebate code, with a colour band per RIP">
+              title="OFF (default) shows each send batch as its own card. ON merges across batches by RIP code so you can see total exposure per rebate.">
               <input type="checkbox" checked={groupByRip} onChange={e => toggleGroupByRip(e.target.checked)} />
-              Group by RIP
+              Merge batches by RIP
             </label>
             <span style={{ fontSize: 16 }}>Cart total: <strong className="text-green">{money(cartTotal)}</strong></span>
           </span>
@@ -447,7 +444,78 @@ export default function Cart() {
               style={{ marginTop: 8, width: '100%', maxWidth: 480, fontSize: 12, padding: '4px 8px' }}
             />
             {(() => {
-              if (!groupByRip) return groupItems.map(it => renderItem(it));
+              if (!groupByRip) {
+                // Default: group by SEND BATCH so a Catalog Case Mix sent
+                // earlier and an AI Case Mix sent later stay as two separate
+                // cards. Items with NULL batch_id (single-product adds, older
+                // pre-batch items) collect into a "Loose items" card so they
+                // still render the per-line UI.
+                const batchMap = new Map<string, typeof groupItems>();
+                const loose: typeof groupItems = [];
+                for (const it of groupItems) {
+                  const bid = it.batch_id && String(it.batch_id).trim();
+                  if (!bid) { loose.push(it); continue; }
+                  if (!batchMap.has(bid)) batchMap.set(bid, []);
+                  batchMap.get(bid)!.push(it);
+                }
+                // Preserve original add order via created_at on the first line.
+                const batches = [...batchMap.entries()].sort((a, b) =>
+                  ((a[1][0] as unknown as { created_at?: string }).created_at ?? '')
+                    .localeCompare((b[1][0] as unknown as { created_at?: string }).created_at ?? '')
+                );
+                return (
+                  <>
+                    {batches.map(([bid, lines]) => {
+                      const label = lines[0]?.batch_label || `Batch ${bid.slice(0, 8)}`;
+                      const ids = lines.map(l => l.id);
+                      const subtotal = lines.reduce((s, it) => s + lineTotal(it), 0);
+                      const totalCases = lines.reduce((s, it) => s + (it.qty_cases || 0), 0);
+                      // Use the RIP hue palette so a batch_label that includes
+                      // a RIP code (catalog_rip / ai_rip) is recognisable.
+                      const hue = ripHueLocal(bid);
+                      return (
+                        <div key={`batch-${bid}`} className="cart-rip-group" style={{
+                          borderLeftColor: `hsl(${hue} 65% 55%)`,
+                          background: `linear-gradient(180deg, hsl(${hue} 75% 97%) 0%, var(--surface) 16px)`,
+                        }}>
+                          <div className="cart-rip-group-header">
+                            <span className="cart-rip-group-badge" style={{
+                              background: `hsl(${hue} 75% 93%)`, color: `hsl(${hue} 65% 28%)`, borderColor: `hsl(${hue} 60% 78%)`,
+                            }} title="A batch is one send. Two sends of the same RIP stay as two batches here. Use 'Merge by RIP' above to see total exposure.">
+                              📦 {label}
+                            </span>
+                            <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
+                              {lines.length} line{lines.length === 1 ? '' : 's'} · {totalCases} case{totalCases === 1 ? '' : 's'}
+                            </span>
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              title={`Move all ${lines.length} line${lines.length === 1 ? '' : 's'} in this batch to Saved for later`}
+                              disabled={bulkSave.isPending}
+                              onClick={() => bulkSave.mutate({ ids, saved: true })}
+                            >
+                              <Clock size={13} /> Save all for later
+                            </button>
+                            <span style={{ marginLeft: 'auto', fontWeight: 600 }}>
+                              Subtotal: <span className="text-green">{money(subtotal)}</span>
+                            </span>
+                          </div>
+                          {lines.map(it => renderItem(it))}
+                        </div>
+                      );
+                    })}
+                    {loose.length > 0 && (
+                      <div className="cart-rip-group" style={{ borderLeftColor: 'var(--border)' }}>
+                        <div className="cart-rip-group-header">
+                          <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
+                            Loose items · {loose.length} line{loose.length === 1 ? '' : 's'}
+                          </span>
+                        </div>
+                        {loose.map(it => renderItem(it))}
+                      </div>
+                    )}
+                  </>
+                );
+              }
               // Three-way sub-grouping. Combos take priority because they're
               // hard requirements (lose any line and the bundle breaks); RIPs
               // are thresholds that earn the buyer money; everything else
@@ -578,7 +646,66 @@ export default function Cart() {
         <div className="panel" data-tour="cart-saved" style={{ padding: 12, marginTop: 20 }}>
           <h3 style={{ margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: 8 }}><Clock size={18} /> Saved for later</h3>
           {(() => {
-            if (!groupByRip) return saved.map(it => renderItem(it, true));
+            if (!groupByRip) {
+              // Mirror the active-cart default: group saved lines by send
+              // batch so a "save all" from a batch keeps its identity, and
+              // "move all back to cart" restores the original send.
+              const batchMap = new Map<string, typeof saved>();
+              const loose: typeof saved = [];
+              for (const it of saved) {
+                const bid = it.batch_id && String(it.batch_id).trim();
+                if (!bid) { loose.push(it); continue; }
+                if (!batchMap.has(bid)) batchMap.set(bid, []);
+                batchMap.get(bid)!.push(it);
+              }
+              const batches = [...batchMap.entries()].sort((a, b) =>
+                ((a[1][0] as unknown as { created_at?: string }).created_at ?? '')
+                  .localeCompare((b[1][0] as unknown as { created_at?: string }).created_at ?? '')
+              );
+              return (
+                <>
+                  {batches.map(([bid, lines]) => {
+                    const label = lines[0]?.batch_label || `Batch ${bid.slice(0, 8)}`;
+                    const ids = lines.map(l => l.id);
+                    const hue = ripHueLocal(bid);
+                    return (
+                      <div key={`saved-batch-${bid}`} className="cart-rip-group" style={{
+                        borderLeftColor: `hsl(${hue} 65% 55%)`,
+                        background: `linear-gradient(180deg, hsl(${hue} 75% 97%) 0%, var(--surface) 16px)`,
+                      }}>
+                        <div className="cart-rip-group-header">
+                          <span className="cart-rip-group-badge" style={{
+                            background: `hsl(${hue} 75% 93%)`, color: `hsl(${hue} 65% 28%)`, borderColor: `hsl(${hue} 60% 78%)`,
+                          }}>📦 {label}</span>
+                          <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
+                            {lines.length} line{lines.length === 1 ? '' : 's'} saved
+                          </span>
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            title={`Move all ${lines.length} line${lines.length === 1 ? '' : 's'} from this batch back into the active cart`}
+                            disabled={bulkSave.isPending}
+                            onClick={() => bulkSave.mutate({ ids, saved: false })}
+                          >
+                            <ArrowUpFromLine size={13} /> Move all to cart
+                          </button>
+                        </div>
+                        {lines.map(it => renderItem(it, true))}
+                      </div>
+                    );
+                  })}
+                  {loose.length > 0 && (
+                    <div className="cart-rip-group" style={{ borderLeftColor: 'var(--border)' }}>
+                      <div className="cart-rip-group-header">
+                        <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
+                          Loose items · {loose.length} line{loose.length === 1 ? '' : 's'}
+                        </span>
+                      </div>
+                      {loose.map(it => renderItem(it, true))}
+                    </div>
+                  )}
+                </>
+              );
+            }
             // Mirror the active-cart layout: combos first (priority), then RIPs,
             // then everything else. Each cluster header carries a "Move all back
             // to cart" action.

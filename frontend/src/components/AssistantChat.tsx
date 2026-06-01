@@ -2,9 +2,10 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Sparkles, Send, Mic, MicOff, AlertCircle, Trash2, PanelRightClose } from 'lucide-react';
-import { assistant } from '../lib/api';
-import type { AssistantChart as ChartSpec, AiUsage, CatalogAiAction, CatalogAiProduct } from '../lib/api';
+import { Sparkles, Send, Mic, MicOff, AlertCircle, Trash2, PanelRightClose, ShoppingCart, Check } from 'lucide-react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { assistant, cart as cartApi } from '../lib/api';
+import type { AssistantChart as ChartSpec, AiUsage, CatalogAiAction, CatalogAiProduct, AssistantRipCluster } from '../lib/api';
 import AssistantChart from './AssistantChart';
 import AddToCartButton from './AddToCartButton';
 import AddToListButton from './AddToListButton';
@@ -20,6 +21,9 @@ interface Msg {
   text: string;
   charts?: ChartSpec[];
   products?: CatalogAiProduct[];
+  // Per-cluster "Add Case Mix to Cart" buttons rendered above the markdown
+  // answer. Empty / absent means the assistant didn't touch any RIP this turn.
+  ripClusters?: AssistantRipCluster[];
   chips?: string[];
   usage?: AiUsage;
   error?: boolean;
@@ -167,6 +171,7 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
         role: 'assistant', text: res.answer,
         charts: drove && !isStandalone ? [] : res.charts,
         products: drove && !isStandalone ? [] : res.products,
+        ripClusters: drove && !isStandalone ? [] : (res.rip_clusters ?? []),
         chips, usage: res.usage,
         // awaitingCount needs an actual navigation to fire — only set in the
         // docked case where we do navigate.
@@ -286,6 +291,9 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
               {m.role === 'assistant'
                 ? <div className="celar-md"><ReactMarkdown remarkPlugins={[remarkGfm]}>{m.text}</ReactMarkdown></div>
                 : <div className="celar-usertext">{m.text}</div>}
+              {m.role === 'assistant' && m.ripClusters && m.ripClusters.length > 0 && (
+                <RipClusterActions clusters={m.ripClusters} />
+              )}
               {m.charts?.map((c, ci) => <AssistantChart key={ci} spec={c} />)}
               {m.products && m.products.length > 0 && (isStandalone || m.products.length >= 3) ? (
                 // Rich decision-pack comparison table (product, distributor, size,
@@ -394,6 +402,49 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
         </form>
         <p className="celar-disclaimer">Answers use your live catalog data. Cost is shown per message. AI can make mistakes, please verify important information.</p>
       </div>
+    </div>
+  );
+}
+
+
+/**
+ * One button per RIP cluster the assistant surfaced this turn. Clicking sends
+ * the WHOLE Case Mix (resolved server-side via /api/cart/add-by-rip) into the
+ * cart as one labelled batch. Sending the same cluster twice produces TWO
+ * separate batches in the cart, not a merged one — per the user rule.
+ */
+function RipClusterActions({ clusters }: { clusters: AssistantRipCluster[] }) {
+  const qc = useQueryClient();
+  const [added, setAdded] = useState<Record<string, boolean>>({});
+  const mut = useMutation({
+    mutationFn: async (c: AssistantRipCluster) =>
+      cartApi.addByRip({ wholesaler: c.wholesaler, rip_code: c.rip_code }),
+    onSuccess: (_, c) => {
+      qc.invalidateQueries({ queryKey: ['cart'] });
+      const key = `${c.wholesaler}|${c.rip_code}`;
+      setAdded(s => ({ ...s, [key]: true }));
+      setTimeout(() => setAdded(s => ({ ...s, [key]: false })), 2000);
+    },
+  });
+  return (
+    <div className="celar-rip-actions">
+      {clusters.map(c => {
+        const key = `${c.wholesaler}|${c.rip_code}`;
+        const flash = added[key];
+        return (
+          <button
+            key={key}
+            className="btn btn-sm celar-rip-action"
+            disabled={mut.isPending}
+            onClick={() => mut.mutate(c)}
+            title={`Add every product in ${c.label} to the cart as one batch (${c.member_count} items).`}
+          >
+            {flash
+              ? (<><Check size={13} /> Added as batch</>)
+              : (<><ShoppingCart size={13} /> Add {c.label} to Cart ({c.member_count})</>)}
+          </button>
+        );
+      })}
     </div>
   );
 }

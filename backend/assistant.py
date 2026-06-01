@@ -3667,6 +3667,12 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
     timeline_result: dict | None = None   # last price_timeline result (for the deterministic line chart)
     screen_out: dict | None = None
     screen_args: dict | None = None   # last show_on_screen filters (for the standalone auto-table)
+    # RIP clusters touched by any rip_lookup call this turn. Each entry is
+    # {code, wholesaler, label, member_count}; the frontend renders one "Add
+    # Case Mix to Cart" button per cluster, which calls /api/cart/add-by-rip
+    # to resolve the full member list server-side and add it as ONE batch.
+    rip_clusters_out: list = []
+    rip_clusters_seen: set = set()
 
     def _collect(items):
         # Accumulate any product dicts a tool surfaced so the UI can render them
@@ -3782,6 +3788,27 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                             _collect([out])   # also show the product as a card
                         if b.name == "price_timeline" and isinstance(out, dict) and not out.get("error"):
                             timeline_result = out   # deterministic line chart attached below
+                        # RIP clusters: surface one entry per (wholesaler, code)
+                        # so the frontend can render an "Add Case Mix to Cart"
+                        # action button per cluster.
+                        if (b.name == "rip_lookup" and isinstance(out, dict)
+                                and not out.get("error")):
+                            for rc in out.get("rip_codes") or []:
+                                code = (rc.get("rip_code") or "").strip()
+                                ws_c = (rc.get("wholesaler") or "").strip()
+                                if not code or not ws_c:
+                                    continue
+                                key = (ws_c.lower(), code)
+                                if key in rip_clusters_seen:
+                                    continue
+                                rip_clusters_seen.add(key)
+                                rip_clusters_out.append({
+                                    "rip_code": code,
+                                    "wholesaler": ws_c,
+                                    "label": f"{ws_c} RIP {code}",
+                                    "member_count": int(rc.get("member_count") or 0),
+                                    "description": rc.get("description"),
+                                })
                     else:
                         out = {"error": "unknown tool"}
                     results.append({"type": "tool_result", "tool_use_id": b.id,
@@ -3873,6 +3900,7 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
         "charts": charts,
         "actions": actions_out,
         "products": products_final,
+        "rip_clusters": rip_clusters_out,
         "screen": screen_out,
         "usage": {"input_tokens": total_in, "output_tokens": total_out,
                   "model": model, "cost_usd": _cost_usd(model, total_in, total_out), "enabled": True},

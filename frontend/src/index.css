@@ -4704,6 +4704,20 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 
 .celar-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
 
+/* "Add Case Mix to Cart" action buttons the assistant surfaces above its
+   answer when a RIP lookup ran (one per cluster). Each click sends the whole
+   Case Mix server-side as one labelled batch. */
+.celar-rip-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 4px; }
+.celar-rip-action {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--brand, #0b6dd6); color: #fff;
+  border: 1px solid var(--brand, #0b6dd6); border-radius: 8px;
+  padding: 5px 10px; font-size: 12.5px; font-weight: 500;
+  cursor: pointer;
+}
+.celar-rip-action:hover:not(:disabled) { filter: brightness(1.08); }
+.celar-rip-action:disabled { opacity: 0.65; cursor: progress; }
+
 /* Comparison table the assistant renders inline when 3+ products come back.
    Shows the full decision pack — product, distributor, size, vintage, list /cs,
    effective /cs, savings %, every CPL discount tier, every RIP tier, row

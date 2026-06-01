@@ -159,17 +159,37 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
   // gets sent. Items with both qty_cases = 0 AND qty_units = 0 are filtered
   // out by the caller before the mutation runs (the confirmation popup
   // covers that case).
+  // Send all entries as ONE labelled batch. The cart keeps every RIP cluster
+  // visually separate by default, so a second send of the same cluster
+  // produces a SECOND card instead of merging. Falls back to per-item /add
+  // calls if the batch endpoint somehow rejects, so a partial outage doesn't
+  // strand the user.
   const addAllMut = useMutation({
-    mutationFn: async (entries: {
-      product_name: string; wholesaler: string; upc?: string; unit_volume?: string;
-      qty_cases: number; qty_units: number;
-    }[]) => {
-      for (const p of entries) {
-        try {
-          await cartApi.add({ product_name: p.product_name, wholesaler: p.wholesaler,
-            upc: p.upc, unit_volume: p.unit_volume,
-            qty_cases: p.qty_cases, qty_units: p.qty_units });
-        } catch { /* keep going on partial failures */ }
+    mutationFn: async (args: {
+      ripCode: string;
+      wholesaler: string;
+      entries: {
+        product_name: string; wholesaler: string; upc?: string; unit_volume?: string;
+        qty_cases: number; qty_units: number;
+      }[];
+    }) => {
+      const items = args.entries.map(p => ({
+        product_name: p.product_name, wholesaler: p.wholesaler,
+        upc: p.upc, unit_volume: p.unit_volume,
+        qty_cases: p.qty_cases, qty_units: p.qty_units,
+      }));
+      try {
+        await cartApi.addBatch({
+          batch_label: `${args.wholesaler} RIP ${args.ripCode}`,
+          batch_source: 'catalog_rip',
+          items,
+        });
+      } catch {
+        // Best-effort fallback to per-item adds so a transient endpoint
+        // failure doesn't lose the basket.
+        for (const p of items) {
+          try { await cartApi.add(p); } catch { /* skip individual failures */ }
+        }
       }
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['cart'] }); },
@@ -507,7 +527,11 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                               setAddAllConfirm({ code: banner.code, kind: 'partial', toAdd, skipped });
                               return;
                             }
-                            addAllMut.mutate(toAdd);
+                            addAllMut.mutate({
+                              ripCode: banner.code,
+                              wholesaler: banner.products[0]?.wholesaler ?? '',
+                              entries: toAdd,
+                            });
                             setAddedFlash(banner.code);
                             setTimeout(() => setAddedFlash(null), 1600);
                           }}
@@ -1014,8 +1038,9 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                         onClick={() => {
                           const code = addAllConfirm.code;
                           const toAdd = addAllConfirm.toAdd;
+                          const ws = toAdd[0]?.wholesaler ?? '';
                           setAddAllConfirm(null);
-                          addAllMut.mutate(toAdd);
+                          addAllMut.mutate({ ripCode: code, wholesaler: ws, entries: toAdd });
                           setAddedFlash(code);
                           setTimeout(() => setAddedFlash(null), 1600);
                         }}>

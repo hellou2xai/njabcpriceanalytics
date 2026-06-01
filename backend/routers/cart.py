@@ -7,6 +7,7 @@ parks an item in the "Save for later" section below the active cart. The
 "send to all reps" step (turns each rep group into a submitted order) is added in
 the Phase 3 order cutover.
 """
+import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -28,6 +29,22 @@ class CartItemIn(BaseModel):
     combo_code: Optional[str] = None
     qty_cases: int = 0
     qty_units: int = 0
+    # Optional batch tagging. When the same product is added under DIFFERENT
+    # batch_ids it produces SEPARATE cart rows (per the user rule that two
+    # sends must not mix). Single-product adds leave these NULL and keep the
+    # original upsert-merge behaviour.
+    batch_id: Optional[str] = None
+    batch_label: Optional[str] = None
+    batch_source: Optional[str] = None   # 'catalog_rip' | 'ai_rip' | 'manual' | ...
+
+
+class CartBatchIn(BaseModel):
+    """One server-side send of N items as a single labelled batch. The router
+    generates a batch_id, stamps every item, and inserts them atomically so
+    they show up together in the cart and can never be partially attributed."""
+    batch_label: str
+    batch_source: str
+    items: list[CartItemIn]
 
 
 class CartItemPatch(BaseModel):
@@ -71,6 +88,16 @@ class SwapDistributorIn(BaseModel):
     upcs: Optional[list[str]] = None       # or to a specific set of (normalized) UPCs
 
 
+class AddByRipIn(BaseModel):
+    """Send every product in a (wholesaler, rip_code) Case Mix to the cart as
+    one labelled batch. Used by the AI assistant's per-cluster button so the
+    full member list is resolved server-side (the AI only ever sees the first
+    25 in its tool output)."""
+    wholesaler: str
+    rip_code: str
+    qty_cases_per_item: int = 0   # 0 = add at zero, let the user step them up
+
+
 def _default_rep_for(con, user_id: int, wholesaler: str):
     """Return the rep id when the distributor has exactly one rep, else None."""
     reps = con.execute(
@@ -80,19 +107,26 @@ def _default_rep_for(con, user_id: int, wholesaler: str):
 
 
 def _insert_cart_item(con, user_id, item: dict, rep_id):
+    # Conflict key matches idx_cart_user_item_batch (db.py migration). Two rows
+    # with the same product but different batch_ids stay separate; identical
+    # batch_id rows merge their quantities (idempotent re-add within a batch);
+    # NULL-batch rows still upsert into the single "no batch" slot per product.
     con.execute(
         f"""INSERT INTO cart_items
               (user_id, product_name, wholesaler, upc, unit_volume, combo_code,
-               qty_cases, qty_units, sales_rep_id, saved_for_later)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,0)
-            ON CONFLICT (user_id, product_name, wholesaler, unit_volume) DO UPDATE SET
+               qty_cases, qty_units, sales_rep_id, saved_for_later,
+               batch_id, batch_label, batch_source)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,0,%s,%s,%s)
+            ON CONFLICT (user_id, product_name, wholesaler, unit_volume,
+                         COALESCE(batch_id, '')) DO UPDATE SET
               qty_cases = cart_items.qty_cases + EXCLUDED.qty_cases,
               qty_units = cart_items.qty_units + EXCLUDED.qty_units,
               saved_for_later = 0,
               updated_at = {NOW_UTC}""",
         (user_id, item["product_name"], item["wholesaler"], item.get("upc"),
          item.get("unit_volume"), item.get("combo_code"),
-         item.get("qty_cases", 0) or 0, item.get("qty_units", 0) or 0, rep_id),
+         item.get("qty_cases", 0) or 0, item.get("qty_units", 0) or 0, rep_id,
+         item.get("batch_id"), item.get("batch_label"), item.get("batch_source")),
     )
 
 
@@ -295,6 +329,107 @@ def add_to_cart(body: CartItemIn, user: dict = Depends(get_current_user)):
         rep_id = _default_rep_for(con, user["id"], body.wholesaler)
         _insert_cart_item(con, user["id"], body.model_dump(), rep_id)
     return {"status": "added"}
+
+
+@router.post("/add-batch")
+def add_batch_to_cart(body: CartBatchIn, user: dict = Depends(get_current_user)):
+    """Add N items to the cart as ONE labelled batch (e.g. a RIP Case Mix sent
+    from the catalog or the AI). Every item is tagged with the same generated
+    batch_id, so the cart page can show them as a single send and a later
+    "send the same cluster again" produces a separate batch instead of mixing.
+
+    Returns the generated batch_id so the caller can offer an immediate
+    "undo this send" affordance if it wants to."""
+    if not body.items:
+        return {"status": "noop", "added": 0}
+    batch_id = str(uuid.uuid4())
+    with get_pg() as con:
+        added = 0
+        for item in body.items:
+            payload = item.model_dump()
+            payload["batch_id"] = batch_id
+            payload["batch_label"] = body.batch_label
+            payload["batch_source"] = body.batch_source
+            rep_id = _default_rep_for(con, user["id"], payload["wholesaler"])
+            _insert_cart_item(con, user["id"], payload, rep_id)
+            added += 1
+    return {"status": "added", "added": added, "batch_id": batch_id,
+            "batch_label": body.batch_label, "batch_source": body.batch_source}
+
+
+@router.post("/add-by-rip")
+def add_by_rip(body: AddByRipIn, user: dict = Depends(get_current_user)):
+    """Resolve a (wholesaler, rip_code) cluster's full SKU list against the
+    catalog and add every member as ONE labelled batch. Same scoping the
+    catalog uses (latest rip edition <= today, latest cpl edition <= today,
+    blank/zero UPCs filtered), so the cart receives exactly the Case Mix the
+    user sees on the page — no bleed-in from rogue blank UPCs."""
+    from backend import pricing as _pricing
+    cym = _pricing.current_yyyy_mm()
+    ws = (body.wholesaler or "").strip()
+    code = (body.rip_code or "").strip()
+    if not ws or not code:
+        raise HTTPException(400, "wholesaler and rip_code are required")
+    with get_duckdb() as duck:
+        rows = duck.execute(
+            "WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched "
+            "             WHERE edition<=? GROUP BY wholesaler), "
+            "ripupc AS (SELECT DISTINCT wholesaler, LTRIM(CAST(upc AS VARCHAR),'0') un "
+            "           FROM rip "
+            "           WHERE LOWER(wholesaler)=LOWER(?) "
+            "             AND CAST(rip_code AS VARCHAR)=? "
+            "             AND edition = (SELECT MAX(edition) FROM rip "
+            "                            WHERE LOWER(wholesaler)=LOWER(?) "
+            "                              AND CAST(rip_code AS VARCHAR)=? "
+            "                              AND edition<=?) "
+            "             AND upc IS NOT NULL "
+            "             AND CAST(upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan') "
+            "             AND LTRIM(CAST(upc AS VARCHAR),'0') NOT IN ('', 'None', 'nan')) "
+            "SELECT DISTINCT c.product_name, c.wholesaler, "
+            "       CAST(c.upc AS VARCHAR) AS upc, c.unit_volume "
+            "FROM cpl_enriched c "
+            "JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
+            "JOIN ripupc r ON r.wholesaler=c.wholesaler "
+            "  AND r.un=LTRIM(CAST(c.upc AS VARCHAR),'0') "
+            "WHERE c.upc IS NOT NULL "
+            "  AND LTRIM(CAST(c.upc AS VARCHAR),'0') NOT IN ('', 'None', 'nan') "
+            "ORDER BY c.product_name",
+            [cym, ws, code, ws, code, cym]).fetchall()
+    if not rows:
+        return {"status": "noop", "added": 0, "batch_id": None,
+                "message": f"No active members found for {ws} RIP {code}."}
+    qc = max(0, int(body.qty_cases_per_item or 0))
+    batch_id = str(uuid.uuid4())
+    label = f"{ws} RIP {code}"
+    with get_pg() as con:
+        rep_id = _default_rep_for(con, user["id"], ws)
+        added = 0
+        for r in rows:
+            _insert_cart_item(con, user["id"], {
+                "product_name": r[0], "wholesaler": r[1], "upc": r[2],
+                "unit_volume": r[3], "qty_cases": qc, "qty_units": 0,
+                "batch_id": batch_id, "batch_label": label,
+                "batch_source": "ai_rip",
+            }, rep_id)
+            added += 1
+    return {"status": "added", "added": added, "batch_id": batch_id,
+            "batch_label": label, "batch_source": "ai_rip"}
+
+
+@router.delete("/batch/{batch_id}")
+def remove_batch(batch_id: str, user: dict = Depends(get_current_user)):
+    """Undo a batch send: remove every cart item tagged with this batch_id.
+    Useful right after an Add-as-Batch click ('oops, wrong cluster')."""
+    with get_pg() as con:
+        r = con.execute(
+            "DELETE FROM cart_items WHERE user_id=%s AND batch_id=%s",
+            (user["id"], batch_id),
+        )
+        try:
+            removed = int(r.rowcount or 0)
+        except Exception:
+            removed = 0
+    return {"status": "removed", "removed": removed, "batch_id": batch_id}
 
 
 @router.put("/{item_id}")

@@ -778,14 +778,29 @@ def search_products(
                       AND CAST(rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
                     GROUP BY wholesaler, edition, CAST(upc AS VARCHAR)
                 ),
+                -- Cluster size = number of distinct UPCs sharing each
+                -- (wholesaler, edition, rip_code) in the RIP sheet. Used to
+                -- order clusters biggest-first when group_by_rip is on.
+                rip_cluster_sizes AS (
+                    SELECT wholesaler AS rcs_wholesaler,
+                           edition    AS rcs_edition,
+                           CAST(rip_code AS VARCHAR) AS rcs_code,
+                           COUNT(DISTINCT CAST(upc AS VARCHAR)) AS cluster_members
+                    FROM {rip_src_cte}
+                    WHERE upc IS NOT NULL
+                      AND CAST(upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
+                      AND rip_code IS NOT NULL
+                      AND CAST(rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
+                    GROUP BY wholesaler, edition, CAST(rip_code AS VARCHAR)
+                ),
                 -- Fan rip_groups out by code so a UPC with N rebates emits N
                 -- rows. The LEFT JOIN below preserves UPCs that don't qualify
                 -- for any rebate (they pass through with NULL membership).
                 rip_memberships AS (
-                    SELECT rg_wholesaler, rg_edition, rg_upc,
-                           UNNEST(rip_group_codes) AS membership_code,
-                           rip_group_min, rip_group_count, rip_group_codes
-                    FROM rip_groups
+                    SELECT rg.rg_wholesaler, rg.rg_edition, rg.rg_upc,
+                           UNNEST(rg.rip_group_codes) AS membership_code,
+                           rg.rip_group_min, rg.rip_group_count, rg.rip_group_codes
+                    FROM rip_groups rg
                 )
             """
             rip_join_sql = """
@@ -793,6 +808,10 @@ def search_products(
                   ON rm.rg_wholesaler = wholesaler
                  AND rm.rg_edition    = edition
                  AND rm.rg_upc        = CAST(upc AS VARCHAR)
+                LEFT JOIN rip_cluster_sizes rcs
+                  ON rcs.rcs_wholesaler = wholesaler
+                 AND rcs.rcs_edition    = edition
+                 AND rcs.rcs_code       = rm.membership_code
             """
 
         # Price-trend filter: keep rows whose effective price changes between
@@ -949,8 +968,14 @@ def search_products(
         # aliased (rg_*) so the unqualified WHERE clause above keeps resolving
         # to the CPL table unambiguously.
         if group_by_rip:
+            # Sort clusters by their TOTAL Case-Mix size (biggest first), then by
+            # code. Per the user: when group-by-RIP is on, the most attractive
+            # case-mix groups (most members) belong at the top, smaller ones at
+            # the bottom; rows outside any cluster sink to the end.
             order_by = (
-                "rip_group_code IS NULL, rip_group_code ASC, "
+                "rip_group_code IS NULL, "
+                "rip_group_member_count DESC NULLS LAST, "
+                "rip_group_code ASC, "
                 + order_by
             )
         # When group_by_rip is on we LEFT JOIN the fanned-out rip_memberships
@@ -961,6 +986,7 @@ def search_products(
             rip_select_sql = """
                    rm.membership_code AS rip_group_code,
                    rm.rip_group_count,
+                   rcs.cluster_members AS rip_group_member_count,
                    CASE
                        WHEN rm.rip_group_min IS NULL THEN false
                        WHEN rip_code IS NULL OR CAST(rip_code AS VARCHAR) IN ('', '0') THEN true

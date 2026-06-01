@@ -650,13 +650,27 @@ def _t_rip_lookup(con, args):
             for c in codes_sorted:
                 all_codes.add((c, r["wholesaler"]))
 
-    code_details = [_code_detail(c, ws) for c, ws in sorted(all_codes)[:15]]
+    # Sort RIP codes by Case-Mix size (biggest first), then code, then distributor,
+    # so the AI mirrors the catalog's group_by_rip ordering.
+    _details_all = [_code_detail(c, ws) for c, ws in sorted(all_codes)]
+    _details_all.sort(key=lambda d: (-(d.get("member_count") or 0),
+                                     d.get("rip_code") or "",
+                                     d.get("wholesaler") or ""))
+    code_details = _details_all[:15]
     note = None
     if not all_codes:
         _when = "this month" if cym == _current_ym() else f"in {cym}"
         note = f"Found {len(matched)} product(s) matching '{match}', but none have a RIP rebate {_when}."
+    # Order each distributor's codes by Case-Mix size (biggest first), so the
+    # quick by_distributor map agrees with the detailed rip_codes list above.
+    _size_for = {(d.get("rip_code"), d.get("wholesaler")): (d.get("member_count") or 0)
+                 for d in _details_all}
+    by_dist_sorted = {
+        k: sorted(v, key=lambda c: (-(_size_for.get((c, k), 0)), c))
+        for k, v in by_dist.items()
+    }
     return {"query": match, "edition": cym, "matched_count": len(matched), "matched_products": matched[:25],
-            "by_distributor": {k: sorted(v) for k, v in by_dist.items()}, "rip_codes": code_details, "note": note}
+            "by_distributor": by_dist_sorted, "rip_codes": code_details, "note": note}
 
 
 def _ml_of(vol):

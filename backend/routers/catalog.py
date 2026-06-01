@@ -198,12 +198,16 @@ def _q_clause(q: str, extra_aliases: dict | None = None,
             counter["i"] += 1
             params[k] = f"%{term}%"
             keys.append(k)
-            # Also match the catalog row's size columns so queries like
-            # "Finlandia 1.75L" or "Bombay 750ML" find the right SKU even
-            # when the size isn't in the product name. unit_volume holds the
-            # raw value ("1.75L", "750ML"); unit_volume_std is the bucket
-            # ("750ML" also matches a row stored as "25.33OZ"). Volume hits
-            # don't bump relevance — only name matches do (rel_terms below).
+            # Required match: a row must have at least one of these structured
+            # fields contain the token. Description is INTENTIONALLY excluded
+            # here — a critic name like "Josh Raynolds" mentioned inside the
+            # tasting notes used to qualify a Perrin wine for q=JOSH, which
+            # was nonsense. Description is now ranking-only (see rel_terms
+            # below): when present it boosts a row that's already qualified
+            # by a structured-field match, but it can no longer qualify a row
+            # on its own. q='tequila' still works because unit_volume,
+            # category, category_path and region all match it via the
+            # enrichment side.
             sub = (
                 f"UPPER({name_col}) LIKE UPPER(${k}) "
                 f"OR UPPER(COALESCE({brand_col},'')) LIKE UPPER(${k}) "
@@ -214,15 +218,27 @@ def _q_clause(q: str, extra_aliases: dict | None = None,
                 sub += (
                     f" OR EXISTS (SELECT 1 FROM {enrich_table} _pe "
                     f"WHERE _pe.upc = LTRIM(CAST({_outer_upc} AS VARCHAR), '0') AND ("
-                    f"UPPER(COALESCE(_pe.description,'')) LIKE UPPER(${k}) "
-                    f"OR UPPER(COALESCE(_pe.category,'')) LIKE UPPER(${k}) "
+                    f"UPPER(COALESCE(_pe.category,'')) LIKE UPPER(${k}) "
                     f"OR UPPER(COALESCE(_pe.category_path,'')) LIKE UPPER(${k}) "
                     f"OR UPPER(COALESCE(_pe.region,'')) LIKE UPPER(${k}) "
                     f"OR UPPER(COALESCE(_pe.name,'')) LIKE UPPER(${k})))")
             subs.append(f"({sub})")
         token_clauses.append("(" + " OR ".join(subs) + ")")
+        # Relevance: NAME match scores 1.0 per token. Description match
+        # (boost-only — no longer qualifies a row on its own) adds 0.25.
+        # Combined name + description match (1.25) ranks above name-only
+        # (1.0) which ranks above brand/category/volume match (0.0).
         name_only = " OR ".join(f"UPPER({name_col}) LIKE UPPER(${k})" for k in keys)
         rel_terms.append(f"(CASE WHEN ({name_only}) THEN 1 ELSE 0 END)")
+        if enrich_table:
+            desc_only = " OR ".join(
+                f"UPPER(COALESCE(_pe2.description,'')) LIKE UPPER(${k})" for k in keys
+            )
+            rel_terms.append(
+                f"(CASE WHEN EXISTS (SELECT 1 FROM {enrich_table} _pe2 "
+                f"WHERE _pe2.upc = LTRIM(CAST({_outer_upc} AS VARCHAR), '0') "
+                f"AND ({desc_only})) THEN 0.25 ELSE 0 END)"
+            )
     name_match = " AND ".join(token_clauses) if token_clauses else "TRUE"
     rel_expr = "(" + " + ".join(rel_terms) + ")" if rel_terms else "0"
 

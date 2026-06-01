@@ -174,7 +174,7 @@ export interface CatalogAiProduct {
   next_tiers?: AssistantTier[];
   next_effective_case_price?: number | null;
 }
-export type CatalogAiActionType = 'add_to_cart' | 'update_quantity' | 'add_to_favorites' | 'add_to_list' | 'swap_distributor' | 'submit_order' | 'reorder' | 'message_rep' | 'set_order_note' | 'assign_rep' | 'create_rep';
+export type CatalogAiActionType = 'add_to_cart' | 'update_quantity' | 'add_to_favorites' | 'add_to_list' | 'remove_from_cart' | 'swap_distributor' | 'submit_order' | 'reorder' | 'message_rep' | 'set_order_note' | 'assign_rep' | 'create_rep';
 export interface CatalogAiAction {
   type: CatalogAiActionType;
   cases: number;

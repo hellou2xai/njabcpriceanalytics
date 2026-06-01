@@ -35,7 +35,7 @@ from backend.ai_catalog_query import (
 from backend import pricing as _pricing
 from backend import rip_utils as _rip   # canonical case/bottle RIP unit math
 
-_ACTION_TYPES =("add_to_cart", "update_quantity", "add_to_favorites", "add_to_list", "swap_distributor", "submit_order", "reorder", "message_rep", "set_order_note", "assign_rep", "create_rep")
+_ACTION_TYPES =("add_to_cart", "update_quantity", "add_to_favorites", "add_to_list", "swap_distributor", "submit_order", "reorder", "message_rep", "set_order_note", "assign_rep", "create_rep", "remove_from_cart")
 _MAX_TURNS = 6
 # Stocking-deal floor used by the "best deals" ranker by default. A row whose
 # effective_case_price is below this fraction of frontline (e.g. a 100%-off
@@ -155,6 +155,134 @@ def _t_price_history(con, args):
             "history": rows.to_dict(orient="records")}
 
 
+def _t_price_timeline(con, args):
+    """Month-over-month price comparison for ONE product across editions.
+
+    Follows the product by UPC (the stable key — names change between editions)
+    and returns, PER DISTRIBUTOR, a per-edition series of frontline + effective
+    case price, RIP savings and discount flag, each with the month-over-month
+    delta, plus a summary (cheapest / dearest month, net change, latest vs prior,
+    trend). Use for 'price over months', 'how has X's price changed', 'compare X
+    prices across months', 'price trend / history for X'. Optional `distributor`
+    to focus one supplier and `months` to cap how many recent editions."""
+    match = (args.get("match") or "").strip()
+    if not match:
+        return {"error": "Provide a product name or UPC in match."}
+    distributor = (args.get("distributor") or "").strip()
+    try:
+        months_n = int(args.get("months") or args.get("limit") or 12)
+    except (TypeError, ValueError):
+        months_n = 12
+    months_n = min(max(months_n, 2), 36)
+
+    compact = re.sub(r"[\s\-]", "", match)
+    upc, name_hint = None, None
+    if compact.isdigit() and len(compact) >= 6:
+        upc = compact.lstrip("0") or compact
+    else:
+        toks = [t for t in re.split(r"\s+", match) if t]
+        if toks:
+            wc = " AND ".join(
+                "(UPPER(product_name) LIKE UPPER(?) OR UPPER(COALESCE(brand,'')) LIKE UPPER(?))"
+                for _ in toks)
+            rp: list = []
+            for t in toks:
+                rp += [f"%{t}%", f"%{t}%"]
+            try:
+                r = con.execute(
+                    "SELECT LTRIM(CAST(upc AS VARCHAR),'0') un, ANY_VALUE(product_name) pn, "
+                    "COUNT(*) n, MAX(edition) last_ed FROM cpl_enriched "
+                    f"WHERE {wc} AND upc IS NOT NULL "
+                    "AND LTRIM(CAST(upc AS VARCHAR),'0') NOT IN ('', '0') "
+                    "GROUP BY 1 ORDER BY last_ed DESC, n DESC LIMIT 1", rp).fetchone()
+                if r:
+                    upc, name_hint = r[0], r[1]
+            except Exception:
+                pass
+    if not upc:
+        return {"error": f"Couldn't resolve a product with a UPC for '{match}'."}
+
+    where = ["LTRIM(CAST(c.upc AS VARCHAR),'0') = ?"]
+    qp: list = [upc]
+    if distributor:
+        where.append("LOWER(c.wholesaler) = LOWER(?)")
+        qp.append(distributor)
+    try:
+        recs = con.execute(
+            "SELECT c.edition, c.wholesaler, c.product_name, c.unit_volume, c.unit_qty, "
+            "c.frontline_case_price, c.effective_case_price, c.rip_savings, "
+            "c.total_savings_per_case, c.has_rip, c.has_discount "
+            f"FROM cpl_enriched c WHERE {' AND '.join(where)} "
+            "ORDER BY c.edition", qp).fetchdf().to_dict(orient="records")
+    except Exception as e:
+        return {"error": f"{type(e).__name__}"}
+    if not recs:
+        return {"error": f"No price history found for '{match}'."}
+
+    hint_tokens = set(re.findall(r"[A-Z0-9]+", (name_hint or match).upper()))
+
+    def _overlap(nm) -> int:
+        return len(hint_tokens & set(re.findall(r"[A-Z0-9]+", str(nm or "").upper())))
+
+    # Group by distributor, then ONE row per edition. A UPC can collide with a
+    # second product in the same edition (bad source data) — disambiguate by name
+    # similarity to the resolved product, tie-broken by higher list price.
+    by_ws: dict = {}
+    for r in recs:
+        ws = r["wholesaler"]
+        ed = str(r["edition"])
+        slot = by_ws.setdefault(ws, {})
+        cur = slot.get(ed)
+        if cur is None:
+            slot[ed] = r
+            continue
+        if (_overlap(r["product_name"]), _num(r["frontline_case_price"]) or 0) > \
+           (_overlap(cur["product_name"]), _num(cur["frontline_case_price"]) or 0):
+            slot[ed] = r
+
+    distributors = []
+    for ws, eds in by_ws.items():
+        series = [eds[e] for e in sorted(eds)][-months_n:]
+        timeline, prev_eff = [], None
+        for r in series:
+            eff = _num(r.get("effective_case_price"))
+            front = _num(r.get("frontline_case_price"))
+            delta = round(eff - prev_eff, 2) if (eff is not None and prev_eff is not None) else None
+            pct = round((eff - prev_eff) / prev_eff * 100, 1) if (delta is not None and prev_eff) else None
+            timeline.append({
+                "edition": str(r.get("edition")),
+                "frontline_case_price": front, "effective_case_price": eff,
+                "rip_savings": _num(r.get("rip_savings")) or 0.0,
+                "total_savings_per_case": _num(r.get("total_savings_per_case")) or 0.0,
+                "has_rip": bool(r.get("has_rip")), "has_discount": bool(r.get("has_discount")),
+                "delta_vs_prev": delta, "pct_vs_prev": pct,
+            })
+            if eff is not None:
+                prev_eff = eff
+        effs = [(t["edition"], t["effective_case_price"]) for t in timeline if t["effective_case_price"] is not None]
+        cheapest = min(effs, key=lambda x: x[1]) if effs else None
+        dearest = max(effs, key=lambda x: x[1]) if effs else None
+        first_eff, last_eff = (effs[0][1] if effs else None), (effs[-1][1] if effs else None)
+        net = round(last_eff - first_eff, 2) if (first_eff is not None and last_eff is not None) else None
+        trend = ("flat" if net is None or abs(net) < 0.01 else ("up" if net > 0 else "down"))
+        distributors.append({
+            "wholesaler": ws,
+            "unit_volume": series[-1].get("unit_volume") if series else None,
+            "bottles_per_case": (str(series[-1].get("unit_qty")) if series and series[-1].get("unit_qty") is not None else None),
+            "timeline": timeline,
+            "cheapest_month": ({"edition": cheapest[0], "effective_case_price": cheapest[1]} if cheapest else None),
+            "dearest_month": ({"edition": dearest[0], "effective_case_price": dearest[1]} if dearest else None),
+            "first_effective": first_eff, "latest_effective": last_eff,
+            "net_change": net,
+            "net_pct": (round(net / first_eff * 100, 1) if (net is not None and first_eff) else None),
+            "trend": trend,
+        })
+    distributors.sort(key=lambda d: d["wholesaler"])
+    return {"product": name_hint or (recs[-1].get("product_name") if recs else match),
+            "upc": upc, "months": months_n, "distributor_count": len(distributors),
+            "distributors": distributors}
+
+
 def _t_price_details(con, args):
     """Full alcohol-retail pricing breakdown for one product: frontline case &
     bottle price, discount tiers, RIP tiers, effective price, bottles/case, and
@@ -256,14 +384,15 @@ def _t_compare_distributors(con, args):
             "distributor_count": len(recs), "comparison": recs}
 
 
-def _rip_tiers_for(con, code, ws=None):
+def _rip_tiers_for(con, code, ws=None, edition=None):
     """(description, [tiers]) for a RIP code. A code's FULL tier ladder is split
     across MULTIPLE rip rows — each row holds up to 4 tier slots, and a code spans
     several UPCs/rows — so we read ALL rows for the code in its latest edition and
     UNION their tiers. (Reading a single row dropped tiers such as the
     '3 Cases -> $108' rung on Anteel code 100027.) Tiers are deduped by
-    (unit, qty, amount) and sorted by rebate amount."""
-    cym = _current_ym()
+    (unit, qty, amount) and sorted by rebate amount. `edition` (YYYY-MM) reads the
+    ladder AS OF that month so a past-month lookup shows that month's tiers."""
+    cym = edition or _current_ym()
     base = ["CAST(rip_code AS VARCHAR) = ?"]
     bp = [str(code)]
     if ws:
@@ -307,6 +436,53 @@ def _rip_tiers_for(con, code, ws=None):
     return desc, tiers
 
 
+_MONTH_NAMES = {
+    "january": 1, "jan": 1, "february": 2, "feb": 2, "march": 3, "mar": 3,
+    "april": 4, "apr": 4, "may": 5, "june": 6, "jun": 6, "july": 7, "jul": 7,
+    "august": 8, "aug": 8, "september": 9, "sept": 9, "sep": 9, "october": 10,
+    "oct": 10, "november": 11, "nov": 11, "december": 12, "dec": 12,
+}
+
+
+def _resolve_month(con, text) -> Optional[str]:
+    """Parse a user month reference into a 'YYYY-MM' edition, or None.
+
+    Accepts '2026-05', '05/2026', 'May', 'may 2026', 'this month'. A bare month
+    name with no year resolves to the most recent edition in the data with that
+    month (so 'May' on a June-current dataset -> '2026-05'). Returns None when no
+    month is referenced, so the caller falls back to the current edition."""
+    if not text:
+        return None
+    s = str(text).strip().lower()
+    if s in ("this month", "current", "now"):
+        return _current_ym()
+    m = re.search(r"\b(20\d{2})[-/.](0?[1-9]|1[0-2])\b", s)         # 2026-05
+    if m:
+        return f"{m.group(1)}-{int(m.group(2)):02d}"
+    m = re.search(r"\b(0?[1-9]|1[0-2])[-/.](20\d{2})\b", s)         # 05/2026
+    if m:
+        return f"{m.group(2)}-{int(m.group(1)):02d}"
+    mon = None
+    for name, num in _MONTH_NAMES.items():
+        if re.search(rf"\b{name}\b", s):
+            mon = num
+            break
+    if mon is None:
+        return None
+    yr = re.search(r"\b(20\d{2})\b", s)
+    if yr:
+        return f"{yr.group(1)}-{mon:02d}"
+    try:
+        row = con.execute(
+            "SELECT MAX(edition) FROM cpl_enriched WHERE edition LIKE ?",
+            [f"%-{mon:02d}"]).fetchone()
+        if row and row[0]:
+            return str(row[0])
+    except Exception:
+        pass
+    return f"{_current_ym()[:4]}-{mon:02d}"
+
+
 def _t_rip_lookup(con, args):
     """RIP rebate lookup by brand/product NAME or a RIP code.
 
@@ -314,13 +490,17 @@ def _t_rip_lookup(con, args):
     RIP codes, and (b) different DISTRIBUTORS use different codes — by reading the
     full set of codes per (distributor, UPC) from the RIP sheet, not just the one
     code on the catalog row. Returns matched products (each with all its codes),
-    a by-distributor code map, and per-code tiers + description + product count."""
-    cym = _current_ym()
+    a by-distributor code map, and per-code tiers + description + product count.
+
+    Pass `month` ('May' / '2026-05') to look up a PAST edition so a rebate that
+    existed then but has since expired is still found."""
+    # Honour a month/edition reference so an expired past-month rebate is found.
+    cym = _resolve_month(con, args.get("month")) or _current_ym()
     code = str(args.get("rip_code") or "").strip()
     match = (args.get("match") or "").strip()
 
     def _code_detail(rc, ws=None):
-        desc, tiers = _rip_tiers_for(con, rc, ws)
+        desc, tiers = _rip_tiers_for(con, rc, ws, edition=cym)
         # Augment each tier with per-case (or per-bottle) savings + flag the best.
         best_amt = max((t["amount"] for t in tiers), default=0.0)
         for t in tiers:
@@ -465,8 +645,9 @@ def _t_rip_lookup(con, args):
     code_details = [_code_detail(c, ws) for c, ws in sorted(all_codes)[:15]]
     note = None
     if not all_codes:
-        note = f"Found {len(matched)} product(s) matching '{match}', but none have a RIP rebate this month."
-    return {"query": match, "matched_count": len(matched), "matched_products": matched[:25],
+        _when = "this month" if cym == _current_ym() else f"in {cym}"
+        note = f"Found {len(matched)} product(s) matching '{match}', but none have a RIP rebate {_when}."
+    return {"query": match, "edition": cym, "matched_count": len(matched), "matched_products": matched[:25],
             "by_distributor": {k: sorted(v) for k, v in by_dist.items()}, "rip_codes": code_details, "note": note}
 
 
@@ -1336,7 +1517,8 @@ def _t_dated_deal_reminders(con, args):
 
 _DATA_TOOLS = {
     "category_breakdown": (_t_category_breakdown, "Product counts and average case price per category (current edition)."),
-    "rip_lookup": (_t_rip_lookup, "RIP rebate lookup by brand/product NAME (e.g. 'sutter home') or by a RIP code. A UPC can have MULTIPLE codes and codes differ BY DISTRIBUTOR; returns matched products (each with all its codes), a by_distributor code map, and per-code tiers + description + product count. Use for any 'what RIP / rebate / RIP code' question."),
+    "price_timeline": (_t_price_timeline, "Month-over-month price comparison for ONE product across editions. Follows the product by UPC (stable across editions even when the name changes) and returns, per distributor, a per-edition series of frontline + effective case price, RIP savings and discount flag, each with the month-over-month delta and %, plus a summary (cheapest / dearest month, net change, latest vs prior, trend up/down/flat). Use for ANY 'price over months / over time', 'how has X's price changed', 'compare X prices across months', 'price history/trend for X'. Pass `distributor` to focus one supplier and `months` to cap recent editions. A line chart of effective $/case over months is attached automatically."),
+    "rip_lookup": (_t_rip_lookup, "RIP rebate lookup by brand/product NAME (e.g. 'sutter home') or by a RIP code. A UPC can have MULTIPLE codes and codes differ BY DISTRIBUTOR; returns matched products (each with all its codes), a by_distributor code map, and per-code tiers + description + product count. Use for any 'what RIP / rebate / RIP code' question. Pass month='May' / '2026-05' when the user names a month, so a rebate from a past edition that has since expired is still found (rebates change every edition)."),
     "compare_distributors": (_t_compare_distributors, "Side-by-side price comparison of ONE product across all distributors carrying it. `match` = UPC or product name (UPC is resolved). Returns each distributor's case/effective price + savings; shown as a table and the rows as add-to-cart cards."),
     "distributor_breakdown": (_t_distributor_breakdown, "Per-distributor product counts, avg case price, and #with RIP/discount."),
     "deal_counts": (_t_deal_counts, "Totals: products, #with RIP, #with discount, #closeouts."),
@@ -2437,6 +2619,8 @@ def _tool_specs() -> list:
         "order_by": {"type": "string", "enum": ["cheapest", "expensive"]},
         "limit": {"type": "number"},
         "rip_code": {"type": "string", "description": "A specific RIP rebate code (for rip_lookup)."},
+        "month": {"type": "string", "description": "Target month / edition for rip_lookup, e.g. 'May', 'May 2026', or '2026-05'. Pass whenever the user names a month so a rebate that existed then but has since expired is still found. Omit for the current month."},
+        "months": {"type": "number", "description": "For price_timeline: how many recent editions/months to include (default 12, max 36)."},
         "sizes": {"type": "array", "items": {"type": "string"},
                   "description": "Restrict to specific bottle sizes the buyer named, e.g. ['1.75L','750mL']. Bare numbers work ('1.75','750'). ALWAYS set this when the user specifies a size — do not return other sizes."},
         "region": {"type": "string", "description": "Region / origin hint (california, napa, sonoma, bordeaux, tuscany, italy, france, spain, kentucky, scotland, mexico, ...). Use this for ANY geography query instead of putting the place name in `match` — `match='california'` wrongly matches ABSOLUT CALIFORNIA. Auto-narrows product_type (california -> Wine, kentucky -> Spirits)."},
@@ -2464,7 +2648,8 @@ def _tool_specs() -> list:
     specs.append({
         "name": "perform_action",
         "description": ("Perform a user action: add_to_cart, update_quantity, add_to_favorites, add_to_list, "
-                        "swap_distributor. Resolves the product(s) by `match`+`which`. To add/act on an ENTIRE "
+                        "remove_from_cart, swap_distributor. Resolves the product(s) by `match`+`which` (use "
+                        "which='all' with remove_from_cart to remove every matching cart line). To add/act on an ENTIRE "
                         "RIP Case Mix (e.g. 'add all the case mix to cart', 'add all these'), pass "
                         "`rip_code`=<the code> (optionally `distributor`) — it resolves EVERY product sharing "
                         "that code. swap_distributor REPLACES the user's cart items from `from_distributor` "
@@ -2948,7 +3133,9 @@ _SYSTEM = (
     "When the user wants to SEE or pick specific products, call top_products — those results are shown "
     "to the user as interactive cards with Add to Cart / Add to List / Favorite buttons, so you don't "
     "need to repeat every product in prose; summarize instead. "
-    "When the user asks to add to cart, set quantity, favorite, or build a list, call perform_action. "
+    "When the user asks to add to cart, set quantity, favorite, build a list, or REMOVE/DELETE an item from "
+    "the cart, call perform_action (type=remove_from_cart to take something out; which='all' to remove every "
+    "matching line). "
     "ADD WHOLE CASE MIX: when the user says 'add all the case mix / add all these / add every member' right "
     "after you showed a RIP's Case Mix, call perform_action with type=add_to_cart and rip_code=<that code> "
     "(NOT match) — it resolves and adds EVERY product in the code's Case Mix at the given cases (default 1 "
@@ -3395,6 +3582,7 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
     products_out: list = []
     seen_products: set = set()
     price_detail_result: dict | None = None
+    timeline_result: dict | None = None   # last price_timeline result (for the deterministic line chart)
     screen_out: dict | None = None
     screen_args: dict | None = None   # last show_on_screen filters (for the standalone auto-table)
 
@@ -3497,7 +3685,7 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                         # top_products / price_history surface concrete products.
                         if isinstance(out, list):
                             _collect(out)
-                        elif isinstance(out, dict) and out.get("product"):
+                        elif isinstance(out, dict) and out.get("product") and b.name != "price_timeline":
                             _collect([{**out, "product_name": out.get("product")}])
                         # compare_distributors -> each distributor row as a card;
                         # find_substitute -> each alternative as a card.
@@ -3510,6 +3698,8 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                         if b.name in ("price_details", "deal_360") and isinstance(out, dict) and not out.get("error"):
                             price_detail_result = out
                             _collect([out])   # also show the product as a card
+                        if b.name == "price_timeline" and isinstance(out, dict) and not out.get("error"):
+                            timeline_result = out   # deterministic line chart attached below
                     else:
                         out = {"error": "unknown tool"}
                     results.append({"type": "tool_result", "tool_use_id": b.id,
@@ -3523,7 +3713,7 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
     charts = _extract_charts(final_text)
     # Deterministically attach the alcohol-retail price visuals when a price
     # breakdown was fetched, so they always appear (not model-dependent).
-    charts = _price_charts(price_detail_result) + charts
+    charts = _price_charts(price_detail_result) + _timeline_charts(timeline_result) + charts
     answer = _strip_charts(final_text) or "Done."
     if not page_path:
         # Standalone page: no grid exists, so strip any "on the left/screen/page"
@@ -3679,6 +3869,39 @@ def _price_charts(pd: dict | None) -> list:
                         {"name": "Effective (after RIP)", "data": eff_h},
                     ]})
     return out
+
+
+def _timeline_charts(tl: dict | None) -> list:
+    """Line chart of effective $/case per edition, one series per distributor,
+    from a price_timeline result. Carries values forward across gaps so a missing
+    month doesn't read as a $0 dip (the renderer coalesces missing points to 0)."""
+    if not tl or not tl.get("distributors"):
+        return []
+    eds = sorted({t["edition"] for d in tl["distributors"]
+                  for t in d.get("timeline", [])})[-12:]
+    if len(eds) < 2:
+        return []
+    series = []
+    for d in tl["distributors"]:
+        m = {t["edition"]: t.get("effective_case_price") for t in d.get("timeline", [])}
+        known = [m[e] for e in eds if m.get(e) is not None]
+        if not known:
+            continue
+        backfill = known[0]
+        data, last = [], None
+        for e in eds:
+            v = m.get(e)
+            if v is None:
+                v = last if last is not None else backfill
+            else:
+                last = v
+            data.append(v)
+        series.append({"name": str(d["wholesaler"]).title(), "data": data})
+    if not series:
+        return []
+    return [{"type": "line",
+             "title": f"Effective $/case over months — {tl.get('product')}",
+             "labels": eds, "series": series}]
 
 
 def _extract_charts(text: str) -> list:

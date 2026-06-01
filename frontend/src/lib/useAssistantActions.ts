@@ -110,6 +110,20 @@ export function useAssistantActions() {
             });
             if (created?.id) await cartApi.assignRep(a.distributor, created.id);
           }
+        } else if (a.type === 'remove_from_cart') {
+          // Resolve the assistant's products to actual cart lines and delete
+          // them. Match by normalized UPC + distributor first, else by
+          // name + distributor (+ size when known).
+          const { items } = await cartApi.get();
+          const norm = (u?: string | null) => (u ?? '').replace(/^0+/, '');
+          for (const p of a.products) {
+            const matches = items.filter(it =>
+              (p.upc && it.upc && norm(it.upc) === norm(p.upc) && it.wholesaler === p.wholesaler) ||
+              (it.product_name === p.product_name && it.wholesaler === p.wholesaler &&
+               (!p.unit_volume || !it.unit_volume || it.unit_volume === p.unit_volume))
+            );
+            for (const it of matches) await cartApi.remove(it.id);
+          }
         } else if (a.type === 'add_to_list') {
           const name = (a.list_name || 'AI List').trim();
           const existing = await listsApi.list();
@@ -145,6 +159,7 @@ export function describeActions(actions: CatalogAiAction[] | undefined): string[
     else if (a.type === 'update_quantity') chips.push(`✏️ ${label} → ${a.cases}cs / ${a.bottles}btl`);
     else if (a.type === 'add_to_favorites') chips.push(`⭐ ${label}`);
     else if (a.type === 'add_to_list') chips.push(`📋 ${a.list_name ?? 'List'} (+${a.products.length})`);
+    else if (a.type === 'remove_from_cart') chips.push(`🗑️ Removed ${label}`);
     else if (a.type === 'swap_distributor') chips.push(`🔁 Swap ${a.from_distributor ?? '?'} → ${a.to_distributor ?? '?'}${a.rip_code ? ` (RIP ${a.rip_code})` : ''}`);
     else if (a.type === 'submit_order') chips.push('📧 Send order to sales rep');
     else if (a.type === 'reorder') chips.push('🔄 Reorder past order to cart');

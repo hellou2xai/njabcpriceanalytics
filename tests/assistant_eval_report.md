@@ -1,8 +1,8 @@
-# Celar AI Assistant — tool-level eval report
+# Celar AI Assistant: tool-level eval report
 
-_Generated: 2026-06-01 18:24 · run `python scripts/eval_assistant.py`_
+_Generated: 2026-06-01 18:50 · run `python scripts/eval_assistant.py`_
 
-**Result: 70 passed, 0 warning(s), 0 failed — all checks passed.**
+**Result: 70 passed, 0 warning(s), 0 failed: all checks passed.**
 
 This eval exercises the assistant's data tools directly (no model call), so it catches response bugs at their source: bad pricing, wrong filters, edition handling, crashes, and inconsistency between tools.
 

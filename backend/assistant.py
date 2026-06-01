@@ -189,12 +189,20 @@ def _t_price_timeline(con, args):
             for t in toks:
                 rp += [f"%{t}%", f"%{t}%"]
             try:
+                # Prefer the standard 750ML when the name is ambiguous across
+                # sizes (so 'Macallan Double Cask 12' resolves to the 750ML
+                # bottle, not the 50ML 12-pack), unless the user named a size.
+                size_hint = bool(re.search(r"\b(50\s?ml|375|187|1\.?75|1\s?l\b|1000|liter|litre)\b",
+                                           match.lower()))
+                size_rank = ("0" if size_hint else
+                             "(CASE WHEN UPPER(REPLACE(ANY_VALUE(unit_volume), ' ', '')) "
+                             "LIKE '750%' THEN 0 ELSE 1 END)")
                 r = con.execute(
                     "SELECT LTRIM(CAST(upc AS VARCHAR),'0') un, ANY_VALUE(product_name) pn, "
                     "COUNT(*) n, MAX(edition) last_ed FROM cpl_enriched "
                     f"WHERE {wc} AND upc IS NOT NULL "
                     "AND LTRIM(CAST(upc AS VARCHAR),'0') NOT IN ('', '0') "
-                    "GROUP BY 1 ORDER BY last_ed DESC, n DESC LIMIT 1", rp).fetchone()
+                    f"GROUP BY 1 ORDER BY {size_rank}, last_ed DESC, n DESC LIMIT 1", rp).fetchone()
                 if r:
                     upc, name_hint = r[0], r[1]
             except Exception:

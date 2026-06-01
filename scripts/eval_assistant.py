@@ -257,7 +257,7 @@ def run(con):
             record("WARN", "consistency: price_details unavailable", pname)
 
     # 8) price_movers direction sanity. Verify each returned product against its
-    #    EXACT latest-edition row (wholesaler + name + size + upc) — price_trend
+    #    EXACT latest-edition row (wholesaler + name + size + upc): price_trend
     #    is computed per product+size+vintage, so a coarse (wholesaler, upc) check
     #    false-fails on UPC collisions.
     section("price_movers direction")
@@ -316,7 +316,7 @@ def write_report(path: str, n_pass: int, n_warn: int, n_fail: int) -> None:
             sections.append(sec)
     icon = {"PASS": "✅", "WARN": "⚠️", "FAIL": "❌"}
     lines = []
-    lines.append("# Celar AI Assistant — tool-level eval report")
+    lines.append("# Celar AI Assistant: tool-level eval report")
     lines.append("")
     lines.append(f"_Generated: {datetime.now():%Y-%m-%d %H:%M} · run `python scripts/eval_assistant.py`_")
     lines.append("")
@@ -326,7 +326,7 @@ def write_report(path: str, n_pass: int, n_warn: int, n_fail: int) -> None:
         verdict = f"no failures, {n_warn} warning(s) to review"
     else:
         verdict = "all checks passed"
-    lines.append(f"**Result: {n_pass} passed, {n_warn} warning(s), {n_fail} failed — {verdict}.**")
+    lines.append(f"**Result: {n_pass} passed, {n_warn} warning(s), {n_fail} failed: {verdict}.**")
     lines.append("")
     lines.append("This eval exercises the assistant's data tools directly (no model call), so it "
                  "catches response bugs at their source: bad pricing, wrong filters, edition handling, "
@@ -338,7 +338,7 @@ def write_report(path: str, n_pass: int, n_warn: int, n_fail: int) -> None:
         lines.append("## Needs attention")
         lines.append("")
         for s, n, d in attn:
-            lines.append(f"- {icon[s]} **{n}** — {d or 'see details'}")
+            lines.append(f"- {icon[s]} **{n}**: {d or 'see details'}")
         lines.append("")
     # Per-section tables.
     for sec in sections:

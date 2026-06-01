@@ -496,12 +496,29 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
         -- sticker agree. NULL trend = no next-edition match for this row.
         SELECT *,
             LEAD(effective_case_price) OVER w AS next_effective_case_price,
+            LAG(effective_case_price) OVER w AS prev_effective_case_price,
+            -- Both-directional trend so the LATEST loaded edition is never null.
+            -- Forward (this -> next edition) is "buy now vs wait" and is used
+            -- whenever a next edition exists. When there isn't one yet (you're on
+            -- the newest sheet, e.g. June while July is not published till mid
+            -- month), fall back to a backward comparison vs the prior edition so
+            -- Price Increases/Drops and price_movers still work. Self-heals: when
+            -- a newer edition loads, this edition gains a LEAD and flips forward.
             CASE
                 WHEN effective_case_price IS NULL THEN NULL
-                WHEN LEAD(effective_case_price) OVER w IS NULL THEN NULL
-                WHEN ABS(LEAD(effective_case_price) OVER w - effective_case_price) <= 0.005 THEN 'flat'
-                WHEN LEAD(effective_case_price) OVER w < effective_case_price THEN 'drop'
-                ELSE 'increase'
+                WHEN LEAD(effective_case_price) OVER w IS NOT NULL THEN
+                    CASE
+                        WHEN ABS(LEAD(effective_case_price) OVER w - effective_case_price) <= 0.005 THEN 'flat'
+                        WHEN LEAD(effective_case_price) OVER w < effective_case_price THEN 'drop'
+                        ELSE 'increase'
+                    END
+                WHEN LAG(effective_case_price) OVER w IS NOT NULL THEN
+                    CASE
+                        WHEN ABS(effective_case_price - LAG(effective_case_price) OVER w) <= 0.005 THEN 'flat'
+                        WHEN effective_case_price < LAG(effective_case_price) OVER w THEN 'drop'
+                        ELSE 'increase'
+                    END
+                ELSE NULL
             END AS price_trend
         FROM enriched
         WINDOW w AS (

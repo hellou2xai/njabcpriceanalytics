@@ -37,6 +37,20 @@ ALL_TABLES = DERIVED + RAW
 _lock = threading.Lock()
 _current_path: Path | None = None
 
+# Vintage normalisation used in the price_trend recompute's partition key.
+# Kept byte-identical to nj_abc_parser/derive.py so "same product across editions"
+# is grouped the same way here as when the column is first derived.
+_VINTAGE_NORM_SQL = (
+    "CASE "
+    "WHEN vintage IS NULL OR vintage = '' THEN NULL "
+    "WHEN UPPER(vintage) IN ('NA','N/A','NONE','NV') THEN NULL "
+    "WHEN regexp_matches(vintage, '^[0-9]{4}$') THEN vintage "
+    "WHEN regexp_matches(vintage, '^[0-9]{4}\\.0+$') THEN substr(vintage, 1, 4) "
+    "WHEN regexp_matches(vintage, '^[0-9]{2}$') THEN "
+    "CASE WHEN CAST(vintage AS INTEGER) <= 30 THEN '20' || vintage ELSE '19' || vintage END "
+    "ELSE NULL END"
+)
+
 
 def _parquet_select(table: str) -> str:
     pdir = PARQUET_DIR.as_posix()
@@ -187,6 +201,50 @@ def build_pricing_cache() -> Path:
                     "UPDATE cpl_enriched SET unit_volume_std = 'Other' "
                     "WHERE unit_volume_std IS NULL AND unit_volume IS NOT NULL AND unit_volume <> ''"
                 )
+            except Exception:
+                pass
+
+            # Price-trend safety net (recomputed at every cache build so it is
+            # self-healing regardless of how stale the source column is). The
+            # derived column is forward-looking (this edition vs the NEXT one),
+            # so the LATEST loaded edition is null until next month's sheet
+            # arrives — e.g. it is July but the July price list is not published
+            # until mid-month, so June is still the newest edition. We recompute
+            # both-directionally: forward when a next edition exists ("buy now vs
+            # wait"), else backward vs the prior edition so Price Increases/Drops
+            # and price_movers keep working on the newest edition during the gap.
+            try:
+                _cols = {r[0] for r in con.execute("DESCRIBE cpl_enriched").fetchall()}
+                _excl = "EXCLUDE (price_trend)" if "price_trend" in _cols else ""
+                con.execute(f"""
+                    CREATE OR REPLACE TABLE cpl_enriched AS
+                    SELECT * {_excl},
+                        CASE
+                            WHEN effective_case_price IS NULL THEN NULL
+                            WHEN LEAD(effective_case_price) OVER w IS NOT NULL THEN
+                                CASE
+                                    WHEN ABS(LEAD(effective_case_price) OVER w - effective_case_price) <= 0.005 THEN 'flat'
+                                    WHEN LEAD(effective_case_price) OVER w < effective_case_price THEN 'drop'
+                                    ELSE 'increase'
+                                END
+                            WHEN LAG(effective_case_price) OVER w IS NOT NULL THEN
+                                CASE
+                                    WHEN ABS(effective_case_price - LAG(effective_case_price) OVER w) <= 0.005 THEN 'flat'
+                                    WHEN effective_case_price < LAG(effective_case_price) OVER w THEN 'drop'
+                                    ELSE 'increase'
+                                END
+                            ELSE NULL
+                        END AS price_trend
+                    FROM cpl_enriched
+                    WINDOW w AS (
+                        PARTITION BY wholesaler,
+                                     COALESCE(CAST(upc AS VARCHAR), ''),
+                                     COALESCE(product_name, ''),
+                                     COALESCE(unit_volume, ''),
+                                     {_VINTAGE_NORM_SQL}
+                        ORDER BY edition
+                    )
+                """)
             except Exception:
                 pass
         finally:

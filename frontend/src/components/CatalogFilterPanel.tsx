@@ -216,10 +216,12 @@ export default function CatalogFilterPanel({
     () => (facets ? toMap(facets.brands) : buildFacet(items, 'brand')),
     [facets, items]
   );
-  const sizeFacet = useMemo(
-    () => (facets ? toMap(facets.sizes) : buildFacet(items, 'unit_volume')),
-    [facets, items]
-  );
+  const sizeFacet = useMemo(() => {
+    // Sizes must read smallest -> largest (750ML, 1L, 1.5L, 1.75L), not
+    // alphabetically or by count.
+    const base = facets ? toMap(facets.sizes) : buildFacet(items, 'unit_volume');
+    return new Map([...base.entries()].sort((a, b) => toMl(a[0]) - toMl(b[0])));
+  }, [facets, items]);
 
   const ripCount = facets?.has_rip ?? items.filter(i => i.has_rip).length;
   const noRipCount = facets?.no_rip ?? items.filter(i => !i.has_rip).length;

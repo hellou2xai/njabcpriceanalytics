@@ -3900,7 +3900,7 @@ def _timeline_charts(tl: dict | None) -> list:
     if not series:
         return []
     return [{"type": "line",
-             "title": f"Effective $/case over months — {tl.get('product')}",
+             "title": f"Effective $/case over months: {tl.get('product')}",
              "labels": eds, "series": series}]
 
 

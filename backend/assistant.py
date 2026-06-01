@@ -1882,6 +1882,24 @@ def _t_analyze_cart(con, args, ctx):
     except Exception:
         pass
 
+    # Duplicate / double-add guard: the SAME UPC on more than one line — usually an
+    # accidental double-add, or the same product sitting at two distributors (pick
+    # one). Flag so the buyer doesn't over-order before sending.
+    upc_lines: dict = {}
+    for it in items:
+        u = _norm(it["upc"])
+        if u:
+            upc_lines.setdefault(u, []).append(it)
+    duplicates = []
+    for u, its in upc_lines.items():
+        if len(its) > 1:
+            duplicates.append({
+                "upc": u,
+                "product_names": sorted({i.get("product_name") for i in its if i.get("product_name")}),
+                "distributors": sorted({i.get("wholesaler") for i in its if i.get("wholesaler")}),
+                "line_count": len(its),
+                "total_cases": sum((i.get("qty_cases") or 0) for i in its)})
+
     cart_ws = sorted({(it.get("wholesaler") or "") for it in items if it.get("wholesaler")})
     # Combo opportunities: cart products that are also part of a bundle.
     combos = []
@@ -1962,6 +1980,7 @@ def _t_analyze_cart(con, args, ctx):
             "rip_status": rip_status,
             "rip_tier_upgrades": rip_upgrades,
             "discount_tier_upgrades": disc_upgrades,
+            "duplicate_lines": duplicates,
             "combo_opportunities": combos,
             "expiring_or_closeout": expiring,
             "items": out_items}
@@ -2314,7 +2333,7 @@ _CTX_TOOLS = {
     "get_orders": (_t_get_orders, "The signed-in user's 10 most recent orders (headers only)."),
     "order_history": (_t_order_history, "REORDER / ORDER HISTORY: past orders WITH line items + a 'frequently ordered' rollup. Use for 'reorder my last order', 'same as last month', 'what do I usually buy/order', 'show my order history'. Pass order_id for one order. To re-add an order to the cart, then call perform_action(type=reorder, order_id=<id>) after confirming."),
     "lapsed_items": (_t_lapsed_items, "WIN-BACK: products the user ORDERED before but not recently, flagged when attractive again NOW (on a CPL discount, has a RIP rebate, or price dropped this edition). Use for 'what have I stopped buying', 'win-back opportunities', 'anything I used to order worth grabbing'. Lead with the why-now reason + current effective price; offer to add to cart."),
-    "analyze_cart": (_t_analyze_cart, "SMART, COMPREHENSIVE analysis of the user's cart / favorites / a list (source: cart|favorites|list, optional list_name) — the one-stop 'analyze my cart/list' report. Returns ALL of: summary (current vs optimized EFFECTIVE total [list − discounts − best RIP] + total savings); cheaper_distributor (same UPC cheaper elsewhere); timing (this vs next month → BUY NOW / WAIT, or HOLD if next month isn't published yet); price_movement (how each line changed vs LAST month — dropped/rose — always useful, the only forward signal before next month's sheet lands); price_increase_warnings (lines rising next month); rip_tier_upgrades (buy more to unlock the next rebate, cart+lists); discount_tier_upgrades (deeper CPL discount at a higher qty); combo_opportunities; expiring_or_closeout (time-sensitive ending soon / closeouts). Use for 'analyze my cart', 'analyze my list(s)/wishlist', 'is anyone cheaper', 'buy now or wait', 'am I near a tier'."),
+    "analyze_cart": (_t_analyze_cart, "SMART, COMPREHENSIVE analysis of the user's cart / favorites / a list (source: cart|favorites|list, optional list_name) — the one-stop 'analyze my cart/list' report. Returns ALL of: summary (current vs optimized EFFECTIVE total [list − discounts − best RIP] + total savings); cheaper_distributor (same UPC cheaper elsewhere); timing (this vs next month → BUY NOW / WAIT, or HOLD if next month isn't published yet); price_movement (how each line changed vs LAST month — dropped/rose — always useful, the only forward signal before next month's sheet lands); price_increase_warnings (lines rising next month); rip_tier_upgrades (buy more to unlock the next rebate, cart+lists); discount_tier_upgrades (deeper CPL discount at a higher qty); duplicate_lines (the SAME UPC on multiple lines — likely a double-add to fix before ordering); combo_opportunities; expiring_or_closeout (time-sensitive ending soon / closeouts). Use for 'analyze my cart', 'analyze my list(s)/wishlist', 'is anyone cheaper', 'buy now or wait', 'am I near a tier'."),
     "optimize_cart": (_t_optimize_cart, "ORDER OPTIMIZER for the user's cart / favorites / a list (source: cart|favorites|list): the cheapest sourcing PLAN — per line picks the lowest effective-price distributor for that UPC, groups the wins into (from->to) distributor swaps with $ saved, and gives current vs optimized total. Use for 'optimize my cart/list', 'make my order cheaper', 'cheapest way to buy this'. Present current vs optimized total + the grouped swaps, then offer to apply each via perform_action(type=swap_distributor)."),
     "cart_timing": (_t_cart_timing, "BUY-NOW-vs-WAIT sweep of the user's cart / favorites / a list (source: cart|favorites|list): per line compares the current edition's effective price to the REAL next edition's and flags BUY NOW (rises or drops off next month) vs WAIT (falls next month), with $ impact + totals. If next month isn't published yet it says so (HOLD) instead of guessing. Use for 'should I buy now or wait', 'scan my cart/list for timing', 'what's going up next month'."),
     "cart_rip_tiers": (_t_cart_rip_tiers, "RIP tier maximizer for the user's cart / favorites / a list (source: cart|favorites|list): sums the case/bottle quantity per RIP code (the Case Mix), shows the tier reached and the NEXT tier, and how many MORE cases/bottles unlock it + the extra rebate. Use for 'am I close to any rebate tiers', 'how do I hit the next RIP tier', 'maximize my rebates'."),
@@ -2885,7 +2904,8 @@ _SYSTEM = (
     "— resolve by UPC + size, confirm what you added with exact effective $/cs; (3) when they want to review or "
     "send, run a PRE-SEND REVIEW: call analyze_cart and surface mistakes to AVOID before ordering — a cheaper "
     "distributor for the same UPC, a line that DROPS next month (wait, don't buy now), being 1 case short of a "
-    "RIP or discount tier, a closeout/expiring line, any line with no current price, and odd quantities. "
+    "RIP or discount tier, a closeout/expiring line, any line with no current price, DUPLICATE lines "
+    "(duplicate_lines — the same UPC added more than once; flag to avoid double-ordering), and odd quantities. "
     "Present a short go/no-go: '✅ looks good' items vs '⚠️ consider fixing' items, with the $ impact, and ASK "
     "whether to fix any or send as-is. (4) Only after the user explicitly confirms, call "
     "perform_action(type=submit_order) — this emails the order to their sales rep(s), one order per rep, and "

@@ -120,6 +120,7 @@ def _t_top_products(con, args):
         "divisions": [args["distributor"]] if args.get("distributor") else [],
         "hasRip": args.get("has_rip"), "hasDiscount": args.get("has_discount"),
         "priceMin": args.get("price_min"), "priceMax": args.get("price_max"),
+        "sizes": args.get("sizes") or [],
         # Semantic hints so 'California wines', 'Napa cabs', 'rising bourbons'
         # resolve the same way the catalog grid does (not a naive name LIKE).
         "region": args.get("region"), "varietal": args.get("varietal"),
@@ -1659,9 +1660,22 @@ def _t_analyze_cart(con, args, ctx):
         cur_eff = pricing.get((it["wholesaler"], un))
         alts = sorted(by_upc.get(un, []), key=lambda x: x[1])
         qty = (it.get("qty_cases") or 0) or 1
+        qcs = it.get("qty_cases") or 0
+        qbt = it.get("qty_units") or 0
+        size = it.get("unit_volume") or None
+        # Human label so two same-named lines (e.g. Absolut Vodka 80 1.75L vs 750mL)
+        # are distinguishable, and cases vs bottles is explicit.
+        _qparts = []
+        if qcs:
+            _qparts.append(f"{int(qcs) if float(qcs).is_integer() else qcs} cs")
+        if qbt:
+            _qparts.append(f"{int(qbt) if float(qbt).is_integer() else qbt} btl")
+        qty_label = " + ".join(_qparts) or "1 cs"
         entry = {"product_name": it.get("product_name"), "current_distributor": it.get("wholesaler"),
+                 "size": size,
                  "current_effective_case": round(cur_eff, 2) if cur_eff is not None else None,
-                 "qty_cases": it.get("qty_cases"), "upc": un or None,
+                 "qty_cases": it.get("qty_cases"), "qty_units": qbt or None,
+                 "qty_label": qty_label, "upc": un or None,
                  "also_at": [w for (w, _e) in alts if w != it.get("wholesaler")]}
         if cur_eff is not None:
             cur_total += cur_eff * qty
@@ -1682,7 +1696,7 @@ def _t_analyze_cart(con, args, ctx):
             entry["moved"] = "dropped" if mv < 0 else "rose"
             price_moves.append({
                 "product_name": it.get("product_name"), "distributor": it.get("wholesaler"),
-                "last_month": round(prv, 2), "now": round(cur_eff, 2),
+                "size": size, "last_month": round(prv, 2), "now": round(cur_eff, 2),
                 "change_per_case": mv, "direction": "dropped" if mv < 0 else "rose"})
         # Timing: is THIS month best, or is next month cheaper? (same UPC+distributor)
         nxt = _match_eff(next_rows, it["wholesaler"], un, it.get("product_name"), it.get("unit_volume"), cur_eff)
@@ -1700,7 +1714,7 @@ def _t_analyze_cart(con, args, ctx):
                 buy_now_total += d * qty; buy_now_n += 1
                 price_increase_warnings.append({
                     "product_name": it.get("product_name"), "distributor": it.get("wholesaler"),
-                    "now": round(cur_eff, 2), "next_month": round(nxt, 2),
+                    "size": size, "now": round(cur_eff, 2), "next_month": round(nxt, 2),
                     "increase_per_case": d, "extra_cost_for_qty": round(d * qty, 2)})
             elif nxt < cur_eff - 0.01:
                 d = round(cur_eff - nxt, 2)
@@ -1725,14 +1739,18 @@ def _t_analyze_cart(con, args, ctx):
                           "discount_per_case": amt}
                     entry["discount_tier_upgrade"] = up
                     disc_upgrades.append({"product_name": it.get("product_name"),
-                                          "distributor": it.get("wholesaler"), **up})
+                                          "distributor": it.get("wholesaler"), "size": size, **up})
                     break
         out_items.append(entry)
 
-    # RIP tier upgrades across the item set (works for cart AND lists/favorites).
-    rip_upgrades = []
+    # RIP situation across the item set (works for cart AND lists/favorites).
+    # rip_status = EVERY rebate code carried (so we can explain "you're on code X,
+    # currently $Y, top tier reached"); rip_upgrades = just the ones with a
+    # reachable next tier (the actionable buy-more wins).
+    rip_status, rip_upgrades = [], []
     try:
-        rip_upgrades = [t for t in _rip_tier_plan(con, items) if t.get("next_tier")]
+        rip_status = _rip_tier_plan(con, items)
+        rip_upgrades = [t for t in rip_status if t.get("next_tier")]
     except Exception:
         pass
 
@@ -1813,6 +1831,7 @@ def _t_analyze_cart(con, args, ctx):
             # forward signal early in a month before next month's sheet lands.
             "price_movement": {"dropped": drops_now, "rose": rises_now},
             "price_increase_warnings": price_increase_warnings,
+            "rip_status": rip_status,
             "rip_tier_upgrades": rip_upgrades,
             "discount_tier_upgrades": disc_upgrades,
             "combo_opportunities": combos,
@@ -2142,6 +2161,8 @@ def _tool_specs() -> list:
         "order_by": {"type": "string", "enum": ["cheapest", "expensive"]},
         "limit": {"type": "number"},
         "rip_code": {"type": "string", "description": "A specific RIP rebate code (for rip_lookup)."},
+        "sizes": {"type": "array", "items": {"type": "string"},
+                  "description": "Restrict to specific bottle sizes the buyer named, e.g. ['1.75L','750mL']. Bare numbers work ('1.75','750'). ALWAYS set this when the user specifies a size — do not return other sizes."},
         "region": {"type": "string", "description": "Region / origin hint (california, napa, sonoma, bordeaux, tuscany, italy, france, spain, kentucky, scotland, mexico, ...). Use this for ANY geography query instead of putting the place name in `match` — `match='california'` wrongly matches ABSOLUT CALIFORNIA. Auto-narrows product_type (california -> Wine, kentucky -> Spirits)."},
         "varietal": {"type": "string", "description": "Varietal / style hint (cabernet, pinot noir, chardonnay, prosecco, ipa, bourbon, single malt, reposado, ...). Use instead of `match` for grape/style queries; stacks with region ('California cabernets')."},
         "price_trend": {"type": "string", "enum": ["increase", "drop"], "description": "Narrow to products whose price is going UP ('increase') or DOWN ('drop') in the latest edition. Combine with region/varietal/category, e.g. 'California wines going up' = region=california + price_trend=increase."},
@@ -2635,10 +2656,19 @@ _SYSTEM = (
     "HOLD if next_month_published is false); (4) This-month price movement (price_movement — what dropped / rose "
     "vs last month; ALWAYS show this, it's the only forward signal before next month's sheet lands); "
     "(5) Price-increase warnings (price_increase_warnings — flag clearly what rises next month, $ extra); "
-    "(6) RIP tier upgrades (buy more to unlock the next rebate); (7) Discount tier upgrades (deeper CPL "
-    "discount at a higher qty); (8) Combo opportunities; (9) Expiring / closeout (time-sensitive ending soon). "
+    "(6) RIP situation — use `rip_status` (EVERY rebate code carried) AND `rip_tier_upgrades`: for each code "
+    "name the product(s) (case_mix_in_cart), the distributor, cases/bottles in cart and the current rebate; "
+    "if it has a next_tier, say how many MORE cases/bottles unlock it and the extra rebate; if NONE has a "
+    "next_tier, say plainly 'You've maximized your RIP opportunity — every rebate you carry is at its top "
+    "reachable tier.' If rip_status is empty, say no RIP rebates apply to these items. NEVER print an empty "
+    "table header. (7) Discount tier upgrades (deeper CPL discount at a higher qty); (8) Combo opportunities; "
+    "(9) Expiring / closeout (time-sensitive ending soon). "
     "ALWAYS show all non-empty sections — never reduce it to just 'fully optimized'; if a section is empty say "
-    "so briefly. Show as much decision-useful detail as you have. Then offer to act (swap, add). Present a per-item table (product, current distributor + effective $/cs, cheaper "
+    "so briefly in ONE line (never an empty table). EVERY table in the analysis MUST identify the line clearly: "
+    "include the DISTRIBUTOR, the SIZE (`size`), and the quantity WITH its unit (use `qty_label`, e.g. '2 cs', "
+    "'1 cs + 6 btl') — two lines named 'Absolut Vodka 80' are different SKUs and the buyer must see which is "
+    "1.75L vs 750mL and whether it's cases or bottles. Show as much decision-useful detail as you have. Then "
+    "offer to act (swap, add). Present a per-item table (product, distributor, size, qty (cs/btl), effective $/cs, cheaper "
     "distributor + $/cs, $ saved per case and for the quantity) and the TOTAL potential savings, then OFFER to "
     "swap. When the user agrees, or says 'swap/replace/move <X> to <distributor>', call "
     "perform_action(type=swap_distributor, from_distributor=<current>, to_distributor=<target>, "

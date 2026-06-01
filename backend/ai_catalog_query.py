@@ -262,6 +262,24 @@ def _resolve_products(con, view: dict, match: str, which: str, cap: int,
         where.append("c.has_rip = true")
     if view.get("hasDiscount"):
         where.append("c.has_discount = true")
+    # Size filter — when the buyer names size(s) ("1.75", "750mL", "1L"), keep ONLY
+    # those. unit_volume is stored like "1.75L" / "750ML"; normalise both sides and
+    # accept the bare number too (1.75 -> 1.75L, 750 -> 750ML). Exact-match the
+    # candidate forms so "1" can't LIKE-match "100ML".
+    size_cands = set()
+    for s in (view.get("sizes") or []):
+        n = str(s or "").strip().upper().replace(" ", "").replace("LITER", "L").replace("LITRE", "L")
+        if not n:
+            continue
+        size_cands.add(n)
+        if n[-1].isdigit():           # bare number -> try the common units
+            size_cands.update({n + "L", n + "ML", n + "OZ"})
+    if size_cands:
+        sc = sorted(size_cands)
+        for i, v in enumerate(sc):
+            params[f"sz{i}"] = v
+        where.append("UPPER(REPLACE(c.unit_volume, ' ', '')) IN ("
+                     + ", ".join(f"$sz{i}" for i in range(len(sc))) + ")")
     # Semantic region + varietal filters — the SAME resolvers the catalog grid
     # uses, so an inline chat table for "California wines" matches the grid and
     # never surfaces ABSOLUT CALIFORNIA (a flavoured vodka) as a "California

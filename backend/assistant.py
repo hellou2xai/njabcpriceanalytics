@@ -1508,6 +1508,75 @@ def _t_order_history(con, args, ctx):
             "note": "Call perform_action(type=reorder, order_id=<id>) to re-add an order to the cart (confirm first)."}
 
 
+def _t_lapsed_items(con, args, ctx):
+    """WIN-BACK: products the user ordered BEFORE but not recently, flagged when
+    they're attractive again NOW — on a CPL discount, carrying a RIP rebate, or
+    price dropped vs last month. Powers 'what have I stopped buying', 'win-back
+    opportunities', 'anything I used to order worth grabbing now'."""
+    uid = ctx.get("user_id")
+    if not uid:
+        return {"error": "user not signed in"}
+    from backend.pg import get_pg
+    days = int(args.get("lapsed_days") or 45)
+    with get_pg() as pg:
+        cand = [dict(r) for r in pg.execute(
+            "SELECT ol.product_name, ol.wholesaler, LTRIM(CAST(ol.upc AS VARCHAR),'0') AS un, "
+            "ol.unit_volume, MAX(o.created_at::timestamptz) AS last_ordered, COUNT(*) AS times "
+            "FROM order_lines ol JOIN orders o ON o.id=ol.order_id "
+            "WHERE o.user_id=%s AND ol.upc IS NOT NULL "
+            "GROUP BY 1,2,3,4 HAVING MAX(o.created_at::timestamptz) < NOW() - make_interval(days => %s)",
+            (uid, days)).fetchall()]
+        active = pg.execute(
+            "SELECT LTRIM(CAST(upc AS VARCHAR),'0') un FROM cart_items WHERE user_id=%s AND COALESCE(saved_for_later,0)=0 "
+            "UNION SELECT LTRIM(CAST(upc AS VARCHAR),'0') un FROM watchlist WHERE user_id=%s", (uid, uid)).fetchall()
+    active_upcs = {str(r["un"]).lstrip("0") for r in active if r.get("un")}
+    cand = [c for c in cand if c.get("un") and c["un"] not in active_upcs]
+    if not cand:
+        return {"lapsed_count": 0, "opportunities": [],
+                "note": f"Nothing you've stopped ordering (looked back {days}+ days)."}
+    upcs = sorted({c["un"] for c in cand})
+    ph = ", ".join("?" for _ in upcs)
+    cym = _pricing.current_yyyy_mm()
+    price = {}
+    try:
+        df = con.execute(
+            "WITH cur AS (SELECT wholesaler, COALESCE(MAX(CASE WHEN edition<=? THEN edition END), MAX(edition)) ed "
+            "FROM cpl_enriched GROUP BY wholesaler) "
+            "SELECT LTRIM(CAST(c.upc AS VARCHAR),'0') un, c.wholesaler w, c.effective_case_price eff, "
+            "c.frontline_case_price fl, c.has_rip, c.has_discount, c.price_trend "
+            "FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
+            f"WHERE LTRIM(CAST(c.upc AS VARCHAR),'0') IN ({ph})", [cym] + upcs).fetchdf()
+        for _, r in df.iterrows():
+            price[(r["w"], str(r["un"]))] = r
+    except Exception:
+        pass
+    opps = []
+    for c in cand:
+        r = price.get((c["wholesaler"], c["un"]))
+        if r is None:
+            continue
+        eff = _num(r["eff"]); fl = _num(r["fl"])
+        reasons = []
+        if bool(r["has_rip"]):
+            reasons.append("RIP rebate available")
+        if bool(r["has_discount"]) or (eff is not None and fl and eff < fl - 0.01):
+            reasons.append("on a CPL discount")
+        if str(r["price_trend"] or "").lower() == "drop":
+            reasons.append("price dropped this edition")
+        if not reasons:
+            continue
+        lo = c.get("last_ordered")
+        opps.append({"product_name": c["product_name"], "distributor": c["wholesaler"],
+                     "size": c.get("unit_volume"), "upc": c["un"],
+                     "last_ordered": str(lo)[:10] if lo else None, "times_ordered": c.get("times"),
+                     "effective_case_price": eff, "frontline_case_price": fl,
+                     "why_now": reasons})
+    opps.sort(key=lambda x: (x["frontline_case_price"] or 0) - (x["effective_case_price"] or 0), reverse=True)
+    return {"lapsed_count": len(cand), "opportunity_count": len(opps), "opportunities": opps[:25],
+            "note": (f"{len(opps)} item(s) you used to order are attractive again now."
+                     if opps else "Nothing you've stopped ordering is on a deal right now.")}
+
+
 # --------------------------------------------------------------------------
 # Shared basket (cart / favorites / list) loading + edition-correct pricing.
 # Every cart/list analysis tool routes through these so they agree on (a) what
@@ -2244,6 +2313,7 @@ _CTX_TOOLS = {
     "get_lists": (_t_get_lists, "The signed-in user's saved lists and item counts."),
     "get_orders": (_t_get_orders, "The signed-in user's 10 most recent orders (headers only)."),
     "order_history": (_t_order_history, "REORDER / ORDER HISTORY: past orders WITH line items + a 'frequently ordered' rollup. Use for 'reorder my last order', 'same as last month', 'what do I usually buy/order', 'show my order history'. Pass order_id for one order. To re-add an order to the cart, then call perform_action(type=reorder, order_id=<id>) after confirming."),
+    "lapsed_items": (_t_lapsed_items, "WIN-BACK: products the user ORDERED before but not recently, flagged when attractive again NOW (on a CPL discount, has a RIP rebate, or price dropped this edition). Use for 'what have I stopped buying', 'win-back opportunities', 'anything I used to order worth grabbing'. Lead with the why-now reason + current effective price; offer to add to cart."),
     "analyze_cart": (_t_analyze_cart, "SMART, COMPREHENSIVE analysis of the user's cart / favorites / a list (source: cart|favorites|list, optional list_name) — the one-stop 'analyze my cart/list' report. Returns ALL of: summary (current vs optimized EFFECTIVE total [list − discounts − best RIP] + total savings); cheaper_distributor (same UPC cheaper elsewhere); timing (this vs next month → BUY NOW / WAIT, or HOLD if next month isn't published yet); price_movement (how each line changed vs LAST month — dropped/rose — always useful, the only forward signal before next month's sheet lands); price_increase_warnings (lines rising next month); rip_tier_upgrades (buy more to unlock the next rebate, cart+lists); discount_tier_upgrades (deeper CPL discount at a higher qty); combo_opportunities; expiring_or_closeout (time-sensitive ending soon / closeouts). Use for 'analyze my cart', 'analyze my list(s)/wishlist', 'is anyone cheaper', 'buy now or wait', 'am I near a tier'."),
     "optimize_cart": (_t_optimize_cart, "ORDER OPTIMIZER for the user's cart / favorites / a list (source: cart|favorites|list): the cheapest sourcing PLAN — per line picks the lowest effective-price distributor for that UPC, groups the wins into (from->to) distributor swaps with $ saved, and gives current vs optimized total. Use for 'optimize my cart/list', 'make my order cheaper', 'cheapest way to buy this'. Present current vs optimized total + the grouped swaps, then offer to apply each via perform_action(type=swap_distributor)."),
     "cart_timing": (_t_cart_timing, "BUY-NOW-vs-WAIT sweep of the user's cart / favorites / a list (source: cart|favorites|list): per line compares the current edition's effective price to the REAL next edition's and flags BUY NOW (rises or drops off next month) vs WAIT (falls next month), with $ impact + totals. If next month isn't published yet it says so (HOLD) instead of guessing. Use for 'should I buy now or wait', 'scan my cart/list for timing', 'what's going up next month'."),
@@ -2280,6 +2350,7 @@ def _tool_specs() -> list:
                  "focus": {"type": "string", "enum": ["all", "mine", "favorites", "cart", "lists"],
                            "description": "edition_changes scope. 'mine' = the user's whole footprint (cart+favorites+lists+recent orders) — use for 'what changed for me'."},
                  "order_id": {"type": "integer", "description": "order_history: fetch one specific past order by id."},
+                 "lapsed_days": {"type": "integer", "description": "lapsed_items: how many days since last order counts as 'lapsed' (default 45)."},
                  "list_name": {"type": "string", "description": "When source='list' (or focus='lists'), the list to target (omit for all of the user's lists)."}}
     for name, (_fn, desc) in _CTX_TOOLS.items():
         specs.append({"name": name, "description": desc,

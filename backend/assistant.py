@@ -333,15 +333,20 @@ def _t_rip_lookup(con, args):
         # mixes to reach a tier.
         members, member_count = [], 0
         try:
-            w2 = ["CAST(rip_code AS VARCHAR) = ?"]
-            pr: list = [str(rc)]
+            # RIP codes are RECYCLED across editions — Fedway code 10265 was Jameson
+            # in April, Mortlach in May, Ricard in June. So the Case Mix for a code
+            # is ONLY the UPCs carrying it in the LATEST edition the code appears in
+            # (matching _rip_tiers_for), never every edition <= now.
+            cond = "CAST(rip_code AS VARCHAR) = ?"
+            sub: list = [str(rc)]
             if ws:
-                w2.append("wholesaler = ?")
-                pr.append(ws)
+                cond += " AND wholesaler = ?"
+                sub.append(ws)
+            pr: list = sub + sub
             df = con.execute(
                 f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<='{cym}' GROUP BY wholesaler), "
                 f"ripupc AS (SELECT DISTINCT wholesaler, LTRIM(CAST(upc AS VARCHAR),'0') un FROM rip "
-                f"WHERE {' AND '.join(w2)} AND edition<='{cym}') "
+                f"WHERE {cond} AND edition = (SELECT MAX(edition) FROM rip WHERE {cond} AND edition<='{cym}')) "
                 "SELECT DISTINCT c.product_name, c.unit_volume, c.frontline_case_price, c.effective_case_price "
                 "FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
                 "JOIN ripupc r ON r.wholesaler=c.wholesaler AND r.un=LTRIM(CAST(c.upc AS VARCHAR),'0') "
@@ -424,11 +429,16 @@ def _t_rip_lookup(con, args):
         for i, (w, u) in enumerate(keys):
             kp[f"w{i}"], kp[f"u{i}"] = w, u
         try:
+            # Each UPC's RIP codes come ONLY from the CURRENT rip sheet per
+            # distributor (latest edition <= now). Codes are recycled month to
+            # month, so reading older editions would tag a UPC with a code that now
+            # belongs to a different product.
             rr = con.execute(
-                "SELECT DISTINCT wholesaler, LTRIM(CAST(upc AS VARCHAR),'0') AS un, CAST(rip_code AS VARCHAR) AS rip_code "
-                f"FROM rip WHERE edition <= '{cym}' "
-                "AND CAST(rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan') "
-                f"AND (wholesaler, LTRIM(CAST(upc AS VARCHAR),'0')) IN ({ph})", kp).fetchdf()
+                f"WITH ripcur AS (SELECT wholesaler, MAX(edition) ed FROM rip WHERE edition<='{cym}' GROUP BY wholesaler) "
+                "SELECT DISTINCT rp.wholesaler, LTRIM(CAST(rp.upc AS VARCHAR),'0') AS un, CAST(rp.rip_code AS VARCHAR) AS rip_code "
+                "FROM rip rp JOIN ripcur rc ON rp.wholesaler=rc.wholesaler AND rp.edition=rc.ed "
+                "WHERE CAST(rp.rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan') "
+                f"AND (rp.wholesaler, LTRIM(CAST(rp.upc AS VARCHAR),'0')) IN ({ph})", kp).fetchdf()
             for _, r in rr.iterrows():
                 upc_codes.setdefault((r["wholesaler"], r["un"]), set()).add(str(r["rip_code"]).strip())
         except Exception:
@@ -882,10 +892,11 @@ def _t_rip_tier_gap(con, args):
             prow = con.execute(
                 "WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<=? GROUP BY wholesaler), "
                 "ripupc AS (SELECT DISTINCT wholesaler, LTRIM(CAST(upc AS VARCHAR),'0') un FROM rip "
-                "WHERE CAST(rip_code AS VARCHAR)=? AND edition<=?) "
+                "WHERE CAST(rip_code AS VARCHAR)=? AND edition = "
+                "(SELECT MAX(edition) FROM rip WHERE CAST(rip_code AS VARCHAR)=? AND edition<=?)) "
                 "SELECT ANY_VALUE(c.unit_qty) FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
                 "JOIN ripupc r ON r.wholesaler=c.wholesaler AND r.un=LTRIM(CAST(c.upc AS VARCHAR),'0')",
-                [cym, str(code), cym]).fetchone()
+                [cym, str(code), str(code), cym]).fetchone()
             if prow:
                 pack = _num(prow[0])
         except Exception:
@@ -2238,16 +2249,20 @@ def _rip_case_mix_products(con, code, ws=None, limit=80) -> list:
     CPL edition for prices — so 'add all the case mix' adds ALL members, not just
     the one the name search happened to resolve."""
     cym = _current_ym()
-    w2 = ["CAST(rip_code AS VARCHAR) = ?"]
-    pr = [str(code)]
+    # RIP codes are recycled across editions, so the Case Mix is ONLY the UPCs that
+    # carry this code in the LATEST edition the code appears in (per distributor) —
+    # never every edition <= now, which would mix in last month's different product.
+    cond = "CAST(rip_code AS VARCHAR) = ?"
+    sub = [str(code)]
     if ws:
-        w2.append("wholesaler = ?")
-        pr.append(ws)
+        cond += " AND wholesaler = ?"
+        sub.append(ws)
+    pr = sub + sub
     try:
         df = con.execute(
             f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<='{cym}' GROUP BY wholesaler), "
             f"ripupc AS (SELECT DISTINCT wholesaler, LTRIM(CAST(upc AS VARCHAR),'0') un FROM rip "
-            f"WHERE {' AND '.join(w2)} AND edition<='{cym}') "
+            f"WHERE {cond} AND edition = (SELECT MAX(edition) FROM rip WHERE {cond} AND edition<='{cym}')) "
             "SELECT DISTINCT c.product_name, c.wholesaler, CAST(c.upc AS VARCHAR) AS upc, c.unit_volume, "
             "c.unit_qty, c.vintage, c.effective_case_price, c.frontline_case_price "
             "FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "

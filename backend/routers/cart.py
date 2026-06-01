@@ -355,10 +355,19 @@ def swap_distributor(body: SwapDistributorIn, user: dict = Depends(get_current_u
     # Optional scope: a RIP code's case mix, or an explicit UPC set.
     limit_upcs = None
     if body.rip_code:
+        # RIP codes are edition + distributor specific and get RECYCLED month to
+        # month (e.g. Fedway 10265 was Jameson in April, Ricard in June). Scope the
+        # case mix to the FROM-distributor's CURRENT rip edition only — never every
+        # edition / every distributor, which would swap unrelated products.
+        from backend import pricing as _pricing
+        cym = _pricing.current_yyyy_mm()
         with get_duckdb() as dcon:
             ru = dcon.execute(
                 "SELECT DISTINCT LTRIM(CAST(upc AS VARCHAR),'0') un FROM rip "
-                "WHERE CAST(rip_code AS VARCHAR)=?", [str(body.rip_code)]).fetchall()
+                "WHERE CAST(rip_code AS VARCHAR)=? AND LOWER(wholesaler)=LOWER(?) "
+                "AND edition = (SELECT MAX(edition) FROM rip "
+                "WHERE CAST(rip_code AS VARCHAR)=? AND LOWER(wholesaler)=LOWER(?) AND edition<=?)",
+                [str(body.rip_code), frm, str(body.rip_code), frm, cym]).fetchall()
         limit_upcs = {str(r[0]) for r in ru if r[0]}
     elif body.upcs:
         limit_upcs = {_norm(u) for u in body.upcs}

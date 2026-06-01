@@ -2075,27 +2075,65 @@ def _t_cart_rip_tiers(con, args, ctx):
 
 
 def _t_edition_changes(con, args, ctx):
-    """EDITION-DROP DIGEST: what changed in the latest CPL edition vs the prior one
-    — new items, new/lost discounts, new closeouts (from item_lifecycle) and the
-    biggest effective price drops/increases (from price_changes). focus='all' (def)
-    or 'favorites'/'cart' to restrict to the signed-in user's products."""
-    focus = (args.get("focus") or "all").lower()
+    """EDITION-DROP DIGEST — "what changed for me this month". Diffs the latest CPL
+    edition vs the prior one: new items, new/lost discounts, new closeouts (from
+    item_lifecycle) and the biggest effective price drops/increases (from
+    price_changes). focus options:
+      'all'                      — everything in the edition (default)
+      'mine' / 'me'              — the user's WHOLE footprint: cart + favorites +
+                                   lists + recently-ordered products (the personal
+                                   "what changed for me" digest)
+      'favorites' / 'cart' / 'lists' (+ optional list_name) — one source only."""
+    focus = (args.get("focus") or "all").lower().strip()
     cap = min(int(args.get("limit") or 8), 25)
     focus_upcs = None
-    if focus in ("favorites", "favourites", "watchlist", "wishlist", "cart"):
+    _personal = {"favorites", "favourites", "watchlist", "wishlist", "cart",
+                 "list", "lists", "mine", "me", "everything", "all mine"}
+    if focus in _personal:
         uid = ctx.get("user_id")
         if not uid:
             return {"error": "user not signed in"}
         from backend.pg import get_pg
+        want_cart = focus in ("cart", "mine", "me", "everything", "all mine")
+        want_fav = focus in ("favorites", "favourites", "watchlist", "wishlist", "mine", "me", "everything", "all mine")
+        want_list = focus in ("list", "lists", "mine", "me", "everything", "all mine")
+        want_orders = focus in ("mine", "me", "everything", "all mine")
+        upcs: set = set()
         with get_pg() as pg:
-            if focus == "cart":
-                rows = pg.execute("SELECT upc FROM cart_items WHERE user_id=%s AND COALESCE(saved_for_later,0)=0", (uid,)).fetchall()
-            else:
-                focus = "favorites"
-                rows = pg.execute("SELECT upc FROM watchlist WHERE user_id=%s", (uid,)).fetchall()
-        focus_upcs = {str(r["upc"]).lstrip("0") for r in rows if r.get("upc")}
+            if want_cart:
+                for r in pg.execute("SELECT upc FROM cart_items WHERE user_id=%s AND COALESCE(saved_for_later,0)=0", (uid,)).fetchall():
+                    if r.get("upc"):
+                        upcs.add(str(r["upc"]).lstrip("0"))
+            if want_fav:
+                for r in pg.execute("SELECT upc FROM watchlist WHERE user_id=%s", (uid,)).fetchall():
+                    if r.get("upc"):
+                        upcs.add(str(r["upc"]).lstrip("0"))
+            if want_list:
+                ln = (args.get("list_name") or "").strip()
+                if ln and focus in ("list", "lists"):
+                    lrows = pg.execute(
+                        "SELECT li.upc FROM list_items li JOIN lists l ON li.list_id=l.id "
+                        "WHERE l.user_id=%s AND lower(l.name)=lower(%s)", (uid, ln)).fetchall()
+                else:
+                    lrows = pg.execute(
+                        "SELECT li.upc FROM list_items li JOIN lists l ON li.list_id=l.id WHERE l.user_id=%s", (uid,)).fetchall()
+                for r in lrows:
+                    if r.get("upc"):
+                        upcs.add(str(r["upc"]).lstrip("0"))
+            if want_orders:
+                for r in pg.execute(
+                    "SELECT ol.upc FROM order_lines ol JOIN orders o ON o.id=ol.order_id "
+                    "WHERE o.user_id=%s ORDER BY o.created_at DESC LIMIT 1000", (uid,)).fetchall():
+                    if r.get("upc"):
+                        upcs.add(str(r["upc"]).lstrip("0"))
+        # Canonical label for the response.
+        focus = ("mine" if focus in ("mine", "me", "everything", "all mine")
+                 else "favorites" if focus in ("favorites", "favourites", "watchlist", "wishlist")
+                 else "lists" if focus in ("list", "lists") else focus)
+        focus_upcs = {u for u in upcs if u}
         if not focus_upcs:
-            return {"focus": focus, "focus_item_count": 0, "note": f"Your {focus} is empty — nothing to focus on."}
+            where = "cart, favorites, lists or orders" if focus == "mine" else f"your {focus}"
+            return {"focus": focus, "focus_item_count": 0, "note": f"Nothing in {where} yet — nothing to focus on."}
     ed_row = con.execute("SELECT MAX(edition) FROM item_lifecycle").fetchone()
     ed = ed_row[0] if ed_row else None
     if not ed:
@@ -2144,7 +2182,10 @@ def _t_edition_changes(con, args, ctx):
             "top_price_drops": drops, "top_price_increases": ups,
             "new_items": _sample("new_item"), "new_discounts": _sample("new_discount"),
             "lost_discounts": _sample("lost_discount"), "new_closeouts": _sample("new_clearance"),
-            "note": "Latest-edition changes" + (f" affecting your {focus}" if focus_upcs is not None else "") + "."}
+            "note": ("Latest-edition changes across your products (cart, favorites, lists & recent orders)."
+                     if focus == "mine"
+                     else f"Latest-edition changes affecting your {focus}." if focus_upcs is not None
+                     else "Latest-edition changes.")}
 
 
 _CTX_TOOLS = {
@@ -2158,7 +2199,7 @@ _CTX_TOOLS = {
     "optimize_cart": (_t_optimize_cart, "ORDER OPTIMIZER for the user's cart / favorites / a list (source: cart|favorites|list): the cheapest sourcing PLAN — per line picks the lowest effective-price distributor for that UPC, groups the wins into (from->to) distributor swaps with $ saved, and gives current vs optimized total. Use for 'optimize my cart/list', 'make my order cheaper', 'cheapest way to buy this'. Present current vs optimized total + the grouped swaps, then offer to apply each via perform_action(type=swap_distributor)."),
     "cart_timing": (_t_cart_timing, "BUY-NOW-vs-WAIT sweep of the user's cart / favorites / a list (source: cart|favorites|list): per line compares the current edition's effective price to the REAL next edition's and flags BUY NOW (rises or drops off next month) vs WAIT (falls next month), with $ impact + totals. If next month isn't published yet it says so (HOLD) instead of guessing. Use for 'should I buy now or wait', 'scan my cart/list for timing', 'what's going up next month'."),
     "cart_rip_tiers": (_t_cart_rip_tiers, "RIP tier maximizer for the user's cart / favorites / a list (source: cart|favorites|list): sums the case/bottle quantity per RIP code (the Case Mix), shows the tier reached and the NEXT tier, and how many MORE cases/bottles unlock it + the extra rebate. Use for 'am I close to any rebate tiers', 'how do I hit the next RIP tier', 'maximize my rebates'."),
-    "edition_changes": (_t_edition_changes, "EDITION-DROP DIGEST: what changed in the latest CPL edition vs prior — counts + samples of new items, new/lost discounts, new closeouts, and the biggest effective price drops/increases. focus='all' (default) or 'favorites'/'cart' to restrict to the user's products. Use for 'what changed this month/edition', 'what's new', 'what changed on my favorites'."),
+    "edition_changes": (_t_edition_changes, "EDITION-DROP DIGEST — 'what changed for ME this month'. Diffs the latest CPL edition vs prior: counts + samples of new items, new/lost discounts, new closeouts, and the biggest effective price drops/increases. focus='mine' = the user's WHOLE footprint (cart + favorites + lists + recently-ordered products) — USE THIS for 'what changed for me', 'what's new for my brands', 'anything I should know this month'. Also focus='all' (default), 'favorites', 'cart', or 'lists' (+ list_name). Lead with what affects the buyer: price drops on their items, new RIP/discounts, then increases to act on. Offer to act (add to cart, analyze)."),
 }
 
 
@@ -2187,7 +2228,9 @@ def _tool_specs() -> list:
                  "direction": {"type": "string", "enum": ["drop", "increase"]},
                  "source": {"type": "string", "enum": ["cart", "favorites", "list"],
                             "description": "Which basket to analyze for cart tools (analyze_cart, optimize_cart, cart_timing, cart_rip_tiers). 'favorites' = wishlist/watchlist. Defaults to cart."},
-                 "list_name": {"type": "string", "description": "When source='list', the list to target (omit for all of the user's lists)."}}
+                 "focus": {"type": "string", "enum": ["all", "mine", "favorites", "cart", "lists"],
+                           "description": "edition_changes scope. 'mine' = the user's whole footprint (cart+favorites+lists+recent orders) — use for 'what changed for me'."},
+                 "list_name": {"type": "string", "description": "When source='list' (or focus='lists'), the list to target (omit for all of the user's lists)."}}
     for name, (_fn, desc) in _CTX_TOOLS.items():
         specs.append({"name": name, "description": desc,
                       "input_schema": {"type": "object", "properties": ctx_props}})

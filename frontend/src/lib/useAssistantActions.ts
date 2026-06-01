@@ -98,6 +98,18 @@ export function useAssistantActions() {
           if (a.distributor && a.order_note) {
             await cartApi.groupNote(a.distributor, a.order_note);
           }
+        } else if (a.type === 'assign_rep') {
+          if (a.distributor && a.rep_id != null) {
+            await cartApi.assignRep(a.distributor, a.rep_id);
+          }
+        } else if (a.type === 'create_rep') {
+          if (a.rep_name && a.distributor) {
+            const created = await salesReps.add({
+              name: a.rep_name, email: a.rep_email ?? undefined,
+              phone: a.rep_phone ?? undefined, distributor: a.distributor,
+            });
+            if (created?.id) await cartApi.assignRep(a.distributor, created.id);
+          }
         } else if (a.type === 'add_to_list') {
           const name = (a.list_name || 'AI List').trim();
           const existing = await listsApi.list();
@@ -116,6 +128,7 @@ export function useAssistantActions() {
       qc.invalidateQueries({ queryKey: ['cart'] });
       qc.invalidateQueries({ queryKey: ['watchlist'] });
       qc.invalidateQueries({ queryKey: ['lists'] });
+      qc.invalidateQueries({ queryKey: ['sales-reps'] });
     }
   }, [qc, confirm]);
 
@@ -137,6 +150,8 @@ export function describeActions(actions: CatalogAiAction[] | undefined): string[
     else if (a.type === 'reorder') chips.push('🔄 Reorder past order to cart');
     else if (a.type === 'message_rep') chips.push('✉️ Message sales rep');
     else if (a.type === 'set_order_note') chips.push(`📝 Note on ${a.distributor ?? 'order'}`);
+    else if (a.type === 'assign_rep') chips.push(`👤 Assign rep → ${a.distributor ?? 'distributor'}`);
+    else if (a.type === 'create_rep') chips.push(`➕ New rep ${a.rep_name ?? ''} (${a.distributor ?? ''})`);
     if (a.note) chips.push(`⚠ ${a.note}`);
   }
   return chips;

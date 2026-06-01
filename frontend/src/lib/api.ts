@@ -174,7 +174,7 @@ export interface CatalogAiProduct {
   next_tiers?: AssistantTier[];
   next_effective_case_price?: number | null;
 }
-export type CatalogAiActionType = 'add_to_cart' | 'update_quantity' | 'add_to_favorites' | 'add_to_list' | 'swap_distributor' | 'submit_order' | 'reorder' | 'message_rep' | 'set_order_note';
+export type CatalogAiActionType = 'add_to_cart' | 'update_quantity' | 'add_to_favorites' | 'add_to_list' | 'swap_distributor' | 'submit_order' | 'reorder' | 'message_rep' | 'set_order_note' | 'assign_rep' | 'create_rep';
 export interface CatalogAiAction {
   type: CatalogAiActionType;
   cases: number;
@@ -195,6 +195,10 @@ export interface CatalogAiAction {
   // set_order_note only: header note for the order at `distributor`.
   distributor?: string | null;
   order_note?: string | null;
+  // create_rep only: a new sales rep to create + assign to `distributor`.
+  rep_name?: string | null;
+  rep_email?: string | null;
+  rep_phone?: string | null;
 }
 export interface CatalogAiResponse {
   answer: string;

@@ -35,7 +35,7 @@ from backend.ai_catalog_query import (
 from backend import pricing as _pricing
 from backend import rip_utils as _rip   # canonical case/bottle RIP unit math
 
-_ACTION_TYPES =("add_to_cart", "update_quantity", "add_to_favorites", "add_to_list", "swap_distributor", "submit_order", "reorder", "message_rep", "set_order_note")
+_ACTION_TYPES =("add_to_cart", "update_quantity", "add_to_favorites", "add_to_list", "swap_distributor", "submit_order", "reorder", "message_rep", "set_order_note", "assign_rep", "create_rep")
 _MAX_TURNS = 6
 # Stocking-deal floor used by the "best deals" ranker by default. A row whose
 # effective_case_price is below this fraction of frontline (e.g. a 100%-off
@@ -1478,6 +1478,53 @@ def _t_get_sales_reps(con, args, ctx):
             "note": "No sales reps saved yet — add them in Sales Reps." if not reps else None}
 
 
+def _t_cart_rep_status(con, args, ctx):
+    """ORDER-READINESS for submission: per distributor in the ACTIVE cart, whether a
+    sales rep is assigned (and who), plus the user's existing reps to choose from.
+    Call this BEFORE submit_order — every distributor needs a rep or its lines won't
+    be emailed. If a distributor has no rep: assign one with perform_action(
+    type=assign_rep, distributor, rep_id), or if none suitable exists, ask the user
+    for the rep's name + email + phone and perform_action(type=create_rep,
+    distributor, rep_name, rep_email, rep_phone) (creates AND assigns)."""
+    uid = ctx.get("user_id")
+    if not uid:
+        return {"error": "user not signed in"}
+    from backend.pg import get_pg
+    with get_pg() as pg:
+        rows = pg.execute(
+            "SELECT ci.wholesaler w, ci.sales_rep_id rid, sr.name rep_name, COUNT(*) lines "
+            "FROM cart_items ci LEFT JOIN sales_reps sr ON sr.id=ci.sales_rep_id "
+            "WHERE ci.user_id=%s AND COALESCE(ci.saved_for_later,0)=0 "
+            "GROUP BY ci.wholesaler, ci.sales_rep_id, sr.name", (uid,)).fetchall()
+        reps = [dict(r) for r in pg.execute(
+            "SELECT id, name, distributor, email, phone FROM sales_reps WHERE user_id=%s ORDER BY name",
+            (uid,)).fetchall()]
+    if not rows:
+        return {"item_count": 0, "note": "Your cart is empty — nothing to submit."}
+    dist: dict = {}
+    for r in rows:
+        d = dist.setdefault(r["w"], {"distributor": r["w"], "lines": 0, "assigned_lines": 0,
+                                     "rep_id": None, "rep_name": None})
+        d["lines"] += r["lines"]
+        if r["rid"]:
+            d["assigned_lines"] += r["lines"]
+            d["rep_id"] = r["rid"]; d["rep_name"] = r["rep_name"]
+    distributors = list(dist.values())
+    needing = []
+    for d in distributors:
+        if d["assigned_lines"] < d["lines"]:
+            # Surface reps already tied to this distributor as the natural choices.
+            cands = [rp for rp in reps if (rp.get("distributor") or "").lower() == d["distributor"].lower()]
+            needing.append({**d, "candidate_reps": cands})
+    return {"item_count": sum(d["lines"] for d in distributors),
+            "distributors": distributors,
+            "distributors_needing_rep": needing,
+            "existing_reps": reps,
+            "ready_to_submit": len(needing) == 0,
+            "note": ("All distributors have a sales rep — ready to submit." if not needing
+                     else f"{len(needing)} distributor(s) need a sales rep before you can submit.")}
+
+
 def _t_order_history(con, args, ctx):
     """REORDER / ORDER HISTORY: the user's past orders WITH their line items, plus a
     'frequently ordered' rollup. Powers 'reorder my last order', 'same as last
@@ -2369,6 +2416,7 @@ _CTX_TOOLS = {
     "get_lists": (_t_get_lists, "The signed-in user's saved lists and item counts."),
     "get_orders": (_t_get_orders, "The signed-in user's 10 most recent orders (headers only)."),
     "get_sales_reps": (_t_get_sales_reps, "The user's sales reps + contact (name, distributor, email, phone). Use to show who to follow up with after an order, look up a rep's phone/email, or before messaging a rep."),
+    "cart_rep_status": (_t_cart_rep_status, "ORDER-READINESS: per distributor in the cart, is a sales rep assigned (and who)? Plus existing reps + ready_to_submit. ALWAYS call before submit_order — a distributor with no rep won't be emailed. For gaps, assign (perform_action assign_rep) or create a rep (perform_action create_rep)."),
     "order_history": (_t_order_history, "REORDER / ORDER HISTORY: past orders WITH line items + a 'frequently ordered' rollup. Use for 'reorder my last order', 'same as last month', 'what do I usually buy/order', 'show my order history'. Pass order_id for one order. To re-add an order to the cart, then call perform_action(type=reorder, order_id=<id>) after confirming."),
     "lapsed_items": (_t_lapsed_items, "WIN-BACK: products the user ORDERED before but not recently, flagged when attractive again NOW (on a CPL discount, has a RIP rebate, or price dropped this edition). Use for 'what have I stopped buying', 'win-back opportunities', 'anything I used to order worth grabbing'. Lead with the why-now reason + current effective price; offer to add to cart."),
     "analyze_cart": (_t_analyze_cart, "SMART, COMPREHENSIVE analysis of the user's cart / favorites / a list (source: cart|favorites|list, optional list_name) — the one-stop 'analyze my cart/list' report. Returns ALL of: summary (current vs optimized EFFECTIVE total [list − discounts − best RIP] + total savings); cheaper_distributor (same UPC cheaper elsewhere); timing (this vs next month → BUY NOW / WAIT, or HOLD if next month isn't published yet); price_movement (how each line changed vs LAST month — dropped/rose — always useful, the only forward signal before next month's sheet lands); price_increase_warnings (lines rising next month); rip_tier_upgrades (buy more to unlock the next rebate, cart+lists); discount_tier_upgrades (deeper CPL discount at a higher qty); duplicate_lines (the SAME UPC on multiple lines — likely a double-add to fix before ordering); combo_opportunities; expiring_or_closeout (time-sensitive ending soon / closeouts). Use for 'analyze my cart', 'analyze my list(s)/wishlist', 'is anyone cheaper', 'buy now or wait', 'am I near a tier'."),
@@ -2431,7 +2479,10 @@ def _tool_specs() -> list:
                         "get_sales_reps, message=<text>) — use for 'ask my Fedway rep if X is in stock', "
                         "'tell my rep ...'; confirm the recipient + message first. set_order_note attaches a "
                         "header note (order_note) to the order for a distributor — use for 'add a note to my "
-                        "Fedway order: deliver after 2pm', 'note on this order: ...'. It rides on the PO when sent."),
+                        "Fedway order: deliver after 2pm', 'note on this order: ...'. It rides on the PO when sent. "
+                        "assign_rep sets an EXISTING sales rep (distributor + rep_id) on that distributor's cart "
+                        "lines. create_rep creates a NEW rep (rep_name + rep_email + rep_phone + distributor) and "
+                        "assigns them — use when a distributor has no rep and none on file fits; then submit_order."),
         "input_schema": {"type": "object", "properties": {
             "type": {"type": "string", "enum": list(_ACTION_TYPES)},
             "match": {"type": "string"},
@@ -2446,6 +2497,9 @@ def _tool_specs() -> list:
             "rep_id": {"type": "integer", "description": "message_rep: the sales rep (from get_sales_reps) to email."},
             "message": {"type": "string", "description": "message_rep: the message/question to email the rep."},
             "order_note": {"type": "string", "description": "set_order_note: header note for the order at `distributor` (rides on the PO when sent)."},
+            "rep_name": {"type": "string", "description": "create_rep: new sales rep's name."},
+            "rep_email": {"type": "string", "description": "create_rep: new sales rep's email (so the order can be emailed)."},
+            "rep_phone": {"type": "string", "description": "create_rep: new sales rep's phone."},
             "list_name": {"type": "string"},
         }, "required": ["type"]},
     })
@@ -2570,6 +2624,32 @@ def _do_action(con, args, actions_out) -> dict:
                   "note": None if (dist and text) else "Need a distributor and note text."}
         actions_out.append(action)
         return {"set_order_note": {"distributor": dist, "has_text": bool(text)}}
+    # Assign an existing sales rep to a distributor's cart lines (so the order can
+    # be emailed). Frontend calls POST /api/cart/assign-rep.
+    if atype == "assign_rep":
+        dist = (args.get("distributor") or "").strip()
+        try:
+            rid = int(args.get("rep_id"))
+        except (TypeError, ValueError):
+            rid = None
+        action = {"type": "assign_rep", "cases": 0, "bottles": 0, "list_name": None,
+                  "products": [], "distributor": dist or None, "rep_id": rid,
+                  "note": None if (dist and rid) else "Need a distributor and rep_id to assign."}
+        actions_out.append(action)
+        return {"assign_rep": {"distributor": dist, "rep_id": rid}}
+    # Create a NEW sales rep (name + email + phone) and assign them to the
+    # distributor's cart lines. Frontend creates via /api/sales-reps then assigns.
+    if atype == "create_rep":
+        dist = (args.get("distributor") or "").strip()
+        rname = (args.get("rep_name") or "").strip()
+        remail = (args.get("rep_email") or "").strip()
+        rphone = (args.get("rep_phone") or "").strip()
+        action = {"type": "create_rep", "cases": 0, "bottles": 0, "list_name": None,
+                  "products": [], "distributor": dist or None,
+                  "rep_name": rname or None, "rep_email": remail or None, "rep_phone": rphone or None,
+                  "note": None if (rname and dist) else "Need at least a rep name and distributor."}
+        actions_out.append(action)
+        return {"create_rep": {"distributor": dist, "name": rname, "has_email": bool(remail)}}
     which = args.get("which") if args.get("which") in ("cheapest", "most_expensive", "first", "all") else "first"
     cap = 10 if which == "all" else 1
     view = {
@@ -2977,7 +3057,13 @@ _SYSTEM = (
     "RIP or discount tier, a closeout/expiring line, any line with no current price, DUPLICATE lines "
     "(duplicate_lines — the same UPC added more than once; flag to avoid double-ordering), and odd quantities. "
     "Present a short go/no-go: '✅ looks good' items vs '⚠️ consider fixing' items, with the $ impact, and ASK "
-    "whether to fix any or send as-is. (4) Only after the user explicitly confirms, call "
+    "whether to fix any or send as-is. (4) REP CHECK before submitting — call cart_rep_status. For EACH "
+    "distributor in distributors_needing_rep: if a suitable rep exists (candidate_reps / existing_reps), ask "
+    "which to use and call perform_action(type=assign_rep, distributor, rep_id); if none fits or the user has "
+    "no reps, ask for the rep's NAME, EMAIL and PHONE, then perform_action(type=create_rep, distributor, "
+    "rep_name, rep_email, rep_phone) — that creates AND assigns the rep. Do NOT submit until ready_to_submit is "
+    "true (every distributor has a rep), or those lines won't be emailed. "
+    "(5) Only after the user explicitly confirms, call "
     "perform_action(type=submit_order) — this emails the order to their sales rep(s), one order per rep, and "
     "clears those items from the cart. NEVER submit without the pre-send review AND an explicit yes. After "
     "sending, report what went to which rep and flag any items skipped because no sales rep is assigned (tell "

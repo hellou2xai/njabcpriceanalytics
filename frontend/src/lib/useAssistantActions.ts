@@ -94,6 +94,10 @@ export function useAssistantActions() {
             if (!ok) continue;
             await salesReps.message(a.rep_id, a.message);
           }
+        } else if (a.type === 'set_order_note') {
+          if (a.distributor && a.order_note) {
+            await cartApi.groupNote(a.distributor, a.order_note);
+          }
         } else if (a.type === 'add_to_list') {
           const name = (a.list_name || 'AI List').trim();
           const existing = await listsApi.list();
@@ -132,6 +136,7 @@ export function describeActions(actions: CatalogAiAction[] | undefined): string[
     else if (a.type === 'submit_order') chips.push('📧 Send order to sales rep');
     else if (a.type === 'reorder') chips.push('🔄 Reorder past order to cart');
     else if (a.type === 'message_rep') chips.push('✉️ Message sales rep');
+    else if (a.type === 'set_order_note') chips.push(`📝 Note on ${a.distributor ?? 'order'}`);
     if (a.note) chips.push(`⚠ ${a.note}`);
   }
   return chips;

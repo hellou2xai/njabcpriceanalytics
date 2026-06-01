@@ -192,6 +192,9 @@ export interface CatalogAiAction {
   // message_rep only: email a sales rep a free-text question.
   rep_id?: number | null;
   message?: string | null;
+  // set_order_note only: header note for the order at `distributor`.
+  distributor?: string | null;
+  order_note?: string | null;
 }
 export interface CatalogAiResponse {
   answer: string;

@@ -35,7 +35,7 @@ from backend.ai_catalog_query import (
 from backend import pricing as _pricing
 from backend import rip_utils as _rip   # canonical case/bottle RIP unit math
 
-_ACTION_TYPES =("add_to_cart", "update_quantity", "add_to_favorites", "add_to_list", "swap_distributor", "submit_order", "reorder", "message_rep")
+_ACTION_TYPES =("add_to_cart", "update_quantity", "add_to_favorites", "add_to_list", "swap_distributor", "submit_order", "reorder", "message_rep", "set_order_note")
 _MAX_TURNS = 6
 # Stocking-deal floor used by the "best deals" ranker by default. A row whose
 # effective_case_price is below this fraction of frontline (e.g. a 100%-off
@@ -2429,7 +2429,9 @@ def _tool_specs() -> list:
                         "they want to send. Use for 'send/submit/place my order', 'email this to my rep'. "
                         "message_rep emails a free-text question/message to a sales rep (rep_id from "
                         "get_sales_reps, message=<text>) — use for 'ask my Fedway rep if X is in stock', "
-                        "'tell my rep ...'; confirm the recipient + message first."),
+                        "'tell my rep ...'; confirm the recipient + message first. set_order_note attaches a "
+                        "header note (order_note) to the order for a distributor — use for 'add a note to my "
+                        "Fedway order: deliver after 2pm', 'note on this order: ...'. It rides on the PO when sent."),
         "input_schema": {"type": "object", "properties": {
             "type": {"type": "string", "enum": list(_ACTION_TYPES)},
             "match": {"type": "string"},
@@ -2443,6 +2445,7 @@ def _tool_specs() -> list:
             "order_id": {"type": "integer", "description": "reorder: the past order to copy back into the cart."},
             "rep_id": {"type": "integer", "description": "message_rep: the sales rep (from get_sales_reps) to email."},
             "message": {"type": "string", "description": "message_rep: the message/question to email the rep."},
+            "order_note": {"type": "string", "description": "set_order_note: header note for the order at `distributor` (rides on the PO when sent)."},
             "list_name": {"type": "string"},
         }, "required": ["type"]},
     })
@@ -2557,6 +2560,16 @@ def _do_action(con, args, actions_out) -> dict:
                   "note": None if (rid and msg) else "Need a rep and a message to send."}
         actions_out.append(action)
         return {"message_rep": {"rep_id": rid, "has_message": bool(msg)}}
+    # Order note: a per-distributor header note that rides along on the order when
+    # sent. The frontend POSTs it to /api/cart/group-note.
+    if atype == "set_order_note":
+        dist = (args.get("distributor") or "").strip()
+        text = (args.get("order_note") or args.get("message") or "").strip()
+        action = {"type": "set_order_note", "cases": 0, "bottles": 0, "list_name": None,
+                  "products": [], "distributor": dist or None, "order_note": text,
+                  "note": None if (dist and text) else "Need a distributor and note text."}
+        actions_out.append(action)
+        return {"set_order_note": {"distributor": dist, "has_text": bool(text)}}
     which = args.get("which") if args.get("which") in ("cheapest", "most_expensive", "first", "all") else "first"
     cap = 10 if which == "all" else 1
     view = {

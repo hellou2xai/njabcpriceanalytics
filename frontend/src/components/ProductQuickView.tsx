@@ -360,7 +360,7 @@ function QuickViewModal({
                     </div>
                   );
                 })()}
-                <div><strong>Case Cost after RIP:</strong> ${p.effective_case_price}{Number(p.unit_qty) > 1 ? <span className="text-muted" style={{ fontWeight: 400 }}> (${(p.effective_case_price / Number(p.unit_qty)).toFixed(2)}/btl)</span> : ''}</div>
+                <div className="detail-after-rip"><strong>Case Cost after RIP:</strong> ${p.effective_case_price}{Number(p.unit_qty) > 1 ? <span className="text-muted" style={{ fontWeight: 400 }}> (${(p.effective_case_price / Number(p.unit_qty)).toFixed(2)}/btl)</span> : ''}</div>
               </div>
             )}
 

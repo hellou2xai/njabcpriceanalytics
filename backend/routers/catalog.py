@@ -23,20 +23,13 @@ from backend import pricing as _pricing
 
 
 def _current_yyyy_mm() -> str:
-    """Edition string for today's month (e.g. '2026-05')."""
-    t = date.today()
-    return f"{t.year:04d}-{t.month:02d}"
+    """Edition string for today's month, Eastern-anchored (e.g. '2026-05')."""
+    return _pricing.current_yyyy_mm()
 
 
 def _next_yyyy_mm() -> str:
-    """Edition string for next month (e.g. '2026-06')."""
-    t = date.today()
-    y, m = t.year, t.month
-    if m == 12:
-        y, m = y + 1, 1
-    else:
-        m += 1
-    return f"{y:04d}-{m:02d}"
+    """Edition string for next month, Eastern-anchored (e.g. '2026-06')."""
+    return _pricing.next_yyyy_mm()
 
 
 def _clean_record(rec: dict) -> dict:

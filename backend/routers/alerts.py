@@ -73,8 +73,8 @@ def mark_all_read(user: dict = Depends(get_current_user)):
 # ---- generation helpers -------------------------------------------------
 
 def _current_ym() -> str:
-    t = date.today()
-    return f"{t.year:04d}-{t.month:02d}"
+    from backend import pricing as _pricing
+    return _pricing.current_yyyy_mm()
 
 
 def _cur_editions(con, src, current_ym):

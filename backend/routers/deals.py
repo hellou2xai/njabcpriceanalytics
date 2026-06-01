@@ -339,10 +339,9 @@ def get_combos(
         # component names both render as garbage. Other distributors also
         # benefit: their combo product_name is also a code in the source.
         cpl_src = read_parquet(con, "cpl_enriched")
-        from datetime import date as _date
         from collections import defaultdict
-        t = _date.today()
-        current_ym = f"{t.year:04d}-{t.month:02d}"
+        from backend import pricing as _pricing
+        current_ym = _pricing.current_yyyy_mm()
 
         # Per-wholesaler current edition (latest <= this month, else newest) and
         # the next edition after it, so we can show this-vs-next-month outlook.
@@ -546,9 +545,8 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
 
     with get_duckdb() as con:
         src = read_parquet(con, "cpl_enriched")
-        from datetime import date as _date
-        t = _date.today()
-        current_ym = f"{t.year:04d}-{t.month:02d}"
+        from backend import pricing as _pricing
+        current_ym = _pricing.current_yyyy_mm()
         # Current edition AND the next edition per wholesaler, so dated deals
         # for next month surface too (gives the buyer time to prep).
         eds = con.execute(

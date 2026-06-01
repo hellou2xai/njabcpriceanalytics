@@ -270,10 +270,9 @@ def semantic_search(
 
 
 def _current_ym() -> str:
-    """Edition string for today's month (mirrors catalog._current_yyyy_mm)."""
-    from datetime import date
-    t = date.today()
-    return f"{t.year:04d}-{t.month:02d}"
+    """Edition string for today's month, Eastern-anchored (mirrors pricing)."""
+    from backend import pricing as _pricing
+    return _pricing.current_yyyy_mm()
 
 
 def enabled() -> bool:

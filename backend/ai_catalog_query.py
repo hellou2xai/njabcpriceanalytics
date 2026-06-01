@@ -64,8 +64,9 @@ def enabled() -> bool:
 
 
 def _current_ym() -> str:
-    t = date.today()
-    return f"{t.year:04d}-{t.month:02d}"
+    # Eastern-anchored (NJ ABC runs on ET; server clock is UTC). Single source.
+    from backend import pricing as _pricing
+    return _pricing.current_yyyy_mm()
 
 
 def _facets() -> tuple[list[str], list[str], list[str]]:

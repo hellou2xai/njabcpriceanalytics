@@ -39,8 +39,14 @@ from __future__ import annotations
 
 import math
 import re
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
+
+try:
+    from zoneinfo import ZoneInfo
+    _EASTERN = ZoneInfo("America/New_York")
+except Exception:  # pragma: no cover - zoneinfo always present on 3.9+
+    _EASTERN = None
 
 from backend.db import read_parquet
 from backend.rip_utils import (
@@ -59,15 +65,25 @@ from backend.rip_utils import (
 # re-export.
 # ---------------------------------------------------------------------------
 
+def eastern_today() -> date:
+    """Today's date in US Eastern time. New Jersey ABC operates on ET, but the
+    server clock runs UTC — which rolls to the next day (and, at a month boundary,
+    the next MONTH) several hours early. Anchoring every edition/date calc here
+    keeps 'current month' correct in the evening ET. Handles EST/EDT automatically."""
+    if _EASTERN is not None:
+        return datetime.now(_EASTERN).date()
+    return date.today()
+
+
 def current_yyyy_mm() -> str:
-    """Edition string for today's month (e.g. '2026-05')."""
-    t = date.today()
+    """Edition string for today's month in ET (e.g. '2026-05')."""
+    t = eastern_today()
     return f"{t.year:04d}-{t.month:02d}"
 
 
 def next_yyyy_mm() -> str:
-    """Edition string for next month (e.g. '2026-06')."""
-    t = date.today()
+    """Edition string for next month in ET (e.g. '2026-06')."""
+    t = eastern_today()
     y, m = t.year, t.month
     if m == 12:
         y, m = y + 1, 1

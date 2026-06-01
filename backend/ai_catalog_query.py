@@ -69,6 +69,40 @@ def _current_ym() -> str:
     return _pricing.current_yyyy_mm()
 
 
+# Canonical distributor slugs + the names buyers actually type. The catalog stores
+# slugs ('allied'), but users (and the model) say "Allied Beverage", "Fedway
+# Distributors", "Highgrade", etc. Resolve free text -> slug so a distributor
+# filter never silently matches nothing.
+_DISTRIBUTOR_SLUGS = ("allied", "fedway", "opici", "high_grade", "peerless")
+_DISTRIBUTOR_TOKENS = (
+    ("allied", "allied"),       # "allied", "allied beverage", "allied bev"
+    ("fedway", "fedway"),       # "fedway", "fedway distributors"
+    ("opici", "opici"),         # "opici", "opici family"
+    ("peerless", "peerless"),   # "peerless", "peerless beverage"
+    ("highgrade", "high_grade"),
+    ("high grade", "high_grade"),
+    ("high_grade", "high_grade"),
+    ("high", "high_grade"),
+)
+
+
+def resolve_distributor(name):
+    """Map a free-text distributor name to its catalog slug, or None if unknown.
+    'Allied Beverage' -> 'allied', 'Fedway Distributors' -> 'fedway', etc."""
+    if not name:
+        return None
+    s = str(name).strip().lower()
+    if not s:
+        return None
+    if s in _DISTRIBUTOR_SLUGS:
+        return s
+    s2 = s.replace("_", " ").replace("-", " ")
+    for token, slug in _DISTRIBUTOR_TOKENS:
+        if token in s2 or token in s:
+            return slug
+    return None
+
+
 def _facets() -> tuple[list[str], list[str], list[str]]:
     """(distributor slugs, product categories, top sizes) from the live cache."""
     try:
@@ -213,10 +247,13 @@ def _resolve_products(con, view: dict, match: str, which: str, cap: int,
         params[f"cat{i}"] = cat
     if view.get("categories"):
         where.append("c.product_type IN (" + ", ".join(f"$cat{i}" for i in range(len(view['categories']))) + ")")
-    for i, d in enumerate(view.get("divisions") or []):
+    # Normalise distributor names ("Allied Beverage" -> "allied") so the filter
+    # matches the slug stored in the catalog instead of silently finding nothing.
+    divisions = [resolve_distributor(d) or d for d in (view.get("divisions") or [])]
+    for i, d in enumerate(divisions):
         params[f"d{i}"] = d
-    if view.get("divisions"):
-        where.append("c.wholesaler IN (" + ", ".join(f"$d{i}" for i in range(len(view['divisions']))) + ")")
+    if divisions:
+        where.append("c.wholesaler IN (" + ", ".join(f"$d{i}" for i in range(len(divisions))) + ")")
     if view.get("priceMin") is not None:
         params["pmin"] = view["priceMin"]; where.append("c.frontline_case_price >= $pmin")
     if view.get("priceMax") is not None:

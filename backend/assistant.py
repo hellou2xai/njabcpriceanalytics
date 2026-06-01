@@ -28,7 +28,7 @@ import re
 from backend.db import get_duckdb
 from backend.ai_catalog_query import (
     _client_or_none, _cost_usd, _MODEL, _current_ym, _resolve_products,
-    _history_messages, enabled,
+    _history_messages, enabled, resolve_distributor as _resolve_distributor,
 )
 # Canonical pricing helpers — every "best deal" / tier / ranking question
 # must read from here, not from inline SQL. See backend/FOUNDATION.md.
@@ -3003,6 +3003,19 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                 for b in resp.content:
                     if getattr(b, "type", "") != "tool_use":
                         continue
+                    # Normalise any distributor name the model passes ("Allied
+                    # Beverage" -> "allied") so every tool filters on the slug the
+                    # catalog stores, not a label that matches nothing.
+                    if isinstance(getattr(b, "input", None), dict):
+                        for _dk in ("distributor", "from_distributor", "to_distributor"):
+                            _dv = b.input.get(_dk)
+                            if _dv:
+                                _slug = _resolve_distributor(_dv)
+                                if _slug:
+                                    b.input[_dk] = _slug
+                        if isinstance(b.input.get("distributors"), list):
+                            b.input["distributors"] = [
+                                (_resolve_distributor(d) or d) for d in b.input["distributors"]]
                     if b.name == "show_on_screen":
                         si = b.input or {}
                         screen_args = si

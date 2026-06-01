@@ -35,7 +35,7 @@ from backend.ai_catalog_query import (
 from backend import pricing as _pricing
 from backend import rip_utils as _rip   # canonical case/bottle RIP unit math
 
-_ACTION_TYPES =("add_to_cart", "update_quantity", "add_to_favorites", "add_to_list", "swap_distributor")
+_ACTION_TYPES =("add_to_cart", "update_quantity", "add_to_favorites", "add_to_list", "swap_distributor", "submit_order")
 _MAX_TURNS = 6
 # Stocking-deal floor used by the "best deals" ranker by default. A row whose
 # effective_case_price is below this fraction of frontline (e.g. a 100%-off
@@ -2244,7 +2244,11 @@ def _tool_specs() -> list:
                         "that code. swap_distributor REPLACES the user's cart items from `from_distributor` "
                         "with the SAME products (matched by UPC) at `to_distributor`, preserving quantities — "
                         "pass `rip_code` to limit it to one Case Mix, else it swaps every line from that "
-                        "distributor. Use for 'swap/replace/move <X> to <distributor>'."),
+                        "distributor. Use for 'swap/replace/move <X> to <distributor>'. "
+                        "submit_order SENDS the active cart as orders (one per sales rep) and EMAILS each rep. "
+                        "It is irreversible from chat — ONLY call it after (a) you have run the pre-send review "
+                        "(analyze_cart) and surfaced any mistakes, and (b) the user has explicitly confirmed "
+                        "they want to send. Use for 'send/submit/place my order', 'email this to my rep'."),
         "input_schema": {"type": "object", "properties": {
             "type": {"type": "string", "enum": list(_ACTION_TYPES)},
             "match": {"type": "string"},
@@ -2335,6 +2339,15 @@ def _do_action(con, args, actions_out) -> dict:
                   "note": None if (frm and to) else "Need both a from- and a to-distributor to swap."}
         actions_out.append(action)
         return {"swap": {"from": frm, "to": to, "rip_code": code}}
+    # Submit order: turn the active cart into orders (one per sales rep) and EMAIL
+    # each rep. The frontend calls POST /api/cart/send after a confirmation dialog
+    # — never sent without the buyer's explicit OK. Carries no products.
+    if atype == "submit_order":
+        action = {"type": "submit_order", "cases": 0, "bottles": 0, "list_name": None,
+                  "products": [], "note": None}
+        actions_out.append(action)
+        return {"submit_order": True,
+                "note": "Will email the order to your sales rep(s) after you confirm."}
     which = args.get("which") if args.get("which") in ("cheapest", "most_expensive", "first", "all") else "first"
     cap = 10 if which == "all" else 1
     view = {
@@ -2733,6 +2746,18 @@ _SYSTEM = (
     "rip_code=<code if it's a Case Mix>) — it replaces those cart lines with the same products (matched by "
     "UPC) at the target distributor, keeping quantities, in one step. Confirm what swapped and flag anything "
     "the target doesn't carry. "
+    "ORDER FLOW (your CENTRAL job — guide the buyer from question to a sent order, mistake-free): "
+    "(1) answer pricing/deal/RIP questions; (2) when they decide, ADD to cart via perform_action(add_to_cart) "
+    "— resolve by UPC + size, confirm what you added with exact effective $/cs; (3) when they want to review or "
+    "send, run a PRE-SEND REVIEW: call analyze_cart and surface mistakes to AVOID before ordering — a cheaper "
+    "distributor for the same UPC, a line that DROPS next month (wait, don't buy now), being 1 case short of a "
+    "RIP or discount tier, a closeout/expiring line, any line with no current price, and odd quantities. "
+    "Present a short go/no-go: '✅ looks good' items vs '⚠️ consider fixing' items, with the $ impact, and ASK "
+    "whether to fix any or send as-is. (4) Only after the user explicitly confirms, call "
+    "perform_action(type=submit_order) — this emails the order to their sales rep(s), one order per rep, and "
+    "clears those items from the cart. NEVER submit without the pre-send review AND an explicit yes. After "
+    "sending, report what went to which rep and flag any items skipped because no sales rep is assigned (tell "
+    "them to assign a rep and resend). If the cart is empty or nothing's priced, say so instead of submitting. "
     "VALUE-INSIGHT tools (use these for the matching intents): best_one_case_rip — 'best 1-case RIP deals', "
     "rebates worth taking on a single case (no bulk needed); present a ranked list with the per-case rebate at "
     "one case and note it equals the bulk per-case value. deal_360 — the FULL picture for ONE item ('deal 360', "

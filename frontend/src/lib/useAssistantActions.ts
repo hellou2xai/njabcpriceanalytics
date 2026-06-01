@@ -56,6 +56,23 @@ export function useAssistantActions() {
               upcs: a.swap_upcs ?? undefined,
             });
           }
+        } else if (a.type === 'submit_order') {
+          // Send the cart as orders (one per sales rep), each emailed. Irreversible
+          // — confirm with a concrete count first.
+          let n = 0;
+          try {
+            const c = await cartApi.get();
+            n = (c.items ?? []).filter(it => !it.saved_for_later).length;
+          } catch { /* generic prompt */ }
+          const ok = await confirm({
+            title: 'Send order to your sales rep(s)?',
+            message: `This submits ${n ? `${n} ` : 'your '}cart item${n === 1 ? '' : 's'} as orders `
+              + `(one per sales rep) and emails each rep, then clears those items from your cart. `
+              + `Items with no sales rep assigned will be left in the cart.`,
+            confirmText: 'Send order', cancelText: 'Not yet',
+          });
+          if (!ok) continue;
+          await cartApi.send();
         } else if (a.type === 'add_to_list') {
           const name = (a.list_name || 'AI List').trim();
           const existing = await listsApi.list();
@@ -91,6 +108,7 @@ export function describeActions(actions: CatalogAiAction[] | undefined): string[
     else if (a.type === 'add_to_favorites') chips.push(`⭐ ${label}`);
     else if (a.type === 'add_to_list') chips.push(`📋 ${a.list_name ?? 'List'} (+${a.products.length})`);
     else if (a.type === 'swap_distributor') chips.push(`🔁 Swap ${a.from_distributor ?? '?'} → ${a.to_distributor ?? '?'}${a.rip_code ? ` (RIP ${a.rip_code})` : ''}`);
+    else if (a.type === 'submit_order') chips.push('📧 Send order to sales rep');
     if (a.note) chips.push(`⚠ ${a.note}`);
   }
   return chips;

@@ -174,7 +174,7 @@ export interface CatalogAiProduct {
   next_tiers?: AssistantTier[];
   next_effective_case_price?: number | null;
 }
-export type CatalogAiActionType = 'add_to_cart' | 'update_quantity' | 'add_to_favorites' | 'add_to_list' | 'swap_distributor';
+export type CatalogAiActionType = 'add_to_cart' | 'update_quantity' | 'add_to_favorites' | 'add_to_list' | 'swap_distributor' | 'submit_order';
 export interface CatalogAiAction {
   type: CatalogAiActionType;
   cases: number;

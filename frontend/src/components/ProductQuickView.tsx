@@ -347,6 +347,7 @@ function QuickViewModal({
                     ? <>${p.frontline_unit_price}/btl <span className="text-muted" style={{ fontWeight: 400 }}>(${p.frontline_case_price}/cs)</span></>
                     : <>${p.frontline_case_price} <span className="text-muted" style={{ fontWeight: 400 }}>(single unit)</span></>}
                 </div>
+                {Number(p.unit_qty) > 1 && <div><strong>Bottle Cost:</strong> ${p.frontline_unit_price}</div>}
                 <div><strong>Best Discount:</strong> {p.has_discount ? <span className="text-green">${p.total_savings_per_case}/case</span> : '—'}</div>
                 {/* Case cost after the case (CPL) discount, before RIP — highlighted. */}
                 {(() => {

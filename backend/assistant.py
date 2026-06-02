@@ -3677,22 +3677,31 @@ def _focal_product_for_rip(con, rl, cym: str) -> dict | None:
             _uq = None
         eff_unit = (row[7] / _uq) if (row[7] is not None and _uq) else None
         # Sweep the 5 discount tier slots and pick the AMOUNT where qty == 1.
-        # That's the "buy 1 case" discount the user wants in the second row.
-        # None when the product has no 1-case tier (some only kick in at 5 cs).
+        # discount_n_qty is stored as a TEXT label like '1 Cases', '20 Cases',
+        # '5 Bottles' — NOT a number — so we parse the leading integer and
+        # skip bottle-tier rows (we only care about the 1-CASE discount here).
+        # None when the product has no 1-case tier (some only kick in at 5 cs
+        # or higher).
         one_case_disc = None
         for i in (8, 10, 12, 14, 16):   # discount_{n}_qty at row offsets
+            raw_q = row[i]
+            if raw_q is None:
+                continue
+            label = str(raw_q).strip().lower()
+            if 'btl' in label or 'bottle' in label:
+                continue   # bottle-tier slot, not the 1-case discount
+            m = re.match(r'\s*(\d+)', label)
+            if not m:
+                continue
+            if int(m.group(1)) != 1:
+                continue
             try:
-                q = float(row[i]) if row[i] is not None else None
+                amt = float(row[i + 1]) if row[i + 1] is not None else None
+                if amt is not None and amt == amt and amt > 0:
+                    one_case_disc = amt
+                    break
             except Exception:
-                q = None
-            if q is not None and q == q and int(q) == 1:
-                try:
-                    amt = float(row[i + 1]) if row[i + 1] is not None else None
-                    if amt is not None and amt == amt and amt > 0:
-                        one_case_disc = amt
-                        break
-                except Exception:
-                    pass
+                pass
         return {"product_name": row[0], "wholesaler": row[1], "upc": row[2],
                 "unit_volume": row[3], "unit_qty": _uq,
                 "frontline_case_price": row[5], "frontline_unit_price": row[6],

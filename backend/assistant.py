@@ -722,6 +722,104 @@ def _t_rip_lookup(con, args):
             "by_distributor": by_dist_sorted, "rip_codes": code_details, "note": note}
 
 
+def _t_rip_summary(con, args):
+    """Per-distributor RIP roll-up: every (wholesaler, rip_code) active in the
+    current edition, with the CANONICAL Case-Mix size (distinct catalog SKUs:
+    same UPC + different vintage = different item) and the RIP's description.
+    Same scoping as the catalog (latest rip edition <= today, joined to the
+    latest cpl_enriched per wholesaler, blank/zero UPCs filtered) so the
+    counts agree with what the catalog page shows.
+
+    Args:
+      distributor: filter to one wholesaler (slug or label).
+      min_members: only return clusters with at least N SKUs (default 1).
+      limit_per_distributor: cap each distributor's top-N (default 50).
+    """
+    cym = args.get("month") or _current_ym()
+    cym = _resolve_month(con, cym) or cym
+    ws = (args.get("distributor") or "").strip().lower() or None
+    try:
+        min_n = max(1, int(args.get("min_members") or 1))
+    except Exception:
+        min_n = 1
+    try:
+        per_dist_cap = max(1, int(args.get("limit_per_distributor") or 50))
+    except Exception:
+        per_dist_cap = 50
+    ws_clause = ""
+    ws_params: list = []
+    if ws:
+        ws_clause = "AND LOWER(wholesaler) = LOWER(?)"
+        ws_params = [ws]
+    try:
+        df = con.execute(
+            "WITH cpl_cur AS ("
+            f"  SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<='{cym}' GROUP BY wholesaler"
+            "), "
+            "rip_cur AS ("
+            f"  SELECT wholesaler, MAX(edition) ed FROM rip WHERE edition<='{cym}' "
+            f"  {ws_clause} GROUP BY wholesaler"
+            "), "
+            "rip_set AS ("
+            "  SELECT r.wholesaler, "
+            "         CAST(r.rip_code AS VARCHAR) AS rip_code, "
+            "         LTRIM(CAST(r.upc AS VARCHAR), '0') AS upc_n "
+            "  FROM rip r JOIN rip_cur rc ON r.wholesaler=rc.wholesaler AND r.edition=rc.ed "
+            "  WHERE r.upc IS NOT NULL "
+            "    AND CAST(r.upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan') "
+            "    AND LTRIM(CAST(r.upc AS VARCHAR), '0') NOT IN ('', 'None', 'nan') "
+            "    AND r.rip_code IS NOT NULL "
+            "    AND CAST(r.rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan') "
+            "), "
+            "rip_desc AS ("
+            "  SELECT wholesaler, CAST(rip_code AS VARCHAR) AS rip_code, "
+            "         ANY_VALUE(rip_description) AS description "
+            "  FROM rip r JOIN rip_cur rc ON r.wholesaler=rc.wholesaler AND r.edition=rc.ed "
+            "  WHERE rip_description IS NOT NULL AND CAST(rip_description AS VARCHAR) <> '' "
+            "  GROUP BY 1, 2"
+            ") "
+            "SELECT rs.wholesaler, rs.rip_code, "
+            "       COUNT(DISTINCT (LTRIM(CAST(c.upc AS VARCHAR),'0'), "
+            "                       COALESCE(CAST(c.vintage AS VARCHAR),''), "
+            "                       COALESCE(c.unit_volume,''), "
+            "                       COALESCE(CAST(c.unit_qty AS VARCHAR),''))) AS member_count, "
+            "       ANY_VALUE(rd.description) AS description "
+            "FROM rip_set rs "
+            "JOIN cpl_cur cc ON cc.wholesaler = rs.wholesaler "
+            "JOIN cpl_enriched c ON c.wholesaler = cc.wholesaler AND c.edition = cc.ed "
+            "                   AND LTRIM(CAST(c.upc AS VARCHAR),'0') = rs.upc_n "
+            "LEFT JOIN rip_desc rd ON rd.wholesaler = rs.wholesaler "
+            "                     AND rd.rip_code = rs.rip_code "
+            "WHERE c.upc IS NOT NULL "
+            "  AND LTRIM(CAST(c.upc AS VARCHAR),'0') NOT IN ('', 'None', 'nan') "
+            "GROUP BY rs.wholesaler, rs.rip_code "
+            "HAVING COUNT(DISTINCT (LTRIM(CAST(c.upc AS VARCHAR),'0'), "
+            "                       COALESCE(CAST(c.vintage AS VARCHAR),''), "
+            "                       COALESCE(c.unit_volume,''), "
+            "                       COALESCE(CAST(c.unit_qty AS VARCHAR),''))) >= ? "
+            "ORDER BY rs.wholesaler, member_count DESC, rs.rip_code",
+            ws_params + [min_n]).fetchdf()
+    except Exception as e:
+        return {"error": f"{type(e).__name__}"}
+    by_dist: dict = {}
+    for _, r in df.iterrows():
+        wh = r["wholesaler"]
+        by_dist.setdefault(wh, []).append({
+            "rip_code": str(r["rip_code"]),
+            "member_count": int(r["member_count"]),
+            "description": (None if r["description"] is None or
+                            (isinstance(r["description"], float) and r["description"] != r["description"])
+                            else str(r["description"])),
+        })
+    # Cap each distributor's list (biggest first already) so a 200+ row distributor
+    # doesn't blow the context. Total cluster count surfaced as `total` per group.
+    summary: dict = {}
+    for wh, lst in by_dist.items():
+        summary[wh] = {"total_codes": len(lst), "clusters": lst[:per_dist_cap]}
+    return {"edition": cym, "by_distributor": summary,
+            "total_codes": sum(len(v) for v in by_dist.values())}
+
+
 def _ml_of(vol):
     """Parse a unit_volume label ('750 ML', '1.75L', '1 L', '12 OZ') to millilitres."""
     if vol is None:
@@ -1595,6 +1693,7 @@ _DATA_TOOLS = {
     "category_breakdown": (_t_category_breakdown, "Product counts and average case price per category (current edition)."),
     "price_timeline": (_t_price_timeline, "Month-over-month price comparison for ONE product across editions. Follows the product by UPC (stable across editions even when the name changes) and returns, per distributor, a per-edition series of frontline + effective case price, RIP savings and discount flag, each with the month-over-month delta and %, plus a summary (cheapest / dearest month, net change, latest vs prior, trend up/down/flat). Use for ANY 'price over months / over time', 'how has X's price changed', 'compare X prices across months', 'price history/trend for X'. Pass `distributor` to focus one supplier and `months` to cap recent editions. A line chart of effective $/case over months is attached automatically."),
     "rip_lookup": (_t_rip_lookup, "RIP rebate lookup by brand/product NAME (e.g. 'sutter home') or by a RIP code. A UPC can have MULTIPLE codes and codes differ BY DISTRIBUTOR; returns matched products (each with all its codes), a by_distributor code map, and per-code tiers + description + product count. Use for any 'what RIP / rebate / RIP code' question. Pass month='May' / '2026-05' when the user names a month, so a rebate from a past edition that has since expired is still found (rebates change every edition)."),
+    "rip_summary": (_t_rip_summary, "Per-distributor RIP roll-up: every (wholesaler, rip_code) active in the current edition with the Case-Mix size (distinct catalog SKUs; same UPC + different vintage counts as a different item) and the RIP description. Use for 'by distributor show every RIP and case-mix size', 'how many products per RIP', 'rip codes per distributor with item counts'. Args: distributor (filter to one wholesaler), min_members (default 1), limit_per_distributor (default 50)."),
     "compare_distributors": (_t_compare_distributors, "Side-by-side price comparison of ONE product across all distributors carrying it. `match` = UPC or product name (UPC is resolved). Returns each distributor's case/effective price + savings; shown as a table and the rows as add-to-cart cards."),
     "distributor_breakdown": (_t_distributor_breakdown, "Per-distributor product counts, avg case price, and #with RIP/discount."),
     "deal_counts": (_t_deal_counts, "Totals: products, #with RIP, #with discount, #closeouts."),
@@ -3439,6 +3538,49 @@ def _auto_table_products(screen_args: dict) -> list:
                                  exclude_stocking=True)
 
 
+def _format_rip_summary_md(rs) -> str:
+    """Render a rip_summary tool result as a deterministic markdown report:
+    one section per distributor, each with a sorted RIP table (CODE / ITEMS /
+    DESCRIPTION). User rule: 'by distributor, show me rip number and number
+    of items in that case mix rip' should look the same on any model."""
+    if not isinstance(rs, dict):
+        return ""
+    by = rs.get("by_distributor") or {}
+    if not by:
+        return rs.get("note") or "No RIP rebates active this edition."
+    parts: list[str] = []
+    total = int(rs.get("total_codes") or 0)
+    edition = rs.get("edition") or ""
+    parts.append(f"🏷️ **RIP Codes by Distributor** — {total} active code{'s' if total != 1 else ''}"
+                 f"{f' ({edition})' if edition else ''}")
+    parts.append("")
+    # Sort distributors alphabetically with a stable label so Allied / Fedway /
+    # Opici always appear in the same order.
+    for ws in sorted(by.keys(), key=lambda w: w.lower()):
+        block = by[ws]
+        clusters = block.get("clusters") or []
+        n_codes = int(block.get("total_codes") or len(clusters))
+        if not clusters:
+            continue
+        ws_label = ws.title()
+        truncated = len(clusters) < n_codes
+        head = f"### {ws_label} — {n_codes} RIP code{'s' if n_codes != 1 else ''}"
+        if truncated:
+            head += f" *(showing top {len(clusters)})*"
+        parts.append(head)
+        parts.append("")
+        parts.append("| RIP CODE | ITEMS | DESCRIPTION |")
+        parts.append("|---|---|---|")
+        for c in clusters:
+            desc = (c.get("description") or "").strip() or "—"
+            # Trim very long descriptions so the table stays readable.
+            if len(desc) > 60:
+                desc = desc[:57] + "…"
+            parts.append(f"| **{c.get('rip_code')}** | {c.get('member_count')} | {desc} |")
+        parts.append("")
+    return "\n".join(parts).rstrip()
+
+
 def _format_rip_md(rl) -> str:
     """Minimal fallback render of a rip_lookup result (kept for callers that
     don't have a DuckDB connection handy). Prefer _format_rip_full_md for the
@@ -4089,25 +4231,51 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
     # not the answer text.
     _ql = question.lower()
     if any(k in _ql for k in ("rip", "rebate")):
-        try:
-            term = (screen_args or {}).get("q") if screen_args else None
-            if not term:
-                m = re.search(r"\b(?:for|of|about|on)\s+(.+)$", question, re.I)
-                term = (m.group(1) if m else "").strip()
-                term = re.sub(r"\b(rip|rebate|details?|analysis|code|tiers?|mix|bottle|prices?)\b",
-                              " ", term, flags=re.I).strip()
-            if not term:
-                # Last-ditch: strip stop words from the whole question.
-                term = re.sub(r"\b(show|me|products?|the|and|for|of|about|on|in|with|rip|rebate|mix|case|bottle|prices?|details?)\b",
-                              " ", _ql).strip()
-            if term:
+        # SUMMARY intent: "by distributor show rip codes and case-mix sizes",
+        # "how many products per rip", "list every rip per distributor". The
+        # rollup template lists every (wholesaler, rip_code) with its SKU
+        # count instead of focusing on one focal product.
+        summary_intent = any(p in _ql for p in (
+            "by distributor", "per distributor", "by wholesaler", "per wholesaler",
+            "every rip", "all rips", "all rip codes", "list rip", "list of rip",
+            "rip codes and", "rip number and number", "rip count", "case mix size",
+            "items per rip", "products per rip", "size per rip",
+        ))
+        # Optional one-distributor filter the model may have typed in words.
+        dist_filter = None
+        for w in ("allied", "fedway", "opici"):
+            if w in _ql:
+                dist_filter = w
+                break
+        if summary_intent:
+            try:
                 with get_duckdb() as _con:
-                    _rl = _t_rip_lookup(_con, {"match": term})
-                    _md = _format_rip_full_md(_con, _rl)
+                    _rs = _t_rip_summary(_con, {"distributor": dist_filter})
+                _md = _format_rip_summary_md(_rs)
                 if _md:
                     answer = _md
-        except Exception:
-            pass  # never fail the answer over the RIP template
+            except Exception:
+                pass  # never fail the answer over the RIP summary
+        else:
+            try:
+                term = (screen_args or {}).get("q") if screen_args else None
+                if not term:
+                    m = re.search(r"\b(?:for|of|about|on)\s+(.+)$", question, re.I)
+                    term = (m.group(1) if m else "").strip()
+                    term = re.sub(r"\b(rip|rebate|details?|analysis|code|tiers?|mix|bottle|prices?)\b",
+                                  " ", term, flags=re.I).strip()
+                if not term:
+                    # Last-ditch: strip stop words from the whole question.
+                    term = re.sub(r"\b(show|me|products?|the|and|for|of|about|on|in|with|rip|rebate|mix|case|bottle|prices?|details?)\b",
+                                  " ", _ql).strip()
+                if term:
+                    with get_duckdb() as _con:
+                        _rl = _t_rip_lookup(_con, {"match": term})
+                        _md = _format_rip_full_md(_con, _rl)
+                    if _md:
+                        answer = _md
+            except Exception:
+                pass  # never fail the answer over the RIP template
     # Multi-product answers (3+ products) get enriched with tier ladders so
     # the frontend can render a side-by-side comparison table, and a Catalog
     # deep-link is built by exact UPCs so "Open in Catalog ->" lands on the

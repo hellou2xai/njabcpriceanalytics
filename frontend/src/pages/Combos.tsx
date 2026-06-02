@@ -32,6 +32,60 @@ function breakdown(c: Combo) {
   return { combo, savings, regularValue, pctOff, reliable };
 }
 
+// Worth-it verdict from the server-computed economics (combo vs one-case price).
+const VERDICT_LABEL: Record<string, string> = {
+  worth_it: '✅ Worth it', marginal: '≈ Marginal',
+  buy_separately: '⚠️ Buy separately', unknown: 'ℹ️ Unverified',
+};
+
+// The economics block: ADVERTISED savings (distributor's claim) vs EFFECTIVE
+// savings (vs the realistic one-case price), the three summed baselines, and a
+// per-component combo / list / one-case table. Same numbers as the AI assistant.
+function EconomicsBlock({ c }: { c: Combo }) {
+  const e = c.economics;
+  if (!e) return null;
+  const adv = e.advertised_savings;
+  const eff = e.save_vs_separate;
+  const optimistic = adv != null && eff != null ? adv - eff : null;
+  return (
+    <div className="combo-detail-summary" style={{ marginTop: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
+        <span className={`combo-pct-badge${e.verdict === 'buy_separately' ? ' combo-pct-badge-warn' : ''}`}>
+          {VERDICT_LABEL[e.verdict ?? 'unknown']}
+        </span>
+        <span style={{ fontSize: 13 }}>
+          <strong>Advertised save {$(adv)}</strong>
+          {eff != null && <> → <span className="text-green font-bold">effective {$(eff)}</span> vs one-case</>}
+          {optimistic != null && optimistic > 1 &&
+            <span className="text-muted"> · advertised is {$(optimistic)} optimistic</span>}
+        </span>
+      </div>
+      {e.verdict === 'unknown' ? (
+        <p className="text-muted" style={{ fontSize: 12.5, margin: 0 }}>
+          Couldn't price every component cleanly (variety/special pack or not on the current sheet), so the
+          effective figure is partial. The advertised number above is the distributor's.
+        </p>
+      ) : (
+        <table className="combo-detail-pricing" style={{ marginTop: 4 }}>
+          <tbody>
+            <tr><td>Combo bundle price</td><td className="right">{$(e.combo_cost)}</td></tr>
+            <tr><td>Individual (list) price</td><td className="right">{$(e.frontline_total)}</td></tr>
+            <tr><td>One-case price (list − 1-case discount)</td><td className="right">{$(e.separate_best_total)}</td></tr>
+            <tr className="combo-detail-total">
+              <td>Effective saving vs one-case</td>
+              <td className="right text-green">{$(eff)}{e.pct_vs_separate != null ? ` (${e.pct_vs_separate.toFixed(0)}%)` : ''}</td>
+            </tr>
+          </tbody>
+        </table>
+      )}
+      <p className="text-muted" style={{ fontSize: 11.5, margin: '6px 0 0' }}>
+        Effective uses the <strong>one-case</strong> price (what you'd really pay buying a case or two), not the
+        bulk-RIP max that needs 20–30 cases.
+      </p>
+    </div>
+  );
+}
+
 function recVariant(rec?: string): 'now' | 'wait' | 'urgent' | 'neutral' {
   if (!rec) return 'neutral';
   if (rec.includes('ends') || rec.includes('rises')) return 'urgent';
@@ -113,6 +167,9 @@ function ComboDetailModal({ c, onClose }: { c: Combo; onClose: () => void }) {
           {distributorName(c.wholesaler)} · Combo #{c.combo_code} · {items} {items === 1 ? 'product' : 'products'}
         </p>
         {contents && <p className="combo-detail-contents">{contents}</p>}
+
+        {/* Worth-it economics (advertised vs effective, vs one-case price). */}
+        <EconomicsBlock c={c} />
 
         {b.reliable ? (
           <>
@@ -366,9 +423,29 @@ export default function Combos() {
                   </span>
                 );
               } },
-            { key: 'total_savings', label: 'Savings', align: 'right', sortable: true,
+            { key: 'total_savings', label: 'Advertised Save', align: 'right', sortable: true,
               exportValue: r => r.total_savings,
               render: r => <SavingsCell c={r} /> },
+            { key: '_eff_save', label: 'Effective Save', align: 'right', sortable: true,
+              exportValue: r => r.economics?.save_vs_separate ?? '',
+              render: r => {
+                const e = r.economics;
+                if (!e || e.verdict === 'unknown' || e.save_vs_separate == null)
+                  return <span className="text-muted" title="Couldn't price every component cleanly">—</span>;
+                return (
+                  <span className="text-green font-bold"
+                    title={`vs the one-case price${e.pct_vs_separate != null ? ` · ${e.pct_vs_separate.toFixed(0)}%` : ''}`}>
+                    {$(e.save_vs_separate)}
+                  </span>
+                );
+              } },
+            { key: '_verdict', label: 'Verdict', sortable: true,
+              exportValue: r => r.economics?.verdict ?? '',
+              render: r => {
+                const v = r.economics?.verdict ?? 'unknown';
+                return <span className={`combo-pct-badge${v === 'buy_separately' ? ' combo-pct-badge-warn' : ''}`}>
+                  {VERDICT_LABEL[v]}</span>;
+              } },
             { key: 'next_total_savings', label: 'Next Mo. Save', align: 'right', sortable: true,
               exportValue: r => r.availability === 'ending' ? 'ends' : (r.next_total_savings ?? ''),
               render: r => r.availability === 'ending'
@@ -388,7 +465,10 @@ export default function Combos() {
             { key: 'recommendation', label: 'Outlook', sortable: true,
               render: r => <span className="combo-rec" data-rec={recVariant(r.recommendation)}>{r.recommendation ?? '—'}</span> },
           ]}
-          data={items.map(i => ({ ...i, _pct_off: breakdown(i).pctOff, _regular_value: breakdown(i).regularValue }))}
+          data={items.map(i => ({
+            ...i, _pct_off: breakdown(i).pctOff, _regular_value: breakdown(i).regularValue,
+            _eff_save: i.economics?.save_vs_separate ?? -Infinity, _verdict: i.economics?.verdict ?? 'unknown',
+          }))}
           pageSize={limit}
           exportName="combos"
           onRowClick={r => setDetailCombo(r)}

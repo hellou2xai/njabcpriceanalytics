@@ -1318,6 +1318,31 @@ export interface ComboComponent {
   frontline_price_each: number | null;
   combo_price_each: number | null;
 }
+// Worth-it economics computed server-side (deals.compute_combo_economics):
+// combo pack price vs the individual LIST price and the realistic ONE-CASE
+// price (list − 1-case discount), priced by UPC and summed. Same numbers the
+// AI assistant uses. `advertised_savings` = the distributor's claimed savings
+// (often inflated) so the UI can show advertised-vs-effective.
+export interface ComboEconomicsComponent {
+  product_name: string | null; upc: string | null; unit_volume?: string | null;
+  cases?: number | null; price_unit?: 'bottle' | 'case' | null;
+  combo_each?: number | null; best_separate_each?: number | null;
+  has_separate_deal?: boolean;
+  combo_cost?: number | null; best_separate_cost?: number | null; frontline_cost?: number | null;
+}
+export interface ComboEconomics {
+  unit?: 'bottle' | 'case' | null;
+  combo_cost?: number | null;
+  advertised_savings?: number | null;
+  separate_best_total?: number | null;   // one-case total
+  frontline_total?: number | null;        // individual/list total
+  save_vs_separate?: number | null;       // effective (vs one-case)
+  save_vs_frontline?: number | null;      // vs list
+  pct_vs_separate?: number | null;
+  verdict?: 'worth_it' | 'marginal' | 'buy_separately' | 'unknown';
+  any_component_missing_price?: boolean;
+  components?: ComboEconomicsComponent[];
+}
 export interface Combo {
   combo_code: string; product_name: string;
   combo_pack_price: number; total_savings: number;
@@ -1327,6 +1352,7 @@ export interface Combo {
   availability?: 'continues' | 'ending' | 'new'; recommendation?: string;
   valid_from?: string | null; valid_through?: string | null;
   next_valid_from?: string | null; next_valid_through?: string | null;
+  economics?: ComboEconomics;
 }
 
 export interface RipPromo {

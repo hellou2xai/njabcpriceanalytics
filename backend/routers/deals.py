@@ -529,7 +529,207 @@ def get_combos(
             })
 
         items.sort(key=lambda x: x["total_savings"] or 0, reverse=True)
-        return items[:limit]
+        items = items[:limit]
+        # Attach the worth-it economics (combo vs individual LIST vs ONE-CASE
+        # price, by UPC) so BOTH the combo page and the AI assistant read the
+        # same numbers from one implementation.
+        try:
+            compute_combo_economics(con, items)
+        except Exception:
+            pass  # never fail the listing over the analysis
+        return items
+
+
+def _combo_qty_bottles(qty_per_pack, bottles_per_case):
+    """(cases, bottles) a combo requires of a component. '3   C' -> 3 cases;
+    '24 bottle' / bare '48' -> bottles (cases derived via bottles-per-case)."""
+    s = str(qty_per_pack or "").strip().lower()
+    m = re.match(r"(\d+(?:\.\d+)?)", s)
+    if not m:
+        return (None, None)
+    n = float(m.group(1))
+    rest = s[m.end():].strip()
+    bpc = bottles_per_case if (bottles_per_case and bottles_per_case > 0) else None
+    if "c" in rest:   # case / cs / c
+        return (n, (n * bpc) if bpc else None)
+    return ((n / bpc) if bpc else None, n)
+
+
+def _combo_one_case_disc(qa_pairs):
+    """Best 'buy ONE case' CPL discount amount from (qty_label, amt) pairs: the
+    qty label's leading integer must be 1 and it must not be a bottle tier."""
+    for raw_q, raw_a in qa_pairs:
+        if raw_q is None:
+            continue
+        label = str(raw_q).strip().lower()
+        if "btl" in label or "bottle" in label:
+            continue
+        m = re.match(r"\s*(\d+)", label)
+        if not m or int(m.group(1)) != 1:
+            continue
+        try:
+            amt = float(raw_a) if raw_a is not None else None
+            if amt is not None and amt == amt and amt > 0:
+                return amt
+        except Exception:
+            pass
+    return None
+
+
+def compute_combo_economics(con, combos, cym=None):
+    """Attach an ``economics`` dict to each combo: combo pack price vs (a) the
+    individual LIST price and (b) the realistic ONE-CASE price (list - 1-case
+    discount), priced BY UPC from the catalog and summed per combo. The pricing
+    unit (per bottle vs per case) is detected by reconciling to the pack price.
+    Bulk-RIP max prices are deliberately ignored (an unreachable 'trap'). Shared
+    by the combo page and the assistant's combo_analyzer so both agree."""
+    from backend import pricing as _pricing
+    cym = cym or _pricing.current_yyyy_mm()
+
+    def _ff(v):
+        try:
+            f = float(v)
+            return None if f != f else f
+        except (TypeError, ValueError):
+            return None
+
+    keys = sorted({(c.get("wholesaler"), str(comp.get("upc") or "").lstrip("0"))
+                   for c in combos for comp in (c.get("components") or [])
+                   if c.get("wholesaler") and str(comp.get("upc") or "").lstrip("0")})
+    info: dict = {}
+    if keys:
+        src = read_parquet(con, "cpl_enriched")
+        ph = ", ".join(f"($w{i}, $u{i})" for i in range(len(keys)))
+        kp: dict = {}
+        for i, (w, u) in enumerate(keys):
+            kp[f"w{i}"], kp[f"u{i}"] = w, u
+        try:
+            df = con.execute(
+                f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM {src} WHERE edition<='{cym}' GROUP BY wholesaler) "
+                "SELECT c.wholesaler ws, LTRIM(CAST(c.upc AS VARCHAR),'0') un, "
+                "ANY_VALUE(c.product_name) product_name, ANY_VALUE(c.unit_volume) unit_volume, "
+                "ANY_VALUE(c.unit_qty) unit_qty, MIN(c.frontline_case_price) fcase, "
+                "ANY_VALUE(c.discount_1_qty) d1q, ANY_VALUE(c.discount_1_amt) d1a, "
+                "ANY_VALUE(c.discount_2_qty) d2q, ANY_VALUE(c.discount_2_amt) d2a, "
+                "ANY_VALUE(c.discount_3_qty) d3q, ANY_VALUE(c.discount_3_amt) d3a, "
+                "ANY_VALUE(c.discount_4_qty) d4q, ANY_VALUE(c.discount_4_amt) d4a, "
+                "ANY_VALUE(c.discount_5_qty) d5q, ANY_VALUE(c.discount_5_amt) d5a "
+                f"FROM {src} c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
+                f"WHERE (c.wholesaler, LTRIM(CAST(c.upc AS VARCHAR),'0')) IN ({ph}) GROUP BY 1,2", kp).fetchdf()
+            for _, r in df.iterrows():
+                d = r.to_dict()
+                d["one_case_disc"] = _combo_one_case_disc([
+                    (d.get("d1q"), d.get("d1a")), (d.get("d2q"), d.get("d2a")),
+                    (d.get("d3q"), d.get("d3a")), (d.get("d4q"), d.get("d4a")),
+                    (d.get("d5q"), d.get("d5a")),
+                ]) or 0.0
+                info[(r["ws"], r["un"])] = d
+        except Exception:
+            pass
+
+    for c in combos:
+        ws = c.get("wholesaler")
+        pack = _ff(c.get("combo_pack_price"))
+        rc = []
+        for comp in c.get("components") or []:
+            un = str(comp.get("upc") or "").lstrip("0")
+            if not un:
+                continue
+            meta = info.get((ws, un), {})
+            bpc = _ff(meta.get("unit_qty"))
+            cases, bottles = _combo_qty_bottles(comp.get("qty_per_pack"), bpc)
+            cases_req = cases if cases is not None else ((bottles / bpc) if (bottles and bpc) else None)
+            fcase = _ff(meta.get("fcase"))
+            one_disc = _ff(meta.get("one_case_disc")) or 0.0
+            rc.append({
+                "un": un, "name": (meta.get("product_name") or comp.get("product_name")),
+                "unit_volume": meta.get("unit_volume") or comp.get("unit_volume"),
+                "bpc": bpc, "fcase": fcase, "one_disc": one_disc,
+                "sep_case": (fcase - one_disc) if fcase is not None else None,
+                "ce": _ff(comp.get("combo_price_each")), "cases_req": cases_req,
+            })
+
+        def _tot(unit):
+            s = 0.0
+            for r in rc:
+                if r["ce"] is None or r["cases_req"] is None:
+                    return None
+                if unit == "bottle":
+                    if not r["bpc"]:
+                        return None
+                    s += r["ce"] * r["cases_req"] * r["bpc"]
+                else:
+                    s += r["ce"] * r["cases_req"]
+            return s
+        tb, tc = _tot("bottle"), _tot("case")
+        unit = None
+        if pack and pack > 0:
+            eb = abs(tb - pack) / pack if tb is not None else 9.0
+            ec = abs(tc - pack) / pack if tc is not None else 9.0
+            if min(eb, ec) <= 0.05:
+                unit = "bottle" if eb <= ec else "case"
+
+        comps_out, sep_total, front_total, missing = [], 0.0, 0.0, False
+        combo_clean = bool(rc) and unit is not None
+        for r in rc:
+            bpc, fcase, sep_case, one_disc, ce, cases_req = (
+                r["bpc"], r["fcase"], r["sep_case"], r["one_disc"], r["ce"], r["cases_req"])
+            suspect = bool(bpc and bpc > 120)
+            scost = (sep_case * cases_req) if (sep_case is not None and cases_req is not None and not suspect) else None
+            fcost = (fcase * cases_req) if (fcase is not None and cases_req is not None and not suspect) else None
+            if unit == "bottle":
+                sep_each = (sep_case / bpc) if (sep_case is not None and bpc) else None
+                ccost = (ce * cases_req * bpc) if (ce is not None and cases_req is not None and bpc) else None
+            elif unit == "case":
+                sep_each = sep_case
+                ccost = (ce * cases_req) if (ce is not None and cases_req is not None) else None
+            else:
+                sep_each = ccost = None
+            sep_total += scost or 0.0
+            front_total += fcost or 0.0
+            if not (sep_case is not None and cases_req is not None and not suspect and ce and ce > 0):
+                missing = True
+                combo_clean = False
+            comps_out.append({
+                "product_name": r["name"], "upc": r["un"], "unit_volume": r["unit_volume"],
+                "bottles_per_case": bpc, "cases": cases_req, "price_unit": unit,
+                "combo_each": ce, "best_separate_each": sep_each,
+                "has_separate_deal": bool(one_disc and one_disc > 0),
+                "combo_cost": ccost, "best_separate_cost": scost, "frontline_cost": fcost,
+            })
+        sep_t = sep_total or None
+        save_vs_sep = (sep_t - pack) if (sep_t is not None and pack is not None) else None
+        save_vs_front = (front_total - pack) if (front_total and pack is not None) else None
+        pct_sep = (save_vs_sep / sep_t * 100) if (save_vs_sep is not None and sep_t) else None
+        if not combo_clean or save_vs_sep is None:
+            verdict = "unknown"
+            save_vs_sep = pct_sep = None
+        elif pct_sep >= 3:
+            verdict = "worth_it"
+        elif pct_sep <= -3:
+            verdict = "buy_separately"
+        else:
+            verdict = "marginal"
+        # ADVERTISED savings = what the source/distributor claims (total_savings,
+        # computed off the combo feed's own frontline). Kept alongside our
+        # EFFECTIVE savings (vs the realistic one-case price) so the buyer sees
+        # advertised-vs-effective — the advertised number is often inflated.
+        advertised = _ff(c.get("total_savings"))
+        c["economics"] = {
+            "combo_code": str(c.get("combo_code")), "wholesaler": ws,
+            "contents": (c.get("comments") or c.get("product_name")),
+            "unit": unit,
+            "combo_cost": round(pack, 2) if pack is not None else None,
+            "advertised_savings": round(advertised, 2) if advertised is not None else None,
+            "separate_best_total": round(sep_t, 2) if sep_t is not None else None,
+            "frontline_total": round(front_total, 2) if front_total else None,
+            "save_vs_separate": round(save_vs_sep, 2) if save_vs_sep is not None else None,
+            "save_vs_frontline": round(save_vs_front, 2) if save_vs_front is not None else None,
+            "pct_vs_separate": round(pct_sep, 1) if pct_sep is not None else None,
+            "verdict": verdict, "any_component_missing_price": missing,
+            "components": comps_out,
+        }
+    return combos
 
 
 @router.get("/time-sensitive")

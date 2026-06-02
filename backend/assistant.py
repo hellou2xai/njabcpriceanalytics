@@ -4453,7 +4453,8 @@ def _format_combo_analyzer_md(res: dict) -> str:
         elif v == "marginal":
             vline = f"{_VERDICT[v]} — about the same as buying separately at the one-case price ({pct}% diff)."
         else:
-            vline = f"{_VERDICT['unknown']} — some components aren't on the current price sheet; figures are partial."
+            why = c.get("unverified_reason") or "couldn't price every component cleanly"
+            vline = f"{_VERDICT['unknown']} — {why}; figures are partial."
         parts.append(vline)
         # Totals line — the combo total vs the two summed baselines (individual
         # LIST price, and the realistic ONE-CASE price), with savings vs each.

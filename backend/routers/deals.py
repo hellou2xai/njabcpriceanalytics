@@ -604,18 +604,35 @@ def compute_combo_economics(con, combos, cym=None):
         for i, (w, u) in enumerate(keys):
             kp[f"w{i}"], kp[f"u{i}"] = w, u
         try:
+            # One UPC can map to SEVERAL catalog rows — the individual SKU AND a
+            # bundle (e.g. Angeline '...VCOMBO', unit_qty 240, alongside the real
+            # 750ML 12-pack). Aggregating across them mixes a bundle's pack size
+            # with another row's price. So pick ONE coherent row per UPC: prefer a
+            # NON-bundle product with a sane case (2–120 bottles), all fields from
+            # that single row. Pack-price reconciliation downstream validates it.
             df = con.execute(
-                f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM {src} WHERE edition<='{cym}' GROUP BY wholesaler) "
-                "SELECT c.wholesaler ws, LTRIM(CAST(c.upc AS VARCHAR),'0') un, "
-                "ANY_VALUE(c.product_name) product_name, ANY_VALUE(c.unit_volume) unit_volume, "
-                "ANY_VALUE(c.unit_qty) unit_qty, MIN(c.frontline_case_price) fcase, "
-                "ANY_VALUE(c.discount_1_qty) d1q, ANY_VALUE(c.discount_1_amt) d1a, "
-                "ANY_VALUE(c.discount_2_qty) d2q, ANY_VALUE(c.discount_2_amt) d2a, "
-                "ANY_VALUE(c.discount_3_qty) d3q, ANY_VALUE(c.discount_3_amt) d3a, "
-                "ANY_VALUE(c.discount_4_qty) d4q, ANY_VALUE(c.discount_4_amt) d4a, "
-                "ANY_VALUE(c.discount_5_qty) d5q, ANY_VALUE(c.discount_5_amt) d5a "
-                f"FROM {src} c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
-                f"WHERE (c.wholesaler, LTRIM(CAST(c.upc AS VARCHAR),'0')) IN ({ph}) GROUP BY 1,2", kp).fetchdf()
+                f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM {src} WHERE edition<='{cym}' GROUP BY wholesaler), "
+                "ranked AS ( "
+                "  SELECT c.wholesaler ws, LTRIM(CAST(c.upc AS VARCHAR),'0') un, "
+                "         c.product_name, c.unit_volume, c.unit_qty, c.frontline_case_price fcase, "
+                "         c.discount_1_qty d1q, c.discount_1_amt d1a, c.discount_2_qty d2q, c.discount_2_amt d2a, "
+                "         c.discount_3_qty d3q, c.discount_3_amt d3a, c.discount_4_qty d4q, c.discount_4_amt d4a, "
+                "         c.discount_5_qty d5q, c.discount_5_amt d5a, "
+                "         ROW_NUMBER() OVER ( "
+                "           PARTITION BY c.wholesaler, LTRIM(CAST(c.upc AS VARCHAR),'0') "
+                "           ORDER BY "
+                "             CASE WHEN COALESCE(TRY_CAST(c.unit_qty AS DOUBLE),0) > 120 "
+                "                    OR UPPER(COALESCE(c.product_name,'')) LIKE '%VCOMBO%' "
+                "                    OR UPPER(COALESCE(c.product_name,'')) LIKE '%VARIETY%' "
+                "                    OR UPPER(COALESCE(c.product_name,'')) LIKE '%COMBO%' THEN 1 ELSE 0 END ASC, "
+                "             CASE WHEN TRY_CAST(c.unit_qty AS DOUBLE) BETWEEN 2 AND 120 THEN 0 ELSE 1 END ASC, "
+                "             TRY_CAST(c.unit_qty AS DOUBLE) DESC NULLS LAST, "
+                "             c.frontline_case_price ASC NULLS LAST "
+                "         ) rn "
+                f"  FROM {src} c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
+                f"  WHERE (c.wholesaler, LTRIM(CAST(c.upc AS VARCHAR),'0')) IN ({ph}) "
+                ") "
+                "SELECT * FROM ranked WHERE rn = 1", kp).fetchdf()
             for _, r in df.iterrows():
                 d = r.to_dict()
                 d["one_case_disc"] = _combo_one_case_disc([
@@ -710,6 +727,26 @@ def compute_combo_economics(con, combos, cym=None):
             verdict = "buy_separately"
         else:
             verdict = "marginal"
+        # Component coverage + a plain-English reason when we can't verify — the
+        # remaining unverifiable combos are genuine SOURCE gaps (a component with
+        # no UPC in the combo feed, a $0 feed price, or a variety pack whose
+        # per-unit prices don't reconcile). brand_reg_no can't recover the missing
+        # UPCs: it matches the catalog only ~47% of the time across feeds, so
+        # using it would attach wrong prices. We report the gap instead of guessing.
+        total_comp = len(c.get("components") or [])
+        priced = sum(1 for co in comps_out
+                     if co.get("combo_cost") is not None and co.get("best_separate_cost") is not None)
+        missing_upc = total_comp - len(rc)
+        reason = None
+        if verdict == "unknown":
+            if missing_upc > 0:
+                reason = f"{missing_upc} of {total_comp} items carry no UPC in the combo feed"
+            elif any(not co.get("combo_each") for co in comps_out):
+                reason = "a component is priced $0 in the feed"
+            elif unit is None:
+                reason = "per-unit prices don't reconcile to the pack (likely a variety/special pack)"
+            else:
+                reason = "a component isn't on the current price sheet"
         # ADVERTISED savings = what the source/distributor claims (total_savings,
         # computed off the combo feed's own frontline). Kept alongside our
         # EFFECTIVE savings (vs the realistic one-case price) so the buyer sees
@@ -727,6 +764,8 @@ def compute_combo_economics(con, combos, cym=None):
             "save_vs_frontline": round(save_vs_front, 2) if save_vs_front is not None else None,
             "pct_vs_separate": round(pct_sep, 1) if pct_sep is not None else None,
             "verdict": verdict, "any_component_missing_price": missing,
+            "components_total": total_comp, "components_priced": priced,
+            "unverified_reason": reason,
             "components": comps_out,
         }
     return combos

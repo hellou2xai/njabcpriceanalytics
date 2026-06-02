@@ -1341,6 +1341,8 @@ export interface ComboEconomics {
   pct_vs_separate?: number | null;
   verdict?: 'worth_it' | 'marginal' | 'buy_separately' | 'unknown';
   any_component_missing_price?: boolean;
+  components_total?: number; components_priced?: number;
+  unverified_reason?: string | null;
   components?: ComboEconomicsComponent[];
 }
 export interface Combo {

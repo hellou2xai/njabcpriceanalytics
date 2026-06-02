@@ -62,8 +62,9 @@ function EconomicsBlock({ c }: { c: Combo }) {
       </div>
       {e.verdict === 'unknown' ? (
         <p className="text-muted" style={{ fontSize: 12.5, margin: 0 }}>
-          Couldn't price every component cleanly (variety/special pack or not on the current sheet), so the
-          effective figure is partial. The advertised number above is the distributor's.
+          Can't verify the effective saving — {e.unverified_reason ?? 'couldn’t price every component cleanly'}
+          {e.components_total ? ` (${e.components_priced ?? 0}/${e.components_total} priced)` : ''}. The advertised
+          number above is the distributor's.
         </p>
       ) : (
         <table className="combo-detail-pricing" style={{ marginTop: 4 }}>

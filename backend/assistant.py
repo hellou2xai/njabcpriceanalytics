@@ -3854,16 +3854,17 @@ def _format_rip_full_md(con, rl) -> str:
         # Frontline Case Cost = frontline minus the Buy-1-case CPL discount,
         # if the product carries one. The single-case buyer pays this without
         # ever committing to a multi-case tier or a RIP rebate, so it sits
-        # between Frontline and After Best RIP. Bolded for emphasis. Skipped
-        # (row not rendered) when the product has no 1-case discount tier.
+        # between Frontline and After Best RIP. Bolded for emphasis. ALWAYS
+        # rendered (it's a fixed template) — when there's no 1-case tier the
+        # row falls back to the frontline values so the structure stays the
+        # same on every product, regardless of the model.
         one_disc = focal.get("one_case_discount")
-        fcc_c = (fc - one_disc) if (fc is not None and one_disc) else None
-        fcc_b = (fcc_c / uq) if (fcc_c is not None and uq) else None
+        fcc_c = (fc - one_disc) if (fc is not None and one_disc) else fc
+        fcc_b = (fcc_c / uq) if (fcc_c is not None and uq) else fb
         parts.append("|  | CASE | BOTTLE |")
         parts.append("|---|---|---|")
         parts.append(f"| **Frontline** | {_fmt_money(fc)} | {_fmt_money(fb)} |")
-        if fcc_c is not None:
-            parts.append(f"| ⭐ **Frontline Case Cost** | **{_fmt_money(fcc_c)}** | **{_fmt_money(fcc_b)}** |")
+        parts.append(f"| ⭐ **Frontline Case Cost** | **{_fmt_money(fcc_c)}** | **{_fmt_money(fcc_b)}** |")
         parts.append(f"| **After Best RIP** | {_fmt_money(after_c)} | {_fmt_money(after_b)} |")
         parts.append("")
     # 2. Per-RIP code block: tier table (case + bottle columns) + "At N" footer

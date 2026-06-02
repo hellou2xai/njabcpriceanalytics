@@ -1546,99 +1546,122 @@ def _t_combo_analyzer(con, args):
             df = con.execute(
                 f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<='{cym}' GROUP BY wholesaler) "
                 "SELECT c.wholesaler ws, LTRIM(CAST(c.upc AS VARCHAR),'0') un, "
+                "ANY_VALUE(c.product_name) product_name, "
                 "ANY_VALUE(c.unit_volume) unit_volume, ANY_VALUE(c.unit_qty) unit_qty, "
-                "MIN(c.effective_case_price) eff, MIN(c.frontline_case_price) fcase "
+                "MIN(c.effective_case_price) eff, MIN(c.frontline_case_price) fcase, "
+                "ANY_VALUE(c.discount_1_qty) d1q, ANY_VALUE(c.discount_1_amt) d1a, "
+                "ANY_VALUE(c.discount_2_qty) d2q, ANY_VALUE(c.discount_2_amt) d2a, "
+                "ANY_VALUE(c.discount_3_qty) d3q, ANY_VALUE(c.discount_3_amt) d3a, "
+                "ANY_VALUE(c.discount_4_qty) d4q, ANY_VALUE(c.discount_4_amt) d4a, "
+                "ANY_VALUE(c.discount_5_qty) d5q, ANY_VALUE(c.discount_5_amt) d5a "
                 "FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
                 f"WHERE (c.wholesaler, LTRIM(CAST(c.upc AS VARCHAR),'0')) IN ({ph}) GROUP BY 1,2", kp).fetchdf()
             for _, r in df.iterrows():
-                info[(r["ws"], r["un"])] = r.to_dict()
+                d = r.to_dict()
+                # The realistic SEPARATE price is the case price after the
+                # ONE-CASE discount — NOT effective_case_price, which bakes in the
+                # best/bulk RIP tier (often 30 cases) you may never hit. Comparing a
+                # combo against that unreachable max is the "trap" the buyer flagged.
+                d["one_case_disc"] = _one_case_disc_from_row([
+                    (d.get("d1q"), d.get("d1a")), (d.get("d2q"), d.get("d2a")),
+                    (d.get("d3q"), d.get("d3a")), (d.get("d4q"), d.get("d4a")),
+                    (d.get("d5q"), d.get("d5a")),
+                ]) or 0.0
+                info[(r["ws"], r["un"])] = d
         except Exception:
             pass
 
     analyzed = []
     for c in combos:
         ws = c.get("wholesaler")
-        comps_out, combo_sum, sep_total, front_total, missing = [], 0.0, 0.0, 0.0, False
-        # A combo is only confidently priceable when EVERY component is clean:
-        # on the current sheet, a detected unit, a sane pack size, a non-zero
-        # combo price, and NO duplicate UPC (the source sometimes repeats a
-        # component row, which would double-count). Otherwise the verdict is
-        # 'unknown' and it is NEVER ranked as a deal.
-        combo_clean = bool(c.get("components"))
-        seen_upcs: set = set()
+        pack = _num(c.get("combo_pack_price"))
+        # 1) DEDUPE components BY UPC. Every combo row carries a real UPC; the
+        # source repeats the SAME UPC once per flavor for a variety pack (and one
+        # copy often has a $0 price). Collapse to one entry per UPC, keeping the
+        # highest combo_price_each so the $0 duplicate halves drop out.
+        by_upc: dict = {}
         for comp in c.get("components") or []:
             un = str(comp.get("upc") or "").lstrip("0")
-            dup = un in seen_upcs
-            if un:
-                seen_upcs.add(un)
+            if not un:
+                continue
+            ce_v = _num(comp.get("combo_price_each")) or 0.0
+            prev = by_upc.get(un)
+            if prev is None or ce_v > (_num(prev.get("combo_price_each")) or 0.0):
+                by_upc[un] = comp
+        # 2) Resolve each UPC against the catalog (price, pack size, name) and the
+        # required CASES — everything keyed on UPC, never on the unreliable
+        # frontline_each / product_name code in the combo feed.
+        rc = []
+        for un, comp in by_upc.items():
             meta = info.get((ws, un), {})
             bpc = _num(meta.get("unit_qty"))
-            eff_case = _num(meta.get("eff"))
-            fcase = _num(meta.get("fcase"))
-            fbtl = (fcase / bpc) if (fcase is not None and bpc) else None
-            ce = _num(comp.get("combo_price_each"))
-            fe = _num(comp.get("frontline_price_each"))
             cases, bottles = _combo_qty_bottles(comp.get("qty_per_pack"), bpc)
-            # CASES required is the unit-independent quantity — best-separate and
-            # frontline totals come from the CATALOG case price x cases, so they're
-            # right regardless of whether the combo quotes per bottle or per case.
             cases_req = cases if cases is not None else ((bottles / bpc) if (bottles and bpc) else None)
-            # DETECT the combo's pricing unit per component (combos are NOT always
-            # per bottle — some are per case): match frontline_each to the catalog
-            # per-bottle vs per-case price. 'neither' (variety/special packs like
-            # '216P', 'VCOMBO') -> we can't reconcile the combo cost cleanly.
-            def _close(a, b):
-                return a is not None and b is not None and abs(a - b) <= max(0.5, 0.03 * abs(b))
-            if _close(fe, fbtl):
-                unit = "bottle"
-            elif _close(fe, fcase):
-                unit = "case"
-            else:
-                unit = "ambiguous"
-            # A "case" in the catalog with an abnormally large pack (e.g. a VCOMBO
-            # whose unit_qty is itself a bundle) can't be multiplied out sanely.
-            suspect = bool(bpc and bpc > 120)
-            # Best-separate + frontline TOTALS for this component (catalog x cases).
-            scost = (eff_case * cases_req) if (eff_case is not None and cases_req is not None and not suspect) else None
+            fcase = _num(meta.get("fcase"))
+            one_disc = _num(meta.get("one_case_disc")) or 0.0
+            # Realistic single-case separate price = list case price − 1-case discount.
+            sep_case = (fcase - one_disc) if fcase is not None else None
+            rc.append({
+                "un": un, "name": (meta.get("product_name") or comp.get("product_name")),
+                "unit_volume": meta.get("unit_volume") or comp.get("unit_volume"),
+                "bpc": bpc, "fcase": fcase, "one_disc": one_disc, "sep_case": sep_case,
+                "ce": _num(comp.get("combo_price_each")), "cases_req": cases_req,
+            })
+        # 3) DETECT the combo's pricing unit by RECONCILING to the pack price:
+        # whichever of Σ(each×cases×bpc) [per-bottle] or Σ(each×cases) [per-case]
+        # reproduces combo_pack_price is the unit. Robust where frontline_each lies.
+        def _tot(unit):
+            s = 0.0
+            for r in rc:
+                if r["ce"] is None or r["cases_req"] is None:
+                    return None
+                if unit == "bottle":
+                    if not r["bpc"]:
+                        return None
+                    s += r["ce"] * r["cases_req"] * r["bpc"]
+                else:
+                    s += r["ce"] * r["cases_req"]
+            return s
+        tb, tc = _tot("bottle"), _tot("case")
+        unit = None
+        if pack and pack > 0:
+            eb = abs(tb - pack) / pack if tb is not None else 9.0
+            ec = abs(tc - pack) / pack if tc is not None else 9.0
+            if min(eb, ec) <= 0.05:
+                unit = "bottle" if eb <= ec else "case"
+        # 4) Build per-component figures + the combo-clean flag (every component
+        # priced, sane pack, a reconciled unit).
+        comps_out, sep_total, front_total, missing = [], 0.0, 0.0, False
+        combo_clean = bool(rc) and unit is not None
+        for r in rc:
+            bpc, fcase, sep_case, one_disc, ce, cases_req = (
+                r["bpc"], r["fcase"], r["sep_case"], r["one_disc"], r["ce"], r["cases_req"])
+            suspect = bool(bpc and bpc > 120)   # catalog SKU is itself a bundle
+            # Separate baseline = case price AFTER the one-case discount (realistic
+            # single-/few-case buying), NOT the bulk-RIP max. Frontline kept for ref.
+            scost = (sep_case * cases_req) if (sep_case is not None and cases_req is not None and not suspect) else None
             fcost = (fcase * cases_req) if (fcase is not None and cases_req is not None and not suspect) else None
-            # Best-separate per the SAME unit the combo quotes, so the each-columns
-            # are apples-to-apples with COMBO EA.
             if unit == "bottle":
-                sep_each = (eff_case / bpc) if (eff_case is not None and bpc) else None
+                sep_each = (sep_case / bpc) if (sep_case is not None and bpc) else None
+                ccost = (ce * cases_req * bpc) if (ce is not None and cases_req is not None and bpc) else None
             elif unit == "case":
-                sep_each = eff_case
+                sep_each = sep_case
+                ccost = (ce * cases_req) if (ce is not None and cases_req is not None) else None
             else:
-                sep_each = None
-            has_sep_deal = bool(eff_case is not None and fcase is not None and eff_case < fcase - 0.5)
-            # Per-component COMBO cost only when the unit is known (else don't guess).
-            if unit == "bottle" and ce is not None and cases_req is not None and bpc:
-                ccost = ce * cases_req * bpc
-            elif unit == "case" and ce is not None and cases_req is not None:
-                ccost = ce * cases_req
-            else:
-                ccost = None
-            combo_sum += ccost or 0.0
+                sep_each = ccost = None
             sep_total += scost or 0.0
             front_total += fcost or 0.0
-            comp_clean = bool(eff_case is not None and unit in ("bottle", "case")
-                              and not suspect and cases_req is not None
-                              and ce is not None and ce > 0 and not dup)
-            if not comp_clean:
+            if not (sep_case is not None and cases_req is not None and not suspect and ce and ce > 0):
                 missing = True
                 combo_clean = False
             comps_out.append({
-                "product_name": comp.get("product_name"), "upc": un,
-                "unit_volume": meta.get("unit_volume") or comp.get("unit_volume"),
-                "bottles_per_case": bpc, "cases": cases_req, "bottles": bottles,
-                "price_unit": unit,
-                "combo_each": ce, "frontline_each": fe, "best_separate_each": sep_each,
-                "has_separate_deal": has_sep_deal,
+                "product_name": r["name"], "upc": r["un"], "unit_volume": r["unit_volume"],
+                "bottles_per_case": bpc, "cases": cases_req, "price_unit": unit,
+                "combo_each": ce, "best_separate_each": sep_each,
+                "has_separate_deal": bool(one_disc and one_disc > 0),
                 "combo_cost": ccost, "best_separate_cost": scost, "frontline_cost": fcost,
             })
-        # Prefer the source pack price as the combo cost (authoritative); fall
-        # back to the summed component combo cost.
-        pack = _num(c.get("combo_pack_price"))
-        combo_cost = pack if pack is not None else combo_sum
+        combo_cost = pack
         sep_t = sep_total or None
         save_vs_sep = (sep_t - combo_cost) if (sep_t is not None) else None
         save_vs_front = (front_total - combo_cost) if front_total else None
@@ -4556,7 +4579,9 @@ def _format_combo_analyzer_md(res: dict) -> str:
         bits.append(f"ℹ️ {vc['unknown']} unpriceable")
     parts.append(f"🧮 **Combo Analysis — {n} combo{'s' if n != 1 else ''} analyzed**"
                  + (f"  ·  {' · '.join(bits)}" if bits else ""))
-    parts.append("_“Best-separate” = buying each component on its own discount + RIP (no combo)._")
+    parts.append("_Baseline = buying each item separately at its **one-case** price (list − the 1-case "
+                 "discount). We deliberately do NOT use the bulk-RIP max price — that often needs 20–30 "
+                 "cases you may never buy, which would make every combo look worse than it is._")
     parts.append("")
     # Show the most worth-it combos in full (cap the chat at a readable number).
     # 'unknown' combos are NOT shown as deals — they couldn't be priced cleanly.
@@ -4580,17 +4605,17 @@ def _format_combo_analyzer_md(res: dict) -> str:
         svs = c.get("save_vs_separate")
         pct = c.get("pct_vs_separate")
         if v == "worth_it" and svs is not None:
-            vline = f"{_VERDICT[v]} — saves {_fmt_money(svs)} ({pct}%) vs buying each at its best deal."
+            vline = f"{_VERDICT[v]} — saves {_fmt_money(svs)} ({pct}%) vs buying each at its one-case price."
         elif v == "buy_separately" and svs is not None:
-            vline = f"{_VERDICT[v]} — buying each at its own best discount/RIP is {_fmt_money(-svs)} cheaper."
+            vline = f"{_VERDICT[v]} — buying each separately at the one-case price is {_fmt_money(-svs)} cheaper."
         elif v == "marginal":
-            vline = f"{_VERDICT[v]} — about the same as buying separately ({pct}% diff)."
+            vline = f"{_VERDICT[v]} — about the same as buying separately at the one-case price ({pct}% diff)."
         else:
             vline = f"{_VERDICT['unknown']} — some components aren't on the current price sheet; figures are partial."
         parts.append(vline)
         # Totals line.
         tline = (f"Pack **{_fmt_money(c.get('combo_cost'))}**  ·  "
-                 f"Buy-separately best {_fmt_money(c.get('separate_best_total'))}  ·  "
+                 f"Separately at 1-cs price {_fmt_money(c.get('separate_best_total'))}  ·  "
                  f"Frontline {_fmt_money(c.get('frontline_total'))}")
         if c.get("save_vs_frontline") is not None:
             tline += f"  ·  vs frontline save {_fmt_money(c.get('save_vs_frontline'))}"
@@ -4598,7 +4623,7 @@ def _format_combo_analyzer_md(res: dict) -> str:
         comps = c.get("components") or []
         if comps:
             parts.append("")
-            parts.append("| COMPONENT | QTY | COMBO EA | BEST-SEP EA | COMBO COST | BEST-SEP COST |")
+            parts.append("| COMPONENT | QTY | COMBO EA | 1-CS EA | COMBO COST | 1-CS COST |")
             parts.append("|---|---|---|---|---|---|")
             for comp in comps:
                 cell = _quickview_cell(comp.get("product_name"), ws, comp.get("upc"), comp.get("unit_volume"))
@@ -4630,14 +4655,14 @@ def _format_combo_analyzer_md(res: dict) -> str:
     # Compact "traps" section — combos that LOOK like deals but lose to buying
     # the components separately at their own discount/RIP. Biggest miss first.
     if traps:
-        parts.append(f"**⚠️ Skip these {min(len(traps), 8)} — cheaper bought separately:**")
+        parts.append(f"**⚠️ Skip these {min(len(traps), 8)} — cheaper at the one-case price:**")
         for c in traps[:8]:
             ws = (c.get("wholesaler") or "").title()
             sep = c.get("save_vs_separate")
             cheaper = _fmt_money(-sep) if sep is not None else "—"
             contents = (c.get("contents") or "").strip()
             contents = (contents[:70] + "…") if len(contents) > 70 else contents
-            parts.append(f"- **{c.get('combo_code')}** ({ws}) — {cheaper} cheaper separately"
+            parts.append(f"- **{c.get('combo_code')}** ({ws}) — {cheaper} cheaper separately (1-cs)"
                          + (f" · {contents}" if contents else ""))
         if len(traps) > 8:
             parts.append(f"- _…and {len(traps) - 8} more not worth it._")

@@ -436,8 +436,12 @@ def get_combos(
                 continue
             g = combos.get((ws, code))
             if g is None:
+                # comp_curr/comp_next are dicts keyed by UPC so a component is
+                # collapsed to ONE row per UPC. Variety packs (e.g. Opici Mom
+                # Water) list the SAME pack UPC once per flavor — often with a
+                # $0 duplicate half — which previously showed as several rows.
                 g = {"comments": None, "curr": None, "next": None,
-                     "comp_curr": [], "comp_next": [], "_sc": set(), "_sn": set()}
+                     "comp_curr": {}, "comp_next": {}}
                 combos[(ws, code)] = g
             if not g["comments"]:
                 g["comments"] = _s(r.get("comments"))
@@ -449,12 +453,15 @@ def get_combos(
                     "qty_per_pack": _s(r.get("qty_per_pack")),
                     "frontline_price_each": _f(r.get("frontline_price_each")),
                     "combo_price_each": _f(r.get("combo_price_each"))}
-            sig = (comp["product_name"], comp["upc"], comp["qty_per_pack"],
-                   comp["frontline_price_each"], comp["combo_price_each"])
-            seen, bucket = (g["_sc"], g["comp_curr"]) if slot == "curr" else (g["_sn"], g["comp_next"])
-            if sig not in seen:
-                seen.add(sig)
-                bucket.append(comp)
+            # Key by UPC (the reliable identifier — every combo row has one); fall
+            # back to a sig only when a row lacks a UPC. On a UPC clash keep the
+            # row with the higher combo_price_each so the $0 duplicate halves drop.
+            key = comp["upc"] or ("_noupc", comp["product_name"], comp["qty_per_pack"],
+                                  comp["combo_price_each"])
+            bucket = g["comp_curr"] if slot == "curr" else g["comp_next"]
+            prev = bucket.get(key)
+            if prev is None or (comp["combo_price_each"] or 0) > (prev["combo_price_each"] or 0):
+                bucket[key] = comp
 
         from backend.search_aliases import expansion_for
         qtokens = [t for t in q.strip().lower().split() if t]
@@ -464,7 +471,7 @@ def get_combos(
             base = curr or nxt
             if base is None:
                 continue
-            comps = g["comp_curr"] if curr else g["comp_next"]
+            comps = list((g["comp_curr"] if curr else g["comp_next"]).values())
             savings, combo_price = base["total_savings"], base["combo_pack_price"]
             next_price = nxt["combo_pack_price"] if nxt else None
             next_savings = nxt["total_savings"] if nxt else None

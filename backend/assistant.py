@@ -3837,20 +3837,27 @@ def _format_rip_full_md(con, rl) -> str:
             uq = float(focal.get("unit_qty") or 0) or None
         except Exception:
             uq = None
-        # Pick the lowest per-case rebate at the BEST tier across the focal
-        # product's RIP codes (typically just one). At-tier effective =
-        # cpl_effective - best_rebate_per_case.
+        # Pick the highest per-case rebate at the BEST tier across the focal
+        # product's RIP codes (typically just one), and record WHICH code +
+        # tier produced it so the After-Best-RIP row can cite its source.
         best_rebate_per_case = 0.0
+        best_rebate_src: dict | None = None   # {code, wholesaler, qty}
         for c in codes:
             if (c.get("wholesaler") or "").lower() != (focal.get("wholesaler") or "").lower():
                 continue
             for t in (c.get("tiers") or []):
                 if t.get("best") and t.get("unit_short") == "cs":
                     try:
-                        best_rebate_per_case = max(best_rebate_per_case,
-                                                   float(t.get("per_unit_savings") or 0.0))
+                        _ps = float(t.get("per_unit_savings") or 0.0)
                     except Exception:
-                        pass
+                        _ps = 0.0
+                    if _ps > best_rebate_per_case:
+                        best_rebate_per_case = _ps
+                        best_rebate_src = {
+                            "code": str(c.get("rip_code") or ""),
+                            "wholesaler": (c.get("wholesaler") or "").title(),
+                            "qty": t.get("qty"),
+                        }
         fc = focal.get("frontline_case_price")
         fb = focal.get("frontline_unit_price")
         # Chain math (each row subtracts ONE thing from the row above so the
@@ -3883,6 +3890,17 @@ def _format_rip_full_md(con, rl) -> str:
         parts.append(f"| **Frontline** | {_fmt_money(fc)} | {_fmt_money(fb)} |")
         parts.append(f"| ⭐ **Frontline Case Cost** | **{_fmt_money(fcc_c)}** | **{_fmt_money(fcc_b)}** |")
         parts.append(f"| **After Best RIP** | {_fmt_money(after_c)} | {_fmt_money(after_b)} |")
+        # Cite the code + distributor + tier driving the After-Best-RIP
+        # value, so the math reconciles with the per-code blocks below
+        # without the user having to hunt for the source.
+        if best_rebate_src and best_rebate_per_case:
+            _src_q = best_rebate_src.get("qty")
+            _src_q_txt = f" at {_src_q} cases" if _src_q else ""
+            parts.append(
+                f"*After Best RIP uses **{best_rebate_src['wholesaler']} RIP "
+                f"{best_rebate_src['code']}** "
+                f"(${best_rebate_per_case:.2f}/cs rebate{_src_q_txt}).*"
+            )
         parts.append("")
     # 2. Per-RIP code block: tier table (case + bottle columns) + "At N" footer
     #    + full Case Mix table.

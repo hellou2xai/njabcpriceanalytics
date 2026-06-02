@@ -3401,7 +3401,17 @@ _SYSTEM = (
     "present the full analysis. Call rip_lookup with the brand/product name (or a code) (or deal_360 for a "
     "single product) and produce: group BY DISTRIBUTOR (by_distributor map); for each code its tier ladder "
     "with per-case savings, the BEST rebate marked, and the Case Mix members to combine; say plainly if there "
-    "is no RIP this month. List EVERY tier the tool returns in the ladder table — a code can have many tiers "
+    "is no RIP this month. "
+    "HARD RULE — whenever a user asks about the RIP for a product, your answer MUST contain, in this order: "
+    "(1) the RIP for THAT specific product (its code(s), the full tier ladder, the best rebate, and its "
+    "price after RIP per case and per bottle), and THEN (2) the ENTIRE Case Mix — every product that shares "
+    "the code — as a table with columns PRODUCT | SIZE | CASE PRICE (after 1-cs discount) | BTL/CS | BOTTLE "
+    "PRICE, ordered by product then size. CASE PRICE here is the list case price minus any single-case (1-cs) "
+    "discount (NOT the bulk-tier or RIP-rebated price), and BOTTLE PRICE is that case figure divided by "
+    "bottles/case. NEVER show the product's RIP without also listing the full Case Mix, and never list the "
+    "Case Mix without first explaining the focal product's RIP. (This combined layout is rendered "
+    "deterministically — reproduce it faithfully and do not drop, reorder, or truncate either part.) "
+    "List EVERY tier the tool returns in the ladder table — a code can have many tiers "
     "(e.g. 3/6/12/20/33 cases) and they are split across rows in the data; never truncate to the first or "
     "'best' tier, show the whole ladder in qty order. NEVER reply with only a bare grid link and no tier "
     "breakdown. (HOW you surface it follows your SURFACE rule below: standalone page -> the full analysis in "
@@ -3773,10 +3783,48 @@ def _cluster_upcs(con, code: str, ws: str, cym: str) -> list[str]:
         return []
 
 
+def _vol_liters(vol) -> float:
+    """Parse a unit_volume label ('750ML', '1.75L', '1L') into litres for sorting
+    a Case Mix by SIZE ascending (750ML before 1.75L). Unparseable -> +inf so it
+    sorts last within a product."""
+    s = str(vol or "").strip().upper()
+    m = re.search(r"(\d+(?:\.\d+)?)", s)
+    if not m:
+        return float("inf")
+    n = float(m.group(1))
+    return n / 1000.0 if "ML" in s else n
+
+
+def _one_case_disc_from_row(qa_pairs) -> float | None:
+    """Best 'buy ONE case' CPL discount amount from (qty_label, amt) slot pairs.
+    Same rule as _focal_product_for_rip: the qty label's leading integer must be
+    1 and the slot must NOT be a bottle tier (we want the per-case discount that
+    needs only a single case). Returns None when no 1-case tier exists."""
+    for raw_q, raw_a in qa_pairs:
+        if raw_q is None:
+            continue
+        label = str(raw_q).strip().lower()
+        if 'btl' in label or 'bottle' in label:
+            continue
+        m = re.match(r'\s*(\d+)', label)
+        if not m or int(m.group(1)) != 1:
+            continue
+        try:
+            amt = float(raw_a) if raw_a is not None else None
+            if amt is not None and amt == amt and amt > 0:
+                return amt
+        except Exception:
+            pass
+    return None
+
+
 def _full_case_mix(con, code: str, ws: str, cym: str) -> list[dict]:
-    """Full member list for one (wholesaler, code) cluster, with case + bottle
-    prices, sorted by case price ascending. Uses the same (edition, distributor,
-    UPC-validity) scoping as the catalog so unrelated brands can't bleed in."""
+    """Full member list for one (wholesaler, code) cluster, ordered by PRODUCT
+    then SIZE. ``case_price`` is the case price after the best single-case (1-cs)
+    CPL discount — i.e. list case price minus any discount you'd get on just one
+    case (NOT the bulk-tier or RIP-rebated price); ``bottle_price`` is that figure
+    divided by bottles-per-case. Uses the same (edition, distributor, UPC-validity)
+    scoping as the catalog so unrelated brands can't bleed in."""
     try:
         df = con.execute(
             "WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched "
@@ -3795,19 +3843,19 @@ def _full_case_mix(con, code: str, ws: str, cym: str) -> list[dict]:
             "SELECT DISTINCT c.product_name, c.wholesaler, "
             "       CAST(c.upc AS VARCHAR) AS upc, "
             "       c.unit_volume, c.unit_qty, "
-            "       c.effective_case_price, "
-            "       c.frontline_case_price, c.frontline_unit_price "
+            "       c.frontline_case_price, c.frontline_unit_price, "
+            "       c.discount_1_qty, c.discount_1_amt, "
+            "       c.discount_2_qty, c.discount_2_amt, "
+            "       c.discount_3_qty, c.discount_3_amt, "
+            "       c.discount_4_qty, c.discount_4_amt, "
+            "       c.discount_5_qty, c.discount_5_amt "
             "FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
             "JOIN ripupc r ON r.wholesaler=c.wholesaler "
             "  AND r.un=LTRIM(CAST(c.upc AS VARCHAR),'0') "
             "WHERE c.upc IS NOT NULL "
             "  AND LTRIM(CAST(c.upc AS VARCHAR),'0') NOT IN ('', 'None', 'nan') "
-            "ORDER BY c.effective_case_price NULLS LAST",
+            "ORDER BY c.product_name",
             [str(code), str(ws), str(code), str(ws)]).fetchdf()
-        # No effective_unit_price column in cpl_enriched — derive bottle
-        # effective as case effective / unit_qty (same as _attach_cart_pricing).
-        # Includes wholesaler + upc so the template can render each product
-        # name as a quickview-modal link (clickable in the chat bubble).
         out = []
         for _, r in df.iterrows():
             uq = r["unit_qty"]
@@ -3817,23 +3865,38 @@ def _full_case_mix(con, code: str, ws: str, cym: str) -> list[dict]:
                     uq_f = None
             except Exception:
                 uq_f = None
-            eff_case = r["effective_case_price"]
+            fc = r["frontline_case_price"]
             try:
-                eff_case_f = float(eff_case) if eff_case is not None else None
-                if eff_case_f is not None and eff_case_f != eff_case_f:
-                    eff_case_f = None
+                fc_f = float(fc) if fc is not None else None
+                if fc_f is not None and fc_f != fc_f:
+                    fc_f = None
             except Exception:
-                eff_case_f = None
-            bottle = (eff_case_f / uq_f) if (eff_case_f is not None and uq_f) else None
+                fc_f = None
+            # Case price minus any ONE-case discount (list − 1-cs discount). When
+            # no 1-case tier exists the discount is 0, so it equals the frontline
+            # case price. Bottle price is derived from this case figure.
+            one_disc = _one_case_disc_from_row([
+                (r["discount_1_qty"], r["discount_1_amt"]),
+                (r["discount_2_qty"], r["discount_2_amt"]),
+                (r["discount_3_qty"], r["discount_3_amt"]),
+                (r["discount_4_qty"], r["discount_4_amt"]),
+                (r["discount_5_qty"], r["discount_5_amt"]),
+            ]) or 0.0
+            case_after = (fc_f - one_disc) if fc_f is not None else None
+            bottle = (case_after / uq_f) if (case_after is not None and uq_f) else None
             out.append({"product_name": r["product_name"],
                         "wholesaler": r["wholesaler"],
                         "upc": (str(r["upc"]) if r["upc"] is not None else None),
                         "unit_volume": r["unit_volume"],
                         "unit_qty": uq_f,
-                        "case_price": eff_case_f,
+                        "case_price": case_after,
                         "bottle_price": bottle,
-                        "frontline_case_price": r["frontline_case_price"],
+                        "one_case_discount": one_disc or None,
+                        "frontline_case_price": fc_f,
                         "frontline_unit_price": r["frontline_unit_price"]})
+        # Order by PRODUCT then SIZE (ascending litres) per the case-RIP-mix spec.
+        out.sort(key=lambda m: (str(m.get("product_name") or "").upper(),
+                                _vol_liters(m.get("unit_volume"))))
         return out
     except Exception:
         return []
@@ -4020,7 +4083,7 @@ def _format_rip_full_md(con, rl) -> str:
             parts.append("")
             parts.append(f"📦 **Full Case Mix — {n} Product{'s' if n != 1 else ''} ({size_note})**")
             parts.append("")
-            parts.append("| PRODUCT | SIZE | BTL/CS | CASE PRICE | BOTTLE PRICE |")
+            parts.append("| PRODUCT | SIZE | CASE PRICE (after 1-cs disc) | BTL/CS | BOTTLE PRICE |")
             parts.append("|---|---|---|---|---|")
             for m in members:
                 # Render the product name as a quickview:// markdown link so
@@ -4050,8 +4113,9 @@ def _format_rip_full_md(con, rl) -> str:
                 except Exception:
                     uq_lbl = "—"
                 vol_lbl = vol_q or "—"
-                parts.append(f"| {name_cell} | {vol_lbl} | {uq_lbl} | "
+                parts.append(f"| {name_cell} | {vol_lbl} | "
                              f"{_fmt_money(m.get('case_price') or m.get('frontline_case_price'))} | "
+                             f"{uq_lbl} | "
                              f"{_fmt_money(m.get('bottle_price') or m.get('frontline_unit_price'))} |")
             parts.append("")
     return "\n".join(parts).rstrip()

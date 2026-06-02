@@ -4325,6 +4325,7 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
     seen_products: set = set()
     price_detail_result: dict | None = None
     timeline_result: dict | None = None   # last price_timeline result (for the deterministic line chart)
+    rip_lookup_result: dict | None = None  # last rip_lookup result the model used (for the deterministic RIP template)
     screen_out: dict | None = None
     screen_args: dict | None = None   # last show_on_screen filters (for the standalone auto-table)
     # RIP clusters touched by any rip_lookup call this turn. Each entry is
@@ -4454,6 +4455,16 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                         # that opens the same cluster in the Catalog page.
                         if (b.name == "rip_lookup" and isinstance(out, dict)
                                 and not out.get("error")):
+                            # Keep the richest rip_lookup result the model used this
+                            # turn so the deterministic RIP template can render from
+                            # the EXACT data the model saw — no fragile re-extraction
+                            # of a search term from the question (which silently
+                            # produced empty output on combo/follow-up phrasings and
+                            # let the model's free-form table stand). Prefer a result
+                            # that actually carries rip_codes.
+                            if (rip_lookup_result is None
+                                    or (out.get("rip_codes") and not rip_lookup_result.get("rip_codes"))):
+                                rip_lookup_result = out
                             for rc in out.get("rip_codes") or []:
                                 code = (rc.get("rip_code") or "").strip()
                                 ws_c = (rc.get("wholesaler") or "").strip()
@@ -4557,7 +4568,12 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
     # buttons (rip_clusters) keep working since they read structured fields,
     # not the answer text.
     _ql = question.lower()
-    if any(k in _ql for k in ("rip", "rebate")):
+    # Fire the deterministic RIP template when the question is about rebates OR
+    # the model actually called rip_lookup this turn (covers combo/stack and
+    # follow-up phrasings like "explain the combo code" that never contain the
+    # word "rip" but still resolved a Case Mix the model tabulated free-form).
+    _model_used_rip = isinstance(rip_lookup_result, dict) and bool(rip_lookup_result.get("rip_codes"))
+    if _model_used_rip or any(k in _ql for k in ("rip", "rebate")):
         # SUMMARY intent: "by distributor show rip codes and case-mix sizes",
         # "how many products per rip", "list every rip per distributor". The
         # rollup template lists every (wholesaler, rip_code) with its SKU
@@ -4590,32 +4606,44 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                 _rip_log.exception("RIP summary template raised")
         else:
             try:
-                term = (screen_args or {}).get("q") if screen_args else None
-                if not term:
-                    m = re.search(r"\b(?:for|of|about|on)\s+(.+)$", question, re.I)
-                    term = (m.group(1) if m else "").strip()
-                    term = re.sub(r"\b(rip|rebate|details?|analysis|code|tiers?|mix|bottle|prices?)\b",
-                                  " ", term, flags=re.I).strip()
-                if not term:
-                    # Last-ditch: strip stop words from the whole question.
-                    term = re.sub(r"\b(show|me|products?|the|and|for|of|about|on|in|with|rip|rebate|mix|case|bottle|prices?|details?)\b",
-                                  " ", _ql).strip()
-                _rip_log.info("RIP template trigger: question=%r term=%r", question, term)
-                if term:
-                    with get_duckdb() as _con:
+                # PREFER the rip_lookup result the model actually used this turn:
+                # it already resolved the focal product + codes from the model's own
+                # (smarter) interpretation of the question. Rendering from it makes
+                # the template fire reliably — the old path RE-EXTRACTED a term from
+                # the raw question and re-ran rip_lookup, which silently produced
+                # nothing on combo/follow-up phrasings and let the model's free-form
+                # table stand. Only re-extract + re-lookup when the model did NOT
+                # call rip_lookup this turn.
+                _rl = (rip_lookup_result
+                       if (isinstance(rip_lookup_result, dict) and rip_lookup_result.get("rip_codes"))
+                       else None)
+                term = None
+                if _rl is None:
+                    term = (screen_args or {}).get("q") if screen_args else None
+                    if not term:
+                        m = re.search(r"\b(?:for|of|about|on)\s+(.+)$", question, re.I)
+                        term = (m.group(1) if m else "").strip()
+                        term = re.sub(r"\b(rip|rebate|details?|analysis|code|tiers?|mix|bottle|prices?)\b",
+                                      " ", term, flags=re.I).strip()
+                    if not term:
+                        # Last-ditch: strip stop words from the whole question.
+                        term = re.sub(r"\b(show|me|products?|the|and|for|of|about|on|in|with|rip|rebate|mix|case|bottle|prices?|details?)\b",
+                                      " ", _ql).strip()
+                _rip_log.info("RIP template trigger: question=%r reused_model_lookup=%s term=%r",
+                              question, _rl is not None, term)
+                with get_duckdb() as _con:
+                    if _rl is None and term:
                         _rl = _t_rip_lookup(_con, {"match": term})
-                        _md = _format_rip_full_md(_con, _rl)
-                    _codes = (_rl or {}).get("rip_codes") or []
-                    _mp = (_rl or {}).get("matched_products") or []
-                    if _md:
-                        answer = _md
-                        _rip_log.info("RIP template fired: term=%r matched=%d codes=%d chars=%d",
-                                      term, len(_mp), len(_codes), len(_md))
-                    else:
-                        _rip_log.warning("RIP template produced empty output: term=%r matched=%d codes=%d note=%r",
-                                         term, len(_mp), len(_codes), (_rl or {}).get("note"))
+                    _md = _format_rip_full_md(_con, _rl) if _rl else ""
+                _codes = (_rl or {}).get("rip_codes") or []
+                _mp = (_rl or {}).get("matched_products") or []
+                if _md:
+                    answer = _md
+                    _rip_log.info("RIP template fired: reused=%s term=%r matched=%d codes=%d chars=%d",
+                                  _rl is rip_lookup_result, term, len(_mp), len(_codes), len(_md))
                 else:
-                    _rip_log.warning("RIP template skipped: empty term for question=%r", question)
+                    _rip_log.warning("RIP template produced empty output: term=%r matched=%d codes=%d note=%r",
+                                     term, len(_mp), len(_codes), (_rl or {}).get("note"))
             except Exception:
                 _rip_log.exception("RIP template raised for question=%r", question)
     # Multi-product answers (3+ products) get enriched with tier ladders so

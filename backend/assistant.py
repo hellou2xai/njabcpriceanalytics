@@ -3428,6 +3428,26 @@ _SYSTEM = (
     "chat + a grid link; docked beside a grid -> you may ALSO refresh the grid via show_on_screen route=catalog, "
     "q=<brand>, group_by_rip=true, which clusters products into Case-Mix groups with tier ladders, live 'X more "
     "for the next tier' progress, and an Add-All-Case-Mix-to-Cart button.) "
+    "DETERMINISTIC FORMAT BACKSTOP — Item, Combo, Time-Sensitive deals, Price Drops and Price Increases are "
+    "normally rendered for you by a fixed server-side template AFTER your turn. But if that ever fails, YOUR "
+    "answer must already be in the right shape, so always format these intents exactly as follows (and ALWAYS "
+    "make every product a clickable [NAME](quickview://<wholesaler>/<upc>?n=<NAME>&v=<size>) modal link, never "
+    "bare text): "
+    "(A) ITEM — 'tell me about / price of / deal on <product>' (deal_360): a product header line (modal link, "
+    "size, bottles/case, vintage/age) then a CASE+BOTTLE price table with three rows — List (frontline), After "
+    "best discount, After best RIP (effective) — followed by the discount tier ladder, the RIP tier ladder "
+    "(per-case + per-bottle, best marked), the 3-month effective line (last -> now -> next, or 'next not yet "
+    "published'), and the buy-now-vs-wait recommendation verbatim. "
+    "(B) COMBO — 'combo / stack / bundle deals' (combo_deals): one block per combo with the code, distributor, "
+    "its CONTENTS, the pack price and total savings, then a component table PRODUCT | QTY/PACK | FRONTLINE EA | "
+    "COMBO EA. "
+    "(C) TIME-SENSITIVE — 'what's expiring / ending soon / dated deals' (find_deals time_sensitive|clearance): a "
+    "table PRODUCT | SIZE | DISTRIBUTOR | CASE PRICE | SAVE/CS | ENDS, ordered by SOONEST end date first, led "
+    "by a one-line takeaway. "
+    "(D) PRICE DROPS / INCREASES — 'what's going down/up next month' (price_movers drop|increase): a table "
+    "PRODUCT | SIZE | DISTRIBUTOR | THIS MONTH | NEXT MONTH | delta/cs, ordered by biggest move; if next "
+    "edition isn't published yet, say so plainly and show this-month pricing instead of inventing next-month "
+    "numbers. NEVER fabricate a price, date, rebate or saving — use only the tool's numbers. "
     "Other tools: compare_distributors (one product across all distributors, by UPC or name — show a "
     "table + a bar chart of effective price by distributor), find_deals (time_sensitive|discount|clearance), "
     "price_movers (drop|increase), and the signed-in user's get_cart / get_favorites / get_lists / get_orders. "
@@ -4131,6 +4151,283 @@ def _format_rip_full_md(con, rl) -> str:
     return "\n".join(parts).rstrip()
 
 
+# ---------------------------------------------------------------------------
+# Deterministic answer templates — Item / Combo / Time-Sensitive / Price Movers.
+# Same contract as the RIP template: render from the EXACT tool result the model
+# used, replace the model's free-form text, and make every product a clickable
+# quickview:// modal link. Layouts approved with the user.
+# ---------------------------------------------------------------------------
+
+def _quickview_cell(name, ws, upc, vol) -> str:
+    """A product name as a [name](quickview://ws/upc?n=..&v=..) markdown link the
+    chat intercepts to open the product modal — or the plain (table-escaped) name
+    when we lack the wholesaler/UPC needed to open the exact SKU."""
+    nm = str(name or "").strip()
+    esc = nm.replace("|", "\\|").replace("[", "\\[").replace("]", "\\]")
+    ws_q = str(ws or "").strip()
+    upc_q = str(upc or "").lstrip("0").strip()
+    vol_q = str(vol or "").strip()
+    if nm and ws_q and upc_q:
+        from urllib.parse import quote
+        return (f"[{esc}](quickview://{quote(ws_q.lower(), safe='')}/"
+                f"{quote(upc_q, safe='')}?n={quote(nm, safe='')}&v={quote(vol_q, safe='')})")
+    return esc
+
+
+def _fmt_date_short(s) -> str:
+    """ISO 'YYYY-MM-DD' -> 'DD Mon'; passthrough/'—' on anything unparseable."""
+    if not s:
+        return "—"
+    m = re.match(r"\s*(\d{4})-(\d{2})-(\d{2})", str(s))
+    if not m:
+        return str(s)
+    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    try:
+        return f"{int(m.group(3))} {months[int(m.group(2)) - 1]}"
+    except Exception:
+        return str(s)
+
+
+def _format_item_md(core: dict) -> str:
+    """ITEM (deal_360 / price_details): product header + List / After-disc /
+    After-RIP price table (case AND bottle), the discount + RIP tier ladders, the
+    3-month outlook and the buy-now-vs-wait recommendation. Rendered identically
+    on every model."""
+    if not isinstance(core, dict) or core.get("error") or not core.get("product_name"):
+        return ""
+    name = core.get("product_name")
+    ws = core.get("wholesaler")
+    upc = str(core.get("upc") or core.get("upc_raw") or "").lstrip("0")
+    vol = core.get("unit_volume") or core.get("size")
+    try:
+        bpc = int(float(core.get("bottles_per_case") or 0)) or None
+    except Exception:
+        bpc = None
+    parts: list[str] = []
+    parts.append(f"🍾 **{_quickview_cell(name, ws, upc, vol)} — {str(ws or '').title()}**")
+    meta = []
+    if upc:
+        meta.append(f"UPC: {upc}")
+    if vol:
+        meta.append(f"**{vol}**")
+    if bpc:
+        meta.append(f"**{bpc} bottles/case**")
+    if core.get("vintage") and str(core.get("vintage")) not in ("0", "None", "nan"):
+        meta.append(f"vintage {core.get('vintage')}")
+    if meta:
+        parts.append(" | ".join(meta))
+    parts.append("")
+
+    fc = core.get("frontline_case_price")
+    fb = core.get("frontline_bottle_price")
+    disc_c = core.get("best_case_price_after_discount")
+    eff_c = core.get("effective_case_price")
+    def _btl(case):
+        try:
+            return (float(case) / bpc) if (case is not None and bpc) else None
+        except Exception:
+            return None
+    disc_b = _btl(disc_c)
+    eff_b = core.get("price_after_rip_bottle")
+    if eff_b is None:
+        eff_b = _btl(eff_c)
+    parts.append("|  | CASE | BOTTLE |")
+    parts.append("|---|---|---|")
+    parts.append(f"| **List (frontline)** | {_fmt_money(fc)} | {_fmt_money(fb)} |")
+    parts.append(f"| **After best discount** | {_fmt_money(disc_c)} | {_fmt_money(disc_b)} |")
+    parts.append(f"| ⭐ **After best RIP (effective)** | **{_fmt_money(eff_c)}** | **{_fmt_money(eff_b)}** |")
+    parts.append("")
+
+    # Discount tier ladder.
+    dts = core.get("discount_tiers") or []
+    if dts:
+        parts.append("**Discount tiers**")
+        parts.append("| BUY | $/CASE OFF | CASE AFTER |")
+        parts.append("|---|---|---|")
+        for t in dts:
+            try:
+                q = int(float(t.get("quantity") or 0))
+            except Exception:
+                q = t.get("quantity")
+            parts.append(f"| {q} cs | {_fmt_money(t.get('amount_per_case'))} | {_fmt_money(t.get('price_after'))} |")
+        parts.append("")
+    # RIP tier ladder (qty in cases or bottles; per-case + per-bottle savings).
+    rts = core.get("rip_tiers") or []
+    if rts:
+        best_amt = max((float(t.get("per_case_savings") or 0) for t in rts), default=0.0)
+        parts.append("**RIP tiers**")
+        parts.append("| BUY | PER CASE | PER BOTTLE | CASE AFTER | BEST? |")
+        parts.append("|---|---|---|---|---|")
+        for t in rts:
+            unit = "btl" if str(t.get("unit") or "").upper().startswith("B") else "cs"
+            pcs = t.get("per_case_savings")
+            best = "⭐ Best" if (pcs is not None and float(pcs or 0) == best_amt and best_amt > 0) else ""
+            parts.append(f"| {t.get('qty')} {unit} | "
+                         f"{_fmt_money(pcs)}/cs | {_fmt_money(t.get('per_bottle_savings'))}/btl | "
+                         f"{_fmt_money(t.get('price_after'))} | {best} |")
+        parts.append("")
+
+    # 3-month outlook.
+    months = core.get("months") or {}
+    last, cur, nxt = months.get("last"), months.get("current"), months.get("upcoming")
+    line = "**3-month (effective/cs):** "
+    segs = []
+    if last and last.get("effective_case") is not None:
+        segs.append(f"last {_fmt_money(last.get('effective_case'))}")
+    if cur and cur.get("effective_case") is not None:
+        segs.append(f"**now {_fmt_money(cur.get('effective_case'))}**")
+    if nxt and nxt.get("effective_case") is not None:
+        segs.append(f"next {_fmt_money(nxt.get('effective_case'))}")
+    else:
+        segs.append("next (not yet published)")
+    if segs:
+        parts.append(line + " → ".join(segs))
+    rec = core.get("best_buy_recommendation")
+    if rec:
+        parts.append(f"\n👉 {rec}")
+    return "\n".join(parts).rstrip()
+
+
+def _format_combo_md(rows: list, focal_name: str | None = None) -> str:
+    """COMBO (combo_deals): one block per combo pack — code, contents, pack price
+    and total savings, then a component table (each component a modal link) with
+    qty/pack, frontline-each and combo-each."""
+    if not isinstance(rows, list) or not rows:
+        return ""
+    parts: list[str] = []
+    n = len(rows)
+    parts.append(f"🎁 **Combo Deals — {n} found**")
+    parts.append("")
+    for r in rows[:12]:
+        ws = (r.get("wholesaler") or "").title()
+        code = str(r.get("combo_code") or "").strip()
+        contents = (r.get("comments") or r.get("product_name") or "").strip()
+        head = f"**Combo {code}" + (f" ({ws})" if ws else "") + "**"
+        if contents:
+            head += f" — {contents}"
+        parts.append(head)
+        pack = r.get("combo_pack_price")
+        save = r.get("total_savings")
+        meta = []
+        if pack is not None:
+            meta.append(f"Pack {_fmt_money(pack)}")
+        if save is not None:
+            meta.append(f"Save {_fmt_money(save)}")
+        if meta:
+            parts.append(" · ".join(meta))
+        comps = r.get("components") or []
+        if comps:
+            parts.append("")
+            parts.append("| PRODUCT | QTY/PACK | FRONTLINE EA | COMBO EA |")
+            parts.append("|---|---|---|---|")
+            for c in comps:
+                qty = str(c.get("qty_per_pack") or "").strip()
+                qty = re.sub(r"\s+", " ", qty)
+                cell = _quickview_cell(c.get("product_name"), r.get("wholesaler"),
+                                       c.get("upc"), c.get("unit_volume"))
+                parts.append(f"| {cell} | {qty or '—'} | "
+                             f"{_fmt_money(c.get('frontline_price_each'))} | "
+                             f"{_fmt_money(c.get('combo_price_each'))} |")
+        parts.append("")
+    return "\n".join(parts).rstrip()
+
+
+def _format_time_sensitive_md(rows: list) -> str:
+    """TIME-SENSITIVE (find_deals time_sensitive / closeout): a table of dated
+    deals ordered by SOONEST end date, each product a modal link, with case price,
+    $ saved per case and the end date."""
+    if not isinstance(rows, list) or not rows:
+        return ""
+    def _end(r):
+        return str(r.get("ends") or r.get("to_date") or "9999-99-99")
+    ordered = sorted(rows, key=_end)
+    parts: list[str] = []
+    n = len(ordered)
+    top = ordered[0]
+    lead = None
+    if top.get("total_savings_per_case") is not None:
+        lead = (f"Soonest: {top.get('product_name')} saves "
+                f"{_fmt_money(top.get('total_savings_per_case'))}/cs, ends {_fmt_date_short(_end(top))}.")
+    parts.append(f"⏳ **Time-Sensitive Deals — {n} ending soon**")
+    if lead:
+        parts.append(lead)
+    parts.append("")
+    parts.append("| PRODUCT | SIZE | DISTRIBUTOR | CASE PRICE | SAVE/CS | ENDS |")
+    parts.append("|---|---|---|---|---|---|")
+    for r in ordered[:20]:
+        cell = _quickview_cell(r.get("product_name"), r.get("wholesaler"), r.get("upc"), r.get("unit_volume"))
+        case = r.get("effective_case_price")
+        if case is None:
+            case = r.get("frontline_case_price")
+        parts.append(f"| {cell} | {r.get('unit_volume') or '—'} | "
+                     f"{str(r.get('wholesaler') or '').title()} | {_fmt_money(case)} | "
+                     f"{_fmt_money(r.get('total_savings_per_case'))} | {_fmt_date_short(_end(r))} |")
+    return "\n".join(parts).rstrip()
+
+
+def _format_movers_md(con, rows: list, direction: str) -> str:
+    """PRICE DROPS / INCREASE (price_movers): a table of products moving next
+    edition, ordered by biggest delta. Looks up each row's next-month effective
+    price (the mover tool returns only this-month fields) so the table can show
+    THIS vs NEXT and the per-case delta. Each product is a modal link."""
+    if not isinstance(rows, list) or not rows:
+        return ""
+    up = direction == "increase"
+    cym = _current_ym()
+    # Batch the next-edition effective price for every (wholesaler, upc) in one go.
+    nxt: dict = {}
+    keys = sorted({(r.get("wholesaler"), str(r.get("upc") or "").lstrip("0"))
+                   for r in rows if r.get("wholesaler") and str(r.get("upc") or "").lstrip("0")})
+    if keys:
+        try:
+            ph = ", ".join(f"($w{i}, $u{i})" for i in range(len(keys)))
+            kp: dict = {}
+            for i, (w, u) in enumerate(keys):
+                kp[f"w{i}"], kp[f"u{i}"] = w, u
+            df = con.execute(
+                "WITH nx AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched "
+                f"           WHERE edition > '{cym}' GROUP BY wholesaler) "
+                "SELECT c.wholesaler ws, LTRIM(CAST(c.upc AS VARCHAR),'0') un, "
+                "       MIN(c.effective_case_price) eff "
+                "FROM cpl_enriched c JOIN nx ON c.wholesaler=nx.wholesaler AND c.edition=nx.ed "
+                f"WHERE (c.wholesaler, LTRIM(CAST(c.upc AS VARCHAR),'0')) IN ({ph}) "
+                "GROUP BY 1,2", kp).fetchdf()
+            for _, r in df.iterrows():
+                nxt[(r["ws"], r["un"])] = _num(r["eff"])
+        except Exception:
+            pass
+
+    enriched = []
+    for r in rows:
+        this_c = r.get("effective_case_price")
+        if this_c is None:
+            this_c = r.get("frontline_case_price")
+        nc = nxt.get((r.get("wholesaler"), str(r.get("upc") or "").lstrip("0")))
+        delta = (float(nc) - float(this_c)) if (nc is not None and this_c is not None) else None
+        enriched.append((r, this_c, nc, delta))
+    # Biggest movement first (absolute delta); rows without a next price sink.
+    enriched.sort(key=lambda e: (e[3] is None, -abs(e[3]) if e[3] is not None else 0))
+
+    parts: list[str] = []
+    n = len(enriched)
+    head = "📈" if up else "📉"
+    word = "Increases" if up else "Drops"
+    parts.append(f"{head} **Price {word} — {n} item{'s' if n != 1 else ''} "
+                 f"{'rising' if up else 'falling'} next month**")
+    if not nxt:
+        parts.append("*Next edition isn't published yet — showing this-month pricing; deltas appear once it lands.*")
+    parts.append("")
+    parts.append("| PRODUCT | SIZE | DISTRIBUTOR | THIS MONTH | NEXT MONTH | Δ/CS |")
+    parts.append("|---|---|---|---|---|---|")
+    for r, this_c, nc, delta in enriched[:25]:
+        cell = _quickview_cell(r.get("product_name"), r.get("wholesaler"), r.get("upc"), r.get("unit_volume"))
+        dtxt = "—" if delta is None else (f"+{_fmt_money(delta)}" if delta > 0 else _fmt_money(delta))
+        parts.append(f"| {cell} | {r.get('unit_volume') or '—'} | "
+                     f"{str(r.get('wholesaler') or '').title()} | {_fmt_money(this_c)} | "
+                     f"{_fmt_money(nc)} | {dtxt} |")
+    return "\n".join(parts).rstrip()
+
+
 def ask(question: str, history: list | None = None, user: dict | None = None,
         page: str | None = None, page_path: str | None = None,
         page_query: str | None = None) -> dict:
@@ -4326,6 +4623,13 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
     price_detail_result: dict | None = None
     timeline_result: dict | None = None   # last price_timeline result (for the deterministic line chart)
     rip_lookup_result: dict | None = None  # last rip_lookup result the model used (for the deterministic RIP template)
+    # Tool results the model used this turn, for the other deterministic templates
+    # (Item / Combo / Time-Sensitive / Price Movers). Each is captured below as the
+    # model calls the backing tool, then rendered + substituted after the turn.
+    item_result: dict | None = None         # deal_360 / price_details
+    combo_result: list | None = None         # combo_deals
+    time_sensitive_result: list | None = None  # find_deals(time_sensitive|closeout)
+    movers_result: tuple | None = None       # (rows, direction) from price_movers
     screen_out: dict | None = None
     screen_args: dict | None = None   # last show_on_screen filters (for the standalone auto-table)
     # RIP clusters touched by any rip_lookup call this turn. Each entry is
@@ -4426,6 +4730,17 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                             out = {"error": f"{type(e).__name__}"}
                         if isinstance(out, list):   # find_deals / price_movers -> cards
                             _collect(out)
+                        # Capture for the deterministic templates (rendered after
+                        # the turn): time-sensitive deals and price movers.
+                        if (b.name == "find_deals" and isinstance(out, list) and out
+                                and str((b.input or {}).get("kind") or "").lower()
+                                    in ("time_sensitive", "time-sensitive", "ending", "expiring",
+                                        "clearance", "closeout")):
+                            time_sensitive_result = out
+                        if b.name == "price_movers" and isinstance(out, list):
+                            _dir = (b.input or {}).get("direction") or (b.input or {}).get("price_trend") or "drop"
+                            _dir = "increase" if str(_dir).lower() in ("increase", "up", "rising", "rise") else "drop"
+                            movers_result = (out, _dir)
                     elif b.name in _DATA_TOOLS:
                         try:
                             out = _DATA_TOOLS[b.name][0](con, b.input or {})
@@ -4446,7 +4761,13 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                             _collect(out["basket"])
                         if b.name in ("price_details", "deal_360") and isinstance(out, dict) and not out.get("error"):
                             price_detail_result = out
+                            # deal_360 is richer (months/combo/ts) — prefer it for
+                            # the Item template; a bare price_details still renders.
+                            if item_result is None or b.name == "deal_360":
+                                item_result = out
                             _collect([out])   # also show the product as a card
+                        if b.name == "combo_deals" and isinstance(out, list) and out:
+                            combo_result = out
                         if b.name == "price_timeline" and isinstance(out, dict) and not out.get("error"):
                             timeline_result = out   # deterministic line chart attached below
                         # RIP clusters: surface one entry per (wholesaler, code)
@@ -4573,6 +4894,7 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
     # follow-up phrasings like "explain the combo code" that never contain the
     # word "rip" but still resolved a Case Mix the model tabulated free-form).
     _model_used_rip = isinstance(rip_lookup_result, dict) and bool(rip_lookup_result.get("rip_codes"))
+    _tmpl_fired = False   # set once any deterministic template replaces the answer
     if _model_used_rip or any(k in _ql for k in ("rip", "rebate")):
         # SUMMARY intent: "by distributor show rip codes and case-mix sizes",
         # "how many products per rip", "list every rip per distributor". The
@@ -4599,6 +4921,7 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                 _md = _format_rip_summary_md(_rs)
                 if _md:
                     answer = _md
+                    _tmpl_fired = True
                     _rip_log.info("RIP summary template fired (chars=%d)", len(_md))
                 else:
                     _rip_log.info("RIP summary template produced empty output (dist=%s)", dist_filter)
@@ -4639,6 +4962,7 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                 _mp = (_rl or {}).get("matched_products") or []
                 if _md:
                     answer = _md
+                    _tmpl_fired = True
                     _rip_log.info("RIP template fired: reused=%s term=%r matched=%d codes=%d chars=%d",
                                   _rl is rip_lookup_result, term, len(_mp), len(_codes), len(_md))
                 else:
@@ -4646,6 +4970,44 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                                      term, len(_mp), len(_codes), (_rl or {}).get("note"))
             except Exception:
                 _rip_log.exception("RIP template raised for question=%r", question)
+
+    # OTHER deterministic templates — Item / Combo / Time-Sensitive / Price
+    # Movers. Each renders from the tool result the model used this turn and
+    # REPLACES the model's free-form text, exactly like RIP. Precedence (only one
+    # fires): RIP (above, intent-gated) > Item > Combo > Time-Sensitive > Movers.
+    # If a template raises or yields nothing, the model's own text stands and the
+    # prompt's backstop instructions keep that answer on-format.
+    if not _tmpl_fired:
+        import logging as _logging2
+        _tlog = _logging2.getLogger("assistant.det_template")
+        try:
+            if isinstance(item_result, dict) and not item_result.get("error") and item_result.get("product_name"):
+                _md = _format_item_md(item_result)
+                if _md:
+                    answer = _md
+                    _tmpl_fired = True
+                    _tlog.info("Item template fired (chars=%d)", len(_md))
+            if not _tmpl_fired and isinstance(combo_result, list) and combo_result:
+                _md = _format_combo_md(combo_result)
+                if _md:
+                    answer = _md
+                    _tmpl_fired = True
+                    _tlog.info("Combo template fired (chars=%d)", len(_md))
+            if not _tmpl_fired and isinstance(time_sensitive_result, list) and time_sensitive_result:
+                _md = _format_time_sensitive_md(time_sensitive_result)
+                if _md:
+                    answer = _md
+                    _tmpl_fired = True
+                    _tlog.info("Time-sensitive template fired (chars=%d)", len(_md))
+            if not _tmpl_fired and isinstance(movers_result, tuple) and movers_result[0]:
+                with get_duckdb() as _con:
+                    _md = _format_movers_md(_con, movers_result[0], movers_result[1])
+                if _md:
+                    answer = _md
+                    _tmpl_fired = True
+                    _tlog.info("Movers template fired (%s, chars=%d)", movers_result[1], len(_md))
+        except Exception:
+            _tlog.exception("deterministic template raised for question=%r", question)
     # Multi-product answers (3+ products) get enriched with tier ladders so
     # the frontend can render a side-by-side comparison table, and a Catalog
     # deep-link is built by exact UPCs so "Open in Catalog ->" lands on the

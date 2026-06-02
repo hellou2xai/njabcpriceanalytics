@@ -767,13 +767,19 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                             frontline,
                             afterDiscount: bestDisc != null && Number.isFinite(bestDisc) ? bestDisc : null,
                             discountTiers: disc
-                              .map(t => ({ qty: t.qty, unit: t.unit, eff: t.price_after ?? 0, ts: !!t.is_time_sensitive }))
+                              .map(t => ({
+                                qty: t.qty, unit: t.unit, eff: t.price_after ?? 0,
+                                ts: !!t.is_time_sensitive,
+                                from_date: t.from_date, to_date: t.to_date,
+                                window_status: t.window_status, days_to_expire: t.days_to_expire,
+                              }))
                               .filter(t => t.eff > 0),
                             // Carry through the backend's per-tier RIP rebate so
                             // the popover shows "this tier saves $X", not the
                             // off-by-one delta against the deepest CPL discount.
-                            // Plus the time-sensitive flag so partial-window
-                            // tiers render with a "TS" marker.
+                            // Plus the validity window so partial-window tiers
+                            // render an Active now / Expires in N days / Starts
+                            // DD MMM badge (falling back to "TS").
                             ripTiers: rip
                               .map(t => ({
                                 qty: t.qty,
@@ -781,6 +787,8 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                                 eff: t.price_after ?? 0,
                                 ripOnlySave: t.rip_only_save_per_case ?? null,
                                 ts: !!t.is_time_sensitive,
+                                from_date: t.from_date, to_date: t.to_date,
+                                window_status: t.window_status, days_to_expire: t.days_to_expire,
                               }))
                               .filter(t => t.eff > 0),
                             bestEff,
@@ -882,6 +890,11 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                         ? <div className="cat-subprice">${(item.effective_case_price / uq).toFixed(2)}/btl</div>
                         : null;
                     })()}
+                    {item.live_better_than_month && item.live_effective_case_price != null && (
+                      <div className="cat-subprice live-price" title="A dated RIP active today beats the stable month price">
+                        ${item.live_effective_case_price.toFixed(2)} live now
+                      </div>
+                    )}
                   </td>
                   <td className="right" data-label="ROI / GP%">
                     {item.has_discount || item.has_rip

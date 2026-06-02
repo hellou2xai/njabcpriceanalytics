@@ -180,6 +180,15 @@ export default function TimeSensitive() {
   const [view, setView] = useState<'cards' | 'table'>(() => (localStorage.getItem('ts-view') as 'cards' | 'table') || 'cards');
   useEffect(() => { localStorage.setItem('ts-view', view); }, [view]);
 
+  // Distinguish "filters hid everything" from "the source genuinely returned
+  // nothing". The latter happens when the current edition's dated promos have
+  // all expired (or none are loaded yet) — a blank page reads as broken, so
+  // say what's actually going on.
+  const rawCount = (data ?? []).length;
+  const emptyMessage = rawCount === 0
+    ? 'No active dated deals right now. Every time-sensitive promotion for the current price sheet has either expired or not started yet. New dated deals appear here as the next edition loads.'
+    : 'No deals match these filters.';
+
   // ---- Filter sections ----
   const sections: FilterSection[] = [
     { type: 'text', key: 'q', title: 'Search', placeholder: 'Product or brand', value: q, onChange: setQ },
@@ -270,7 +279,7 @@ export default function TimeSensitive() {
                   <DealCard key={`${d.wholesaler}|${d.upc ?? d.product_name}|${d.unit_volume ?? ''}|${i}`} d={d} open={open} />
                 ))}
                 {!isLoading && shown.length === 0 && (
-                  <div className="empty" style={{ padding: 30, textAlign: 'center' }}>No deals match these filters.</div>
+                  <div className="empty" style={{ padding: 30, textAlign: 'center', maxWidth: 480, margin: '0 auto' }}>{emptyMessage}</div>
                 )}
               </div>
             ) : (

@@ -347,10 +347,18 @@ def _attach_next_month_prices(con, src, records):
     _pricing.attach_next_month_prices(con, src, records)
 
 
-def _attach_discount_rip_tiers(con, records):
+def _attach_discount_rip_tiers(con, records, ref_date=None):
     """Thin shim — canonical impl lives in backend/pricing.py.
-    Kept for the existing call sites; equivalent to pricing.attach_tiers."""
-    _pricing.attach_tiers(con, records)
+    Kept for the existing call sites; equivalent to pricing.attach_tiers.
+    ``ref_date`` (ISO date, default today ET) annotates each tier's window."""
+    _pricing.attach_tiers(con, records, ref_date=ref_date)
+
+
+def _attach_live_rip(con, records, ref_date=None):
+    """Thin shim — canonical impl lives in backend/pricing.py.
+    Stamps the date-aware live-now RIP overlay; equivalent to
+    pricing.attach_live_rip."""
+    _pricing.attach_live_rip(con, records, ref_date=ref_date)
 
 
 def _attach_next_tiers(con, records):
@@ -582,6 +590,7 @@ def search_products(
     offset: int = Query(0, ge=0),
     include_tiers: bool = Query(False, description="If true, include discount_tiers and rip_tiers arrays per item"),
     group_by_rip: bool = Query(False, description="If true, attach rip_group_code (from the RIP sheet) per row and sort by it so products sharing a rebate cluster together"),
+    as_of: Optional[str] = Query(None, description="Reference date (YYYY-MM-DD, default today ET) used to classify RIP windows and compute the date-aware 'live now' RIP price overlay per row. Does not change the grid's sort/filter; only annotates each row + tier."),
     user: Optional[dict] = Depends(get_optional_user),
 ):
     """Full-text search with faceted filtering. Defaults to latest edition to avoid duplicates."""
@@ -1263,10 +1272,17 @@ def search_products(
 
         # Optionally enrich each item with discount + RIP tier sub-rows.
         if include_tiers:
-            _attach_discount_rip_tiers(con, records)
+            _attach_discount_rip_tiers(con, records, ref_date=as_of)
             # And the SAME shape for next month so the row sparkline popover
             # can show Frontline / After Discount / RIP / Best for both.
             _attach_next_tiers(con, records)
+
+        # Date-aware "live now" RIP overlay on EVERY row (cheap; runs on the
+        # paginated page only). The grid's sort/filter key stays the stable
+        # whole-month effective_case_price; this just annotates each row with
+        # the live price + savings active on the reference date so the buyer
+        # sees the full picture.
+        _attach_live_rip(con, records, ref_date=as_of)
 
         # Go-UPC thumbnail per row (one batch query; served from R2 CDN).
         _attach_enrichment_image(con, records)
@@ -1330,6 +1346,7 @@ def new_items(
     limit: int = Query(50, ge=1, le=50000),
     offset: int = Query(0, ge=0),
     include_tiers: bool = Query(False, description="If true, include discount_tiers and rip_tiers arrays per item"),
+    as_of: Optional[str] = Query(None, description="Reference date (YYYY-MM-DD, default today ET) for RIP window status + the date-aware 'live now' RIP price overlay per row."),
 ):
     """Products newly introduced in the last ``months`` editions.
 
@@ -1496,7 +1513,8 @@ def new_items(
         # Same enrichment as /search so the catalog table renders identically.
         _attach_next_month_prices(con, src, records)
         if include_tiers:
-            _attach_discount_rip_tiers(con, records)
+            _attach_discount_rip_tiers(con, records, ref_date=as_of)
+        _attach_live_rip(con, records, ref_date=as_of)
         _attach_enrichment_image(con, records)
         _attach_dup_upc(con, src, records)
 
@@ -1521,8 +1539,14 @@ def get_product_detail(
     unit_qty: Optional[str] = None,
     vintage: Optional[str] = None,
     rip_code: Optional[str] = None,
+    as_of: Optional[str] = None,
 ):
     """Full product detail with all pricing, discount tiers, and RIP info.
+
+    ``as_of`` (YYYY-MM-DD, default today ET) is the reference date each RIP /
+    discount window is classified against, and the date the 'live now' RIP
+    price overlay (live_effective_case_price / live_rip_amt /
+    live_better_than_month on the product) is computed for.
 
     Accepts optional ``upc`` and ``unit_volume`` so callers can disambiguate
     when a wholesaler stocks several sizes (or several distinct SKUs) under
@@ -1585,10 +1609,20 @@ def get_product_detail(
         if row.empty:
             return {"error": "Product not found"}
 
+        def _iso_date(v):
+            """Render a date-ish cell as 'YYYY-MM-DD' or None."""
+            if v is None or (isinstance(v, float) and v != v):
+                return None
+            s = str(v)[:10]
+            return s or None
+
         # Get discount tiers (CPL)
         tiers = []
         item = row.iloc[0]
         case_price_for_roi = float(item["frontline_case_price"]) if item.get("frontline_case_price") else 0.0
+        # The CPL row's own window classifies its discount tiers.
+        cpl_win = _pricing.window_status(item.get("from_date"), item.get("to_date"), as_of)
+        cpl_from, cpl_to = _iso_date(item.get("from_date")), _iso_date(item.get("to_date"))
         for i in range(1, 6):
             qty = item.get(f"discount_{i}_qty")
             amt = item.get(f"discount_{i}_amt")
@@ -1600,6 +1634,10 @@ def get_product_detail(
                     "amount_per_case": amt_f,
                     "price_after": round(case_price_for_roi - amt_f, 2),
                     "roi_pct": round((amt_f / case_price_for_roi) * 100, 2) if case_price_for_roi > 0 else 0.0,
+                    "from_date": cpl_from,
+                    "to_date": cpl_to,
+                    "window_status": cpl_win["status"],
+                    "days_to_expire": cpl_win["days_to_expire"],
                 })
 
         # Get RIP tiers (RIP sheet, joined by rip_code + upc + edition)
@@ -1625,25 +1663,35 @@ def get_product_detail(
             item_btl_price = 0.0
         if rip_code and str(rip_code) not in ("None", "nan", "0", ""):
             rip_src = read_parquet(con, "rip")
+            # Some wholesalers (Fedway) pack several RIP codes into one cell,
+            # e.g. "240002 250002". The RIP sheet stores each code as its own
+            # row, so match ANY of the split codes (same as pricing.attach_tiers
+            # and derive.py) instead of the literal multi-code string.
+            rcodes = _pricing._split_rip_codes(rip_code) or [str(rip_code)]
+            rc_ph = ", ".join(f"$rc{i}" for i in range(len(rcodes)))
+            rc_params = {f"rc{i}": c for i, c in enumerate(rcodes)}
             rip_rows = con.execute(f"""
                 SELECT rip_description,
+                       from_date, to_date,
                        rip_unit_1, rip_qty_1, rip_amt_1,
                        rip_unit_2, rip_qty_2, rip_amt_2,
                        rip_unit_3, rip_qty_3, rip_amt_3,
                        rip_unit_4, rip_qty_4, rip_amt_4
                 FROM {rip_src}
-                WHERE rip_code = $rip_code
+                WHERE rip_code IN ({rc_ph})
                   AND wholesaler = $wholesaler
                   AND edition = $edition
                   AND upc = $upc
             """, {
-                "rip_code": str(rip_code), "wholesaler": wholesaler,
+                **rc_params, "wholesaler": wholesaler,
                 "edition": ed, "upc": str(upc),
             }).fetchdf()
 
             seen = set()
             for _, r in rip_rows.iterrows():
                 description = r.get("rip_description")
+                rwin = _pricing.window_status(r.get("from_date"), r.get("to_date"), as_of)
+                rfrom, rto = _iso_date(r.get("from_date")), _iso_date(r.get("to_date"))
                 for j in range(1, 5):
                     unit = r.get(f"rip_unit_{j}")
                     rqty = r.get(f"rip_qty_{j}")
@@ -1657,7 +1705,11 @@ def get_product_detail(
                     if (_m.isnan(ramt_f) or _m.isnan(rqty_f)
                             or ramt_f <= 0 or rqty_f <= 0):
                         continue
-                    sig = (int(rqty_f), round(ramt_f, 2), str(unit))
+                    # Include the window in the signature so two distinct date
+                    # ranges at the same qty/amount (e.g. an active 1-8 Jun deal
+                    # and an upcoming 11-30 Jun one) both survive — the buyer
+                    # sees the full picture, each badged with its own status.
+                    sig = (int(rqty_f), round(ramt_f, 2), str(unit), rfrom, rto)
                     if sig in seen:
                         continue
                     seen.add(sig)
@@ -1676,8 +1728,16 @@ def get_product_detail(
                         "bundle_cost": round(bundle_cost, 2) if bundle_cost > 0 else 0.0,
                         "roi_pct": round((ramt_f / bundle_cost) * 100, 2) if bundle_cost > 0 else 0.0,
                         "description": str(description) if description else None,
+                        "from_date": rfrom,
+                        "to_date": rto,
+                        "window_status": rwin["status"],
+                        "days_to_expire": rwin["days_to_expire"],
+                        "is_time_sensitive": _pricing.is_time_sensitive_window(
+                            r.get("from_date"), r.get("to_date")),
                     })
-            rip_tiers.sort(key=lambda x: x["qty"])
+            # Order by qty, then by window start so an "active now" tier sorts
+            # ahead of a later "starts DD MMM" tier at the same qty.
+            rip_tiers.sort(key=lambda x: (x["qty"], x.get("from_date") or ""))
 
         # Go-UPC enrichment (image + canonical details), matched by normalised
         # UPC. Empty/absent table -> no enrichment, never an error. category_path
@@ -1730,8 +1790,13 @@ def get_product_detail(
         except Exception:
             ai_blurb = None
 
+        # Date-aware "live now" RIP overlay on the product itself, so the modal
+        # can show the month-stable price AND the price live on `as_of`.
+        prod_rec = row.to_dict(orient="records")[0]
+        _attach_live_rip(con, [prod_rec], ref_date=as_of)
+
         return {
-            "product": _clean_record(row.to_dict(orient="records")[0]),
+            "product": _clean_record(prod_rec),
             "discount_tiers": tiers,
             "rip_tiers": rip_tiers,
             "enrichment": enrichment,
@@ -3091,6 +3156,7 @@ def get_rip_siblings(
     rip_code: str,
     edition: Optional[str] = None,
     exclude_upc: Optional[str] = None,
+    as_of: Optional[str] = None,
 ):
     """Every product in the same RIP rebate group.
 
@@ -3193,7 +3259,11 @@ def get_rip_siblings(
         except Exception:
             pass
         try:
-            _attach_discount_rip_tiers(con, records)
+            _attach_discount_rip_tiers(con, records, ref_date=as_of)
+        except Exception:
+            pass
+        try:
+            _attach_live_rip(con, records, ref_date=as_of)
         except Exception:
             pass
     return {"edition": edition, "rip_code": rc, "items": records}

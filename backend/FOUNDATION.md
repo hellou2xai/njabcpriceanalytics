@@ -152,6 +152,40 @@ PRICING_SOURCE=parquet python -c "from backend.pricing_cache import build_pricin
 On Render, the next monthly ETL (or a manual run + reload-pricing endpoint
 hit) does this.
 
+### 2.3.2 Date-aware "live now" RIP overlay (runtime, NOT precomputed)
+
+`effective_case_price` (2.3.1) is the **stable whole-month** price. It bakes in
+only full-month RIPs and is deliberately blind to partial-window RIPs, even ones
+active right now. That is correct for "the price you can count on all month", but
+it hides a real rebate a buyer would get today. (June 2026 sample: 123 RIPs
+active on the 1st-of-month are excluded purely because they end mid-month.)
+
+A per-date price CANNOT be a precomputed column, because the cache is rebuilt
+monthly, so "today" would go stale within a day. So the date-aware layer is
+**runtime**:
+
+- `pricing.window_status(from, to, ref_date)` classifies each RIP/discount
+  window vs a reference date (default today ET): `whole_month` / `evergreen` /
+  `active` / `upcoming` / `expired`.
+- `pricing.attach_live_rip(con, records, ref_date)` mirrors derive.py's
+  `rip_per_code_upc` CTE but swaps the full-month gate for "active on
+  ref_date", then stamps each record:
+  - `live_rip_amt`: best per-case RIP rebate active on ref_date,
+  - `live_effective_case_price`: month price minus the EXTRA active rebate
+    (`effective_case_price + rip_savings - best_active_rip`, floored at 0),
+  - `live_better_than_month`: true when the live price beats the month price.
+
+The grid's sort/filter key stays the stable `effective_case_price`. The live
+overlay is attached AFTER pagination (like `attach_next_month_prices`) to the
+page rows only, so making the grid date-aware costs one extra small query. The
+reference date defaults to today. The product detail, catalog search and
+new-items endpoints accept `?as_of=YYYY-MM-DD`, and a cart/order line uses its
+needed-by date. "Full picture": surfaces show BOTH the month price and the
+live-now price, and every tier is badged with its window status.
+
+**No rebuild required** for this layer. It reads the existing `rip` native
+table at request time. Only 2.3.1 changes touch the parquet.
+
 ### 2.4 Next-month preview
 
 ```sql
@@ -290,7 +324,9 @@ read from the same code.
 
 | Helper | Was previously | Purpose |
 |---|---|---|
-| `attach_tiers(con, records)` | `catalog.py:396 _attach_discount_rip_tiers` | Build the per-product tier ladder (CPL discounts + stacked RIP rebates) the modal shows. Mutates `records[i]["tiers"]` in place. |
+| `attach_tiers(con, records, ref_date=None)` | `catalog.py:396 _attach_discount_rip_tiers` | Build the per-product tier ladder (CPL discounts + stacked RIP rebates) the modal shows. Mutates `records[i]["tiers"]` in place. Every tier carries `from_date`, `to_date`, `window_status`, `days_to_expire` classified against `ref_date` (default today ET). |
+| `window_status(from_date, to_date, ref_date=None)` | NEW | Classify a validity window vs a reference date: `whole_month` / `evergreen` / `active` / `upcoming` / `expired`, plus `days_to_expire` and `starts_in`. The single rule for "is this RIP/discount live on date X". |
+| `attach_live_rip(con, records, ref_date=None)` | NEW | Date-aware "live now" RIP overlay. Stamps `live_rip_amt`, `live_effective_case_price`, `live_better_than_month` from the RIP rows ACTIVE on `ref_date` (full-window always qualifies; partial-window only when ref_date is inside the window). See 2.3.2. |
 | `best_disc_at(disc_tiers, cases, pack)` | `catalog.py:545` closure | Highest qualifying CPL discount amount at `cases` cases for pack size `pack`. |
 | `lookup_rips_for_records(con, records)` | `catalog.py:472 _lookup_rips` | Fetch the RIP-sheet rows that apply to a set of CPL records, with code+UPC and code-level fallback. |
 | `attach_next_month_prices(con, records)` | `catalog.py:313 _attach_next_month_prices` | Add `next_case_price` and `better_month` to each record. |

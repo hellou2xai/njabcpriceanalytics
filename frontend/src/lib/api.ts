@@ -635,6 +635,11 @@ export interface CartItem {
   unit_qty?: number | string | null;
   has_discount?: boolean; has_rip?: boolean;
   discount_pct?: number | null; total_savings_per_case?: number | null;
+  // Date-aware "live now" RIP overlay (see Product). On a cart/order line the
+  // reference date is the needed-by date when set, else today.
+  live_effective_case_price?: number | null;
+  live_rip_amt?: number | null;
+  live_better_than_month?: boolean | null;
   tiers?: CatalogTier[];
   // True only while the whole bundle is still in the cart (combo pricing applies).
   combo_intact?: boolean;
@@ -962,6 +967,14 @@ export interface Product {
   has_closeout: boolean;
   discount_pct: number;
   total_savings_per_case: number;
+  // Date-aware "live now" RIP overlay (see backend pricing.attach_live_rip).
+  // effective_case_price is the stable whole-month price; these reflect the
+  // best RIP active on the reference date (default today, or ?as_of=). When a
+  // currently-active partial-window RIP beats the month price,
+  // live_better_than_month is true and live_effective_case_price < effective.
+  live_effective_case_price?: number | null;
+  live_rip_amt?: number | null;
+  live_better_than_month?: boolean | null;
   rip_code?: string;
   combo_code?: string;
   // RIP rebate grouping (catalog only — populated when sorting/grouping by
@@ -1032,7 +1045,24 @@ export interface NewItemsResponse {
   items: Product[];
 }
 
-export interface CatalogTier {
+// A tier's validity-window status relative to a reference date (default today).
+//   whole_month : full calendar month(s); part of the always-on monthly price
+//   evergreen   : no dated window; always applies
+//   active      : dated window that contains the reference date (live now)
+//   upcoming    : dated window that starts after the reference date
+//   expired     : dated window that ended before the reference date
+export type WindowStatus = 'whole_month' | 'evergreen' | 'active' | 'upcoming' | 'expired';
+
+// Fields stamped on every tier so the UI can badge Active now / Starts DD MMM /
+// Expires in N days. from_date/to_date are ISO 'YYYY-MM-DD' or null.
+export interface TierWindow {
+  from_date?: string | null;
+  to_date?: string | null;
+  window_status?: WindowStatus | null;
+  days_to_expire?: number | null;
+}
+
+export interface CatalogTier extends TierWindow {
   source: 'discount' | 'rip';
   qty: number;
   unit: string;
@@ -1057,7 +1087,7 @@ export interface CatalogTier {
   is_time_sensitive?: boolean;
 }
 
-export interface DiscountTier {
+export interface DiscountTier extends TierWindow {
   tier: number;
   quantity: string;
   amount_per_case: number;
@@ -1065,7 +1095,7 @@ export interface DiscountTier {
   roi_pct: number;
 }
 
-export interface RipTier {
+export interface RipTier extends TierWindow {
   qty: number;
   unit: string;
   amount: number;
@@ -1076,6 +1106,7 @@ export interface RipTier {
   bundle_cost: number;
   roi_pct: number;
   description: string | null;
+  is_time_sensitive?: boolean;
 }
 
 export interface Edition { wholesaler: string; edition: string; item_count: number }
@@ -1318,6 +1349,17 @@ export interface RipProduct {
   rip_unit: string | null;
   rip_qty: number;
 
+  // Per-side RIP validity window (RIP-source tiers only) so the sparkline
+  // popover badges this tier Active now / Expires in N days / Starts DD MMM.
+  curr_window_status?: WindowStatus | null;
+  curr_from_date?: string | null;
+  curr_to_date?: string | null;
+  curr_days_to_expire?: number | null;
+  next_window_status?: WindowStatus | null;
+  next_from_date?: string | null;
+  next_to_date?: string | null;
+  next_days_to_expire?: number | null;
+
   curr_case_price: number | null;
   curr_btl_price: number | null;
   curr_has_discount: boolean;
@@ -1377,6 +1419,10 @@ export interface Order {
   division?: string; created_at: string; updated_at?: string;
   distributor?: string | null; sales_rep_id?: number | null;
   revision?: number;
+  // Date the buyer plans to place this order against (ISO YYYY-MM-DD). When
+  // set, lines re-price against it: a RIP active on that date drives the
+  // line's best rebate, not just today's. Null = price as today.
+  needed_by_date?: string | null;
   total?: number;
 }
 
@@ -1390,7 +1436,7 @@ export interface UserNote {
   deleted?: number; created_at: string; updated_at?: string;
 }
 
-export interface OrderRipTier {
+export interface OrderRipTier extends TierWindow {
   tier: string;
   tier_cases: number;
   save_amount: string;

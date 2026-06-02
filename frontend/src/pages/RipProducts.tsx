@@ -257,10 +257,20 @@ function RipProductsImpl() {
         }
       } else if (it.source === 'rip') {
         if (ce != null && (it.curr_save_per_case ?? 0) > 0) {
-          entry.curr.ripTiers.push({ qty: it.rip_qty, unit: it.rip_unit ?? 'Case', eff: ce });
+          entry.curr.ripTiers.push({
+            qty: it.rip_qty, unit: it.rip_unit ?? 'Case', eff: ce,
+            ripOnlySave: it.curr_save_per_case,
+            from_date: it.curr_from_date, to_date: it.curr_to_date,
+            window_status: it.curr_window_status, days_to_expire: it.curr_days_to_expire,
+          });
         }
         if (ne != null && (it.next_save_per_case ?? 0) > 0) {
-          entry.next.ripTiers.push({ qty: it.rip_qty, unit: it.rip_unit ?? 'Case', eff: ne });
+          entry.next.ripTiers.push({
+            qty: it.rip_qty, unit: it.rip_unit ?? 'Case', eff: ne,
+            ripOnlySave: it.next_save_per_case,
+            from_date: it.next_from_date, to_date: it.next_to_date,
+            window_status: it.next_window_status, days_to_expire: it.next_days_to_expire,
+          });
         }
       }
     }

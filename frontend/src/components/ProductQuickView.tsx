@@ -9,6 +9,20 @@ import FavoriteButton from './FavoriteButton';
 import ProductThumb from './ProductThumb';
 import AddToCartButton from './AddToCartButton';
 import { distributorName } from '../lib/distributors';
+import { windowBadge } from '../lib/dealDates';
+import type { TierWindow } from '../lib/api';
+
+// Inline window-status badge (Active now / Expires in N days / Starts DD MMM)
+// for a single RIP / discount tier. Returns null for whole-month / evergreen.
+function WinBadge({ tier }: { tier: TierWindow }) {
+  const b = windowBadge(tier);
+  if (!b) return null;
+  return (
+    <span className={`win-badge ${b.cls}${b.urgent ? ' urgent' : ''}`} style={{ marginTop: 3 }}>
+      {b.label}
+    </span>
+  );
+}
 
 // Stable colour hue for a RIP code so the same rebate gets the same swatch
 // everywhere (here and on the cart's RIP-grouped view).
@@ -369,6 +383,16 @@ function QuickViewModal({
                   );
                 })()}
                 <div className="detail-after-rip"><strong>Case Cost after RIP:</strong> ${p.effective_case_price}{Number(p.unit_qty) > 1 ? <span className="text-muted" style={{ fontWeight: 400 }}> (${(p.effective_case_price / Number(p.unit_qty)).toFixed(2)}/btl)</span> : ''}</div>
+                {p.live_better_than_month && p.live_effective_case_price != null && (
+                  <div className="detail-after-rip" style={{ marginTop: 2 }}>
+                    <strong>Live now:</strong>{' '}
+                    <span className="live-price">${p.live_effective_case_price.toFixed(2)}/cs</span>{' '}
+                    <span className="live-price-strike">${p.effective_case_price}</span>{' '}
+                    <span className="text-muted" style={{ fontSize: 11, fontWeight: 400 }}>
+                      (a dated RIP active today beats the month price by ${(p.effective_case_price - p.live_effective_case_price).toFixed(2)}/cs)
+                    </span>
+                  </div>
+                )}
               </div>
             )}
 
@@ -704,6 +728,7 @@ function QuickViewModal({
                                   <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
                                     ROI: <strong style={{ color: 'var(--green)' }}>{t.roi_pct}%</strong>
                                   </div>
+                                  <div><WinBadge tier={t} /></div>
                                 </td>
                               );
                             })}
@@ -762,6 +787,7 @@ function QuickViewModal({
                                   <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
                                     Cost: ${t.bundle_cost} · ROI: <strong style={{ color: 'var(--green)' }}>{t.roi_pct}%</strong>
                                   </div>
+                                  <div><WinBadge tier={t} /></div>
                                 </td>
                               );
                             })}

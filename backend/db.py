@@ -150,6 +150,7 @@ def init_user_db():
             division text,
             distributor text,
             sales_rep_id integer,
+            needed_by_date text,
             created_at text DEFAULT {NOW_UTC},
             updated_at text DEFAULT {NOW_UTC}
         )""",
@@ -580,6 +581,10 @@ def init_user_db():
         ).fetchone()
         if not has_rev:
             con.execute("ALTER TABLE orders ADD COLUMN revision integer DEFAULT 0")
+        # Needed-by date: the date the buyer plans to place this order against.
+        # When set, order lines re-price against it (a RIP active on that date,
+        # not just today, drives the line's best rebate). NULL = price as today.
+        con.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS needed_by_date text")
         # Cart batches: when the user sends a RIP cluster or a Quick-Add group
         # to the cart, all items in that send share a batch_id and a label.
         # Default (single-product add) leaves these NULL = no batch.

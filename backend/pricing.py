@@ -210,6 +210,62 @@ def is_time_sensitive_window(from_date, to_date) -> bool:
     return not (f.day == 1 and t.day == _cal.monthrange(t.year, t.month)[1])
 
 
+def _to_date(v):
+    """Parse a date-ish value (ISO string / date / Timestamp) to a datetime.date,
+    or None. Shared by window_status and the live-RIP overlay."""
+    if v is None:
+        return None
+    if isinstance(v, float) and v != v:  # NaN
+        return None
+    if hasattr(v, "year") and hasattr(v, "month") and hasattr(v, "day"):
+        try:
+            return date(v.year, v.month, v.day)
+        except Exception:
+            pass
+    try:
+        return date.fromisoformat(str(v)[:10])
+    except (TypeError, ValueError):
+        return None
+
+
+def _iso(v) -> Optional[str]:
+    """Render a date-ish value as 'YYYY-MM-DD' or None."""
+    d = _to_date(v)
+    return d.isoformat() if d else None
+
+
+def window_status(from_date, to_date, ref_date=None) -> dict:
+    """Classify a RIP / discount validity window relative to a reference date.
+
+    Returns ``{status, days_to_expire, starts_in}`` where status is one of:
+      - 'evergreen'   : no window (null from/to); always applies
+      - 'whole_month' : full calendar month(s); part of the always-on monthly
+                        price (NOT time-sensitive)
+      - 'active'      : dated window that CONTAINS ref_date (live right now)
+      - 'upcoming'    : dated window that STARTS after ref_date
+      - 'expired'     : dated window that ENDED before ref_date
+
+    days_to_expire = (to_date - ref).days (negative once expired; None if no
+    to_date). starts_in = (from_date - ref).days (>0 while upcoming; None if no
+    from_date). ref_date defaults to today in US Eastern (matches edition math).
+    """
+    ref = _to_date(ref_date) or eastern_today()
+    f, t = _to_date(from_date), _to_date(to_date)
+    if f is None or t is None:
+        return {"status": "evergreen", "days_to_expire": None, "starts_in": None}
+    days_to_expire = (t - ref).days
+    starts_in = (f - ref).days
+    if not is_time_sensitive_window(from_date, to_date):
+        status = "whole_month"
+    elif ref < f:
+        status = "upcoming"
+    elif ref > t:
+        status = "expired"
+    else:
+        status = "active"
+    return {"status": status, "days_to_expire": days_to_expire, "starts_in": starts_in}
+
+
 def best_disc_at(disc_tiers: list[dict], cases_bought: float, pack: float) -> float:
     """Highest-amount qualifying CPL discount at `cases_bought` cases, given
     pack size `pack` (bottles per case). CPL tiers are mutually exclusive —
@@ -235,7 +291,7 @@ def best_disc_at(disc_tiers: list[dict], cases_bought: float, pack: float) -> fl
 # in routers/catalog.py:_attach_discount_rip_tiers; behaviour preserved.
 # ---------------------------------------------------------------------------
 
-def attach_tiers(con, records) -> None:
+def attach_tiers(con, records, ref_date=None) -> None:
     """Attach a ``tiers`` list (CPL discount tiers + stacked RIP tiers) to each
     record, mirroring what the catalog table renders as expandable sub-rows.
     Shared by /search (include_tiers), /new-items, the product modal, and the
@@ -244,6 +300,12 @@ def attach_tiers(con, records) -> None:
     Each record needs at minimum: wholesaler, edition, upc, unit_qty,
     frontline_case_price, frontline_unit_price, discount_{1..5}_qty/amt, and
     optionally rip_code / rip_group_code.
+
+    ``ref_date`` (ISO string or date; defaults to today in ET) is the date each
+    tier's validity window is classified against — every emitted tier carries
+    ``from_date``, ``to_date``, ``window_status`` and ``days_to_expire`` so the
+    UI can badge Active now / Starts DD MMM / Expires in N days. The reference
+    date does NOT change which tiers are listed; it only annotates them.
 
     Side effect: mutates `records[i]["tiers"]` in place.
     """
@@ -326,6 +388,9 @@ def attach_tiers(con, records) -> None:
             # way, but the UI can render it distinctly. derive.py excludes
             # these from best_rip_amt so they don't pollute effective price.
             rip_ts = is_time_sensitive_window(r.get("from_date"), r.get("to_date"))
+            rip_win = window_status(r.get("from_date"), r.get("to_date"), ref_date)
+            rip_from = _iso(r.get("from_date"))
+            rip_to = _iso(r.get("to_date"))
             tiers_here = []
             for j in range(1, 5):
                 amt = r.get(f"rip_amt_{j}")
@@ -344,6 +409,10 @@ def attach_tiers(con, records) -> None:
                     "amount": af,
                     "description": str(r.get("rip_description") or "") or None,
                     "is_time_sensitive": rip_ts,
+                    "from_date": rip_from,
+                    "to_date": rip_to,
+                    "window_status": rip_win["status"],
+                    "days_to_expire": rip_win["days_to_expire"],
                 })
             if not tiers_here:
                 continue
@@ -394,6 +463,9 @@ def attach_tiers(con, records) -> None:
         # we still surface them in the ladder so the buyer sees the promo
         # exists, but tagged so the UI can render them distinctly.
         cpl_ts = is_time_sensitive_window(rec.get("from_date"), rec.get("to_date"))
+        cpl_win = window_status(rec.get("from_date"), rec.get("to_date"), ref_date)
+        cpl_from = _iso(rec.get("from_date"))
+        cpl_to = _iso(rec.get("to_date"))
         # CPL discount tiers
         disc = []
         for i in range(1, 6):
@@ -426,6 +498,10 @@ def attach_tiers(con, records) -> None:
                 "save_per_bottle": round(amt_f / uq, 2) if uq > 0 else None,
                 "roi_pct": round(amt_f / cp * 100, 2) if cp > 0 else 0.0,
                 "is_time_sensitive": cpl_ts,
+                "from_date": cpl_from,
+                "to_date": cpl_to,
+                "window_status": cpl_win["status"],
+                "days_to_expire": cpl_win["days_to_expire"],
             })
 
         # RIP tiers. When a CPL row matches MULTIPLE RIP codes (e.g. fedway's
@@ -490,9 +566,167 @@ def attach_tiers(con, records) -> None:
                 # / effective_case_price. The buyer still sees it in the
                 # ladder, distinctly rendered.
                 "is_time_sensitive": bool(t.get("is_time_sensitive", False)),
+                # Validity window + status relative to ref_date, so the UI can
+                # badge Active now / Starts DD MMM / Expires in N days.
+                "from_date": t.get("from_date"),
+                "to_date": t.get("to_date"),
+                "window_status": t.get("window_status"),
+                "days_to_expire": t.get("days_to_expire"),
             })
         rips.sort(key=lambda x: x["qty"])
         rec["tiers"] = disc + rips
+
+
+# ---------------------------------------------------------------------------
+# attach_live_rip: date-aware "live now" RIP overlay.
+# ---------------------------------------------------------------------------
+
+def _num(v) -> Optional[float]:
+    """Coerce a possibly-NaN / string cell to float, or None."""
+    if v is None:
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return None if f != f else f
+
+
+def _split_rip_codes(rc) -> list[str]:
+    """Split a RIP-code cell ('10604 120001') into clean codes. Module-level
+    twin of the splitter inside attach_tiers so attach_live_rip stays in sync."""
+    if rc is None:
+        return []
+    s = str(rc).strip()
+    if not s or s in ("None", "nan", "0"):
+        return []
+    out, seen = [], set()
+    for part in s.split():
+        p = part.strip()
+        if not p or p in ("0", "None", "nan") or p in seen:
+            continue
+        seen.add(p)
+        out.append(p)
+    return out
+
+
+def attach_live_rip(con, records, ref_date=None) -> None:
+    """Overlay a DATE-AWARE 'live now' RIP price on each record.
+
+    The precomputed ``effective_case_price`` bakes in only WHOLE-MONTH RIPs
+    (derive.py filters partial-window RIPs out of best_rip_amt). This helper
+    looks at the RIP rows actually ACTIVE on ``ref_date`` (full-window rows
+    always qualify; a partial-window row qualifies only when ref_date falls
+    inside [from_date, to_date]) and, when a currently-active partial RIP
+    beats what's baked into the month price, stamps each record with:
+
+      - live_rip_amt              best per-case RIP rebate active on ref_date
+      - live_effective_case_price month price minus the EXTRA active rebate
+      - live_better_than_month    True when the live price beats the month price
+
+    Records with no extra active rebate get ``live_better_than_month = False``
+    and ``live_effective_case_price == effective_case_price``. Mirrors
+    derive.py's ``rip_per_code_upc`` CTE with the full-month gate swapped for
+    active-on-date. Run AFTER each record carries effective_case_price +
+    rip_savings + unit_qty + rip_code(s). No-op on an empty list.
+    """
+    if not records:
+        return
+    ref = _iso(ref_date) or eastern_today().isoformat()
+    codes, wss, eds, upcs = set(), set(), set(), set()
+    rec_codes: list[list[str]] = []
+    for rec in records:
+        cs: list[str] = []
+        for fld in ("rip_group_code", "rip_code"):
+            for c in _split_rip_codes(rec.get(fld)):
+                if c not in cs:
+                    cs.append(c)
+        rec_codes.append(cs)
+        codes.update(cs)
+        wss.add(rec["wholesaler"])
+        eds.add(rec["edition"])
+        if rec.get("upc"):
+            upcs.add(str(rec["upc"]))
+
+    def _default():
+        for rec in records:
+            eff = _num(rec.get("effective_case_price"))
+            rec["live_rip_amt"] = None
+            rec["live_effective_case_price"] = eff
+            rec["live_better_than_month"] = False
+
+    if not codes or not upcs:
+        _default()
+        return
+
+    rip_src = read_parquet(con, "rip")
+    uc, uw, ue, uu = sorted(codes), sorted(wss), sorted(eds), sorted(upcs)
+    ph = lambda pre, n: ", ".join(f"${pre}{i}" for i in range(n))
+    params: dict = {"ref": ref}
+    for i, v in enumerate(uc):
+        params[f"rc{i}"] = v
+    for i, v in enumerate(uw):
+        params[f"ws{i}"] = v
+    for i, v in enumerate(ue):
+        params[f"ed{i}"] = v
+    for i, v in enumerate(uu):
+        params[f"up{i}"] = v
+
+    def case_expr(j):
+        return (f"COALESCE(CASE WHEN rip_qty_{j} > 0 AND LOWER(rip_unit_{j}) NOT LIKE 'b%' "
+                f"THEN rip_amt_{j} / rip_qty_{j} END, 0)")
+
+    def btl_expr(j):
+        return (f"COALESCE(CASE WHEN rip_qty_{j} > 0 AND LOWER(rip_unit_{j}) LIKE 'b%' "
+                f"THEN rip_amt_{j} / rip_qty_{j} END, 0)")
+
+    sql = f"""
+        SELECT rip_code, wholesaler, edition, CAST(upc AS VARCHAR) AS upc,
+               MAX(GREATEST({case_expr(1)}, {case_expr(2)}, {case_expr(3)}, {case_expr(4)})) AS best_case_per_case,
+               MAX(GREATEST({btl_expr(1)}, {btl_expr(2)}, {btl_expr(3)}, {btl_expr(4)})) AS best_btl_per_btl
+        FROM {rip_src}
+        WHERE rip_code IN ({ph('rc', len(uc))})
+          AND wholesaler IN ({ph('ws', len(uw))})
+          AND edition IN ({ph('ed', len(ue))})
+          AND CAST(upc AS VARCHAR) IN ({ph('up', len(uu))})
+          AND (from_date IS NULL OR to_date IS NULL
+               OR (CAST($ref AS DATE) BETWEEN CAST(from_date AS DATE) AND CAST(to_date AS DATE)))
+        GROUP BY 1, 2, 3, 4
+    """
+    active: dict = {}
+    try:
+        df = con.execute(sql, params).fetchdf()
+        for _, r in df.iterrows():
+            active[(str(r["rip_code"]), r["wholesaler"], r["edition"], str(r["upc"]))] = (
+                float(r["best_case_per_case"] or 0.0),
+                float(r["best_btl_per_btl"] or 0.0),
+            )
+    except Exception:
+        _default()
+        return
+
+    for rec, cs in zip(records, rec_codes):
+        eff = _num(rec.get("effective_case_price"))
+        if eff is None:
+            rec["live_rip_amt"] = None
+            rec["live_effective_case_price"] = None
+            rec["live_better_than_month"] = False
+            continue
+        pack = _num(rec.get("unit_qty")) or 1.0
+        ws, ed, upc = rec["wholesaler"], rec["edition"], str(rec.get("upc") or "")
+        best_active = 0.0
+        for c in cs:
+            hit = active.get((c, ws, ed, upc))
+            if hit:
+                cand = max(hit[0], hit[1] * pack)
+                if cand > best_active:
+                    best_active = cand
+        month_rip = _num(rec.get("rip_savings")) or 0.0
+        extra = max(0.0, best_active - month_rip)
+        live = max(0.0, round(eff - extra, 2))
+        rec["live_rip_amt"] = round(best_active, 2) if best_active > 0 else None
+        rec["live_effective_case_price"] = live
+        rec["live_better_than_month"] = live < eff - 0.005
 
 
 # ---------------------------------------------------------------------------
@@ -688,6 +922,7 @@ def rank_best_deals(
     category: Optional[str] = None,
     distributor: Optional[str] = None,
     limit: int = 25,
+    as_of: Optional[str] = None,
 ) -> list[dict]:
     """Return the top-N best-deal rows for ONE consistent ranking definition.
 
@@ -739,13 +974,17 @@ def rank_best_deals(
         where += ["c.has_closeout = true"]
         order_by = "c.total_savings_per_case DESC NULLS LAST"
     elif kind == "time_sensitive":
-        # Dated promos still active. We don't apply the partial-month rule
-        # here (that's the deals router's specialty for the page) - just
-        # "has a to_date in the future, ordered by expiry".
+        # Dated promos still active on the reference date (default: today). We
+        # don't apply the partial-month rule here (that's the deals router's
+        # specialty for the page) - just "to_date on/after the reference date,
+        # ordered by expiry". `as_of` lets a caller ask "active on date X".
+        ref_expr = "CAST(? AS DATE)" if as_of else "CURRENT_DATE"
         where += [
             "c.to_date IS NOT NULL",
-            "CAST(c.to_date AS DATE) >= CURRENT_DATE",
+            f"CAST(c.to_date AS DATE) >= {ref_expr}",
         ]
+        if as_of:
+            params.append(as_of)
         order_by = (
             "CAST(c.to_date AS DATE) ASC, c.total_savings_per_case DESC NULLS LAST"
         )

@@ -16,6 +16,7 @@ from backend.enrichment_join import attach_enrichment_image
 from backend.pg import get_pg
 from backend.auth import get_current_user
 from backend.rip_utils import is_bottle_unit, rip_per_case
+from backend import pricing as _pricing
 from backend import mailer
 from backend.po_pdf import build_po_pdf, build_po_html
 
@@ -38,10 +39,16 @@ def _num(v):
     return None if f != f else f  # drop NaN
 
 
-def _enrich_order_lines(lines: list[dict]) -> list[dict]:
+def _enrich_order_lines(lines: list[dict], ref_date: Optional[str] = None) -> list[dict]:
     """Attach current-edition pricing (case cost, category, brand, RIP tiers,
     closeout flag) to raw order_lines so the Order Detail page can show and
-    total them. Lines that no longer match a current product are left as-is."""
+    total them. Lines that no longer match a current product are left as-is.
+
+    ``ref_date`` (ISO YYYY-MM-DD, default today) is the date each line's RIP
+    windows are classified against — the order's needed-by date when set. A RIP
+    that has expired (or not yet started) by ref_date is tagged on its tier and
+    excluded from ``best_rip_save`` so the order's headline savings reflect what
+    the buyer would actually get on that date."""
     if not lines:
         return lines
     with get_duckdb() as con:
@@ -109,8 +116,13 @@ def _enrich_order_lines(lines: list[dict]) -> list[dict]:
             by_upc[(ws, up, vol)] = rec
             by_upc.setdefault((ws, up), rec)
 
-        # RIP tiers (case-unit) for the matched rip_codes.
-        codes = sorted({rec["rip_code"] for rec in by_full.values() if rec.get("rip_code")})
+        # RIP tiers (case-unit) for the matched rip_codes. A CPL cell can pack
+        # several codes ("240002 250002") — split them so each matches its own
+        # RIP-sheet rows (same rule as pricing.attach_tiers / derive.py).
+        codes = sorted({
+            c for rec in by_full.values()
+            for c in _pricing._split_rip_codes(rec.get("rip_code"))
+        })
         rip_tier_map: dict = {}
         if codes:
             rip_src = read_parquet(con, "rip")
@@ -119,7 +131,7 @@ def _enrich_order_lines(lines: list[dict]) -> list[dict]:
             cph = ", ".join(f"$rc{i}" for i in range(len(codes)))
             rwph = ", ".join(f"$rw{i}" for i in range(len(ws_list)))
             rdf = con.execute(f"""
-                SELECT rip_code, wholesaler, edition,
+                SELECT rip_code, wholesaler, edition, from_date, to_date,
                        rip_unit_1, rip_qty_1, rip_amt_1, rip_unit_2, rip_qty_2, rip_amt_2,
                        rip_unit_3, rip_qty_3, rip_amt_3, rip_unit_4, rip_qty_4, rip_amt_4
                 FROM {rip_src}
@@ -130,6 +142,8 @@ def _enrich_order_lines(lines: list[dict]) -> list[dict]:
                     continue
                 key = (str(r["rip_code"]), r["wholesaler"])
                 bucket = rip_tier_map.setdefault(key, [])
+                win = _pricing.window_status(r.get("from_date"), r.get("to_date"), ref_date)
+                rfrom, rto = _pricing._iso(r.get("from_date")), _pricing._iso(r.get("to_date"))
                 for j in range(1, 5):
                     af, qf = _num(r.get(f"rip_amt_{j}")), _num(r.get(f"rip_qty_{j}"))
                     unit = str(r.get(f"rip_unit_{j}") or "")
@@ -137,8 +151,14 @@ def _enrich_order_lines(lines: list[dict]) -> list[dict]:
                         continue
                     # Keep BOTH case- and bottle-unit tiers; convert to per-case
                     # later (needs the line's pack size). Storing raw avoids
-                    # dropping bottle rebates as the old code did.
-                    bucket.append({"qty": int(qf), "amount": af, "unit": unit})
+                    # dropping bottle rebates as the old code did. Carry the
+                    # window so the line can badge active/upcoming/expired vs
+                    # the order's needed-by date.
+                    bucket.append({
+                        "qty": int(qf), "amount": af, "unit": unit,
+                        "from_date": rfrom, "to_date": rto,
+                        "window_status": win["status"], "days_to_expire": win["days_to_expire"],
+                    })
 
         for l in lines:
             ws, up, nm, vol = l.get("wholesaler"), str(l["upc"]) if l.get("upc") else "", l.get("product_name"), l.get("unit_volume")
@@ -160,7 +180,10 @@ def _enrich_order_lines(lines: list[dict]) -> list[dict]:
             l["has_rip"] = rec["has_rip"]
             l["is_closeout"] = rec["has_closeout"]
             l["description"] = l.get("product_name")
-            raw_tiers = rip_tier_map.get((rec["rip_code"], ws), []) if rec.get("rip_code") else []
+            # Gather tiers across every code packed into this row's rip_code.
+            raw_tiers = []
+            for c in _pricing._split_rip_codes(rec.get("rip_code")):
+                raw_tiers.extend(rip_tier_map.get((c, ws), []))
             pack = l["pack"] or 0  # bottles per case
             tiers = []
             seen = set()
@@ -175,17 +198,30 @@ def _enrich_order_lines(lines: list[dict]) -> list[dict]:
                     tier_cases = max(1, -(-t["qty"] // pack)) if pack > 0 else 1
                 else:
                     tier_cases = t["qty"]
-                sig = (tier_cases, sv)
+                # Window in the signature so two distinct date ranges at the
+                # same (cases, savings) both survive — the buyer sees one badged
+                # active and another upcoming/expired.
+                sig = (tier_cases, sv, t.get("from_date"), t.get("to_date"))
                 if sig in seen:
                     continue
                 seen.add(sig)
                 tiers.append({
                     "tier": f"{tier_cases}cs", "tier_cases": tier_cases, "save_amount": str(sv),
                     "case_price": str(round(cc - sv, 2)) if cc else None, "btl_price": None,
+                    "from_date": t.get("from_date"), "to_date": t.get("to_date"),
+                    "window_status": t.get("window_status"), "days_to_expire": t.get("days_to_expire"),
                 })
             tiers.sort(key=lambda x: x["tier_cases"])
             l["rip_tiers"] = tiers
-            best = max([float(t["save_amount"]) for t in tiers] + [rec["rip_savings"] or 0.0], default=0.0)
+            # best_rip_save counts only tiers ACTIVE on ref_date (whole-month /
+            # evergreen / active) — an expired or not-yet-started dated RIP must
+            # not inflate the order's savings on the needed-by date. The
+            # precomputed rip_savings is the whole-month best, always active.
+            active_saves = [
+                float(t["save_amount"]) for t in tiers
+                if t.get("window_status") in (None, "whole_month", "evergreen", "active")
+            ]
+            best = max(active_saves + [rec["rip_savings"] or 0.0], default=0.0)
             l["best_rip_save"] = str(round(best, 2)) if best > 0 else None
     return lines
 
@@ -284,6 +320,7 @@ class OrderCreate(BaseModel):
     division: Optional[str] = None
     distributor: Optional[str] = None
     sales_rep_id: Optional[int] = None
+    needed_by_date: Optional[str] = None   # ISO YYYY-MM-DD; null = price as today
 
 
 class OrderLineCreate(BaseModel):
@@ -397,8 +434,8 @@ def create_order(order: OrderCreate, user: dict = Depends(get_current_user)):
             if existing:
                 return {"id": existing["id"], "status": "exists"}
         cur = con.execute(
-            "INSERT INTO orders (user_id, name, notes, division, distributor, sales_rep_id) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
-            (user["id"], order.name, order.notes, order.division, order.distributor, order.sales_rep_id)
+            "INSERT INTO orders (user_id, name, notes, division, distributor, sales_rep_id, needed_by_date) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (user["id"], order.name, order.notes, order.division, order.distributor, order.sales_rep_id, order.needed_by_date)
         )
         order_id = cur.fetchone()["id"]
         _audit(con, "orders", order_id, "insert", new_values=order.model_dump())
@@ -425,6 +462,7 @@ class OrderUpdate(BaseModel):
     division: Optional[str] = None
     distributor: Optional[str] = None
     sales_rep_id: Optional[int] = None
+    needed_by_date: Optional[str] = None   # ISO YYYY-MM-DD; '' or null clears it
 
 
 @router.put("/orders/{order_id}")
@@ -514,7 +552,12 @@ def get_order_detail(order_id: int, user: dict = Depends(get_current_user)):
         lines = con.execute(
             "SELECT * FROM order_lines WHERE order_id = %s", (order_id,)
         ).fetchall()
-    return {"order": dict(order), "lines": _enrich_order_lines([dict(l) for l in lines])}
+    order_d = dict(order)
+    return {
+        "order": order_d,
+        "lines": _enrich_order_lines([dict(l) for l in lines],
+                                     ref_date=order_d.get("needed_by_date")),
+    }
 
 
 @router.delete("/orders/{order_id}")
@@ -634,7 +677,8 @@ def _gather_po(con, order: dict, user: dict, revision: int | None = None) -> tup
     raw_lines = con.execute(
         "SELECT * FROM order_lines WHERE order_id = %s ORDER BY id", (order_id,)
     ).fetchall()
-    lines = _enrich_order_lines([dict(l) for l in raw_lines])
+    lines = _enrich_order_lines([dict(l) for l in raw_lines],
+                                ref_date=order.get("needed_by_date"))
 
     pdf_lines, subtotal = [], 0.0
     for l in lines:

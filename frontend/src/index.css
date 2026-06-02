@@ -311,6 +311,21 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
 .tag-red { background: rgba(239,68,68,0.2); color: var(--red); }
 .tag-gray { background: rgba(107,114,128,0.2); color: var(--text-muted); }
 
+/* ---- RIP / discount validity-window badges (see lib/dealDates.ts) ---- */
+.win-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 1px 7px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 700; line-height: 1.5;
+  white-space: nowrap; vertical-align: middle;
+}
+.win-active { background: rgba(16,185,129,0.16); color: var(--green); }
+.win-badge.urgent { background: rgba(239,68,68,0.16); color: var(--red); }
+.win-upcoming { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.win-expired { background: rgba(107,114,128,0.18); color: var(--text-muted); }
+/* The "live now" better-than-month price call-out on a catalog row / modal. */
+.live-price { color: var(--green); font-weight: 700; }
+.live-price-strike { color: var(--text-muted); text-decoration: line-through; font-weight: 500; }
+
 /* ---- Tabs ---- */
 .tab-bar { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
 .tab {

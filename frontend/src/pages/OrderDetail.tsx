@@ -6,6 +6,7 @@ import type { OrderLine, OrderRipTier, Product, SubmitResult } from '../lib/api'
 import { useProductQuickView } from '../components/ProductQuickView';
 import { distributorName, DISTRIBUTOR_NAMES } from '../lib/distributors';
 import { trackAction } from '../lib/activityTracker';
+import { windowBadge } from '../lib/dealDates';
 
 // ---- Constants ----
 
@@ -271,7 +272,7 @@ export default function OrderDetail() {
   });
 
   const updateAssocMut = useMutation({
-    mutationFn: (patch: { distributor?: string | null; sales_rep_id?: number | null }) =>
+    mutationFn: (patch: { distributor?: string | null; sales_rep_id?: number | null; needed_by_date?: string | null }) =>
       orders.update(orderId, patch),
     onSuccess: invalidateOrder,
   });
@@ -528,6 +529,17 @@ export default function OrderDetail() {
                   {repsForDist.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                 </select>
               ) : <span>{repName ?? '—'}</span>}
+            </span>
+            <span className="order-assoc-item">
+              <span className="order-assoc-label" title="Lines re-price against this date: a RIP active on it (not just today) drives each line's best rebate.">Needed by</span>
+              {isDraft ? (
+                <input
+                  type="date"
+                  className="assoc-select"
+                  value={order.needed_by_date ?? ''}
+                  onChange={e => updateAssocMut.mutate({ needed_by_date: e.target.value || null })}
+                />
+              ) : <span>{order.needed_by_date ?? '—'}</span>}
             </span>
           </div>
         )}
@@ -1094,6 +1106,7 @@ function RipTierCell({ tiers, qtyCases }: { tiers?: OrderRipTier[]; qtyCases: nu
           : isBest ? 'color-mix(in srgb, var(--accent) 16%, transparent)'
           : 'color-mix(in srgb, var(--text-muted) 14%, transparent)';
         const tone = met ? 'var(--green)' : isBest ? 'var(--accent)' : 'var(--text-muted)';
+        const wb = windowBadge(tier);
 
         return (
           <div key={i} className={rowClass}>
@@ -1105,6 +1118,7 @@ function RipTierCell({ tiers, qtyCases }: { tiers?: OrderRipTier[]; qtyCases: nu
             </span>
             {met && <span style={{ color: 'var(--green)', fontWeight: 700, fontSize: 10 }} title="Unlocked at your current quantity">&#10003; UNLOCKED</span>}
             {isBest && <span style={{ color: 'var(--accent)', fontSize: 10, fontWeight: 700 }} title="Best value tier you haven't reached yet">BEST VALUE</span>}
+            {wb && <span className={`win-badge ${wb.cls}${wb.urgent ? ' urgent' : ''}`}>{wb.label}</span>}
           </div>
         );
       })}

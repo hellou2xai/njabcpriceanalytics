@@ -888,8 +888,9 @@ def _build_rip_items(con, wholesaler=None, product_type=None, q="", rip_code=Non
             return {"total": 0, "limit": limit, "offset": offset, "items": []}
 
         # 3. RIP sheet lookup: (rip_code, wholesaler, edition, upc) -> deduped tier list
+        from backend import pricing as _pricing
         rip_df = con.execute(f"""
-            SELECT rip_code, wholesaler, edition, upc,
+            SELECT rip_code, wholesaler, edition, upc, from_date, to_date,
                    rip_unit_1, rip_qty_1, rip_amt_1,
                    rip_unit_2, rip_qty_2, rip_amt_2,
                    rip_unit_3, rip_qty_3, rip_amt_3,
@@ -907,8 +908,20 @@ def _build_rip_items(con, wholesaler=None, product_type=None, q="", rip_code=Non
                 return "btl"
             return s
 
+        # Rank used when two RIP rows give the same (unit, qty, amt) under one
+        # code/UPC but with different validity windows: keep the one most
+        # relevant NOW so the tier badges read "active" over "expired".
+        _win_rank = {"active": 0, "whole_month": 1, "evergreen": 2, "upcoming": 3, "expired": 4}
+
         rip_lookup = {}
         for _, r in rip_df.iterrows():
+            win = _pricing.window_status(r.get("from_date"), r.get("to_date"))
+            wmeta = {
+                "from_date": _pricing._iso(r.get("from_date")),
+                "to_date": _pricing._iso(r.get("to_date")),
+                "window_status": win["status"],
+                "days_to_expire": win["days_to_expire"],
+            }
             tiers_here = []
             for i in range(1, 5):
                 unit = r.get(f"rip_unit_{i}")
@@ -919,23 +932,23 @@ def _build_rip_items(con, wholesaler=None, product_type=None, q="", rip_code=Non
                         "unit": unit if pd.notna(unit) else "Cases",
                         "qty": int(qty),
                         "amt": float(amt),
+                        **wmeta,
                     })
             if not tiers_here:
                 continue
             key = (str(r["rip_code"]), r["wholesaler"], r["edition"], str(r.get("upc", "")))
             rip_lookup.setdefault(key, []).extend(tiers_here)
 
-        # Dedupe each lookup entry by (norm_unit, qty, amt)
+        # Dedupe each lookup entry by (norm_unit, qty, amt). When the same tier
+        # exists under multiple windows, keep the most-relevant-now one.
         for k, tlist in rip_lookup.items():
-            seen = set()
-            deduped = []
+            best: dict = {}
             for t in tlist:
                 sig = (_norm_unit_key(t["unit"]), t["qty"], t["amt"])
-                if sig in seen:
-                    continue
-                seen.add(sig)
-                deduped.append(t)
-            rip_lookup[k] = deduped
+                cur = best.get(sig)
+                if cur is None or _win_rank.get(t.get("window_status"), 5) < _win_rank.get(cur.get("window_status"), 5):
+                    best[sig] = t
+            rip_lookup[k] = list(best.values())
 
         # Map (wholesaler, normalised UPC) -> sorted list of every RIP code
         # this UPC qualifies under in the RIP sheet (across both target
@@ -989,8 +1002,13 @@ def _build_rip_items(con, wholesaler=None, product_type=None, q="", rip_code=Non
             rip_code = str(p["rip_code"]) if pd.notna(p["rip_code"]) else None
             rip_tiers = []
             if rip_code and rip_code not in ("None", "nan", "0"):
-                rk = (rip_code, ws, p["edition"], upc)
-                rip_tiers = [{**t, "source": "rip"} for t in rip_lookup.get(rk, [])]
+                # A CPL cell can pack several codes ("240002 250002"); the RIP
+                # sheet stores each as its own row, so look up every split code
+                # (same rule as pricing.attach_tiers / derive.py) instead of the
+                # literal multi-code string, which would match nothing.
+                for code in _pricing._split_rip_codes(rip_code):
+                    rk = (code, ws, p["edition"], upc)
+                    rip_tiers.extend({**t, "source": "rip"} for t in rip_lookup.get(rk, []))
 
             product_map[key][slot] = {
                 "case_price": float(p["frontline_case_price"]) if pd.notna(p["frontline_case_price"]) else None,
@@ -1071,16 +1089,26 @@ def _build_rip_items(con, wholesaler=None, product_type=None, q="", rip_code=Non
             if not curr_tiers and not next_tiers:
                 continue
 
+            # When several codes contribute the same (source, unit, qty) tier
+            # (a UPC stacked under two codes with different windows, e.g. an
+            # active 1-8 Jun deal and an upcoming 11-30 Jun one), keep the one
+            # most relevant NOW so the badge reads "active" over "upcoming".
+            def _prefer(old, new):
+                if old is None:
+                    return new
+                return new if (_win_rank.get(new.get("window_status"), 5)
+                               < _win_rank.get(old.get("window_status"), 5)) else old
+
             tier_pairs = {}
             for t in (curr_tiers or []):
                 k = (t["source"], _norm_unit(t["unit"]), t["qty"])
                 tier_pairs.setdefault(k, {"curr": None, "next": None, "unit": t["unit"], "qty": t["qty"], "source": t["source"]})
-                tier_pairs[k]["curr"] = t
+                tier_pairs[k]["curr"] = _prefer(tier_pairs[k]["curr"], t)
             for t in (next_tiers or []):
                 k = (t["source"], _norm_unit(t["unit"]), t["qty"])
                 if k not in tier_pairs:
                     tier_pairs[k] = {"curr": None, "next": None, "unit": t["unit"], "qty": t["qty"], "source": t["source"]}
-                tier_pairs[k]["next"] = t
+                tier_pairs[k]["next"] = _prefer(tier_pairs[k]["next"], t)
 
             # Stable order: discounts first, then RIPs; within each, by qty ascending
             ordered = sorted(
@@ -1101,6 +1129,19 @@ def _build_rip_items(con, wholesaler=None, product_type=None, q="", rip_code=Non
                     "source": tp["source"],
                     "rip_unit": tp["unit"],
                     "rip_qty": tp["qty"],
+                    # Per-side validity window so the sparkline popover can badge
+                    # this tier Active now / Expires in N days / Starts DD MMM
+                    # against today (curr) and against next month (next). Only
+                    # RIP-source tiers carry these; discount tiers are evergreen
+                    # within their edition here.
+                    "curr_window_status": (tp.get("curr") or {}).get("window_status"),
+                    "curr_from_date": (tp.get("curr") or {}).get("from_date"),
+                    "curr_to_date": (tp.get("curr") or {}).get("to_date"),
+                    "curr_days_to_expire": (tp.get("curr") or {}).get("days_to_expire"),
+                    "next_window_status": (tp.get("next") or {}).get("window_status"),
+                    "next_from_date": (tp.get("next") or {}).get("from_date"),
+                    "next_to_date": (tp.get("next") or {}).get("to_date"),
+                    "next_days_to_expire": (tp.get("next") or {}).get("days_to_expire"),
                     "curr_case_price": (curr or {}).get("case_price"),
                     "curr_btl_price": (curr or {}).get("btl_price"),
                     "curr_has_discount": (curr or {}).get("has_discount", False),

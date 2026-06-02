@@ -12,23 +12,38 @@
  * default chip-anchored position.
  */
 import { useRef, useState, useEffect } from 'react';
+import type { TierWindow } from '../lib/api';
+import { windowBadge } from '../lib/dealDates';
 
-export interface RipTier {
+export interface RipTier extends TierWindow {
   qty: number;
   unit: string;
   eff: number;
   // RIP tiers only: the per-case rebate amount the RIP itself contributes
   // at this tier (excluding the stacked CPL discount that auto-applies).
-  // When present, the popover shows this as the savings number for the row
-  // — that's what "this RIP tier saves" actually means. Without it the
-  // popover would fall back to (best-discount-price − this-tier-price),
+  // When present, the popover shows this as the savings number for the row,
+  // which is what "this RIP tier saves" actually means. Without it the
+  // popover would fall back to (best-discount-price minus this-tier-price),
   // which produces a meaningless negative for early RIP tiers that don't
   // beat the deepest CPL discount alone.
   ripOnlySave?: number | null;
   // True when this tier's source row has a partial-month validity window
-  // (time-sensitive). Rendered with a small "TS" marker; derive.py has
-  // already excluded these from effective_case_price.
+  // (time-sensitive). When the richer window fields (window_status etc.,
+  // from TierWindow) are present we render an Active/Starts/Expires badge;
+  // ts is the fallback "TS" marker for callers that don't carry the dates
+  // yet (e.g. the RIP Products feed). derive.py has already excluded these
+  // from effective_case_price.
   ts?: boolean;
+}
+
+// Per-tier validity badge: prefer the full Active now / Expires in N days /
+// Starts DD MMM badge when the window fields are present; otherwise fall back
+// to the bare "TS" marker. Whole-month / evergreen tiers get nothing.
+function TierWin({ t }: { t: RipTier }) {
+  const wb = windowBadge(t);
+  if (wb) return <span className={`win-badge ${wb.cls}${wb.urgent ? ' urgent' : ''}`}>{wb.label}</span>;
+  if (t.ts) return <span className="mes-ts-badge" title="Time-sensitive: window is not a full month. Not counted in effective price.">TS</span>;
+  return null;
 }
 
 export interface MonthBreakdown {
@@ -99,7 +114,7 @@ function MonthBlock({ label, short, b }: { label: string; short?: string; b: Mon
                   <tr key={`d${i}`} className={`${isBest ? 'mes-row-best' : ''} ${t.ts ? 'mes-row-ts' : ''}`}>
                     <td>
                       {tierLabel(t)}
-                      {t.ts && <span className="mes-ts-badge" title="Time-sensitive: window is not a full month. Not counted in effective price.">TS</span>}
+                      {' '}<TierWin t={t} />
                     </td>
                     <td className="mes-num">
                       <span className="mes-save">−{dollars(save)}</span>
@@ -145,7 +160,7 @@ function MonthBlock({ label, short, b }: { label: string; short?: string; b: Mon
                   <tr key={`r${i}`} className={`${isBest ? 'mes-row-best' : ''} ${t.ts ? 'mes-row-ts' : ''}`}>
                     <td>
                       {tierLabel(t)}
-                      {t.ts && <span className="mes-ts-badge" title="Time-sensitive: window is not a full month. Not counted in effective price.">TS</span>}
+                      {' '}<TierWin t={t} />
                     </td>
                     <td className="mes-num">
                       <span className="mes-save">−{dollars(Math.max(0, save))}</span>

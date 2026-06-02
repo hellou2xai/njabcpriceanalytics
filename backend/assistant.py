@@ -351,6 +351,13 @@ def _t_price_details(con, args):
         "next_month_case_effective": next_eff,
         "next_edition": next_edition,
         "best_buy_recommendation": rec,
+        # Date-aware "live now" RIP overlay: the whole-month effective price is
+        # above; this is the price if a dated RIP active today is applied. Only
+        # populated when a currently-active partial-window RIP beats the month
+        # price (live_better_than_month true).
+        "live_effective_case_price": prod.get("live_effective_case_price"),
+        "live_rip_amount_per_case": prod.get("live_rip_amt"),
+        "live_better_than_month": prod.get("live_better_than_month"),
         "discount_tiers": detail.get("discount_tiers") or [],
         "rip_tiers": detail.get("rip_tiers") or [],
         "price_history_3mo": history,
@@ -392,14 +399,22 @@ def _t_compare_distributors(con, args):
             "distributor_count": len(recs), "comparison": recs}
 
 
-def _rip_tiers_for(con, code, ws=None, edition=None):
+def _rip_tiers_for(con, code, ws=None, edition=None, as_of=None):
     """(description, [tiers]) for a RIP code. A code's FULL tier ladder is split
     across MULTIPLE rip rows — each row holds up to 4 tier slots, and a code spans
     several UPCs/rows — so we read ALL rows for the code in its latest edition and
     UNION their tiers. (Reading a single row dropped tiers such as the
     '3 Cases -> $108' rung on Anteel code 100027.) Tiers are deduped by
-    (unit, qty, amount) and sorted by rebate amount. `edition` (YYYY-MM) reads the
-    ladder AS OF that month so a past-month lookup shows that month's tiers."""
+    (unit, qty, amount, window) and sorted by rebate amount. `edition` (YYYY-MM)
+    reads the ladder AS OF that month so a past-month lookup shows that month's
+    tiers.
+
+    Each tier carries its validity window relative to ``as_of`` (default today):
+    ``from_date`` / ``to_date`` / ``window_status`` (whole_month | active |
+    upcoming | expired | evergreen) / ``days_to_expire`` / ``is_time_sensitive``,
+    so the assistant can tell the buyer a rebate is live now vs whole-month vs
+    not yet started. Two distinct date ranges at the same qty/amount both survive
+    the dedup (the buyer sees the full picture)."""
     cym = edition or _current_ym()
     base = ["CAST(rip_code AS VARCHAR) = ?"]
     bp = [str(code)]
@@ -413,7 +428,8 @@ def _rip_tiers_for(con, code, ws=None, edition=None):
         if not ed:
             return None, []
         df = con.execute(
-            "SELECT rip_description, rip_unit_1, rip_qty_1, rip_amt_1, rip_unit_2, rip_qty_2, rip_amt_2, "
+            "SELECT rip_description, from_date, to_date, "
+            "rip_unit_1, rip_qty_1, rip_amt_1, rip_unit_2, rip_qty_2, rip_amt_2, "
             "rip_unit_3, rip_qty_3, rip_amt_3, rip_unit_4, rip_qty_4, rip_amt_4 "
             f"FROM rip WHERE {' AND '.join(base)} AND edition = ? LIMIT 1000", bp + [ed]).fetchdf()
     except Exception:
@@ -426,6 +442,10 @@ def _rip_tiers_for(con, code, ws=None, edition=None):
             d = r.get("rip_description")
             if d is not None and str(d) != "nan":
                 desc = str(d)
+        win = _pricing.window_status(r.get("from_date"), r.get("to_date"), as_of)
+        rfrom = _pricing._iso(r.get("from_date"))
+        rto = _pricing._iso(r.get("to_date"))
+        rts = _pricing.is_time_sensitive_window(r.get("from_date"), r.get("to_date"))
         for j in range(1, 5):
             amt, qty, unit = r.get(f"rip_amt_{j}"), r.get(f"rip_qty_{j}"), r.get(f"rip_unit_{j}")
             try:
@@ -435,11 +455,16 @@ def _rip_tiers_for(con, code, ws=None, edition=None):
             if a != a or q != q or a <= 0 or q <= 0:
                 continue
             u = str(unit) if unit and str(unit) != "nan" else "Cases"
-            key = (u, int(q), round(a, 2))
+            key = (u, int(q), round(a, 2), rfrom, rto)
             if key in seen:
                 continue
             seen.add(key)
-            tiers.append({"qty": int(q), "unit": u, "amount": round(a, 2)})
+            tiers.append({
+                "qty": int(q), "unit": u, "amount": round(a, 2),
+                "from_date": rfrom, "to_date": rto,
+                "window_status": win["status"], "days_to_expire": win["days_to_expire"],
+                "is_time_sensitive": rts,
+            })
     tiers.sort(key=lambda t: t["amount"])
     return desc, tiers
 

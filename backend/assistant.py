@@ -3641,25 +3641,37 @@ def _focal_product_for_rip(con, rl, cym: str) -> dict | None:
         return {"product_name": head.get("product_name"), "wholesaler": ws,
                 "upc": head.get("upc"), "unit_volume": head.get("unit_volume")}
     try:
+        # cpl_enriched stores frontline_unit_price + effective_case_price but
+        # has no effective_unit_price column — derive it Python-side as
+        # effective_case_price / unit_qty (same as _attach_cart_pricing does).
         row = con.execute(
             "WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched "
             f"            WHERE edition<='{cym}' GROUP BY wholesaler) "
             "SELECT c.product_name, c.wholesaler, CAST(c.upc AS VARCHAR) AS upc, "
             "       c.unit_volume, c.unit_qty, "
             "       c.frontline_case_price, c.frontline_unit_price, "
-            "       c.effective_case_price, c.effective_unit_price "
+            "       c.effective_case_price "
             "FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
-            f"WHERE LOWER(c.wholesaler)=LOWER('{ws}') "
+            "WHERE LOWER(c.wholesaler)=LOWER(?) "
             "  AND LTRIM(CAST(c.upc AS VARCHAR),'0') = ? "
             "ORDER BY c.product_name LIMIT 1",
-            [upc_n]).fetchone()
+            [str(ws), upc_n]).fetchone()
         if not row:
             return {"product_name": head.get("product_name"), "wholesaler": ws,
                     "upc": head.get("upc"), "unit_volume": head.get("unit_volume")}
+        # Bottle effective price = case effective / unit_qty (derived here so
+        # the template can show it without depending on a non-existent column).
+        try:
+            _uq = float(row[4]) if row[4] is not None else None
+            if _uq is not None and _uq != _uq:  # NaN
+                _uq = None
+        except Exception:
+            _uq = None
+        eff_unit = (row[7] / _uq) if (row[7] is not None and _uq) else None
         return {"product_name": row[0], "wholesaler": row[1], "upc": row[2],
-                "unit_volume": row[3], "unit_qty": row[4],
+                "unit_volume": row[3], "unit_qty": _uq,
                 "frontline_case_price": row[5], "frontline_unit_price": row[6],
-                "effective_case_price": row[7], "effective_unit_price": row[8]}
+                "effective_case_price": row[7], "effective_unit_price": eff_unit}
     except Exception:
         return {"product_name": head.get("product_name"), "wholesaler": ws,
                 "upc": head.get("upc"), "unit_volume": head.get("unit_volume")}
@@ -3685,7 +3697,7 @@ def _full_case_mix(con, code: str, ws: str, cym: str) -> list[dict]:
             "             AND CAST(upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan') "
             "             AND LTRIM(CAST(upc AS VARCHAR),'0') NOT IN ('', 'None', 'nan')) "
             "SELECT DISTINCT c.product_name, c.unit_volume, c.unit_qty, "
-            "       c.effective_case_price, c.effective_unit_price, "
+            "       c.effective_case_price, "
             "       c.frontline_case_price, c.frontline_unit_price "
             "FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
             "JOIN ripupc r ON r.wholesaler=c.wholesaler "
@@ -3694,12 +3706,29 @@ def _full_case_mix(con, code: str, ws: str, cym: str) -> list[dict]:
             "  AND LTRIM(CAST(c.upc AS VARCHAR),'0') NOT IN ('', 'None', 'nan') "
             "ORDER BY c.effective_case_price NULLS LAST",
             [str(code), str(ws), str(code), str(ws)]).fetchdf()
+        # No effective_unit_price column in cpl_enriched — derive bottle
+        # effective as case effective / unit_qty (same as _attach_cart_pricing).
         out = []
         for _, r in df.iterrows():
+            uq = r["unit_qty"]
+            try:
+                uq_f = float(uq) if uq is not None else None
+                if uq_f is not None and uq_f != uq_f:
+                    uq_f = None
+            except Exception:
+                uq_f = None
+            eff_case = r["effective_case_price"]
+            try:
+                eff_case_f = float(eff_case) if eff_case is not None else None
+                if eff_case_f is not None and eff_case_f != eff_case_f:
+                    eff_case_f = None
+            except Exception:
+                eff_case_f = None
+            bottle = (eff_case_f / uq_f) if (eff_case_f is not None and uq_f) else None
             out.append({"product_name": r["product_name"], "unit_volume": r["unit_volume"],
-                        "unit_qty": r["unit_qty"],
-                        "case_price": r["effective_case_price"],
-                        "bottle_price": r["effective_unit_price"],
+                        "unit_qty": uq_f,
+                        "case_price": eff_case_f,
+                        "bottle_price": bottle,
                         "frontline_case_price": r["frontline_case_price"],
                         "frontline_unit_price": r["frontline_unit_price"]})
         return out

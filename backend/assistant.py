@@ -4406,6 +4406,8 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
             if w in _ql:
                 dist_filter = w
                 break
+        import logging as _logging
+        _rip_log = _logging.getLogger("assistant.rip_template")
         if summary_intent:
             try:
                 with get_duckdb() as _con:
@@ -4413,8 +4415,11 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                 _md = _format_rip_summary_md(_rs)
                 if _md:
                     answer = _md
+                    _rip_log.info("RIP summary template fired (chars=%d)", len(_md))
+                else:
+                    _rip_log.info("RIP summary template produced empty output (dist=%s)", dist_filter)
             except Exception:
-                pass  # never fail the answer over the RIP summary
+                _rip_log.exception("RIP summary template raised")
         else:
             try:
                 term = (screen_args or {}).get("q") if screen_args else None
@@ -4427,14 +4432,24 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                     # Last-ditch: strip stop words from the whole question.
                     term = re.sub(r"\b(show|me|products?|the|and|for|of|about|on|in|with|rip|rebate|mix|case|bottle|prices?|details?)\b",
                                   " ", _ql).strip()
+                _rip_log.info("RIP template trigger: question=%r term=%r", question, term)
                 if term:
                     with get_duckdb() as _con:
                         _rl = _t_rip_lookup(_con, {"match": term})
                         _md = _format_rip_full_md(_con, _rl)
+                    _codes = (_rl or {}).get("rip_codes") or []
+                    _mp = (_rl or {}).get("matched_products") or []
                     if _md:
                         answer = _md
+                        _rip_log.info("RIP template fired: term=%r matched=%d codes=%d chars=%d",
+                                      term, len(_mp), len(_codes), len(_md))
+                    else:
+                        _rip_log.warning("RIP template produced empty output: term=%r matched=%d codes=%d note=%r",
+                                         term, len(_mp), len(_codes), (_rl or {}).get("note"))
+                else:
+                    _rip_log.warning("RIP template skipped: empty term for question=%r", question)
             except Exception:
-                pass  # never fail the answer over the RIP template
+                _rip_log.exception("RIP template raised for question=%r", question)
     # Multi-product answers (3+ products) get enriched with tier ladders so
     # the frontend can render a side-by-side comparison table, and a Catalog
     # deep-link is built by exact UPCs so "Open in Catalog ->" lands on the

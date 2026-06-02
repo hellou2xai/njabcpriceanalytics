@@ -617,9 +617,20 @@ def _t_rip_lookup(con, args):
         params["upc_raw"] = f"%{_compact}%"
         where.append("(LTRIM(CAST(c.upc AS VARCHAR), '0') = $upc_n OR CAST(c.upc AS VARCHAR) LIKE $upc_raw)")
     else:
+        # Each token must match name OR brand OR unit_volume (so size tokens
+        # like '1.75' / '750ML' / 'L' qualify the row — the catalog stores
+        # the SIZE in unit_volume, not embedded in product_name, so without
+        # this the assistant's RIP template silently failed on questions
+        # like 'rip mix for malibu pink 1.75 l' with matched_count = 0).
         for i, t in enumerate(t for t in re.split(r"\s+", match) if t):
             params[f"m{i}"] = f"%{t}%"
-            where.append(f"(UPPER(c.product_name) LIKE UPPER(${'m'+str(i)}) OR UPPER(COALESCE(c.brand,'')) LIKE UPPER(${'m'+str(i)}))")
+            ki = f"${'m'+str(i)}"
+            where.append(
+                f"(UPPER(c.product_name) LIKE UPPER({ki}) "
+                f"OR UPPER(COALESCE(c.brand,'')) LIKE UPPER({ki}) "
+                f"OR UPPER(COALESCE(c.unit_volume,'')) LIKE UPPER({ki}) "
+                f"OR UPPER(COALESCE(c.unit_volume_std,'')) LIKE UPPER({ki}))"
+            )
     try:
         rows = con.execute(
             f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<='{cym}' GROUP BY wholesaler) "

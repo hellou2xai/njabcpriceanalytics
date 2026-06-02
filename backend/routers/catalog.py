@@ -619,7 +619,93 @@ def search_products(
         if q:
             clause, qp, rel_expr = _q_clause(q, _brand_initialisms(con, src),
                                              enrich_table=_enr, enrich_upc_expr=_enr_upc)
-            where.append(clause)
+            # group-by-RIP EXPANSION: when the toggle is on, a row that
+            # matches q drags in EVERY OTHER row in its RIP cluster, so a
+            # search for one product surfaces the FULL Case Mix the buyer
+            # needs to plan a rebate basket. Implemented as an OR against a
+            # pre-computed UPC set: seed matches via the text clause, then
+            # walk the rip table to pull every UPC under the same code.
+            if group_by_rip:
+                rip_x_src = read_parquet(con, "rip")
+                # Pre-compute the seed UPC set once for this request via a
+                # plain Python query (DuckDB executes via fetchdf). This
+                # avoids correlating the rip-expansion EXISTS to every cpl
+                # row in the main scan.
+                try:
+                    seed_sql = (
+                        f"SELECT DISTINCT wholesaler, "
+                        f"       LTRIM(CAST(upc AS VARCHAR), '0') AS un "
+                        f"FROM {src} WHERE {clause} "
+                        f"  AND upc IS NOT NULL "
+                        f"  AND LTRIM(CAST(upc AS VARCHAR), '0') NOT IN ('','None','nan') "
+                    )
+                    seed_df = con.execute(seed_sql, qp).fetchdf()
+                    seed_pairs = [(str(r["wholesaler"]),
+                                   str(r["un"])) for _, r in seed_df.iterrows()]
+                except Exception:
+                    seed_pairs = []
+                # From seeds, find every (wholesaler, upc) that shares a
+                # rip_code with a seed UPC. Latest edition <= today, valid
+                # rip_code only (rip codes recycle month to month).
+                expanded_pairs: set = set(seed_pairs)
+                if seed_pairs:
+                    try:
+                        ph = ", ".join(f"($sw{i}, $su{i})" for i in range(len(seed_pairs)))
+                        sp = {"x_cym": _current_yyyy_mm()}
+                        for i, (w, u) in enumerate(seed_pairs):
+                            sp[f"sw{i}"], sp[f"su{i}"] = w, u
+                        x_df = con.execute(
+                            "WITH ripcur AS (SELECT wholesaler, MAX(edition) ed "
+                            f"                FROM {rip_x_src} "
+                            "                WHERE edition <= $x_cym GROUP BY wholesaler), "
+                            "seed AS (SELECT _r.wholesaler, "
+                            "                CAST(_r.rip_code AS VARCHAR) AS rc "
+                            f"          FROM {rip_x_src} _r "
+                            "         JOIN ripcur ON _r.wholesaler=ripcur.wholesaler "
+                            "                    AND _r.edition=ripcur.ed "
+                            "         WHERE (_r.wholesaler, "
+                            "                LTRIM(CAST(_r.upc AS VARCHAR),'0')) "
+                            f"               IN ({ph}) "
+                            "           AND CAST(_r.rip_code AS VARCHAR) "
+                            "               NOT IN ('','0','None','nan') "
+                            "           AND _r.upc IS NOT NULL "
+                            "           AND CAST(_r.upc AS VARCHAR) "
+                            "               NOT IN ('','0','None','nan')) "
+                            f"SELECT DISTINCT _e.wholesaler, "
+                            "        LTRIM(CAST(_e.upc AS VARCHAR),'0') AS un "
+                            f"FROM {rip_x_src} _e "
+                            "JOIN ripcur ON _e.wholesaler=ripcur.wholesaler "
+                            "           AND _e.edition=ripcur.ed "
+                            "JOIN seed ON seed.wholesaler=_e.wholesaler "
+                            "          AND seed.rc=CAST(_e.rip_code AS VARCHAR) "
+                            "WHERE _e.upc IS NOT NULL "
+                            "  AND CAST(_e.upc AS VARCHAR) "
+                            "      NOT IN ('','0','None','nan') "
+                            "  AND LTRIM(CAST(_e.upc AS VARCHAR),'0') "
+                            "      NOT IN ('','None','nan')",
+                            sp).fetchdf()
+                        for _, r in x_df.iterrows():
+                            expanded_pairs.add((str(r["wholesaler"]), str(r["un"])))
+                    except Exception:
+                        pass  # any failure falls back to the literal text match
+                # The original text clause stays as part of the OR (catches
+                # the rows where rip data is silent but the text matches —
+                # e.g. closeouts without a current RIP). The expanded UPC
+                # set joins via VALUES so DuckDB can index-scan it.
+                if expanded_pairs and len(expanded_pairs) > len(seed_pairs):
+                    vals_keys = []
+                    for i, (w, u) in enumerate(sorted(expanded_pairs)):
+                        params[f"xw{i}"], params[f"xu{i}"] = w, u
+                        vals_keys.append(f"(${'xw'+str(i)}, ${'xu'+str(i)})")
+                    where.append(
+                        "(" + clause + " OR (wholesaler, "
+                        "LTRIM(CAST(upc AS VARCHAR), '0')) IN ("
+                        + ", ".join(vals_keys) + "))"
+                    )
+                else:
+                    where.append(clause)
+            else:
+                where.append(clause)
             q_clause_idx = len(where) - 1
             params.update(qp)
         if wholesaler:

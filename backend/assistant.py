@@ -3886,7 +3886,20 @@ def _format_rip_full_md(con, rl) -> str:
         parts.append("")
     # 2. Per-RIP code block: tier table (case + bottle columns) + "At N" footer
     #    + full Case Mix table.
-    for c in codes[:4]:
+    # Sort so the FOCAL wholesaler's codes appear first — otherwise the
+    # header's 'After Best RIP' can subtract a $40/cs rebate from a different
+    # distributor's code that isn't visible until the user scrolls past
+    # another distributor's block, reading like nonsense math.
+    focal_ws_lc = (focal.get("wholesaler") or "").lower() if focal else ""
+    codes_sorted = sorted(
+        codes,
+        key=lambda c: (
+            0 if (c.get("wholesaler") or "").lower() == focal_ws_lc else 1,
+            (c.get("wholesaler") or ""),
+            str(c.get("rip_code") or ""),
+        ),
+    )
+    for c in codes_sorted[:4]:
         ws = (c.get("wholesaler") or "").title()
         ws_lc = (c.get("wholesaler") or "").lower()
         code = str(c.get("rip_code") or "")

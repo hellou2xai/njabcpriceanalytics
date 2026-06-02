@@ -986,13 +986,17 @@ def search_products(
         # aliased (rg_*) so the unqualified WHERE clause above keeps resolving
         # to the CPL table unambiguously.
         if group_by_rip:
-            # Sort clusters by their TOTAL Case-Mix size (biggest first), then by
-            # code. Per the user: when group-by-RIP is on, the most attractive
-            # case-mix groups (most members) belong at the top, smaller ones at
-            # the bottom; rows outside any cluster sink to the end.
+            # Sort clusters by the count of rows surfaced IN THE CURRENT VIEW
+            # (after the user's search/filter), biggest first. User rule: when
+            # I search 'LIND BIN' with group-by-RIP on, the cluster showing 15
+            # filtered products belongs above the one showing 1, regardless of
+            # how big either cluster is globally. COUNT(*) OVER runs after the
+            # WHERE clause and the QUALIFY-dedup, so it reflects exactly what
+            # the user sees. rip_group_member_count (global cluster size) stays
+            # in the SELECT for the UI badge but is no longer the sort key.
             order_by = (
                 "rip_group_code IS NULL, "
-                "rip_group_member_count DESC NULLS LAST, "
+                "COUNT(*) OVER (PARTITION BY rip_group_code) DESC NULLS LAST, "
                 "rip_group_code ASC, "
                 + order_by
             )

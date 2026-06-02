@@ -33,9 +33,14 @@ export default function GlobalAssistant() {
     ?? (location.pathname.startsWith('/orders/') ? 'Order detail' : undefined);
 
   // Push the page: publish the dock width as a CSS var the main content reads.
+  // Also nudge a resize event so any fixed-position floaters (CartFab) can
+  // re-clamp their position against the new usable area — without this the
+  // FAB stays at the old viewport edge and slides under the dock when it
+  // opens, clipping its count badge against the right side.
   useEffect(() => {
     const w = open && !suppressed ? `${width}px` : '0px';
     document.documentElement.style.setProperty('--global-dock-w', w);
+    window.dispatchEvent(new Event('resize'));
     return () => { document.documentElement.style.setProperty('--global-dock-w', '0px'); };
   }, [open, width, suppressed]);
 

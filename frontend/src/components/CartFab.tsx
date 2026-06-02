@@ -15,8 +15,18 @@ const POS_KEY = 'cart_fab_pos';
 
 interface Pos { x: number; y: number }
 
+function dockWidth(): number {
+  // The Celar assistant publishes its current width as a CSS var. When the
+  // dock is open we have to reserve that strip on the right so the FAB
+  // doesn't slide behind it (and clip its badge against the viewport edge).
+  const raw = getComputedStyle(document.documentElement).getPropertyValue('--global-dock-w').trim();
+  const n = parseFloat(raw);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function clampToViewport(x: number, y: number): Pos {
-  const maxX = Math.max(MARGIN, window.innerWidth - SIZE - MARGIN);
+  const dw = dockWidth();
+  const maxX = Math.max(MARGIN, window.innerWidth - dw - SIZE - MARGIN);
   const maxY = Math.max(MARGIN, window.innerHeight - SIZE - MARGIN);
   return {
     x: Math.min(Math.max(MARGIN, x), maxX),

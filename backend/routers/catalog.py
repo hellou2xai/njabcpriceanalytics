@@ -212,7 +212,14 @@ def _q_clause(q: str, extra_aliases: dict | None = None,
                 f"UPPER({name_col}) LIKE UPPER(${k}) "
                 f"OR UPPER(COALESCE({brand_col},'')) LIKE UPPER(${k}) "
                 f"OR UPPER(COALESCE(unit_volume,'')) LIKE UPPER(${k}) "
-                f"OR UPPER(COALESCE(unit_volume_std,'')) LIKE UPPER(${k})"
+                f"OR UPPER(COALESCE(unit_volume_std,'')) LIKE UPPER(${k}) "
+                # rip_code: typing '109359' or 'Lindemans' in the catalog
+                # search box should also surface the cluster's rows. Match
+                # is exact-or-substring on the canonical rip_code stored
+                # on the cpl row (full multi-code stacking lives in the
+                # rip table and is reached via the dedicated rip_code
+                # filter, not free-text search).
+                f"OR UPPER(COALESCE(CAST(rip_code AS VARCHAR),'')) LIKE UPPER(${k})"
             )
             if enrich_table:
                 sub += (
@@ -565,6 +572,7 @@ def search_products(
     brands: Optional[str] = None,           # comma-separated brands
     sizes: Optional[str] = None,            # comma-separated unit volumes
     upcs: Optional[str] = Query(None, description="Comma-separated UPCs (leading-zero-normalised); restricts the grid to exactly these SKUs. Used by Celar Assistant 'Open in Catalog' links."),
+    rip_code: Optional[str] = Query(None, description="Restrict to products in this RIP cluster (current edition). Optional ?wholesaler= or ?divisions= narrows to one distributor; without that, any wholesaler carrying the code is included. Same (edition, distributor, UPC-validity) scoping the catalog's group-by-RIP plumbing uses."),
     region: Optional[str] = Query(None, description="Region / origin hint, e.g. 'california', 'napa', 'bordeaux', 'tuscany'. Filters by product name tokens + enrichment description. Auto-narrows product_type when the region implies a category (e.g. region=california auto-applies product_type=Wine if none is set)."),
     varietal: Optional[str] = Query(None, description="Varietal / style hint, e.g. 'cabernet', 'pinot noir', 'ipa', 'bourbon', 'reposado', 'single malt'. Combine with region for queries like 'California cabernets' or 'Kentucky bourbon'."),
     tracked_only: bool = Query(False, description="If true, only return products on the watchlist"),
@@ -704,6 +712,37 @@ def search_products(
                     params[k] = v
                     keys.append(f"${k}")
                 where.append(f"LTRIM(CAST(upc AS VARCHAR), '0') IN ({', '.join(keys)})")
+
+        # RIP-cluster restriction: limit the grid to products whose UPC sits
+        # under this rip_code in the current edition's rip sheet. EXISTS
+        # subquery against the rip parquet, scoped to (wholesaler, latest rip
+        # edition <= today, valid UPC). Used by the assistant's "Open Allied
+        # RIP 109359 in Catalog" deep links.
+        if rip_code:
+            rip_filter_src = read_parquet(con, "rip")
+            params["rip_code_filter"] = rip_code
+            params["rip_code_cym"] = _current_yyyy_mm()
+            where.append(f"""
+                EXISTS (
+                    SELECT 1 FROM {rip_filter_src} _rfilt
+                    WHERE _rfilt.wholesaler = wholesaler
+                      AND CAST(_rfilt.rip_code AS VARCHAR) = $rip_code_filter
+                      AND LTRIM(CAST(_rfilt.upc AS VARCHAR), '0')
+                        = LTRIM(CAST(upc AS VARCHAR), '0')
+                      AND _rfilt.upc IS NOT NULL
+                      AND CAST(_rfilt.upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
+                      AND LTRIM(CAST(_rfilt.upc AS VARCHAR), '0')
+                          NOT IN ('', 'None', 'nan')
+                      AND _rfilt.edition = (
+                          SELECT MAX(_rfilt2.edition)
+                          FROM {rip_filter_src} _rfilt2
+                          WHERE _rfilt2.wholesaler = _rfilt.wholesaler
+                            AND CAST(_rfilt2.rip_code AS VARCHAR)
+                                = $rip_code_filter
+                            AND _rfilt2.edition <= $rip_code_cym
+                      )
+                )
+            """)
 
         # Restrict to watchlisted products across ALL editions/pages (server-side
         # so tracked items aren't hidden by pagination). Match on (name, wholesaler).

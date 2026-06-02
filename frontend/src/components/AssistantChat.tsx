@@ -325,7 +325,7 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
             </div>
             <div className="celar-bubble">
               {m.role === 'assistant'
-                ? <div className="celar-md"><ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{m.text}</ReactMarkdown></div>
+                ? <div className="celar-md"><ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents} urlTransform={(u: string) => u}>{m.text}</ReactMarkdown></div>
                 : <div className="celar-usertext">{m.text}</div>}
               {m.role === 'assistant' && m.ripClusters && m.ripClusters.length > 0 && (
                 <RipClusterActions clusters={m.ripClusters} />

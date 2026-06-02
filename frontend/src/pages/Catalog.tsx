@@ -20,6 +20,10 @@ export default function Catalog() {
   // Exact-UPC lock used by Celar Assistant "Open in Catalog" deep-links —
   // the grid shows ONLY the same SKUs the chat surfaced.
   const [upcs, setUpcs] = useState(params.get('upcs') ?? '');
+  // RIP-code restriction. Filters the grid to products in this (wholesaler,
+  // rip_code) Case Mix. Used by the assistant's deep links and by the new
+  // 'RIP Code' filter input in the sidebar.
+  const [ripCode, setRipCode] = useState(params.get('rip_code') ?? '');
   // Semantic region hint ("california", "napa", "bordeaux"...) — backend
   // resolves to product-name tokens + enrichment description match and
   // auto-narrows product_type when implied (e.g. california -> Wine).
@@ -72,13 +76,16 @@ export default function Catalog() {
     setQ(params.get('q') ?? '');
     setWholesaler(params.get('wholesaler') ?? '');
     setUpcs(params.get('upcs') ?? '');
+    setRipCode(params.get('rip_code') ?? '');
     setRegion(params.get('region') ?? '');
     setVarietal(params.get('varietal') ?? '');
     setFilters({
       ...emptyCatalogFilters,
       hasRip: params.get('hasRip') === '1' ? true : undefined,
       hasDiscount: params.get('hasDiscount') === '1' ? true : undefined,
-      groupByRip: params.get('group_by_rip') === '1' || undefined,
+      // group_by_rip accepts both '1' (canonical) and 'true' so older deep
+      // links from the assistant keep working.
+      groupByRip: (params.get('group_by_rip') === '1' || params.get('group_by_rip') === 'true') || undefined,
       // Assistant "only show prices going up / down" deep-links land here.
       priceTrend: params.get('price_increase') === '1' ? 'increase'
                 : params.get('price_drop') === '1' ? 'drop' : undefined,
@@ -133,7 +140,7 @@ export default function Catalog() {
   const filterKey = JSON.stringify(filters);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['catalog', q, wholesaler, sort, order, page, limit, trackedOnly, filterKey, upcs, region, varietal],
+    queryKey: ['catalog', q, wholesaler, sort, order, page, limit, trackedOnly, filterKey, upcs, ripCode, region, varietal],
     queryFn: () => catalog.search({
       q,
       wholesaler: wholesaler || undefined,
@@ -143,6 +150,7 @@ export default function Catalog() {
       tracked_only: trackedOnly || undefined,
       include_tiers: true,
       upcs: upcs || undefined,
+      rip_code: ripCode || undefined,
       region: region || undefined,
       varietal: varietal || undefined,
     }),
@@ -195,6 +203,26 @@ export default function Catalog() {
 
       <div className="search-bar">
         <input type="text" placeholder="Search products..." value={q} onChange={e => { setQ(e.target.value); setPage(0); }} />
+        {/* RIP-code pinpoint filter, sitting on the top filter row (the user
+            asked for it here, not in a side panel). Sets the same param the
+            assistant's 'Open in Catalog' deep-link uses, so a typed code and
+            a clicked link land on the identical filtered grid. */}
+        <input
+          type="text"
+          placeholder="RIP code…"
+          value={ripCode}
+          onChange={e => { setRipCode(e.target.value); setPage(0); }}
+          title="Filter the grid to products in a specific RIP Case Mix. Pair with a distributor filter when the same code is reused across wholesalers."
+          style={{ maxWidth: 140 }}
+        />
+        {ripCode && (
+          <button type="button" className="link-btn"
+                  onClick={() => { setRipCode(''); setPage(0); }}
+                  title="Clear RIP code filter"
+                  style={{ background: 'none', border: 0, padding: '0 6px', color: 'var(--text-muted)', cursor: 'pointer' }}>
+            ✕
+          </button>
+        )}
         <span className="search-count">{isLoading ? 'Fetching data…' : `${(data?.total ?? 0).toLocaleString()} results`}</span>
       </div>
       {data?.corrected_query && data.corrected_query.toLowerCase() !== q.trim().toLowerCase() && (

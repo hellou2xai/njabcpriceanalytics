@@ -3953,8 +3953,8 @@ def _format_rip_full_md(con, rl) -> str:
             parts.append("")
             parts.append(f"📦 **Full Case Mix — {n} Product{'s' if n != 1 else ''} ({size_note})**")
             parts.append("")
-            parts.append("| PRODUCT | CASE PRICE | BOTTLE PRICE |")
-            parts.append("|---|---|---|")
+            parts.append("| PRODUCT | SIZE | BTL/CS | CASE PRICE | BOTTLE PRICE |")
+            parts.append("|---|---|---|---|---|")
             for m in members:
                 # Render the product name as a quickview:// markdown link so
                 # the chat-side ReactMarkdown override can intercept the click
@@ -3975,7 +3975,15 @@ def _format_rip_full_md(con, rl) -> str:
                                  f"&v={quote(vol_q, safe='')})")
                 else:
                     name_cell = pn_esc
-                parts.append(f"| {name_cell} | "
+                # Size + bottles/case as their own columns so the buyer can
+                # compare same-RIP SKUs at a glance without parsing the name.
+                try:
+                    uq_val = m.get("unit_qty")
+                    uq_lbl = f"{int(float(uq_val))}" if uq_val not in (None, "") else "—"
+                except Exception:
+                    uq_lbl = "—"
+                vol_lbl = vol_q or "—"
+                parts.append(f"| {name_cell} | {vol_lbl} | {uq_lbl} | "
                              f"{_fmt_money(m.get('case_price') or m.get('frontline_case_price'))} | "
                              f"{_fmt_money(m.get('bottle_price') or m.get('frontline_unit_price'))} |")
             parts.append("")
@@ -4321,14 +4329,17 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                                 # 2KB on truly huge clusters; the UI shows the
                                 # member_count next to it so the user knows
                                 # if more exist beyond the deep-linked set.
-                                catalog_url = None
-                                try:
-                                    _upcs = _cluster_upcs(con, code, ws_c.lower(), _current_ym())
-                                except Exception:
-                                    _upcs = []
-                                if _upcs:
-                                    _csv = ",".join(_upcs[:80])
-                                    catalog_url = f"/catalog?upcs={_csv}&group_by_rip=true"
+                                # Deep link uses the dedicated rip_code +
+                                # distributor filters so the URL stays short
+                                # (was a UPC CSV that ballooned past 2KB on
+                                # big clusters and clipped). group_by_rip=1
+                                # matches the canonical Catalog.tsx parser.
+                                from urllib.parse import quote as _quote
+                                catalog_url = (
+                                    f"/catalog?wholesaler={_quote(ws_c.lower(), safe='')}"
+                                    f"&rip_code={_quote(code, safe='')}"
+                                    f"&group_by_rip=1"
+                                )
                                 rip_clusters_out.append({
                                     "rip_code": code,
                                     "wholesaler": ws_c,

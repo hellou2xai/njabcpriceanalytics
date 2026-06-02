@@ -1,4 +1,5 @@
-import { useRef, useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
+import type React from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -6,6 +7,7 @@ import { Sparkles, Send, Mic, MicOff, AlertCircle, Trash2, PanelRightClose, Shop
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { assistant, cart as cartApi } from '../lib/api';
 import type { AssistantChart as ChartSpec, AiUsage, CatalogAiAction, CatalogAiProduct, AssistantRipCluster } from '../lib/api';
+import { useProductQuickView } from './ProductQuickView';
 import AssistantChart from './AssistantChart';
 import AddToCartButton from './AddToCartButton';
 import AddToListButton from './AddToListButton';
@@ -116,6 +118,40 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
   const navigate = useNavigate();
   const listRef = useRef<HTMLDivElement>(null);
   const { value: resultCount } = useResultCount();
+  const { open: openQuickView } = useProductQuickView();
+  // Override ReactMarkdown's <a> so links of the form
+  //   quickview://{wholesaler}/{upc}?n={name}&v={volume}
+  // open the product modal in-place instead of navigating away. Backend's RIP
+  // template emits one of these per row in the Full Case Mix table.
+  const mdComponents = useMemo(() => ({
+    a: (props: { href?: string; children?: React.ReactNode }) => {
+      const href = props.href ?? '';
+      if (href.startsWith('quickview://')) {
+        return (
+          <a
+            href="#"
+            className="celar-md-quickview"
+            onClick={e => {
+              e.preventDefault();
+              try {
+                const u = new URL(href);
+                const ws = decodeURIComponent(u.hostname || '');
+                const upc = decodeURIComponent((u.pathname || '/').slice(1));
+                const name = u.searchParams.get('n') ?? '';
+                const vol = u.searchParams.get('v') ?? undefined;
+                if (ws && name) {
+                  openQuickView(name, ws, undefined, {
+                    upc: upc || undefined, unitVolume: vol,
+                  });
+                }
+              } catch { /* malformed quickview URL — ignore */ }
+            }}
+          >{props.children}</a>
+        );
+      }
+      return <a href={href} target="_blank" rel="noreferrer">{props.children}</a>;
+    },
+  }), [openQuickView]);
 
   const totalIn = messages.reduce((s, m) => s + (m.usage?.input_tokens ?? 0), 0);
   const totalOut = messages.reduce((s, m) => s + (m.usage?.output_tokens ?? 0), 0);
@@ -289,7 +325,7 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
             </div>
             <div className="celar-bubble">
               {m.role === 'assistant'
-                ? <div className="celar-md"><ReactMarkdown remarkPlugins={[remarkGfm]}>{m.text}</ReactMarkdown></div>
+                ? <div className="celar-md"><ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{m.text}</ReactMarkdown></div>
                 : <div className="celar-usertext">{m.text}</div>}
               {m.role === 'assistant' && m.ripClusters && m.ripClusters.length > 0 && (
                 <RipClusterActions clusters={m.ripClusters} />

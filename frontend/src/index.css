@@ -4649,6 +4649,11 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 /* Keep the conversation fully responsive — never a horizontal scrollbar. */
 .assistant-chat, .celar-msg { min-width: 0; max-width: 100%; }
 .celar-md, .celar-usertext, .celar-usage, .celar-chips { overflow-wrap: anywhere; }
+/* quickview:// links rendered inside the RIP template's Case Mix table —
+   clicking opens the product modal in place. Underlined + accented so the
+   user sees they're clickable. */
+.celar-md-quickview { color: var(--accent); text-decoration: underline; cursor: pointer; }
+.celar-md-quickview:hover { filter: brightness(0.9); }
 .celar-md pre { white-space: pre-wrap; word-break: break-word; }
 .celar-md table { display: block; max-width: 100%; overflow-x: auto; }
 .celar-empty { text-align: center; margin: auto; max-width: 560px; color: var(--text-muted); }

@@ -3756,7 +3756,9 @@ def _full_case_mix(con, code: str, ws: str, cym: str) -> list[dict]:
             "             AND upc IS NOT NULL "
             "             AND CAST(upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan') "
             "             AND LTRIM(CAST(upc AS VARCHAR),'0') NOT IN ('', 'None', 'nan')) "
-            "SELECT DISTINCT c.product_name, c.unit_volume, c.unit_qty, "
+            "SELECT DISTINCT c.product_name, c.wholesaler, "
+            "       CAST(c.upc AS VARCHAR) AS upc, "
+            "       c.unit_volume, c.unit_qty, "
             "       c.effective_case_price, "
             "       c.frontline_case_price, c.frontline_unit_price "
             "FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
@@ -3768,6 +3770,8 @@ def _full_case_mix(con, code: str, ws: str, cym: str) -> list[dict]:
             [str(code), str(ws), str(code), str(ws)]).fetchdf()
         # No effective_unit_price column in cpl_enriched — derive bottle
         # effective as case effective / unit_qty (same as _attach_cart_pricing).
+        # Includes wholesaler + upc so the template can render each product
+        # name as a quickview-modal link (clickable in the chat bubble).
         out = []
         for _, r in df.iterrows():
             uq = r["unit_qty"]
@@ -3785,7 +3789,10 @@ def _full_case_mix(con, code: str, ws: str, cym: str) -> list[dict]:
             except Exception:
                 eff_case_f = None
             bottle = (eff_case_f / uq_f) if (eff_case_f is not None and uq_f) else None
-            out.append({"product_name": r["product_name"], "unit_volume": r["unit_volume"],
+            out.append({"product_name": r["product_name"],
+                        "wholesaler": r["wholesaler"],
+                        "upc": (str(r["upc"]) if r["upc"] is not None else None),
+                        "unit_volume": r["unit_volume"],
                         "unit_qty": uq_f,
                         "case_price": eff_case_f,
                         "bottle_price": bottle,
@@ -3835,10 +3842,14 @@ def _format_rip_full_md(con, rl) -> str:
                         pass
         fc = focal.get("frontline_case_price")
         fb = focal.get("frontline_unit_price")
-        ec = focal.get("effective_case_price")
-        eb = focal.get("effective_unit_price")
-        after_c = (ec - best_rebate_per_case) if (ec is not None and best_rebate_per_case) else ec
-        after_b = (eb - (best_rebate_per_case / uq)) if (eb is not None and best_rebate_per_case and uq) else eb
+        # Chain math (each row subtracts ONE thing from the row above so the
+        # 'After Best RIP' value can be reproduced by adding the rebates back):
+        #   Frontline           = list price
+        #   Frontline Case Cost = Frontline − Buy-1-case CPL discount (or = Frontline)
+        #   After Best RIP      = Frontline Case Cost − best RIP per case
+        # Previous version subtracted RIP from effective_case_price (which
+        # itself already bakes in the best CPL discount + best RIP), so the
+        # number double-counted the rebate and disagreed with the footer.
         parts.append(f"🍷 **{focal['product_name']} — {ws_label}**")
         meta = []
         upc_d = (str(focal.get("upc") or "").lstrip("0"))
@@ -3851,16 +3862,11 @@ def _format_rip_full_md(con, rl) -> str:
         if meta:
             parts.append(" | ".join(meta))
         parts.append("")
-        # Frontline Case Cost = frontline minus the Buy-1-case CPL discount,
-        # if the product carries one. The single-case buyer pays this without
-        # ever committing to a multi-case tier or a RIP rebate, so it sits
-        # between Frontline and After Best RIP. Bolded for emphasis. ALWAYS
-        # rendered (it's a fixed template) — when there's no 1-case tier the
-        # row falls back to the frontline values so the structure stays the
-        # same on every product, regardless of the model.
         one_disc = focal.get("one_case_discount")
         fcc_c = (fc - one_disc) if (fc is not None and one_disc) else fc
         fcc_b = (fcc_c / uq) if (fcc_c is not None and uq) else fb
+        after_c = (fcc_c - best_rebate_per_case) if (fcc_c is not None and best_rebate_per_case) else fcc_c
+        after_b = (after_c / uq) if (after_c is not None and uq) else fcc_b
         parts.append("|  | CASE | BOTTLE |")
         parts.append("|---|---|---|")
         parts.append(f"| **Frontline** | {_fmt_money(fc)} | {_fmt_money(fb)} |")
@@ -3906,7 +3912,10 @@ def _format_rip_full_md(con, rl) -> str:
                 per_cs_txt = f"${pu:.2f}/cs" if t.get("unit_short") == "cs" else (
                     f"${pu * (pack or 0):.2f}/cs" if (pack and per_btl is not None) else "—")
                 parts.append(f"| {cases_lbl} | ${amt:.2f} | {per_cs_txt} | {per_btl_txt} | {best_lbl} |")
-        # Footer summary at the best tier (frontline → frontline-best-rebate).
+        # Footer summary at the best tier — uses the SAME chain math as the
+        # header table (Frontline Case Cost → minus best RIP per case), so the
+        # numbers reproduce what the row shows. No more frontline-vs-effective
+        # inconsistency.
         if focal and focal.get("frontline_case_price") is not None:
             best_per_cs = 0.0
             for t in tiers:
@@ -3920,15 +3929,18 @@ def _format_rip_full_md(con, rl) -> str:
                         pass
             if best_per_cs and (focal.get("frontline_case_price") is not None):
                 best_qty = next((t.get("qty") for t in tiers if t.get("best")), None)
-                fc = float(focal["frontline_case_price"])
-                eff_c = fc - best_per_cs
-                fb = float(focal.get("frontline_unit_price") or 0)
-                eff_b = (fb - (best_per_cs / pack)) if (pack and fb) else None
+                _fc = float(focal["frontline_case_price"])
+                _one = focal.get("one_case_discount") or 0
+                _fcc_c = _fc - _one
+                _eff_c = _fcc_c - best_per_cs
+                _fb = float(focal.get("frontline_unit_price") or 0)
+                _fcc_b = (_fcc_c / pack) if (pack and _fcc_c) else _fb
+                _eff_b = (_eff_c / pack) if (pack and _eff_c is not None) else None
                 if best_qty:
-                    line = (f"\n*At {best_qty} cases: **Case** ${fc:.2f} → "
-                            f"${eff_c:.2f} effective")
-                    if eff_b is not None:
-                        line += f" | **Bottle** ${fb:.2f} → ${eff_b:.2f} effective"
+                    line = (f"\n*At {best_qty} cases: **Case** ${_fcc_c:.2f} → "
+                            f"${_eff_c:.2f} effective")
+                    if _eff_b is not None:
+                        line += f" | **Bottle** ${_fcc_b:.2f} → ${_eff_b:.2f} effective"
                     line += "*"
                     parts.append(line)
         # Full Case Mix table.
@@ -3944,7 +3956,26 @@ def _format_rip_full_md(con, rl) -> str:
             parts.append("| PRODUCT | CASE PRICE | BOTTLE PRICE |")
             parts.append("|---|---|---|")
             for m in members:
-                parts.append(f"| {m.get('product_name') or ''} | "
+                # Render the product name as a quickview:// markdown link so
+                # the chat-side ReactMarkdown override can intercept the click
+                # and open the product modal directly. Carries wholesaler,
+                # LTRIMmed UPC and unit_volume so the modal opens with the
+                # exact SKU the row represents (not a guess from the name).
+                name = m.get("product_name") or ""
+                pn_esc = name.replace("|", "\\|").replace("[", "\\[").replace("]", "\\]")
+                ws_q = (m.get("wholesaler") or "").strip()
+                upc_q = (str(m.get("upc") or "").lstrip("0")).strip()
+                vol_q = (m.get("unit_volume") or "").strip()
+                if name and ws_q and upc_q:
+                    from urllib.parse import quote
+                    name_cell = (f"[{pn_esc}](quickview://"
+                                 f"{quote(ws_q, safe='')}/"
+                                 f"{quote(upc_q, safe='')}"
+                                 f"?n={quote(name, safe='')}"
+                                 f"&v={quote(vol_q, safe='')})")
+                else:
+                    name_cell = pn_esc
+                parts.append(f"| {name_cell} | "
                              f"{_fmt_money(m.get('case_price') or m.get('frontline_case_price'))} | "
                              f"{_fmt_money(m.get('bottle_price') or m.get('frontline_unit_price'))} |")
             parts.append("")

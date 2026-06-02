@@ -2,7 +2,7 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Sparkles, Send, Mic, MicOff, AlertCircle, Trash2, PanelRightClose, ShoppingCart, Check } from 'lucide-react';
+import { Sparkles, Send, Mic, MicOff, AlertCircle, Trash2, PanelRightClose, ShoppingCart, Check, ExternalLink } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { assistant, cart as cartApi } from '../lib/api';
 import type { AssistantChart as ChartSpec, AiUsage, CatalogAiAction, CatalogAiProduct, AssistantRipCluster } from '../lib/api';
@@ -415,6 +415,7 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
  */
 function RipClusterActions({ clusters }: { clusters: AssistantRipCluster[] }) {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [added, setAdded] = useState<Record<string, boolean>>({});
   const mut = useMutation({
     mutationFn: async (c: AssistantRipCluster) =>
@@ -432,17 +433,27 @@ function RipClusterActions({ clusters }: { clusters: AssistantRipCluster[] }) {
         const key = `${c.wholesaler}|${c.rip_code}`;
         const flash = added[key];
         return (
-          <button
-            key={key}
-            className="btn btn-sm celar-rip-action"
-            disabled={mut.isPending}
-            onClick={() => mut.mutate(c)}
-            title={`Add every product in ${c.label} to the cart as one batch (${c.member_count} items).`}
-          >
-            {flash
-              ? (<><Check size={13} /> Added as batch</>)
-              : (<><ShoppingCart size={13} /> Add {c.label} to Cart ({c.member_count})</>)}
-          </button>
+          <div key={key} className="celar-rip-action-pair">
+            <button
+              className="btn btn-sm celar-rip-action"
+              disabled={mut.isPending}
+              onClick={() => mut.mutate(c)}
+              title={`Add every product in ${c.label} to the cart as one batch (${c.member_count} items).`}
+            >
+              {flash
+                ? (<><Check size={13} /> Added as batch</>)
+                : (<><ShoppingCart size={13} /> Add {c.label} to Cart ({c.member_count})</>)}
+            </button>
+            {c.catalog_url && (
+              <button
+                className="btn btn-sm celar-rip-action celar-rip-action-deeplink"
+                onClick={() => navigate(c.catalog_url!)}
+                title={`Open ${c.label} in the Catalog page (${c.member_count} items, grouped by RIP).`}
+              >
+                <ExternalLink size={13} /> Open {c.label} in Catalog
+              </button>
+            )}
+          </div>
         );
       })}
     </div>

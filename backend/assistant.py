@@ -3644,13 +3644,21 @@ def _focal_product_for_rip(con, rl, cym: str) -> dict | None:
         # cpl_enriched stores frontline_unit_price + effective_case_price but
         # has no effective_unit_price column — derive it Python-side as
         # effective_case_price / unit_qty (same as _attach_cart_pricing does).
+        # Also pull the five discount tier (qty, amount) pairs so the template
+        # can show the "Frontline Case Cost" row = frontline - one-case discount
+        # when the product has a Buy-1-case tier on its CPL discount.
         row = con.execute(
             "WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched "
             f"            WHERE edition<='{cym}' GROUP BY wholesaler) "
             "SELECT c.product_name, c.wholesaler, CAST(c.upc AS VARCHAR) AS upc, "
             "       c.unit_volume, c.unit_qty, "
             "       c.frontline_case_price, c.frontline_unit_price, "
-            "       c.effective_case_price "
+            "       c.effective_case_price, "
+            "       c.discount_1_qty, c.discount_1_amt, "
+            "       c.discount_2_qty, c.discount_2_amt, "
+            "       c.discount_3_qty, c.discount_3_amt, "
+            "       c.discount_4_qty, c.discount_4_amt, "
+            "       c.discount_5_qty, c.discount_5_amt "
             "FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
             "WHERE LOWER(c.wholesaler)=LOWER(?) "
             "  AND LTRIM(CAST(c.upc AS VARCHAR),'0') = ? "
@@ -3668,13 +3676,56 @@ def _focal_product_for_rip(con, rl, cym: str) -> dict | None:
         except Exception:
             _uq = None
         eff_unit = (row[7] / _uq) if (row[7] is not None and _uq) else None
+        # Sweep the 5 discount tier slots and pick the AMOUNT where qty == 1.
+        # That's the "buy 1 case" discount the user wants in the second row.
+        # None when the product has no 1-case tier (some only kick in at 5 cs).
+        one_case_disc = None
+        for i in (8, 10, 12, 14, 16):   # discount_{n}_qty at row offsets
+            try:
+                q = float(row[i]) if row[i] is not None else None
+            except Exception:
+                q = None
+            if q is not None and q == q and int(q) == 1:
+                try:
+                    amt = float(row[i + 1]) if row[i + 1] is not None else None
+                    if amt is not None and amt == amt and amt > 0:
+                        one_case_disc = amt
+                        break
+                except Exception:
+                    pass
         return {"product_name": row[0], "wholesaler": row[1], "upc": row[2],
                 "unit_volume": row[3], "unit_qty": _uq,
                 "frontline_case_price": row[5], "frontline_unit_price": row[6],
-                "effective_case_price": row[7], "effective_unit_price": eff_unit}
+                "effective_case_price": row[7], "effective_unit_price": eff_unit,
+                "one_case_discount": one_case_disc}
     except Exception:
         return {"product_name": head.get("product_name"), "wholesaler": ws,
                 "upc": head.get("upc"), "unit_volume": head.get("unit_volume")}
+
+
+def _cluster_upcs(con, code: str, ws: str, cym: str) -> list[str]:
+    """LTRIMmed UPC list for one (wholesaler, code) cluster, current edition.
+    Used to build /catalog?upcs=<csv> deep links the assistant surfaces next
+    to its 'Add Case Mix to Cart' buttons, so the user can jump straight to
+    the cluster on the Catalog page. Same (edition, distributor, UPC-validity)
+    scoping the rest of the RIP plumbing uses."""
+    try:
+        rows = con.execute(
+            "SELECT DISTINCT LTRIM(CAST(upc AS VARCHAR),'0') AS un "
+            "FROM rip "
+            "WHERE CAST(rip_code AS VARCHAR) = ? "
+            "  AND LOWER(wholesaler) = LOWER(?) "
+            "  AND edition = (SELECT MAX(edition) FROM rip "
+            "                 WHERE CAST(rip_code AS VARCHAR) = ? "
+            "                   AND LOWER(wholesaler) = LOWER(?) "
+            f"                   AND edition<='{cym}') "
+            "  AND upc IS NOT NULL "
+            "  AND CAST(upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan') "
+            "  AND LTRIM(CAST(upc AS VARCHAR),'0') NOT IN ('', 'None', 'nan')",
+            [str(code), str(ws), str(code), str(ws)]).fetchall()
+        return sorted({str(r[0]) for r in rows if r and r[0]})
+    except Exception:
+        return []
 
 
 def _full_case_mix(con, code: str, ws: str, cym: str) -> list[dict]:
@@ -3791,9 +3842,19 @@ def _format_rip_full_md(con, rl) -> str:
         if meta:
             parts.append(" | ".join(meta))
         parts.append("")
+        # Frontline Case Cost = frontline minus the Buy-1-case CPL discount,
+        # if the product carries one. The single-case buyer pays this without
+        # ever committing to a multi-case tier or a RIP rebate, so it sits
+        # between Frontline and After Best RIP. Bolded for emphasis. Skipped
+        # (row not rendered) when the product has no 1-case discount tier.
+        one_disc = focal.get("one_case_discount")
+        fcc_c = (fc - one_disc) if (fc is not None and one_disc) else None
+        fcc_b = (fcc_c / uq) if (fcc_c is not None and uq) else None
         parts.append("|  | CASE | BOTTLE |")
         parts.append("|---|---|---|")
         parts.append(f"| **Frontline** | {_fmt_money(fc)} | {_fmt_money(fb)} |")
+        if fcc_c is not None:
+            parts.append(f"| ⭐ **Frontline Case Cost** | **{_fmt_money(fcc_c)}** | **{_fmt_money(fcc_b)}** |")
         parts.append(f"| **After Best RIP** | {_fmt_money(after_c)} | {_fmt_money(after_b)} |")
         parts.append("")
     # 2. Per-RIP code block: tier table (case + bottle columns) + "At N" footer
@@ -4198,8 +4259,9 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                         if b.name == "price_timeline" and isinstance(out, dict) and not out.get("error"):
                             timeline_result = out   # deterministic line chart attached below
                         # RIP clusters: surface one entry per (wholesaler, code)
-                        # so the frontend can render an "Add Case Mix to Cart"
-                        # action button per cluster.
+                        # so the frontend can render two action buttons per
+                        # cluster — "Add Case Mix to Cart" and a deep link
+                        # that opens the same cluster in the Catalog page.
                         if (b.name == "rip_lookup" and isinstance(out, dict)
                                 and not out.get("error")):
                             for rc in out.get("rip_codes") or []:
@@ -4211,12 +4273,28 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                                 if key in rip_clusters_seen:
                                     continue
                                 rip_clusters_seen.add(key)
+                                # Resolve the cluster's full UPC list once so
+                                # the Catalog deep link can pin to those exact
+                                # SKUs (using the existing ?upcs=<csv> filter).
+                                # Bounded at ~80 UPCs so the URL stays under
+                                # 2KB on truly huge clusters; the UI shows the
+                                # member_count next to it so the user knows
+                                # if more exist beyond the deep-linked set.
+                                catalog_url = None
+                                try:
+                                    _upcs = _cluster_upcs(con, code, ws_c.lower(), _current_ym())
+                                except Exception:
+                                    _upcs = []
+                                if _upcs:
+                                    _csv = ",".join(_upcs[:80])
+                                    catalog_url = f"/catalog?upcs={_csv}&group_by_rip=true"
                                 rip_clusters_out.append({
                                     "rip_code": code,
                                     "wholesaler": ws_c,
                                     "label": f"{ws_c} RIP {code}",
                                     "member_count": int(rc.get("member_count") or 0),
                                     "description": rc.get("description"),
+                                    "catalog_url": catalog_url,
                                 })
                     else:
                         out = {"error": "unknown tool"}

@@ -104,6 +104,11 @@ export interface AssistantRipCluster {
   label: string;            // 'Allied RIP 112074'
   member_count: number;     // distinct SKUs in the Case Mix
   description?: string | null;
+  // Deep link into the Catalog page filtered to this cluster's UPCs (with
+  // group_by_rip on), so the user can jump from chat to the catalog view of
+  // the same Case Mix in one click. NULL when the cluster has no resolvable
+  // members for the deep link.
+  catalog_url?: string | null;
 }
 
 export interface AssistantResponse {

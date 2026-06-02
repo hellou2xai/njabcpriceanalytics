@@ -4712,10 +4712,13 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 
 .celar-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
 
-/* "Add Case Mix to Cart" action buttons the assistant surfaces above its
-   answer when a RIP lookup ran (one per cluster). Each click sends the whole
-   Case Mix server-side as one labelled batch. */
-.celar-rip-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 4px; }
+/* "Add Case Mix to Cart" + "Open in Catalog" action buttons the assistant
+   surfaces below its answer when a RIP lookup ran (one pair per cluster).
+   The cart button adds the whole Case Mix as one labelled batch; the deep
+   link jumps to the Catalog page filtered to the same UPCs with
+   group_by_rip on. */
+.celar-rip-actions { display: flex; flex-direction: column; gap: 6px; margin: 10px 0 4px; }
+.celar-rip-action-pair { display: flex; flex-wrap: wrap; gap: 6px; }
 .celar-rip-action {
   display: inline-flex; align-items: center; gap: 6px;
   background: var(--brand, #0b6dd6); color: #fff;
@@ -4725,6 +4728,15 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 }
 .celar-rip-action:hover:not(:disabled) { filter: brightness(1.08); }
 .celar-rip-action:disabled { opacity: 0.65; cursor: progress; }
+/* The deep link sits next to the cart button — same shape, lighter palette so
+   the primary action (Add to Cart) still reads as the lead. */
+.celar-rip-action-deeplink {
+  background: transparent; color: var(--brand, #0b6dd6);
+  border-color: color-mix(in srgb, var(--brand, #0b6dd6) 50%, transparent);
+}
+.celar-rip-action-deeplink:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--brand, #0b6dd6) 8%, transparent);
+}
 
 /* Comparison table the assistant renders inline when 3+ products come back.
    Shows the full decision pack — product, distributor, size, vintage, list /cs,

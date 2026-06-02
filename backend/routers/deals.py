@@ -626,6 +626,11 @@ def compute_combo_economics(con, combos, cym=None):
                 "                    OR UPPER(COALESCE(c.product_name,'')) LIKE '%VARIETY%' "
                 "                    OR UPPER(COALESCE(c.product_name,'')) LIKE '%COMBO%' THEN 1 ELSE 0 END ASC, "
                 "             CASE WHEN TRY_CAST(c.unit_qty AS DOUBLE) BETWEEN 2 AND 120 THEN 0 ELSE 1 END ASC, "
+                # Same UPC often spans VINTAGES (the barcode is reused year to year) —
+                # prefer the LATEST vintage, the one a combo almost always features.
+                # (If a vintage also differs in pack size, pack-price reconciliation
+                # downstream still self-corrects: a wrong pick just won't reconcile.)
+                "             TRY_CAST(c.vintage AS INTEGER) DESC NULLS LAST, "
                 "             TRY_CAST(c.unit_qty AS DOUBLE) DESC NULLS LAST, "
                 "             c.frontline_case_price ASC NULLS LAST "
                 "         ) rn "

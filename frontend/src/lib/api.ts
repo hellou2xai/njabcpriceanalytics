@@ -1325,6 +1325,7 @@ export interface ComboComponent {
 // (often inflated) so the UI can show advertised-vs-effective.
 export interface ComboEconomicsComponent {
   product_name: string | null; upc: string | null; unit_volume?: string | null;
+  vintage?: string | null;
   cases?: number | null; price_unit?: 'bottle' | 'case' | null;
   combo_each?: number | null; best_separate_each?: number | null;
   has_separate_deal?: boolean;

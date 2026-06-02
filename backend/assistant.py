@@ -4488,6 +4488,11 @@ def _format_combo_analyzer_md(res: dict) -> str:
             parts.append("|---|---|---|---|---|---|")
             for comp in comps:
                 cell = _quickview_cell(comp.get("product_name"), ws, comp.get("upc"), comp.get("unit_volume"))
+                # State the vintage we priced (we pick the LATEST vintage when a
+                # UPC spans several years), so the buyer can verify the year.
+                vint = comp.get("vintage")
+                if vint:
+                    cell += f" `'{str(vint)[-2:]}`"
                 cases = comp.get("cases")
                 qty_lbl = f"{int(round(cases))} cs" if (cases is not None and abs(cases - round(cases)) < 0.01) \
                     else (f"{cases:.1f} cs" if cases is not None else "—")

@@ -221,10 +221,16 @@ function ComboDetailModal({ c, onClose }: { c: Combo; onClose: () => void }) {
                     const cmb = comp.combo_price_each;
                     const save = reg != null && cmb != null ? reg - cmb : null;
                     const pct = save != null && reg ? (save / reg) * 100 : null;
+                    // The vintage we priced (a UPC can span years — we use the
+                    // latest), matched from the server economics by UPC.
+                    const vintage = c.economics?.components?.find(
+                      e => e.upc && comp.upc && e.upc === String(comp.upc).replace(/^0+/, ''))?.vintage;
                     return (
                       <tr key={i}>
                         <td>
-                          <div style={{ fontWeight: 600 }}>{comp.product_name}</div>
+                          <div style={{ fontWeight: 600 }}>
+                            {comp.product_name}{vintage ? <span className="text-muted"> · '{String(vintage).slice(-2)}</span> : ''}
+                          </div>
                           {comp.upc && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{comp.upc}</div>}
                         </td>
                         <td>{comp.qty_per_pack ?? '—'}</td>

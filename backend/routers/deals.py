@@ -614,7 +614,7 @@ def compute_combo_economics(con, combos, cym=None):
                 f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM {src} WHERE edition<='{cym}' GROUP BY wholesaler), "
                 "ranked AS ( "
                 "  SELECT c.wholesaler ws, LTRIM(CAST(c.upc AS VARCHAR),'0') un, "
-                "         c.product_name, c.unit_volume, c.unit_qty, c.frontline_case_price fcase, "
+                "         c.product_name, c.unit_volume, c.unit_qty, c.vintage, c.frontline_case_price fcase, "
                 "         c.discount_1_qty d1q, c.discount_1_amt d1a, c.discount_2_qty d2q, c.discount_2_amt d2a, "
                 "         c.discount_3_qty d3q, c.discount_3_amt d3a, c.discount_4_qty d4q, c.discount_4_amt d4a, "
                 "         c.discount_5_qty d5q, c.discount_5_amt d5a, "
@@ -663,9 +663,11 @@ def compute_combo_economics(con, combos, cym=None):
             cases_req = cases if cases is not None else ((bottles / bpc) if (bottles and bpc) else None)
             fcase = _ff(meta.get("fcase"))
             one_disc = _ff(meta.get("one_case_disc")) or 0.0
+            _vint = meta.get("vintage")
+            _vint = str(_vint).strip() if _vint is not None and str(_vint).strip() not in ("", "0", "None", "nan") else None
             rc.append({
                 "un": un, "name": (meta.get("product_name") or comp.get("product_name")),
-                "unit_volume": meta.get("unit_volume") or comp.get("unit_volume"),
+                "unit_volume": meta.get("unit_volume") or comp.get("unit_volume"), "vintage": _vint,
                 "bpc": bpc, "fcase": fcase, "one_disc": one_disc,
                 "sep_case": (fcase - one_disc) if fcase is not None else None,
                 "ce": _ff(comp.get("combo_price_each")), "cases_req": cases_req,
@@ -714,6 +716,7 @@ def compute_combo_economics(con, combos, cym=None):
                 combo_clean = False
             comps_out.append({
                 "product_name": r["name"], "upc": r["un"], "unit_volume": r["unit_volume"],
+                "vintage": r["vintage"],
                 "bottles_per_case": bpc, "cases": cases_req, "price_unit": unit,
                 "combo_each": ce, "best_separate_each": sep_each,
                 "has_separate_deal": bool(one_disc and one_disc > 0),

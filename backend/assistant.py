@@ -1489,6 +1489,136 @@ def _t_combo_deals(con, args):
         return {"error": f"{type(e).__name__}"}
 
 
+def _combo_qty_bottles(qty_per_pack, bottles_per_case):
+    """(cases, bottles) a combo requires of a component. qty_per_pack is like
+    '3   C' (3 cases), '24 bottle', or a bare '48' (Fedway stores bottles). A
+    trailing 'c' (C / cs / case / cases) means CASES — anything else (bottle/btl
+    or blank) means BOTTLES, with the missing unit derived via bottles/case."""
+    s = str(qty_per_pack or "").strip().lower()
+    m = re.match(r"(\d+(?:\.\d+)?)", s)
+    if not m:
+        return (None, None)
+    n = float(m.group(1))
+    rest = s[m.end():].strip()
+    bpc = bottles_per_case if (bottles_per_case and bottles_per_case > 0) else None
+    # 'case'/'cs'/'c' contain 'c'; 'bottle'/'btl' do not.
+    if "c" in rest:
+        return (n, (n * bpc) if bpc else None)
+    return ((n / bpc) if bpc else None, n)
+
+
+def _t_combo_analyzer(con, args):
+    """Analyze whether COMBO / bundle deals are actually WORTH taking: for each
+    combo, compare the combo pack price against (a) frontline and (b) the
+    best-separate price — buying each component on its OWN best CPL discount + RIP
+    with NO combo. Returns net advantage vs separate, % saved, the forced-quantity
+    caveat and a worth-it verdict, ranked best-first. Use for 'is this combo worth
+    it', 'analyze combo deals', 'should I take the bundle', 'combo vs buying
+    separately'. Optional q (brand/keyword), distributor, combo_code, limit."""
+    from backend.routers.deals import get_combos
+    cym = _current_ym()
+    code = str(args.get("combo_code") or "").strip()
+    try:
+        combos = get_combos(wholesaler=(args.get("distributor") or None),
+                            q=(args.get("q") or ""), limit=min(int(args.get("limit") or 15), 50))
+    except Exception as e:
+        return {"error": f"{type(e).__name__}"}
+    if code:
+        combos = [c for c in combos if str(c.get("combo_code")) == code]
+    if not combos:
+        return {"count": 0, "combos": [], "note": "No combos matched."}
+
+    # Batch every component's bottles/case + best effective case price (current
+    # edition per wholesaler) in ONE query, so 'each at its best deal' is exact.
+    keys = sorted({(c.get("wholesaler"), str(comp.get("upc") or "").lstrip("0"))
+                   for c in combos for comp in (c.get("components") or [])
+                   if c.get("wholesaler") and str(comp.get("upc") or "").lstrip("0")})
+    info: dict = {}
+    if keys:
+        ph = ", ".join(f"($w{i}, $u{i})" for i in range(len(keys)))
+        kp: dict = {}
+        for i, (w, u) in enumerate(keys):
+            kp[f"w{i}"], kp[f"u{i}"] = w, u
+        try:
+            df = con.execute(
+                f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<='{cym}' GROUP BY wholesaler) "
+                "SELECT c.wholesaler ws, LTRIM(CAST(c.upc AS VARCHAR),'0') un, "
+                "ANY_VALUE(c.unit_volume) unit_volume, ANY_VALUE(c.unit_qty) unit_qty, "
+                "MIN(c.effective_case_price) eff, MIN(c.frontline_case_price) fcase "
+                "FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
+                f"WHERE (c.wholesaler, LTRIM(CAST(c.upc AS VARCHAR),'0')) IN ({ph}) GROUP BY 1,2", kp).fetchdf()
+            for _, r in df.iterrows():
+                info[(r["ws"], r["un"])] = r.to_dict()
+        except Exception:
+            pass
+
+    analyzed = []
+    for c in combos:
+        ws = c.get("wholesaler")
+        comps_out, combo_sum, sep_total, front_total, missing = [], 0.0, 0.0, 0.0, False
+        for comp in c.get("components") or []:
+            un = str(comp.get("upc") or "").lstrip("0")
+            meta = info.get((ws, un), {})
+            bpc = _num(meta.get("unit_qty"))
+            cases, bottles = _combo_qty_bottles(comp.get("qty_per_pack"), bpc)
+            nb = bottles if bottles is not None else 0.0
+            ce = _num(comp.get("combo_price_each"))      # per bottle
+            fe = _num(comp.get("frontline_price_each"))  # per bottle
+            eff_case = _num(meta.get("eff"))
+            # Best-separate per bottle = own best discount+RIP / bottles-per-case;
+            # if the SKU isn't on the current sheet, fall back to frontline.
+            sep_each = (eff_case / bpc) if (eff_case is not None and bpc) else fe
+            has_sep_deal = bool(eff_case is not None and bpc and fe is not None
+                                and (eff_case / bpc) < fe - 0.005)
+            ccost = (ce * nb) if ce is not None else None
+            scost = (sep_each * nb) if sep_each is not None else None
+            fcost = (fe * nb) if fe is not None else None
+            combo_sum += ccost or 0.0
+            sep_total += scost or 0.0
+            front_total += fcost or 0.0
+            if eff_case is None:
+                missing = True
+            comps_out.append({
+                "product_name": comp.get("product_name"), "upc": un,
+                "unit_volume": meta.get("unit_volume") or comp.get("unit_volume"),
+                "bottles_per_case": bpc, "cases": cases, "bottles": bottles,
+                "combo_each": ce, "frontline_each": fe, "best_separate_each": sep_each,
+                "has_separate_deal": has_sep_deal,
+                "combo_cost": ccost, "best_separate_cost": scost, "frontline_cost": fcost,
+            })
+        # Prefer the source pack price as the combo cost (authoritative); fall
+        # back to the summed component combo cost.
+        pack = _num(c.get("combo_pack_price"))
+        combo_cost = pack if pack is not None else combo_sum
+        sep_t = sep_total or None
+        save_vs_sep = (sep_t - combo_cost) if (sep_t is not None) else None
+        save_vs_front = (front_total - combo_cost) if front_total else None
+        pct_sep = (save_vs_sep / sep_t * 100) if (save_vs_sep is not None and sep_t) else None
+        if save_vs_sep is None:
+            verdict = "unknown"
+        elif pct_sep is not None and pct_sep >= 3:
+            verdict = "worth_it"
+        elif pct_sep is not None and pct_sep <= -3:
+            verdict = "buy_separately"
+        else:
+            verdict = "marginal"
+        analyzed.append({
+            "combo_code": str(c.get("combo_code")), "wholesaler": ws,
+            "contents": (c.get("comments") or c.get("product_name")),
+            "combo_cost": round(combo_cost, 2) if combo_cost is not None else None,
+            "separate_best_total": round(sep_t, 2) if sep_t is not None else None,
+            "frontline_total": round(front_total, 2) if front_total else None,
+            "save_vs_separate": round(save_vs_sep, 2) if save_vs_sep is not None else None,
+            "save_vs_frontline": round(save_vs_front, 2) if save_vs_front is not None else None,
+            "pct_vs_separate": round(pct_sep, 1) if pct_sep is not None else None,
+            "verdict": verdict, "any_component_missing_price": missing,
+            "components": comps_out,
+        })
+    # Most worth-it first (biggest net advantage vs buying separately).
+    analyzed.sort(key=lambda x: (x["save_vs_separate"] is None, -(x["save_vs_separate"] or 0)))
+    return {"count": len(analyzed), "combos": analyzed}
+
+
 def _t_category_distributor_compare(con, args):
     """Which distributor is best for a whole CATEGORY: per distributor, the count,
     average effective case price, and # with a discount / RIP for that category
@@ -1748,6 +1878,7 @@ _DATA_TOOLS = {
     "build_budget_basket": (_t_build_budget_basket, "BUDGET BASKET: build the best order that fits a $ budget (required `budget`), greedily from the top deals by GP% (rank_by='gp', default) or total savings (rank_by='savings'), optional category/distributor. Returns the basket + total spend, total savings, remaining. Use for 'build me a $5,000 order, best margins', 'fill a $2k tequila order with the deepest discounts'."),
     "dated_deal_reminders": (_t_dated_deal_reminders, "DATED-DEAL REMINDERS: dated (sub-month) promos whose window STARTS or ENDS within `within_days` (default 7), optional distributor — the easy-to-miss short windows, tagged 'Starts/Ends in N days'. Use for 'what deals start or end soon', 'any short-window deals this week', 'expiring deals'."),
     "combo_deals": (_t_combo_deals, "COMBO / BUNDLE deals: one row per combo with pack price, total savings and components (this month vs next). Optional q (brand/keyword), distributor. Use for 'what combos/bundles are there', 'combo deals on X', 'is there a bundle for Y'."),
+    "combo_analyzer": (_t_combo_analyzer, "COMBO WORTH-IT ANALYZER: for each combo, compares the pack price against (a) frontline and (b) the best-SEPARATE price (buying each component on its OWN best discount + RIP, no combo). Returns net advantage vs separate, % saved, the forced-quantity caveat and a worth-it verdict, ranked best-first. Use for 'is this combo worth it', 'analyze the combo(s)', 'should I take the bundle', 'combo vs buying separately'. Optional q (brand/keyword), distributor, combo_code, limit."),
     "category_distributor_compare": (_t_category_distributor_compare, "Which distributor is best for a whole CATEGORY (required `category`): per distributor count, avg + cheapest effective case price, # with discount/RIP. Use for 'who's cheapest for wine', 'best distributor for spirits'."),
     "deals_by_category": (_t_deals_by_category, "Which CATEGORIES have the most/deepest deals this edition: per category total, # discounted, avg discount %, # RIP, # closeouts, ranked by discounted count. Use for 'which category has the deepest deals', 'where are the most discounts'."),
     "semantic_search": (_t_semantic_search, "FREE-TEXT semantic search over the enrichment corpus. USE this for descriptive natural-language queries that DON'T map to a region/varietal slot — 'old vine zinfandel from a cool climate', 'small-producer natural orange wine', 'high altitude napa cabernet', 'biodynamic Burgundy', 'rare single barrel bourbon from kentucky', 'small batch japanese whisky'. Args: q (the user's phrase), limit (default 12), product_type (optional narrowing). Returns ranked product cards (product_name, wholesaler, upc, prices, score). Prefer region/varietal slots when they match; fall back to this for the long tail."),
@@ -3440,7 +3571,12 @@ _SYSTEM = (
     "published'), and the buy-now-vs-wait recommendation verbatim. "
     "(B) COMBO — 'combo / stack / bundle deals' (combo_deals): one block per combo with the code, distributor, "
     "its CONTENTS, the pack price and total savings, then a component table PRODUCT | QTY/PACK | FRONTLINE EA | "
-    "COMBO EA. "
+    "COMBO EA. For 'is this combo WORTH it / analyze the combo / combo vs buying separately', call combo_analyzer "
+    "instead — it compares the pack price to the best-SEPARATE price (each component on its own discount + RIP) "
+    "and returns a verdict; present per combo: the verdict (Worth it / Marginal / Skip), pack vs best-separate "
+    "vs frontline totals, the per-component table (combo-each vs best-separate-each + cost each way), and the "
+    "caveat that a combo forces buying every component at the listed quantity. NEVER call a combo a saving "
+    "without checking it against buying the components separately at their own best deal. "
     "(C) TIME-SENSITIVE — 'what's expiring / ending soon / dated deals' (find_deals time_sensitive|clearance): a "
     "table PRODUCT | SIZE | DISTRIBUTOR | CASE PRICE | SAVE/CS | ENDS, ordered by SOONEST end date first, led "
     "by a one-line takeaway. "
@@ -4332,6 +4468,84 @@ def _format_combo_md(rows: list, focal_name: str | None = None) -> str:
     return "\n".join(parts).rstrip()
 
 
+def _format_combo_analyzer_md(res: dict) -> str:
+    """COMBO ANALYZER (combo_analyzer): per-combo verdict — combo pack price vs the
+    best-SEPARATE price (each component on its own discount+RIP) and vs frontline,
+    with a component table showing combo-each vs best-separate-each and the cost
+    each way. Ranked most-worth-it first. Every component is a modal link."""
+    if not isinstance(res, dict):
+        return ""
+    rows = res.get("combos") or []
+    if not rows:
+        return res.get("note") or ""
+    _VERDICT = {
+        "worth_it": "✅ **Worth it**",
+        "marginal": "≈ **Marginal**",
+        "buy_separately": "⚠️ **Skip the combo**",
+        "unknown": "ℹ️ **Can't fully price**",
+    }
+    parts: list[str] = []
+    n = len(rows)
+    parts.append(f"🧮 **Combo Analysis — {n} combo{'s' if n != 1 else ''}** "
+                 f"_(ranked: most worth-it first; “best-separate” = each item on its own discount + RIP)_")
+    parts.append("")
+    for c in rows[:12]:
+        ws = (c.get("wholesaler") or "").title()
+        code = str(c.get("combo_code") or "")
+        contents = (c.get("contents") or "").strip()
+        head = f"**Combo {code}" + (f" ({ws})" if ws else "") + "**"
+        if contents:
+            head += f" — {contents}"
+        parts.append(head)
+        # Verdict line.
+        v = c.get("verdict") or "unknown"
+        svs = c.get("save_vs_separate")
+        pct = c.get("pct_vs_separate")
+        if v == "worth_it" and svs is not None:
+            vline = f"{_VERDICT[v]} — saves {_fmt_money(svs)} ({pct}%) vs buying each at its best deal."
+        elif v == "buy_separately" and svs is not None:
+            vline = f"{_VERDICT[v]} — buying each at its own best discount/RIP is {_fmt_money(-svs)} cheaper."
+        elif v == "marginal":
+            vline = f"{_VERDICT[v]} — about the same as buying separately ({pct}% diff)."
+        else:
+            vline = f"{_VERDICT['unknown']} — some components aren't on the current price sheet; figures are partial."
+        parts.append(vline)
+        # Totals line.
+        tline = (f"Pack **{_fmt_money(c.get('combo_cost'))}**  ·  "
+                 f"Buy-separately best {_fmt_money(c.get('separate_best_total'))}  ·  "
+                 f"Frontline {_fmt_money(c.get('frontline_total'))}")
+        if c.get("save_vs_frontline") is not None:
+            tline += f"  ·  vs frontline save {_fmt_money(c.get('save_vs_frontline'))}"
+        parts.append(tline)
+        comps = c.get("components") or []
+        if comps:
+            parts.append("")
+            parts.append("| COMPONENT | QTY | COMBO EA | BEST-SEP EA | COMBO COST | BEST-SEP COST |")
+            parts.append("|---|---|---|---|---|---|")
+            for comp in comps:
+                cell = _quickview_cell(comp.get("product_name"), ws, comp.get("upc"), comp.get("unit_volume"))
+                # Qty as "N cs (M btl)" when we know cases, else "M btl".
+                cases, bottles = comp.get("cases"), comp.get("bottles")
+                if cases is not None and abs(cases - round(cases)) < 0.01:
+                    qty_lbl = f"{int(round(cases))} cs"
+                    if bottles is not None:
+                        qty_lbl += f" ({int(round(bottles))} btl)"
+                elif bottles is not None:
+                    qty_lbl = f"{int(round(bottles))} btl"
+                else:
+                    qty_lbl = "—"
+                sep_each = comp.get("best_separate_each")
+                sep_mark = "" if comp.get("has_separate_deal") else " *(list)*"
+                parts.append(f"| {cell} | {qty_lbl} | {_fmt_money(comp.get('combo_each'))} | "
+                             f"{_fmt_money(sep_each)}{sep_mark} | {_fmt_money(comp.get('combo_cost'))} | "
+                             f"{_fmt_money(comp.get('best_separate_cost'))} |")
+        parts.append("_⚠️ A combo forces you to buy EVERY component at the listed quantity._"
+                     + ("  Some components had no current price, so totals are partial."
+                        if c.get("any_component_missing_price") else ""))
+        parts.append("")
+    return "\n".join(parts).rstrip()
+
+
 def _format_time_sensitive_md(rows: list) -> str:
     """TIME-SENSITIVE (find_deals time_sensitive / closeout): a table of dated
     deals ordered by SOONEST end date, each product a modal link, with case price,
@@ -4628,6 +4842,7 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
     # model calls the backing tool, then rendered + substituted after the turn.
     item_result: dict | None = None         # deal_360 / price_details
     combo_result: list | None = None         # combo_deals
+    combo_analyzer_result: dict | None = None  # combo_analyzer
     time_sensitive_result: list | None = None  # find_deals(time_sensitive|closeout)
     movers_result: tuple | None = None       # (rows, direction) from price_movers
     screen_out: dict | None = None
@@ -4768,6 +4983,8 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                             _collect([out])   # also show the product as a card
                         if b.name == "combo_deals" and isinstance(out, list) and out:
                             combo_result = out
+                        if b.name == "combo_analyzer" and isinstance(out, dict) and (out.get("combos")):
+                            combo_analyzer_result = out
                         if b.name == "price_timeline" and isinstance(out, dict) and not out.get("error"):
                             timeline_result = out   # deterministic line chart attached below
                         # RIP clusters: surface one entry per (wholesaler, code)
@@ -4987,6 +5204,12 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                     answer = _md
                     _tmpl_fired = True
                     _tlog.info("Item template fired (chars=%d)", len(_md))
+            if not _tmpl_fired and isinstance(combo_analyzer_result, dict) and combo_analyzer_result.get("combos"):
+                _md = _format_combo_analyzer_md(combo_analyzer_result)
+                if _md:
+                    answer = _md
+                    _tmpl_fired = True
+                    _tlog.info("Combo analyzer template fired (chars=%d)", len(_md))
             if not _tmpl_fired and isinstance(combo_result, list) and combo_result:
                 _md = _format_combo_md(combo_result)
                 if _md:

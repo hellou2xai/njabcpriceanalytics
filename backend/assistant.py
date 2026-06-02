@@ -3406,9 +3406,13 @@ _SYSTEM = (
     "(1) the RIP for THAT specific product (its code(s), the full tier ladder, the best rebate, and its "
     "price after RIP per case and per bottle), and THEN (2) the ENTIRE Case Mix — every product that shares "
     "the code — as a table with columns PRODUCT | SIZE | CASE PRICE (after 1-cs discount) | BTL/CS | BOTTLE "
-    "PRICE, ordered by product then size. CASE PRICE here is the list case price minus any single-case (1-cs) "
+    "PRICE. CASE PRICE here is the list case price minus any single-case (1-cs) "
     "discount (NOT the bulk-tier or RIP-rebated price), and BOTTLE PRICE is that case figure divided by "
-    "bottles/case. NEVER show the product's RIP without also listing the full Case Mix, and never list the "
+    "bottles/case. ORDER THE CASE MIX BY PRODUCT NAME, THEN BY SIZE — this is a HARD RULE: all rows for the "
+    "SAME product MUST be adjacent (e.g. Absolut Citron 750ML directly above Absolut Citron 1.75L), and each "
+    "product's sizes run smallest->largest. NEVER sort the Case Mix by price, by case price, or by any other "
+    "column — a buyer must be able to find a product and see all its sizes together in one place. NEVER show "
+    "the product's RIP without also listing the full Case Mix, and never list the "
     "Case Mix without first explaining the focal product's RIP. (This combined layout is rendered "
     "deterministically — reproduce it faithfully and do not drop, reorder, or truncate either part.) "
     "List EVERY tier the tool returns in the ladder table — a code can have many tiers "
@@ -4467,24 +4471,37 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                                 if key in rip_clusters_seen:
                                     continue
                                 rip_clusters_seen.add(key)
-                                # Resolve the cluster's full UPC list once so
-                                # the Catalog deep link can pin to those exact
-                                # SKUs (using the existing ?upcs=<csv> filter).
-                                # Bounded at ~80 UPCs so the URL stays under
-                                # 2KB on truly huge clusters; the UI shows the
-                                # member_count next to it so the user knows
-                                # if more exist beyond the deep-linked set.
-                                # Deep link uses the dedicated rip_code +
-                                # distributor filters so the URL stays short
-                                # (was a UPC CSV that ballooned past 2KB on
-                                # big clusters and clipped). group_by_rip=1
-                                # matches the canonical Catalog.tsx parser.
+                                # Deep link PINS to the cluster's exact member
+                                # UPCs (?upcs=<csv> + wholesaler), so the grid
+                                # shows precisely the Case Mix the chat lists —
+                                # NOT a rip_code+group_by_rip filter, which fans
+                                # a UPC out across every code it carries and could
+                                # land the buyer on a DIFFERENT (e.g. combo/stack)
+                                # cluster than the button promised. Bounded at 120
+                                # UPCs (URL stays < ~2KB); a larger cluster falls
+                                # back to the exact-code filter WITHOUT group_by_rip
+                                # so the fan-out still can't relabel rows.
                                 from urllib.parse import quote as _quote
-                                catalog_url = (
-                                    f"/catalog?wholesaler={_quote(ws_c.lower(), safe='')}"
-                                    f"&rip_code={_quote(code, safe='')}"
-                                    f"&group_by_rip=1"
-                                )
+                                _ws_q = _quote(ws_c.lower(), safe='')
+                                try:
+                                    _members = _rip_case_mix_products(con, code, ws_c)
+                                except Exception:
+                                    _members = []
+                                _upcs = sorted({
+                                    str(m.get("upc") or "").lstrip("0")
+                                    for m in _members
+                                    if str(m.get("upc") or "").lstrip("0")
+                                })
+                                if _upcs and len(_upcs) <= 120:
+                                    catalog_url = (
+                                        f"/catalog?wholesaler={_ws_q}"
+                                        f"&upcs={_quote(','.join(_upcs), safe=',')}"
+                                    )
+                                else:
+                                    catalog_url = (
+                                        f"/catalog?wholesaler={_ws_q}"
+                                        f"&rip_code={_quote(code, safe='')}"
+                                    )
                                 rip_clusters_out.append({
                                     "rip_code": code,
                                     "wholesaler": ws_c,

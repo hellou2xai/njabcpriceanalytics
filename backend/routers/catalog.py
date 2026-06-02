@@ -884,9 +884,37 @@ def search_products(
         allowed_sorts = {
             "product_name", "frontline_case_price", "best_case_price",
             "effective_case_price", "discount_pct", "total_savings_per_case",
+            # Date-aware: the price/savings active on `as_of` (default today ET).
+            # Computed as a SELECT alias below so ORDER BY can use it.
+            "live_effective_case_price", "live_savings",
         }
         sort_col = sort if sort in allowed_sorts else "product_name"
         sort_dir = "DESC" if order.lower() == "desc" else "ASC"
+
+        # Reference date for the live RIP price + sort. Inlined as a quoted SQL
+        # literal (DuckDB rejects bound params inside the lambda the rip_windows
+        # filter uses). Validated to a real ISO date first so it can't inject.
+        try:
+            ref_date_val = date.fromisoformat(str(as_of)[:10]).isoformat() if as_of else _pricing.eastern_today().isoformat()
+        except (TypeError, ValueError):
+            ref_date_val = _pricing.eastern_today().isoformat()
+        ref_lit = f"'{ref_date_val}'"
+        # Degrade gracefully when the cache predates the rip_windows column (a
+        # deploy that lands before the ETL rebuilds the parquet). Without this
+        # the SQL below would reference a missing column and 500 the whole
+        # catalog. Fallback: live price == month price, live sort -> effective.
+        has_rip_windows = bool(con.execute(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'cpl_enriched' AND column_name = 'rip_windows'"
+        ).fetchone())
+        if has_rip_windows:
+            live_eff_expr = _pricing.live_effective_sql(ref_lit)
+            live_amt_expr = _pricing.live_rip_amt_sql("rip_windows", ref_lit)
+        else:
+            live_eff_expr = "effective_case_price"
+            live_amt_expr = "CAST(NULL AS DOUBLE)"
+            if sort_col in ("live_effective_case_price", "live_savings"):
+                sort_col = "effective_case_price"
 
         where_clause = " AND ".join(where)
 
@@ -1242,6 +1270,13 @@ def search_products(
                    discount_3_qty, discount_3_amt,
                    discount_4_qty, discount_4_amt,
                    discount_5_qty, discount_5_amt,
+                   -- Date-aware "live now" RIP price (active on $as_of) + the
+                   -- savings vs the stable month price. Computed here so ORDER BY
+                   -- can sort the whole grid by it. Mirror of pricing.attach_live_rip.
+                   {live_eff_expr} AS live_effective_case_price,
+                   {live_amt_expr} AS live_rip_amt,
+                   ({live_eff_expr}) < effective_case_price - 0.005 AS live_better_than_month,
+                   ROUND(effective_case_price - ({live_eff_expr}), 2) AS live_savings,
                    {rip_select_sql}
             FROM {src}
             {data_join_sql}
@@ -1308,12 +1343,10 @@ def search_products(
             # can show Frontline / After Discount / RIP / Best for both.
             _attach_next_tiers(con, records)
 
-        # Date-aware "live now" RIP overlay on EVERY row (cheap; runs on the
-        # paginated page only). The grid's sort/filter key stays the stable
-        # whole-month effective_case_price; this just annotates each row with
-        # the live price + savings active on the reference date so the buyer
-        # sees the full picture.
-        _attach_live_rip(con, records, ref_date=as_of)
+        # The date-aware "live now" RIP price (live_effective_case_price,
+        # live_rip_amt, live_better_than_month, live_savings) is computed in the
+        # SQL above so the whole grid can be SORTED by it (sort=live_effective_
+        # case_price / live_savings), not just annotated post-pagination.
 
         # Go-UPC thumbnail per row (one batch query; served from R2 CDN).
         _attach_enrichment_image(con, records)
@@ -1521,6 +1554,7 @@ def new_items(
             SELECT e.wholesaler, e.edition, e.upc, e.product_name, e.product_type,
                    e.unit_qty, e.unit_volume, e.frontline_case_price, e.frontline_unit_price,
                    e.best_case_price, e.best_unit_price, e.effective_case_price,
+                   e.rip_savings, e.rip_windows,
                    e.has_discount, e.has_rip, e.has_closeout, e.discount_pct,
                    e.total_savings_per_case, e.rip_code, e.combo_code, e.brand,
                    e.discount_1_qty, e.discount_1_amt,
@@ -3257,7 +3291,7 @@ def get_rip_siblings(
                        product_type, unit_volume, unit_qty, unit_volume_std,
                        frontline_case_price, frontline_unit_price,
                        best_case_price, best_unit_price,
-                       effective_case_price, rip_savings, total_savings_per_case,
+                       effective_case_price, rip_savings, rip_windows, total_savings_per_case,
                        has_discount, has_rip, has_closeout, discount_pct,
                        rip_code, combo_code
                 FROM {src}

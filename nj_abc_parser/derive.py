@@ -367,6 +367,32 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
               AND {full_window('from_date', 'to_date')}
             GROUP BY wholesaler, edition, rip_code, upc
         ),
+        rip_windows_per_code_upc AS (
+            -- Same per-case / per-bottle best as rip_per_code_upc, but WITHOUT the
+            -- full-month gate and grouped per validity window (from_date, to_date)
+            -- so each distinct window is preserved. Powers the precomputed
+            -- `rip_windows` list column the catalog uses to compute (and SORT by)
+            -- the date-aware "live now" price at request time. The windows are
+            -- static per edition; only the comparison to "today" varies, so this
+            -- belongs in the parquet while the date filter stays at query time.
+            SELECT
+                wholesaler, edition, rip_code, upc, from_date, to_date,
+                MAX(GREATEST(
+                    COALESCE(CASE WHEN rip_qty_1 > 0 AND LOWER(rip_unit_1) NOT LIKE 'b%' THEN rip_amt_1 / rip_qty_1 END, 0),
+                    COALESCE(CASE WHEN rip_qty_2 > 0 AND LOWER(rip_unit_2) NOT LIKE 'b%' THEN rip_amt_2 / rip_qty_2 END, 0),
+                    COALESCE(CASE WHEN rip_qty_3 > 0 AND LOWER(rip_unit_3) NOT LIKE 'b%' THEN rip_amt_3 / rip_qty_3 END, 0),
+                    COALESCE(CASE WHEN rip_qty_4 > 0 AND LOWER(rip_unit_4) NOT LIKE 'b%' THEN rip_amt_4 / rip_qty_4 END, 0)
+                )) AS best_case_per_case,
+                MAX(GREATEST(
+                    COALESCE(CASE WHEN rip_qty_1 > 0 AND LOWER(rip_unit_1) LIKE 'b%' THEN rip_amt_1 / rip_qty_1 END, 0),
+                    COALESCE(CASE WHEN rip_qty_2 > 0 AND LOWER(rip_unit_2) LIKE 'b%' THEN rip_amt_2 / rip_qty_2 END, 0),
+                    COALESCE(CASE WHEN rip_qty_3 > 0 AND LOWER(rip_unit_3) LIKE 'b%' THEN rip_amt_3 / rip_qty_3 END, 0),
+                    COALESCE(CASE WHEN rip_qty_4 > 0 AND LOWER(rip_unit_4) LIKE 'b%' THEN rip_amt_4 / rip_qty_4 END, 0)
+                )) AS best_bottle_per_bottle
+            FROM read_parquet('{pdir}/rip/**/data.parquet', hive_partitioning=true, union_by_name=true)
+            WHERE rip_code IS NOT NULL
+            GROUP BY wholesaler, edition, rip_code, upc, from_date, to_date
+        ),
         -- NOTE: the previous code-level fallback (rip_per_code CTE) is
         -- intentionally removed. The canonical rule is: a RIP applies to a
         -- product ONLY when the RIP sheet has a row explicitly pairing this
@@ -385,6 +411,40 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
                        END
                    ) AS single_code
             FROM read_parquet('{pdir}/cpl/**/data.parquet', hive_partitioning=true, union_by_name=true) c
+        ),
+        rip_windows_agg AS (
+            -- Per CPL line, the list of EVERY RIP window that applies (full AND
+            -- partial), each with its per-case amount (bottle tiers x pack). The
+            -- catalog computes the live price at request time as
+            --   base - MAX(amt where ref BETWEEN from_date AND to_date)
+            -- so it can sort the whole grid by "best price active today" without
+            -- a per-request join. Dates stored as ISO strings (lexical compare ==
+            -- date compare) to keep the nested parquet column simple. Collapsed
+            -- on the same identity the `joined` CTE uses so the LEFT JOIN below
+            -- is 1:1.
+            SELECT
+                cc.wholesaler, cc.edition, cc.upc, cc.product_name, cc.unit_volume, cc.vintage,
+                list(DISTINCT struct_pack(
+                    from_date := CAST(rw.from_date AS VARCHAR),
+                    to_date := CAST(rw.to_date AS VARCHAR),
+                    amt := ROUND(GREATEST(
+                        COALESCE(rw.best_case_per_case, 0),
+                        COALESCE(rw.best_bottle_per_bottle, 0) * COALESCE(TRY_CAST(cc.unit_qty AS DOUBLE), 1)
+                    ), 2)
+                )) AS rip_windows
+            FROM cpl_codes cc
+            JOIN rip_windows_per_code_upc rw
+                ON cc.wholesaler = rw.wholesaler
+                AND cc.edition = rw.edition
+                AND cc.single_code = rw.rip_code
+                AND cc.upc = rw.upc
+                AND cc.single_code != ''
+                AND cc.single_code != '0'
+            WHERE GREATEST(
+                    COALESCE(rw.best_case_per_case, 0),
+                    COALESCE(rw.best_bottle_per_bottle, 0) * COALESCE(TRY_CAST(cc.unit_qty AS DOUBLE), 1)
+                  ) > 0
+            GROUP BY cc.wholesaler, cc.edition, cc.upc, cc.product_name, cc.unit_volume, cc.vintage
         ),
         cpl_with_rip AS (
             SELECT
@@ -427,7 +487,12 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
         ),
         enriched AS (
             SELECT
-                * EXCLUDE (best_rip_amt, rn),
+                j.* EXCLUDE (best_rip_amt, rn),
+                -- Date-aware RIP windows for the runtime "live now" price + sort.
+                -- Empty list when the SKU carries no RIP.
+                COALESCE(rwa.rip_windows,
+                         CAST([] AS STRUCT(from_date VARCHAR, to_date VARCHAR, amt DOUBLE)[])
+                ) AS rip_windows,
                 -- Tag whether THIS CPL row's window is full-month (or null).
                 -- A partial-window CPL row (e.g. 5 Apr - 22 Apr) is a time-
                 -- sensitive deal; its discount is excluded from effective
@@ -485,8 +550,15 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
                     2),
                     frontline_case_price
                 ) AS total_savings_per_case
-            FROM joined
-            WHERE rn = 1
+            FROM joined j
+            LEFT JOIN rip_windows_agg rwa
+                ON j.wholesaler IS NOT DISTINCT FROM rwa.wholesaler
+                AND j.edition IS NOT DISTINCT FROM rwa.edition
+                AND j.upc IS NOT DISTINCT FROM rwa.upc
+                AND j.product_name IS NOT DISTINCT FROM rwa.product_name
+                AND j.unit_volume IS NOT DISTINCT FROM rwa.unit_volume
+                AND j.vintage IS NOT DISTINCT FROM rwa.vintage
+            WHERE j.rn = 1
         )
         -- Precompute the this-month -> next-month effective comparison so the
         -- catalog search can filter by Price Drop / Price Increase as a plain

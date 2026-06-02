@@ -610,121 +610,91 @@ def _split_rip_codes(rc) -> list[str]:
     return out
 
 
+def live_rip_amt_sql(windows_col: str, ref_sql: str) -> str:
+    """SQL snippet: best per-case RIP rebate ACTIVE on the reference date.
+
+    Reads the precomputed ``rip_windows`` list column (derive.py) — a list of
+    STRUCT(from_date VARCHAR, to_date VARCHAR, amt DOUBLE), dates as ISO
+    'YYYY-MM-DD' strings (lexical compare == date compare). ``ref_sql`` is a
+    string-typed SQL expression holding the reference date (e.g. a bound
+    ``$as_of`` param). Null window bounds count as open-ended."""
+    return (
+        f"COALESCE(list_max(list_transform(list_filter({windows_col}, "
+        f"w -> (w.from_date IS NULL OR {ref_sql} >= w.from_date) "
+        f"AND (w.to_date IS NULL OR {ref_sql} <= w.to_date)), w -> w.amt)), 0)"
+    )
+
+
+def live_effective_sql(
+    ref_sql: str,
+    windows_col: str = "rip_windows",
+    eff_col: str = "effective_case_price",
+    rip_sav_col: str = "rip_savings",
+) -> str:
+    """SQL snippet for the date-aware 'live now' effective case price.
+
+    base = month effective price + the full-window RIP already baked into it
+    (``effective_case_price + rip_savings``); subtract the best rebate active on
+    the reference date; floor at 0 and cap at the month price (the live price is
+    never higher than what you'd pay anyway). Python mirror: ``attach_live_rip``.
+    """
+    amt = live_rip_amt_sql(windows_col, ref_sql)
+    base = f"(COALESCE({eff_col}, 0) + COALESCE({rip_sav_col}, 0))"
+    return f"LEAST({eff_col}, GREATEST(ROUND({base} - ({amt}), 2), 0))"
+
+
+def _best_active_window_amt(rip_windows, ref: str) -> float:
+    """Python mirror of live_rip_amt_sql: max amt over windows containing ref."""
+    if rip_windows is None:
+        return 0.0
+    best = 0.0
+    for w in rip_windows:
+        if w is None:
+            continue
+        f = w.get("from_date") if isinstance(w, dict) else None
+        t = w.get("to_date") if isinstance(w, dict) else None
+        a = _num(w.get("amt")) if isinstance(w, dict) else None
+        a = a or 0.0
+        if (f is None or ref >= f) and (t is None or ref <= t) and a > best:
+            best = a
+    return best
+
+
 def attach_live_rip(con, records, ref_date=None) -> None:
     """Overlay a DATE-AWARE 'live now' RIP price on each record.
 
-    The precomputed ``effective_case_price`` bakes in only WHOLE-MONTH RIPs
-    (derive.py filters partial-window RIPs out of best_rip_amt). This helper
-    looks at the RIP rows actually ACTIVE on ``ref_date`` (full-window rows
-    always qualify; a partial-window row qualifies only when ref_date falls
-    inside [from_date, to_date]) and, when a currently-active partial RIP
-    beats what's baked into the month price, stamps each record with:
+    The precomputed ``effective_case_price`` bakes in only WHOLE-MONTH RIPs.
+    This reads the record's precomputed ``rip_windows`` list (derive.py), picks
+    the best rebate ACTIVE on ``ref_date`` (default today ET), and stamps:
 
       - live_rip_amt              best per-case RIP rebate active on ref_date
       - live_effective_case_price month price minus the EXTRA active rebate
       - live_better_than_month    True when the live price beats the month price
 
-    Records with no extra active rebate get ``live_better_than_month = False``
-    and ``live_effective_case_price == effective_case_price``. Mirrors
-    derive.py's ``rip_per_code_upc`` CTE with the full-month gate swapped for
-    active-on-date. Run AFTER each record carries effective_case_price +
-    rip_savings + unit_qty + rip_code(s). No-op on an empty list.
+    Python mirror of ``live_effective_sql`` (the catalog grid computes the same
+    value in SQL so it can SORT by it). The single source of windows is the
+    ``rip_windows`` column; no query to the rip table. ``con`` is accepted for
+    signature compatibility but unused. No-op on an empty list.
     """
     if not records:
         return
     ref = _iso(ref_date) or eastern_today().isoformat()
-    codes, wss, eds, upcs = set(), set(), set(), set()
-    rec_codes: list[list[str]] = []
     for rec in records:
-        cs: list[str] = []
-        for fld in ("rip_group_code", "rip_code"):
-            for c in _split_rip_codes(rec.get(fld)):
-                if c not in cs:
-                    cs.append(c)
-        rec_codes.append(cs)
-        codes.update(cs)
-        wss.add(rec["wholesaler"])
-        eds.add(rec["edition"])
-        if rec.get("upc"):
-            upcs.add(str(rec["upc"]))
-
-    def _default():
-        for rec in records:
-            eff = _num(rec.get("effective_case_price"))
-            rec["live_rip_amt"] = None
-            rec["live_effective_case_price"] = eff
-            rec["live_better_than_month"] = False
-
-    if not codes or not upcs:
-        _default()
-        return
-
-    rip_src = read_parquet(con, "rip")
-    uc, uw, ue, uu = sorted(codes), sorted(wss), sorted(eds), sorted(upcs)
-    ph = lambda pre, n: ", ".join(f"${pre}{i}" for i in range(n))
-    params: dict = {"ref": ref}
-    for i, v in enumerate(uc):
-        params[f"rc{i}"] = v
-    for i, v in enumerate(uw):
-        params[f"ws{i}"] = v
-    for i, v in enumerate(ue):
-        params[f"ed{i}"] = v
-    for i, v in enumerate(uu):
-        params[f"up{i}"] = v
-
-    def case_expr(j):
-        return (f"COALESCE(CASE WHEN rip_qty_{j} > 0 AND LOWER(rip_unit_{j}) NOT LIKE 'b%' "
-                f"THEN rip_amt_{j} / rip_qty_{j} END, 0)")
-
-    def btl_expr(j):
-        return (f"COALESCE(CASE WHEN rip_qty_{j} > 0 AND LOWER(rip_unit_{j}) LIKE 'b%' "
-                f"THEN rip_amt_{j} / rip_qty_{j} END, 0)")
-
-    sql = f"""
-        SELECT rip_code, wholesaler, edition, CAST(upc AS VARCHAR) AS upc,
-               MAX(GREATEST({case_expr(1)}, {case_expr(2)}, {case_expr(3)}, {case_expr(4)})) AS best_case_per_case,
-               MAX(GREATEST({btl_expr(1)}, {btl_expr(2)}, {btl_expr(3)}, {btl_expr(4)})) AS best_btl_per_btl
-        FROM {rip_src}
-        WHERE rip_code IN ({ph('rc', len(uc))})
-          AND wholesaler IN ({ph('ws', len(uw))})
-          AND edition IN ({ph('ed', len(ue))})
-          AND CAST(upc AS VARCHAR) IN ({ph('up', len(uu))})
-          AND (from_date IS NULL OR to_date IS NULL
-               OR (CAST($ref AS DATE) BETWEEN CAST(from_date AS DATE) AND CAST(to_date AS DATE)))
-        GROUP BY 1, 2, 3, 4
-    """
-    active: dict = {}
-    try:
-        df = con.execute(sql, params).fetchdf()
-        for _, r in df.iterrows():
-            active[(str(r["rip_code"]), r["wholesaler"], r["edition"], str(r["upc"]))] = (
-                float(r["best_case_per_case"] or 0.0),
-                float(r["best_btl_per_btl"] or 0.0),
-            )
-    except Exception:
-        _default()
-        return
-
-    for rec, cs in zip(records, rec_codes):
+        # rip_windows is an internal precomputed column (a list of structs). Read
+        # it, then drop it so it never reaches the JSON response (FastAPI can't
+        # encode the numpy struct array, and the payload would be heavy anyway).
+        wins = rec.pop("rip_windows", None)
         eff = _num(rec.get("effective_case_price"))
         if eff is None:
             rec["live_rip_amt"] = None
             rec["live_effective_case_price"] = None
             rec["live_better_than_month"] = False
             continue
-        pack = _num(rec.get("unit_qty")) or 1.0
-        ws, ed, upc = rec["wholesaler"], rec["edition"], str(rec.get("upc") or "")
-        best_active = 0.0
-        for c in cs:
-            hit = active.get((c, ws, ed, upc))
-            if hit:
-                cand = max(hit[0], hit[1] * pack)
-                if cand > best_active:
-                    best_active = cand
+        best = _best_active_window_amt(wins, ref)
         month_rip = _num(rec.get("rip_savings")) or 0.0
-        extra = max(0.0, best_active - month_rip)
-        live = max(0.0, round(eff - extra, 2))
-        rec["live_rip_amt"] = round(best_active, 2) if best_active > 0 else None
+        base = eff + month_rip
+        live = min(eff, max(0.0, round(base - best, 2)))
+        rec["live_rip_amt"] = round(best, 2) if best > 0 else None
         rec["live_effective_case_price"] = live
         rec["live_better_than_month"] = live < eff - 0.005
 

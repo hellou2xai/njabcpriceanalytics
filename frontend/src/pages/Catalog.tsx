@@ -32,7 +32,7 @@ export default function Catalog() {
   // Stacks with region for "California cabernets" / "Kentucky bourbon" style
   // queries. Backend auto-narrows product_type too.
   const [varietal, setVarietal] = useState(params.get('varietal') ?? '');
-  const [sort, setSort] = useState<'product_name' | 'frontline_case_price' | 'effective_case_price'>('product_name');
+  const [sort, setSort] = useState<'product_name' | 'frontline_case_price' | 'effective_case_price' | 'live_effective_case_price'>('product_name');
   const [order, setOrder] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(0);
   const [limit, setLimit] = useState(50);
@@ -96,7 +96,7 @@ export default function Catalog() {
       priceMax: params.get('priceMax') ? parseFloat(params.get('priceMax')!) : undefined,
     });
     const sp = params.get('sort');
-    if (sp === 'product_name' || sp === 'frontline_case_price' || sp === 'effective_case_price') setSort(sp);
+    if (sp === 'product_name' || sp === 'frontline_case_price' || sp === 'effective_case_price' || sp === 'live_effective_case_price') setSort(sp);
     setOrder(params.get('order') === 'desc' ? 'desc' : 'asc');
     setPage(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -187,9 +187,10 @@ export default function Catalog() {
   const items = data?.items ?? [];
   const facetItems = data?.items ?? [];
 
-  const handleSort = (col: 'product_name' | 'frontline_case_price' | 'effective_case_price') => {
+  const handleSort = (col: 'product_name' | 'frontline_case_price' | 'effective_case_price' | 'live_effective_case_price') => {
     if (sort === col) setOrder(o => o === 'asc' ? 'desc' : 'asc');
-    else { setSort(col); setOrder(col === 'product_name' ? 'asc' : 'desc'); }
+    // Price columns default to cheapest-first (asc); name defaults A-Z.
+    else { setSort(col); setOrder(col === 'live_effective_case_price' ? 'asc' : col === 'product_name' ? 'asc' : 'desc'); }
     setPage(0);
   };
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / limit));

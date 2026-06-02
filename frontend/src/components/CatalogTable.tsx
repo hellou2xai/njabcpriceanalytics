@@ -99,7 +99,7 @@ export function QtyStepper({ label, value, onChange }: { label: string; value: n
   );
 }
 
-type SortKey = 'product_name' | 'frontline_case_price' | 'effective_case_price';
+type SortKey = 'product_name' | 'frontline_case_price' | 'effective_case_price' | 'live_effective_case_price';
 
 interface Props {
   items: Product[];
@@ -426,7 +426,20 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
             <th {...rightHeadSort('frontline_case_price')}>Case / Btl{sortIcon('frontline_case_price')}</th>
             <th>Tier</th>
             <th className="right">Save (cs / btl)</th>
-            <th {...rightHeadSort('effective_case_price')}>Effective (cs / btl){sortIcon('effective_case_price')}</th>
+            <th className="right">
+              <span className={sortControls ? 'sortable' : undefined}
+                    onClick={sortControls ? () => sortControls.onSort('effective_case_price') : undefined}>
+                Effective (cs / btl){sortIcon('effective_case_price')}
+              </span>
+              {sortControls && (
+                <span className="sortable"
+                      title="Sort by the price active today, including dated RIPs that aren't part of the whole-month price"
+                      onClick={() => sortControls.onSort('live_effective_case_price')}
+                      style={{ marginLeft: 6, color: 'var(--green)' }}>
+                  Live{sortIcon('live_effective_case_price')}
+                </span>
+              )}
+            </th>
             <th className="right">ROI / GP%</th>
           </tr>
         </thead>

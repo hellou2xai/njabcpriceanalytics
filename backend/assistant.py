@@ -4360,6 +4360,20 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                                 ws_c = (rc.get("wholesaler") or "").strip()
                                 if not code or not ws_c:
                                     continue
+                                # Skip malformed multi-code rows: some source
+                                # RIP sheets jam two codes into one cell
+                                # ("10209 50017"), which never resolves
+                                # against the canonical rip_code column and
+                                # produces empty Add-to-Cart / Open-in-Catalog
+                                # results. The legitimate single-code clusters
+                                # (10209, 50017) appear as their own rows.
+                                if any(ch.isspace() for ch in code):
+                                    continue
+                                # Skip clusters with zero members — the buttons
+                                # would resolve to empty either way and just
+                                # waste the user's attention.
+                                if int(rc.get("member_count") or 0) <= 0:
+                                    continue
                                 key = (ws_c.lower(), code)
                                 if key in rip_clusters_seen:
                                     continue

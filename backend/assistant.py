@@ -3440,10 +3440,10 @@ def _auto_table_products(screen_args: dict) -> list:
 
 
 def _format_rip_md(rl) -> str:
-    """Render a rip_lookup result as a markdown RIP analysis (per distributor +
-    code, the FULL tier ladder, best rebate marked, Case Mix members). Used as the
-    standalone-page safety net so a rebate question always shows the tier ladder
-    even when the model only drove the grid."""
+    """Minimal fallback render of a rip_lookup result (kept for callers that
+    don't have a DuckDB connection handy). Prefer _format_rip_full_md for the
+    full deterministic template — used by ask() so any RIP question renders
+    the same rich layout regardless of the model that produced the text."""
     if not isinstance(rl, dict):
         return ""
     codes = rl.get("rip_codes") or []
@@ -3469,6 +3469,244 @@ def _format_rip_md(rl) -> str:
             extra = "…" if len(mems) > 6 else ""
             out.append(f"\n*Case Mix (combine any of these to hit a tier): {', '.join(mems[:6])}{extra}*")
     return "\n".join(out)
+
+
+def _fmt_money(v) -> str:
+    """$X.XX, or '—' for None/NaN. Used by the RIP template tables."""
+    if v is None:
+        return "—"
+    try:
+        f = float(v)
+        if f != f:  # NaN
+            return "—"
+        return f"${f:.2f}"
+    except Exception:
+        return "—"
+
+
+def _focal_product_for_rip(con, rl, cym: str) -> dict | None:
+    """Pick the single focal product the RIP template's top header is about,
+    then enrich it with the full pricing the catalog stores. Prefers the first
+    matched product; resolves UPC + wholesaler against cpl_enriched so the
+    header carries Frontline + Effective for BOTH case and bottle."""
+    mp = rl.get("matched_products") or []
+    if not mp:
+        return None
+    head = mp[0]
+    upc_n = (str(head.get("upc") or "").lstrip("0")) or None
+    ws = head.get("wholesaler")
+    if not upc_n or not ws:
+        return {"product_name": head.get("product_name"), "wholesaler": ws,
+                "upc": head.get("upc"), "unit_volume": head.get("unit_volume")}
+    try:
+        row = con.execute(
+            "WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched "
+            f"            WHERE edition<='{cym}' GROUP BY wholesaler) "
+            "SELECT c.product_name, c.wholesaler, CAST(c.upc AS VARCHAR) AS upc, "
+            "       c.unit_volume, c.unit_qty, "
+            "       c.frontline_case_price, c.frontline_unit_price, "
+            "       c.effective_case_price, c.effective_unit_price "
+            "FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
+            f"WHERE LOWER(c.wholesaler)=LOWER('{ws}') "
+            "  AND LTRIM(CAST(c.upc AS VARCHAR),'0') = ? "
+            "ORDER BY c.product_name LIMIT 1",
+            [upc_n]).fetchone()
+        if not row:
+            return {"product_name": head.get("product_name"), "wholesaler": ws,
+                    "upc": head.get("upc"), "unit_volume": head.get("unit_volume")}
+        return {"product_name": row[0], "wholesaler": row[1], "upc": row[2],
+                "unit_volume": row[3], "unit_qty": row[4],
+                "frontline_case_price": row[5], "frontline_unit_price": row[6],
+                "effective_case_price": row[7], "effective_unit_price": row[8]}
+    except Exception:
+        return {"product_name": head.get("product_name"), "wholesaler": ws,
+                "upc": head.get("upc"), "unit_volume": head.get("unit_volume")}
+
+
+def _full_case_mix(con, code: str, ws: str, cym: str) -> list[dict]:
+    """Full member list for one (wholesaler, code) cluster, with case + bottle
+    prices, sorted by case price ascending. Uses the same (edition, distributor,
+    UPC-validity) scoping as the catalog so unrelated brands can't bleed in."""
+    try:
+        df = con.execute(
+            "WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched "
+            f"            WHERE edition<='{cym}' GROUP BY wholesaler), "
+            "ripupc AS (SELECT DISTINCT wholesaler, LTRIM(CAST(upc AS VARCHAR),'0') un "
+            "           FROM rip "
+            "           WHERE CAST(rip_code AS VARCHAR) = ? "
+            "             AND LOWER(wholesaler) = LOWER(?) "
+            f"             AND edition = (SELECT MAX(edition) FROM rip "
+            "                            WHERE CAST(rip_code AS VARCHAR) = ? "
+            "                              AND LOWER(wholesaler) = LOWER(?) "
+            f"                              AND edition<='{cym}') "
+            "             AND upc IS NOT NULL "
+            "             AND CAST(upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan') "
+            "             AND LTRIM(CAST(upc AS VARCHAR),'0') NOT IN ('', 'None', 'nan')) "
+            "SELECT DISTINCT c.product_name, c.unit_volume, c.unit_qty, "
+            "       c.effective_case_price, c.effective_unit_price, "
+            "       c.frontline_case_price, c.frontline_unit_price "
+            "FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
+            "JOIN ripupc r ON r.wholesaler=c.wholesaler "
+            "  AND r.un=LTRIM(CAST(c.upc AS VARCHAR),'0') "
+            "WHERE c.upc IS NOT NULL "
+            "  AND LTRIM(CAST(c.upc AS VARCHAR),'0') NOT IN ('', 'None', 'nan') "
+            "ORDER BY c.effective_case_price NULLS LAST",
+            [str(code), str(ws), str(code), str(ws)]).fetchdf()
+        out = []
+        for _, r in df.iterrows():
+            out.append({"product_name": r["product_name"], "unit_volume": r["unit_volume"],
+                        "unit_qty": r["unit_qty"],
+                        "case_price": r["effective_case_price"],
+                        "bottle_price": r["effective_unit_price"],
+                        "frontline_case_price": r["frontline_case_price"],
+                        "frontline_unit_price": r["frontline_unit_price"]})
+        return out
+    except Exception:
+        return []
+
+
+def _format_rip_full_md(con, rl) -> str:
+    """Deterministic RIP-analysis template: product header (Frontline + After
+    Best RIP for case AND bottle), per-code tier table (case + bottle rebate
+    columns + best mark + 'At N cases' footer with effective per-unit math),
+    and the FULL case-mix table with case + bottle prices. Always renders the
+    same layout regardless of the upstream LLM, so RIP questions read the
+    same on Haiku / Sonnet / Opus."""
+    if not isinstance(rl, dict):
+        return ""
+    codes = rl.get("rip_codes") or []
+    if not codes:
+        return rl.get("note") or ""
+    cym = _current_ym()
+    parts: list[str] = []
+    # 1. Product header (only if we have a focal product with prices).
+    focal = _focal_product_for_rip(con, rl, cym)
+    if focal and focal.get("product_name"):
+        ws_label = (focal.get("wholesaler") or "").title()
+        size = focal.get("unit_volume") or ""
+        try:
+            uq = float(focal.get("unit_qty") or 0) or None
+        except Exception:
+            uq = None
+        # Pick the lowest per-case rebate at the BEST tier across the focal
+        # product's RIP codes (typically just one). At-tier effective =
+        # cpl_effective - best_rebate_per_case.
+        best_rebate_per_case = 0.0
+        for c in codes:
+            if (c.get("wholesaler") or "").lower() != (focal.get("wholesaler") or "").lower():
+                continue
+            for t in (c.get("tiers") or []):
+                if t.get("best") and t.get("unit_short") == "cs":
+                    try:
+                        best_rebate_per_case = max(best_rebate_per_case,
+                                                   float(t.get("per_unit_savings") or 0.0))
+                    except Exception:
+                        pass
+        fc = focal.get("frontline_case_price")
+        fb = focal.get("frontline_unit_price")
+        ec = focal.get("effective_case_price")
+        eb = focal.get("effective_unit_price")
+        after_c = (ec - best_rebate_per_case) if (ec is not None and best_rebate_per_case) else ec
+        after_b = (eb - (best_rebate_per_case / uq)) if (eb is not None and best_rebate_per_case and uq) else eb
+        parts.append(f"🍷 **{focal['product_name']} — {ws_label}**")
+        meta = []
+        upc_d = (str(focal.get("upc") or "").lstrip("0"))
+        if upc_d:
+            meta.append(f"UPC: {upc_d}")
+        if size:
+            meta.append(f"**{size}**")
+        if uq:
+            meta.append(f"**{int(uq)} bottles/case**")
+        if meta:
+            parts.append(" | ".join(meta))
+        parts.append("")
+        parts.append("|  | CASE | BOTTLE |")
+        parts.append("|---|---|---|")
+        parts.append(f"| **Frontline** | {_fmt_money(fc)} | {_fmt_money(fb)} |")
+        parts.append(f"| **After Best RIP** | {_fmt_money(after_c)} | {_fmt_money(after_b)} |")
+        parts.append("")
+    # 2. Per-RIP code block: tier table (case + bottle columns) + "At N" footer
+    #    + full Case Mix table.
+    for c in codes[:4]:
+        ws = (c.get("wholesaler") or "").title()
+        ws_lc = (c.get("wholesaler") or "").lower()
+        code = str(c.get("rip_code") or "")
+        head = f"🏷️ **RIP Code {code}**"
+        if c.get("description"):
+            head += f" — {c['description']}"
+        head += f" ({ws} only)"
+        parts.append(head)
+        # Build a unified case-quantity tier table: for each tier we display
+        # the buy-N value, total rebate, per-case savings, per-bottle savings
+        # (= per_case / pack_size, derived from focal pack if available).
+        tiers = c.get("tiers") or []
+        pack = uq if focal and focal.get("unit_qty") else None
+        try:
+            if pack is None and tiers:
+                # Fall back to any focal product matching the same wholesaler.
+                pack = float(focal.get("unit_qty") or 0) if focal else None
+                pack = pack or None
+        except Exception:
+            pack = None
+        if tiers:
+            parts.append("")
+            parts.append("| CASES | TOTAL REBATE | PER CASE | PER BOTTLE | BEST? |")
+            parts.append("|---|---|---|---|---|")
+            for t in tiers:
+                qty = t.get("qty")
+                amt = float(t.get("amount") or 0)
+                pu = float(t.get("per_unit_savings") or 0)
+                per_btl = (pu / pack) if (pack and t.get("unit_short") == "cs") else (
+                    pu if t.get("unit_short") == "btl" else None)
+                cases_lbl = f"{qty} cs" if t.get("unit_short") == "cs" else f"{qty} btl"
+                best_lbl = "⭐ Best" if t.get("best") else ""
+                per_btl_txt = f"${per_btl:.2f}/btl" if per_btl is not None else "—"
+                per_cs_txt = f"${pu:.2f}/cs" if t.get("unit_short") == "cs" else (
+                    f"${pu * (pack or 0):.2f}/cs" if (pack and per_btl is not None) else "—")
+                parts.append(f"| {cases_lbl} | ${amt:.2f} | {per_cs_txt} | {per_btl_txt} | {best_lbl} |")
+        # Footer summary at the best tier (frontline → frontline-best-rebate).
+        if focal and focal.get("frontline_case_price") is not None:
+            best_per_cs = 0.0
+            for t in tiers:
+                if t.get("best"):
+                    try:
+                        if t.get("unit_short") == "cs":
+                            best_per_cs = float(t.get("per_unit_savings") or 0.0)
+                        elif t.get("unit_short") == "btl" and pack:
+                            best_per_cs = float(t.get("per_unit_savings") or 0.0) * pack
+                    except Exception:
+                        pass
+            if best_per_cs and (focal.get("frontline_case_price") is not None):
+                best_qty = next((t.get("qty") for t in tiers if t.get("best")), None)
+                fc = float(focal["frontline_case_price"])
+                eff_c = fc - best_per_cs
+                fb = float(focal.get("frontline_unit_price") or 0)
+                eff_b = (fb - (best_per_cs / pack)) if (pack and fb) else None
+                if best_qty:
+                    line = (f"\n*At {best_qty} cases: **Case** ${fc:.2f} → "
+                            f"${eff_c:.2f} effective")
+                    if eff_b is not None:
+                        line += f" | **Bottle** ${fb:.2f} → ${eff_b:.2f} effective"
+                    line += "*"
+                    parts.append(line)
+        # Full Case Mix table.
+        members = _full_case_mix(con, code, ws_lc, cym)
+        if members:
+            size_label = focal.get("unit_volume") if focal else None
+            ws_h = (c.get("wholesaler") or "").title()
+            n = len(members)
+            size_note = f"all {size_label}, {ws_h}" if size_label else ws_h
+            parts.append("")
+            parts.append(f"📦 **Full Case Mix — {n} Product{'s' if n != 1 else ''} ({size_note})**")
+            parts.append("")
+            parts.append("| PRODUCT | CASE PRICE | BOTTLE PRICE |")
+            parts.append("|---|---|---|")
+            for m in members:
+                parts.append(f"| {m.get('product_name') or ''} | "
+                             f"{_fmt_money(m.get('case_price') or m.get('frontline_case_price'))} | "
+                             f"{_fmt_money(m.get('bottle_price') or m.get('frontline_unit_price'))} |")
+            parts.append("")
+    return "\n".join(parts).rstrip()
 
 
 def ask(question: str, history: list | None = None, user: dict | None = None,
@@ -3838,29 +4076,38 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                 _collect(_auto_table_products(screen_args))   # deduped into products_out
             except Exception:
                 pass  # never fail the answer over the auto-table
-        # RIP NET: a rebate question on the standalone page must show the full tier
-        # ladder, not just a link + product card. If the model didn't already put a
-        # tier table in its reply, build one deterministically from rip_lookup so
-        # the analysis always appears (the model often only drives the grid here).
-        ql = question.lower()
-        if any(k in ql for k in ("rip", "rebate")):
-            has_ladder = ("| buy " in answer.lower()) or ("per unit" in answer.lower()) \
-                or ("/cs" in answer.lower() and "tier" in answer.lower())
-            if not has_ladder:
-                term = (screen_args or {}).get("q") if screen_args else None
-                if not term:
-                    m = re.search(r"\b(?:for|of|about|on)\s+(.+)$", question, re.I)
-                    term = (m.group(1) if m else "").strip()
-                    term = re.sub(r"\b(rip|rebate|details?|analysis|code|tiers?)\b", " ", term, flags=re.I).strip()
-                if term:
-                    try:
-                        with get_duckdb() as _con:
-                            _rl = _t_rip_lookup(_con, {"match": term})
-                        _md = _format_rip_md(_rl)
-                        if _md:
-                            answer = _md if (not answer or answer == "Done.") else answer.rstrip() + "\n\n" + _md
-                    except Exception:
-                        pass  # never fail the answer over the RIP net
+        # (Standalone-only RIP fallback removed — replaced by the unconditional
+        # RIP template below, which fires for any RIP question regardless of
+        # mode so the layout is identical on Haiku / Sonnet / Opus.)
+    # RIP TEMPLATE — for any rebate-related question, REPLACE the model's text
+    # with the deterministic rich template (product header → tier table with
+    # case+bottle columns → "At N cases" effective summary → full Case Mix
+    # table). User rule: "make this as a fixed template; show irrespective of
+    # model". The model's text is dropped because Haiku / Sonnet / Opus all
+    # vary in layout and accuracy. The frontend's per-cluster Add-to-Cart
+    # buttons (rip_clusters) keep working since they read structured fields,
+    # not the answer text.
+    _ql = question.lower()
+    if any(k in _ql for k in ("rip", "rebate")):
+        try:
+            term = (screen_args or {}).get("q") if screen_args else None
+            if not term:
+                m = re.search(r"\b(?:for|of|about|on)\s+(.+)$", question, re.I)
+                term = (m.group(1) if m else "").strip()
+                term = re.sub(r"\b(rip|rebate|details?|analysis|code|tiers?|mix|bottle|prices?)\b",
+                              " ", term, flags=re.I).strip()
+            if not term:
+                # Last-ditch: strip stop words from the whole question.
+                term = re.sub(r"\b(show|me|products?|the|and|for|of|about|on|in|with|rip|rebate|mix|case|bottle|prices?|details?)\b",
+                              " ", _ql).strip()
+            if term:
+                with get_duckdb() as _con:
+                    _rl = _t_rip_lookup(_con, {"match": term})
+                    _md = _format_rip_full_md(_con, _rl)
+                if _md:
+                    answer = _md
+        except Exception:
+            pass  # never fail the answer over the RIP template
     # Multi-product answers (3+ products) get enriched with tier ladders so
     # the frontend can render a side-by-side comparison table, and a Catalog
     # deep-link is built by exact UPCs so "Open in Catalog ->" lands on the

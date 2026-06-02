@@ -2985,23 +2985,35 @@ def get_rip_siblings(
         excl_rip = ""
         excl_cpl = ""
         if exclude_upc:
-            excl_rip = "AND r.upc <> $xu"
-            excl_cpl = "AND upc <> $xu"
-            params["xu"] = str(exclude_upc)
+            # Compare on the LTRIMmed form so a leading-zero variant of the
+            # same UPC (e.g. '090787461' vs '90787461') is still excluded.
+            excl_rip = "AND LTRIM(CAST(r.upc AS VARCHAR), '0') <> $xu"
+            excl_cpl = "AND LTRIM(CAST(upc AS VARCHAR), '0') <> $xu"
+            params["xu"] = str(exclude_upc).lstrip("0")
         # 1) Authoritative UPC list comes from the RIP sheet for this rebate.
+        #    Filter out blank / '0' / '000000000000' / 'None' / 'nan' rows
+        #    BEFORE the join — the all-zeros placeholder row (a duplicate of
+        #    a brand's real-UPC row) would otherwise leak in and the cpl join
+        #    would match every blank-UPC product in the catalog, bleeding
+        #    hundreds of unrelated brands into the cluster (700+ items in the
+        #    ProductQuickView "Other Products in this RIP" panel).
         upc_rows = con.execute(f"""
-            SELECT DISTINCT CAST(r.upc AS VARCHAR) AS upc
+            SELECT DISTINCT LTRIM(CAST(r.upc AS VARCHAR), '0') AS un
             FROM {rip_src} r
             WHERE r.wholesaler = $w AND r.edition = $e
               AND CAST(r.rip_code AS VARCHAR) = $rc
-              AND r.upc IS NOT NULL AND CAST(r.upc AS VARCHAR) <> ''
+              AND r.upc IS NOT NULL
+              AND CAST(r.upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
+              AND LTRIM(CAST(r.upc AS VARCHAR), '0') NOT IN ('', 'None', 'nan')
               {excl_rip}
         """, params).fetchdf()
-        rip_upcs = sorted({str(u).strip() for u in upc_rows["upc"].tolist() if u and str(u).strip()})
+        rip_upcs = sorted({str(u).strip() for u in upc_rows["un"].tolist() if u and str(u).strip()})
         # 2) Join CPL rows for those UPCs to pick up pricing + size info. Fall
         #    back to whatever the CPL has even when the CPL's own rip_code
         #    points elsewhere — UPC 80432400708 is the canonical example
         #    (stacked under another RIP on the CPL row, still qualifies here).
+        #    Match by LTRIM-normalised UPC so leading-zero formatting can't
+        #    cause a real product to be missed.
         records = []
         if rip_upcs:
             ph = ", ".join(f"$u{i}" for i in range(len(rip_upcs)))
@@ -3016,7 +3028,10 @@ def get_rip_siblings(
                        rip_code, combo_code
                 FROM {src}
                 WHERE wholesaler = $w AND edition = $e
-                  AND CAST(upc AS VARCHAR) IN ({ph})
+                  AND upc IS NOT NULL
+                  AND CAST(upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
+                  AND LTRIM(CAST(upc AS VARCHAR), '0') NOT IN ('', 'None', 'nan')
+                  AND LTRIM(CAST(upc AS VARCHAR), '0') IN ({ph})
             """, uprm).fetchdf()
             records = [
                 {k: (None if isinstance(v, float) and math.isnan(v) else v) for k, v in r.items()}
@@ -3025,8 +3040,9 @@ def get_rip_siblings(
         # 3) RIP UPCs missing from the CPL still belong on screen — surface a
         #    minimal stub so the user sees the full rebate group and knows the
         #    SKU isn't on the current CPL. The UI keeps Add-to-Cart disabled
-        #    when the row has no price.
-        seen_upcs = {str(r.get("upc")) for r in records}
+        #    when the row has no price. Compare by LTRIMmed UPC since that's
+        #    what records carry now.
+        seen_upcs = {str(r.get("upc") or "").lstrip("0") for r in records}
         for u in rip_upcs:
             if u not in seen_upcs:
                 records.append({

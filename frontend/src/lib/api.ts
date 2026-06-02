@@ -50,7 +50,7 @@ export const catalog = {
     request<{ total: number; items: Product[]; corrected_query?: string | null }>(`/api/catalog/search${qs(params)}`),
   newItems: (params?: Record<string, unknown>) =>
     request<NewItemsResponse>(`/api/catalog/new-items${qs(params ?? {})}`),
-  product: (wholesaler: string, name: string, opts?: { edition?: string; upc?: string; unit_volume?: string; unit_qty?: string; vintage?: string }) =>
+  product: (wholesaler: string, name: string, opts?: { edition?: string; upc?: string; unit_volume?: string; unit_qty?: string; vintage?: string; rip_code?: string }) =>
     request<{ product: Product; discount_tiers: DiscountTier[]; rip_tiers: RipTier[]; enrichment: ProductEnrichment | null; ai_blurb: string | null }>(
       `/api/catalog/product/${encodeURIComponent(wholesaler)}/${encodeURIComponent(name)}${qs(opts ?? {})}`
     ),

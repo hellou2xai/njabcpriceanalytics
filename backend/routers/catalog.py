@@ -1520,6 +1520,7 @@ def get_product_detail(
     unit_volume: Optional[str] = None,
     unit_qty: Optional[str] = None,
     vintage: Optional[str] = None,
+    rip_code: Optional[str] = None,
 ):
     """Full product detail with all pricing, discount tiers, and RIP info.
 
@@ -1603,7 +1604,14 @@ def get_product_detail(
 
         # Get RIP tiers (RIP sheet, joined by rip_code + upc + edition)
         rip_tiers = []
-        rip_code = item.get("rip_code")
+        # Caller can pin the modal to a specific RIP cluster via the
+        # `rip_code` query param — a UPC can sit under several rebates and
+        # the cpl row's canonical rip_code is just one of them. Falls back to
+        # the canonical when no override is sent.
+        override_rc = rip_code if (rip_code and str(rip_code).strip()
+                                   and str(rip_code) not in ("None", "nan", "0"))\
+                                  else None
+        rip_code = override_rc or item.get("rip_code")
         upc = item.get("upc")
         ed = item.get("edition")
         case_price = float(item["frontline_case_price"]) if item.get("frontline_case_price") else 0.0

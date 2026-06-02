@@ -34,7 +34,7 @@ interface QuickViewCtx {
     productName: string,
     wholesaler: string,
     compareWith?: CompareSide,
-    opts?: { upc?: string; unitVolume?: string; unitQty?: string; vintage?: string; months?: MonthCompare },
+    opts?: { upc?: string; unitVolume?: string; unitQty?: string; vintage?: string; months?: MonthCompare; ripCode?: string },
   ) => void;
   close: () => void;
 }
@@ -44,7 +44,7 @@ export const useProductQuickView = () => useContext(Ctx);
 
 export function ProductQuickViewProvider({ children }: { children: React.ReactNode }) {
   const [target, setTarget] = useState<
-    { productName: string; wholesaler: string; upc?: string; unitVolume?: string; unitQty?: string; vintage?: string; months?: MonthCompare; compareWith?: CompareSide } | null
+    { productName: string; wholesaler: string; upc?: string; unitVolume?: string; unitQty?: string; vintage?: string; months?: MonthCompare; compareWith?: CompareSide; ripCode?: string } | null
   >(null);
 
   const open = useCallback(
@@ -52,7 +52,7 @@ export function ProductQuickViewProvider({ children }: { children: React.ReactNo
       productName: string,
       wholesaler: string,
       compareWith?: CompareSide,
-      opts?: { upc?: string; unitVolume?: string; unitQty?: string; vintage?: string; months?: MonthCompare },
+      opts?: { upc?: string; unitVolume?: string; unitQty?: string; vintage?: string; months?: MonthCompare; ripCode?: string },
     ) => setTarget({ productName, wholesaler, ...opts, compareWith }),
     []
   );
@@ -71,6 +71,7 @@ export function ProductQuickViewProvider({ children }: { children: React.ReactNo
           vintage={target.vintage}
           months={target.months}
           compareWith={target.compareWith}
+          ripCodeOverride={target.ripCode}
           onClose={close}
         />
       )}
@@ -79,7 +80,7 @@ export function ProductQuickViewProvider({ children }: { children: React.ReactNo
 }
 
 function QuickViewModal({
-  productName, wholesaler, upc, unitVolume, unitQty, vintage, months, compareWith, onClose,
+  productName, wholesaler, upc, unitVolume, unitQty, vintage, months, compareWith, ripCodeOverride, onClose,
 }: {
   productName: string;
   wholesaler: string;
@@ -89,6 +90,7 @@ function QuickViewModal({
   vintage?: string;
   months?: MonthCompare;
   compareWith?: CompareSide;
+  ripCodeOverride?: string;
   onClose: () => void;
 }) {
   // Draggable modal: offset from its centered position. Lets the user pull it
@@ -111,8 +113,11 @@ function QuickViewModal({
   };
 
   const { data: detail } = useQuery({
-    queryKey: ['product-detail', wholesaler, productName, upc, unitVolume, unitQty, vintage, months?.curr],
-    queryFn: () => catalog.product(wholesaler, productName, { edition: months?.curr, upc, unit_volume: unitVolume, unit_qty: unitQty, vintage }),
+    // ripCodeOverride is included so a click from a multi-RIP catalog row
+    // re-fetches the detail bound to THAT cluster's tier ladder, not the
+    // canonical cpl rip_code (which may be a different cluster entirely).
+    queryKey: ['product-detail', wholesaler, productName, upc, unitVolume, unitQty, vintage, months?.curr, ripCodeOverride],
+    queryFn: () => catalog.product(wholesaler, productName, { edition: months?.curr, upc, unit_volume: unitVolume, unit_qty: unitQty, vintage, rip_code: ripCodeOverride }),
   });
 
   // Auto-derive a current/next edition pair from whatever this page loaded,
@@ -173,8 +178,11 @@ function QuickViewModal({
 
   // RIP siblings: every other product sharing this product's rip_code in the
   // latest edition. RIP rebates qualify on combined quantity across the group,
-  // so we surface the full list with per-row Add to Cart.
-  const ripCodeRaw = detail?.product?.rip_code;
+  // so we surface the full list with per-row Add to Cart. When the caller
+  // pinned a specific cluster via ripCodeOverride (e.g. a click on a
+  // group-by-RIP catalog row), use THAT code so the siblings panel matches
+  // the cluster the user came from.
+  const ripCodeRaw = ripCodeOverride || detail?.product?.rip_code;
   const ripCode = ripCodeRaw && !['None', 'nan', '0', ''].includes(String(ripCodeRaw)) ? String(ripCodeRaw) : null;
   const { data: ripSiblings } = useQuery({
     enabled: !!ripCode,

@@ -4196,10 +4196,14 @@ def _format_rip_full_md(con, rl) -> str:
         # Full Case Mix table.
         members = _full_case_mix(con, code, ws_lc, cym)
         if members:
-            size_label = focal.get("unit_volume") if focal else None
             ws_h = (c.get("wholesaler") or "").title()
             n = len(members)
-            size_note = f"all {size_label}, {ws_h}" if size_label else ws_h
+            # Size note from the ACTUAL members' sizes — not the focal product's.
+            # Only say "all <size>" when every member really is that size; a mix
+            # spanning sizes (the common case) just shows the distributor.
+            _sizes = {str(m.get("unit_volume")).strip() for m in members
+                      if m.get("unit_volume") and str(m.get("unit_volume")).strip()}
+            size_note = f"all {next(iter(_sizes))}, {ws_h}" if len(_sizes) == 1 else ws_h
             parts.append("")
             parts.append(f"📦 **Full Case Mix — {n} Product{'s' if n != 1 else ''} ({size_note})**")
             parts.append("")

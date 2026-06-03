@@ -37,6 +37,21 @@ from backend import rip_utils as _rip   # canonical case/bottle RIP unit math
 
 _ACTION_TYPES =("add_to_cart", "update_quantity", "add_to_favorites", "add_to_list", "swap_distributor", "submit_order", "reorder", "message_rep", "set_order_note", "assign_rep", "create_rep", "remove_from_cart")
 _MAX_TURNS = 6
+# RIP-membership filter for any (rip-sheet UPC -> cpl_enriched) join. A UPC can
+# have SEVERAL catalog SKUs; some are promo/gift/VAP variants (or unrelated
+# products an over-broad rip-sheet code paired) that share the UPC but carry NO
+# rip_code and get NO rebate. Such a sibling is NOT a RIP member. Keep a cpl row
+# (alias `c`, joined to its current edition) only if it has a valid rip_code, OR
+# no same-UPC sibling in the same edition does (so single-SKU UPCs are untouched
+# and no cluster is ever wiped). Append to the WHERE of the cpl join.
+_RIP_MEMBER_FILTER = (
+    " AND ((c.rip_code IS NOT NULL AND CAST(c.rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan')) "
+    "      OR NOT EXISTS (SELECT 1 FROM cpl_enriched c2 "
+    "                     WHERE c2.wholesaler = c.wholesaler AND c2.edition = c.edition "
+    "                       AND LTRIM(CAST(c2.upc AS VARCHAR),'0') = LTRIM(CAST(c.upc AS VARCHAR),'0') "
+    "                       AND c2.rip_code IS NOT NULL "
+    "                       AND CAST(c2.rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan'))) "
+)
 # Stocking-deal floor used by the "best deals" ranker by default. A row whose
 # effective_case_price is below this fraction of frontline (e.g. a 100%-off
 # free-with-purchase rebate at $0/cs) is excluded from the ranking — those
@@ -590,7 +605,8 @@ def _t_rip_lookup(con, args):
                     "FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
                     "JOIN ripupc r ON r.wholesaler=c.wholesaler AND r.un=LTRIM(CAST(c.upc AS VARCHAR),'0') "
                     "WHERE c.upc IS NOT NULL "
-                    "  AND LTRIM(CAST(c.upc AS VARCHAR), '0') NOT IN ('', 'None', 'nan')",
+                    "  AND LTRIM(CAST(c.upc AS VARCHAR), '0') NOT IN ('', 'None', 'nan')"
+                    + _RIP_MEMBER_FILTER,
                     pr_count).fetchone()
                 member_count = int(cnt_df[0]) if cnt_df and cnt_df[0] is not None else 0
             except Exception:
@@ -611,6 +627,7 @@ def _t_rip_lookup(con, args):
                 "JOIN ripupc r ON r.wholesaler=c.wholesaler AND r.un=LTRIM(CAST(c.upc AS VARCHAR),'0') "
                 "WHERE c.upc IS NOT NULL "
                 "  AND LTRIM(CAST(c.upc AS VARCHAR), '0') NOT IN ('', 'None', 'nan') "
+                + _RIP_MEMBER_FILTER +
                 "ORDER BY c.frontline_case_price NULLS LAST LIMIT 25", pr_sample).fetchdf()
             for _, m in df.iterrows():
                 cp = m["frontline_case_price"]
@@ -1289,7 +1306,8 @@ def _t_rip_tier_gap(con, args):
                 "SELECT ANY_VALUE(c.unit_qty) FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
                 "JOIN ripupc r ON r.wholesaler=c.wholesaler AND r.un=LTRIM(CAST(c.upc AS VARCHAR),'0') "
                 "WHERE c.upc IS NOT NULL "
-                "  AND LTRIM(CAST(c.upc AS VARCHAR), '0') NOT IN ('', 'None', 'nan')",
+                "  AND LTRIM(CAST(c.upc AS VARCHAR), '0') NOT IN ('', 'None', 'nan')"
+                + _RIP_MEMBER_FILTER,
                 [cym, str(code), str(code), cym]).fetchone()
             if prow:
                 pack = _num(prow[0])
@@ -3013,6 +3031,7 @@ def _rip_case_mix_products(con, code, ws=None, limit=80) -> list:
             f"WHERE c.product_name IS NOT NULL "
             "  AND c.upc IS NOT NULL "
             "  AND LTRIM(CAST(c.upc AS VARCHAR), '0') NOT IN ('', 'None', 'nan') "
+            + _RIP_MEMBER_FILTER +
             f"ORDER BY c.product_name LIMIT {int(limit)}", pr).fetchdf()
         return df.to_dict(orient="records")
     except Exception:
@@ -3947,6 +3966,7 @@ def _full_case_mix(con, code: str, ws: str, cym: str) -> list[dict]:
             "  AND r.un=LTRIM(CAST(c.upc AS VARCHAR),'0') "
             "WHERE c.upc IS NOT NULL "
             "  AND LTRIM(CAST(c.upc AS VARCHAR),'0') NOT IN ('', 'None', 'nan') "
+            + _RIP_MEMBER_FILTER +
             "ORDER BY c.product_name",
             [str(code), str(ws), str(code), str(ws)]).fetchdf()
         out = []

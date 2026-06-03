@@ -127,7 +127,10 @@ def _t_top_products(con, args):
         "price_trend": args.get("price_trend"),
     }
     which = {"cheapest": "cheapest", "expensive": "most_expensive"}.get(args.get("order_by"), "cheapest")
-    cap = min(int(args.get("limit") or 10), 25)
+    # This is a DATA-ANALYSIS tool — honor the requested limit fully (no hard 25
+    # ceiling) so 'list all X' / 'how many X' return the complete set. A high
+    # backstop (1000) only guards against a pathological all-catalog dump.
+    cap = min(int(args.get("limit") or 50), 1000)
     # Hide $0 free-with-purchase stocking rows by default (otherwise the
     # 'cheapest' list is dominated by 100%-off liquidation rows like Beronia
     # Rose). Opt back in with include_stocking_deals=True.
@@ -1785,7 +1788,7 @@ _DATA_TOOLS = {
     "compare_distributors": (_t_compare_distributors, "Side-by-side price comparison of ONE product across all distributors carrying it. `match` = UPC or product name (UPC is resolved). Returns each distributor's case/effective price + savings; shown as a table and the rows as add-to-cart cards."),
     "distributor_breakdown": (_t_distributor_breakdown, "Per-distributor product counts, avg case price, and #with RIP/discount."),
     "deal_counts": (_t_deal_counts, "Totals: products, #with RIP, #with discount, #closeouts."),
-    "top_products": (_t_top_products, "Resolve matching products. Args: match, category, distributor, has_rip, has_discount, price_min, price_max, order_by(cheapest|expensive), limit."),
+    "top_products": (_t_top_products, "Resolve matching products. Args: match, category, distributor, has_rip, has_discount, price_min, price_max, order_by(cheapest|expensive), limit. THIS IS A DATA-ANALYSIS TOOL — for 'list ALL / show every / how many X' questions, pass a HIGH limit (e.g. 500) so the COMPLETE matching set comes back, then state the exact count and list them (don't sample or truncate)."),
     "price_history": (_t_price_history, "Price history across editions for the product matching `match`."),
     "price_details": (_t_price_details, "FULL price breakdown for ONE product (call this for any 'price'/'pricing'/'cost'/'deal' question about a specific product): frontline case & bottle price, discount tiers, RIP tiers, effective price, bottles/case, 3-month history."),
     "best_one_case_rip": (_t_best_one_case_rip, "BEST 'buy just one case' RIP rebates — rebates whose per-case value at a SINGLE case is essentially the same as buying in bulk (e.g. 30 cases), so a small buyer isn't penalised. Ranked by per-case rebate at 1 case. Optional: distributor, limit. Use for 'best 1 case RIP deal', 'RIP deals worth it on one case', 'no-bulk RIP rebates'."),
@@ -3106,7 +3109,9 @@ def _do_action(con, args, actions_out) -> dict:
         actions_out.append(action)
         return {"create_rep": {"distributor": dist, "name": rname, "has_email": bool(remail)}}
     which = args.get("which") if args.get("which") in ("cheapest", "most_expensive", "first", "all") else "first"
-    cap = 10 if which == "all" else 1
+    # 'all' resolves the FULL matching set (high backstop), not a 10-item slice,
+    # so 'add all X' / 'every X' acts on everything that matches.
+    cap = 1000 if which == "all" else 1
     view = {
         "categories": [args["category"]] if args.get("category") else [],
         "divisions": [args["distributor"]] if args.get("distributor") else [],
@@ -5220,12 +5225,12 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                     _tlog.info("Movers template fired (%s, chars=%d)", movers_result[1], len(_md))
         except Exception:
             _tlog.exception("deterministic template raised for question=%r", question)
-    # Multi-product answers (3+ products) get enriched with tier ladders so
-    # the frontend can render a side-by-side comparison table, and a Catalog
-    # deep-link is built by exact UPCs so "Open in Catalog ->" lands on the
-    # same set the chat shows. Cap at 12 rows — that's all the table is sized
-    # for; the user can hit the Catalog hyperlink for the full set.
-    products_final = products_out[:24]
+    # Multi-product answers get enriched with tier ladders so the frontend can
+    # render a side-by-side comparison table, and a Catalog deep-link is built by
+    # exact UPCs so "Open in Catalog ->" lands on the same set the chat shows.
+    # DATA-ANALYSIS tool: surface the FULL set the tools returned (no 12/24-card
+    # cap) so 'list/show all X' is complete; a 1000 backstop guards the payload.
+    products_final = products_out[:1000]
     if products_final:
         # Enrich EVERY surfaced product with its discount/RIP tiers + next-month
         # tiers so any tabular product view renders the rich interactive format
@@ -5253,7 +5258,6 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                     "path": f"/catalog?upcs={upc_csv}",
                     "label": f"these {len(products_final)} products in Catalog",
                 }
-        products_final = products_final[:12]
     return _json_safe({
         "answer": answer,
         "charts": charts,

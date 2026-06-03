@@ -21,6 +21,8 @@ export interface SparkSourceItem {
   // Headline figures
   frontline_case_price?: number | null;
   effective_case_price?: number | null;
+  // Bottles per case, so the popover can show $/btl alongside $/cs.
+  unit_qty?: number | string | null;
   // Mover-only fields (Price Drops / Increases): list price for next month
   // and the curr/next effective price under different names.
   frontline_next_case_price?: number | null;
@@ -51,6 +53,7 @@ function buildBlock(
   frontline: number | null,
   bestEff: number | null,
   edition: string | null,
+  pack: number | null,
 ): MonthBreakdown {
   const disc = (tiers ?? []).filter(t => t.source === 'discount');
   const rip  = (tiers ?? []).filter(t => t.source === 'rip');
@@ -80,6 +83,7 @@ function buildBlock(
       }))
       .filter(t => t.eff > 0),
     bestEff,
+    pack,
   };
 }
 
@@ -124,8 +128,9 @@ export function buildSparkProps(item: SparkSourceItem):
     ? (item.next_case_price ?? null)
     : (item.next_effective_case_price ?? null);
 
+  const pack = item.unit_qty != null && Number(item.unit_qty) > 0 ? Number(item.unit_qty) : null;
   return {
-    curr: buildBlock(item.tiers, currFront, currBest, currEd),
-    next: buildBlock(item.next_tiers, nextFront, nextBest, nextEd),
+    curr: buildBlock(item.tiers, currFront, currBest, currEd, pack),
+    next: buildBlock(item.next_tiers, nextFront, nextBest, nextEd, pack),
   };
 }

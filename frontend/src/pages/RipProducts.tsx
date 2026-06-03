@@ -228,10 +228,13 @@ function RipProductsImpl() {
       const k = `${it.wholesaler}|${it.product_name}|${it.unit_volume ?? ''}`;
       let entry = m.get(k);
       if (!entry) {
+        {
+        const pack = Number(it.unit_qty) > 0 ? Number(it.unit_qty) : null;
         entry = {
-          curr: { edition: null, frontline: null, afterDiscount: null, discountTiers: [], ripTiers: [], bestEff: null },
-          next: { edition: null, frontline: null, afterDiscount: null, discountTiers: [], ripTiers: [], bestEff: null },
+          curr: { edition: null, frontline: null, afterDiscount: null, discountTiers: [], ripTiers: [], bestEff: null, pack },
+          next: { edition: null, frontline: null, afterDiscount: null, discountTiers: [], ripTiers: [], bestEff: null, pack },
         };
+        }
         m.set(k, entry);
       }
       if (entry.curr.edition == null && it.curr_edition) entry.curr.edition = it.curr_edition;

@@ -216,6 +216,26 @@ def _clean(v):
     return v
 
 
+# Semantic "flavored" handling. The data has NO 'flavored' tag and the word
+# appears in no product name, so a literal/FTS match for "flavored absolut"
+# returns nothing. Instead, "flavored <brand>" means the brand's SKUs whose
+# name carries a FLAVOR word; "plain/unflavored/original <brand>" means the
+# base SKUs (no flavor word, e.g. ABSOLUT 80 / ELYX). The token list is
+# brand-agnostic and includes the abbreviated forms the source data uses
+# (GRAPEF, GRPFRT, MANDRIN, VANILIA, APEACH).
+_FLAVOR_DESCRIPTORS = {"flavored", "flavoured", "flavor", "flavour", "flavors", "flavours"}
+_PLAIN_DESCRIPTORS = {"unflavored", "unflavoured", "plain", "original", "regular"}
+_FLAVOR_TOKENS = [
+    "CITRON", "MANDRIN", "MANDARIN", "MANGO", "LIME", "PEACH", "APEACH", "BERRY",
+    "GRAPEFRUIT", "GRAPEF", "GRPFRT", "VANILLA", "VANILIA", "RASPBERRY", "RASPBERRI",
+    "PEAR", "WATERMELON", "CUCUMBER", "LEMON", "ORANGE", "APPLE", "CHERRY", "COCONUT",
+    "PINEAPPLE", "PASSION", "RUBY", "GRAPE", "ELDERFLOWER", "GINGER", "CRANBERRY",
+    "POMEGRANATE", "BLUEBERRY", "STRAWBERRY", "KIWI", "MELON", "LYCHEE", "CURRANT",
+    "BLACKBERRY", "TANGERINE", "CLEMENTINE", "APRICOT", "PLUM", "FIG", "HONEY",
+    "CARAMEL", "CINNAMON", "ESPRESSO", "COFFEE", "CHOCOLATE", "POMELO", "DRAGON",
+]
+
+
 def _resolve_products(con, view: dict, match: str, which: str, cap: int,
                       exclude_stocking: bool = False) -> list[dict]:
     """Resolve concrete catalog products (current edition per wholesaler) matching
@@ -240,9 +260,28 @@ def _resolve_products(con, view: dict, match: str, which: str, cap: int,
         params["upc_raw"] = f"%{_compact}%"
         where.append("(LTRIM(CAST(c.upc AS VARCHAR), '0') = $upc_n OR CAST(c.upc AS VARCHAR) LIKE $upc_raw)")
     else:
-        for i, t in enumerate(t for t in re.split(r"\s+", (match or "").strip()) if t):
+        raw_tokens = [t for t in re.split(r"\s+", (match or "").strip()) if t]
+        low = [t.lower() for t in raw_tokens]
+        flavored_intent = any(t in _FLAVOR_DESCRIPTORS for t in low)
+        unflavored_intent = any(t in _PLAIN_DESCRIPTORS for t in low)
+        # Words to drop from the literal AND-match. The descriptor words are not
+        # in any product name (matching them would zero the result); when a
+        # flavored/plain intent is present we also drop the bare category noun
+        # ('vodka' -> names say 'VOD'), since the brand token already scopes it.
+        strip = set(_FLAVOR_DESCRIPTORS) | set(_PLAIN_DESCRIPTORS)
+        if flavored_intent or unflavored_intent:
+            strip |= {"vodka", "vodkas", "vodca"}
+        content = [t for t in raw_tokens if t.lower() not in strip]
+        for i, t in enumerate(content):
             params[f"m{i}"] = f"%{t}%"
             where.append(f"(UPPER(c.product_name) LIKE UPPER(${'m'+str(i)}) OR UPPER(COALESCE(c.brand,'')) LIKE UPPER(${'m'+str(i)}))")
+        # Flavor semantics: 'flavored' -> name carries a flavor word;
+        # 'plain/unflavored/original' -> name carries NONE (the base SKU).
+        if flavored_intent or unflavored_intent:
+            for i, fw in enumerate(_FLAVOR_TOKENS):
+                params[f"fl{i}"] = f"%{fw}%"
+            flav = " OR ".join(f"UPPER(c.product_name) LIKE $fl{i}" for i in range(len(_FLAVOR_TOKENS)))
+            where.append(f"({flav})" if flavored_intent else f"NOT ({flav})")
     for i, cat in enumerate(view.get("categories") or []):
         params[f"cat{i}"] = cat
     if view.get("categories"):

@@ -808,6 +808,7 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                               }))
                               .filter(t => t.eff > 0),
                             bestEff,
+                            pack: Number(item.unit_qty) > 0 ? Number(item.unit_qty) : null,
                           };
                         };
                         const nextEd = (() => {

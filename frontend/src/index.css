@@ -2742,6 +2742,8 @@ tr:hover .row-menu-btn { opacity: 1; }
 .mes-section-pill.is-discount { background: #fef3c7; color: #92400e; border-color: #fde68a; }
 .mes-section-pill.is-rip      { background: #e0e7ff; color: #3730a3; border-color: #c7d2fe; }
 .mes-num { white-space: nowrap; }
+/* Per-bottle equivalent shown beside each per-case price in the popover. */
+.mes-btl { color: var(--text-muted); font-size: 0.82em; margin-left: 5px; font-weight: 400; }
 .mes-save { color: var(--red); font-weight: 600; }
 .mes-arrow { color: var(--text-muted); margin: 0 2px; }
 .mes-row-best td { background: color-mix(in srgb, var(--green) 10%, transparent); }

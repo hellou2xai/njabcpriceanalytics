@@ -3701,13 +3701,29 @@ def _auto_table_products(screen_args: dict) -> list:
         "priceMin": sa.get("price_min"), "priceMax": sa.get("price_max"),
     }
     which = "most_expensive" if sa.get("order") == "desc" else "cheapest"
+    match_str = " ".join(match_terms)
     with get_duckdb() as con:
         # Return the COMPLETE matching set, not a 12-row preview. This is the
         # path 'show me X products' actually takes (the model calls show_on_screen,
         # NOT top_products), so a hardcoded cap here is what truncated the inline
         # table. Only a browser-safety backstop (5000) remains.
-        return _resolve_products(con, view, " ".join(match_terms), which, 5000,
-                                 exclude_stocking=True)
+        prods = _resolve_products(con, view, match_str, which, 5000, exclude_stocking=True)
+        # Consistent output: _resolve_products AND-matches every WORD of the
+        # phrase against product names. A descriptive word the model invents that
+        # isn't in any name ('flavored' in 'absolut flavored') collapses the set
+        # to zero and the inline table silently vanishes. When the strict match
+        # is empty, fall back to the single word that matches the most products,
+        # so a brand query still returns its rows instead of a bare answer line.
+        if not prods:
+            words = [w for w in dict.fromkeys(match_str.split()) if w]
+            if len(words) > 1:
+                best: list = []
+                for w in words:
+                    r = _resolve_products(con, view, w, which, 5000, exclude_stocking=True)
+                    if len(r) > len(best):
+                        best = r
+                prods = best
+        return prods
 
 
 def _format_rip_summary_md(rs) -> str:

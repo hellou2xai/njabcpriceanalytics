@@ -53,6 +53,7 @@ export interface MonthBreakdown {
   discountTiers?: RipTier[];      // every CPL discount option for this month (optional detail)
   ripTiers: RipTier[];            // every RIP option for this month
   bestEff: number | null;         // headline price the sparkline plots
+  pack?: number | null;           // bottles per case, so the popover can show $/btl
 }
 
 interface Props {
@@ -96,13 +97,19 @@ function MonthBlock({ label, short, b }: { label: string; short?: string; b: Mon
 
   const tierLabel = (t: RipTier) => `Buy ${t.qty} ${/btl|bottle/i.test(t.unit) ? 'btl' : 'cs'}`;
   const dollars = (n: number) => `$${n.toFixed(2)}`;
+  // Per-bottle equivalent shown beside every per-case figure when we know the
+  // pack size, so the buyer doesn't have to divide in their head.
+  const perBtl = (n: number | null | undefined) =>
+    (n != null && b.pack && b.pack > 0)
+      ? <span className="mes-btl">${(n / b.pack).toFixed(2)}/btl</span>
+      : null;
 
   return (
     <div className="mes-block">
       <div className="mes-block-head">{label}</div>
       <table className="mes-table">
         <tbody>
-          <tr><td>Frontline</td><td className="mes-num">{fmt(b.frontline)}</td></tr>
+          <tr><td>Frontline</td><td className="mes-num">{fmt(b.frontline)}{perBtl(b.frontline)}</td></tr>
 
           {hasDiscTiers && b.frontline != null && (
             <>
@@ -119,7 +126,7 @@ function MonthBlock({ label, short, b }: { label: string; short?: string; b: Mon
                     <td className="mes-num">
                       <span className="mes-save">−{dollars(save)}</span>
                       <span className="mes-arrow"> = </span>
-                      <strong>{dollars(t.eff)}</strong>
+                      <strong>{dollars(t.eff)}</strong>{perBtl(t.eff)}
                     </td>
                   </tr>
                 );
@@ -165,7 +172,7 @@ function MonthBlock({ label, short, b }: { label: string; short?: string; b: Mon
                     <td className="mes-num">
                       <span className="mes-save">−{dollars(Math.max(0, save))}</span>
                       <span className="mes-arrow"> = </span>
-                      <strong>{dollars(t.eff)}</strong>
+                      <strong>{dollars(t.eff)}</strong>{perBtl(t.eff)}
                     </td>
                   </tr>
                 );
@@ -177,7 +184,7 @@ function MonthBlock({ label, short, b }: { label: string; short?: string; b: Mon
             {/* Prefix the month so a reader scanning side-by-side knows which
                 column's best they're looking at ("May Best" vs "Jun Best"). */}
             <td>{short ? `${short} Best` : 'Best'}</td>
-            <td className="mes-num">{fmt(b.bestEff)}</td>
+            <td className="mes-num">{fmt(b.bestEff)}{perBtl(b.bestEff)}</td>
           </tr>
         </tbody>
       </table>
@@ -293,6 +300,12 @@ export default function MonthEffectiveSparkline({ curr, next }: Props) {
   const wrapRef = useRef<HTMLSpanElement | null>(null);
   const popRef = useRef<HTMLSpanElement | null>(null);
   const [placeBelow, setPlaceBelow] = useState(false);
+  // The chip's screen rect, captured on hover. The hover popover is rendered
+  // position:fixed anchored to it so it ESCAPES the catalog table's
+  // overflow-x:auto clip (an absolutely-positioned popover inside an
+  // overflow:auto ancestor gets cut off — that was the "information not
+  // visible" bug in the assistant comparison table).
+  const [hoverRect, setHoverRect] = useState<DOMRect | null>(null);
   // Pinned + drag state. When pinned: popover stays visible after mouseleave,
   // turns into a position-fixed floating panel at `pos`, draggable from
   // anywhere on its body. dragOffset stores the cursor-to-panel offset at
@@ -308,6 +321,7 @@ export default function MonthEffectiveSparkline({ curr, next }: Props) {
     const rect = el.getBoundingClientRect();
     const ROOM_NEEDED = 360;   // generous min height for the two-column popover
     setPlaceBelow(rect.top < ROOM_NEEDED);
+    setHoverRect(rect);
   };
 
   // On any mousedown inside the popover (except the close button), pin and
@@ -380,7 +394,14 @@ export default function MonthEffectiveSparkline({ curr, next }: Props) {
   // mode only.
   const popStyle: React.CSSProperties | undefined = pinned && pos
     ? { position: 'fixed', left: pos.x, top: pos.y, transform: 'none', bottom: 'auto' }
-    : undefined;
+    : hoverRect
+      // Fixed + anchored to the chip so the popover is never clipped by the
+      // catalog table's overflow-x:auto. Centre over the chip; flip below when
+      // there isn't room above.
+      ? (placeBelow
+          ? { position: 'fixed', left: hoverRect.left + hoverRect.width / 2, top: hoverRect.bottom + 8, bottom: 'auto', transform: 'translateX(-50%)' }
+          : { position: 'fixed', left: hoverRect.left + hoverRect.width / 2, top: hoverRect.top - 8, bottom: 'auto', transform: 'translate(-50%, -100%)' })
+      : undefined;
 
   return (
     <span className={`mes-wrap${placeBelow ? ' mes-wrap-below' : ''}${pinned ? ' mes-wrap-pinned' : ''}`}

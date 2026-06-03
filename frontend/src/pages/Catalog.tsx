@@ -203,7 +203,7 @@ export default function Catalog() {
       </div>
 
       <div className="search-bar">
-        <input type="text" placeholder="Search products..." value={q} onChange={e => { setQ(e.target.value); setPage(0); }} />
+        <input type="text" placeholder="Search products, UPC, item # or RIP code..." value={q} onChange={e => { setQ(e.target.value); setPage(0); }} />
         {/* RIP-code pinpoint filter, sitting on the top filter row (the user
             asked for it here, not in a side panel). Sets the same param the
             assistant's 'Open in Catalog' deep-link uses, so a typed code and

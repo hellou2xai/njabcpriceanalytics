@@ -255,7 +255,18 @@ def _q_clause(q: str, extra_aliases: dict | None = None,
         digits_norm = compact.lstrip("0") or compact
         params["q_upc"] = f"%{compact}%"
         params["q_upc2"] = f"%{digits_norm}%"
-        return f"(({name_match}) OR {upc_col} LIKE $q_upc OR {upc_col} LIKE $q_upc2)", params, rel_expr
+        ors = [f"{upc_col} LIKE $q_upc", f"{upc_col} LIKE $q_upc2"]
+        # The same digits can be an Allied (ABG) item number or a RIP cluster
+        # code rather than a barcode - exactly the numbers the catalog cards
+        # display. identifier_clause() ORs in those lookups (sku_mapping +
+        # the rip table) so the number a buyer reads off the card always
+        # finds the product.
+        from backend.code_search import identifier_clause
+        id_clause, id_params = identifier_clause(q, upc_expr=_outer_upc)
+        if id_clause:
+            ors.append(id_clause)
+            params.update(id_params)
+        return f"(({name_match}) OR {' OR '.join(ors)})", params, rel_expr
     return f"({name_match})", params, rel_expr
 
 

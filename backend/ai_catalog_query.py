@@ -252,14 +252,24 @@ def _resolve_products(con, view: dict, match: str, which: str, cap: int,
                      "OR c.effective_case_price IS NULL "
                      "OR c.effective_case_price >= c.frontline_case_price * 0.10)")
     params = {"cym": _current_ym()}
-    # A mostly-numeric match of 6+ digits is a UPC/barcode, not a name — match it
-    # against the upc column (leading zeros normalised) instead of the name, so
-    # "812147022384" resolves the product. Otherwise AND the name/brand tokens.
+    # A mostly-numeric match of 5+ digits is a code, not a name: a UPC/barcode,
+    # an Allied (ABG) item number, or a RIP cluster code. Match all three, so
+    # "812147022384" (UPC), "4219043" (ABG SKU) and "10368" (RIP code) each
+    # resolve the product. A name match stays in the OR because real product
+    # names carry numbers too (DON JULIO 1942).
     _compact = re.sub(r"[\s\-]", "", (match or ""))
-    if _compact.isdigit() and len(_compact) >= 6:
+    if _compact.isdigit() and len(_compact) >= 5:
         params["upc_n"] = _compact.lstrip("0") or _compact
         params["upc_raw"] = f"%{_compact}%"
-        where.append("(LTRIM(CAST(c.upc AS VARCHAR), '0') = $upc_n OR CAST(c.upc AS VARCHAR) LIKE $upc_raw)")
+        _ors = ["LTRIM(CAST(c.upc AS VARCHAR), '0') = $upc_n",
+                "CAST(c.upc AS VARCHAR) LIKE $upc_raw",
+                "UPPER(c.product_name) LIKE UPPER($upc_raw)"]
+        from backend.code_search import identifier_clause
+        _idc, _idp = identifier_clause(_compact, upc_expr="c.upc")
+        if _idc:
+            _ors.append(_idc)
+            params.update(_idp)
+        where.append("(" + " OR ".join(_ors) + ")")
     else:
         raw_tokens = [t for t in re.split(r"\s+", (match or "").strip()) if t]
         low = [t.lower() for t in raw_tokens]

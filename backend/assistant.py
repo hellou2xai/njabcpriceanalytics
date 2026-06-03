@@ -207,6 +207,22 @@ def _t_price_timeline(con, args):
     upc, name_hint = None, None
     if compact.isdigit() and len(compact) >= 6:
         upc = compact.lstrip("0") or compact
+        # The number may be an Allied (ABG) item number instead of a barcode.
+        # If no catalog row carries it as a UPC, translate it via sku_mapping
+        # (only when it resolves to exactly one UPC - a RIP code spanning a
+        # whole cluster has no single timeline).
+        try:
+            _hit = con.execute(
+                "SELECT 1 FROM cpl_enriched "
+                "WHERE LTRIM(CAST(upc AS VARCHAR), '0') = ? LIMIT 1",
+                [upc]).fetchone()
+        except Exception:
+            _hit = True
+        if not _hit:
+            from backend.code_search import resolve_codes_to_upcs
+            _alts = resolve_codes_to_upcs(con, compact)
+            if len(_alts) == 1:
+                upc = _alts[0]
     else:
         toks = [t for t in re.split(r"\s+", match) if t]
         if toks:
@@ -667,10 +683,22 @@ def _t_rip_lookup(con, args):
     where = ["1=1"]
     params: dict = {}
     _compact = re.sub(r"[\s\-]", "", match)
-    if _compact.isdigit() and len(_compact) >= 6:
+    if _compact.isdigit() and len(_compact) >= 5:
+        # 5+ digits is a code: UPC, Allied (ABG) item number, or RIP cluster
+        # code. Match all three (plus the name, since names carry numbers
+        # like DON JULIO 1942) so the digits printed on a catalog card
+        # always resolve here too.
         params["upc_n"] = _compact.lstrip("0") or _compact
         params["upc_raw"] = f"%{_compact}%"
-        where.append("(LTRIM(CAST(c.upc AS VARCHAR), '0') = $upc_n OR CAST(c.upc AS VARCHAR) LIKE $upc_raw)")
+        _ors = ["LTRIM(CAST(c.upc AS VARCHAR), '0') = $upc_n",
+                "CAST(c.upc AS VARCHAR) LIKE $upc_raw",
+                "UPPER(c.product_name) LIKE UPPER($upc_raw)"]
+        from backend.code_search import identifier_clause
+        _idc, _idp = identifier_clause(_compact, upc_expr="c.upc")
+        if _idc:
+            _ors.append(_idc)
+            params.update(_idp)
+        where.append("(" + " OR ".join(_ors) + ")")
     else:
         # Each token must match name OR brand OR unit_volume (so size tokens
         # like '1.75' / '750ML' / 'L' qualify the row — the catalog stores

@@ -194,20 +194,31 @@ def semantic_search(
     q = (query or "").strip()
     if not q or con_pg is None or con_duck is None:
         return []
-    # Engine selection: prefer Voyage vector search when available + indexed,
-    # fall back to Postgres FTS otherwise. Same return shape from both paths.
+    # Engine selection: identifier-like queries (a UPC, an Allied/ABG item
+    # number, a RIP cluster code) never match the text corpus, so resolve
+    # them straight to UPCs. Otherwise prefer Voyage vector search when
+    # available + indexed, falling back to Postgres FTS. Same return shape
+    # from every path.
     upcs_scored: list[tuple[str, float]] = []
-    voyage_hits = _voyage_upcs(con_pg, q, limit)
-    if voyage_hits is not None and voyage_hits:
-        upcs_scored = voyage_hits
-        engine = "voyage"
+    from backend.code_search import compact_identifier, resolve_codes_to_upcs
+    cid = compact_identifier(q)
+    if cid:
+        norm = cid.lstrip("0") or cid
+        ids = [norm] + resolve_codes_to_upcs(con_duck, q)
+        upcs_scored = [(u, 1.0) for u in dict.fromkeys(ids)]
+        engine = "codes"
     else:
-        try:
-            upcs_scored = _fts_upcs(con_pg, q, limit)
-            engine = "fts"
-        except Exception as e:
-            log.warning("FTS lookup failed: %s", e)
-            return []
+        voyage_hits = _voyage_upcs(con_pg, q, limit)
+        if voyage_hits is not None and voyage_hits:
+            upcs_scored = voyage_hits
+            engine = "voyage"
+        else:
+            try:
+                upcs_scored = _fts_upcs(con_pg, q, limit)
+                engine = "fts"
+            except Exception as e:
+                log.warning("FTS lookup failed: %s", e)
+                return []
     log.debug("semantic_search engine=%s hits=%d q=%r", engine, len(upcs_scored), q)
     if not upcs_scored:
         return []

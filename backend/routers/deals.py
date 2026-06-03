@@ -991,8 +991,19 @@ def get_active_rips(
             where.append("edition = $edition")
             params["edition"] = edition
         if q:
-            where.append("UPPER(rip_description) LIKE UPPER($q)")
+            # Description text, plus the codes a buyer can read off the sheet:
+            # the RIP code itself, the UPC, and (via code_search) an Allied
+            # ABG item number that maps to a member UPC.
             params["q"] = f"%{q}%"
+            _ors = ["UPPER(rip_description) LIKE UPPER($q)",
+                    "CAST(rip_code AS VARCHAR) LIKE $q",
+                    "CAST(upc AS VARCHAR) LIKE $q"]
+            from backend.code_search import identifier_clause
+            _idc, _idp = identifier_clause(q, upc_expr="upc")
+            if _idc:
+                _ors.append(_idc)
+                params.update(_idp)
+            where.append("(" + " OR ".join(_ors) + ")")
 
         w = " AND ".join(where)
         df = con.execute(f"""
@@ -1777,9 +1788,18 @@ def get_rip_products(
                 toks = [t for t in qq.lower().split() if t]
                 if not toks:
                     return items_list
+                # An identifier query (Allied ABG item number, RIP code) may
+                # not appear in the haystack at all - the ABG SKU lives in
+                # sku_mapping, not on the tier row. Resolve it to UPCs once
+                # and accept any row carrying one of them.
+                from backend.code_search import resolve_codes_to_upcs
+                id_upcs = set(resolve_codes_to_upcs(con, qq))
                 tok_terms = [_expansions_for(t) for t in toks]
                 out = []
                 for it in items_list:
+                    if id_upcs and str(it.get("upc") or "").lstrip("0") in id_upcs:
+                        out.append(it)
+                        continue
                     hay = " ".join([
                         (it.get("product_name") or "").lower(),
                         (it.get("brand") or "").lower(),

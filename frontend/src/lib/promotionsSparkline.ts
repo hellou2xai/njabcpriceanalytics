@@ -1,136 +1,58 @@
 /**
- * Build the `curr` + `next` MonthBreakdown props for the Catalog-style
- * MonthEffectiveSparkline from any Promotions card payload. Used by the
- * Time-Sensitive Deals, Price Drops / Increases and Major Discounts
- * pages so all four render the same popover (Frontline / Discount tiers
- * / RIP tiers / Best for both months).
- *
- * The backend's attach_promotion_tiers helper (catalog.py) already
- * attaches `tiers` + `next_tiers` arrays per card; this helper just
- * partitions them by source and produces the shape the sparkline
- * component expects. Fields the Promotions endpoints don't expose
- * (afterDiscount as a single number) are derived from the tier ladder.
+ * Build the `months` prop for `MonthEffectiveSparkline` from any record that
+ * carries the backend `price_3mo` array (last 3 EXISTING editions, each with
+ * the 1-case-discount price, best-RIP price, and that edition's tier ladder).
+ * Shared by the Catalog grid, the assistant comparison table, and the
+ * Promotions pages so all render the same two-line 3-month sparkline + popover.
  */
-import type { MonthBreakdown } from '../components/MonthEffectiveSparkline';
-import type { CatalogTier } from './api';
+import type { MonthBreakdown, RipTier } from '../components/MonthEffectiveSparkline';
+import type { CatalogTier, Price3moBlock } from './api';
 
-// Inputs are union-typed so all three Promotions card shapes fit, with
-// optional fields for the ones that vary across pages.
 export interface SparkSourceItem {
-  edition?: string | null;
-  // Headline figures
-  frontline_case_price?: number | null;
-  effective_case_price?: number | null;
-  // Bottles per case, so the popover can show $/btl alongside $/cs.
   unit_qty?: number | string | null;
-  // Mover-only fields (Price Drops / Increases): list price for next month
-  // and the curr/next effective price under different names.
-  frontline_next_case_price?: number | null;
-  case_price?: number | null;
-  next_case_price?: number | null;
-  next_effective_case_price?: number | null;
-  // Editions for movers
-  cur_edition?: string | null;
-  next_edition?: string | null;
-  // Mover-only: previous-edition values, used when the headline drop /
-  // rise happened on the prev→cur transition rather than cur→next.
-  prev_case_price?: number | null;
-  frontline_prev_case_price?: number | null;
-  prev_edition?: string | null;
-  // Mover-only: which transition is the headline (`'cur'` = prev→cur,
-  // `'next'` = cur→next). The sparkline plots THIS transition so rows
-  // that qualify because of prev→cur don't appear flat.
-  headline_period?: 'cur' | 'next';
-  // Tier ladders
-  tiers?: CatalogTier[];
-  next_tiers?: CatalogTier[];
-  // Time-Sensitive carries a from_date instead of an edition string
-  from_date?: string | null;
+  unit_volume?: string | null;
+  // The 3-month history the backend attaches (pricing.attach_price_3mo).
+  price_3mo?: Price3moBlock[] | null;
 }
 
-function buildBlock(
-  tiers: CatalogTier[] | undefined,
-  frontline: number | null,
-  bestEff: number | null,
-  edition: string | null,
-  pack: number | null,
-): MonthBreakdown {
-  const disc = (tiers ?? []).filter(t => t.source === 'discount');
-  const rip  = (tiers ?? []).filter(t => t.source === 'rip');
-  const bestDisc = disc.length
-    ? Math.min(...disc
-        .map(t => t.price_after ?? Infinity)
-        .filter(v => Number.isFinite(v)))
-    : null;
+function tierToRip(t: CatalogTier): RipTier {
   return {
-    edition,
-    frontline,
-    afterDiscount: bestDisc != null && Number.isFinite(bestDisc) ? bestDisc : null,
-    discountTiers: disc
-      .map(t => ({ qty: t.qty, unit: t.unit, eff: t.price_after ?? 0, ts: !!t.is_time_sensitive }))
-      .filter(t => t.eff > 0),
-    ripTiers: rip
-      // Carry the canonical per-tier RIP rebate from the backend so the
-      // popover shows "this RIP saves $X" instead of an off-by-one delta
-      // against the deepest CPL discount. Plus the time-sensitive flag so
-      // partial-window tiers render with a "TS" marker in the popover.
-      .map(t => ({
-        qty: t.qty,
-        unit: t.unit,
-        eff: t.price_after ?? 0,
-        ripOnlySave: t.rip_only_save_per_case ?? null,
-        ts: !!t.is_time_sensitive,
-      }))
-      .filter(t => t.eff > 0),
-    bestEff,
-    pack,
+    qty: t.qty,
+    unit: t.unit,
+    eff: t.price_after ?? 0,
+    ripOnlySave: t.rip_only_save_per_case ?? null,
+    ts: !!t.is_time_sensitive,
+    from_date: t.from_date,
+    to_date: t.to_date,
+    window_status: t.window_status,
+    days_to_expire: t.days_to_expire,
   };
 }
 
-function nextEdition(curr: string | null): string | null {
-  const m = /^(\d{4})-(\d{1,2})/.exec(curr ?? '');
-  if (!m) return null;
-  const y = parseInt(m[1], 10), mo = parseInt(m[2], 10);
-  const ny = mo === 12 ? y + 1 : y;
-  const nm = mo === 12 ? 1 : mo + 1;
-  return `${ny}-${String(nm).padStart(2, '0')}`;
-}
-
-export function buildSparkProps(item: SparkSourceItem):
-  { curr: MonthBreakdown; next: MonthBreakdown } {
-  // Always show CURR vs NEXT (this month vs next month), matching the
-  // Catalog row. The user explicitly asked for "we are in May. This
-  // should compare May Vs June." Rows whose price-change qualifier
-  // landed on the prev→cur transition rather than cur→next still show
-  // up on the page (the "Active May 2026 only" / "Active Jun 2026 only"
-  // tag tells the buyer WHEN the move happened), but the sparkline +
-  // popover stay anchored on the current-vs-next comparison so the
-  // visualisation is consistent with the Catalog.
-  const isMover = item.case_price != null
-              || item.next_case_price != null
-              || item.headline_period != null;
-
-  const currEd = item.cur_edition
-    ?? item.edition
-    ?? (item.from_date ? item.from_date.slice(0, 7) : null)
-    ?? null;
-  const nextEd = item.next_edition ?? nextEdition(currEd);
-
-  // PriceMover stores EFFECTIVE prices in `case_price` / `next_case_price`
-  // (LIST values land under frontline_*). Other shapes use the catalog
-  // naming where `frontline_*` is list and `effective_*` is post-discount.
-  const currFront = item.frontline_case_price ?? null;
-  const currBest  = isMover
-    ? (item.case_price ?? null)
-    : (item.effective_case_price ?? null);
-  const nextFront = item.frontline_next_case_price ?? null;
-  const nextBest  = isMover
-    ? (item.next_case_price ?? null)
-    : (item.next_effective_case_price ?? null);
-
+/** Map the backend `price_3mo` blocks (oldest->newest) into MonthBreakdown[]. */
+export function buildMonths(item: SparkSourceItem): MonthBreakdown[] {
+  const blocks = item.price_3mo ?? [];
   const pack = item.unit_qty != null && Number(item.unit_qty) > 0 ? Number(item.unit_qty) : null;
-  return {
-    curr: buildBlock(item.tiers, currFront, currBest, currEd, pack),
-    next: buildBlock(item.next_tiers, nextFront, nextBest, nextEd, pack),
-  };
+  const size = item.unit_volume ?? null;
+  return blocks.map(b => {
+    const disc = (b.tiers ?? []).filter(t => t.source === 'discount').map(tierToRip).filter(t => t.eff > 0);
+    const rip = (b.tiers ?? []).filter(t => t.source === 'rip').map(tierToRip).filter(t => t.eff > 0);
+    const bestDisc = disc.length ? Math.min(...disc.map(t => t.eff)) : null;
+    return {
+      edition: b.edition,
+      frontline: b.frontline,
+      afterDiscount: bestDisc,
+      discountTiers: disc,
+      ripTiers: rip,
+      bestEff: b.rip_price,
+      disc1: b.disc1_price,
+      pack,
+      size,
+    };
+  });
+}
+
+/** Thin wrapper so `<MonthEffectiveSparkline {...buildSparkProps(item)} />` works. */
+export function buildSparkProps(item: SparkSourceItem): { months: MonthBreakdown[] } {
+  return { months: buildMonths(item) };
 }

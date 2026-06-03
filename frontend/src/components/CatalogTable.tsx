@@ -8,6 +8,7 @@ import AddToCartButton from './AddToCartButton';
 import AddToListButton from './AddToListButton';
 import { RowMenuButton } from './ContextMenu';
 import MonthEffectiveSparkline from './MonthEffectiveSparkline';
+import { buildMonths } from '../lib/promotionsSparkline';
 import RipMembersModal from './RipMembersModal';
 import { distributorName } from '../lib/distributors';
 import { cart as cartApi } from '../lib/api';
@@ -757,73 +758,16 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                           </div>
                         )}
                       </div>
-                      {/* This-month vs next-month sparkline sits on the
-                          RIGHT side of the product cell, after the name +
-                          spec + badges block, so the catalog row isn't
-                          crowded next to the thumbnail. Popover lays out
-                          Frontline / After Discount / RIP tiers / Best for
-                          both months side by side. */}
+                      {/* Two 3-month sparklines (1-case-discount price + best-RIP
+                          price) over the last 3 existing editions, on the RIGHT
+                          of the product cell. Hover -> popover with one block per
+                          month, every price as case + bottle (with size). */}
                       {(() => {
-                        const ce = item.effective_case_price ?? item.frontline_case_price ?? null;
-                        const ne = item.next_effective_case_price ?? item.next_case_price ?? null;
-                        if (ce == null && ne == null) return null;
-                        const buildBlock = (
-                          tiers: CatalogTier[] | undefined,
-                          frontline: number | null,
-                          bestEff: number | null,
-                          edition: string | null,
-                        ) => {
-                          const disc = (tiers ?? []).filter(t => t.source === 'discount');
-                          const rip  = (tiers ?? []).filter(t => t.source === 'rip');
-                          const bestDisc = disc.length
-                            ? Math.min(...disc.map(t => t.price_after ?? Infinity).filter(v => Number.isFinite(v)))
-                            : null;
-                          return {
-                            edition,
-                            frontline,
-                            afterDiscount: bestDisc != null && Number.isFinite(bestDisc) ? bestDisc : null,
-                            discountTiers: disc
-                              .map(t => ({
-                                qty: t.qty, unit: t.unit, eff: t.price_after ?? 0,
-                                ts: !!t.is_time_sensitive,
-                                from_date: t.from_date, to_date: t.to_date,
-                                window_status: t.window_status, days_to_expire: t.days_to_expire,
-                              }))
-                              .filter(t => t.eff > 0),
-                            // Carry through the backend's per-tier RIP rebate so
-                            // the popover shows "this tier saves $X", not the
-                            // off-by-one delta against the deepest CPL discount.
-                            // Plus the validity window so partial-window tiers
-                            // render an Active now / Expires in N days / Starts
-                            // DD MMM badge (falling back to "TS").
-                            ripTiers: rip
-                              .map(t => ({
-                                qty: t.qty,
-                                unit: t.unit,
-                                eff: t.price_after ?? 0,
-                                ripOnlySave: t.rip_only_save_per_case ?? null,
-                                ts: !!t.is_time_sensitive,
-                                from_date: t.from_date, to_date: t.to_date,
-                                window_status: t.window_status, days_to_expire: t.days_to_expire,
-                              }))
-                              .filter(t => t.eff > 0),
-                            bestEff,
-                            pack: Number(item.unit_qty) > 0 ? Number(item.unit_qty) : null,
-                          };
-                        };
-                        const nextEd = (() => {
-                          const m = /^(\d{4})-(\d{1,2})$/.exec(item.edition ?? '');
-                          if (!m) return null;
-                          const y = parseInt(m[1], 10), mo = parseInt(m[2], 10);
-                          const ny = mo === 12 ? y + 1 : y;
-                          const nm = mo === 12 ? 1 : mo + 1;
-                          return `${ny}-${String(nm).padStart(2, '0')}`;
-                        })();
-                        const curr = buildBlock(item.tiers, item.frontline_case_price ?? null, ce, item.edition ?? null);
-                        const next = buildBlock(item.next_tiers, item.next_case_price ?? null, ne, nextEd);
+                        const months = buildMonths(item);
+                        if (months.length === 0) return null;
                         return (
                           <span onClick={e => e.stopPropagation()} style={{ marginLeft: 'auto', flexShrink: 0 }}>
-                            <MonthEffectiveSparkline curr={curr} next={next} />
+                            <MonthEffectiveSparkline months={months} />
                           </span>
                         );
                       })()}

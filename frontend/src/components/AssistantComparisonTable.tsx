@@ -90,13 +90,9 @@ export default function AssistantComparisonTable({ products, screenPath, screenL
                   {standalone && (
                     <td className="celar-compare-spark">
                       <MonthEffectiveSparkline {...buildSparkProps({
-                        edition: p.edition,
-                        frontline_case_price: p.frontline_case_price,
-                        effective_case_price: p.effective_case_price,
-                        next_effective_case_price: p.next_effective_case_price,
                         unit_qty: p.unit_qty,
-                        tiers: (p.tiers ?? []) as unknown as CatalogTier[],
-                        next_tiers: (p.next_tiers ?? []) as unknown as CatalogTier[],
+                        unit_volume: p.unit_volume,
+                        price_3mo: p.price_3mo,
                       })} />
                     </td>
                   )}

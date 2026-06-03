@@ -367,6 +367,13 @@ def _attach_next_tiers(con, records):
     _pricing.attach_next_tiers(con, records)
 
 
+def _attach_price_3mo(con, records):
+    """Thin shim — canonical impl lives in backend/pricing.py.
+    Attaches `price_3mo` (last 3 existing editions: 1-case-discount + best-RIP
+    prices + per-edition tiers) that powers the two-line 3-month sparkline."""
+    _pricing.attach_price_3mo(con, records)
+
+
 def _attach_dup_upc(con, src, records):
     """For each row's UPC, work out whether the same barcode is carried by several
     distributors (informational: the same product at multiple suppliers) versus
@@ -556,7 +563,7 @@ def attach_promotion_tiers(con, records):
         r.setdefault("rip_group_code", None)
 
     _attach_discount_rip_tiers(con, records)
-    _attach_next_tiers(con, records)
+    _attach_price_3mo(con, records)
 
 
 @router.get("/search")
@@ -1339,9 +1346,9 @@ def search_products(
         # Optionally enrich each item with discount + RIP tier sub-rows.
         if include_tiers:
             _attach_discount_rip_tiers(con, records, ref_date=as_of)
-            # And the SAME shape for next month so the row sparkline popover
-            # can show Frontline / After Discount / RIP / Best for both.
-            _attach_next_tiers(con, records)
+            # Last 3 existing editions (1-case-discount + best-RIP prices + per-
+            # edition tiers) for the two-line 3-month sparkline + its popover.
+            _attach_price_3mo(con, records)
 
         # The date-aware "live now" RIP price (live_effective_case_price,
         # live_rip_amt, live_better_than_month, live_savings) is computed in the
@@ -1579,6 +1586,7 @@ def new_items(
         _attach_next_month_prices(con, src, records)
         if include_tiers:
             _attach_discount_rip_tiers(con, records, ref_date=as_of)
+            _attach_price_3mo(con, records)
         _attach_live_rip(con, records, ref_date=as_of)
         _attach_enrichment_image(con, records)
         _attach_dup_upc(con, src, records)
@@ -3329,6 +3337,10 @@ def get_rip_siblings(
             pass
         try:
             _attach_live_rip(con, records, ref_date=as_of)
+        except Exception:
+            pass
+        try:
+            _attach_price_3mo(con, records)
         except Exception:
             pass
     return {"edition": edition, "rip_code": rc, "items": records}

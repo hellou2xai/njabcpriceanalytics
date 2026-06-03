@@ -2606,6 +2606,16 @@ tr:hover .row-menu-btn { opacity: 1; }
 .mes-chip svg { display: block; }
 .mes-val { font-size: 11px; font-weight: 700; white-space: nowrap; }
 .mes-chip:hover { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent); }
+/* Two 3-month chips (1-case discount + best RIP) side by side. */
+.mes-chips2 { display: inline-flex; align-items: center; gap: 6px; cursor: help; }
+.mes-chip2 {
+  display: inline-flex; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); line-height: 1; padding: 1px;
+}
+.mes-chip2 svg { display: block; }
+.mes-chips2:hover .mes-chip2 { border-color: var(--accent); }
+/* 3 month-blocks can be wide; cap and scroll the popover horizontally. */
+.mes-blocks { max-width: 86vw; overflow-x: auto; }
 
 .mes-popover {
   position: absolute; left: 50%; bottom: calc(100% + 8px);

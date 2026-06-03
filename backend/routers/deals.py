@@ -1588,6 +1588,28 @@ def _build_rip_items(con, wholesaler=None, product_type=None, q="", rip_code=Non
                     }
                     items.append(row)
 
+        # 3-month sparkline history (1-case-discount + best-RIP) per product,
+        # attached to every row of that product. Computed once (this list is
+        # cached with the pricing file), so the RIP page gets the same two-line
+        # 3-month sparkline the Catalog uses.
+        try:
+            from backend import pricing as _pricing
+            metas: dict = {}
+            for r in items:
+                k = (r.get("wholesaler"), str(r.get("upc") or ""))
+                if r.get("upc") and k not in metas:
+                    metas[k] = {"wholesaler": r.get("wholesaler"), "upc": r.get("upc"),
+                                "product_name": r.get("product_name"), "unit_volume": r.get("unit_volume"),
+                                "unit_qty": r.get("unit_qty"), "vintage": r.get("vintage")}
+            meta_list = list(metas.values())
+            _pricing.attach_price_3mo(con, meta_list)
+            p3 = {(m.get("wholesaler"), str(m.get("upc") or "")): m.get("price_3mo") for m in meta_list}
+            for r in items:
+                r["price_3mo"] = p3.get((r.get("wholesaler"), str(r.get("upc") or ""))) or []
+        except Exception:
+            for r in items:
+                r.setdefault("price_3mo", [])
+
         return items
 
 

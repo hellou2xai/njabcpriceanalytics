@@ -187,6 +187,8 @@ export interface CatalogAiProduct {
   tiers?: AssistantTier[];
   discount_tiers?: AssistantTier[];
   rip_tiers?: AssistantTier[];
+  // 3-month sparkline history (1-case-discount + best-RIP).
+  price_3mo?: Price3moBlock[] | null;
   // Next-edition data for the this->next pricing sparkline.
   next_tiers?: AssistantTier[];
   next_effective_case_price?: number | null;
@@ -1002,6 +1004,9 @@ export interface Product {
   discount_5_qty?: string | null;
   discount_5_amt?: number | null;
   tiers?: CatalogTier[];
+  // Last 3 EXISTING editions (1-case-discount + best-RIP prices + per-edition
+  // tiers) for the two-line 3-month sparkline (pricing.attach_price_3mo).
+  price_3mo?: Price3moBlock[] | null;
   // Same shape as `tiers` but computed against next month's edition, so the
   // catalog row sparkline popover can show Frontline / After Discount /
   // RIP tiers for both months.
@@ -1085,6 +1090,17 @@ export interface CatalogTier extends TierWindow {
   // and has_discount; the modal/popover still surfaces the tier so the buyer
   // sees the promo exists, but the UI renders it with a "TS" marker.
   is_time_sensitive?: boolean;
+}
+
+// One edition's block in the 3-month sparkline history (pricing.attach_price_3mo).
+// disc1_price = case price after the 1-case (entry) CPL discount, no RIP.
+// rip_price   = best effective price (best RIP applied) that edition.
+export interface Price3moBlock {
+  edition: string | null;
+  frontline: number | null;
+  disc1_price: number | null;
+  rip_price: number | null;
+  tiers: CatalogTier[];
 }
 
 export interface DiscountTier extends TierWindow {
@@ -1291,6 +1307,8 @@ export interface PriceMover {
   // Tier ladders for this month and next, attached by attach_promotion_tiers.
   tiers?: CatalogTier[];
   next_tiers?: CatalogTier[];
+  // 3-month sparkline history (1-case-discount + best-RIP).
+  price_3mo?: Price3moBlock[] | null;
   // Distinct vintages of the same SKU listed in the same edition (wines /
   // sparkling / vermouth only; empty otherwise).
   vintages_available?: string[];
@@ -1414,6 +1432,8 @@ export interface RipProduct {
   rip_save_per_case: number;
   has_discount: boolean;
   discount_pct: number;
+  // 3-month sparkline history (1-case-discount + best-RIP).
+  price_3mo?: Price3moBlock[] | null;
   // True when this UPC was found in the RIP sheet but has no matching CPL
   // row, so list/effective prices are unknown. The UI shows a "Check with
   // sales rep" sticker; add-to-cart still works using UPC + name.

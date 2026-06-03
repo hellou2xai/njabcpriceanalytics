@@ -880,6 +880,100 @@ def attach_next_tiers(con, records) -> None:
         rec["next_tiers"] = match.get("tiers", []) if match else []
 
 
+def attach_price_3mo(con, records) -> None:
+    """Attach ``price_3mo`` to each record: an ordered (oldest->newest) list of
+    up to 3 month-blocks for the last 3 EXISTING editions of the same SKU. Each
+    block is::
+
+        {edition, frontline, disc1_price, rip_price, tiers}
+
+    where ``rip_price`` is that edition's ``effective_case_price`` (best RIP
+    applied) and ``disc1_price`` is the case price after the best 1-case CPL
+    discount with NO RIP (``frontline - best_disc_at(disc_tiers, 1, pack)``).
+    Powers the two-line 3-month sparkline + its popover. NEVER invents a future
+    month: only editions that exist are returned (1-3 blocks). No-op on []."""
+    if not records:
+        return
+    upcs = sorted({str(r["upc"]) for r in records if r.get("upc")})
+    if not upcs:
+        for r in records:
+            r["price_3mo"] = []
+        return
+    src = read_parquet(con, "cpl_enriched")
+    cym = current_yyyy_mm()
+    upc_ph = ", ".join(f"$u{i}" for i in range(len(upcs)))
+    params = {f"u{i}": u for i, u in enumerate(upcs)}
+    params["cym"] = cym
+    try:
+        df = con.execute(f"""
+            WITH eds AS (
+                SELECT wholesaler, edition,
+                       ROW_NUMBER() OVER (PARTITION BY wholesaler ORDER BY edition DESC) AS rn
+                FROM (SELECT DISTINCT wholesaler, edition FROM {src} WHERE edition <= $cym)
+            )
+            SELECT c.wholesaler, c.edition, c.upc, c.product_name, c.unit_volume, c.unit_qty, c.vintage,
+                   c.frontline_case_price, c.frontline_unit_price, c.effective_case_price,
+                   c.discount_1_qty, c.discount_1_amt, c.discount_2_qty, c.discount_2_amt,
+                   c.discount_3_qty, c.discount_3_amt, c.discount_4_qty, c.discount_4_amt,
+                   c.discount_5_qty, c.discount_5_amt, c.rip_code
+            FROM {src} c
+            JOIN eds ON c.wholesaler = eds.wholesaler AND c.edition = eds.edition AND eds.rn <= 3
+            WHERE c.upc IN ({upc_ph})
+        """, params).fetchdf()
+    except Exception:
+        for r in records:
+            r["price_3mo"] = []
+        return
+
+    rows = [dict(nr) for _, nr in df.iterrows()]
+    if rows:
+        attach_tiers(con, rows)   # each edition row gets its own tier ladder
+
+    # Group blocks by the full SKU identity, then index looser keys to it so a
+    # record matches even when only name/upc/size are known (mirror of
+    # attach_next_tiers' fallback chain).
+    from collections import defaultdict
+    groups: dict = defaultdict(list)
+    for d in rows:
+        ws = d.get("wholesaler"); upc = str(d.get("upc") or "")
+        nm = d.get("product_name") or ""; vol = d.get("unit_volume") or ""
+        uq = uq_key(d.get("unit_qty")); vn = norm_vintage(d.get("vintage"))
+        pack = _num(d.get("unit_qty")) or 1.0
+        front = _num(d.get("frontline_case_price"))
+        disc_tiers = [t for t in (d.get("tiers") or []) if t.get("source") == "discount"]
+        disc1 = best_disc_at(disc_tiers, 1.0, pack) if (front and disc_tiers) else 0.0
+        groups[(ws, upc, nm, vol, uq, vn)].append({
+            "edition": d.get("edition"),
+            "frontline": front,
+            "disc1_price": round(front - disc1, 2) if front is not None else None,
+            "rip_price": _num(d.get("effective_case_price")),
+            "tiers": d.get("tiers") or [],
+        })
+
+    def _keys(ws, upc, nm, vol, uq, vn):
+        return [(ws, upc, nm, vol, uq, vn), (ws, upc, nm, vol, uq), (ws, upc, nm, vol),
+                (ws, upc, nm), (ws, nm, vol, uq, vn), (ws, nm, vol, uq), (ws, nm, vol),
+                (ws, nm), (ws, upc, vol, uq, vn), (ws, upc, vol, uq), (ws, upc, vol), (ws, upc)]
+
+    index: dict = {}
+    for full in groups:
+        for k in _keys(*full):
+            index.setdefault(k, full)
+
+    for rec in records:
+        ws = rec.get("wholesaler"); upc = str(rec.get("upc") or "")
+        nm = rec.get("product_name") or ""; vol = rec.get("unit_volume") or ""
+        uq = uq_key(rec.get("unit_qty")); vn = norm_vintage(rec.get("vintage"))
+        blocks = []
+        for k in _keys(ws, upc, nm, vol, uq, vn):
+            full = index.get(k)
+            if full:
+                blocks = groups[full]
+                break
+        # Oldest -> newest, so the sparkline plots left (older) to right (newer).
+        rec["price_3mo"] = sorted(blocks, key=lambda b: b.get("edition") or "")
+
+
 # ---------------------------------------------------------------------------
 # rank_best_deals — NEW. The single canonical "best deal" ranker.
 #

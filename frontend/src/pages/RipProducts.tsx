@@ -8,6 +8,7 @@ import { RowMenuButton } from '../components/ContextMenu';
 import RowLimitSelect from '../components/RowLimitSelect';
 import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
 import MonthEffectiveSparkline, { type MonthBreakdown } from '../components/MonthEffectiveSparkline';
+import { buildMonths } from '../lib/promotionsSparkline';
 import { useProductQuickView } from '../components/ProductQuickView';
 import DataLoading from '../components/DataLoading';
 import AddToCartButton from '../components/AddToCartButton';
@@ -219,63 +220,14 @@ function RipProductsImpl() {
     return m;
   }, [rawItems]);
 
-  // Per-product MonthBreakdown for the inline sparkline. We fold every tier
-  // row of the same (wholesaler, name, volume) so the popover can list
-  // Frontline -> After Discount -> every RIP tier -> Best for both months.
+  // Per-product 3-month sparkline (last 3 existing editions: 1-case-discount +
+  // best-RIP), built from the backend `price_3mo` the rip-products endpoint now
+  // attaches. Keyed (wholesaler, name, volume) like the rest of the page.
   const sparkByProduct = useMemo(() => {
-    const m = new Map<string, { curr: MonthBreakdown; next: MonthBreakdown }>();
+    const m = new Map<string, MonthBreakdown[]>();
     for (const it of rawItems) {
       const k = `${it.wholesaler}|${it.product_name}|${it.unit_volume ?? ''}`;
-      let entry = m.get(k);
-      if (!entry) {
-        {
-        const pack = Number(it.unit_qty) > 0 ? Number(it.unit_qty) : null;
-        entry = {
-          curr: { edition: null, frontline: null, afterDiscount: null, discountTiers: [], ripTiers: [], bestEff: null, pack },
-          next: { edition: null, frontline: null, afterDiscount: null, discountTiers: [], ripTiers: [], bestEff: null, pack },
-        };
-        }
-        m.set(k, entry);
-      }
-      if (entry.curr.edition == null && it.curr_edition) entry.curr.edition = it.curr_edition;
-      if (entry.next.edition == null && it.next_edition) entry.next.edition = it.next_edition;
-      // Frontline is the same across every tier row of a product, so first one wins.
-      if (entry.curr.frontline == null && it.curr_case_price != null) entry.curr.frontline = it.curr_case_price;
-      if (entry.next.frontline == null && it.next_case_price != null) entry.next.frontline = it.next_case_price;
-
-      const ce = it.curr_effective_case_price ?? null;
-      const ne = it.next_effective_case_price ?? null;
-      if (ce != null && (entry.curr.bestEff == null || ce < entry.curr.bestEff)) entry.curr.bestEff = ce;
-      if (ne != null && (entry.next.bestEff == null || ne < entry.next.bestEff)) entry.next.bestEff = ne;
-
-      if (it.source === 'discount') {
-        // Track every discount tier individually + the rolling best as a summary.
-        if (ce != null && (it.curr_save_per_case ?? 0) > 0) {
-          entry.curr.discountTiers!.push({ qty: it.rip_qty, unit: it.rip_unit ?? 'Case', eff: ce });
-          if (entry.curr.afterDiscount == null || ce < entry.curr.afterDiscount) entry.curr.afterDiscount = ce;
-        }
-        if (ne != null && (it.next_save_per_case ?? 0) > 0) {
-          entry.next.discountTiers!.push({ qty: it.rip_qty, unit: it.rip_unit ?? 'Case', eff: ne });
-          if (entry.next.afterDiscount == null || ne < entry.next.afterDiscount) entry.next.afterDiscount = ne;
-        }
-      } else if (it.source === 'rip') {
-        if (ce != null && (it.curr_save_per_case ?? 0) > 0) {
-          entry.curr.ripTiers.push({
-            qty: it.rip_qty, unit: it.rip_unit ?? 'Case', eff: ce,
-            ripOnlySave: it.curr_save_per_case,
-            from_date: it.curr_from_date, to_date: it.curr_to_date,
-            window_status: it.curr_window_status, days_to_expire: it.curr_days_to_expire,
-          });
-        }
-        if (ne != null && (it.next_save_per_case ?? 0) > 0) {
-          entry.next.ripTiers.push({
-            qty: it.rip_qty, unit: it.rip_unit ?? 'Case', eff: ne,
-            ripOnlySave: it.next_save_per_case,
-            from_date: it.next_from_date, to_date: it.next_to_date,
-            window_status: it.next_window_status, days_to_expire: it.next_days_to_expire,
-          });
-        }
-      }
+      if (!m.has(k)) m.set(k, buildMonths(it));
     }
     return m;
   }, [rawItems]);
@@ -921,10 +873,10 @@ function RipProductsImpl() {
                             {(() => {
                               const sk = `${item.wholesaler}|${item.product_name}|${item.unit_volume ?? ''}`;
                               const s = sparkByProduct.get(sk);
-                              if (!s) return null;
+                              if (!s || s.length === 0) return null;
                               return (
                                 <span onClick={e => e.stopPropagation()} style={{ marginLeft: 'auto', flexShrink: 0 }}>
-                                  <MonthEffectiveSparkline curr={s.curr} next={s.next} />
+                                  <MonthEffectiveSparkline months={s} />
                                 </span>
                               );
                             })()}

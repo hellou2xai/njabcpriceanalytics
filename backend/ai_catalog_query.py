@@ -454,6 +454,12 @@ def _enrich_products_with_tiers(con, products: list[dict]) -> None:
         pricing.attach_next_tiers(con, rows)
     except Exception:
         pass
+    # Last 3 existing editions (1-case-discount + best-RIP prices + per-edition
+    # tiers) for the two-line 3-month sparkline. Best-effort.
+    try:
+        pricing.attach_price_3mo(con, rows)
+    except Exception:
+        pass
     for p in products:
         ws = p.get("wholesaler"); upc = str(p.get("upc") or "")
         vol = p.get("unit_volume") or ""; uq = str(p.get("unit_qty") or "")
@@ -470,6 +476,8 @@ def _enrich_products_with_tiers(con, products: list[dict]) -> None:
         p["discount_tiers"] = [t for t in tiers if t.get("source") == "discount"]
         p["rip_tiers"] = [t for t in tiers if t.get("source") == "rip"]
         p["edition"] = match.get("edition")
+        # 3-month history (1-case-discount + best-RIP) for the two-line sparkline.
+        p["price_3mo"] = match.get("price_3mo") or []
         # Next-month data for the sparkline (next tier ladder + next effective).
         p["next_tiers"] = match.get("next_tiers") or []
         ne = match.get("next_effective_case_price")

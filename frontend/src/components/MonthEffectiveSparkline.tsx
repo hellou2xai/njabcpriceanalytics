@@ -75,8 +75,10 @@ function Chip({ values, label, title }: { values: (number | null | undefined)[];
   const vals = real.map(p => p.v);
   const min = Math.min(...vals), max = Math.max(...vals), range = Math.max(max - min, 0.01);
   const ys = (v: number) => BOTTOM - ((v - min) / range) * (BOTTOM - TOP);
-  const first = vals[0], last = vals[vals.length - 1];
-  const colour = last < first - 0.005 ? '#16a34a' : last > first + 0.005 ? '#dc2626' : '#6b7280';
+  // Series is newest-first (June leftmost), so vals[0] is the current price and
+  // the last entry is the oldest. Cheaper now than 3 months ago = green.
+  const newest = vals[0], oldest = vals[vals.length - 1];
+  const colour = newest < oldest - 0.005 ? '#16a34a' : newest > oldest + 0.005 ? '#dc2626' : '#6b7280';
   const poly = real.map(p => `${xs(p.i).toFixed(1)},${ys(p.v).toFixed(1)}`).join(' ');
   return (
     <span className="mes-chip2" title={title}>
@@ -84,7 +86,7 @@ function Chip({ values, label, title }: { values: (number | null | undefined)[];
         {real.length > 1 && <polyline points={poly} fill="none" stroke={colour} strokeWidth={1.75} />}
         {real.map(p => <circle key={p.i} cx={xs(p.i)} cy={ys(p.v)} r={2.4} fill={colour} />)}
         <text x={2} y={H - 4} fontSize="9.5" fontWeight="600" fill="var(--text-muted, #64748b)">{label}</text>
-        <text x={W - 2} y={H - 4} fontSize="10" fontWeight="700" fill={colour} textAnchor="end">${last.toFixed(0)}</text>
+        <text x={W - 2} y={H - 4} fontSize="10" fontWeight="700" fill={colour} textAnchor="end">${newest.toFixed(0)}</text>
       </svg>
     </span>
   );
@@ -268,7 +270,8 @@ export default function MonthEffectiveSparkline({ months }: Props) {
 
   const closePinned = () => { setPinned(false); setPos(null); dragRef.current = null; };
 
-  const blocks = (months ?? []).filter(m => m.bestEff != null || m.disc1 != null || m.frontline != null);
+  // Backend feeds oldest -> newest; show newest first (June at top / leftmost).
+  const blocks = [...(months ?? []).filter(m => m.bestEff != null || m.disc1 != null || m.frontline != null)].reverse();
   if (blocks.length === 0) return null;
 
   const popStyle: React.CSSProperties | undefined = pinned && pos
@@ -279,8 +282,9 @@ export default function MonthEffectiveSparkline({ months }: Props) {
           : { position: 'fixed', left: hoverRect.left + hoverRect.width / 2, top: hoverRect.top - 8, bottom: 'auto', transform: 'translate(-50%, -100%)' })
       : undefined;
 
-  const prior = blocks.length >= 2 ? blocks[blocks.length - 2] : null;
-  const latest = blocks[blocks.length - 1];
+  // Newest-first: latest = blocks[0], prior = the month behind it.
+  const latest = blocks[0];
+  const prior = blocks.length >= 2 ? blocks[1] : null;
 
   return (
     <span className={`mes-wrap${placeBelow ? ' mes-wrap-below' : ''}${pinned ? ' mes-wrap-pinned' : ''}`}
@@ -288,6 +292,15 @@ export default function MonthEffectiveSparkline({ months }: Props) {
       <span className="mes-chips2">
         <Chip values={blocks.map(m => m.disc1)} label="1cs" title="Price after the 1-case discount, last 3 months" />
         <Chip values={blocks.map(m => m.bestEff)} label="RIP" title="Best effective price (best RIP), last 3 months" />
+        {/* Month-name stickers under the chips, newest-first (June leftmost) to
+            match the chip points, so the buyer can read which point is which. */}
+        <span className="mes-months">
+          {blocks.map((m, i) => {
+            const mm = /^(\d{4})-(\d{1,2})/.exec(m.edition ?? '');
+            const lab = mm ? (MONTHS[parseInt(mm[2], 10) - 1] ?? '') : '';
+            return <span key={i} className="mes-month-sticker">{lab}</span>;
+          })}
+        </span>
       </span>
       <span className={`mes-popover${pinned ? ' mes-popover-pinned' : ''}`}
             role={pinned ? 'dialog' : 'tooltip'}

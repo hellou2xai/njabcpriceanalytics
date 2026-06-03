@@ -2614,6 +2614,14 @@ tr:hover .row-menu-btn { opacity: 1; }
 }
 .mes-chip2 svg { display: block; }
 .mes-chips2:hover .mes-chip2 { border-color: var(--accent); }
+/* Month-name stickers below the two chips, spread across the chip width so they
+   line up left(newest)->right(oldest) with the plotted points. */
+.mes-months { display: flex; justify-content: space-between; padding: 1px 3px 0; }
+.mes-month-sticker {
+  font-size: 9px; font-weight: 700; line-height: 1.3; letter-spacing: 0.02em;
+  color: var(--text-muted); background: var(--surface-2, #f1f5f9);
+  border: 1px solid var(--border); border-radius: 5px; padding: 0 4px;
+}
 
 .mes-popover {
   position: absolute; left: 50%; bottom: calc(100% + 8px);
@@ -2754,8 +2762,9 @@ tr:hover .row-menu-btn { opacity: 1; }
 .mes-section-pill.is-discount { background: #fef3c7; color: #92400e; border-color: #fde68a; }
 .mes-section-pill.is-rip      { background: #e0e7ff; color: #3730a3; border-color: #c7d2fe; }
 .mes-num { white-space: nowrap; }
-/* Per-bottle equivalent shown beside each per-case price in the popover. */
-.mes-btl { color: var(--text-muted); font-size: 0.82em; margin-left: 5px; font-weight: 400; }
+/* Per-bottle equivalent shown beside each per-case price in the popover.
+   Same font size as the case price (not shrunk); only the colour is muted. */
+.mes-btl { color: var(--text-muted); font-size: 1em; margin-left: 5px; font-weight: 400; }
 .mes-save { color: var(--red); font-weight: 600; }
 .mes-arrow { color: var(--text-muted); margin: 0 2px; }
 .mes-row-best td { background: color-mix(in srgb, var(--green) 10%, transparent); }

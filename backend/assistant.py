@@ -43,12 +43,19 @@ _MAX_TURNS = 6
 # rip_code and get NO rebate. Such a sibling is NOT a RIP member. Keep a cpl row
 # (alias `c`, joined to its current edition) only if it has a valid rip_code, OR
 # no same-UPC sibling in the same edition does (so single-SKU UPCs are untouched
-# and no cluster is ever wiped). Append to the WHERE of the cpl join.
+# and no cluster is ever wiped).
+#
+# IMPORTANT — same-VINTAGE only: wines reuse a barcode across vintages, so a UPC
+# can hold a 2023 (with rip) and a 2024 (without). Those are DIFFERENT products,
+# not a promo variant — collapsing across them would wrongly drop a vintage. The
+# EXISTS therefore requires the sibling share the SAME vintage; different vintages
+# get their own membership treatment. Append to the WHERE of the cpl join.
 _RIP_MEMBER_FILTER = (
     " AND ((c.rip_code IS NOT NULL AND CAST(c.rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan')) "
     "      OR NOT EXISTS (SELECT 1 FROM cpl_enriched c2 "
     "                     WHERE c2.wholesaler = c.wholesaler AND c2.edition = c.edition "
     "                       AND LTRIM(CAST(c2.upc AS VARCHAR),'0') = LTRIM(CAST(c.upc AS VARCHAR),'0') "
+    "                       AND COALESCE(CAST(c2.vintage AS VARCHAR),'') = COALESCE(CAST(c.vintage AS VARCHAR),'') "
     "                       AND c2.rip_code IS NOT NULL "
     "                       AND CAST(c2.rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan'))) "
 )

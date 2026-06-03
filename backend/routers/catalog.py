@@ -838,6 +838,25 @@ def search_products(
                       )
                 )
             """)
+            # RIP membership is by UPC, but a UPC can have several SKUs — a
+            # promo/gift/VAP sibling (or unrelated product) that shares the UPC
+            # but carries NO valid rip_code gets NO rebate and is NOT a member.
+            # Drop such a sibling ONLY when a SAME-UPC + SAME-VINTAGE sibling does
+            # carry a rip_code (different vintages are their own products, never
+            # collapsed). Single-SKU UPCs are untouched.
+            where.append(f"""
+                (
+                  (rip_code IS NOT NULL AND CAST(rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan'))
+                  OR NOT EXISTS (
+                    SELECT 1 FROM {src} _sib
+                    WHERE _sib.wholesaler = wholesaler AND _sib.edition = edition
+                      AND LTRIM(CAST(_sib.upc AS VARCHAR), '0') = LTRIM(CAST(upc AS VARCHAR), '0')
+                      AND COALESCE(CAST(_sib.vintage AS VARCHAR), '') = COALESCE(CAST(vintage AS VARCHAR), '')
+                      AND _sib.rip_code IS NOT NULL
+                      AND CAST(_sib.rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
+                  )
+                )
+            """)
 
         # Restrict to watchlisted products across ALL editions/pages (server-side
         # so tracked items aren't hidden by pagination). Match on (name, wholesaler).
@@ -943,6 +962,18 @@ def search_products(
                       ON c.wholesaler = cls.wholesaler
                      AND c.edition    = cls.edition
                      AND LTRIM(CAST(c.upc AS VARCHAR), '0') = cls.upc_n
+                    -- Exclude a same-UPC sibling that carries NO valid rip_code
+                    -- (promo/gift/VAP variant or unrelated product) when a
+                    -- same-UPC + same-VINTAGE sibling DOES carry one. Different
+                    -- vintages are distinct products and never collapsed.
+                    WHERE (c.rip_code IS NOT NULL AND CAST(c.rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan'))
+                       OR NOT EXISTS (
+                           SELECT 1 FROM {src} c2
+                           WHERE c2.wholesaler = c.wholesaler AND c2.edition = c.edition
+                             AND LTRIM(CAST(c2.upc AS VARCHAR), '0') = LTRIM(CAST(c.upc AS VARCHAR), '0')
+                             AND COALESCE(CAST(c2.vintage AS VARCHAR), '') = COALESCE(CAST(c.vintage AS VARCHAR), '')
+                             AND c2.rip_code IS NOT NULL
+                             AND CAST(c2.rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan'))
                     GROUP BY cls.wholesaler, cls.edition, cls.rip_code
                 ),
                 -- Fan rip_groups out by code so a UPC with N rebates emits N

@@ -2606,16 +2606,14 @@ tr:hover .row-menu-btn { opacity: 1; }
 .mes-chip svg { display: block; }
 .mes-val { font-size: 11px; font-weight: 700; white-space: nowrap; }
 .mes-chip:hover { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent); }
-/* Two 3-month chips (1-case discount + best RIP) side by side. */
-.mes-chips2 { display: inline-flex; align-items: center; gap: 6px; cursor: help; }
+/* Two 3-month chips (1-case discount on top, best RIP below) STACKED. */
+.mes-chips2 { display: inline-flex; flex-direction: column; align-items: stretch; gap: 3px; cursor: help; }
 .mes-chip2 {
   display: inline-flex; border: 1px solid var(--border); border-radius: 8px;
   background: var(--surface); line-height: 1; padding: 1px;
 }
 .mes-chip2 svg { display: block; }
 .mes-chips2:hover .mes-chip2 { border-color: var(--accent); }
-/* 3 month-blocks can be wide; cap and scroll the popover horizontally. */
-.mes-blocks { max-width: 86vw; overflow-x: auto; }
 
 .mes-popover {
   position: absolute; left: 50%; bottom: calc(100% + 8px);
@@ -2646,8 +2644,12 @@ tr:hover .row-menu-btn { opacity: 1; }
   border-bottom-color: var(--surface);
   filter: drop-shadow(0 -1px 0 var(--border));
 }
-/* The two month blocks themselves are still rendered side-by-side. */
-.mes-blocks { display: flex; gap: 14px; }
+/* Month blocks STACKED vertically (one per existing edition) so 3 months fit
+   the popover with NO horizontal scroll, each full-width and readable. */
+.mes-blocks { display: flex; flex-direction: column; gap: 0; }
+.mes-blocks .mes-block + .mes-block { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 8px; }
+.mes-blocks .mes-block { min-width: 0; }
+.mes-blocks .mes-table { width: 100%; }
 /* Plain-English summary line below the blocks ("Buy 1cs/2cs: same RIP both months. ..."). */
 .mes-summary {
   border-top: 1px dashed var(--border);

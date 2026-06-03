@@ -2992,7 +2992,7 @@ def _tool_specs() -> list:
                         "Pick the best route and filters; reply with a ONE-LINE confirmation."),
         "input_schema": {"type": "object", "properties": {
             "route": {"type": "string", "enum": list(_SCREEN_ROUTES.keys())},
-            "q": {"type": "string", "description": "Free-text search (brand/product keywords). Use ONLY for brand or product name. Do NOT put country/region/origin words here (use `region` instead) — passing 'California' as q matches ABSOLUT CALIFORNIA cans, not California wines."},
+            "q": {"type": "string", "description": "Free-text search (brand/product keywords). Use ONLY for brand or product name. KEEP descriptive flavour modifiers in q verbatim — 'flavored', 'flavoured', 'unflavored', 'plain', 'original' — the catalog understands them (e.g. q='absolut flavored' returns the flavoured SKUs like Citron/Mandrin, q='absolut plain' returns the base 80/Elyx). Do NOT drop them or swap 'flavored' for 'vodka'. Do NOT put country/region/origin words here (use `region` instead) — passing 'California' as q matches ABSOLUT CALIFORNIA cans, not California wines."},
             "categories": {"type": "array", "items": {"type": "string"}},
             "distributors": {"type": "array", "items": {"type": "string"}},
             "sizes": {"type": "array", "items": {"type": "string"}},
@@ -4690,6 +4690,57 @@ def _format_movers_md(con, rows: list, direction: str) -> str:
     return "\n".join(parts).rstrip()
 
 
+def _listing_analysis(products: list) -> str:
+    """Concise, deterministic 'analyst' summary rendered ABOVE the product grid:
+    count, distributor split, effective price range, the cheapest pick (with its
+    per-bottle price), and discount coverage. Pure data, no model call, so the
+    grid always comes with a readable read of what's in it."""
+    import collections
+
+    def _f(v):
+        try:
+            x = float(v)
+            return x if x == x else None
+        except (TypeError, ValueError):
+            return None
+
+    n = len(products)
+    if not n:
+        return ""
+    by_dist = collections.Counter(
+        str(p.get("wholesaler") or "").strip().title()
+        for p in products if p.get("wholesaler"))
+    priced = [(p, _f(p.get("effective_case_price"))) for p in products]
+    priced = [(p, e) for p, e in priced if e is not None and e > 0]
+
+    lines: list[str] = []
+    dist_str = ", ".join(f"{d} ({c})" for d, c in by_dist.most_common())
+    lines.append(f"**{n} product{'s' if n != 1 else ''}**"
+                 + (f" across {dist_str}" if dist_str else "") + ".")
+    if priced:
+        lo = min(priced, key=lambda x: x[1])
+        hi = max(priced, key=lambda x: x[1])
+        lines.append(f"Effective case price runs ${lo[1]:,.2f} to ${hi[1]:,.2f}.")
+        cp, ce = lo
+        pack = _f(cp.get("unit_qty"))
+        btl = f" (${ce / pack:,.2f}/btl)" if pack and pack > 0 else ""
+        lines.append(f"Cheapest: **{cp.get('product_name')}** at ${ce:,.2f}/cs{btl}.")
+    disc, best_pct, best_name = 0, 0.0, None
+    for p in products:
+        e = _f(p.get("effective_case_price"))
+        f = _f(p.get("frontline_case_price"))
+        if e is not None and f and f > 0 and e < f - 0.005:
+            disc += 1
+            pct = (f - e) / f * 100
+            if pct > best_pct:
+                best_pct, best_name = pct, p.get("product_name")
+    if disc:
+        lines.append(f"{disc} of {n} are below list"
+                     + (f"; deepest **{best_pct:.0f}% off** ({best_name})" if best_name else "")
+                     + ".")
+    return "  \n".join(lines)
+
+
 def ask(question: str, history: list | None = None, user: dict | None = None,
         page: str | None = None, page_path: str | None = None,
         page_query: str | None = None) -> dict:
@@ -5298,6 +5349,18 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                 _enrich_products_with_tiers(_con, products_final)
         except Exception:
             pass  # never fail the answer over enrichment
+        # Lead the grid with an analyst read (count, distributor split, price
+        # range, cheapest pick, discount coverage). Only for plain product
+        # listings (3+ rows) where no richer deterministic template already
+        # owns the answer, so we add insight without clobbering Item / Movers /
+        # Combo / Time-Sensitive templates.
+        if len(products_final) >= 3 and not _tmpl_fired:
+            try:
+                _an = _listing_analysis(products_final)
+                if _an:
+                    answer = _an + "\n\n" + (answer or "")
+            except Exception:
+                _tlog.exception("listing analysis raised for question=%r", question)
         if len(products_final) >= 3 and screen_out is None:
             # Normalise UPCs and drop blanks/zeros — a product missing a UPC
             # would otherwise put a stray empty string in the comma-separated

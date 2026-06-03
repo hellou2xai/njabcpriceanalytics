@@ -149,10 +149,13 @@ def _t_top_products(con, args):
         "price_trend": args.get("price_trend"),
     }
     which = {"cheapest": "cheapest", "expensive": "most_expensive"}.get(args.get("order_by"), "cheapest")
-    # This is a DATA-ANALYSIS tool — honor the requested limit fully (no hard 25
-    # ceiling) so 'list all X' / 'how many X' return the complete set. A high
-    # backstop (1000) only guards against a pathological all-catalog dump.
-    cap = min(int(args.get("limit") or 50), 1000)
+    # This is a DATA-ANALYSIS tool — return the COMPLETE matching set. When the
+    # model doesn't pin a specific count ('show me Absolut products', 'list all
+    # X'), default to "everything" rather than a small page, because hiding real
+    # results is the #1 user frustration here. The only ceiling is a browser
+    # safety backstop (5000) so a 'show me all wines' can't try to render tens of
+    # thousands of rows into one chat bubble and freeze the tab.
+    cap = min(int(args.get("limit") or 5000), 5000)
     # Hide $0 free-with-purchase stocking rows by default (otherwise the
     # 'cheapest' list is dominated by 100%-off liquidation rows like Beronia
     # Rose). Opt back in with include_stocking_deals=True.
@@ -768,7 +771,7 @@ def _t_rip_lookup(con, args):
     _details_all.sort(key=lambda d: (-(d.get("member_count") or 0),
                                      d.get("rip_code") or "",
                                      d.get("wholesaler") or ""))
-    code_details = _details_all[:15]
+    code_details = _details_all[:5000]
     note = None
     if not all_codes:
         _when = "this month" if cym == _current_ym() else f"in {cym}"
@@ -781,7 +784,7 @@ def _t_rip_lookup(con, args):
         k: sorted(v, key=lambda c: (-(_size_for.get((c, k), 0)), c))
         for k, v in by_dist.items()
     }
-    return {"query": match, "edition": cym, "matched_count": len(matched), "matched_products": matched[:25],
+    return {"query": match, "edition": cym, "matched_count": len(matched), "matched_products": matched[:5000],
             "by_distributor": by_dist_sorted, "rip_codes": code_details, "note": note}
 
 
@@ -806,7 +809,7 @@ def _t_rip_summary(con, args):
     except Exception:
         min_n = 1
     try:
-        per_dist_cap = max(1, int(args.get("limit_per_distributor") or 50))
+        per_dist_cap = max(1, int(args.get("limit_per_distributor") or 5000))
     except Exception:
         per_dist_cap = 50
     ws_clause = ""
@@ -951,7 +954,7 @@ def _t_best_one_case_rip(con, args):
     with bottle rebates converted to per-case. Ranked by per-case rebate at one
     case."""
     cym = _current_ym()
-    cap = min(int(args.get("limit") or 12), 25)
+    cap = min(int(args.get("limit") or 5000), 5000)
     dist = (args.get("distributor") or "").strip()
     where = ["CAST(r.rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan')"]
     params = [cym, cym]
@@ -1259,9 +1262,9 @@ def _t_size_value(con, args):
                     "price_premium_pct": round((b["effective_bottle_price"] / s["effective_bottle_price"] - 1) * 100),
                 })
     return {"query": match, "count": len(valued),
-            "by_value_per_liter": valued[: min(int(args.get("limit") or 20), 40)],
+            "by_value_per_liter": valued[: min(int(args.get("limit") or 5000), 5000)],
             "best_value": valued[0] if valued else None,
-            "upsize_opportunities": upsize[:10]}
+            "upsize_opportunities": upsize[:5000]}
 
 
 def _t_rip_tier_gap(con, args):
@@ -1363,7 +1366,7 @@ def _t_rip_tier_gap(con, args):
         note = f"With {have:.0f} case(s) you're already at the top tier."
     return {"rip_code": code, "wholesaler": ws, "description": desc, "cases_planned": have,
             "bottles_per_case": pack, "tier_ladder": ladder, "next_tier": next_tier,
-            "case_mix_members": members[:15], "note": note}
+            "case_mix_members": members[:5000], "note": note}
 
 
 def _t_distributor_arbitrage(con, args):
@@ -1371,7 +1374,7 @@ def _t_distributor_arbitrage(con, args):
     distributors, ranked by how much cheaper the cheapest is vs the dearest
     (effective case price). Surfaces 'buy this from X, not Y' opportunities."""
     cym = _current_ym()
-    cap = min(int(args.get("limit") or 15), 30)
+    cap = min(int(args.get("limit") or 5000), 5000)
     cat = (args.get("category") or "").strip()
     try:
         min_pct = float(args.get("min_savings_pct") or 0)
@@ -1445,7 +1448,7 @@ def _t_best_gp_deals(con, args):
         min_effective_pct_of_frontline=floor,
         category=(args.get("category") or "").strip() or None,
         distributor=(args.get("distributor") or "").strip() or None,
-        limit=int(args.get("limit") or 12),
+        limit=int(args.get("limit") or 5000),
     )
     # Optional secondary filter — caller may want gp_pct >= N% on top of the
     # stocking floor (e.g. "deals at least 20% off"). Applied after the SQL
@@ -1471,7 +1474,7 @@ def _t_closeouts(con, args):
         min_effective_pct_of_frontline=floor,
         category=(args.get("category") or "").strip() or None,
         distributor=(args.get("distributor") or "").strip() or None,
-        limit=int(args.get("limit") or 15),
+        limit=int(args.get("limit") or 5000),
     )
 
 
@@ -1486,7 +1489,7 @@ def _t_semantic_search(con, args):
     from backend.semantic_search import semantic_search as _ss
     from backend.pg import get_pg
     q = (args.get("q") or args.get("query") or "").strip()
-    limit = int(args.get("limit") or 12)
+    limit = int(args.get("limit") or 5000)
     pt = (args.get("product_type") or "").strip() or None
     if not q:
         return []
@@ -1512,7 +1515,7 @@ def _t_combo_deals(con, args):
     from backend.routers.deals import get_combos
     try:
         return get_combos(wholesaler=(args.get("distributor") or None),
-                          q=(args.get("q") or ""), limit=min(int(args.get("limit") or 15), 50))
+                          q=(args.get("q") or ""), limit=min(int(args.get("limit") or 5000), 5000))
     except Exception as e:
         return {"error": f"{type(e).__name__}"}
 
@@ -1652,7 +1655,7 @@ def _t_build_assortment(con, args):
     well'), honoring max_bottle_price / max_case_price. Uses semantic search, then
     a structured varietal/region fallback. Returns product cards."""
     q = (args.get("q") or args.get("query") or "").strip()
-    limit = min(int(args.get("limit") or 15), 40)
+    limit = min(int(args.get("limit") or 5000), 5000)
     pt = (args.get("category") or args.get("product_type") or "").strip() or None
     max_btl = _num(args.get("max_bottle_price"))
     max_cs = _num(args.get("max_case_price"))
@@ -1844,7 +1847,7 @@ def _t_find_deals(con, args, ctx):
     EVERY kind (overridable via include_stocking_deals) so a $0 free-with-purchase
     row never surfaces as '100% off'."""
     kind_raw = (args.get("kind") or "discount").lower()
-    limit = int(args.get("limit") or 10)
+    limit = int(args.get("limit") or 5000)
     include_stocking = bool(args.get("include_stocking_deals"))
     floor = None if include_stocking else _STOCKING_FLOOR_PCT
     if kind_raw in ("clearance", "closeout"):
@@ -1870,7 +1873,7 @@ def _t_price_movers(con, args, ctx):
     California wines, not whatever spirits happen to be rising."""
     direction = (args.get("direction") or args.get("price_trend") or "drop").lower()
     trend = "increase" if direction in ("increase", "up", "rising", "rise") else "drop"
-    cap = min(int(args.get("limit") or 10), 25)
+    cap = min(int(args.get("limit") or 5000), 5000)
     view = {
         "categories": [args["category"]] if args.get("category") else [],
         "divisions": [args["distributor"]] if args.get("distributor") else [],
@@ -2008,7 +2011,7 @@ def _t_order_history(con, args, ctx):
     if not uid:
         return {"error": "user not signed in"}
     from backend.pg import get_pg
-    cap = min(int(args.get("limit") or 6), 12)
+    cap = min(int(args.get("limit") or 5000), 5000)
     oid = args.get("order_id")
     with get_pg() as pg:
         if oid:
@@ -2041,7 +2044,7 @@ def _t_order_history(con, args, ctx):
         f["total_cases"] += (ln.get("qty_cases") or 0)
     orders = [{**h, "lines": by_order.get(h["id"], []), "line_count": len(by_order.get(h["id"], []))}
               for h in heads]
-    frequently_ordered = sorted(freq.values(), key=lambda x: (x["times_ordered"], x["total_cases"]), reverse=True)[:15]
+    frequently_ordered = sorted(freq.values(), key=lambda x: (x["times_ordered"], x["total_cases"]), reverse=True)[:5000]
     return {"order_count": len(orders), "orders": orders,
             "frequently_ordered": frequently_ordered,
             "note": "Call perform_action(type=reorder, order_id=<id>) to re-add an order to the cart (confirm first)."}
@@ -2111,7 +2114,7 @@ def _t_lapsed_items(con, args, ctx):
                      "effective_case_price": eff, "frontline_case_price": fl,
                      "why_now": reasons})
     opps.sort(key=lambda x: (x["frontline_case_price"] or 0) - (x["effective_case_price"] or 0), reverse=True)
-    return {"lapsed_count": len(cand), "opportunity_count": len(opps), "opportunities": opps[:25],
+    return {"lapsed_count": len(cand), "opportunity_count": len(opps), "opportunities": opps[:5000],
             "note": (f"{len(opps)} item(s) you used to order are attractive again now."
                      if opps else "Nothing you've stopped ordering is on a deal right now.")}
 
@@ -2746,7 +2749,7 @@ def _rip_tier_plan(con, items):
                     "in_cart_cases": round(g["cases"], 1), "in_cart_bottles": round(g["bottles"], 1),
                     "current_rebate": round(reached_amt, 2) or 0,
                     "next_tier": next_tier,
-                    "case_mix_in_cart": sorted(g["products"])[:8]})
+                    "case_mix_in_cart": sorted(g["products"])[:5000]})
     out.sort(key=lambda x: (x["next_tier"] or {}).get("extra_rebate_vs_current", 0), reverse=True)
     return out
 
@@ -2779,7 +2782,7 @@ def _t_edition_changes(con, args, ctx):
                                    "what changed for me" digest)
       'favorites' / 'cart' / 'lists' (+ optional list_name) — one source only."""
     focus = (args.get("focus") or "all").lower().strip()
-    cap = min(int(args.get("limit") or 8), 25)
+    cap = min(int(args.get("limit") or 5000), 5000)
     focus_upcs = None
     _personal = {"favorites", "favourites", "watchlist", "wishlist", "cart",
                  "list", "lists", "mine", "me", "everything", "all mine"}
@@ -3008,7 +3011,7 @@ def _tool_specs() -> list:
     return specs
 
 
-def _rip_case_mix_products(con, code, ws=None, limit=80) -> list:
+def _rip_case_mix_products(con, code, ws=None, limit=5000) -> list:
     """Every product sharing a RIP code (the Case Mix) as cart-ready dicts. The
     case mix is defined by the RIP sheet's UPCs for the code, joined to the latest
     CPL edition for prices — so 'add all the case mix' adds ALL members, not just
@@ -3757,7 +3760,7 @@ def _format_rip_md(rl) -> str:
     if not codes:
         return rl.get("note") or ""
     out = [f"**🏷️ RIP rebates — {rl.get('query', 'this product')}**"]
-    for c in codes[:6]:
+    for c in codes[:5000]:
         ws = (c.get("wholesaler") or "").title()
         head = f"**{ws} · code {c.get('rip_code')}**"
         if c.get("description"):
@@ -3774,7 +3777,7 @@ def _format_rip_md(rl) -> str:
         mems = [m.get("product_name") for m in (c.get("case_mix_members") or []) if m.get("product_name")]
         if mems:
             extra = "…" if len(mems) > 6 else ""
-            out.append(f"\n*Case Mix (combine any of these to hit a tier): {', '.join(mems[:6])}{extra}*")
+            out.append(f"\n*Case Mix (combine any of these to hit a tier): {', '.join(mems[:5000])}{extra}*")
     return "\n".join(out)
 
 
@@ -4125,7 +4128,7 @@ def _format_rip_full_md(con, rl) -> str:
             str(c.get("rip_code") or ""),
         ),
     )
-    for c in codes_sorted[:4]:
+    for c in codes_sorted[:5000]:
         ws = (c.get("wholesaler") or "").title()
         ws_lc = (c.get("wholesaler") or "").lower()
         code = str(c.get("rip_code") or "")
@@ -4558,7 +4561,7 @@ def _format_combo_analyzer_md(res: dict) -> str:
     # the components separately at their own discount/RIP. Biggest miss first.
     if traps:
         parts.append(f"**⚠️ Skip these {min(len(traps), 8)} — cheaper at the one-case price:**")
-        for c in traps[:8]:
+        for c in traps[:5000]:
             ws = (c.get("wholesaler") or "").title()
             sep = c.get("save_vs_separate")
             cheaper = _fmt_money(-sep) if sep is not None else "—"
@@ -4593,7 +4596,7 @@ def _format_time_sensitive_md(rows: list) -> str:
     parts.append("")
     parts.append("| PRODUCT | SIZE | DISTRIBUTOR | CASE PRICE | SAVE/CS | ENDS |")
     parts.append("|---|---|---|---|---|---|")
-    for r in ordered[:20]:
+    for r in ordered[:5000]:
         cell = _quickview_cell(r.get("product_name"), r.get("wholesaler"), r.get("upc"), r.get("unit_volume"))
         case = r.get("effective_case_price")
         if case is None:
@@ -4658,7 +4661,7 @@ def _format_movers_md(con, rows: list, direction: str) -> str:
     parts.append("")
     parts.append("| PRODUCT | SIZE | DISTRIBUTOR | THIS MONTH | NEXT MONTH | Δ/CS |")
     parts.append("|---|---|---|---|---|---|")
-    for r, this_c, nc, delta in enriched[:25]:
+    for r, this_c, nc, delta in enriched[:5000]:
         cell = _quickview_cell(r.get("product_name"), r.get("wholesaler"), r.get("upc"), r.get("unit_volume"))
         dtxt = "—" if delta is None else (f"+{_fmt_money(delta)}" if delta > 0 else _fmt_money(delta))
         parts.append(f"| {cell} | {r.get('unit_volume') or '—'} | "
@@ -4755,7 +4758,7 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                 return _json_safe({
                     "answer": f"Added all **{len(products)} Case-Mix products** (RIP {code}) to your cart at "
                               f"{cases} case{'s' if cases != 1 else ''} each. Anything else I can help with?",
-                    "charts": [], "actions": [action], "products": products[:24], "screen": None,
+                    "charts": [], "actions": [action], "products": products[:5000], "screen": None,
                     "usage": zero,
                 })
 
@@ -5260,8 +5263,10 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
     # render a side-by-side comparison table, and a Catalog deep-link is built by
     # exact UPCs so "Open in Catalog ->" lands on the same set the chat shows.
     # DATA-ANALYSIS tool: surface the FULL set the tools returned (no 12/24-card
-    # cap) so 'list/show all X' is complete; a 1000 backstop guards the payload.
-    products_final = products_out[:1000]
+    # cap) so 'list/show all X' is complete. The only ceiling is a browser
+    # safety backstop (5000) matching the per-tool cap, so a chat bubble can't be
+    # asked to render tens of thousands of rows and freeze the tab.
+    products_final = products_out[:5000]
     if products_final:
         # Enrich EVERY surfaced product with its discount/RIP tiers + next-month
         # tiers so any tabular product view renders the rich interactive format

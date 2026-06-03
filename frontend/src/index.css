@@ -4778,9 +4778,16 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
   background: var(--bg);
 }
 .celar-compare-table {
-  width: 100%; border-collapse: collapse;
+  /* Size to content (min full-width) so wide column sets OVERFLOW and scroll
+     via the wrapper's overflow-x, instead of cramming every column into 100%
+     and clipping/wrapping the data. */
+  width: max-content; min-width: 100%; border-collapse: collapse;
   font-size: 12.5px; color: var(--text);
 }
+/* Keep the core data columns on one line so they read cleanly; the tier
+   columns still stack their chips vertically (their own rule). */
+.celar-compare-table tbody td.celar-compare-name,
+.celar-compare-table thead th { white-space: nowrap; }
 .celar-compare-table thead th {
   text-align: left; padding: 8px 10px;
   background: color-mix(in srgb, var(--accent) 6%, var(--bg));

@@ -139,7 +139,7 @@ export default function Dashboard() {
 
   const { data: newItems } = useQuery({
     queryKey: ['new-items-tile', wholesaler],
-    queryFn: () => catalog.newItems({ wholesaler: wholesaler || undefined, limit: 500 }),
+    queryFn: () => catalog.newItems({ wholesaler: wholesaler || undefined, limit: 5000 }),
   });
 
   // ---- My Workspace: user-specific data ----

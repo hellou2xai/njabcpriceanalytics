@@ -933,7 +933,9 @@ def rank_best_deals(
         anomalies — returns [] on query failure so the chat surface stays
         responsive.
     """
-    cap = min(max(int(limit), 1), 100)
+    # Data-analysis tool: no artificial ranking ceiling (was 100). Only a
+    # browser-safety backstop so a huge result set can't freeze a chat bubble.
+    cap = min(max(int(limit), 1), 5000)
     cym = current_yyyy_mm()
     where = []
     params: list = [cym]

@@ -664,7 +664,10 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                           // stub UPCs in the RIP sheet match HUNDREDS of
                           // codes and would otherwise blow up the row into a
                           // wall of badges.
-                          const HARD_CAP = 8;
+                          // Show every RIP code the SKU qualifies under (was
+                          // capped at 8). High ceiling only to avoid a runaway
+                          // render on pathological data.
+                          const HARD_CAP = 1000;
                           const all = (item.rip_all_codes && item.rip_all_codes.length > 0)
                             ? item.rip_all_codes
                             : [String(ripGroupCode)];

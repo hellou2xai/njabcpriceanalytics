@@ -152,7 +152,7 @@ function AddToCartSearch({ onAdd, adding }: { onAdd: (p: Product) => void; addin
   const [q, setQ] = useState('');
   const { data } = useQuery({
     queryKey: ['cart-add-search', q],
-    queryFn: () => catalog.search({ q, limit: 8 }),
+    queryFn: () => catalog.search({ q, limit: 50 }),
     enabled: q.trim().length >= 2,
   });
   const results = data?.items ?? [];

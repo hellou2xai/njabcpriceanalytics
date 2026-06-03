@@ -418,7 +418,7 @@ def get_price_movers(
     edition: Optional[str] = None,
     direction: str = Query("down", description="up or down"),
     validity: str = Query("all", description="all | current_only | next_only | both"),
-    limit: int = Query(500, ge=1, le=5000),
+    limit: int = Query(500, ge=1, le=50000),
 ):
     """Top price movers (6.2, 8.1). Resilient to older ingested data that may
     lack some derived columns (e.g. vintage_norm) - any missing column is
@@ -484,7 +484,7 @@ def get_lifecycle_events(
     wholesaler: Optional[str] = None,
     edition: Optional[str] = None,
     event_type: Optional[str] = None,
-    limit: int = Query(50, ge=1, le=1000),
+    limit: int = Query(50, ge=1, le=50000),
 ):
     """New items, discontinued, new/lost discounts â€” Â§8.1"""
     with get_duckdb() as con:
@@ -515,7 +515,7 @@ def get_lifecycle_events(
 def get_cross_source_comparison(
     product_name: Optional[str] = None,
     min_similarity: float = Query(0.9, ge=0.5, le=1.0),
-    limit: int = Query(50, ge=1, le=1000),
+    limit: int = Query(50, ge=1, le=50000),
 ):
     """Cross-source price comparison â€” Â§8.2, Â§11"""
     with get_duckdb() as con:

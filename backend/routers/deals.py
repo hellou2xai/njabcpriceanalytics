@@ -64,7 +64,7 @@ def get_top_discounts(
     product_type: Optional[str] = None,
     min_discount_pct: float = Query(0, ge=0),
     sort: str = Query("total_savings_per_case", description="Sort by"),
-    limit: int = Query(50, ge=1, le=1000),
+    limit: int = Query(50, ge=1, le=50000),
     per_category: bool = Query(False, description="If true, return top `limit` per product category instead of overall"),
 ):
     """Discount ranker. §7.1.
@@ -233,7 +233,7 @@ def get_top_discounts(
 def get_clearance_items(
     wholesaler: Optional[str] = None,
     edition: Optional[str] = None,
-    limit: int = Query(50, ge=1, le=1000),
+    limit: int = Query(50, ge=1, le=50000),
 ):
     """Clearance / closeout items. Â§7.2"""
     with get_duckdb() as con:
@@ -965,7 +965,7 @@ def get_active_rips(
     wholesaler: Optional[str] = None,
     edition: Optional[str] = None,
     q: str = "",
-    limit: int = Query(50, ge=1, le=1000),
+    limit: int = Query(50, ge=1, le=50000),
 ):
     """Active RIP promotions. Â§7.4"""
     with get_duckdb() as con:
@@ -1636,7 +1636,7 @@ def get_rip_products(
     source: Optional[str] = None,
     sort: str = Query("rip_save_per_case", description="Sort field"),
     order: str = Query("desc", description="asc or desc"),
-    limit: int = Query(50, ge=1, le=1000),
+    limit: int = Query(50, ge=1, le=50000),
     offset: int = Query(0, ge=0),
 ):
     """Products with incentives: DISCOUNT tiers (CPL) and RIP tiers (RIP sheet, by

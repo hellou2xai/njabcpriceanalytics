@@ -1,0 +1,7 @@
+1. Multi size must be sort by smaller to larger.
+2. Item search not working
+3. Check for duplicate UPC
+4. When clicking on a bundle, its opening a new page. It should open a popup new window.
+5. Include comments/notes on order line and header
+6.On Oder, show a message that please follow up with your sales rep after you send the order.
+7. Add phone number to sales rep

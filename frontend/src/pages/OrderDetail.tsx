@@ -1135,7 +1135,7 @@ function SmartAddProduct({ onAdd, pending, wholesaler }: { onAdd: (p: Product) =
   const { data, isFetching } = useQuery({
     queryKey: ['order-add-search', dq, wholesaler],
     // Scoped to the order's distributor so you can only add matching products.
-    queryFn: () => catalog.search({ q: dq, limit: 8, wholesaler: wholesaler || undefined }),
+    queryFn: () => catalog.search({ q: dq, limit: 50, wholesaler: wholesaler || undefined }),
     enabled: dq.length >= 2,
   });
   const results = data?.items ?? [];

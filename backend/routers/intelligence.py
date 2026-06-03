@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api/intelligence", tags=["intelligence"])
 def get_buy_signals(
     wholesaler: Optional[str] = None,
     edition: Optional[str] = None,
-    limit: int = Query(50, ge=1, le=1000),
+    limit: int = Query(50, ge=1, le=50000),
 ):
     """
     Buy signals per product â€” Â§4.2, Â§9.1
@@ -176,7 +176,7 @@ def get_buy_sheet(wholesaler: Optional[str] = None, edition: Optional[str] = Non
 def get_missed_opportunities(
     wholesaler: Optional[str] = None,
     edition: Optional[str] = None,
-    limit: int = Query(50, ge=1, le=1000),
+    limit: int = Query(50, ge=1, le=50000),
     user: dict = Depends(get_current_user),
 ):
     """Items with deals NOT in user's watchlist â€” Â§9.3"""

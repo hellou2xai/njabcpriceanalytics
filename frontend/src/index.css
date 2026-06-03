@@ -2731,10 +2731,15 @@ tr:hover .row-menu-btn { opacity: 1; }
 .mes-popover-pinned .mes-summary { user-select: text; }
 
 .mes-block { min-width: 150px; }
+/* Month header as a sticker pill (same family as .mes-month-sticker under
+   the chips) so each month block is identified at a glance. */
 .mes-block-head {
-  font-size: 11px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: .3px; color: var(--text-muted); margin-bottom: 4px;
-  text-align: center;
+  width: fit-content; margin: 0 auto 6px;
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .4px; color: var(--text);
+  background: var(--surface-2, #f1f5f9);
+  border: 1px solid var(--border); border-radius: 999px;
+  padding: 2px 10px; text-align: center;
 }
 .mes-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .mes-table td { padding: 2px 0; vertical-align: top; }

@@ -75,9 +75,9 @@ function Chip({ values, label, title }: { values: (number | null | undefined)[];
   const vals = real.map(p => p.v);
   const min = Math.min(...vals), max = Math.max(...vals), range = Math.max(max - min, 0.01);
   const ys = (v: number) => BOTTOM - ((v - min) / range) * (BOTTOM - TOP);
-  // Series is newest-first (June leftmost), so vals[0] is the current price and
-  // the last entry is the oldest. Cheaper now than 3 months ago = green.
-  const newest = vals[0], oldest = vals[vals.length - 1];
+  // Series is chronological (oldest leftmost, like any price chart), so the
+  // last entry is the current price. Cheaper now than 3 months ago = green.
+  const newest = vals[vals.length - 1], oldest = vals[0];
   const colour = newest < oldest - 0.005 ? '#16a34a' : newest > oldest + 0.005 ? '#dc2626' : '#6b7280';
   const poly = real.map(p => `${xs(p.i).toFixed(1)},${ys(p.v).toFixed(1)}`).join(' ');
   return (
@@ -270,8 +270,11 @@ export default function MonthEffectiveSparkline({ months }: Props) {
 
   const closePinned = () => { setPinned(false); setPos(null); dragRef.current = null; };
 
-  // Backend feeds oldest -> newest; show newest first (June at top / leftmost).
-  const blocks = [...(months ?? []).filter(m => m.bestEff != null || m.disc1 != null || m.frontline != null)].reverse();
+  // Backend feeds oldest -> newest. The CHART reads left -> right in time
+  // (Apr, May, Jun) like any price chart; the POPOVER lists newest first
+  // (Jun, May, Apr) so the current month is the first thing the buyer reads.
+  const chrono = (months ?? []).filter(m => m.bestEff != null || m.disc1 != null || m.frontline != null);
+  const blocks = [...chrono].reverse();   // newest-first, popover + summary
   if (blocks.length === 0) return null;
 
   const popStyle: React.CSSProperties | undefined = pinned && pos
@@ -290,12 +293,12 @@ export default function MonthEffectiveSparkline({ months }: Props) {
     <span className={`mes-wrap${placeBelow ? ' mes-wrap-below' : ''}${pinned ? ' mes-wrap-pinned' : ''}`}
           ref={wrapRef} onMouseEnter={onWrapEnter}>
       <span className="mes-chips2">
-        <Chip values={blocks.map(m => m.disc1)} label="1cs" title="Price after the 1-case discount, last 3 months" />
-        <Chip values={blocks.map(m => m.bestEff)} label="RIP" title="Best effective price (best RIP), last 3 months" />
-        {/* Month-name stickers under the chips, newest-first (June leftmost) to
-            match the chip points, so the buyer can read which point is which. */}
+        <Chip values={chrono.map(m => m.disc1)} label="1cs" title="Price after the 1-case discount, last 3 months" />
+        <Chip values={chrono.map(m => m.bestEff)} label="RIP" title="Best effective price (best RIP), last 3 months" />
+        {/* Month-name stickers under the chips, chronological (Apr, May, Jun)
+            to match the chip points, so the buyer can read which point is which. */}
         <span className="mes-months">
-          {blocks.map((m, i) => {
+          {chrono.map((m, i) => {
             const mm = /^(\d{4})-(\d{1,2})/.exec(m.edition ?? '');
             const lab = mm ? (MONTHS[parseInt(mm[2], 10) - 1] ?? '') : '';
             return <span key={i} className="mes-month-sticker">{lab}</span>;

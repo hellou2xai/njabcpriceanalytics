@@ -3702,7 +3702,11 @@ def _auto_table_products(screen_args: dict) -> list:
     }
     which = "most_expensive" if sa.get("order") == "desc" else "cheapest"
     with get_duckdb() as con:
-        return _resolve_products(con, view, " ".join(match_terms), which, 12,
+        # Return the COMPLETE matching set, not a 12-row preview. This is the
+        # path 'show me X products' actually takes (the model calls show_on_screen,
+        # NOT top_products), so a hardcoded cap here is what truncated the inline
+        # table. Only a browser-safety backstop (5000) remains.
+        return _resolve_products(con, view, " ".join(match_terms), which, 5000,
                                  exclude_stocking=True)
 
 

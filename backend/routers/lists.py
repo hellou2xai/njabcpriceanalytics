@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from backend.pg import get_pg
 from backend.db import get_duckdb, NOW_UTC
 from backend.auth import get_current_user
-from backend.enrichment_join import attach_enrichment_image
+from backend.enrichment_join import attach_enrichment_image, attach_sku_mapping
 
 router = APIRouter(prefix="/api/lists", tags=["lists"])
 
@@ -101,6 +101,7 @@ def get_list(list_id: int, user: dict = Depends(get_current_user)):
     if items:
         with get_duckdb() as dcon:
             attach_enrichment_image(dcon, items)
+            attach_sku_mapping(dcon, items)
             _attach_rip_code_for_list_items(dcon, items)
     return {**dict(lst), "items": items}
 

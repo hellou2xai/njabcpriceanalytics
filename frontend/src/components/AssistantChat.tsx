@@ -14,7 +14,7 @@ import AddToListButton from './AddToListButton';
 import FavoriteButton from './FavoriteButton';
 import AiRatingWidget from './AiRatingWidget';
 import AssistantComparisonTable from './AssistantComparisonTable';
-import { distributorName } from '../lib/distributors';
+import { distributorName, abgSku } from '../lib/distributors';
 import { useAssistantActions, describeActions } from '../lib/useAssistantActions';
 import { useResultCount } from '../lib/resultCount';
 
@@ -375,7 +375,8 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
                       <div className="celar-product-main">
                         <div className="celar-product-name">{p.product_name}</div>
                         <div className="celar-product-sub">
-                          {[p.unit_volume, distributorName(p.wholesaler), p.vintage && p.vintage !== '0' ? `Vintage ${p.vintage}` : null]
+                          {[p.unit_volume, distributorName(p.wholesaler), p.vintage && p.vintage !== '0' ? `Vintage ${p.vintage}` : null,
+                            abgSku(p.wholesaler, p.abg_sku) ? `ABG ${p.abg_sku}` : null]
                             .filter(Boolean).join(' · ')}
                         </div>
                         <div className="celar-product-price">

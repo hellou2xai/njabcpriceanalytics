@@ -95,7 +95,7 @@ _pm_lock = _threading.Lock()
 
 def _pm_compute_full(con, direction: str) -> list[dict]:
     """Compute the full classified mover list for a direction (no filters)."""
-    from backend.enrichment_join import attach_enrichment_image
+    from backend.enrichment_join import attach_enrichment_image, attach_sku_mapping
     from datetime import date as _date
     import pandas as pd
 
@@ -344,6 +344,7 @@ def _pm_compute_full(con, direction: str) -> list[dict]:
     out = _records(pd.DataFrame(out)) if out else []
     try:
         attach_enrichment_image(con, out)
+        attach_sku_mapping(con, out)
     except Exception:
         pass
     return out

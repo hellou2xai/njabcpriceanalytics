@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { orders, catalog, salesReps } from '../lib/api';
 import type { OrderLine, OrderRipTier, Product, SubmitResult } from '../lib/api';
 import { useProductQuickView } from '../components/ProductQuickView';
-import { distributorName, DISTRIBUTOR_NAMES } from '../lib/distributors';
+import { distributorName, DISTRIBUTOR_NAMES, abgSku } from '../lib/distributors';
 import { trackAction } from '../lib/activityTracker';
 import { windowBadge } from '../lib/dealDates';
 
@@ -892,7 +892,7 @@ export default function OrderDetail() {
                       {line.description || line.product_name}
                     </span>
                     <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                      {line.size || line.unit_volume || ''}{line.pack ? ` / ${line.pack}pk` : ''}{line.upc ? ` \u00b7 ${line.upc}` : ''}
+                      {line.size || line.unit_volume || ''}{line.pack ? ` / ${line.pack}pk` : ''}{line.upc ? ` \u00b7 ${line.upc}` : ''}{abgSku(line.wholesaler, line.abg_sku) ? ` \u00b7 ABG ${line.abg_sku}` : ''}
                     </div>
                     {line.combo_code && (
                       <span className="combo-line-badge" title="Part of a combo bundle">\ud83c\udf81 Combo #{line.combo_code}</span>

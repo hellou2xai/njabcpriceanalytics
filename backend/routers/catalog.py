@@ -15,6 +15,7 @@ from typing import Optional
 from backend.db import get_duckdb, read_parquet
 from backend.auth import get_optional_user
 from backend.enrichment_join import attach_enrichment_image as _attach_enrichment_image
+from backend.enrichment_join import attach_sku_mapping as _attach_sku_mapping
 from backend.rip_utils import is_bottle_unit as _is_bottle_unit, rip_per_case as _rip_per_case, rip_bundle_cost as _rip_bundle_cost, normalize_unit as _norm_unit
 # Canonical pricing helpers live in backend/pricing.py — every router, the
 # assistant engine and MCP read from there so a formula change ripples
@@ -1357,6 +1358,7 @@ def search_products(
 
         # Go-UPC thumbnail per row (one batch query; served from R2 CDN).
         _attach_enrichment_image(con, records)
+        _attach_sku_mapping(con, records)
         _attach_dup_upc(con, src, records)
 
         return {
@@ -1589,6 +1591,7 @@ def new_items(
             _attach_price_3mo(con, records)
         _attach_live_rip(con, records, ref_date=as_of)
         _attach_enrichment_image(con, records)
+        _attach_sku_mapping(con, records)
         _attach_dup_upc(con, src, records)
 
         return {
@@ -1867,6 +1870,7 @@ def get_product_detail(
         # can show the month-stable price AND the price live on `as_of`.
         prod_rec = row.to_dict(orient="records")[0]
         _attach_live_rip(con, [prod_rec], ref_date=as_of)
+        _attach_sku_mapping(con, [prod_rec])
 
         return {
             "product": _clean_record(prod_rec),
@@ -3329,6 +3333,7 @@ def get_rip_siblings(
         records.sort(key=lambda r: str(r.get("product_name") or ""))
         try:
             _attach_enrichment_image(con, records)
+            _attach_sku_mapping(con, records)
         except Exception:
             pass
         try:

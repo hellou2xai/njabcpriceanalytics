@@ -12,7 +12,7 @@ from typing import Optional
 from backend.db import get_duckdb, read_parquet
 from backend.pg import get_pg
 from backend.auth import get_current_user
-from backend.enrichment_join import attach_enrichment_image
+from backend.enrichment_join import attach_enrichment_image, attach_sku_mapping
 
 router = APIRouter(prefix="/api/intelligence", tags=["intelligence"])
 
@@ -118,6 +118,7 @@ def get_buy_signals(
 
         records = df.to_dict(orient="records")
         attach_enrichment_image(con, records)
+        attach_sku_mapping(con, records)
         return records
 
 
@@ -218,6 +219,7 @@ def get_missed_opportunities(
         # Filter out items already on watchlist
         missed = [i for i in items if (i["product_name"], i["wholesaler"]) not in watched]
         attach_enrichment_image(con, missed)
+        attach_sku_mapping(con, missed)
 
         return {
             "total_opportunities": len(missed),

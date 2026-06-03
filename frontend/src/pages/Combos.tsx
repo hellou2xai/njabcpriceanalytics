@@ -5,7 +5,7 @@ import { deals, cart, type Combo } from '../lib/api';
 import SortableTable from '../components/SortableTable';
 import RowLimitSelect from '../components/RowLimitSelect';
 import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
-import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
+import { distributorName, ALL_DISTRIBUTORS, abgSku } from '../lib/distributors';
 import { X, ShoppingCart, Check } from 'lucide-react';
 import { QtyStepper } from '../components/CatalogTable';
 import AddToListButton from '../components/AddToListButton';
@@ -231,7 +231,7 @@ function ComboDetailModal({ c, onClose }: { c: Combo; onClose: () => void }) {
                           <div style={{ fontWeight: 600 }}>
                             {comp.product_name}{vintage ? <span className="text-muted"> · '{String(vintage).slice(-2)}</span> : ''}
                           </div>
-                          {comp.upc && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{comp.upc}</div>}
+                          {comp.upc && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{comp.upc}{abgSku(c.wholesaler, comp.abg_sku) ? ` · ABG ${comp.abg_sku}` : ''}</div>}
                         </td>
                         <td>{comp.qty_per_pack ?? '—'}</td>
                         <td className="right">{$(reg)}</td>

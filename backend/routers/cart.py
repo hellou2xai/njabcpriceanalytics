@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from backend.pg import get_pg
 from backend.db import get_duckdb, NOW_UTC
 from backend.auth import get_current_user
-from backend.enrichment_join import attach_enrichment_image
+from backend.enrichment_join import attach_enrichment_image, attach_sku_mapping
 
 router = APIRouter(prefix="/api/cart", tags=["cart"])
 
@@ -311,6 +311,7 @@ def get_cart(user: dict = Depends(get_current_user)):
         with get_duckdb() as dcon:
             try:
                 attach_enrichment_image(dcon, items)
+                attach_sku_mapping(dcon, items)
             except Exception:
                 pass
             try:

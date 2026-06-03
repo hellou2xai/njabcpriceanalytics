@@ -27,6 +27,7 @@ import re
 from datetime import date
 
 from backend.db import get_duckdb
+from backend.enrichment_join import attach_sku_mapping
 
 _MODEL = os.getenv("CELR_CATALOG_AI_MODEL", os.getenv("CELR_SEARCH_AI_MODEL", "claude-sonnet-4-6"))
 
@@ -385,6 +386,9 @@ def _resolve_products(con, view: dict, match: str, which: str, cap: int,
             "frontline_case_price": (float(r["frontline_case_price"])
                                      if _clean(r["frontline_case_price"]) is not None else None),
         })
+    # Allied (ABG) SKU on Allied rows only, so the assistant shows the
+    # distributor's own item number next to the UPC.
+    attach_sku_mapping(con, out)
     return out
 
 

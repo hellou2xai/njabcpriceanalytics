@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from backend.db import get_duckdb, read_parquet, NOW_UTC
-from backend.enrichment_join import attach_enrichment_image
+from backend.enrichment_join import attach_enrichment_image, attach_sku_mapping
 from backend.pg import get_pg
 from backend.auth import get_current_user
 from backend.rip_utils import is_bottle_unit, rip_per_case
@@ -261,6 +261,7 @@ def get_watchlist(user: dict = Depends(get_current_user)):
     if items:
         with get_duckdb() as con:
             attach_enrichment_image(con, items)
+            attach_sku_mapping(con, items)
     return items
 
 
@@ -553,10 +554,14 @@ def get_order_detail(order_id: int, user: dict = Depends(get_current_user)):
             "SELECT * FROM order_lines WHERE order_id = %s", (order_id,)
         ).fetchall()
     order_d = dict(order)
+    enriched_lines = _enrich_order_lines([dict(l) for l in lines],
+                                         ref_date=order_d.get("needed_by_date"))
+    # Allied (ABG) SKU next to the UPC on Allied lines only.
+    with get_duckdb() as dcon:
+        attach_sku_mapping(dcon, enriched_lines)
     return {
         "order": order_d,
-        "lines": _enrich_order_lines([dict(l) for l in lines],
-                                     ref_date=order_d.get("needed_by_date")),
+        "lines": enriched_lines,
     }
 
 

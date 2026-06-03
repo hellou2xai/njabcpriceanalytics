@@ -39,7 +39,7 @@ from typing import Optional
 
 from backend.db import get_duckdb, read_parquet
 from backend.rip_utils import is_bottle_unit, rip_per_case, rip_bundle_cost
-from backend.enrichment_join import attach_enrichment_image
+from backend.enrichment_join import attach_enrichment_image, attach_sku_mapping
 
 
 def _clean(rec: dict) -> dict:
@@ -213,6 +213,7 @@ def get_top_discounts(
             r["discount_source"] = src_parts
 
         attach_enrichment_image(con, records)
+        attach_sku_mapping(con, records)
         # AI deal blurbs from the 60s in-process cache (see _cached_deal_blurbs).
         blurb_map = _cached_deal_blurbs()
         for r in records:
@@ -264,6 +265,7 @@ def get_clearance_items(
         """, {**params, "limit": limit}).fetchdf()
         records = [_clean(r) for r in df.to_dict(orient="records")]
         attach_enrichment_image(con, records)
+        attach_sku_mapping(con, records)
         return records
 
 
@@ -537,6 +539,14 @@ def get_combos(
             compute_combo_economics(con, items)
         except Exception:
             pass  # never fail the listing over the analysis
+        # Allied (ABG) SKU per component, shown next to its UPC. Components don't
+        # carry their own wholesaler, so borrow the parent combo's for the gate.
+        flat_comps = []
+        for it in items:
+            for c in it.get("components", []):
+                c["wholesaler"] = it.get("wholesaler")
+                flat_comps.append(c)
+        attach_sku_mapping(con, flat_comps)
         return items
 
 
@@ -948,6 +958,7 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
 
         # Add product images (Go-UPC enrichment) for the card view.
         attach_enrichment_image(con, out)
+        attach_sku_mapping(con, out)
         # Attach the full Discount + RIP tier ladder for THIS month and
         # next month, same shape the Catalog row uses, so the card's
         # MonthEffectiveSparkline popover can show Frontline / Discount /
@@ -1894,6 +1905,7 @@ def get_rip_products(
         page_items = items[offset:offset + limit]
 
         attach_enrichment_image(con, page_items)
+        attach_sku_mapping(con, page_items)
         return {
             "total": total,
             "limit": limit,

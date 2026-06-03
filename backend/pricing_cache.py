@@ -119,11 +119,20 @@ def build_pricing_cache() -> Path:
                 "specs VARCHAR, ean VARCHAR, code_type VARCHAR, barcode_url VARCHAR, "
                 "inferred INTEGER, image_url VARCHAR, image_source VARCHAR)"
             )
+            # Allied (ABG) SKU<->UPC translation table, loaded by
+            # scripts/load_sku_mapping.py. Joined onto Allied catalogue rows by
+            # the normalised UPC to surface the distributor's own item number.
+            empty_sku = (
+                "CREATE TABLE sku_mapping ("
+                "distributor VARCHAR, abg_sku VARCHAR, upc VARCHAR, "
+                "upc_norm VARCHAR, brand_reg VARCHAR, item_name VARCHAR)"
+            )
             if PRICING_SOURCE == "parquet":
                 for t in ALL_TABLES:
                     con.execute(f"CREATE TABLE {t} AS SELECT * FROM {_parquet_select(t)}")
                 # No enrichment in parquet dev mode; an empty table keeps joins valid.
                 con.execute(empty_enrich)
+                con.execute(empty_sku)
                 con.execute("CREATE TABLE ai_deal_blurbs (wholesaler VARCHAR, upc VARCHAR, edition VARCHAR, blurb VARCHAR)")
             else:
                 from backend.pg import DATABASE_URL
@@ -135,6 +144,10 @@ def build_pricing_cache() -> Path:
                     con.execute(f"CREATE TABLE product_enrichment AS SELECT {enrich_cols} FROM pg.product_enrichment")
                 except Exception:  # table may not exist yet on a brand-new DB
                     con.execute(empty_enrich)
+                try:
+                    con.execute("CREATE TABLE sku_mapping AS SELECT distributor, abg_sku, upc, upc_norm, brand_reg, item_name FROM pg.sku_mapping")
+                except Exception:  # table not loaded yet
+                    con.execute(empty_sku)
                 # AI-generated deal blurbs (one per product per edition). Used by
                 # the Time-Sensitive Deals endpoint to attach an "AI says" line.
                 try:

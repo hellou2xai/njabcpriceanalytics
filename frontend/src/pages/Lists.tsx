@@ -5,7 +5,7 @@ import { lists as listsApi, cart as cartApi, type ListItem } from '../lib/api';
 import { ContextMenuProvider } from '../components/ContextMenu';
 import { useProductQuickView } from '../components/ProductQuickView';
 import ProductThumb from '../components/ProductThumb';
-import { distributorName } from '../lib/distributors';
+import { distributorName, abgSku } from '../lib/distributors';
 import { useDialog } from '../components/Dialog';
 
 const LIST_RIP_GROUP_KEY = 'celr_lists_group_by_rip';
@@ -266,7 +266,7 @@ function ListRow({ it, selected, toggle, onRemove }: {
           <ProductThumb src={it.image_url} alt={it.product_name} size={56} />
           <div>
             <div style={{ fontWeight: 600 }}>{it.product_name}</div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{it.upc}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{it.upc}{abgSku(it.wholesaler, it.abg_sku) ? ` · ABG ${it.abg_sku}` : ''}</div>
           </div>
         </div>
       </td>

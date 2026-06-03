@@ -10,7 +10,7 @@ import { RowMenuButton } from './ContextMenu';
 import MonthEffectiveSparkline from './MonthEffectiveSparkline';
 import { buildMonths } from '../lib/promotionsSparkline';
 import RipMembersModal from './RipMembersModal';
-import { distributorName } from '../lib/distributors';
+import { distributorName, abgSku } from '../lib/distributors';
 import { cart as cartApi } from '../lib/api';
 import type { Product, CatalogTier } from '../lib/api';
 
@@ -631,6 +631,10 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                         </div>
                         <div className="cat-ident">
                           {item.upc}
+                          {abgSku(item.wholesaler, item.abg_sku) && (
+                            <span className="tag" style={{ marginLeft: 6, fontSize: 10 }}
+                                  title="Allied (ABG) SKU">ABG {item.abg_sku}</span>
+                          )}
                           {item.vintage != null && String(item.vintage) !== '0' && String(item.vintage).trim() !== '' && (
                             <span className="tag" style={{ marginLeft: 6, fontSize: 10 }}
                                   title="Vintage year. The same barcode can cover several vintages, each priced separately.">Vintage {item.vintage}</span>

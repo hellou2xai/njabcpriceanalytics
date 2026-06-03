@@ -15,7 +15,7 @@ import AddToCartButton from '../components/AddToCartButton';
 import AddToListButton from '../components/AddToListButton';
 import { QtyStepper, loadCart, saveCart, buildRipPaletteMap, type CartState } from '../components/CatalogTable';
 import RipMembersModal from '../components/RipMembersModal';
-import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
+import { distributorName, ALL_DISTRIBUTORS, abgSku } from '../lib/distributors';
 import { useAuth } from '../contexts/AuthContext';
 
 function tierLabel(unit?: string | null): string {
@@ -826,6 +826,7 @@ function RipProductsImpl() {
                                   ? <> · {item.unit_qty} btl/cs</>
                                   : null}
                                 {item.upc ? <> · UPC {item.upc}</> : null}
+                                {abgSku(item.wholesaler, item.abg_sku) ? <> · ABG {item.abg_sku}</> : null}
                               </span>
                               {/* "Better deal" identifier per UPC. The
                                   comparison is across EVERY tier of this

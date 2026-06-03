@@ -178,6 +178,7 @@ export interface CatalogAiProduct {
   product_name: string;
   wholesaler: string;
   upc?: string | null;
+  abg_sku?: string | null;
   unit_volume?: string | null;
   unit_qty?: string | null;
   vintage?: string | null;
@@ -617,7 +618,7 @@ export interface ProductList {
 }
 export interface ListItem {
   id: number; list_id: number; product_name: string; wholesaler: string;
-  upc?: string | null; unit_volume?: string | null; combo_code?: string | null;
+  upc?: string | null; abg_sku?: string | null; unit_volume?: string | null; combo_code?: string | null;
   notes?: string | null; image_url?: string | null;
   // Latest CPL rip_code for this UPC, attached server-side so the Lists UI
   // can sub-group lines by RIP rebate the same way the cart does.
@@ -627,7 +628,7 @@ export interface ListDetail { id: number; name: string; created_at: string; upda
 
 export interface CartItem {
   id: number; product_name: string; wholesaler: string;
-  upc?: string | null; unit_volume?: string | null; combo_code?: string | null;
+  upc?: string | null; abg_sku?: string | null; unit_volume?: string | null; combo_code?: string | null;
   qty_cases: number; qty_units: number;
   sales_rep_id?: number | null; sales_rep_name?: string | null;
   saved_for_later: number; image_url?: string | null; notes?: string | null;
@@ -777,6 +778,7 @@ export interface Todo {
   product_name: string | null;
   wholesaler: string | null;
   upc: string | null;
+  abg_sku?: string | null;
   unit_volume: string | null;
   source_page: string | null;
   created_at: string;
@@ -955,6 +957,8 @@ export interface Product {
   wholesaler: string;
   edition: string;
   upc: string;
+  // Allied (ABG) item number, attached server-side for allied rows only.
+  abg_sku?: string | null;
   product_name: string;
   product_type: string;
   unit_qty: string;
@@ -1332,6 +1336,9 @@ export interface CategoryTrend {
 export interface ComboComponent {
   product_name: string | null;
   upc: string | null;
+  // Set server-side: the parent combo's wholesaler and (for allied) the ABG SKU.
+  wholesaler?: string | null;
+  abg_sku?: string | null;
   qty_per_pack: string | null;
   frontline_price_each: number | null;
   combo_price_each: number | null;
@@ -1387,6 +1394,7 @@ export interface RipProduct {
    * chip cluster reads stable. */
   rip_codes?: string[];
   wholesaler: string; upc: string;
+  abg_sku?: string | null;
   rip_number: string | null;
   product_name: string; product_type: string;
   unit_qty: string; unit_volume: string;
@@ -1459,7 +1467,7 @@ export interface MissedOpps {
 
 export interface WatchlistItem {
   id: number; product_name: string; wholesaler: string;
-  upc?: string; unit_volume?: string; target_price?: number; notes?: string;
+  upc?: string; abg_sku?: string | null; unit_volume?: string; target_price?: number; notes?: string;
   image_url?: string | null;
 }
 
@@ -1495,7 +1503,7 @@ export interface OrderRipTier extends TierWindow {
 
 export interface OrderLine {
   id: number; order_id: number; product_name: string; wholesaler: string;
-  upc?: string; unit_volume?: string;
+  upc?: string; abg_sku?: string | null; unit_volume?: string;
   qty_cases: number; qty_units: number;
   selected_discount_tier?: number;
   combo_code?: string | null;

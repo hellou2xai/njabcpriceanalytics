@@ -9,7 +9,7 @@ import { RowMenuButton } from '../components/ContextMenu';
 import PriceTrendIndicator from '../components/PriceTrendIndicator';
 import AddToCartButton from '../components/AddToCartButton';
 import { Download, Layers } from 'lucide-react';
-import { distributorName } from '../lib/distributors';
+import { distributorName, abgSku } from '../lib/distributors';
 
 // Transient per-row quantities (cases/units) used to seed the "Add to cart"
 // button and the running totals. Not persisted: the real cart lives server-side.
@@ -347,7 +347,10 @@ export default function WatchlistPage() {
         {/* 2. Code + Distributor */}
         <td>
           <div className="cell-stacked">
-            <span className="cell-code">{item.upc ?? '--'}</span>
+            <span className="cell-code">
+              {item.upc ?? '--'}
+              {abgSku(item.wholesaler, item.abg_sku) && <span style={{ marginLeft: 6, color: 'var(--text-muted)' }}>ABG {item.abg_sku}</span>}
+            </span>
             <DistributorBadge code={item.wholesaler} />
           </div>
         </td>

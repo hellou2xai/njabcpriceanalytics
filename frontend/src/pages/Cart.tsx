@@ -5,7 +5,7 @@ import { cart as cartApi, salesReps as repsApi, catalog, type CartItem, type Pro
 import ProductThumb from '../components/ProductThumb';
 import { useDialog } from '../components/Dialog';
 import { shortUnit } from '../components/CatalogTable';
-import { distributorName } from '../lib/distributors';
+import { distributorName, abgSku } from '../lib/distributors';
 
 function Stepper({ label, value, onChange }: { label: string; value: number; onChange: (n: number) => void }) {
   return (
@@ -291,7 +291,7 @@ export default function Cart() {
               {showCombo && <ComboBadge code={it.combo_code!} />}
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-              {distributorName(it.wholesaler)}{it.unit_volume ? ` · ${it.unit_volume}` : ''}{it.upc ? ` · ${it.upc}` : ''}
+              {distributorName(it.wholesaler)}{it.unit_volume ? ` · ${it.unit_volume}` : ''}{it.upc ? ` · ${it.upc}` : ''}{abgSku(it.wholesaler, it.abg_sku) ? ` · ABG ${it.abg_sku}` : ''}
             </div>
             {it.frontline_case_price != null && (
               <div style={{ fontSize: 12, marginTop: 2 }}>

@@ -8,7 +8,7 @@ import PriceWaterfall from './PriceWaterfall';
 import FavoriteButton from './FavoriteButton';
 import ProductThumb from './ProductThumb';
 import AddToCartButton from './AddToCartButton';
-import { distributorName } from '../lib/distributors';
+import { distributorName, abgSku } from '../lib/distributors';
 import { windowBadge } from '../lib/dealDates';
 import type { TierWindow } from '../lib/api';
 
@@ -269,6 +269,7 @@ function QuickViewModal({
                 </div>
                 <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '6px 0 0' }}>
                   {p.wholesaler} · {p.product_type} · {p.unit_volume} · {p.upc}
+                  {abgSku(p.wholesaler, p.abg_sku) && <> · ABG {p.abg_sku}</>}
                   {vintage && <span className="tag tag-blue" style={{ marginLeft: 8, fontSize: 11 }}>Vintage {vintage}</span>}
                 </p>
                 {detail?.enrichment && (detail.enrichment.brand || detail.enrichment.region) && (

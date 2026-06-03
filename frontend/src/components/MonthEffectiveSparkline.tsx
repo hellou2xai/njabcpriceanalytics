@@ -12,7 +12,7 @@
  * position:fixed anchored to the chip so it never gets clipped by a parent
  * table's overflow-x:auto.
  */
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useLayoutEffect } from 'react';
 import type { TierWindow } from '../lib/api';
 import { windowBadge } from '../lib/dealDates';
 
@@ -224,6 +224,11 @@ export default function MonthEffectiveSparkline({ months }: Props) {
   // Chip rect captured on hover; the hover popover renders position:fixed
   // anchored to it so it escapes any parent overflow:auto clip.
   const [hoverRect, setHoverRect] = useState<DOMRect | null>(null);
+  // Final clamped position, computed from the MEASURED popover size (the
+  // popover can be 3 stacked month blocks tall, so a fixed flip threshold
+  // is never right). Keeps the whole box inside the viewport and reserves
+  // a right-edge gutter so the window's vertical scrollbar stays reachable.
+  const [hoverPos, setHoverPos] = useState<{ left: number; top: number } | null>(null);
   const [pinned, setPinned] = useState(false);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const dragRef = useRef<{ dx: number; dy: number } | null>(null);
@@ -232,10 +237,27 @@ export default function MonthEffectiveSparkline({ months }: Props) {
     if (pinned) return;
     const el = wrapRef.current;
     if (!el) return;
-    const rect = el.getBoundingClientRect();
-    setPlaceBelow(rect.top < 360);
-    setHoverRect(rect);
+    setHoverRect(el.getBoundingClientRect());
   };
+
+  // Measure-and-clamp, before paint so there is no jump. Above the chip when
+  // it fits, otherwise below; then clamp into the viewport with an 8px margin
+  // and a 28px right gutter (the window scrollbar must never be covered).
+  useLayoutEffect(() => {
+    if (!hoverRect || pinned) return;
+    const el = popRef.current;
+    if (!el) return;
+    const M = 8, GUTTER = 28;
+    const W = el.offsetWidth, H = el.offsetHeight;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const below = hoverRect.top - M - H < M;
+    let left = hoverRect.left + hoverRect.width / 2 - W / 2;
+    left = Math.max(M, Math.min(left, vw - GUTTER - W));
+    let top = below ? hoverRect.bottom + M : hoverRect.top - M - H;
+    top = Math.max(M, Math.min(top, vh - M - H));
+    setPlaceBelow(below);
+    setHoverPos({ left, top });
+  }, [hoverRect, pinned]);
 
   const onPopMouseDown = (e: React.MouseEvent<HTMLSpanElement>) => {
     const target = e.target as HTMLElement;
@@ -279,11 +301,13 @@ export default function MonthEffectiveSparkline({ months }: Props) {
 
   const popStyle: React.CSSProperties | undefined = pinned && pos
     ? { position: 'fixed', left: pos.x, top: pos.y, transform: 'none', bottom: 'auto' }
-    : hoverRect
-      ? (placeBelow
-          ? { position: 'fixed', left: hoverRect.left + hoverRect.width / 2, top: hoverRect.bottom + 8, bottom: 'auto', transform: 'translateX(-50%)' }
-          : { position: 'fixed', left: hoverRect.left + hoverRect.width / 2, top: hoverRect.top - 8, bottom: 'auto', transform: 'translate(-50%, -100%)' })
-      : undefined;
+    : hoverRect && hoverPos
+      ? { position: 'fixed', left: hoverPos.left, top: hoverPos.top, bottom: 'auto', transform: 'none' }
+      : hoverRect
+        ? (placeBelow
+            ? { position: 'fixed', left: hoverRect.left + hoverRect.width / 2, top: hoverRect.bottom + 8, bottom: 'auto', transform: 'translateX(-50%)' }
+            : { position: 'fixed', left: hoverRect.left + hoverRect.width / 2, top: hoverRect.top - 8, bottom: 'auto', transform: 'translate(-50%, -100%)' })
+        : undefined;
 
   // Newest-first: latest = blocks[0], prior = the month behind it.
   const latest = blocks[0];

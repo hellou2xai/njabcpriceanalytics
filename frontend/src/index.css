@@ -4696,6 +4696,14 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 
 /* Markdown styling inside assistant bubbles */
 .celar-md { font-size: 14.5px; line-height: 1.6; color: var(--text); }
+/* RIP analysis: each RIP-code group is its own card with alternating shading so
+   the groups are easy to tell apart instead of running together. */
+.celar-rip-block { padding: 8px 12px; margin: 8px 0; border-radius: 8px;
+  border: 1px solid var(--border, rgba(0,0,0,0.08)); border-left: 3px solid var(--brand, #4f46e5);
+  background: var(--surface, rgba(0,0,0,0.015)); }
+.celar-rip-block-alt { background: rgba(79,70,229,0.06); border-left-color: #7c6df2; }
+.celar-rip-block > :first-child { margin-top: 0; }
+.celar-rip-block > :last-child { margin-bottom: 0; }
 .celar-md h1, .celar-md h2, .celar-md h3 { margin: 14px 0 8px; line-height: 1.3; }
 .celar-md h1 { font-size: 19px; } .celar-md h2 { font-size: 17px; } .celar-md h3 { font-size: 15px; }
 .celar-md p { margin: 9px 0; }

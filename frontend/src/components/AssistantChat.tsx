@@ -153,6 +153,30 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
     },
   }), [openQuickView]);
 
+  // Render an assistant answer. A RIP analysis lists several RIP-code groups
+  // (each starts with a 🏷️ "RIP Code …" line and carries its tier table + Case
+  // Mix). Render each group in its own card with ALTERNATING shading so the
+  // groups are easy to tell apart instead of running together on one wall of
+  // text. Non-RIP answers render as a single markdown block.
+  const renderAssistantMd = useCallback((text: string) => {
+    const md = (seg: string) => (
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents} urlTransform={(u: string) => u}>{seg}</ReactMarkdown>
+    );
+    if (!text.includes('🏷️')) return md(text);
+    const parts = text.split(/\n(?=🏷️\s)/);
+    let ripIdx = -1;
+    return parts.map((seg, i) => {
+      const isRip = seg.trimStart().startsWith('🏷️');
+      if (!isRip) return <div key={i} className="celar-rip-preamble">{md(seg)}</div>;
+      ripIdx += 1;
+      return (
+        <div key={i} className={`celar-rip-block${ripIdx % 2 === 1 ? ' celar-rip-block-alt' : ''}`}>
+          {md(seg)}
+        </div>
+      );
+    });
+  }, [mdComponents]);
+
   const totalIn = messages.reduce((s, m) => s + (m.usage?.input_tokens ?? 0), 0);
   const totalOut = messages.reduce((s, m) => s + (m.usage?.output_tokens ?? 0), 0);
   const totalCost = messages.reduce((s, m) => s + (m.usage?.cost_usd ?? 0), 0);
@@ -325,7 +349,7 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
             </div>
             <div className="celar-bubble">
               {m.role === 'assistant'
-                ? <div className="celar-md"><ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents} urlTransform={(u: string) => u}>{m.text}</ReactMarkdown></div>
+                ? <div className="celar-md">{renderAssistantMd(m.text)}</div>
                 : <div className="celar-usertext">{m.text}</div>}
               {m.role === 'assistant' && m.ripClusters && m.ripClusters.length > 0 && (
                 <RipClusterActions clusters={m.ripClusters} />

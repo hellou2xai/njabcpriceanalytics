@@ -165,11 +165,15 @@ while the cache rebuilds monthly). But the **windows** can: they're static per
 edition, and only the comparison to the reference date varies. So:
 
 - **Precomputed (derive.py).** `cpl_enriched.parquet` carries a `rip_windows`
-  column: `LIST<STRUCT(from_date VARCHAR, to_date VARCHAR, amt DOUBLE)>` of every
-  RIP window that applies to the row (full AND partial), `amt` already converted
-  to per-case using pack size. Dates are ISO strings (lexical compare == date
-  compare). Built from a no-full-month-gate twin of `rip_per_code_upc` joined
-  through the `cpl_codes` multi-code UNNEST.
+  column: a **JSON-array STRING** (plain VARCHAR) of
+  `{from_date, to_date, amt}` for every RIP window that applies to the row (full
+  AND partial), `amt` already converted to per-case using pack size. Dates are
+  ISO strings (lexical compare == date compare). It is a string, not a native
+  `LIST<STRUCT>`, ON PURPOSE: prod stores pricing in Postgres (which has no
+  list-of-struct type), and the cache is rebuilt FROM Postgres, so the column
+  has to round-trip as text. Parsed back with `from_json` at query time. Built
+  from a no-full-month-gate twin of `rip_per_code_upc` joined through the
+  `cpl_codes` multi-code UNNEST.
 - **Query-time date.** `pricing.live_rip_amt_sql(col, ref)` and
   `pricing.live_effective_sql(ref)` build the SQL that filters `rip_windows` to
   the windows containing `ref` and takes the best amt:

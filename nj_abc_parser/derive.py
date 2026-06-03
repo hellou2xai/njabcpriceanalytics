@@ -418,20 +418,21 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
             -- catalog computes the live price at request time as
             --   base - MAX(amt where ref BETWEEN from_date AND to_date)
             -- so it can sort the whole grid by "best price active today" without
-            -- a per-request join. Dates stored as ISO strings (lexical compare ==
-            -- date compare) to keep the nested parquet column simple. Collapsed
-            -- on the same identity the `joined` CTE uses so the LEFT JOIN below
-            -- is 1:1.
+            -- a per-request join. Stored as a JSON-array STRING (plain VARCHAR)
+            -- so it round-trips through Postgres (the prod store has no native
+            -- list-of-struct type); parsed back with from_json at query time.
+            -- Dates as ISO strings (lexical compare == date compare). Collapsed
+            -- on the same identity the `joined` CTE uses so the LEFT JOIN is 1:1.
             SELECT
                 cc.wholesaler, cc.edition, cc.upc, cc.product_name, cc.unit_volume, cc.vintage,
-                list(DISTINCT struct_pack(
+                CAST(to_json(list(DISTINCT struct_pack(
                     from_date := CAST(rw.from_date AS VARCHAR),
                     to_date := CAST(rw.to_date AS VARCHAR),
                     amt := ROUND(GREATEST(
                         COALESCE(rw.best_case_per_case, 0),
                         COALESCE(rw.best_bottle_per_bottle, 0) * COALESCE(TRY_CAST(cc.unit_qty AS DOUBLE), 1)
                     ), 2)
-                )) AS rip_windows
+                ))) AS VARCHAR) AS rip_windows
             FROM cpl_codes cc
             JOIN rip_windows_per_code_upc rw
                 ON cc.wholesaler = rw.wholesaler
@@ -488,11 +489,9 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
         enriched AS (
             SELECT
                 j.* EXCLUDE (best_rip_amt, rn),
-                -- Date-aware RIP windows for the runtime "live now" price + sort.
-                -- Empty list when the SKU carries no RIP.
-                COALESCE(rwa.rip_windows,
-                         CAST([] AS STRUCT(from_date VARCHAR, to_date VARCHAR, amt DOUBLE)[])
-                ) AS rip_windows,
+                -- Date-aware RIP windows for the runtime "live now" price + sort,
+                -- as a JSON-array string. Empty array when the SKU carries no RIP.
+                COALESCE(rwa.rip_windows, '[]') AS rip_windows,
                 -- Tag whether THIS CPL row's window is full-month (or null).
                 -- A partial-window CPL row (e.g. 5 Apr - 22 Apr) is a time-
                 -- sensitive deal; its discount is excluded from effective

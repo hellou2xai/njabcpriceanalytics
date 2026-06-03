@@ -37,6 +37,7 @@ What does NOT live here
 """
 from __future__ import annotations
 
+import json
 import math
 import re
 from datetime import date, datetime
@@ -610,16 +611,22 @@ def _split_rip_codes(rc) -> list[str]:
     return out
 
 
+# JSON schema for the rip_windows column (a JSON-array string; see derive.py).
+# Parsed back to a list<struct> with from_json at query time.
+_RIP_WINDOWS_JSON_SCHEMA = '[{"from_date":"VARCHAR","to_date":"VARCHAR","amt":"DOUBLE"}]'
+
+
 def live_rip_amt_sql(windows_col: str, ref_sql: str) -> str:
     """SQL snippet: best per-case RIP rebate ACTIVE on the reference date.
 
-    Reads the precomputed ``rip_windows`` list column (derive.py) — a list of
-    STRUCT(from_date VARCHAR, to_date VARCHAR, amt DOUBLE), dates as ISO
-    'YYYY-MM-DD' strings (lexical compare == date compare). ``ref_sql`` is a
-    string-typed SQL expression holding the reference date (e.g. a bound
-    ``$as_of`` param). Null window bounds count as open-ended."""
+    Reads the precomputed ``rip_windows`` column (derive.py) — a JSON-array
+    STRING of {from_date, to_date, amt}, dates as ISO 'YYYY-MM-DD' strings
+    (lexical compare == date compare). Stored as text so it round-trips through
+    Postgres; parsed here with from_json. ``ref_sql`` is a string-typed SQL
+    expression holding the reference date. Null window bounds = open-ended."""
+    parsed = f"from_json({windows_col}, '{_RIP_WINDOWS_JSON_SCHEMA}')"
     return (
-        f"COALESCE(list_max(list_transform(list_filter({windows_col}, "
+        f"COALESCE(list_max(list_transform(list_filter({parsed}, "
         f"w -> (w.from_date IS NULL OR {ref_sql} >= w.from_date) "
         f"AND (w.to_date IS NULL OR {ref_sql} <= w.to_date)), w -> w.amt)), 0)"
     )
@@ -644,17 +651,27 @@ def live_effective_sql(
 
 
 def _best_active_window_amt(rip_windows, ref: str) -> float:
-    """Python mirror of live_rip_amt_sql: max amt over windows containing ref."""
+    """Python mirror of live_rip_amt_sql: max amt over windows containing ref.
+
+    ``rip_windows`` is the JSON-array string from the column (or already a
+    parsed list/None, for robustness)."""
     if rip_windows is None:
         return 0.0
+    if isinstance(rip_windows, str):
+        s = rip_windows.strip()
+        if not s or s == "[]":
+            return 0.0
+        try:
+            rip_windows = json.loads(s)
+        except (ValueError, TypeError):
+            return 0.0
     best = 0.0
     for w in rip_windows:
-        if w is None:
+        if not isinstance(w, dict):
             continue
-        f = w.get("from_date") if isinstance(w, dict) else None
-        t = w.get("to_date") if isinstance(w, dict) else None
-        a = _num(w.get("amt")) if isinstance(w, dict) else None
-        a = a or 0.0
+        f = w.get("from_date")
+        t = w.get("to_date")
+        a = _num(w.get("amt")) or 0.0
         if (f is None or ref >= f) and (t is None or ref <= t) and a > best:
             best = a
     return best

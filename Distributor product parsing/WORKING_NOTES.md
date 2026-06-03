@@ -69,15 +69,17 @@ Env (all set in `.env`): `DATABASE_URL` (local PG), `RENDER_EXTERNAL_DATABASE_UR
   RIP line: `RIP: <id> [1BOTTLE $x]`. Price rows: `1 CASE $.. $..` (BUY PER CS,
   BEST RIP PER BT), `1 BOTTLE $..`. Leading `+` = changed this month.
 
-## Current results (Fedway June 2026)
+## Current results (Fedway June 2026, AFTER the parser fixes)
 
-- Extract (BEFORE the latest parser fixes were re-run end to end): 6,323 item
-  rows, 5,919 distinct item numbers, 5,538 catalogue listings.
-- Crosswalk pushed to local + Render: **3,287 / 5,919 UPCs assigned = 55.5%**
-  (HIGH 2,772 + MEDIUM 466 + LLM 49). 1,539 rows have BOTH prices.
+- Extract: 6,581 item rows, **6,141 distinct item numbers**, 5,798 catalogue
+  listings. Catalogue price capture ~80%, brandless ~18%.
+- Crosswalk pushed to local + Render: **3,550 / 6,141 UPCs assigned = 57.8%**
+  (HIGH 2,877 + MEDIUM 598 + LLM 75). **2,492 rows have BOTH prices**
+  (discrepancy-ready), up from 1,539.
 - Crosswalk columns include `front_line_case_price` (PDF), `live_frontline_case_price`
-  (live), `price_delta` (live - pdf; NULL unless both present). Render upsert is
-  append-only (PK distributor_code+item_number_norm) so Allied data is safe.
+  (live), `price_delta` (live - pdf; NULL unless both present, verified 0 bad).
+  Render upsert is append-only (PK distributor_code+item_number_norm) so Allied
+  data is safe.
 
 ## FIXED in the latest parser pass (extract.py)
 

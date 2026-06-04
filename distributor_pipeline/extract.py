@@ -148,6 +148,27 @@ def _item_anchors(page):
     return uniq
 
 
+def _column_cuts(page):
+    """Two x boundaries splitting a 3-column page. The 'ITEM' header can appear
+    MORE than 3 times (sub-headers), so pick the three that fit an evenly-spaced
+    grid (col0, col0+~187, col0+~374) instead of trusting anchors[1]/[2]. Cut a
+    bit LEFT of each column edge because col headers (e.g. 'ALTUS') are aligned
+    slightly left of the item-number column and otherwise bleed into the
+    previous column."""
+    a = _item_anchors(page)
+    w = page.width
+    if not a:
+        return [w / 3, 2 * w / 3]
+    col0 = a[0]
+    span = w / 3  # ~204; columns are evenly spaced
+    def nearest(target):
+        best = min(a, key=lambda x: abs(x - target))
+        return best if abs(best - target) <= 40 else target
+    c1 = nearest(col0 + span - 17)   # ~223
+    c2 = nearest(col0 + 2 * (span - 17))  # ~410
+    return [c1 - 10, c2 - 10]
+
+
 def _is_banner(text):
     t = text.strip()
     if not t or "$" in t:
@@ -193,6 +214,7 @@ def parse_catalog(col_lines, page_no, section, items, combos, unparsed):
         cur = None
         notes = []
         combo_pending = None
+        emitted_since_label = False  # an item used the current product label?
 
         def close():
             nonlocal cur
@@ -247,10 +269,19 @@ def parse_catalog(col_lines, page_no, section, items, combos, unparsed):
                 ctx_brand, ctx_flags = name, flags
                 page_brand = name        # page-level fallback so items are never brandless
                 ctx_product = []
+                emitted_since_label = False
                 notes = []
                 continue
             if fclass == "product":
-                ctx_product = [t]   # a new product label replaces the prior one
+                # A product label covers the whole size group below it. A SINGLE
+                # stray word arriving AFTER items already used the current label
+                # is almost always a value bled from the neighbouring column
+                # (e.g. 'ALTUS', 'AZUMA' landing in the Glenlivet group); don't
+                # let it hijack the group's name.
+                if emitted_since_label and len(t.split()) <= 1:
+                    continue
+                ctx_product = [t]
+                emitted_since_label = False
                 notes = []
                 continue
             if fclass == "desc":
@@ -281,7 +312,8 @@ def parse_catalog(col_lines, page_no, section, items, combos, unparsed):
                     "product_notes": " ".join(notes) or None,
                     "program_flags": ctx_flags, "category": section,
                     "type": ctx_type, "country": ctx_country,
-                    "front_line_case_price": None, "bottle_price": None,
+                    "front_line_case_price": None, "best_case_price": None,
+                    "bottle_price": None,
                     "best_rip_bottle_price": None, "unit_price": None,
                     "unit_of_measure": None, "rip_id": None,
                     "deals": [(q, u, a, util.find_month(t)) for (q, u, a) in tiers],
@@ -296,6 +328,7 @@ def parse_catalog(col_lines, page_no, section, items, combos, unparsed):
                     })
                     combo_pending = None
                 notes = []
+                emitted_since_label = True   # this size used the current label
                 continue
             mr = RIP_RE.match(t)
             if mr and cur is not None:
@@ -311,30 +344,40 @@ def parse_catalog(col_lines, page_no, section, items, combos, unparsed):
 
 
 def _apply_prices(item, text):
-    """Pull case / bottle / best-rip / unit prices off a child row.
+    """Pull prices off a child row, matching the live system's definition.
 
-    Column order on a CASE row is [BUY PER CS, BEST RIP PER BT]; some rows also
-    carry a leading per-OZ/EA unit price (e.g. '1 CASE $7.14 $181.00 $181.00').
-    So the case price is the SECOND-TO-LAST dollar and best-rip is the LAST, not
-    the first (which can be the unit price)."""
+    The '1 CASE $325.08 $27.09' row is the DISCOUNTED buy-per-case ($325.08) and
+    best-RIP-per-bottle ($27.09); it is NOT the frontline. The '1 BOTTLE $29.09'
+    row is the regular single-bottle price. The live catalogue's
+    frontline_case_price == regular bottle * bottles-per-case, so we compute
+    front_line_case_price = bottle_price * pack_qty (this is what makes the
+    PDF<->live frontline-price match line up). Rows may also carry a leading
+    per-OZ/EA unit price which must be ignored for the case/bottle figures."""
     um = UNIT_RE.search(text)
     if um:
         item["unit_price"] = float(um.group(1))
         item["unit_of_measure"] = um.group(2).upper()
     dollars = [float(x) for x in DOLLAR_RE.findall(text)]
+    if not dollars:
+        return
     up = text.upper()
-    if "CASE" in up and dollars:
+    pk = item.get("pack_qty")
+    if "CASE" in up:
+        # discounted buy-per-case + best-rip-per-bottle
         if len(dollars) >= 2:
-            item["front_line_case_price"] = dollars[-2]
+            item["best_case_price"] = dollars[-2]
             item["best_rip_bottle_price"] = dollars[-1]
-            if len(dollars) >= 3 and item["unit_price"] is None:
-                item["unit_price"] = dollars[0]  # leading /OZ or /EA price
         else:
-            item["front_line_case_price"] = dollars[0]
-    elif ("BOTTLE" in up or "SLEEVE" in up) and dollars:
+            item["best_case_price"] = dollars[-1]
+        # frontline only as a fallback until the bottle row gives the real one
+        if item.get("front_line_case_price") is None:
+            item["front_line_case_price"] = item["best_case_price"]
+    elif "BOTTLE" in up or "SLEEVE" in up:
         item["bottle_price"] = dollars[-1]
         if item["best_rip_bottle_price"] is None:
             item["best_rip_bottle_price"] = dollars[-1]
+        if pk:   # frontline case = regular bottle * bottles-per-case
+            item["front_line_case_price"] = round(dollars[-1] * pk, 2)
 
 
 # --------------------------------------------------------------------------
@@ -522,12 +565,7 @@ def extract(pdf_path=None, max_pages=None):
                 continue
             section_pages[kind] += 1
             if kind in ("A", "D"):
-                anchors = _item_anchors(page)
-                if len(anchors) >= 3:
-                    cuts = [anchors[1] - 6, anchors[2] - 6]
-                else:
-                    cuts = [config._THIRD * 1, config._THIRD * 2] if hasattr(config, "_THIRD") \
-                        else [page.width / 3, 2 * page.width / 3]
+                cuts = _column_cuts(page)
                 if kind == "A":
                     parse_catalog(_column_lines_fonts(page, cuts), p1, section, items, combos, unparsed)
                 else:

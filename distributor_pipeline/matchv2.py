@@ -45,26 +45,31 @@ def _price_close(a, b):
 
 
 def build_master(rows):
-    """rows from db.find_upc_master. Return (records, name_list, name_to_idx)."""
+    """rows from db.find_upc_master. Return (records, name_list, name_to_idx,
+    price_index). price_index keys (size_ml, round(case_price)) -> [idx] for the
+    exact frontline-price match path."""
     recs = []
     by_name = collections.defaultdict(list)
+    price_index = collections.defaultdict(list)
     for upc, pn, brand, uv, uq, ptype, cost, casep, ws in rows:
         name = _clean(f"{pn or ''}")
         if not name:
             continue
         i = len(recs)
+        size_ml = util.parse_size_ml(uv or "")
+        cp = float(casep) if casep else None
         recs.append({"upc": upc, "name": name, "product_name": pn,
-                     "size_ml": util.parse_size_ml(uv or ""),
-                     "case_price": float(casep) if casep else None,
-                     "unit_price": float(cost) if cost else None,
-                     "wholesaler": ws})
+                     "size_ml": size_ml, "case_price": cp,
+                     "unit_price": float(cost) if cost else None, "wholesaler": ws})
         by_name[name].append(i)
+        if size_ml and cp:
+            price_index[(size_ml, round(cp))].append(i)
     names = list(by_name.keys())
-    return recs, names, by_name
+    return recs, names, by_name, price_index
 
 
 def match_items(master_rows, items, use_llm=True, log=print):
-    recs, names, by_name = build_master(master_rows)
+    recs, names, by_name, price_index = build_master(master_rows)
     log(f"  master: {len(recs)} rows, {len(names)} distinct names; embedding...")
     index = semantic.SemanticIndex(names)
 
@@ -73,32 +78,49 @@ def match_items(master_rows, items, use_llm=True, log=print):
     topk = index.topk(qvecs, k=20)
 
     matched, review, llm_queue = [], [], []
+    exact_price = 0
     for ti, it in enumerate(items):
         cp = it.get("front_line_case_price")
         size = it.get("size_ml")
         qname = q_texts[ti]
-        # gather size-compatible candidates from the semantic neighbours
-        cands = []  # (score, sim, rec_idx, price_delta)
-        for name_idx, sim in topk[ti]:
-            for ri in by_name[names[name_idx]]:
-                r = recs[ri]
-                if not _size_ok(size, r["size_ml"]):
-                    continue
-                pc = _price_close(cp, r["case_price"])
-                fz = fuzz.token_set_ratio(qname, r["name"]) / 100.0
-                score = 0.6 * sim + 0.25 * pc + 0.15 * fz
-                pd = (round(r["case_price"] - cp, 2)
-                      if (cp and r["case_price"]) else None)
-                cands.append((score, sim, pc, ri, pd))
+        # candidate pool: semantic neighbours UNION exact (size, frontline price)
+        cand_idx = set()
+        for name_idx, _sim in topk[ti]:
+            cand_idx.update(by_name[names[name_idx]])
+        if size and cp:
+            cand_idx.update(price_index.get((size, round(cp)), ()))
+        sim_by_name = {names[ni]: s for ni, s in topk[ti]}
+        cands = []  # (score, sim, price_close, rec_idx, price_delta)
+        for ri in cand_idx:
+            r = recs[ri]
+            if not _size_ok(size, r["size_ml"]):
+                continue
+            sim = sim_by_name.get(r["name"], 0.0)
+            pc = _price_close(cp, r["case_price"])
+            fz = fuzz.token_set_ratio(qname, r["name"]) / 100.0
+            score = 0.6 * sim + 0.25 * pc + 0.15 * fz
+            pd = round(r["case_price"] - cp, 2) if (cp and r["case_price"]) else None
+            cands.append((score, sim, pc, ri, pd, fz))
         if not cands:
             matched.append(_unmatched(it))
             continue
         cands.sort(reverse=True)
-        best = cands[0]
-        bscore, bsim, bpc, bri, bpd = best
+        bscore, bsim, bpc, bri, bpd, bfz = cands[0]
         runner = cands[1][0] if len(cands) > 1 else 0.0
-        # auto-accept clear semantic+price winners
-        if bsim >= 0.86 and (bpc >= 0.90 or it.get("front_line_case_price") is None):
+        # EXACT frontline price + matching size is near-definitive (the live
+        # frontline == bottle*pack now matches the PDF exactly). Among the
+        # exact-price candidates pick the BEST-NAMED one (different products can
+        # share a size+price, e.g. Glenlivet 750 vs a Chanson Beaune at ~$702),
+        # and accept only when its name genuinely agrees.
+        exact = [c for c in cands if c[2] >= 0.999]
+        if cp and exact:
+            exb = max(exact, key=lambda c: max(c[1], c[5]))
+            if max(exb[1], exb[5]) >= 0.55:
+                matched.append(_matched(it, recs[exb[3]], "price+size", "HIGH",
+                                        round(exb[0] * 100, 1), exb[4]))
+                exact_price += 1
+                continue
+        if bsim >= 0.86 and (bpc >= 0.90 or cp is None):
             matched.append(_matched(it, recs[bri], "semantic+price", "HIGH",
                                     round(bscore * 100, 1), bpd))
             continue
@@ -106,9 +128,9 @@ def match_items(master_rows, items, use_llm=True, log=print):
             matched.append(_matched(it, recs[bri], "semantic+price", "MEDIUM",
                                     round(bscore * 100, 1), bpd))
             continue
-        # ambiguous -> Claude (keep top candidates)
-        top = cands[:6]
+        top = [c[:5] for c in cands[:6]]
         llm_queue.append((ti, it, top))
+    log(f"  exact frontline-price+size matches: {exact_price}")
 
     # Claude disambiguation pass
     if use_llm and llm_queue:

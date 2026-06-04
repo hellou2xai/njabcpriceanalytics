@@ -5433,19 +5433,30 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
     # grid actually changes. Guarded to a CONCISE subject (a product/brand), not
     # a descriptive phrase, to avoid turning 'the cheapest 5 wines' into a search.
     if screen_out is None and answer:
-        # 'Showing Glenfiddich products on the catalog' / 'Showing Rampur on the
-        # catalog' — capture the subject, treating a trailing 'products' as noise.
-        _ms = re.match(r"^\s*showing\s+\*{0,2}(.+?)\*{0,2}(?:\s+products?)?\s+on the catalog\b", answer, re.I)
+        # The model (esp. Haiku) often CLAIMS it showed something — 'Showing
+        # Glenfiddich products on the catalog', 'Showing new vodka on the page',
+        # 'Showing bourbon time-sensitive deals on the screen' — but forgets to
+        # call show_on_screen, so the grid stays frozen on the prior query.
+        # Capture the subject (stop at the first filler word) and synthesise a
+        # screen pinned to the CURRENT grid page so it actually re-filters.
+        _ms = re.match(
+            r"^\s*showing\s+\*{0,2}(.+?)\*{0,2}"
+            r"(?:\s+(?:products?|deals?|sorted|on|in|from|by|time-?sensitive|that|with|priced)\b|[.,!]|$)",
+            answer, re.I)
         if _ms:
             _subj = _ms.group(1).strip().strip("*\"'").strip()
+            # Drop leading filler so 'new vodka' -> 'vodka', 'the macallan' -> 'macallan'.
+            _subj = re.sub(r"^(?:new|the|some|more|all|a|an)\s+", "", _subj, flags=re.I).strip()
             _low = _subj.lower()
-            # Skip only DESCRIPTIVE phrases that wouldn't make a sane free-text
-            # search (a list/filter, not a named product/brand).
-            _bad = any(w in _low for w in ("cheapest", "these", "those", "case mix",
-                                           "deal", "discount", "rebate"))
+            # Skip DESCRIPTIVE phrases that wouldn't make a sane free-text search.
+            _bad = any(w in _low for w in ("cheapest", "biggest", "these", "those",
+                                           "case mix", "rebate", "result", "discount", "deal"))
             if 0 < len(_subj) <= 40 and not _bad:
                 from urllib.parse import urlencode
-                screen_out = {"path": "/catalog?" + urlencode({"q": _subj}), "label": _subj}
+                _grids = ("/catalog", "/new-items", "/time-sensitive", "/major-discounts",
+                          "/price-drops", "/price-increases", "/combos")
+                _base = page_path if page_path in _grids else "/catalog"
+                screen_out = {"path": _base + "?" + urlencode({"q": _subj}), "label": _subj}
 
     return _json_safe({
         "answer": answer,

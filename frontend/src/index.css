@@ -596,6 +596,10 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
   cursor: pointer; font-size: 12px;
 }
 .product-link:hover { color: var(--orange); text-decoration: underline; }
+/* Clickable product NAME (keeps the name's own font/weight, unlike .product-link
+   which is the small monospace code link). Used in Cart + Lists rows. */
+.product-name-link { cursor: pointer; }
+.product-name-link:hover { color: var(--orange); text-decoration: underline; }
 
 /* ---- Tracked-Only Toggle ---- */
 .tracked-toggle {

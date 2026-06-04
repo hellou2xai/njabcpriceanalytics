@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Trash2, Clock, Send, ShoppingCart, Plus, Search, ArrowUpFromLine, Eraser } from 'lucide-react';
 import { cart as cartApi, salesReps as repsApi, catalog, type CartItem, type Product } from '../lib/api';
 import ProductThumb from '../components/ProductThumb';
+import DealSparkline from '../components/DealSparkline';
+import { useProductQuickView } from '../components/ProductQuickView';
 import { useDialog } from '../components/Dialog';
 import { shortUnit } from '../components/CatalogTable';
 import { distributorName, abgSku } from '../lib/distributors';
@@ -226,6 +228,7 @@ export default function Cart() {
     onSuccess: invalidate,
   });
   const del = useMutation({ mutationFn: (id: number) => cartApi.remove(id), onSuccess: invalidate });
+  const { open } = useProductQuickView();  // product-name → price-detail modal
   const add = useMutation({
     mutationFn: (p: Product) => cartApi.add({
       product_name: p.product_name, wholesaler: p.wholesaler,
@@ -287,7 +290,17 @@ export default function Cart() {
           <ProductThumb src={it.image_url} alt={it.product_name} size={56} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              {it.product_name}
+              <span
+                className="product-name-link"
+                title="View price detail"
+                onClick={() => open(it.product_name, it.wholesaler, undefined, {
+                  upc: it.upc ?? undefined,
+                  unitVolume: it.unit_volume ?? undefined,
+                  unitQty: it.unit_qty != null ? String(it.unit_qty) : undefined,
+                })}
+              >
+                {it.product_name}
+              </span>
               {showCombo && <ComboBadge code={it.combo_code!} />}
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
@@ -301,6 +314,20 @@ export default function Cart() {
                 {it.total_savings_per_case ? <> · Save <span className="text-green">{money(it.total_savings_per_case)}/cs</span></> : null}
               </div>
             )}
+            {/* Price-history sparkline (effective vs frontline across editions);
+                interactive → click opens the 3-month price popover. */}
+            <div style={{ marginTop: 4 }}>
+              <DealSparkline
+                interactive
+                wholesaler={it.wholesaler}
+                productName={it.product_name}
+                upc={it.upc ?? undefined}
+                unitVolume={it.unit_volume ?? undefined}
+                unitQty={it.unit_qty != null ? String(it.unit_qty) : undefined}
+                width={130}
+                height={32}
+              />
+            </div>
           </div>
           {!saving && (
             <>

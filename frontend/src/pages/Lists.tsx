@@ -5,6 +5,7 @@ import { lists as listsApi, cart as cartApi, type ListItem } from '../lib/api';
 import { ContextMenuProvider } from '../components/ContextMenu';
 import { useProductQuickView } from '../components/ProductQuickView';
 import ProductThumb from '../components/ProductThumb';
+import DealSparkline from '../components/DealSparkline';
 import { distributorName, abgSku } from '../lib/distributors';
 import { useDialog } from '../components/Dialog';
 
@@ -231,12 +232,13 @@ export default function Lists() {
                         <th>Product</th>
                         <th>Distributor</th>
                         <th>Size</th>
+                        <th>Price trend</th>
                         <th style={{ width: 40 }}></th>
                       </tr>
                     </thead>
                     <tbody>
                       {items.map(it => <ListRow key={it.id} it={it} selected={selected} toggle={toggle} onRemove={() => removeItems.mutate([it.id])} />)}
-                      {items.length === 0 && <tr><td colSpan={5} className="empty">No items. Add products from anywhere with right-click → Add to List.</td></tr>}
+                      {items.length === 0 && <tr><td colSpan={6} className="empty">No items. Add products from anywhere with right-click → Add to List.</td></tr>}
                     </tbody>
                   </table>
                 )}
@@ -255,6 +257,7 @@ function ListRow({ it, selected, toggle, onRemove }: {
   toggle: (id: number) => void;
   onRemove: () => void;
 }) {
+  const { open } = useProductQuickView();
   return (
     <tr data-ctx="" data-ctx-product={it.product_name} data-ctx-wholesaler={it.wholesaler}
         data-ctx-upc={it.upc ?? ''} data-ctx-volume={it.unit_volume ?? ''}>
@@ -265,13 +268,32 @@ function ListRow({ it, selected, toggle, onRemove }: {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <ProductThumb src={it.image_url} alt={it.product_name} size={56} />
           <div>
-            <div style={{ fontWeight: 600 }}>{it.product_name}</div>
+            <div
+              className="product-name-link"
+              style={{ fontWeight: 600 }}
+              title="View price detail"
+              onClick={e => { e.stopPropagation(); open(it.product_name, it.wholesaler, undefined, {
+                upc: it.upc ?? undefined, unitVolume: it.unit_volume ?? undefined }); }}
+            >
+              {it.product_name}
+            </div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{it.upc}{abgSku(it.wholesaler, it.abg_sku) ? ` · ABG ${it.abg_sku}` : ''}</div>
           </div>
         </div>
       </td>
       <td>{distributorName(it.wholesaler)}</td>
       <td>{it.unit_volume}</td>
+      <td onClick={e => e.stopPropagation()}>
+        <DealSparkline
+          interactive
+          wholesaler={it.wholesaler}
+          productName={it.product_name}
+          upc={it.upc ?? undefined}
+          unitVolume={it.unit_volume ?? undefined}
+          width={130}
+          height={32}
+        />
+      </td>
       <td style={{ width: 40 }} onClick={e => e.stopPropagation()}>
         <button className="btn btn-secondary btn-sm" title="Remove from list" onClick={onRemove}><Trash2 size={14} /></button>
       </td>

@@ -62,6 +62,15 @@ def _name_score(a, b):
 SKU_DISTRIBUTORS = ("allied", "fedway")
 
 
+def _display_sku(wholesaler, sku):
+    """Format a SKU for display. Fedway part numbers are stored zero-padded to 9
+    (so they join the catalogue), but are shown WITHOUT leading zeros. Allied
+    (ABG) numbers carry no leading zeros, so they pass through unchanged."""
+    if sku and wholesaler == "fedway":
+        return sku.lstrip("0") or sku
+    return sku
+
+
 def attach_sku_mapping(con, records, upc_key="upc", wholesaler_key="wholesaler",
                        name_key="product_name"):
     """Set rec["abg_sku"] (the distributor's own item number) on records whose
@@ -108,11 +117,11 @@ def attach_sku_mapping(con, records, upc_key="upc", wholesaler_key="wholesaler",
         if not c:
             continue
         if len(c) == 1:
-            rec["abg_sku"] = c[0][0]
+            rec["abg_sku"] = _display_sku(w, c[0][0])
             continue
         # Multiple SKUs share this UPC: resolve only on a clear name winner.
         pn = rec.get(name_key) or ""
         scored = sorted(((_name_score(pn, nm), sku) for sku, nm in c), reverse=True)
         if scored[0][0] > 0 and (len(scored) == 1 or scored[0][0] - scored[1][0] > 1e-9):
-            rec["abg_sku"] = scored[0][1]
+            rec["abg_sku"] = _display_sku(w, scored[0][1])
         # else: ambiguous -> leave None (do not confuse the user).

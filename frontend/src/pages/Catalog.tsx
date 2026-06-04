@@ -14,7 +14,7 @@ import type { CatalogFilters } from '../components/CatalogFilterPanel';
 import type { Product } from '../lib/api';
 
 export default function Catalog() {
-  const [params] = useSearchParams();
+  const [params, setSearchParams] = useSearchParams();
   const [q, setQ] = useState(params.get('q') ?? '');
   const [wholesaler, setWholesaler] = useState(params.get('wholesaler') ?? '');
   // Exact-UPC lock used by Celar Assistant "Open in Catalog" deep-links —
@@ -101,6 +101,36 @@ export default function Catalog() {
     setPage(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
+
+  // Mirror the live filter state back INTO the URL so the Back/Forward buttons
+  // restore search + filters (React would otherwise discard this useState on
+  // unmount) and a filtered view is shareable / bookmarkable. Guarded against
+  // the URL->state effect above: we only write when the canonical query string
+  // actually changes, so the two effects converge in one extra render instead
+  // of looping. `replace` keeps each keystroke out of the history stack.
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (q) next.set('q', q);
+    if (wholesaler) next.set('wholesaler', wholesaler);
+    if (upcs) next.set('upcs', upcs);
+    if (ripCode) next.set('rip_code', ripCode);
+    if (region) next.set('region', region);
+    if (varietal) next.set('varietal', varietal);
+    if (sort !== 'product_name') next.set('sort', sort);
+    if (order !== 'asc') next.set('order', order);
+    if (filters.hasRip) next.set('hasRip', '1');
+    if (filters.hasDiscount) next.set('hasDiscount', '1');
+    if (filters.groupByRip) next.set('group_by_rip', '1');
+    if (filters.priceTrend === 'increase') next.set('price_increase', '1');
+    if (filters.priceTrend === 'drop') next.set('price_drop', '1');
+    if (filters.categories?.length) next.set('categories', filters.categories.join(','));
+    if (filters.divisions?.length) next.set('divisions', filters.divisions.join(','));
+    if (filters.sizes?.length) next.set('sizes', filters.sizes.join(','));
+    if (filters.priceMin != null) next.set('priceMin', String(filters.priceMin));
+    if (filters.priceMax != null) next.set('priceMax', String(filters.priceMax));
+    if (next.toString() !== params.toString()) setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, wholesaler, upcs, ripCode, region, varietal, sort, order, filters]);
 
   const setCart = useCallback((update: CartState | ((p: CartState) => CartState)) => {
     setCartState(prev => {

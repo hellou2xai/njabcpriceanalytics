@@ -1,8 +1,8 @@
-import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Trash2 } from 'lucide-react';
 import { divisions } from '../lib/api';
 import { distributorName, DISTRIBUTOR_NAMES } from '../lib/distributors';
+import { useDraftState, clearDrafts } from '../hooks/useDraftState';
 import SalesRepsPage from './SalesReps';
 import StoresPage from './Stores';
 
@@ -12,13 +12,14 @@ const DISTRIBUTORS = Object.keys(DISTRIBUTOR_NAMES);
 
 function DivisionsManager() {
   const qc = useQueryClient();
-  const [name, setName] = useState('');
-  const [distributor, setDistributor] = useState('');
+  // Draft-persisted so a half-typed division survives a Back-button navigation.
+  const [name, setName] = useDraftState('divisions:name', '');
+  const [distributor, setDistributor] = useDraftState('divisions:distributor', '');
   const { data } = useQuery({ queryKey: ['divisions'], queryFn: divisions.list });
 
   const addMut = useMutation({
     mutationFn: () => divisions.add(name.trim(), distributor),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['divisions'] }); setName(''); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['divisions'] }); setName(''); clearDrafts('divisions:'); },
   });
   const removeMut = useMutation({
     mutationFn: (id: number) => divisions.remove(id),
@@ -67,7 +68,7 @@ function DivisionsManager() {
 }
 
 export default function Configuration() {
-  const [tab, setTab] = useState<Tab>('reps');
+  const [tab, setTab] = useDraftState<Tab>('config:tab', 'reps');
   return (
     <div className="page">
       <h2>Configuration</h2>

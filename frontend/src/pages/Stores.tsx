@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Trash2, Pencil, MapPin, Plus, X, Phone } from 'lucide-react';
 import { stores as storesApi } from '../lib/api';
 import type { Store, StorePrediction } from '../lib/api';
+import { useDraftState, clearDrafts } from '../hooks/useDraftState';
 
 type FormState = {
   id?: number;
@@ -44,8 +45,12 @@ function storeToForm(s: Store): FormState {
 
 export default function StoresPage({ onboarding = false, embedded = false }: { onboarding?: boolean; embedded?: boolean }) {
   const qc = useQueryClient();
-  const [form, setForm] = useState<FormState>(EMPTY);
-  const [showForm, setShowForm] = useState(onboarding);
+  // Draft-persisted so a half-filled store survives a Back-button navigation
+  // (React unmounts the page and would otherwise discard the form).
+  const [form, setForm] = useDraftState<FormState>('stores:form', EMPTY);
+  const formDirty = !!(form.name || form.street || form.city || form.state
+    || form.postal_code || form.phone || form.license_number || form.notes);
+  const [showForm, setShowForm] = useState(onboarding || formDirty);
 
   // Name autocomplete
   const [predictions, setPredictions] = useState<StorePrediction[]>([]);
@@ -86,6 +91,7 @@ export default function StoresPage({ onboarding = false, embedded = false }: { o
 
   function resetForm() {
     setForm(EMPTY);
+    clearDrafts('stores:');
     setShowForm(false);
     setPredictions([]);
     setLookupOpen(false);

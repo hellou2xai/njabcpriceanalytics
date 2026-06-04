@@ -2,13 +2,16 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { auth as authApi } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+import { useDraftState, clearDrafts } from '../hooks/useDraftState';
 import StoresPage from './Stores';
 
 export default function Profile() {
   const { user, updateUser } = useAuth();
 
-  const [fullName, setFullName] = useState(user?.full_name ?? '');
-  const [email, setEmail] = useState(user?.email ?? '');
+  // Draft-persisted so edits survive a Back-button navigation. Passwords are
+  // deliberately NOT persisted — never write secrets to web storage.
+  const [fullName, setFullName] = useDraftState('profile:fullName', user?.full_name ?? '');
+  const [email, setEmail] = useDraftState('profile:email', user?.email ?? '');
   const [profileMsg, setProfileMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [savingProfile, setSavingProfile] = useState(false);
 
@@ -27,6 +30,7 @@ export default function Profile() {
         email: email.trim().toLowerCase(),
       });
       updateUser(res.user);
+      clearDrafts('profile:');
       setProfileMsg({ ok: true, text: 'Profile updated.' });
     } catch (err) {
       setProfileMsg({ ok: false, text: err instanceof Error ? err.message : 'Could not update profile.' });

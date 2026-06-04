@@ -195,6 +195,27 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['cart'] }); },
   });
+  // Remove a RIP group's COMMITTED cart lines (the server cart, not the local
+  // typed steppers). Without this the banner's "X in cart" could only ever go
+  // up: adds invalidate ['cart'], but nothing on the catalog decremented it,
+  // so a buyer who cleared a Case Mix still saw the old count. Matches lines by
+  // the same wholesaler|upc-norm|unit_volume key the banner totals are built
+  // from, so every vintage/row in the cluster is cleared.
+  const removeGroupMut = useMutation({
+    mutationFn: async (cartKeys: string[]) => {
+      const keys = new Set(cartKeys);
+      const ids = (cartData?.items ?? [])
+        .filter(it => {
+          const upc = (it.upc ?? '').toString().replace(/^0+/, '');
+          return keys.has(`${it.wholesaler}|${upc}|${(it.unit_volume ?? '').toString()}`);
+        })
+        .map(it => it.id);
+      for (const id of ids) {
+        try { await cartApi.remove(id); } catch { /* skip individual failures */ }
+      }
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['cart'] }); },
+  });
   const [addedFlash, setAddedFlash] = useState<string | null>(null);
   // Confirmation modal state for "Add All Case Mix to Cart". Null = closed.
   // Two flavours: 'none' (zero quantities entered, ask user to enter some),
@@ -566,20 +587,30 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                             return q && (q.cases > 0 || q.units > 0);
                           });
                           const hasTyped = typedProducts.length > 0;
+                          // Committed quantity sitting in the server cart for
+                          // this cluster. Reset must clear this too, otherwise
+                          // "X in cart" never drops on removal.
+                          const inCart = banner.casesInCart > 0 || banner.bottlesInCart > 0;
+                          const canReset = hasTyped || inCart;
                           return (
                             <button
                               className="btn btn-sm btn-secondary catalog-rip-banner-reset"
-                              disabled={!hasTyped}
+                              disabled={!canReset || removeGroupMut.isPending}
                               onClick={e => {
                                 e.stopPropagation();
+                                // Clear the local typed steppers...
                                 for (const p of typedProducts) {
                                   updateQty(p.stepperKey, 'cases', 0);
                                   updateQty(p.stepperKey, 'units', 0);
                                 }
+                                // ...and remove what's already committed to the
+                                // cart for this cluster, so the banner count
+                                // actually reflects the removal.
+                                if (inCart) removeGroupMut.mutate(banner.products.map(p => p.cartKey));
                               }}
-                              title={hasTyped
-                                ? `Clear typed Case / Btl quantities on ${typedProducts.length} product${typedProducts.length === 1 ? '' : 's'} in this Case Mix.`
-                                : 'Nothing typed yet on this Case Mix.'}
+                              title={canReset
+                                ? `Clear this Case Mix: removes ${inCart ? 'items already in your cart and ' : ''}any typed Case / Btl quantities (${banner.products.length} product${banner.products.length === 1 ? '' : 's'}).`
+                                : 'Nothing typed or in cart for this Case Mix.'}
                             >
                               <X size={13} /> Reset
                             </button>

@@ -3467,6 +3467,13 @@ _SYSTEM = (
     "wines') and then refines ('only show prices going up'), the prior region/varietal/category filter "
     "is kept automatically as long as you do NOT pass a new q/region/varietal/category — just pass the "
     "refinement (price_trend, has_discount, price_max, etc.). Do not restate the old scope. "
+    "NEW SUBJECT ALWAYS RE-DRIVES THE GRID: a follow-up that names a DIFFERENT product, brand or search "
+    "subject than what is currently shown (e.g. 'show me glenfiddich' right after 'rampur', or 'now tequila') "
+    "is NOT a refinement — you MUST call show_on_screen with the NEW q/region/varietal. Being already on the "
+    "catalog does NOT mean it 'already shows it': the grid is still showing the PREVIOUS subject, so without a "
+    "fresh show_on_screen the user sees stale results. NEVER reply 'Showing X on the catalog' (or similar) "
+    "WITHOUT actually calling show_on_screen in the same turn — claiming you showed something you didn't drive "
+    "is WRONG and leaves the grid frozen on the old query. "
     "Use the CHAT WINDOW only for genuinely CONVERSATIONAL questions that a product grid cannot represent: "
     "why/how explanations, recommendations, totals/counts, category or distributor breakdowns, a single "
     "product's full price breakdown, or a head-to-head distributor comparison. For those, use the data "
@@ -5418,6 +5425,28 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                     "path": f"/catalog?upcs={upc_csv}",
                     "label": f"these {len(products_final)} products in Catalog",
                 }
+    # DETERMINISTIC BACKSTOP for the docked grid. Haiku sometimes CLAIMS it
+    # showed a product ("Showing Glenfiddich on the catalog.") but forgets to
+    # call show_on_screen, so no screen is returned and the grid stays frozen on
+    # the previous query. When the answer asserts it showed something on the
+    # catalog but we have no screen, synthesise one from the named subject so the
+    # grid actually changes. Guarded to a CONCISE subject (a product/brand), not
+    # a descriptive phrase, to avoid turning 'the cheapest 5 wines' into a search.
+    if screen_out is None and answer:
+        # 'Showing Glenfiddich products on the catalog' / 'Showing Rampur on the
+        # catalog' — capture the subject, treating a trailing 'products' as noise.
+        _ms = re.match(r"^\s*showing\s+\*{0,2}(.+?)\*{0,2}(?:\s+products?)?\s+on the catalog\b", answer, re.I)
+        if _ms:
+            _subj = _ms.group(1).strip().strip("*\"'").strip()
+            _low = _subj.lower()
+            # Skip only DESCRIPTIVE phrases that wouldn't make a sane free-text
+            # search (a list/filter, not a named product/brand).
+            _bad = any(w in _low for w in ("cheapest", "these", "those", "case mix",
+                                           "deal", "discount", "rebate"))
+            if 0 < len(_subj) <= 40 and not _bad:
+                from urllib.parse import urlencode
+                screen_out = {"path": "/catalog?" + urlencode({"q": _subj}), "label": _subj}
+
     return _json_safe({
         "answer": answer,
         "charts": charts,

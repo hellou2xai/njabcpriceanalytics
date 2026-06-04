@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import type { ReactNode } from 'react';
 import type { CatalogAiProduct, AssistantTier, CatalogTier } from '../lib/api';
 import { distributorName } from '../lib/distributors';
 import { openDataGridTab } from '../lib/datagridTab';
@@ -45,6 +46,20 @@ function tierChip(t: AssistantTier): string {
  * tiers and all RIP tiers. Below the table, a deep-link opens the same set
  * in the Catalog (filtered by exact UPCs).
  */
+// Deal-radar month-over-month cell: the salient RIP / combo change vs last month.
+function momCell(p: CatalogAiProduct) {
+  const red = { color: '#dc2626' }, green = { color: '#16a34a' };
+  const m = (v?: number | null) => (v == null ? '—' : `$${Math.round(v)}`);
+  const rows: ReactNode[] = [];
+  if (p.rip_change === 'lost') rows.push(<div key="r" style={red}>RIP lost · was {m(p.rip_prior)}/cs</div>);
+  else if (p.rip_change === 'gained') rows.push(<div key="r" style={green}>RIP new · {m(p.rip_now)}/cs</div>);
+  else if (p.rip_change === 'up') rows.push(<div key="r" style={green}>RIP ↑ {m(p.rip_now)} (was {m(p.rip_prior)})</div>);
+  else if (p.rip_change === 'down') rows.push(<div key="r" style={red}>RIP ↓ {m(p.rip_now)} (was {m(p.rip_prior)})</div>);
+  if (p.combo_change === 'lost') rows.push(<div key="c" style={red}>combo lost</div>);
+  else if (p.combo_change === 'gained') rows.push(<div key="c" style={green}>combo new</div>);
+  return rows.length ? <>{rows}</> : <span className="celar-compare-empty">—</span>;
+}
+
 export default function AssistantComparisonTable({ products, screenPath, screenLabel, standalone }: Props) {
   const { open } = useProductQuickView();
   return (
@@ -63,6 +78,8 @@ export default function AssistantComparisonTable({ products, screenPath, screenL
               {standalone && <th>Trend</th>}
               <th>Discount tiers</th>
               <th>RIP tiers</th>
+              <th>RIP Δ mo/mo</th>
+              <th>Best buy</th>
               <th></th>
             </tr>
           </thead>
@@ -111,6 +128,8 @@ export default function AssistantComparisonTable({ products, screenPath, screenL
                       </div>
                     )}
                   </td>
+                  <td className="celar-compare-mom" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{momCell(p)}</td>
+                  <td style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{p.best_buy_window ?? '—'}</td>
                   <td>
                     <div className="celar-compare-actions">
                       <FavoriteButton productName={p.product_name} wholesaler={p.wholesaler} upc={p.upc ?? undefined} unitVolume={p.unit_volume ?? undefined} />

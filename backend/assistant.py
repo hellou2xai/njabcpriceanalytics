@@ -1836,6 +1836,191 @@ def _t_dated_deal_reminders(con, args):
     return out
 
 
+def _t_deal_changes(con, args):
+    """Products whose RIP / case-discount / combo CHANGED month-over-month (prior
+    vs current edition). direction: lost|gained|changed; scope: rip|discount|combo|
+    any. Answers 'X that had a May RIP but not June', 'what gained a combo', etc.
+    Built on the central deal_compare engine so the numbers match every surface."""
+    from backend.deal_compare import deal_compare
+    direction = (args.get("direction") or "lost").lower()
+    scope = (args.get("scope") or "any").lower()
+    view = {
+        "categories": [args["category"]] if args.get("category") else [],
+        "divisions": [args["distributor"]] if args.get("distributor") else [],
+        "region": args.get("region"), "varietal": args.get("varietal"),
+    }
+    prods = _resolve_products(con, view, args.get("match") or "", "cheapest", 3000,
+                              exclude_stocking=True)
+    deal_compare(con, prods, cap=3000)
+    field = {"rip": "rip_change", "discount": "disc_change", "combo": "combo_change"}
+    cols = list(field.values()) if scope in ("any", "") else [field.get(scope, "rip_change")]
+
+    def hit(p):
+        chs = [p.get(c) for c in cols]
+        if direction == "changed":
+            return any(c in ("gained", "lost", "up", "down") for c in chs)
+        return any(c == direction for c in chs)  # lost / gained / up / down
+
+    return [p for p in prods if hit(p)]
+
+
+def _t_best_to_buy(con, args):
+    """WHEN to buy. when=now (best net price now / now<=next), when=next (cheaper
+    next edition → wait), when=soon (dated/time-sensitive deals ending within
+    days). Ranked product cards. Built on deal_compare (now vs next net price)."""
+    when = (args.get("when") or "now").lower()
+    if when == "soon":
+        return _t_dated_deal_reminders(con, args)
+    from backend.deal_compare import deal_compare
+    view = {
+        "categories": [args["category"]] if args.get("category") else [],
+        "divisions": [args["distributor"]] if args.get("distributor") else [],
+        "region": args.get("region"), "varietal": args.get("varietal"),
+    }
+    lim = min(int(args.get("limit") or 200), 1000)
+    prods = _resolve_products(con, view, args.get("match") or "", "cheapest", lim,
+                              exclude_stocking=True)
+    deal_compare(con, prods, cap=lim)
+    pred = (lambda p: (p.get("best_buy_window") or "").startswith("wait")) if when == "next" \
+        else (lambda p: p.get("best_buy_window") == "now")
+    picks = [p for p in prods if pred(p)]
+    picks.sort(key=lambda p: -(p.get("best_buy_saving") or 0))
+    return picks[:lim]
+
+
+def _t_beer_mix_match(con, args):
+    """Beer MIX-&-MATCH, keg and ROLLING-KEG deals (the beer houses — Peerless,
+    High Grade). Each deal carries the min cases to qualify, the discount %, the
+    per-case keg discount, price each and a rolling-keg flag. High Grade stores
+    discount_pct as a fraction, Peerless as a percent — normalised to percent."""
+    from backend.db import PARQUET_DIR
+    src = (f"read_parquet('{PARQUET_DIR.as_posix()}/beer_mm/**/data.parquet', "
+           "hive_partitioning=true, union_by_name=true)")
+    where = ["(COALESCE(b.discount_pct,0)>0 OR COALESCE(b.per_case_keg_discount,0)>0 "
+             "OR UPPER(COALESCE(CAST(b.rolling_keg AS VARCHAR),''))='Y' OR COALESCE(b.min_qty,0)>0)"]
+    params: list = []
+    for tok in [t for t in (args.get("match") or "").split() if t]:
+        where.append("UPPER(b.description) LIKE UPPER(?)")
+        params.append(f"%{tok}%")
+    if (args.get("distributor") or "").strip():
+        where.append("LOWER(b.wholesaler)=LOWER(?)")
+        params.append(args["distributor"].strip())
+    if args.get("rolling_keg"):
+        where.append("UPPER(COALESCE(CAST(b.rolling_keg AS VARCHAR),''))='Y'")
+    cap = min(int(args.get("limit") or 100), 1000)
+    try:
+        df = con.execute(f"""
+            WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM {src} GROUP BY 1)
+            SELECT b.wholesaler, b.description, b.min_qty, b.discount_pct,
+                   b.per_case_keg_discount, CAST(b.rolling_keg AS VARCHAR) rolling_keg,
+                   b.price_each, b.frontline_case_keg_price
+            FROM {src} b JOIN cur ON b.wholesaler=cur.wholesaler AND b.edition=cur.ed
+            WHERE {' AND '.join(where)}
+            ORDER BY COALESCE(b.per_case_keg_discount,0) DESC, COALESCE(b.discount_pct,0) DESC
+            LIMIT {cap}
+        """, params).fetchdf()
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {str(e)[:120]}"}
+    out = []
+    for r in df.itertuples(index=False):
+        dp = r.discount_pct
+        if dp is not None and dp == dp:
+            dp = round(dp * 100, 2) if dp <= 1 else round(dp, 2)  # -> percent
+        out.append({"distributor": r.wholesaler, "description": r.description,
+                    "min_cases": _num(r.min_qty), "discount_pct": dp,
+                    "per_case_keg_discount": _num(r.per_case_keg_discount),
+                    "rolling_keg": str(r.rolling_keg).upper().startswith("Y"),
+                    "price_each": _num(r.price_each),
+                    "frontline_case_keg_price": _num(r.frontline_case_keg_price)})
+    return out
+
+
+# NJ RIP rule constants (single-RIP transaction cap). Tunable in one place.
+_RIP_SINGLE_CAP = 1000.0
+
+
+def _t_rip_near_cap(con, args):
+    """RIP rebates approaching the $1,000 single-RIP transaction cap — the
+    maximum-DOLLAR rebates this edition. Ranked by the largest single-tier rebate
+    amount; flags whether it is at / over the cap."""
+    cym = _current_ym()
+    where = ["CAST(r.rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan')"]
+    params = [cym]
+    if (args.get("distributor") or "").strip():
+        where.append("LOWER(r.wholesaler)=LOWER(?)")
+        params.append(args["distributor"].strip())
+    try:
+        df = con.execute(f"""
+            WITH rcur AS (SELECT wholesaler, MAX(edition) ed FROM rip WHERE edition<=? GROUP BY wholesaler)
+            SELECT r.wholesaler, CAST(r.rip_code AS VARCHAR) rip_code,
+                   ANY_VALUE(r.rip_description) descr,
+                   MAX(GREATEST(COALESCE(r.rip_amt_1,0), COALESCE(r.rip_amt_2,0),
+                                COALESCE(r.rip_amt_3,0), COALESCE(r.rip_amt_4,0))) max_amt
+            FROM rip r JOIN rcur ON r.wholesaler=rcur.wholesaler AND r.edition=rcur.ed
+            WHERE {' AND '.join(where)}
+            GROUP BY 1, 2
+        """, params).fetchdf()
+    except Exception as e:
+        return {"error": f"{type(e).__name__}"}
+    thresh = float(args.get("threshold") or 700)
+    out = []
+    for r in df.itertuples(index=False):
+        amt = float(r.max_amt or 0)
+        if amt < thresh:
+            continue
+        out.append({"distributor": r.wholesaler, "rip_code": r.rip_code, "description": r.descr,
+                    "max_rebate": round(min(amt, _RIP_SINGLE_CAP), 2),
+                    "uncapped_rebate": round(amt, 2), "at_cap": amt >= _RIP_SINGLE_CAP})
+    out.sort(key=lambda x: -x["uncapped_rebate"])
+    return out[:min(int(args.get("limit") or 50), 200)]
+
+
+def _t_discontinued(con, args):
+    """Products that DROPPED OFF a distributor's CPL this edition — present last
+    edition, gone now (per wholesaler, by UPC). Signals discontinuation /
+    allocation / out-of-stock. Scoped by match (brand/name), category, distributor."""
+    cym = _current_ym()
+    where = ["p.upc IS NOT NULL", "CAST(p.upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan')"]
+    params = [cym]
+    for tok in [t for t in (args.get("match") or "").split() if t]:
+        where.append("UPPER(p.product_name) LIKE UPPER(?)")
+        params.append(f"%{tok}%")
+    if (args.get("category") or "").strip():
+        where.append("UPPER(p.product_type) = UPPER(?)")
+        params.append(args["category"].strip())
+    if (args.get("distributor") or "").strip():
+        where.append("LOWER(p.wholesaler) = LOWER(?)")
+        params.append(args["distributor"].strip())
+    cap = min(int(args.get("limit") or 500), 3000)
+    try:
+        df = con.execute(f"""
+            WITH eds AS (
+                SELECT wholesaler, edition,
+                       ROW_NUMBER() OVER (PARTITION BY wholesaler ORDER BY edition DESC) rn
+                FROM (SELECT DISTINCT wholesaler, edition FROM cpl_enriched WHERE edition <= ?)),
+                 cur AS (SELECT wholesaler, edition FROM eds WHERE rn = 1),
+                 pri AS (SELECT wholesaler, edition FROM eds WHERE rn = 2)
+            SELECT DISTINCT p.product_name, p.wholesaler, CAST(p.upc AS VARCHAR) AS upc,
+                   p.unit_volume, p.unit_qty, p.product_type, p.frontline_case_price,
+                   p.effective_case_price
+            FROM cpl_enriched p
+            JOIN pri ON p.wholesaler = pri.wholesaler AND p.edition = pri.edition
+            WHERE {' AND '.join(where)}
+              AND NOT EXISTS (
+                  SELECT 1 FROM cpl_enriched c JOIN cur
+                    ON c.wholesaler = cur.wholesaler AND c.edition = cur.edition
+                  WHERE c.wholesaler = p.wholesaler
+                    AND LTRIM(CAST(c.upc AS VARCHAR), '0') = LTRIM(CAST(p.upc AS VARCHAR), '0'))
+            LIMIT {cap}
+        """, params).fetchdf()
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {str(e)[:120]}"}
+    return [{"product_name": r.product_name, "wholesaler": r.wholesaler, "upc": str(r.upc),
+             "unit_volume": r.unit_volume, "unit_qty": r.unit_qty, "product_type": r.product_type,
+             "frontline_case_price": _num(r.frontline_case_price),
+             "effective_case_price": _num(r.effective_case_price)} for r in df.itertuples(index=False)]
+
+
 _DATA_TOOLS = {
     "category_breakdown": (_t_category_breakdown, "Product counts and average case price per category (current edition)."),
     "price_timeline": (_t_price_timeline, "Month-over-month price comparison for ONE product across editions. Follows the product by UPC (stable across editions even when the name changes) and returns, per distributor, a per-edition series of frontline + effective case price, RIP savings and discount flag, each with the month-over-month delta and %, plus a summary (cheapest / dearest month, net change, latest vs prior, trend up/down/flat). Use for ANY 'price over months / over time', 'how has X's price changed', 'compare X prices across months', 'price history/trend for X'. Pass `distributor` to focus one supplier and `months` to cap recent editions. A line chart of effective $/case over months is attached automatically."),
@@ -1862,6 +2047,11 @@ _DATA_TOOLS = {
     "combo_analyzer": (_t_combo_analyzer, "COMBO WORTH-IT ANALYZER: for each combo, compares the pack price against (a) frontline and (b) the best-SEPARATE price (buying each component on its OWN best discount + RIP, no combo). Returns net advantage vs separate, % saved, the forced-quantity caveat and a worth-it verdict, ranked best-first. Use for 'is this combo worth it', 'analyze the combo(s)', 'should I take the bundle', 'combo vs buying separately'. Optional q (brand/keyword), distributor, combo_code, limit."),
     "category_distributor_compare": (_t_category_distributor_compare, "Which distributor is best for a whole CATEGORY (required `category`): per distributor count, avg + cheapest effective case price, # with discount/RIP. Use for 'who's cheapest for wine', 'best distributor for spirits'."),
     "deals_by_category": (_t_deals_by_category, "Which CATEGORIES have the most/deepest deals this edition: per category total, # discounted, avg discount %, # RIP, # closeouts, ranked by discounted count. Use for 'which category has the deepest deals', 'where are the most discounts'."),
+    "deal_changes": (_t_deal_changes, "Products whose RIP, CASE-DISCOUNT or COMBO changed between last month and this month (prior vs current edition). Args: direction (lost|gained|changed, default lost), scope (rip|discount|combo|any, default any), match (brand/product), region, varietal, category, distributor. THE tool for 'X that had a May RIP but not June', 'what lost/gained a RIP or combo this month', 'deeper discount than last month'. Returns the matching products (each carrying rip_now/rip_prior, casedisc_now/prior, combo_now/prior + change flags) and drives the grid."),
+    "beer_mix_match": (_t_beer_mix_match, "BEER mix-&-match, keg and ROLLING-KEG deals (beer houses: Peerless, High Grade). Args: match (brand/keyword), distributor, rolling_keg (true = only rolling-keg rebates), limit. Each deal: min cases to qualify, discount %, per-case keg discount, price each, rolling-keg flag. Use for 'beer mix and match', 'best blended cost per case', 'rolling keg rebates', 'minimum buy to qualify for the beer tier', 'mix sizes/brands to hit a tier'."),
+    "discontinued": (_t_discontinued, "Products that DROPPED OFF a distributor's CPL this edition (present last edition, gone now — matched by UPC per distributor) — signals discontinuation, allocation or out-of-stock. Args: match (brand/name), category, distributor, limit. Use for 'what dropped off the CPL', 'which products were discontinued / are no longer available', 'did X disappear this month'. Returns the gone products with their last posted price."),
+    "rip_near_cap": (_t_rip_near_cap, "RIP rebates approaching the $1,000 single-RIP transaction cap (NJ) — the maximum-DOLLAR rebates this edition. Args: distributor, threshold (default 700), limit. Returns RIP codes ranked by largest single-tier rebate, the capped value, and whether at/over the $1,000 cap. Use for 'which RIPs pay close to the $1,000 cap', 'biggest dollar rebates per transaction', 'max rebate buys'."),
+    "best_to_buy": (_t_best_to_buy, "WHEN to buy: ranks products by the timing of their best NET (after discount + RIP) price. when=now (best to grab now), when=next (cheaper next edition, so wait/hold), when=soon (dated/time-sensitive deals ending within days). Args: when, match, category, region, varietal, distributor, limit. Use for 'when is the best time to buy X', \"what's best this week / now vs next month\", 'should I buy now or wait'."),
     "semantic_search": (_t_semantic_search, "FREE-TEXT semantic search over the enrichment corpus. USE this for descriptive natural-language queries that DON'T map to a region/varietal slot — 'old vine zinfandel from a cool climate', 'small-producer natural orange wine', 'high altitude napa cabernet', 'biodynamic Burgundy', 'rare single barrel bourbon from kentucky', 'small batch japanese whisky'. Args: q (the user's phrase), limit (default 12), product_type (optional narrowing). Returns ranked product cards (product_name, wholesaler, upc, prices, score). Prefer region/varietal slots when they match; fall back to this for the long tail."),
 }
 
@@ -2949,6 +3139,11 @@ def _tool_specs() -> list:
         "region": {"type": "string", "description": "Region / origin hint (california, napa, sonoma, bordeaux, tuscany, italy, france, spain, kentucky, scotland, mexico, ...). Use this for ANY geography query instead of putting the place name in `match` — `match='california'` wrongly matches ABSOLUT CALIFORNIA. Auto-narrows product_type (california -> Wine, kentucky -> Spirits)."},
         "varietal": {"type": "string", "description": "Varietal / style hint (cabernet, pinot noir, chardonnay, prosecco, ipa, bourbon, single malt, reposado, ...). Use instead of `match` for grape/style queries; stacks with region ('California cabernets')."},
         "price_trend": {"type": "string", "enum": ["increase", "drop"], "description": "Narrow to products whose price is going UP ('increase') or DOWN ('drop') in the latest edition. Combine with region/varietal/category, e.g. 'California wines going up' = region=california + price_trend=increase."},
+        "direction": {"type": "string", "enum": ["lost", "gained", "changed"], "description": "For deal_changes: which month-over-month change to find — lost (had it last month, not now), gained (new this month), changed (any). Default lost."},
+        "scope": {"type": "string", "enum": ["rip", "discount", "combo", "any"], "description": "For deal_changes: which deal type to diff — rip, discount (case discount), combo, or any. Default any."},
+        "when": {"type": "string", "enum": ["now", "next", "soon"], "description": "For best_to_buy: now (best to buy now), next (cheaper next edition → wait), soon (dated/time-sensitive deals ending within days)."},
+        "rolling_keg": {"type": "boolean", "description": "For beer_mix_match: true to return ONLY rolling-keg rebate deals."},
+        "threshold": {"type": "number", "description": "For rip_near_cap: minimum single-tier rebate dollars to include (default 700; the cap is $1,000)."},
     }
     for name, (_fn, desc) in _DATA_TOOLS.items():
         specs.append({"name": name, "description": desc,
@@ -3474,6 +3669,20 @@ _SYSTEM = (
     "fresh show_on_screen the user sees stale results. NEVER reply 'Showing X on the catalog' (or similar) "
     "WITHOUT actually calling show_on_screen in the same turn — claiming you showed something you didn't drive "
     "is WRONG and leaves the grid frozen on the old query. "
+    "MONTH-OVER-MONTH DEAL CHANGES: for 'which X had a RIP last month but not this month', 'what "
+    "LOST / GAINED a RIP or combo', 'deeper discount than last month', 'what changed' -> call "
+    "deal_changes (direction=lost|gained|changed, scope=rip|discount|combo|any, plus match/region/"
+    "varietal/category/distributor). It returns the changed products and drives the grid. "
+    "BEER mix-&-match / KEG: for 'beer mix and match', 'best blended cost per case', 'rolling keg "
+    "rebates', 'minimum buy to qualify for the beer tier' -> call beer_mix_match (Peerless / High "
+    "Grade only). MAX-DOLLAR RIPS: for 'which RIPs pay close to the $1,000 cap', 'biggest dollar "
+    "rebates per transaction' -> call rip_near_cap. "
+    "DISCONTINUED / DROPPED OFF CPL: for 'what dropped off the CPL', 'which products were "
+    "discontinued / are no longer available', 'did X disappear this month' -> call discontinued. "
+    "BEST TIME TO BUY: for 'when's the best time to buy X', 'buy now or wait', 'what's best this "
+    "week / now vs next month' -> call best_to_buy (when=now|next|soon). EVERY product result now "
+    "carries rip_now/rip_prior, casedisc_now/prior, combo_now/prior (+ change flags) and "
+    "best_buy_window, so you can describe a product's recent change and timing without another call. "
     "Use the CHAT WINDOW only for genuinely CONVERSATIONAL questions that a product grid cannot represent: "
     "why/how explanations, recommendations, totals/counts, category or distributor breakdowns, a single "
     "product's full price breakdown, or a head-to-head distributor comparison. For those, use the data "
@@ -5395,6 +5604,15 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
             from backend.ai_catalog_query import _enrich_products_with_tiers
             with get_duckdb() as _con:
                 _enrich_products_with_tiers(_con, products_final)
+        except Exception:
+            pass  # never fail the answer over enrichment
+        # PERVASIVE deal-radar: attach month-over-month RIP / case-discount / combo
+        # change + best-time-to-buy to EVERY product result (capped for perf), via
+        # the central engine so chat numbers match the catalog/cart everywhere.
+        try:
+            from backend.deal_compare import deal_compare
+            with get_duckdb() as _con:
+                deal_compare(_con, products_final, cap=80)
         except Exception:
             pass  # never fail the answer over enrichment
         # Lead the grid with an analyst read (count, distributor split, price

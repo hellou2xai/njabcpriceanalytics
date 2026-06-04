@@ -193,6 +193,19 @@ export interface CatalogAiProduct {
   // Next-edition data for the this->next pricing sparkline.
   next_tiers?: AssistantTier[];
   next_effective_case_price?: number | null;
+  // Deal-radar: month-over-month change (prior vs current edition) + best time to
+  // buy. Attached to every product result by backend deal_compare.
+  rip_now?: number | null;
+  rip_prior?: number | null;
+  rip_change?: 'gained' | 'lost' | 'up' | 'down' | 'same' | 'none';
+  casedisc_now?: number | null;
+  casedisc_prior?: number | null;
+  disc_change?: 'gained' | 'lost' | 'up' | 'down' | 'same' | 'none';
+  combo_now?: boolean;
+  combo_prior?: boolean;
+  combo_change?: 'gained' | 'lost' | 'up' | 'down' | 'same' | 'none';
+  best_buy_window?: string | null;
+  best_buy_saving?: number | null;
 }
 export type CatalogAiActionType = 'add_to_cart' | 'update_quantity' | 'add_to_favorites' | 'add_to_list' | 'remove_from_cart' | 'swap_distributor' | 'submit_order' | 'reorder' | 'message_rep' | 'set_order_note' | 'assign_rep' | 'create_rep';
 export interface CatalogAiAction {

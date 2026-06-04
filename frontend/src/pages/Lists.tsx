@@ -6,7 +6,7 @@ import { ContextMenuProvider } from '../components/ContextMenu';
 import { useProductQuickView } from '../components/ProductQuickView';
 import ProductThumb from '../components/ProductThumb';
 import DealSparkline from '../components/DealSparkline';
-import { distributorName, abgSku } from '../lib/distributors';
+import { distributorName, abgSku, skuLabel } from '../lib/distributors';
 import { useDialog } from '../components/Dialog';
 
 const LIST_RIP_GROUP_KEY = 'celr_lists_group_by_rip';
@@ -277,7 +277,7 @@ function ListRow({ it, selected, toggle, onRemove }: {
             >
               {it.product_name}
             </div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{it.upc}{abgSku(it.wholesaler, it.abg_sku) ? ` · ABG ${it.abg_sku}` : ''}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{it.upc}{abgSku(it.wholesaler, it.abg_sku) ? ` · ${skuLabel(it.wholesaler)} ${it.abg_sku}` : ''}</div>
           </div>
         </div>
       </td>

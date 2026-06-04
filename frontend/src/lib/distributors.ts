@@ -10,14 +10,22 @@ export function distributorName(code: string): string {
   return DISTRIBUTOR_NAMES[code] ?? code;
 }
 
-// The app's wholesaler code for Allied Beverage Group. The ABG (Allied) SKU is
-// only meaningful for Allied rows; the same UPC exists under other distributors,
-// so callers MUST gate the SKU on this.
 export const ALLIED = 'allied';
 
-/** ABG SKU to show next to a UPC, but only for Allied rows; '' otherwise. */
+// Distributors that carry their own item number (shown next to the UPC). The
+// backend sets the SKU only on these distributors' own rows, so a number never
+// leaks across a shared UPC.
+const SKU_LABELS: Record<string, string> = { allied: 'ABG', fedway: 'Fedway' };
+
+/** Distributor item number to show next to a UPC, only for distributors that
+ *  have one (Allied, Fedway); '' otherwise. */
 export function abgSku(wholesaler?: string | null, sku?: string | null): string {
-  return wholesaler === ALLIED && sku ? String(sku) : '';
+  return wholesaler && sku && (wholesaler in SKU_LABELS) ? String(sku) : '';
+}
+
+/** Prefix shown before the SKU number, e.g. 'ABG' (Allied) or 'Fedway'. */
+export function skuLabel(wholesaler?: string | null): string {
+  return (wholesaler && SKU_LABELS[wholesaler]) || 'SKU';
 }
 
 export const ALL_DISTRIBUTORS: { value: string; label: string }[] = [

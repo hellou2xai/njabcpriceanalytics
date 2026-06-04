@@ -57,38 +57,43 @@ def _name_score(a, b):
     return j + 0.001 * SequenceMatcher(None, (a or "").upper(), (b or "").upper()).ratio()
 
 
+# Distributors that carry their own item number in sku_mapping. The SKU is shown
+# next to the UPC only for these, and only on that distributor's own rows.
+SKU_DISTRIBUTORS = ("allied", "fedway")
+
+
 def attach_sku_mapping(con, records, upc_key="upc", wholesaler_key="wholesaler",
                        name_key="product_name"):
-    """Set rec["abg_sku"] (Allied's item number) on Allied records only.
+    """Set rec["abg_sku"] (the distributor's own item number) on records whose
+    wholesaler has a SKU mapping (Allied = ABG SKU, Fedway = Fedway SKU).
 
-    Only records whose wholesaler is 'allied' are touched; the rest get
-    abg_sku=None, because the same UPC exists under other distributors and the
-    SKU must never leak across. Lookup is by normalised UPC (LTRIM(upc,'0')),
-    matching how sku_mapping.upc_norm is stored.
+    Gated per-record by wholesaler: a SKU is only ever set from that record's
+    OWN distributor, because the same UPC exists under several distributors and
+    the number must not leak across. Lookup is by (distributor, normalised UPC).
 
-    UPC -> ABG SKU is one-to-many. We only surface a SKU when it resolves to a
-    single one: a UPC with one SKU, or a multi-SKU UPC where the catalogue
-    product name clearly matches one candidate's item_name (RIP description).
-    Genuinely ambiguous UPCs (siblings the master can't tell apart) are left
-    blank on purpose, so the field is never misleading. Degrades to no SKUs if
-    the table is absent (e.g. parquet dev mode before a load).
+    UPC -> SKU is one-to-many. We surface a SKU only when it resolves to one: a
+    UPC with a single SKU, or a multi-SKU UPC where the catalogue product name
+    clearly matches one candidate's item_name. Genuinely ambiguous UPCs are left
+    blank so the field is never misleading. Degrades to no SKUs if the table is
+    absent (e.g. parquet dev mode before a load).
     """
     if not records:
         return
     norms = sorted({str(r.get(upc_key)).lstrip("0") for r in records
-                    if str(r.get(wholesaler_key) or "") == ALLIED
+                    if str(r.get(wholesaler_key) or "") in SKU_DISTRIBUTORS
                     and r.get(upc_key) and str(r.get(upc_key)).lstrip("0")})
     cand: dict = {}
     if norms:
         ph = ", ".join(f"$s{i}" for i in range(len(norms)))
         prm = {f"s{i}": u for i, u in enumerate(norms)}
+        dist_ph = ", ".join(f"'{d}'" for d in SKU_DISTRIBUTORS)
         try:
             df = con.execute(
-                "SELECT upc_norm, abg_sku, item_name FROM sku_mapping "
-                f"WHERE distributor = '{ALLIED}' AND upc_norm IN ({ph})", prm
+                "SELECT distributor, upc_norm, abg_sku, item_name FROM sku_mapping "
+                f"WHERE distributor IN ({dist_ph}) AND upc_norm IN ({ph})", prm
             ).fetchdf()
             for _, er in df.iterrows():
-                cand.setdefault(str(er["upc_norm"]), []).append(
+                cand.setdefault((str(er["distributor"]), str(er["upc_norm"])), []).append(
                     (str(er["abg_sku"]), er.get("item_name") or "")
                 )
         except Exception:
@@ -96,10 +101,10 @@ def attach_sku_mapping(con, records, upc_key="upc", wholesaler_key="wholesaler",
 
     for rec in records:
         rec["abg_sku"] = None
-        if str(rec.get(wholesaler_key) or "") != ALLIED:
+        w = str(rec.get(wholesaler_key) or "")
+        if w not in SKU_DISTRIBUTORS:
             continue
-        key = str(rec.get(upc_key) or "").lstrip("0")
-        c = cand.get(key)
+        c = cand.get((w, str(rec.get(upc_key) or "").lstrip("0")))
         if not c:
             continue
         if len(c) == 1:

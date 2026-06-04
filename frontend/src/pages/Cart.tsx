@@ -7,7 +7,7 @@ import DealSparkline from '../components/DealSparkline';
 import { useProductQuickView } from '../components/ProductQuickView';
 import { useDialog } from '../components/Dialog';
 import { shortUnit } from '../components/CatalogTable';
-import { distributorName, abgSku } from '../lib/distributors';
+import { distributorName, abgSku, skuLabel } from '../lib/distributors';
 
 function Stepper({ label, value, onChange }: { label: string; value: number; onChange: (n: number) => void }) {
   return (
@@ -304,7 +304,7 @@ export default function Cart() {
               {showCombo && <ComboBadge code={it.combo_code!} />}
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-              {distributorName(it.wholesaler)}{it.unit_volume ? ` · ${it.unit_volume}` : ''}{it.upc ? ` · ${it.upc}` : ''}{abgSku(it.wholesaler, it.abg_sku) ? ` · ABG ${it.abg_sku}` : ''}
+              {distributorName(it.wholesaler)}{it.unit_volume ? ` · ${it.unit_volume}` : ''}{it.upc ? ` · ${it.upc}` : ''}{abgSku(it.wholesaler, it.abg_sku) ? ` · ${skuLabel(it.wholesaler)} ${it.abg_sku}` : ''}
             </div>
             {it.frontline_case_price != null && (
               <div style={{ fontSize: 12, marginTop: 2 }}>

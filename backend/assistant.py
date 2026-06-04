@@ -1699,7 +1699,7 @@ def _t_build_assortment(con, args):
             continue
         if max_btl is not None and (btl is None or btl > max_btl):
             continue
-        out.append({k: r.get(k) for k in ("product_name", "wholesaler", "upc", "unit_volume", "unit_qty",
+        out.append({k: r.get(k) for k in ("product_name", "wholesaler", "upc", "abg_sku", "unit_volume", "unit_qty",
                                           "vintage", "effective_case_price", "frontline_case_price")}
                    | {"effective_bottle_price": btl})
         if len(out) >= limit:
@@ -1733,7 +1733,7 @@ def _t_find_substitute(con, args):
         reff = _num(r.get("effective_case_price"))
         if ceil_cs is not None and (reff is None or reff > ceil_cs):
             continue
-        out.append({k: r.get(k) for k in ("product_name", "wholesaler", "upc", "unit_volume", "unit_qty",
+        out.append({k: r.get(k) for k in ("product_name", "wholesaler", "upc", "abg_sku", "unit_volume", "unit_qty",
                                           "vintage", "effective_case_price", "frontline_case_price")}
                    | {"effective_bottle_price": _btl_price(r)})
         if len(out) >= 12:
@@ -1765,7 +1765,7 @@ def _t_build_budget_basket(con, args):
         eff = _num(r.get("effective_case_price"))
         if eff is None or eff <= 0 or spent + eff > budget:
             continue
-        basket.append({k: r.get(k) for k in ("product_name", "wholesaler", "upc", "unit_volume", "unit_qty",
+        basket.append({k: r.get(k) for k in ("product_name", "wholesaler", "upc", "abg_sku", "unit_volume", "unit_qty",
                                              "vintage", "effective_case_price", "frontline_case_price")}
                       | {"cases": 1})
         spent += eff
@@ -5078,7 +5078,7 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                         continue
                     seen.add(key)
                     products.append({k: p.get(k) for k in
-                                     ("product_name", "wholesaler", "upc", "unit_volume", "unit_qty",
+                                     ("product_name", "wholesaler", "upc", "abg_sku", "unit_volume", "unit_qty",
                                       "vintage", "effective_case_price", "frontline_case_price")})
                 action = {"type": "add_to_cart", "cases": cases, "bottles": 0,
                           "list_name": None, "products": products, "note": None}
@@ -5221,7 +5221,7 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                 continue
             seen_products.add(key)
             products_out.append({k: p.get(k) for k in
-                                 ("product_name", "wholesaler", "upc", "unit_volume", "unit_qty",
+                                 ("product_name", "wholesaler", "upc", "abg_sku", "unit_volume", "unit_qty",
                                   "vintage", "effective_case_price", "frontline_case_price")})
 
     with get_duckdb() as con:

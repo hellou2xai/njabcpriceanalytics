@@ -277,7 +277,15 @@ def semantic_search(
         seen.add(key)
         out.append(r)
     out.sort(key=lambda r: r.get("score") or 0.0, reverse=True)
-    return out[: int(limit)]
+    out = out[: int(limit)]
+    # Distributor item number (ABG / Fedway) next to the UPC, for the cards the
+    # semantic search and the AI assistant render.
+    try:
+        from backend.enrichment_join import attach_sku_mapping
+        attach_sku_mapping(con_duck, out)
+    except Exception:
+        pass
+    return out
 
 
 def _current_ym() -> str:

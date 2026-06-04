@@ -147,6 +147,9 @@ def _base(it):
         "bottle_price": it.get("bottle_price"),
         "best_rip_bottle_price": it.get("best_rip_bottle_price"),
         "rip_id": it.get("rip_id"), "program_flags": it.get("program_flags"),
+        # enrichment from the section headers (useful even when unmatched)
+        "category": it.get("category"), "product_type": it.get("type"),
+        "country": it.get("country"),
     }
 
 

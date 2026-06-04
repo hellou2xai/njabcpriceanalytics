@@ -273,13 +273,11 @@ def parse_catalog(col_lines, page_no, section, items, combos, unparsed):
                 notes = []
                 continue
             if fclass == "product":
-                # A product label covers the whole size group below it. A SINGLE
-                # stray word arriving AFTER items already used the current label
-                # is almost always a value bled from the neighbouring column
-                # (e.g. 'ALTUS', 'AZUMA' landing in the Glenlivet group); don't
-                # let it hijack the group's name.
-                if emitted_since_label and len(t.split()) <= 1:
-                    continue
+                # A product label covers the whole size group below it, and a new
+                # label (even a single word like 'MAGARI') starts a new size group.
+                # Column bleed that used to hijack the label (ALTUS/AZUMA) is now
+                # prevented by the corrected column cuts, so we no longer drop
+                # short product lines (which wrongly blanked real names).
                 ctx_product = [t]
                 emitted_since_label = False
                 notes = []

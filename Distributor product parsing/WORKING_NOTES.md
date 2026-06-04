@@ -69,17 +69,26 @@ Env (all set in `.env`): `DATABASE_URL` (local PG), `RENDER_EXTERNAL_DATABASE_UR
   RIP line: `RIP: <id> [1BOTTLE $x]`. Price rows: `1 CASE $.. $..` (BUY PER CS,
   BEST RIP PER BT), `1 BOTTLE $..`. Leading `+` = changed this month.
 
-## Current results (Fedway June 2026, AFTER the parser fixes)
+## Current results (Fedway June 2026)
 
-- Extract: 6,581 item rows, **6,141 distinct item numbers**, 5,798 catalogue
-  listings. Catalogue price capture ~80%, brandless ~18%.
-- Crosswalk pushed to local + Render: **3,550 / 6,141 UPCs assigned = 57.8%**
-  (HIGH 2,877 + MEDIUM 598 + LLM 75). **2,492 rows have BOTH prices**
-  (discrepancy-ready), up from 1,539.
-- Crosswalk columns include `front_line_case_price` (PDF), `live_frontline_case_price`
-  (live), `price_delta` (live - pdf; NULL unless both present, verified 0 bad).
-  Render upsert is append-only (PK distributor_code+item_number_norm) so Allied
-  data is safe.
+- Extract: **9,944 distinct item numbers** (3-column grid fix recovered the
+  mangled middle/right columns; was 6,141).
+- Crosswalk pushed to local + Render: **8,842 / 9,944 UPCs assigned = 88.9%**
+  (HIGH 8,680 + MEDIUM 148 + LLM 14), of which **7,786 via exact frontline
+  price + size**. Only 1,102 unmatched.
+- Crosswalk columns: `front_line_case_price` (PDF = bottle*pack), `best_case_price`
+  (discounted BUY-PER-CS), `live_frontline_case_price` (live), `price_delta`
+  (live - pdf), plus header enrichment `category` / `product_type` / `country`
+  (populated even on unmatched rows). Render upsert is append-only so other
+  distributors are safe.
+
+### Why the remaining ~1,102 are unmatched (verified)
+- ~896 genuinely have NO real UPC in the live catalogue (e.g. Chateau Margaux,
+  Diamond Creek, Armand de Brignac large formats). Need an external UPC source
+  (Fedway's own data / Go-UPC), not a parser fix.
+- ~264 are combos / bulk multipacks (104CS) with no single UPC.
+- ~17 minis/gift packs whose price isn't printed in the PDF (last item before a
+  page footer). The header enrichment still classifies all of these.
 
 ## FIXED in the latest parser pass (extract.py)
 

@@ -148,25 +148,31 @@ class CrosswalkWriter:
             best_rip_bottle_price double precision, rip_id text, program_flags text,
             price_book_month text,
             live_frontline_case_price double precision,
+            category text, product_type text, country text,
             match_method text, match_confidence text, match_score double precision,
             price_delta double precision, updated_at timestamptz,
             PRIMARY KEY (distributor_code, item_number_norm)
         )"""
-    # live_frontline_case_price was added later; backfill the column on an
-    # existing table so the upsert below always has it.
-    ALTER = (f"ALTER TABLE {CROSSWALK} "
-             "ADD COLUMN IF NOT EXISTS live_frontline_case_price double precision")
+    # columns added after the first deploy; backfill on an existing table so the
+    # upsert below always has them.
+    ALTERS = tuple(
+        f"ALTER TABLE {CROSSWALK} ADD COLUMN IF NOT EXISTS {c}"
+        for c in ("live_frontline_case_price double precision",
+                  "category text", "product_type text", "country text")
+    )
 
     UPSERT = f"""
         INSERT INTO {CROSSWALK} (distributor_code, item_number_norm, upc, upc_product_name,
             brand, product_name, size_ml, pack_qty, proof, vintage, front_line_case_price,
             bottle_price, best_rip_bottle_price, rip_id, program_flags, price_book_month,
-            live_frontline_case_price, match_method, match_confidence, match_score,
+            live_frontline_case_price, category, product_type, country,
+            match_method, match_confidence, match_score,
             price_delta, updated_at)
         VALUES (%(distributor_code)s,%(item_number_norm)s,%(upc)s,%(upc_product_name)s,
             %(brand)s,%(product_name)s,%(size_ml)s,%(pack_qty)s,%(proof)s,%(vintage)s,
             %(front_line_case_price)s,%(bottle_price)s,%(best_rip_bottle_price)s,%(rip_id)s,
             %(program_flags)s,%(price_book_month)s,%(live_frontline_case_price)s,
+            %(category)s,%(product_type)s,%(country)s,
             %(match_method)s,%(match_confidence)s,%(match_score)s,%(price_delta)s,%(updated_at)s)
         ON CONFLICT (distributor_code, item_number_norm) DO UPDATE SET
             upc=EXCLUDED.upc, upc_product_name=EXCLUDED.upc_product_name, brand=EXCLUDED.brand,
@@ -176,6 +182,7 @@ class CrosswalkWriter:
             best_rip_bottle_price=EXCLUDED.best_rip_bottle_price, rip_id=EXCLUDED.rip_id,
             program_flags=EXCLUDED.program_flags, price_book_month=EXCLUDED.price_book_month,
             live_frontline_case_price=EXCLUDED.live_frontline_case_price,
+            category=EXCLUDED.category, product_type=EXCLUDED.product_type, country=EXCLUDED.country,
             match_method=EXCLUDED.match_method, match_confidence=EXCLUDED.match_confidence,
             match_score=EXCLUDED.match_score, price_delta=EXCLUDED.price_delta,
             updated_at=EXCLUDED.updated_at"""
@@ -190,11 +197,12 @@ class CrosswalkWriter:
         now = datetime.now(timezone.utc)
         for r in rows:
             r["updated_at"] = now
-        for r in rows:
-            r.setdefault("live_frontline_case_price", None)
+            for k in ("live_frontline_case_price", "category", "product_type", "country"):
+                r.setdefault(k, None)
         with _conn(self.url) as con:
             con.execute(self.DDL)
-            con.execute(self.ALTER)
+            for stmt in self.ALTERS:
+                con.execute(stmt)
             with con.cursor() as cur:
                 cur.executemany(self.UPSERT, rows)
             con.commit()

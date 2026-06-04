@@ -3358,8 +3358,21 @@ def _build_screen(args: dict, page_path: str | None = None,
     terms = [t for t in search_terms if t]
     if terms:
         q["q"] = " ".join(dict.fromkeys(terms))   # de-dupe, preserve order
+    # No-op guard: if driving the catalog produced a query IDENTICAL to where the
+    # user already is, the front-end navigate() does nothing and the grid never
+    # refreshes. This happens when the user names a NEW subject (e.g. 'glenlivet'
+    # after 'irish whiskey') but the model passes only a `label` with no scope
+    # arg, so the carry-forward above just reproduces the prior filters. Replace
+    # the reproduced scope with a free-text search of the label so the screen
+    # actually changes. A real refinement ('prices going up') sets price_trend/
+    # has_*/sort, so its query differs from the prior and never trips this.
+    _raw_label = (args.get("label") or "").strip()
+    if base == "/catalog" and page_query and _raw_label:
+        _prior = {k: v[0] for k, v in parse_qs(page_query.lstrip("?")).items()}
+        if {k: str(v) for k, v in q.items()} == _prior:
+            q = {"q": _raw_label}
     path = base + ("?" + urlencode(q) if q else "")
-    return {"path": path, "label": (args.get("label") or "your request").strip()}
+    return {"path": path, "label": _raw_label or "your request"}
 
 
 _SYSTEM = (

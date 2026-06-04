@@ -764,7 +764,14 @@ def search_products(
         # product_type wins if set.
         if region:
             from backend.region_semantics import build_region_filter
-            region_clause, region_params, region_auto_type = build_region_filter(region)
+            # Qualify the columns with the outer table: the region clause's
+            # description/category EXISTS subqueries correlate on upc, and an
+            # UNqualified `upc` binds to the inner product_enrichment.upc
+            # (name resolution prefers the inner scope), making the correlation
+            # `pe.upc = pe.upc` — always true — so the filter matched the WHOLE
+            # catalog. Qualifying as {src}.upc restores the real correlation.
+            region_clause, region_params, region_auto_type = build_region_filter(
+                region, name_col=f"{src}.product_name", upc_col=f"{src}.upc")
             if region_clause:
                 where.append(region_clause)
                 params.update(region_params)
@@ -776,7 +783,9 @@ def search_products(
         # add narrowing the region didn't supply (e.g. varietal=ipa -> Beer).
         if varietal:
             from backend.varietal_semantics import build_varietal_filter
-            v_clause, v_params, v_auto_type = build_varietal_filter(varietal)
+            # Same correlation fix as region above — qualify with the outer table.
+            v_clause, v_params, v_auto_type = build_varietal_filter(
+                varietal, name_col=f"{src}.product_name", upc_col=f"{src}.upc")
             if v_clause:
                 where.append(v_clause)
                 params.update(v_params)

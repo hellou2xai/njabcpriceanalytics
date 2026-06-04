@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import type { CatalogAiProduct, AssistantTier, CatalogTier } from '../lib/api';
 import { distributorName } from '../lib/distributors';
+import { openDataGridTab } from '../lib/datagridTab';
 import AddToCartButton from './AddToCartButton';
 import AddToListButton from './AddToListButton';
 import FavoriteButton from './FavoriteButton';
@@ -125,9 +126,16 @@ export default function AssistantComparisonTable({ products, screenPath, screenL
       </div>
       {screenPath && (
         <div className="celar-compare-link">
-          <Link to={screenPath} className="celar-compare-link-btn">
-            Open {screenLabel || 'full list'} in Catalog →
-          </Link>
+          {standalone ? (
+            <button type="button" className="celar-compare-link-btn"
+                    onClick={() => { if (!openDataGridTab(screenPath)) window.location.assign(screenPath); }}>
+              Open {screenLabel || 'full list'} in Catalog →
+            </button>
+          ) : (
+            <Link to={screenPath} className="celar-compare-link-btn">
+              Open {screenLabel || 'full list'} in Catalog →
+            </Link>
+          )}
         </div>
       )}
     </div>

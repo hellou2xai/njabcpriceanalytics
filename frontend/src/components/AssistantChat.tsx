@@ -17,6 +17,7 @@ import AssistantComparisonTable from './AssistantComparisonTable';
 import { distributorName, abgSku } from '../lib/distributors';
 import { useAssistantActions, describeActions } from '../lib/useAssistantActions';
 import { useResultCount } from '../lib/resultCount';
+import { openDataGridTab } from '../lib/datagridTab';
 
 interface Msg {
   role: 'user' | 'assistant';
@@ -399,9 +400,19 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
                   The 3+ branch above renders its own footer inside the table. */}
               {m.screenPath && !(m.products && m.products.length > 0 && (isStandalone || m.products.length >= 3)) && (
                 <div className="celar-screen-link">
-                  <Link to={m.screenPath} className="celar-screen-link-btn">
-                    Open {m.screenLabel || 'result'} →
-                  </Link>
+                  {isStandalone ? (
+                    // Standalone Ask page: open/reuse the dedicated data-grid tab
+                    // (keeps the chat tab intact). Falls back to in-app nav if
+                    // the popup is blocked.
+                    <button type="button" className="celar-screen-link-btn"
+                            onClick={() => { if (!openDataGridTab(m.screenPath!)) navigate(m.screenPath!); }}>
+                      Open {m.screenLabel || 'result'} →
+                    </button>
+                  ) : (
+                    <Link to={m.screenPath} className="celar-screen-link-btn">
+                      Open {m.screenLabel || 'result'} →
+                    </Link>
+                  )}
                 </div>
               )}
               {m.chips && m.chips.length > 0 && (

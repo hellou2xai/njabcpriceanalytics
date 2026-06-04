@@ -150,7 +150,7 @@ class CrosswalkWriter:
             live_frontline_case_price double precision,
             category text, product_type text, country text,
             match_method text, match_confidence text, match_score double precision,
-            price_delta double precision, updated_at timestamptz,
+            price_delta double precision, price_flag boolean, updated_at timestamptz,
             PRIMARY KEY (distributor_code, item_number_norm)
         )"""
     # columns added after the first deploy; backfill on an existing table so the
@@ -158,7 +158,8 @@ class CrosswalkWriter:
     ALTERS = tuple(
         f"ALTER TABLE {CROSSWALK} ADD COLUMN IF NOT EXISTS {c}"
         for c in ("live_frontline_case_price double precision",
-                  "category text", "product_type text", "country text")
+                  "category text", "product_type text", "country text",
+                  "price_flag boolean")
     )
 
     UPSERT = f"""
@@ -167,13 +168,14 @@ class CrosswalkWriter:
             bottle_price, best_rip_bottle_price, rip_id, program_flags, price_book_month,
             live_frontline_case_price, category, product_type, country,
             match_method, match_confidence, match_score,
-            price_delta, updated_at)
+            price_delta, price_flag, updated_at)
         VALUES (%(distributor_code)s,%(item_number_norm)s,%(upc)s,%(upc_product_name)s,
             %(brand)s,%(product_name)s,%(size_ml)s,%(pack_qty)s,%(proof)s,%(vintage)s,
             %(front_line_case_price)s,%(bottle_price)s,%(best_rip_bottle_price)s,%(rip_id)s,
             %(program_flags)s,%(price_book_month)s,%(live_frontline_case_price)s,
             %(category)s,%(product_type)s,%(country)s,
-            %(match_method)s,%(match_confidence)s,%(match_score)s,%(price_delta)s,%(updated_at)s)
+            %(match_method)s,%(match_confidence)s,%(match_score)s,%(price_delta)s,
+            %(price_flag)s,%(updated_at)s)
         ON CONFLICT (distributor_code, item_number_norm) DO UPDATE SET
             upc=EXCLUDED.upc, upc_product_name=EXCLUDED.upc_product_name, brand=EXCLUDED.brand,
             product_name=EXCLUDED.product_name, size_ml=EXCLUDED.size_ml, pack_qty=EXCLUDED.pack_qty,
@@ -185,7 +187,7 @@ class CrosswalkWriter:
             category=EXCLUDED.category, product_type=EXCLUDED.product_type, country=EXCLUDED.country,
             match_method=EXCLUDED.match_method, match_confidence=EXCLUDED.match_confidence,
             match_score=EXCLUDED.match_score, price_delta=EXCLUDED.price_delta,
-            updated_at=EXCLUDED.updated_at"""
+            price_flag=EXCLUDED.price_flag, updated_at=EXCLUDED.updated_at"""
 
     def __init__(self, url, label):
         self.url = url
@@ -199,6 +201,7 @@ class CrosswalkWriter:
             r["updated_at"] = now
             for k in ("live_frontline_case_price", "category", "product_type", "country"):
                 r.setdefault(k, None)
+            r.setdefault("price_flag", False)
         with _conn(self.url) as con:
             con.execute(self.DDL)
             for stmt in self.ALTERS:

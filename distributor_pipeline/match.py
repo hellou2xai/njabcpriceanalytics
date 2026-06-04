@@ -164,7 +164,10 @@ def _matched(it, mrow, method, conf, score, delta):
               # meaningful when BOTH prices exist, else null (no false delta).
               "live_frontline_case_price": live,
               "price_delta": (round(live - pdf, 2)
-                              if (live is not None and pdf is not None) else None)})
+                              if (live is not None and pdf is not None) else None),
+              # QC flag: PDF vs live frontline differ by more than 5 cents.
+              "price_flag": (live is not None and pdf is not None
+                             and abs(live - pdf) > 0.05)})
     return r
 
 
@@ -172,5 +175,6 @@ def _unmatched(it):
     r = _base(it)
     r.update({"upc": None, "upc_product_name": None, "match_method": None,
               "match_confidence": "NONE", "match_score": None,
-              "live_frontline_case_price": None, "price_delta": None})
+              "live_frontline_case_price": None, "price_delta": None,
+              "price_flag": False})
     return r

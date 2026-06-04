@@ -10,31 +10,16 @@ import collections
 import pdfplumber
 
 from . import config, util
+from .profiles import FEDWAY as PROFILE   # active layout profile (see profiles.py)
 
-HEADER_RE = re.compile(r"800-4-FEDWAY\s+(.*?)\s+Order Fax", re.I)
-PROGRAM_FLAGS = {"F", "LA", "GP", "JNC", "JC", "J", "N", "SM", "VAP", "C", "G"}
+HEADER_RE = re.compile(PROFILE.header_regex, re.I)
+PROGRAM_FLAGS = set(PROFILE.program_flags)
 
 # Type/style and country banners sit ABOVE brands in the hierarchy; they must not
 # be mistaken for the brand or product name. Not exhaustive, just the common ones
 # so real brand banners (KAIYO, ARDBEG, ...) win the brand slot.
-TYPE_WORDS = {
-    "WHISKIES", "WHISKY", "WHISKEY", "BOURBON", "SCOTCH", "VODKA", "VODKAS",
-    "GIN", "GINS", "RUM", "RUMS", "TEQUILA", "TEQUILAS", "MEZCAL", "BRANDY",
-    "COGNAC", "CORDIALS", "LIQUEUR", "LIQUEURS", "CANADIAN", "IRISH", "RYE",
-    "RED", "WHITE", "ROSE", "BLUSH", "SPARKLING", "CHAMPAGNE", "STILL",
-    "DESSERT", "SAKE", "VERMOUTH", "APERITIF", "BITTERS", "BLENDED", "MALT",
-    "SCHNAPPS", "GRAPPA", "PORT", "SHERRY", "WINE", "SPIRITS", "CANS",
-    "COCKTAILS", "MALT", "CRAFT", "PROSECCO", "MOSCATO", "RTD", "RTS",
-}
-COUNTRY_WORDS = {
-    "JAPAN", "USA", "CANADA", "SCOTLAND", "IRELAND", "FRANCE", "MEXICO",
-    "ITALY", "SPAIN", "GERMANY", "AUSTRALIA", "ARGENTINA", "CHILE",
-    "PORTUGAL", "ENGLAND", "CARIBBEAN", "PUERTO", "BARBADOS", "JAMAICA",
-    "GREECE", "AUSTRIA", "HUNGARY", "ISRAEL", "BRAZIL", "PERU", "CUBA",
-    "DOMINICAN", "GUATEMALA", "NICARAGUA", "VENEZUELA", "RUSSIA", "POLAND",
-    "SWEDEN", "FINLAND", "HOLLAND", "BELGIUM", "SWITZERLAND", "INTERNATIONAL",
-    "DOMESTIC", "IMPORTED",
-}
+TYPE_WORDS = set(PROFILE.type_words)
+COUNTRY_WORDS = set(PROFILE.country_words)
 
 # item line: [+] itemnum  size  pack PK  proof(PF)|vintage(VTG)  rest(deals/month)
 ITEM_RE = re.compile(
@@ -70,13 +55,13 @@ def _font_class(fontname, size):
     Asap-SemiBold = PRODUCT label, Asap-Italic = description, Asap-Regular = data.
     """
     fn = fontname or ""
-    if "Kingsbridge" in fn:
-        return "type" if size >= 8.5 else "country"
-    if "SemiBold" in fn:
+    if PROFILE.font_type_country in fn:
+        return "type" if size >= PROFILE.font_type_min_size else "country"
+    if PROFILE.font_product in fn:      # checked before brand (SemiBold contains 'Bold')
         return "product"
-    if "Bold" in fn:
+    if PROFILE.font_brand in fn:
         return "brand"
-    if "Italic" in fn:
+    if PROFILE.font_italic in fn:
         return "desc"
     return "data"
 
@@ -139,7 +124,8 @@ def _column_lines(page, cuts):
 
 def _item_anchors(page):
     """x0 of the repeated 'ITEM' header tokens -> column boundaries."""
-    xs = sorted(w["x0"] for w in page.extract_words() if w["text"].upper() == "ITEM")
+    xs = sorted(w["x0"] for w in page.extract_words()
+                if w["text"].upper() == PROFILE.col_anchor_token)
     # de-dup near-equal
     uniq = []
     for x in xs:
@@ -158,15 +144,14 @@ def _column_cuts(page):
     a = _item_anchors(page)
     w = page.width
     if not a:
-        return [w / 3, 2 * w / 3]
+        return [w * i / PROFILE.n_columns for i in range(1, PROFILE.n_columns)]
     col0 = a[0]
-    span = w / 3  # ~204; columns are evenly spaced
+    span = PROFILE.col_span_px - 17   # left edge of column n ~ col0 + n*span
+    off = PROFILE.col_cut_offset
     def nearest(target):
         best = min(a, key=lambda x: abs(x - target))
         return best if abs(best - target) <= 40 else target
-    c1 = nearest(col0 + span - 17)   # ~223
-    c2 = nearest(col0 + 2 * (span - 17))  # ~410
-    return [c1 - 10, c2 - 10]
+    return [nearest(col0 + i * span) - off for i in range(1, PROFILE.n_columns)]
 
 
 def _is_banner(text):

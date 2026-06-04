@@ -15,7 +15,11 @@ PARSE_DIR = PROJECT_ROOT / "Distributor product parsing"
 PDF_PATH = PARSE_DIR / "Fedway+Pricebook+Full+June+2026.pdf"
 OUTPUT_DIR = PARSE_DIR / "output"
 
-DISTRIBUTOR_CODE = "fedway"          # MUST match the app's wholesaler code
+from . import profiles
+
+# Active distributor profile (all layout-specific parsing lives in profiles.py).
+PROFILE = profiles.FEDWAY
+DISTRIBUTOR_CODE = PROFILE.code      # MUST match the app's wholesaler code
 SOURCE_FILE = PDF_PATH.name
 PRICE_BOOK_MONTH = "2026-06"
 
@@ -35,19 +39,8 @@ def local_db_url() -> str:
 def render_db_url() -> str | None:
     return os.getenv("RENDER_DATABASE_URL") or os.getenv("RENDER_EXTERNAL_DATABASE_URL")
 
-# Section name (from the page header) -> parser kind. Header format:
-#   "Order Phone: 800-4-FEDWAY  {SECTION}  Order Fax: 908-647-1269"
-# Parser kinds: A=3-col catalog, B=best-deal tabular, C=retail incentives,
-# D=combo packs. Anything else is skipped.
-SECTION_PARSER = {
-    "SPIRITS": "A", "CANS AND COCKTAILS": "A", "MALT": "A", "WINE": "A",
-    "NON ALCOHOLIC": "A", "GLASSWARE": "A", "MIXERS": "A",
-    "CRAFT DISTILLED": "A", "SAKE": "A", "FEATURED SAKE": "A",
-    "HIGHLY RATED": "A",
-    "BEST DEAL - ALL BUY-INS": "B", "PARTIAL MONTH": "B",
-    "RETAIL INCENTIVES": "C",
-    "COMBO PACKS": "D",
-}
+# Section -> parser kind comes from the active profile (see profiles.py).
+SECTION_PARSER = PROFILE.section_parser
 
 # Page ranges used ONLY to validate header detection (1-based, inclusive).
 EXPECTED_RANGES = {
@@ -56,4 +49,4 @@ EXPECTED_RANGES = {
     "C": [(33, 55)],
     "D": [(56, 66)],
 }
-SKIP_BEFORE = 22  # pages 1-21 skipped
+SKIP_BEFORE = PROFILE.skip_before_page  # pages before this are skipped

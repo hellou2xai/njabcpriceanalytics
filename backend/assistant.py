@@ -3234,6 +3234,22 @@ def _tool_specs() -> list:
     return specs
 
 
+def tool_registry() -> tuple[dict, dict]:
+    """Public read-only view of the assistant tool registries for other in-repo
+    consumers (procurement_agents). Returns (data_tools, ctx_tools), each
+    {name: (fn, description)}. Data tools take (con, args); ctx tools take
+    (con, args, ctx) where ctx carries user_id."""
+    return dict(_DATA_TOOLS), dict(_CTX_TOOLS)
+
+
+def tool_specs_for(names: list[str]) -> list[dict]:
+    """Claude tool specs (name/description/input_schema) for a subset of the
+    assistant's data/ctx tools, reusing the exact schemas the chat assistant
+    ships so other agent surfaces never drift from it."""
+    wanted = set(names)
+    return [s for s in _tool_specs() if s["name"] in wanted]
+
+
 def _rip_case_mix_products(con, code, ws=None, limit=5000) -> list:
     """Every product sharing a RIP code (the Case Mix) as cart-ready dicts. The
     case mix is defined by the RIP sheet's UPCs for the code, joined to the latest

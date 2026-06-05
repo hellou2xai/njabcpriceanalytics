@@ -539,6 +539,56 @@ def init_user_db():
             created_at text DEFAULT {NOW_UTC}
         )""",
         "CREATE INDEX IF NOT EXISTS idx_pos_ingest_store ON pos_ingest_log(store_id)",
+        # Agent observability: one row per procurement-agent run...
+        f"""CREATE TABLE IF NOT EXISTS agent_runs (
+            id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            store_id integer REFERENCES stores(id) ON DELETE SET NULL,
+            ym text NOT NULL,
+            trigger_source text NOT NULL DEFAULT 'manual',
+            status text NOT NULL DEFAULT 'running'
+                CHECK (status IN ('running','completed','failed','aborted')),
+            batch_id text,
+            candidates integer DEFAULT 0,
+            lines_kept integer DEFAULT 0,
+            lines_vetoed integer DEFAULT 0,
+            est_total_usd double precision DEFAULT 0,
+            est_savings_usd double precision DEFAULT 0,
+            input_tokens integer DEFAULT 0,
+            output_tokens integer DEFAULT 0,
+            cost_usd double precision DEFAULT 0,
+            duration_ms integer DEFAULT 0,
+            summary text,
+            error text,
+            created_at text DEFAULT {NOW_UTC},
+            finished_at text
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_agent_runs_user ON agent_runs(user_id, created_at)",
+        # ...and one row per ACTION inside a run: every LLM turn, every tool
+        # call, every deterministic phase (gate, cart staging). model/tokens/
+        # cost are filled for llm_turn steps; detail is a JSON blob (args,
+        # result counts, veto reasons). This is the drill-down the
+        # 'Celr AI Agents' observability UI reads, and what backs ROI claims
+        # (cost_usd spent vs est_savings_usd found, per run and per step).
+        f"""CREATE TABLE IF NOT EXISTS agent_steps (
+            id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            run_id integer NOT NULL REFERENCES agent_runs(id) ON DELETE CASCADE,
+            seq integer NOT NULL,
+            agent text NOT NULL,
+            kind text NOT NULL CHECK (kind IN ('llm_turn','tool_call','phase')),
+            name text NOT NULL,
+            status text NOT NULL DEFAULT 'ok' CHECK (status IN ('ok','error')),
+            model text,
+            input_tokens integer DEFAULT 0,
+            output_tokens integer DEFAULT 0,
+            cache_read_tokens integer DEFAULT 0,
+            cache_write_tokens integer DEFAULT 0,
+            cost_usd double precision DEFAULT 0,
+            duration_ms integer DEFAULT 0,
+            detail text,
+            created_at text DEFAULT {NOW_UTC}
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_agent_steps_run ON agent_steps(run_id, seq)",
     ]
     with get_pg() as con:
         for s in stmts:

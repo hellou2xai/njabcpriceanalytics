@@ -1558,3 +1558,58 @@ export interface SalesRep {
   id: number; name: string; division?: string; email?: string; phone?: string;
   distributor?: string;
 }
+
+// ---- Celr AI Agents (admin-only) ----
+
+export interface AgentRun {
+  id: number; ym: string; trigger_source: string;
+  status: 'running' | 'completed' | 'failed' | 'aborted';
+  batch_id: string | null; candidates: number; lines_kept: number;
+  lines_vetoed: number; est_total_usd: number; est_savings_usd: number;
+  input_tokens: number; output_tokens: number; cost_usd: number;
+  duration_ms: number; summary: string | null; error: string | null;
+  created_at: string; finished_at: string | null;
+}
+
+export interface AgentStep {
+  seq: number; agent: string; kind: 'llm_turn' | 'tool_call' | 'phase';
+  name: string; status: 'ok' | 'error'; model: string | null;
+  input_tokens: number; output_tokens: number; cache_read_tokens: number;
+  cache_write_tokens: number; cost_usd: number; duration_ms: number;
+  detail: Record<string, unknown> | null; created_at: string;
+}
+
+export interface AgentConfig {
+  scout_model: string; sourcing_model: string; max_turns: number;
+  max_candidates: number; max_cases_per_line: number; min_gp: number;
+  max_run_tokens: number;
+  pricing_per_mtok: Record<string, { input: number; output: number }>;
+  env_overrides: string[];
+}
+
+export interface PosRow {
+  upc: string; product_name: string; category: string;
+  units_per_day?: number; days_of_cover?: number | null;
+  unit_retail?: number; on_hand_units?: number | null;
+  last_sale?: string; lifetime_units?: number; still_available?: boolean;
+  wholesaler?: string | null; effective_case_price?: number;
+  bottles_per_case?: number; has_rip?: boolean; has_discount?: boolean;
+}
+
+export interface PosSummary {
+  store: { id: number; name: string; city?: string; state?: string } | null;
+  months: { ym: string; revenue: number; units: number }[];
+  totals: { skus?: number; first_sale?: string; last_sale?: string; units?: number; revenue?: number };
+  last_feed: { source: string; kind: string; period_end: string; rows_ingested: number; created_at: string } | null;
+}
+
+export const agents = {
+  startRun: () => request<{ status: string }>('/api/agents/procurement/run', { method: 'POST' }),
+  runs: (limit = 25) => request<{ runs: AgentRun[] }>(`/api/agents/procurement/runs${qs({ limit })}`),
+  runDetail: (id: number) => request<{ run: AgentRun; steps: AgentStep[] }>(`/api/agents/procurement/runs/${id}`),
+  config: () => request<AgentConfig>('/api/agents/procurement/config'),
+  posSummary: () => request<PosSummary>('/api/agents/pos/summary'),
+  posVelocity: (limit = 50) => request<{ rows: PosRow[] }>(`/api/agents/pos/velocity${qs({ limit })}`),
+  posLowStock: (days = 14, limit = 50) => request<{ rows: PosRow[] }>(`/api/agents/pos/low-stock${qs({ days_threshold: days, limit })}`),
+  posLapsed: (days = 60, limit = 50) => request<{ rows: PosRow[] }>(`/api/agents/pos/lapsed${qs({ lapsed_days: days, limit })}`),
+};

@@ -1,0 +1,21 @@
+name: Monthly agent proposals
+
+# Runs the procurement-agent pipeline for every user with a store, shortly
+# after the monthly edition data normally lands. Mirrors nightly-alerts.yml:
+# the endpoint is CRON_SECRET-protected and runs the work in the background.
+# Manual runs are always available from the Actions tab (or the "Run now"
+# button on the Order Proposals page).
+on:
+  schedule:
+    - cron: "0 9 2 * *"   # 04:00/05:00 ET on the 2nd of each month
+  workflow_dispatch: {}
+
+jobs:
+  propose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger agent runs
+        run: |
+          curl -fsS --max-time 300 -X POST \
+            "https://njabc-price-analytics.onrender.com/api/agents/procurement/run-all" \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}"

@@ -44,6 +44,9 @@ import Admin from './pages/Admin';
 import AdminActivity from './pages/AdminActivity';
 import AdminAiUsage from './pages/AdminAiUsage';
 import AdminAiFeedback from './pages/AdminAiFeedback';
+import AgentProposals from './pages/AgentProposals';
+import AgentStoreFeed from './pages/AgentStoreFeed';
+import AgentSettings from './pages/AgentSettings';
 import QA from './pages/QA';
 import OrderAnalysis from './pages/OrderAnalysis';
 import Cart from './pages/Cart';
@@ -138,6 +141,9 @@ function AuthenticatedApp() {
             <Route path="/sales-reps" element={<SalesReps />} />
             <Route path="/stores" element={<Stores />} />
             <Route path="/configuration" element={<Configuration />} />
+            <Route path="/agents/proposals" element={<AgentProposals />} />
+            <Route path="/agents/store-feed" element={<AgentStoreFeed />} />
+            <Route path="/agents/settings" element={<AgentSettings />} />
             <Route path="/admin" element={<Admin />} />
             <Route path="/admin/activity" element={<AdminActivity />} />
             <Route path="/admin/ai-usage" element={<AdminAiUsage />} />

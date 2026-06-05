@@ -1,13 +1,17 @@
 """HTTP surface for the procurement agents + their observability data.
+ADMIN-ONLY (except the CRON_SECRET fan-out): the whole 'Celr AI Agents'
+section is gated while the platform matures.
 
-- POST /api/agents/procurement/run        start a run for the signed-in user
+- POST /api/agents/procurement/run        start a run for the signed-in admin
 - GET  /api/agents/procurement/runs       run list (the observability index)
 - GET  /api/agents/procurement/runs/{id}  full step-by-step trace of one run
+- GET  /api/agents/procurement/config     pipeline config (models, floors, caps)
+- GET  /api/agents/pos/summary|velocity|low-stock|lapsed   Store Feed data
 - POST /api/agents/procurement/run-all    CRON_SECRET-protected fan-out
   (mirrors /api/alerts/regenerate-all)
 
 Runs execute in a background thread (a chain takes 1-3 minutes); the POST
-returns the run_id immediately and the UI polls the run row.
+returns immediately and the UI polls the run list.
 """
 
 import json
@@ -16,12 +20,14 @@ import threading
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from backend.auth import get_current_user
+from backend.auth import require_admin
 from backend.pg import get_pg
 
+from . import config as cfg
+from .pos_signals import pos_lapsed, pos_low_stock, pos_velocity
 from .run import run_for_user
 
-router = APIRouter(prefix="/api/agents/procurement", tags=["agents"])
+router = APIRouter(prefix="/api/agents", tags=["agents"])
 
 
 def _store_for(user_id: int) -> int | None:
@@ -31,8 +37,8 @@ def _store_for(user_id: int) -> int | None:
     return s["id"] if s else None
 
 
-@router.post("/run")
-def start_run(user: dict = Depends(get_current_user)):
+@router.post("/procurement/run")
+def start_run(user: dict = Depends(require_admin)):
     store_id = _store_for(user["id"])
     if store_id is None:
         raise HTTPException(400, "Create a store first - the agents need one.")
@@ -55,8 +61,8 @@ def start_run(user: dict = Depends(get_current_user)):
     return {"status": "started"}
 
 
-@router.get("/runs")
-def list_runs(limit: int = 20, user: dict = Depends(get_current_user)):
+@router.get("/procurement/runs")
+def list_runs(limit: int = 20, user: dict = Depends(require_admin)):
     with get_pg() as pg:
         rows = pg.execute(
             "SELECT id, ym, trigger_source, status, batch_id, candidates, "
@@ -68,8 +74,8 @@ def list_runs(limit: int = 20, user: dict = Depends(get_current_user)):
     return {"runs": [dict(r) for r in rows]}
 
 
-@router.get("/runs/{run_id}")
-def run_detail(run_id: int, user: dict = Depends(get_current_user)):
+@router.get("/procurement/runs/{run_id}")
+def run_detail(run_id: int, user: dict = Depends(require_admin)):
     with get_pg() as pg:
         run = pg.execute("SELECT * FROM agent_runs WHERE id=%s AND user_id=%s",
                          (run_id, user["id"])).fetchone()
@@ -91,7 +97,78 @@ def run_detail(run_id: int, user: dict = Depends(get_current_user)):
     return {"run": dict(run), "steps": out_steps}
 
 
-@router.post("/run-all")
+@router.get("/procurement/config")
+def pipeline_config(user: dict = Depends(require_admin)):
+    """Read-only pipeline configuration for the Agent Settings page."""
+    return {
+        "scout_model": cfg.SCOUT_MODEL,
+        "sourcing_model": cfg.SOURCING_MODEL,
+        "max_turns": cfg.MAX_TURNS,
+        "max_candidates": cfg.MAX_CANDIDATES,
+        "max_cases_per_line": cfg.MAX_CASES_PER_LINE,
+        "min_gp": cfg.MIN_GP,
+        "max_run_tokens": cfg.MAX_RUN_TOKENS,
+        "pricing_per_mtok": {k: {"input": v[0], "output": v[1]}
+                             for k, v in cfg.PRICING.items()},
+        "env_overrides": ["CELR_AGENT_SCOUT_MODEL", "CELR_AGENT_SOURCING_MODEL",
+                          "CELR_AGENT_MIN_GP", "CELR_AGENT_MAX_RUN_TOKENS"],
+    }
+
+
+def _pos_ctx(user: dict) -> dict:
+    store_id = _store_for(user["id"])
+    if store_id is None:
+        raise HTTPException(400, "Create a store first - the POS feed hangs off one.")
+    return {"user_id": user["id"], "store_id": store_id}
+
+
+@router.get("/pos/summary")
+def pos_summary(user: dict = Depends(require_admin)):
+    """Store Feed header: store identity, monthly revenue/units, totals."""
+    ctx = _pos_ctx(user)
+    with get_pg() as pg:
+        store = pg.execute("SELECT id, name, city, state FROM stores WHERE id=%s",
+                           (ctx["store_id"],)).fetchone()
+        months = pg.execute(
+            "SELECT SUBSTR(business_date,1,7) ym, ROUND(SUM(net_revenue)::numeric,0)::float revenue, "
+            "SUM(units_sold) units FROM pos_sales_daily WHERE store_id=%s "
+            "GROUP BY 1 ORDER BY 1 DESC LIMIT 12", (ctx["store_id"],)).fetchall()
+        totals = pg.execute(
+            "SELECT COUNT(DISTINCT upc) skus, MIN(business_date) first_sale, "
+            "MAX(business_date) last_sale, SUM(units_sold) units, "
+            "ROUND(SUM(net_revenue)::numeric,0)::float revenue "
+            "FROM pos_sales_daily WHERE store_id=%s", (ctx["store_id"],)).fetchone()
+        feed = pg.execute(
+            "SELECT source, kind, period_end, rows_ingested, created_at "
+            "FROM pos_ingest_log WHERE store_id=%s ORDER BY id DESC LIMIT 1",
+            (ctx["store_id"],)).fetchone()
+    return {"store": dict(store) if store else None,
+            "months": [dict(m) for m in reversed(months)],
+            "totals": dict(totals) if totals else {},
+            "last_feed": dict(feed) if feed else None}
+
+
+@router.get("/pos/velocity")
+def pos_velocity_api(limit: int = 50, category: str | None = None,
+                     user: dict = Depends(require_admin)):
+    return {"rows": pos_velocity({"limit": limit, "category": category}, _pos_ctx(user))}
+
+
+@router.get("/pos/low-stock")
+def pos_low_stock_api(days_threshold: float = 14, limit: int = 50,
+                      user: dict = Depends(require_admin)):
+    return {"rows": pos_low_stock({"days_threshold": days_threshold, "limit": limit},
+                                  _pos_ctx(user))}
+
+
+@router.get("/pos/lapsed")
+def pos_lapsed_api(lapsed_days: int = 60, limit: int = 50,
+                   user: dict = Depends(require_admin)):
+    return {"rows": pos_lapsed({"lapsed_days": lapsed_days, "limit": limit},
+                               _pos_ctx(user))}
+
+
+@router.post("/procurement/run-all")
 def run_all(request: Request):
     """Nightly/monthly fan-out for every user with a store. Same shared-secret
     pattern as /api/alerts/regenerate-all."""

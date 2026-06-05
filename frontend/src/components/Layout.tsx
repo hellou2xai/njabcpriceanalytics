@@ -6,6 +6,7 @@ import {
   Sun, Moon, LogOut, BadgeDollarSign, ClipboardList, LayoutGrid,
   ChevronLeft, ChevronRight, ChevronDown, StickyNote, UserCog, Settings, Shield, Sparkles, BookOpen, ListTodo,
   Activity, Clock, Percent, Compass, ArrowDownRight, ArrowUpRight, ThumbsUp,
+  Bot, Database, Settings2,
 } from 'lucide-react';
 import { alerts as alertsApi, orders as ordersApi, cart as cartApi } from '../lib/api';
 import WhatsAppShareButton from './WhatsAppShare';
@@ -63,6 +64,16 @@ const NAV_GROUPS: {
     header: 'Setup',
     items: [
       { path: '/configuration', label: 'Configuration', icon: Settings },
+    ],
+  },
+  // The agentic procurement platform. Admin-only while it matures: every item
+  // is adminOnly, so non-admins never see the section at all.
+  {
+    header: 'Celr AI Agents',
+    items: [
+      { path: '/agents/proposals', label: 'Order Proposals', icon: Bot, adminOnly: true },
+      { path: '/agents/store-feed', label: 'Store Feed', icon: Database, adminOnly: true },
+      { path: '/agents/settings', label: 'Agent Settings', icon: Settings2, adminOnly: true },
     ],
   },
   // All admin-only screens grouped in one place. The whole section renders only

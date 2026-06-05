@@ -310,6 +310,11 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
 .tag-blue { background: rgba(59,130,246,0.2); color: var(--accent); }
 .tag-red { background: rgba(239,68,68,0.2); color: var(--red); }
 .tag-gray { background: rgba(107,114,128,0.2); color: var(--text-muted); }
+.tag-amber { background: rgba(245,158,11,0.2); color: #b45309; }
+.tag-purple { background: rgba(139,92,246,0.2); color: #7c3aed; }
+
+/* Celr AI Agents: trace rows that errored */
+.agent-step-error td { background: rgba(239,68,68,0.06); }
 
 /* ---- RIP / discount validity-window badges (see lib/dealDates.ts) ---- */
 .win-badge {

@@ -18,12 +18,13 @@ import json
 import os
 import threading
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 
 from backend.auth import require_admin
 from backend.pg import get_pg
 
 from . import config as cfg
+from .cart_stage import stage_draft
 from .pos_signals import pos_lapsed, pos_low_stock, pos_velocity
 from .run import advance_manual_run, run_for_user, start_manual_run
 
@@ -126,6 +127,49 @@ def run_detail(run_id: int, user: dict = Depends(require_admin)):
             pass
         out_steps.append(d)
     return {"run": dict(run), "steps": out_steps}
+
+
+@router.post("/procurement/runs/{run_id}/add-to-cart")
+def add_proposal_to_cart(run_id: int, payload: dict = Body(default={}),
+                         user: dict = Depends(require_admin)):
+    """THE human approval step: push proposal lines into the cart.
+    payload.upcs (optional list) limits it to selected lines; omitted = every
+    line not yet staged. Appends to the run's existing batch on repeat calls."""
+    with get_pg() as pg:
+        run = pg.execute("SELECT * FROM agent_runs WHERE id=%s", (run_id,)).fetchone()
+    if not run or run["user_id"] != user["id"]:
+        raise HTTPException(404, "run not found")
+    if not run["proposal_json"]:
+        raise HTTPException(409, "this run has no proposal to stage")
+    proposal = json.loads(run["proposal_json"])
+    lines = proposal.get("lines", [])
+    norm = lambda u: str(u or "").strip().lstrip("0")
+    wanted = {norm(u) for u in (payload.get("upcs") or [])}
+    selected = [l for l in lines if not l.get("staged")
+                and (not wanted or norm(l["upc"]) in wanted)]
+    if not selected:
+        raise HTTPException(409, "no unstaged lines matched")
+
+    batch_id = stage_draft(user["id"], selected, run["ym"],
+                           batch_id=run["batch_id"])
+    sel_upcs = {norm(l["upc"]) for l in selected}
+    for l in lines:
+        if norm(l["upc"]) in sel_upcs:
+            l["staged"] = True
+    with get_pg() as pg:
+        pg.execute("UPDATE agent_runs SET proposal_json=%s, batch_id=%s WHERE id=%s",
+                   (json.dumps(proposal, default=str), batch_id, run_id))
+        # Journal the human action as a trace step, so the run's story shows
+        # WHO put lines in the cart (the user, never an agent).
+        seq = pg.execute("SELECT COALESCE(MAX(seq),0)+1 s FROM agent_steps "
+                         "WHERE run_id=%s", (run_id,)).fetchone()["s"]
+        pg.execute(
+            "INSERT INTO agent_steps (run_id, seq, agent, kind, name, status, detail) "
+            "VALUES (%s,%s,'cart','phase','user_added_to_cart','ok',%s)",
+            (run_id, seq, json.dumps({"by": user.get("email"), "lines": len(selected),
+                                      "batch_id": batch_id})))
+    return {"status": "staged", "batch_id": batch_id, "lines": len(selected),
+            "remaining": sum(1 for l in lines if not l.get("staged"))}
 
 
 @router.get("/procurement/config")

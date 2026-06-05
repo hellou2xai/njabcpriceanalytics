@@ -608,6 +608,10 @@ def init_user_db():
         "ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS scout_json text",
         "ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS plan_json text",
         "ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS gated_json text",
+        # The reviewable proposal (terminal pipeline artifact): enriched lines
+        # with per-product decision trails. The pipeline STOPS here; adding to
+        # the cart is a separate, human-triggered action on the proposal.
+        "ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS proposal_json text",
         "ALTER TABLE agent_runs DROP CONSTRAINT IF EXISTS agent_runs_status_check",
         """ALTER TABLE agent_runs ADD CONSTRAINT agent_runs_status_check
             CHECK (status IN ('running','paused','completed','failed','aborted'))""",

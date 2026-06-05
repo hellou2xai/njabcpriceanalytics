@@ -15,15 +15,21 @@ from backend.routers.alerts import _rollup
 BATCH_SOURCE = "agent_procurement"
 
 
-def stage_draft(user_id: int, lines: list[dict], ym: str) -> str:
-    batch_id = str(uuid.uuid4())
+def stage_draft(user_id: int, lines: list[dict], ym: str,
+                batch_id: str | None = None) -> str:
+    """Write lines to the cart as one labelled agent batch.
+
+    batch_id=None -> a fresh proposal push: replaces any previous unsent agent
+    batch for the month. Passing an existing batch_id APPENDS to that batch
+    (the user adding more lines from the same proposal) without wiping the
+    lines they already accepted."""
     label = f"Agent proposal · {ym}"
     with get_pg() as pg:
-        # One proposal per month: a re-run replaces the previous unsent draft
-        # instead of stacking a second one next to it.
-        pg.execute(
-            "DELETE FROM cart_items WHERE user_id=%s AND batch_source=%s "
-            "AND batch_label=%s", (user_id, BATCH_SOURCE, label))
+        if batch_id is None:
+            batch_id = str(uuid.uuid4())
+            pg.execute(
+                "DELETE FROM cart_items WHERE user_id=%s AND batch_source=%s "
+                "AND batch_label=%s", (user_id, BATCH_SOURCE, label))
         for ln in lines:
             _insert_cart_item(pg, user_id, {
                 "product_name": ln["product_name"],
@@ -41,10 +47,11 @@ def stage_draft(user_id: int, lines: list[dict], ym: str) -> str:
 
 def notify(user_id: int, ym: str, kept: list[dict], vetoed: list[dict],
            est_total: float, est_savings: float) -> None:
-    msg = (f"Draft order ready: {len(kept)} lines, ~${est_total:,.0f}. "
-           f"Smart sourcing saves ~${est_savings:,.0f}. "
+    msg = (f"Order proposal ready for review: {len(kept)} lines, ~${est_total:,.0f}. "
+           f"Smart sourcing saves ~${est_savings:,.0f}; "
            f"{len(vetoed)} line(s) vetoed by the money gate. "
-           f"Review it in your cart.")
+           f"Nothing is in your cart yet - review each line's full reasoning "
+           f"under Celr AI Agents > Order Proposals and add what you approve.")
     items = [{"product_name": l["product_name"], "wholesaler": l["chosen_wholesaler"],
               "qty_cases": l["cases"], "note": l.get("sourcing_note", "")[:120]}
              for l in kept[:10]]

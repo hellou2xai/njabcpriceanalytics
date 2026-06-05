@@ -3,9 +3,9 @@ import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Bot, Play, ChevronDown, ChevronRight, Search, GitCompareArrows,
-  ShieldCheck, ShoppingCart, Bell, ArrowRight,
+  ShieldCheck, ShoppingCart, Bell, ArrowRight, ClipboardCheck,
 } from 'lucide-react';
-import { agents, type AgentRun, type AgentStep } from '../lib/api';
+import { agents, type AgentRun, type AgentStep, type AgentProposalLine } from '../lib/api';
 
 // Admin-only: every procurement-agent run with its full step-by-step trace.
 // The ROI framing is deliberate: each run shows what the AI spend bought
@@ -22,10 +22,47 @@ const STATUS_TAG: Record<AgentRun['status'], string> = {
 
 // Stepwise mode: what has finished -> which agent runs next.
 const NEXT_AGENT: Record<string, string> = {
-  scout: 'Sourcing Planner', sourcing: 'Money Gate', gate: 'Stage draft cart',
+  scout: 'Sourcing Planner', sourcing: 'Money Gate', gate: 'Build proposal',
 };
 
 const CONF_TAG: Record<string, string> = { high: 'tag tag-green', medium: 'tag tag-blue', low: 'tag tag-gray' };
+
+// The four stages of a stepwise run, in order, for the progress stepper.
+// 'staged' is the legacy name for the old terminal stage; treat as proposed.
+const STAGE_FLOW: { key: string; label: string }[] = [
+  { key: 'scout', label: 'Deal Scout' },
+  { key: 'sourcing', label: 'Sourcing Planner' },
+  { key: 'gate', label: 'Money Gate' },
+  { key: 'proposed', label: 'Proposal (your review)' },
+];
+
+/** Stepwise progress: which agents have run, which one is live or next.
+ *  `stage` is the last FINISHED stage (null = none yet). */
+function StageStepper({ stage, running }: { stage: string | null; running: boolean }) {
+  const doneIdx = stage ? STAGE_FLOW.findIndex(s => s.key === stage) : -1;
+  return (
+    <div className="agent-flow" style={{ margin: '8px 0' }}>
+      {STAGE_FLOW.map((s, i) => {
+        const done = i <= doneIdx;
+        const isLive = running && i === doneIdx + 1;
+        const isNext = !running && i === doneIdx + 1;
+        return (
+          <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {i > 0 && <ArrowRight size={14} className="text-muted" />}
+            <div className="agent-flow-chip"
+                 style={{ opacity: done || isLive || isNext ? 1 : 0.45 }}>
+              {done ? <span className="text-green">✓</span>
+                : isLive ? <span className="agent-live-dot" /> : null}
+              <span>{s.label}</span>
+              {isNext && <span className="tag tag-amber">next - waiting for you</span>}
+              {isLive && <span className="tag tag-blue">running</span>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 function parseJson<T>(s?: string | null): T | null {
   if (!s) return null;
@@ -165,7 +202,8 @@ const AGENT_META: Record<string, { label: string; role: string; icon: typeof Sea
   scout:    { label: 'Deal Scout',       role: 'finds what the store should buy', icon: Search,           tag: 'tag-blue' },
   sourcing: { label: 'Sourcing Planner', role: 'picks the distributor per line',  icon: GitCompareArrows, tag: 'tag-purple' },
   gate:     { label: 'Money Gate',       role: 'code-only price & margin vetoes', icon: ShieldCheck,      tag: 'tag-amber' },
-  cart:     { label: 'Cart Stager',      role: 'stages the draft batch',          icon: ShoppingCart,     tag: 'tag-green' },
+  proposal: { label: 'Proposal Builder', role: 'explains every line for review',  icon: ClipboardCheck,   tag: 'tag-green' },
+  cart:     { label: 'Cart Stager',      role: 'stages lines YOU approved',       icon: ShoppingCart,     tag: 'tag-green' },
   notify:   { label: 'Notifier',         role: 'posts the alert digest',          icon: Bell,             tag: 'tag-gray' },
 };
 const meta = (agent: string) =>
@@ -198,7 +236,7 @@ function stepSummary(s: AgentStep): string {
 
 const AGENT_DOT: Record<string, string> = {
   scout: '#2563eb', sourcing: '#7c3aed', gate: '#f59e0b',
-  cart: '#10b981', notify: '#6b7280',
+  proposal: '#0d9488', cart: '#10b981', notify: '#6b7280',
 };
 
 function AgentSection({ agent, steps, vetoed, selectedSeq, onSelect }: {
@@ -277,6 +315,147 @@ function AgentSection({ agent, steps, vetoed, selectedSeq, onSelect }: {
   );
 }
 
+const VERDICT_TAG: Record<string, [string, string]> = {
+  buy_now: ['tag tag-green', 'BUY NOW'], wait: ['tag tag-amber', 'WAIT'],
+  neutral: ['tag tag-gray', 'STABLE'], no_forecast: ['tag tag-gray', 'NO FORECAST'],
+};
+
+/** The review-and-approve surface: every proposed line with its full
+ *  step-by-step decision trail. THIS is where lines enter the cart - by a
+ *  human pressing the button, never by an agent. */
+function ProposalReview({ runId, lines, ym }: {
+  runId: number; lines: AgentProposalLine[]; ym: string;
+}) {
+  const qc = useQueryClient();
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [openLine, setOpenLine] = useState<string | null>(null);
+  const [msg, setMsg] = useState('');
+  const unstaged = lines.filter(l => !l.staged);
+  const stagedCount = lines.length - unstaged.length;
+  const total = (ls: AgentProposalLine[]) =>
+    ls.reduce((a, l) => a + l.effective_case_price * l.cases, 0);
+
+  const toggle = (upc: string) => setChecked(s => {
+    const n = new Set(s);
+    if (n.has(upc)) n.delete(upc); else n.add(upc);
+    return n;
+  });
+
+  const add = async (upcs?: string[]) => {
+    setMsg('');
+    try {
+      const r = await agents.addToCart(runId, upcs);
+      setMsg(`Added ${r.lines} line(s) to the cart (${r.remaining} left to review).`);
+      setChecked(new Set());
+      qc.invalidateQueries({ queryKey: ['agent-run', runId] });
+      qc.invalidateQueries({ queryKey: ['agent-runs'] });
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'Failed to add to cart');
+    }
+  };
+
+  return (
+    <div className="agent-group" style={{ borderLeft: '3px solid var(--accent)' }}>
+      <div className="agent-group-head">
+        <ClipboardCheck size={16} />
+        <strong>Order Proposal · {ym}</strong>
+        <span className="text-muted" style={{ fontSize: 12 }}>
+          {lines.length} lines, ~{money(total(lines))}. Click a product for its full
+          step-by-step reasoning. Nothing reaches the cart until you add it.
+        </span>
+        <span className="agent-group-stats">
+          {stagedCount > 0 && <span className="tag tag-green" style={{ marginRight: 8 }}>{stagedCount} in cart</span>}
+          <button className="btn btn-sm btn-secondary" disabled={checked.size === 0}
+                  onClick={() => add([...checked])}>
+            <ShoppingCart size={13} style={{ verticalAlign: -2, marginRight: 4 }} />
+            Add selected ({checked.size})
+          </button>{' '}
+          <button className="btn btn-sm btn-primary" disabled={unstaged.length === 0}
+                  onClick={() => add()}>
+            <ShoppingCart size={13} style={{ verticalAlign: -2, marginRight: 4 }} />
+            Add all remaining ({unstaged.length})
+          </button>
+        </span>
+      </div>
+      {msg && <p style={{ fontSize: 12 }} className={msg.startsWith('Added') ? 'text-green' : 'text-red'}>
+        {msg} {msg.startsWith('Added') && <Link to="/cart">Open cart →</Link>}
+      </p>}
+      <div className="table-container">
+        <table className="catalog-table">
+          <thead><tr>
+            <th style={{ width: 30 }}></th>
+            <th>Product</th><th>Buy</th><th className="right">$/case</th>
+            <th className="right">Margin</th><th>Why</th><th>Rebate</th><th>Timing</th>
+            <th style={{ width: 90 }}></th>
+          </tr></thead>
+          <tbody>
+            {lines.map((l, i) => {
+              const key = `${l.upc}-${i}`;
+              const expanded = openLine === key;
+              const v = l.timing ? VERDICT_TAG[l.timing.verdict] : null;
+              return (
+                <>
+                  <tr key={key} style={{ cursor: 'pointer', opacity: l.staged ? 0.6 : 1 }}
+                      onClick={() => setOpenLine(expanded ? null : key)}>
+                    <td onClick={e => e.stopPropagation()}>
+                      {l.staged
+                        ? <span className="tag tag-green">✓</span>
+                        : <input type="checkbox" checked={checked.has(l.upc)}
+                                 onChange={() => toggle(l.upc)} />}
+                    </td>
+                    <td>
+                      {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}{' '}
+                      {l.product_name}
+                      {l.pos?.days_of_cover != null && l.pos.days_of_cover <= 14 && (
+                        <span className="tag tag-red" style={{ marginLeft: 6 }}>
+                          {l.pos.days_of_cover}d stock
+                        </span>
+                      )}
+                    </td>
+                    <td>{l.cases} cs · {l.chosen_wholesaler}</td>
+                    <td className="right">{money(l.effective_case_price, 2)}</td>
+                    <td className="right">{l.gp_pct != null ? `${Math.round(l.gp_pct * 100)}%` : '–'}</td>
+                    <td><span className="tag tag-blue">{(l.reason_code ?? 'opportunity').replace(/_/g, ' ')}</span></td>
+                    <td style={{ fontSize: 12 }}>
+                      {l.rip?.earned_rebate
+                        ? <span className="text-green">${l.rip.earned_rebate.toLocaleString()} back</span>
+                        : l.rip ? 'tier below' : '–'}
+                    </td>
+                    <td>{v && <span className={v[0]}>{v[1]}</span>}</td>
+                    <td className="text-muted" style={{ fontSize: 11 }}>
+                      {expanded ? 'hide detail' : 'why? ▸'}
+                    </td>
+                  </tr>
+                  {expanded && (
+                    <tr key={`${key}-detail`}>
+                      <td colSpan={9} style={{ background: 'var(--bg)' }}>
+                        <div style={{ padding: '8px 10px' }}>
+                          {(l.explain_steps ?? []).map(s => (
+                            <p key={s.title} style={{ fontSize: 13, margin: '6px 0' }}>
+                              <strong>{s.title}.</strong>{' '}
+                              <span className="text-muted">{s.text}</span>
+                            </p>
+                          ))}
+                          {l.rip?.next_tier && (
+                            <p style={{ fontSize: 12, margin: '6px 0' }} className="text-muted">
+                              Tier ladder tip: {l.rip.note}
+                            </p>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
+              );
+            })}
+            {lines.length === 0 && <tr><td colSpan={9} className="empty">Proposal is empty.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function RunDetail({ runId }: { runId: number }) {
   const qc = useQueryClient();
   const [selected, setSelected] = useState<number | null>(null);
@@ -296,6 +475,7 @@ function RunDetail({ runId }: { runId: number }) {
   const scoutReport = parseJson<{ candidates: ScoutCandidate[]; skipped_note?: string }>(data.run.scout_json);
   const plan = parseJson<{ lines: PlanLine[]; summary?: string }>(data.run.plan_json);
   const gated = parseJson<{ kept: PlanLine[]; vetoed: (PlanLine & VetoLine)[] }>(data.run.gated_json);
+  const proposal = parseJson<{ lines: AgentProposalLine[] }>(data.run.proposal_json);
 
   const advance = async () => {
     setStepErr('');
@@ -323,9 +503,25 @@ function RunDetail({ runId }: { runId: number }) {
     <div style={{ padding: '4px 8px 12px' }}>
       {live && (
         <p style={{ fontSize: 13, margin: '6px 0' }}>
-          <span className="agent-live-dot" /> <strong>Run in progress</strong>
-          <span className="text-muted"> — actions appear below as each agent finishes them.</span>
+          <span className="agent-live-dot" /> <strong>
+            {data.run.mode === 'manual' ? 'Running ONE agent' : 'Run in progress'}
+          </strong>
+          <span className="text-muted">
+            {data.run.mode === 'manual'
+              ? ' — this stage will finish and PAUSE for your review. Nothing else runs without your say-so.'
+              : ' — actions appear below as each agent finishes them.'}
+          </span>
         </p>
+      )}
+      {data.run.mode === 'manual' && (
+        <StageStepper stage={data.run.stage === 'staged' ? 'proposed' : data.run.stage} running={live} />
+      )}
+
+      {/* THE review surface: the explained proposal, with add-to-cart under
+          the user's control. Shown above the trace because approving lines is
+          the job; the trace below is the audit trail. */}
+      {proposal && proposal.lines.length > 0 && (
+        <ProposalReview runId={runId} lines={proposal.lines} ym={data.run.ym} />
       )}
       {data.run.summary && !live && <p className="text-muted" style={{ fontSize: 13 }}>{data.run.summary}</p>}
       {data.run.error && <p className="text-red" style={{ fontSize: 13 }}>Error: {data.run.error}</p>}
@@ -336,7 +532,8 @@ function RunDetail({ runId }: { runId: number }) {
           <span className="tag tag-amber">paused</span>
           <span style={{ fontSize: 13 }}>
             <strong>{meta(data.run.stage === 'scout' ? 'scout' : data.run.stage === 'sourcing' ? 'sourcing' : 'gate').label}</strong>
-            {' '}finished. Review its output below, then continue when ready.
+            {' '}finished and STOPPED. Nothing else runs until you press the button.
+            Review its output below first.
           </span>
           <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }} onClick={advance}>
             <Play size={13} style={{ verticalAlign: -2, marginRight: 4 }} />
@@ -491,12 +688,34 @@ export default function AgentProposals() {
           Each run: Scout → Sourcing → money gate → draft cart. The agents never send an order.
         </span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          <button className="btn btn-secondary btn-sm" onClick={() => start(true)}
-                  disabled={running}
-                  title="Run one agent at a time: Scout first, then advance each agent manually after reviewing its output.">
-            <Play size={14} style={{ verticalAlign: -2, marginRight: 4 }} />
-            Step-by-step
-          </button>
+          {pausedRun ? (
+            // A step run is waiting on a human: continuing IT is the primary
+            // action. Starting a second scout from here was too easy a misclick.
+            <button className="btn btn-secondary btn-sm"
+                    disabled={running}
+                    title={`Run #${pausedRun.id} is paused after the ${pausedRun.stage} stage. Continues with: ${NEXT_AGENT[pausedRun.stage ?? ''] ?? 'next agent'}.`}
+                    onClick={async () => {
+                      setStartErr('');
+                      try {
+                        await agents.advanceStep(pausedRun.id);
+                        setOpen(pausedRun.id);
+                        qc.invalidateQueries({ queryKey: ['agent-runs'] });
+                        qc.invalidateQueries({ queryKey: ['agent-run', pausedRun.id] });
+                      } catch (e) {
+                        setStartErr(e instanceof Error ? e.message : 'Failed to continue');
+                      }
+                    }}>
+              <Play size={14} style={{ verticalAlign: -2, marginRight: 4 }} />
+              Continue run #{pausedRun.id}: {NEXT_AGENT[pausedRun.stage ?? ''] ?? 'next agent'}
+            </button>
+          ) : (
+            <button className="btn btn-secondary btn-sm" onClick={() => start(true)}
+                    disabled={running}
+                    title="Runs ONLY the Deal Scout, then pauses for your review. You advance each later agent yourself.">
+              <Play size={14} style={{ verticalAlign: -2, marginRight: 4 }} />
+              Step-by-step (Scout only)
+            </button>
+          )}
           <button className="btn btn-primary btn-sm" onClick={() => start(false)} disabled={running}>
             <Play size={14} style={{ verticalAlign: -2, marginRight: 4 }} />
             {running ? 'Run in progress…' : 'Run now'}

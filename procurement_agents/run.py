@@ -21,14 +21,15 @@ from datetime import date
 from backend.db import init_user_db
 from backend.pg import get_pg
 
-from .cart_stage import notify, stage_draft
+from .cart_stage import notify
+from .enrich import build_proposal
 from .gate import apply_gate
 from .journal import RunTrace
 from .scout import run_scout
 from .sourcing import run_sourcing
 
 # stage value on the run row -> what has FINISHED. The next agent to run:
-NEXT_STAGE = {"scout": "sourcing", "sourcing": "gate", "gate": "staged"}
+NEXT_STAGE = {"scout": "sourcing", "sourcing": "gate", "gate": "proposed"}
 
 
 def _resolve(email: str) -> tuple[int, int | None]:
@@ -72,20 +73,27 @@ def _stage_gate(trace: RunTrace, plan: dict) -> tuple[list, list]:
     return kept, vetoed
 
 
-def _stage_stage(trace: RunTrace, kept: list, vetoed: list) -> tuple[str | None, float, float]:
+def _stage_propose(trace: RunTrace, kept: list, vetoed: list,
+                   scout_report: dict) -> tuple[float, float]:
+    """Terminal pipeline stage: build the reviewable, fully-explained proposal
+    and notify. The pipeline NEVER touches the cart - adding lines to the cart
+    is a separate human action on the proposal (api.add_proposal_to_cart)."""
     est_total = sum(l["effective_case_price"] * l["cases"] for l in kept)
     est_savings = sum((l.get("savings_vs_alt") or 0) for l in kept
                       if (l.get("savings_vs_alt") or 0) > 0)
-    batch_id = None
+    with trace.phase("proposal", "build_proposal") as ctx:
+        lines = build_proposal(trace.store_id, kept, scout_report)
+        trace.save_json("proposal_json", {"lines": lines})
+        ctx["detail"] = {"lines": len(lines),
+                         "with_rip": sum(1 for l in lines if l.get("rip")),
+                         "buy_now": sum(1 for l in lines
+                                        if (l.get("timing") or {}).get("verdict") == "buy_now"),
+                         "est_total_usd": round(est_total, 2)}
     if kept:
-        with trace.phase("cart", "stage_draft_batch") as ctx:
-            batch_id = stage_draft(trace.user_id, kept, trace.ym)
-            ctx["detail"] = {"batch_id": batch_id, "lines": len(kept),
-                             "est_total_usd": round(est_total, 2)}
         with trace.phase("notify", "alert_digest") as ctx:
             notify(trace.user_id, trace.ym, kept, vetoed, est_total, est_savings)
             ctx["detail"] = {"alert": "agent_proposal"}
-    return batch_id, est_total, est_savings
+    return est_total, est_savings
 
 
 # --------------------------- full-chain mode ---------------------------------
@@ -98,15 +106,16 @@ def run_for_user(user_id: int, store_id: int, ym: str | None = None,
         report = _stage_scout(trace)
         plan = _stage_sourcing(trace, report)
         kept, vetoed = _stage_gate(trace, plan)
-        batch_id, est_total, est_savings = _stage_stage(trace, kept, vetoed)
-        summary = (f"{len(kept)} lines staged (~${est_total:,.0f}), "
+        est_total, est_savings = _stage_propose(trace, kept, vetoed, report)
+        summary = (f"Proposal ready: {len(kept)} lines (~${est_total:,.0f}), "
                    f"{len(vetoed)} vetoed, est sourcing savings ${est_savings:,.0f}. "
+                   f"Awaiting your review - nothing added to the cart. "
                    f"Scout note: {report.get('skipped_note', '')[:300]}")
-        trace.finish("completed", stage="staged", batch_id=batch_id,
+        trace.finish("completed", stage="proposed",
                      candidates=len(report["candidates"]),
                      kept=len(kept), vetoed=len(vetoed), est_total=est_total,
                      est_savings=est_savings, summary=summary)
-        return {"run_id": trace.run_id, "batch_id": batch_id,
+        return {"run_id": trace.run_id,
                 "candidates": len(report["candidates"]), "kept": len(kept),
                 "vetoed": len(vetoed), "est_total_usd": round(est_total, 2),
                 "est_savings_usd": round(est_savings, 2),
@@ -165,18 +174,20 @@ def advance_manual_run(run_id: int, user_email: str | None = None) -> dict:
                                 "Review the vetoes, then stage the draft cart.")
             return {"run_id": run_id, "stage": "gate",
                     "kept": len(kept), "vetoed": len(vetoed)}
-        # stage == 'gate': final step stages the cart + alert and completes.
+        # stage == 'gate': final step builds the reviewable proposal and
+        # completes. The cart stays untouched until the human adds lines.
         gated = json.loads(run["gated_json"] or "{}")
+        report = json.loads(run["scout_json"] or "{}")
         kept, vetoed = gated.get("kept", []), gated.get("vetoed", [])
-        batch_id, est_total, est_savings = _stage_stage(trace, kept, vetoed)
-        trace.finish("completed", stage="staged", batch_id=batch_id,
+        est_total, est_savings = _stage_propose(trace, kept, vetoed, report)
+        trace.finish("completed", stage="proposed",
                      candidates=run["candidates"], kept=len(kept),
                      vetoed=len(vetoed), est_total=est_total,
                      est_savings=est_savings,
-                     summary=f"{len(kept)} lines staged (~${est_total:,.0f}), "
-                             f"{len(vetoed)} vetoed, est sourcing savings "
-                             f"${est_savings:,.0f}. (Step-by-step run.)")
-        return {"run_id": run_id, "stage": "staged", "batch_id": batch_id}
+                     summary=f"Proposal ready: {len(kept)} lines "
+                             f"(~${est_total:,.0f}), {len(vetoed)} vetoed. "
+                             f"Awaiting your review. (Step-by-step run.)")
+        return {"run_id": run_id, "stage": "proposed"}
     except Exception as e:
         trace.finish("failed", error=str(e)[:2000])
         raise

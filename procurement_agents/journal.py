@@ -75,8 +75,8 @@ class RunTrace:
         return self._prev_ms + int((time.monotonic() - self._t0) * 1000)
 
     def save_json(self, column: str, obj) -> None:
-        """Persist a stage artifact (scout_json / plan_json / gated_json)."""
-        assert column in ("scout_json", "plan_json", "gated_json")
+        """Persist a stage artifact."""
+        assert column in ("scout_json", "plan_json", "gated_json", "proposal_json")
         with get_pg() as pg:
             pg.execute(f"UPDATE agent_runs SET {column}=%s WHERE id=%s",
                        (json.dumps(obj, default=str), self.run_id))

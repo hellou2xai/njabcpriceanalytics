@@ -1565,7 +1565,7 @@ export interface AgentRun {
   id: number; ym: string; trigger_source: string;
   status: 'running' | 'paused' | 'completed' | 'failed' | 'aborted';
   mode: 'auto' | 'manual';
-  stage: 'scout' | 'sourcing' | 'gate' | 'staged' | null;
+  stage: 'scout' | 'sourcing' | 'gate' | 'proposed' | 'staged' | null;
   batch_id: string | null; candidates: number; lines_kept: number;
   lines_vetoed: number; est_total_usd: number; est_savings_usd: number;
   input_tokens: number; output_tokens: number; cost_usd: number;
@@ -1576,6 +1576,28 @@ export interface AgentRun {
 
 export interface AgentRunDetailRow extends AgentRun {
   scout_json?: string | null; plan_json?: string | null; gated_json?: string | null;
+  proposal_json?: string | null;
+}
+
+export interface AgentProposalLine {
+  upc: string; product_name: string; chosen_wholesaler: string; cases: number;
+  effective_case_price: number; alt_wholesaler: string | null;
+  alt_effective_price: number | null; savings_vs_alt: number | null;
+  rip_code: string | null; sourcing_note: string; gp_pct?: number | null;
+  bottles_per_case?: number | null;
+  reason_code?: string | null; scout_rationale?: string | null;
+  rip?: { rip_code: string; description?: string; earned_rebate?: number | null;
+          earned_per_case?: number | null; note?: string;
+          next_tier?: { buy_qty: number; unit: string; rebate: number;
+                        more_needed?: number | null } | null } | null;
+  timing?: { verdict: 'buy_now' | 'wait' | 'neutral' | 'no_forecast';
+             explain: string; price_now: number;
+             price_next_month: number | null; price_last_month: number | null } | null;
+  pos?: { units_per_day?: number; on_hand_units?: number | null;
+          days_of_cover?: number | null; unit_retail?: number | null } | null;
+  all_sources?: { wholesaler: string; effective_case_price: number }[];
+  explain_steps?: { title: string; text: string }[];
+  staged?: boolean;
 }
 
 export interface AgentStep {
@@ -1614,6 +1636,10 @@ export const agents = {
   startRun: () => request<{ status: string }>('/api/agents/procurement/run', { method: 'POST' }),
   startStep: () => request<{ status: string }>('/api/agents/procurement/step', { method: 'POST' }),
   advanceStep: (runId: number) => request<{ status: string }>(`/api/agents/procurement/runs/${runId}/step`, { method: 'POST' }),
+  addToCart: (runId: number, upcs?: string[]) =>
+    request<{ status: string; batch_id: string; lines: number; remaining: number }>(
+      `/api/agents/procurement/runs/${runId}/add-to-cart`,
+      { method: 'POST', body: JSON.stringify(upcs?.length ? { upcs } : {}) }),
   runs: (limit = 25) => request<{ runs: AgentRun[] }>(`/api/agents/procurement/runs${qs({ limit })}`),
   runDetail: (id: number) => request<{ run: AgentRunDetailRow; steps: AgentStep[] }>(`/api/agents/procurement/runs/${id}`),
   config: () => request<AgentConfig>('/api/agents/procurement/config'),

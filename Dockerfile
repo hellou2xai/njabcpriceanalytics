@@ -28,6 +28,10 @@ RUN pip install -r backend/requirements.txt
 RUN python -c "import duckdb; duckdb.connect().execute('INSTALL postgres')"
 
 COPY backend/ ./backend/
+# Agent pipeline + POS feed framework: top-level packages imported by
+# backend.main (procurement_agents.api) and the seed/ingest tooling.
+COPY procurement_agents/ ./procurement_agents/
+COPY pos_feed/ ./pos_feed/
 COPY --from=frontend /app/frontend/dist ./frontend/dist
 
 # Render injects $PORT. Shell form so it expands.

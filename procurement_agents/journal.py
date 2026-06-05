@@ -45,6 +45,16 @@ class RunTrace:
                 (user_id, store_id, ym, trigger)).fetchone()
         self.run_id = row["id"]
 
+    def note(self, action: str) -> None:
+        """Publish what the run is ABOUT to do (live-trace heartbeat). Cheap
+        single-column update; best-effort, never breaks the run."""
+        try:
+            with get_pg() as pg:
+                pg.execute("UPDATE agent_runs SET current_action=%s WHERE id=%s",
+                           (action[:300], self.run_id))
+        except Exception:
+            pass
+
     # ---- step recording -----------------------------------------------------
 
     def _write_step(self, agent, kind, name, status, detail, dur_ms,
@@ -63,6 +73,7 @@ class RunTrace:
     def phase(self, agent: str, name: str, detail_fn=None):
         """Trace a deterministic phase (pre-pass, gate, cart staging). The
         with-block may set ctx['detail'] for the journal."""
+        self.note(f"{agent}: {name.replace('_', ' ')}")
         t0 = time.monotonic()
         ctx: dict = {}
         try:
@@ -129,3 +140,6 @@ class RunTrace:
                  self.input_tokens, self.output_tokens, round(self.cost, 6),
                  int((time.monotonic() - self._t0) * 1000),
                  summary, error, self.run_id))
+            # The run is over; clear the live-action pointer.
+            pg.execute("UPDATE agent_runs SET current_action=NULL WHERE id=%s",
+                       (self.run_id,))

@@ -35,6 +35,8 @@ def run_agent(trace, agent: str, model: str, system: str, box: ToolBox,
             raise RunBudgetExceeded(
                 f"run exceeded {MAX_RUN_TOKENS} tokens during {agent}")
         force_final = turn == MAX_TURNS
+        trace.note(f"{agent}: thinking (turn {turn + 1})"
+                   + (" - writing final output" if force_final else ""))
         t0 = time.monotonic()
         resp = client.messages.create(
             model=model,

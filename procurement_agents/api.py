@@ -68,7 +68,7 @@ def list_runs(limit: int = 20, user: dict = Depends(require_admin)):
             "SELECT id, ym, trigger_source, status, batch_id, candidates, "
             "lines_kept, lines_vetoed, est_total_usd, est_savings_usd, "
             "input_tokens, output_tokens, cost_usd, duration_ms, summary, "
-            "error, created_at, finished_at "
+            "error, current_action, created_at, finished_at "
             "FROM agent_runs WHERE user_id=%s ORDER BY id DESC LIMIT %s",
             (user["id"], min(limit, 100))).fetchall()
     return {"runs": [dict(r) for r in rows]}

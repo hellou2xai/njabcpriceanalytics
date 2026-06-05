@@ -33,6 +33,7 @@ class ToolBox:
 
     def call(self, name: str, args: dict) -> object:
         args = args or {}
+        self.trace.note(f"{self.agent}: running tool {name}")
         t0 = time.monotonic()
         try:
             kind, fn = self._dispatch[name]

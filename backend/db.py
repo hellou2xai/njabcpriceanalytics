@@ -589,6 +589,10 @@ def init_user_db():
             created_at text DEFAULT {NOW_UTC}
         )""",
         "CREATE INDEX IF NOT EXISTS idx_agent_steps_run ON agent_steps(run_id, seq)",
+        # What the run is doing RIGHT NOW ("scout: thinking (turn 3)",
+        # "sourcing: tool rip_tier_gap"). Written before each action starts so
+        # the live trace UI never shows a silent gap during long model turns.
+        "ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS current_action text",
     ]
     with get_pg() as con:
         for s in stmts:

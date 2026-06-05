@@ -1568,6 +1568,7 @@ export interface AgentRun {
   lines_vetoed: number; est_total_usd: number; est_savings_usd: number;
   input_tokens: number; output_tokens: number; cost_usd: number;
   duration_ms: number; summary: string | null; error: string | null;
+  current_action: string | null;
   created_at: string; finished_at: string | null;
 }
 

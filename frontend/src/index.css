@@ -316,6 +316,80 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
 /* Celr AI Agents: trace rows that errored */
 .agent-step-error td { background: rgba(239,68,68,0.06); }
 
+/* ---- Celr AI Agents: run-detail trace viewer ---- */
+/* Sidebar (all actions, chronological) + main pane (per-agent sections). */
+.agent-trace-layout {
+  display: grid; grid-template-columns: 270px 1fr; gap: 14px;
+  align-items: start; margin-top: 8px;
+}
+@media (max-width: 900px) { .agent-trace-layout { grid-template-columns: 1fr; } }
+.agent-trace-sidebar {
+  background: var(--surface); border-radius: var(--radius);
+  box-shadow: var(--shadow-card); padding: 8px;
+  position: sticky; top: 8px; max-height: 70vh; overflow-y: auto;
+}
+.agent-trace-sidebar h5 {
+  margin: 4px 6px 8px; font-size: 11px; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--text-muted);
+}
+.agent-trace-item {
+  display: flex; align-items: center; gap: 7px; width: 100%;
+  padding: 5px 7px; border: 0; border-radius: 7px; background: transparent;
+  font: inherit; font-size: 12px; text-align: left; cursor: pointer;
+  color: inherit;
+}
+.agent-trace-item:hover { background: var(--bg); }
+.agent-trace-item.active { background: rgba(37,99,235,0.1); }
+.agent-trace-item .dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 8px; }
+.agent-trace-item .seq { color: var(--text-muted); flex: 0 0 18px; text-align: right; }
+.agent-trace-item .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-trace-item .ms { color: var(--text-muted); font-size: 11px; }
+
+/* Pipeline strip: agents in execution order with rollups. */
+.agent-flow {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  margin: 6px 0 4px;
+}
+.agent-flow-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--surface); border-radius: 999px; padding: 4px 11px;
+  box-shadow: var(--shadow-card); font-size: 12px; font-weight: 600;
+}
+.agent-flow-chip .text-muted { font-weight: 400; }
+.agent-flow-chip--error { outline: 1.5px solid var(--red); }
+
+/* One card per agent listing its individual actions. */
+.agent-group {
+  background: var(--surface); border-radius: var(--radius);
+  box-shadow: var(--shadow-card); padding: 10px 12px; margin-top: 10px;
+}
+.agent-group-head {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.agent-group-stats { margin-left: auto; font-size: 12px; color: var(--text-muted); }
+
+/* Live indicator: pulsing dot while a run streams its actions. */
+.agent-live-dot {
+  display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+  background: var(--accent); flex: 0 0 9px;
+  animation: agent-pulse 1.2s ease-in-out infinite;
+}
+@keyframes agent-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.8); }
+}
+
+/* Selected-action detail card (full journalled payload). */
+.agent-step-detail {
+  background: var(--surface); border-radius: var(--radius);
+  box-shadow: var(--shadow-card); padding: 10px 12px; margin-top: 8px;
+}
+.agent-step-detail pre {
+  margin: 6px 0 0; font-family: var(--font-mono); font-size: 11.5px;
+  white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow-y: auto;
+}
+
 /* ---- RIP / discount validity-window badges (see lib/dealDates.ts) ---- */
 .win-badge {
   display: inline-flex; align-items: center; gap: 3px;

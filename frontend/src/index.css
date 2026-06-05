@@ -2746,10 +2746,12 @@ tr:hover .row-menu-btn { opacity: 1; }
   padding: 2px 10px; text-align: center;
 }
 .mes-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.mes-table td { padding: 2px 0; vertical-align: top; }
+.mes-table td { padding: 1px 0; vertical-align: top; }
 .mes-table td:first-child { color: var(--text-muted); padding-right: 10px; white-space: nowrap; }
 .mes-table td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
-.mes-best td { padding-top: 5px; border-top: 1px solid var(--border); font-weight: 700; color: var(--green); }
+/* "Best" row: bold + green, NO divider line — the tiers above read as one
+   compact box rather than separate lined rows (was wasting vertical space). */
+.mes-best td { padding-top: 3px; font-weight: 700; color: var(--green); }
 .mes-best td:first-child { color: var(--green); }
 /* Per-tier rows show: "Buy N cs   -$X = $Y" so the buyer reads the
    reduction AND the resulting price. The save amount is muted-red, the
@@ -2761,7 +2763,7 @@ tr:hover .row-menu-btn { opacity: 1; }
    the previous styling washed out and users complained the headers were
    hard to read. The pill background lifts them off the row and gives
    each section a clear colour identity (amber = discount, indigo = RIP). */
-.mes-section td { padding: 8px 0 4px; background: none; }
+.mes-section td { padding: 5px 0 1px; background: none; }
 .mes-section td > .mes-section-pill {
   display: inline-block; font-size: 10px; font-weight: 800;
   text-transform: uppercase; letter-spacing: .5px;
@@ -5016,7 +5018,14 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
   display: flex; background: var(--surface); border-left: 1px solid var(--border);
   box-shadow: -8px 0 24px rgba(15, 23, 42, 0.10);
 }
-.global-dock .assistant-chat { flex: 1 1 auto; min-width: 0; padding: 8px 12px 4px; }
+.global-dock .assistant-chat {
+  flex: 1 1 auto; min-width: 0; padding: 8px 12px 4px;
+  /* Keep wide answer content (tables, the RIP template) inside the dock — it
+     must scroll its own wrapper, not spill off the right edge of the screen.
+     Fixes "part of the chat is not visible". (On the chat content only, so the
+     left-edge resize handle is unaffected.) */
+  overflow-x: hidden;
+}
 .global-dock-resizer {
   flex: 0 0 8px; align-self: stretch; cursor: col-resize; touch-action: none;
   display: flex; align-items: center; justify-content: center;

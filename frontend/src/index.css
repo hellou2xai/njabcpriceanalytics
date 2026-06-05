@@ -329,8 +329,19 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
   position: sticky; top: 8px; max-height: 70vh; overflow-y: auto;
 }
 .agent-trace-sidebar h5 {
-  margin: 4px 6px 8px; font-size: 11px; text-transform: uppercase;
+  margin: 4px 6px 8px; font-size: 12px; text-transform: uppercase;
   letter-spacing: 0.04em; color: var(--text-muted);
+}
+/* Agent group header inside the action sidebar: which agent did the tasks below. */
+.agent-trace-grouphead {
+  display: flex; align-items: center; gap: 7px;
+  margin: 8px 4px 3px; padding-top: 6px;
+  font-size: 12px; font-weight: 700;
+  border-top: 1px solid var(--border);
+}
+.agent-trace-grouphead .dot { width: 8px; height: 8px; border-radius: 50%; }
+.agent-trace-grouphead:first-child, div:first-child > .agent-trace-grouphead {
+  border-top: 0; margin-top: 2px;
 }
 .agent-trace-item {
   display: flex; align-items: center; gap: 7px; width: 100%;

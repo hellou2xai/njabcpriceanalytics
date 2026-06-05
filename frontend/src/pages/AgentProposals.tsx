@@ -113,10 +113,10 @@ function ScoutOutput({ report }: { report: { candidates: ScoutCandidate[]; skipp
           <tbody>
             {report.candidates.map((c, i) => (
               <tr key={`${c.upc}-${i}`}>
-                <td>{c.product_name}<div className="text-muted" style={{ fontSize: 11 }}>{c.wholesaler}</div></td>
+                <td>{c.product_name}<div className="text-muted" style={{ fontSize: 12 }}>{c.wholesaler}</div></td>
                 <td>
                   <span className="tag tag-blue">{c.reason_code.replace(/_/g, ' ')}</span>
-                  <div style={{ fontSize: 11, marginTop: 3 }}>
+                  <div style={{ fontSize: 12, marginTop: 3 }}>
                     {c.suggested_cases} cs · <span className={CONF_TAG[c.confidence] ?? 'tag tag-gray'}>{c.confidence}</span>
                   </div>
                 </td>
@@ -154,7 +154,7 @@ function PlanOutput({ plan }: { plan: { lines: PlanLine[]; summary?: string } })
                 <td>{l.product_name}</td>
                 <td>
                   <strong>{l.chosen_wholesaler}</strong>
-                  <div className="text-muted" style={{ fontSize: 11 }}>
+                  <div className="text-muted" style={{ fontSize: 12 }}>
                     {l.cases} cs @ {money(l.effective_case_price, 2)}
                   </div>
                 </td>
@@ -267,7 +267,7 @@ function AgentSection({ agent, steps, vetoed, selectedSeq, onSelect }: {
         <Icon size={16} />
         <strong>{m.label}</strong>
         <span className="text-muted" style={{ fontSize: 12 }}>{m.role}</span>
-        {model && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }} className="text-muted">{model}</span>}
+        {model && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }} className="text-muted">{model}</span>}
         {hasError && <span className="tag tag-red">error</span>}
         <span className="agent-group-stats">
           {steps.length} action{steps.length !== 1 ? 's' : ''} · {secs(agentMs)}
@@ -412,7 +412,7 @@ function AgentControlPanel({ runs, running, activeRun, onRunAll, onRunScout, onA
                 {isLive && <span style={{ marginLeft: 'auto' }}><span className="agent-live-dot" /></span>}
               </div>
               <p className="text-muted" style={{ fontSize: 12, margin: '6px 0' }}>{p.desc}</p>
-              <p className="text-muted" style={{ fontSize: 11, margin: '2px 0', fontFamily: 'var(--font-mono)' }}>{engines[i]}</p>
+              <p className="text-muted" style={{ fontSize: 12, margin: '2px 0', fontFamily: 'var(--font-mono)' }}>{engines[i]}</p>
               {isLive && (
                 <p style={{ fontSize: 12, margin: '4px 0' }}>
                   <span className="agent-live-dot" />{' '}
@@ -436,7 +436,7 @@ function AgentControlPanel({ runs, running, activeRun, onRunAll, onRunScout, onA
                     {i === 0 && doneIdx >= 0 ? 'Run Scout (new cycle)' : p.button}
                   </button>
                 ) : (
-                  <span className="text-muted" style={{ fontSize: 11 }}>
+                  <span className="text-muted" style={{ fontSize: 12 }}>
                     {isLive ? 'running…'
                       : isDone ? 'finished - output above'
                       : running ? 'waiting for the run to finish'
@@ -554,7 +554,7 @@ function ProposalReview({ runId, lines, ym }: {
                     </td>
                     <td>
                       <strong>{l.chosen_wholesaler}</strong>
-                      <div className="text-muted" style={{ fontSize: 11 }}>
+                      <div className="text-muted" style={{ fontSize: 12 }}>
                         {l.cases} cs @ {money(l.effective_case_price, 2)}
                       </div>
                     </td>
@@ -597,7 +597,7 @@ function ProposalReview({ runId, lines, ym }: {
   );
 }
 
-function RunDetail({ runId }: { runId: number }) {
+function RunDetail({ runId, hideProposal }: { runId: number; hideProposal?: boolean }) {
   const qc = useQueryClient();
   const [selected, setSelected] = useState<number | null>(null);
   const [stepErr, setStepErr] = useState('');
@@ -661,8 +661,13 @@ function RunDetail({ runId }: { runId: number }) {
       {/* THE review surface: the explained proposal, with add-to-cart under
           the user's control. Shown above the trace because approving lines is
           the job; the trace below is the audit trail. */}
-      {proposal && proposal.lines.length > 0 && (
+      {!hideProposal && proposal && proposal.lines.length > 0 && (
         <ProposalReview runId={runId} lines={proposal.lines} ym={data.run.ym} />
+      )}
+      {hideProposal && proposal && proposal.lines.length > 0 && (
+        <p className="text-muted" style={{ fontSize: 12 }}>
+          This run's proposal is open in the Staging Area above.
+        </p>
       )}
       {!proposal && data.run.status === 'completed' && (
         <p className="text-muted" style={{ fontSize: 12 }}>
@@ -694,15 +699,23 @@ function RunDetail({ runId }: { runId: number }) {
         {/* Sidebar: EVERY action, chronological, streaming while live. */}
         <div className="agent-trace-sidebar">
           <h5>{live ? 'Actions (live)' : 'All actions'} · {data.steps.length}</h5>
-          {data.steps.map(s => (
-            <button key={s.seq}
-                    className={`agent-trace-item ${shownSeq === s.seq ? 'active' : ''}`}
-                    onClick={() => select(s.seq)}>
-              <span className="dot" style={{ background: AGENT_DOT[s.agent] ?? '#6b7280' }} />
-              <span className="seq">{s.seq}</span>
-              <span className="nm">{s.name}</span>
-              <span className="ms">{s.status === 'error' ? '✕' : secs(s.duration_ms)}</span>
-            </button>
+          {data.steps.map((s, idx) => (
+            <div key={s.seq}>
+              {/* Group header whenever a new agent takes over, so every task
+                  is identifiable by who performed it. */}
+              {(idx === 0 || data.steps[idx - 1].agent !== s.agent) && (
+                <div className="agent-trace-grouphead">
+                  <span className="dot" style={{ background: AGENT_DOT[s.agent] ?? '#6b7280' }} />
+                  {meta(s.agent).label}
+                </div>
+              )}
+              <button className={`agent-trace-item ${shownSeq === s.seq ? 'active' : ''}`}
+                      onClick={() => select(s.seq)}>
+                <span className="seq">{s.seq}</span>
+                <span className="nm">{s.name}</span>
+                <span className="ms">{s.status === 'error' ? '✕' : secs(s.duration_ms)}</span>
+              </button>
+            </div>
           ))}
           {live && (
             <div className="agent-trace-item" style={{ cursor: 'default' }}>
@@ -817,6 +830,17 @@ export default function AgentProposals() {
   const totalCost = completed.reduce((a, r) => a + (r.cost_usd || 0), 0);
   const totalSavings = completed.reduce((a, r) => a + (r.est_savings_usd || 0), 0);
 
+  // The STAGING AREA shows the newest reviewable proposal, permanently on the
+  // page (not buried inside an expanded run). Shares the panel's detail query.
+  const displayRun = runningRun ?? pausedRun ?? runs[0];
+  const { data: displayDetail } = useQuery({
+    queryKey: ['agent-run', displayRun?.id ?? 0],
+    queryFn: () => agents.runDetail(displayRun!.id),
+    enabled: !!displayRun,
+    refetchInterval: q => q.state.data?.run.status === 'running' ? 2000 : false,
+  });
+  const stagingProposal = parseJson<{ lines: AgentProposalLine[] }>(displayDetail?.run.proposal_json);
+
   const start = async (step: boolean) => {
     setStartErr('');
     try {
@@ -854,6 +878,21 @@ export default function AgentProposals() {
                          activeRun={runningRun ?? pausedRun}
                          onRunAll={() => start(false)} onRunScout={() => start(true)}
                          onAdvance={advance} busyErr={startErr} />
+
+      {/* STAGING AREA: the newest proposal, always visible here. Approve all
+          or individual lines into the cart - this is the only door to it. */}
+      <h4 style={{ margin: '14px 0 4px' }}>Staging area</h4>
+      {stagingProposal && stagingProposal.lines.length > 0 && displayRun ? (
+        <ProposalReview runId={displayRun.id} lines={stagingProposal.lines} ym={displayRun.ym} />
+      ) : (
+        <div className="agent-group">
+          <span className="text-muted" style={{ fontSize: 13 }}>
+            {running ? 'Agents are working - the proposal lands here when the chain finishes.'
+              : pausedRun ? `Run #${pausedRun.id} is paused mid-chain. Advance it through the remaining agents to produce the proposal.`
+              : 'No proposal staged yet. Run the agents above; the reviewable proposal appears here, and nothing reaches the cart until you approve it.'}
+          </span>
+        </div>
+      )}
 
       <div className="ai-usage-cards">
         <div className="ai-usage-card"><span>Runs</span><strong>{num(runs.length)}</strong></div>
@@ -896,7 +935,7 @@ export default function AgentProposals() {
                     <td style={{ whiteSpace: 'nowrap' }}>
                       <span className={STATUS_TAG[r.status]}>{r.status}</span>
                       {r.status === 'paused' && r.stage && (
-                        <span className="text-muted" style={{ fontSize: 11, marginLeft: 5 }}>{r.stage} ✓</span>
+                        <span className="text-muted" style={{ fontSize: 12, marginLeft: 5 }}>{r.stage} ✓</span>
                       )}
                     </td>
                     <td className="right" style={{ whiteSpace: 'nowrap' }}>
@@ -912,7 +951,7 @@ export default function AgentProposals() {
                   {open === r.id && (
                     <tr key={`${r.id}-detail`}>
                       <td colSpan={8} className="agent-detail-cell" style={{ background: 'var(--bg)' }}>
-                        <RunDetail runId={r.id} />
+                        <RunDetail runId={r.id} hideProposal={r.id === displayRun?.id} />
                       </td>
                     </tr>
                   )}

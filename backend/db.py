@@ -485,6 +485,60 @@ def init_user_db():
         "CREATE INDEX IF NOT EXISTS idx_ai_feedback_user ON ai_feedback(user_id)",
         "CREATE INDEX IF NOT EXISTS idx_ai_feedback_created ON ai_feedback(created_at)",
         "CREATE INDEX IF NOT EXISTS idx_ai_feedback_rating ON ai_feedback(rating)",
+        # POS feed: per-store daily sell-through, one row per (store, day, UPC)
+        # that actually sold (no zero rows — real POS exports only report items
+        # with movement). 'source' tags where the rows came from ('dummy' for
+        # the generated Planet of Wine feed; a real feed name later). The
+        # ingest contract lives in pos_feed/ingest.py and is the same for both.
+        f"""CREATE TABLE IF NOT EXISTS pos_sales_daily (
+            id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            store_id integer NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+            user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            business_date text NOT NULL,
+            upc text NOT NULL,
+            product_name text,
+            category text,
+            units_sold integer NOT NULL DEFAULT 0,
+            unit_retail double precision,
+            net_revenue double precision NOT NULL DEFAULT 0,
+            source text NOT NULL DEFAULT 'dummy',
+            created_at text DEFAULT {NOW_UTC}
+        )""",
+        """CREATE UNIQUE INDEX IF NOT EXISTS uq_pos_sales_store_day_upc
+            ON pos_sales_daily(store_id, business_date, upc)""",
+        "CREATE INDEX IF NOT EXISTS idx_pos_sales_store_upc ON pos_sales_daily(store_id, upc)",
+        "CREATE INDEX IF NOT EXISTS idx_pos_sales_user ON pos_sales_daily(user_id)",
+        # POS inventory snapshots: on-hand units per (store, as-of date, UPC).
+        # The dummy feed writes one snapshot at the latest sales date; a real
+        # feed can write one per export.
+        f"""CREATE TABLE IF NOT EXISTS pos_inventory (
+            id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            store_id integer NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+            user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            as_of_date text NOT NULL,
+            upc text NOT NULL,
+            product_name text,
+            on_hand_units integer NOT NULL DEFAULT 0,
+            source text NOT NULL DEFAULT 'dummy',
+            created_at text DEFAULT {NOW_UTC}
+        )""",
+        """CREATE UNIQUE INDEX IF NOT EXISTS uq_pos_inventory_store_day_upc
+            ON pos_inventory(store_id, as_of_date, upc)""",
+        "CREATE INDEX IF NOT EXISTS idx_pos_inventory_user ON pos_inventory(user_id)",
+        # POS ingest journal: one row per feed run (dummy seed or real export),
+        # so every sales/inventory row is traceable to the run that loaded it.
+        f"""CREATE TABLE IF NOT EXISTS pos_ingest_log (
+            id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            store_id integer NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+            user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            source text NOT NULL,
+            kind text NOT NULL CHECK (kind IN ('sales', 'inventory')),
+            period_start text,
+            period_end text,
+            rows_ingested integer DEFAULT 0,
+            created_at text DEFAULT {NOW_UTC}
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_pos_ingest_store ON pos_ingest_log(store_id)",
     ]
     with get_pg() as con:
         for s in stmts:

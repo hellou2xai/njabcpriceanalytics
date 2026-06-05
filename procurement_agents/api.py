@@ -71,11 +71,45 @@ def start_run(user: dict = Depends(require_admin)):
 
 @router.post("/procurement/step")
 def start_step_run(user: dict = Depends(require_admin)):
-    """Stepwise mode, stage 1: run ONLY the Deal Scout, then pause."""
+    """Stepwise mode, stage 1: run ONLY the Deal Scout, then pause.
+    ONE step-cycle at a time: a second paused cycle made the UI's next-agent
+    buttons ambiguous (the prod 'wrong sequencing' report), so a new cycle is
+    blocked until the open one is finished or abandoned."""
     store_id = _guard_can_start(user["id"])
+    with get_pg() as pg:
+        open_run = pg.execute(
+            "SELECT id, stage FROM agent_runs WHERE user_id=%s AND status='paused' "
+            "ORDER BY id DESC LIMIT 1", (user["id"],)).fetchone()
+    if open_run:
+        raise HTTPException(
+            409, f"Run #{open_run['id']} is paused after its {open_run['stage']} "
+                 f"stage. Continue it or abandon it before starting a new cycle.")
     _in_background(start_manual_run, user["id"], store_id,
                    user_email=user.get("email"))
     return {"status": "started", "stage": "scout"}
+
+
+@router.post("/procurement/runs/{run_id}/abandon")
+def abandon_run(run_id: int, user: dict = Depends(require_admin)):
+    """Abandon a paused step-cycle (its artifacts stay journalled)."""
+    with get_pg() as pg:
+        run = pg.execute("SELECT user_id, status FROM agent_runs WHERE id=%s",
+                         (run_id,)).fetchone()
+        if not run or run["user_id"] != user["id"]:
+            raise HTTPException(404, "run not found")
+        if run["status"] != "paused":
+            raise HTTPException(409, f"run is {run['status']}, not paused")
+        pg.execute(
+            "UPDATE agent_runs SET status='aborted', current_action=NULL, "
+            "finished_at=TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') "
+            "WHERE id=%s", (run_id,))
+        seq = pg.execute("SELECT COALESCE(MAX(seq),0)+1 s FROM agent_steps "
+                         "WHERE run_id=%s", (run_id,)).fetchone()["s"]
+        pg.execute(
+            "INSERT INTO agent_steps (run_id, seq, agent, kind, name, status, detail) "
+            "VALUES (%s,%s,'notify','phase','user_abandoned_run','ok',%s)",
+            (run_id, seq, json.dumps({"by": user.get("email")})))
+    return {"status": "aborted", "run_id": run_id}
 
 
 @router.post("/procurement/runs/{run_id}/step")

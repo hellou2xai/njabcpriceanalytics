@@ -1636,6 +1636,7 @@ export const agents = {
   startRun: () => request<{ status: string }>('/api/agents/procurement/run', { method: 'POST' }),
   startStep: () => request<{ status: string }>('/api/agents/procurement/step', { method: 'POST' }),
   advanceStep: (runId: number) => request<{ status: string }>(`/api/agents/procurement/runs/${runId}/step`, { method: 'POST' }),
+  abandonRun: (runId: number) => request<{ status: string }>(`/api/agents/procurement/runs/${runId}/abandon`, { method: 'POST' }),
   addToCart: (runId: number, upcs?: string[]) =>
     request<{ status: string; batch_id: string; lines: number; remaining: number }>(
       `/api/agents/procurement/runs/${runId}/add-to-cart`,

@@ -21,7 +21,7 @@ export default function AgentSettings() {
   ];
 
   return (
-    <div className="page">
+    <div className="page agents-page">
       <div className="orders-header">
         <h2><Settings2 size={20} style={{ verticalAlign: -3, marginRight: 6 }} />Agent Settings</h2>
         <span className="text-muted" style={{ fontSize: 13 }}>

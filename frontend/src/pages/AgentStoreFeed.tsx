@@ -52,7 +52,7 @@ export default function AgentStoreFeed() {
 
   const t = summary?.totals ?? {};
   return (
-    <div className="page">
+    <div className="page agents-page">
       <div className="orders-header">
         <h2><Database size={20} style={{ verticalAlign: -3, marginRight: 6 }} />Store Feed</h2>
         <span className="text-muted" style={{ fontSize: 13 }}>

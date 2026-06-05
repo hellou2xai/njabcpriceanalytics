@@ -92,7 +92,7 @@ function StagePanel({ title, blurb, children }: {
            onClick={() => setOpenPanel(o => !o)}>
         {openPanel ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         <strong>{title}</strong>
-        <span className="text-muted" style={{ fontSize: 12 }}>{blurb}</span>
+        <span className="text-muted" style={{ fontSize: 13 }}>{blurb}</span>
       </div>
       {openPanel && children}
     </div>
@@ -113,21 +113,21 @@ function ScoutOutput({ report }: { report: { candidates: ScoutCandidate[]; skipp
           <tbody>
             {report.candidates.map((c, i) => (
               <tr key={`${c.upc}-${i}`}>
-                <td>{c.product_name}<div className="text-muted" style={{ fontSize: 12 }}>{c.wholesaler}</div></td>
+                <td>{c.product_name}<div className="text-muted" style={{ fontSize: 13 }}>{c.wholesaler}</div></td>
                 <td>
                   <span className="tag tag-blue">{c.reason_code.replace(/_/g, ' ')}</span>
-                  <div style={{ fontSize: 12, marginTop: 3 }}>
+                  <div style={{ fontSize: 13, marginTop: 3 }}>
                     {c.suggested_cases} cs · <span className={CONF_TAG[c.confidence] ?? 'tag tag-gray'}>{c.confidence}</span>
                   </div>
                 </td>
-                <td className="text-muted" style={{ fontSize: 12 }}>{c.rationale}</td>
+                <td className="text-muted">{c.rationale}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
       {report.skipped_note && (
-        <p className="text-muted" style={{ fontSize: 12, marginTop: 6 }}>
+        <p className="text-muted" style={{ fontSize: 13, marginTop: 6 }}>
           <strong>What it left out:</strong> {report.skipped_note}
         </p>
       )}
@@ -139,7 +139,7 @@ function PlanOutput({ plan }: { plan: { lines: PlanLine[]; summary?: string } })
   return (
     <StagePanel title="Sourcing output: the buying plan"
                 blurb="Which distributor to buy each line from, and what the alternative would have cost.">
-      {plan.summary && <p className="text-muted" style={{ fontSize: 12, margin: '2px 0 8px' }}>{plan.summary}</p>}
+      {plan.summary && <p className="text-muted" style={{ fontSize: 13, margin: '2px 0 8px' }}>{plan.summary}</p>}
       <div className="table-container">
         <table className="catalog-table agent-wrap-table">
           <thead><tr>
@@ -154,11 +154,11 @@ function PlanOutput({ plan }: { plan: { lines: PlanLine[]; summary?: string } })
                 <td>{l.product_name}</td>
                 <td>
                   <strong>{l.chosen_wholesaler}</strong>
-                  <div className="text-muted" style={{ fontSize: 12 }}>
+                  <div className="text-muted" style={{ fontSize: 13 }}>
                     {l.cases} cs @ {money(l.effective_case_price, 2)}
                   </div>
                 </td>
-                <td style={{ fontSize: 12 }}>
+                <td>
                   {l.alt_wholesaler
                     ? <>
                         <span className="text-muted">{l.alt_wholesaler} @ {money(l.alt_effective_price, 2)}</span>
@@ -168,7 +168,7 @@ function PlanOutput({ plan }: { plan: { lines: PlanLine[]; summary?: string } })
                       </>
                     : <span className="text-muted">only source</span>}
                 </td>
-                <td className="text-muted" style={{ fontSize: 12 }}>{l.sourcing_note}</td>
+                <td className="text-muted">{l.sourcing_note}</td>
               </tr>
             ))}
           </tbody>
@@ -266,8 +266,8 @@ function AgentSection({ agent, steps, vetoed, selectedSeq, onSelect }: {
       <div className="agent-group-head">
         <Icon size={16} />
         <strong>{m.label}</strong>
-        <span className="text-muted" style={{ fontSize: 12 }}>{m.role}</span>
-        {model && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }} className="text-muted">{model}</span>}
+        <span className="text-muted" style={{ fontSize: 13 }}>{m.role}</span>
+        {model && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }} className="text-muted">{model}</span>}
         {hasError && <span className="tag tag-red">error</span>}
         <span className="agent-group-stats">
           {steps.length} action{steps.length !== 1 ? 's' : ''} · {secs(agentMs)}
@@ -293,7 +293,7 @@ function AgentSection({ agent, steps, vetoed, selectedSeq, onSelect }: {
                 <td className="right text-muted">{s.seq}</td>
                 <td>{s.name}{s.status === 'error' && <span className="tag tag-red" style={{ marginLeft: 6 }}>error</span>}</td>
                 <td className="text-muted">{s.kind.replace('_', ' ')}</td>
-                <td className="text-muted" style={{ fontSize: 12 }}>{stepSummary(s)}</td>
+                <td className="text-muted" style={{ fontSize: 13 }}>{stepSummary(s)}</td>
                 <td className="right">{secs(s.duration_ms)}</td>
                 <td className="right">{s.kind === 'llm_turn' ? cost(s.cost_usd) : '—'}</td>
               </tr>
@@ -303,7 +303,7 @@ function AgentSection({ agent, steps, vetoed, selectedSeq, onSelect }: {
       </div>
       {agent === 'gate' && vetoed.length > 0 && (
         <div style={{ marginTop: 8 }}>
-          <div className="text-muted" style={{ fontSize: 12, margin: '4px 0' }}>
+          <div className="text-muted" style={{ fontSize: 13, margin: '4px 0' }}>
             Lines vetoed by this agent ({vetoed.length}):
           </div>
           <div className="table-container">
@@ -314,7 +314,7 @@ function AgentSection({ agent, steps, vetoed, selectedSeq, onSelect }: {
                   <tr key={i}>
                     <td>{v.name ?? v.upc}</td>
                     <td><span className="tag tag-amber">{v.reason}</span></td>
-                    <td className="text-muted" style={{ fontSize: 12 }}>{v.detail}</td>
+                    <td className="text-muted" style={{ fontSize: 13 }}>{v.detail}</td>
                   </tr>
                 ))}
               </tbody>
@@ -342,10 +342,10 @@ const PANEL_AGENTS: { stage: string; agent: string; button: string; desc: string
 ];
 const STAGE_IDX: Record<string, number> = { scout: 0, sourcing: 1, gate: 2, proposed: 3, staged: 3 };
 
-function AgentControlPanel({ runs, running, activeRun, onRunAll, onRunScout, onAdvance, busyErr }: {
+function AgentControlPanel({ runs, running, activeRun, onRunAll, onRunScout, onAdvance, onAbandon, busyErr }: {
   runs: AgentRun[]; running: boolean; activeRun: AgentRun | undefined;
   onRunAll: () => void; onRunScout: () => void; onAdvance: (runId: number) => void;
-  busyErr: string;
+  onAbandon: (runId: number) => void; busyErr: string;
 }) {
   const displayRun = activeRun ?? runs[0];
   const { data: detail } = useQuery({
@@ -382,16 +382,27 @@ function AgentControlPanel({ runs, running, activeRun, onRunAll, onRunScout, onA
     <div style={{ margin: '10px 0' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <h4 style={{ margin: 0 }}>Your agents</h4>
-        <span className="text-muted" style={{ fontSize: 12 }}>
+        <span className="text-muted" style={{ fontSize: 13 }}>
           Run them one at a time (each stops and waits for you), or all at once.
         </span>
+        {/* ALWAYS name the run the buttons act on - a silent context switch
+            between runs is what looked like broken sequencing. */}
+        {displayRun && (displayRun.status === 'running' || displayRun.status === 'paused') && (
+          <span className="tag tag-blue">working on run #{displayRun.id}</span>
+        )}
+        {displayRun?.status === 'paused' && (
+          <button className="btn btn-sm btn-secondary" onClick={() => onAbandon(displayRun.id)}
+                  title="Mark this step-cycle aborted; its trace stays in the history.">
+            Abandon run #{displayRun.id}
+          </button>
+        )}
         <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }}
                 onClick={onRunAll} disabled={running}>
           <Play size={13} style={{ verticalAlign: -2, marginRight: 4 }} />
           {running ? 'Agents working…' : 'Run all agents'}
         </button>
       </div>
-      {busyErr && <p className="text-red" style={{ fontSize: 12 }}>{busyErr}</p>}
+      {busyErr && <p className="text-red" style={{ fontSize: 13 }}>{busyErr}</p>}
       <div className="agent-control-grid">
         {PANEL_AGENTS.map((p, i) => {
           const m = meta(p.agent);
@@ -400,7 +411,9 @@ function AgentControlPanel({ runs, running, activeRun, onRunAll, onRunScout, onA
           const isLive = liveAgent === p.agent
             || (displayRun?.status === 'running' && !liveAgent && i === doneIdx + 1);
           const isNext = !running && displayRun?.status === 'paused' && i === doneIdx + 1;
-          const scoutStartable = i === 0 && !running;   // Scout can always start a new cycle
+          // ONE cycle at a time: a fresh Scout is only startable when no
+          // step-cycle is paused (the backend enforces the same rule).
+          const scoutStartable = i === 0 && !running && displayRun?.status !== 'paused';
           const enabled = isNext || scoutStartable;
           return (
             <div key={p.stage}
@@ -411,16 +424,16 @@ function AgentControlPanel({ runs, running, activeRun, onRunAll, onRunScout, onA
                 {isDone && <span className="text-green" style={{ marginLeft: 'auto' }}>✓ done</span>}
                 {isLive && <span style={{ marginLeft: 'auto' }}><span className="agent-live-dot" /></span>}
               </div>
-              <p className="text-muted" style={{ fontSize: 12, margin: '6px 0' }}>{p.desc}</p>
-              <p className="text-muted" style={{ fontSize: 12, margin: '2px 0', fontFamily: 'var(--font-mono)' }}>{engines[i]}</p>
+              <p className="text-muted" style={{ fontSize: 13, margin: '6px 0' }}>{p.desc}</p>
+              <p className="text-muted" style={{ fontSize: 13, margin: '2px 0', fontFamily: 'var(--font-mono)' }}>{engines[i]}</p>
               {isLive && (
-                <p style={{ fontSize: 12, margin: '4px 0' }}>
+                <p style={{ fontSize: 13, margin: '4px 0' }}>
                   <span className="agent-live-dot" />{' '}
                   {(displayRun?.current_action ?? detail?.run.current_action) || 'working…'}
                 </p>
               )}
               {outputs[i] && !isLive && (
-                <p style={{ fontSize: 12, margin: '4px 0' }}>
+                <p style={{ fontSize: 13, margin: '4px 0' }}>
                   <strong>Output:</strong> {outputs[i]}
                   {i === 3 && proposal && (proposal.lines.some(l => l.staged)
                     ? <span className="tag tag-green" style={{ marginLeft: 6 }}>partly in cart</span>
@@ -431,15 +444,18 @@ function AgentControlPanel({ runs, running, activeRun, onRunAll, onRunScout, onA
                 {enabled ? (
                   <button className={`btn btn-sm ${isNext ? 'btn-primary' : 'btn-secondary'}`}
                           style={{ width: '100%' }}
-                          onClick={() => (i === 0 ? onRunScout() : onAdvance(displayRun!.id))}>
+                          onClick={() => (isNext ? onAdvance(displayRun!.id) : onRunScout())}>
                     <Play size={12} style={{ verticalAlign: -2, marginRight: 4 }} />
-                    {i === 0 && doneIdx >= 0 ? 'Run Scout (new cycle)' : p.button}
+                    {isNext ? `${p.button} · run #${displayRun!.id}`
+                      : doneIdx >= 0 ? 'Run Scout (new cycle)' : p.button}
                   </button>
                 ) : (
-                  <span className="text-muted" style={{ fontSize: 12 }}>
+                  <span className="text-muted" style={{ fontSize: 13 }}>
                     {isLive ? 'running…'
                       : isDone ? 'finished - output above'
                       : running ? 'waiting for the run to finish'
+                      : i === 0 && displayRun?.status === 'paused'
+                        ? `finish or abandon run #${displayRun.id} first`
                       : `needs ${PANEL_AGENTS[i - 1] ? meta(PANEL_AGENTS[i - 1].agent).label : 'previous agent'} first`}
                   </span>
                 )}
@@ -496,7 +512,7 @@ function ProposalReview({ runId, lines, ym }: {
       <div className="agent-group-head">
         <ClipboardCheck size={16} />
         <strong>Order Proposal · {ym}</strong>
-        <span className="text-muted" style={{ fontSize: 12 }}>
+        <span className="text-muted" style={{ fontSize: 13 }}>
           {lines.length} lines, ~{money(total(lines))}. Click a product for its full
           step-by-step reasoning. Nothing reaches the cart until you add it.
         </span>
@@ -514,7 +530,7 @@ function ProposalReview({ runId, lines, ym }: {
           </button>
         </span>
       </div>
-      {msg && <p style={{ fontSize: 12 }} className={msg.startsWith('Added') ? 'text-green' : 'text-red'}>
+      {msg && <p style={{ fontSize: 13 }} className={msg.startsWith('Added') ? 'text-green' : 'text-red'}>
         {msg} {msg.startsWith('Added') && <Link to="/cart">Open cart →</Link>}
       </p>}
       <div className="table-container">
@@ -554,13 +570,13 @@ function ProposalReview({ runId, lines, ym }: {
                     </td>
                     <td>
                       <strong>{l.chosen_wholesaler}</strong>
-                      <div className="text-muted" style={{ fontSize: 12 }}>
+                      <div className="text-muted" style={{ fontSize: 13 }}>
                         {l.cases} cs @ {money(l.effective_case_price, 2)}
                       </div>
                     </td>
                     <td className="right">{l.gp_pct != null ? `${Math.round(l.gp_pct * 100)}%` : '–'}</td>
                     <td><span className="tag tag-blue">{(l.reason_code ?? 'opportunity').replace(/_/g, ' ')}</span></td>
-                    <td style={{ fontSize: 12 }}>
+                    <td>
                       {l.rip?.earned_rebate
                         ? <span className="text-green">${l.rip.earned_rebate.toLocaleString()} back</span>
                         : l.rip ? 'tier below' : '–'}
@@ -572,13 +588,13 @@ function ProposalReview({ runId, lines, ym }: {
                       <td colSpan={7} style={{ background: 'var(--bg)' }}>
                         <div style={{ padding: '8px 10px' }}>
                           {(l.explain_steps ?? []).map(s => (
-                            <p key={s.title} style={{ fontSize: 13, margin: '6px 0' }}>
+                            <p key={s.title} style={{ fontSize: 14, margin: '6px 0' }}>
                               <strong>{s.title}.</strong>{' '}
                               <span className="text-muted">{s.text}</span>
                             </p>
                           ))}
                           {l.rip?.next_tier && (
-                            <p style={{ fontSize: 12, margin: '6px 0' }} className="text-muted">
+                            <p style={{ fontSize: 13, margin: '6px 0' }} className="text-muted">
                               Tier ladder tip: {l.rip.note}
                             </p>
                           )}
@@ -665,12 +681,12 @@ function RunDetail({ runId, hideProposal }: { runId: number; hideProposal?: bool
         <ProposalReview runId={runId} lines={proposal.lines} ym={data.run.ym} />
       )}
       {hideProposal && proposal && proposal.lines.length > 0 && (
-        <p className="text-muted" style={{ fontSize: 12 }}>
+        <p className="text-muted" style={{ fontSize: 13 }}>
           This run's proposal is open in the Staging Area above.
         </p>
       )}
       {!proposal && data.run.status === 'completed' && (
-        <p className="text-muted" style={{ fontSize: 12 }}>
+        <p className="text-muted" style={{ fontSize: 13 }}>
           This run predates the proposal-review stage, so it has no per-product
           explanations. Start a new cycle (Run Scout or Run all agents) to get them.
         </p>
@@ -691,7 +707,7 @@ function RunDetail({ runId, hideProposal }: { runId: number; hideProposal?: bool
             <Play size={13} style={{ verticalAlign: -2, marginRight: 4 }} />
             Run next: {nextAgent}
           </button>
-          {stepErr && <span className="text-red" style={{ fontSize: 12 }}>{stepErr}</span>}
+          {stepErr && <span className="text-red" style={{ fontSize: 13 }}>{stepErr}</span>}
         </div>
       )}
 
@@ -726,7 +742,7 @@ function RunDetail({ runId, hideProposal }: { runId: number; hideProposal?: bool
             </div>
           )}
           {!live && data.steps.length === 0 && (
-            <div className="text-muted" style={{ fontSize: 12, padding: 6 }}>No actions recorded.</div>
+            <div className="text-muted" style={{ fontSize: 13, padding: 6 }}>No actions recorded.</div>
           )}
         </div>
 
@@ -751,7 +767,7 @@ function RunDetail({ runId, hideProposal }: { runId: number; hideProposal?: bool
               );
             })}
             {live && groups.length < 5 && (
-              <span className="text-muted" style={{ fontSize: 12 }}>… more to come</span>
+              <span className="text-muted" style={{ fontSize: 13 }}>… more to come</span>
             )}
           </div>
 
@@ -761,14 +777,14 @@ function RunDetail({ runId, hideProposal }: { runId: number; hideProposal?: bool
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <span className="dot" style={{ width: 8, height: 8, borderRadius: '50%', display: 'inline-block', background: AGENT_DOT[shownStep.agent] ?? '#6b7280' }} />
                 <strong>#{shownStep.seq} · {meta(shownStep.agent).label} · {shownStep.name}</strong>
-                <span className="text-muted" style={{ fontSize: 12 }}>
+                <span className="text-muted" style={{ fontSize: 13 }}>
                   {shownStep.kind.replace('_', ' ')}
                   {shownStep.model ? ` · ${shownStep.model}` : ''} · {secs(shownStep.duration_ms)}
                   {shownStep.kind === 'llm_turn' ? ` · ${cost(shownStep.cost_usd)}` : ''}
                 </span>
               </div>
               {shownStep.kind === 'llm_turn' && (
-                <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>
+                <div className="text-muted" style={{ fontSize: 13, marginTop: 4 }}>
                   tokens: {num(shownStep.input_tokens)} in / {num(shownStep.output_tokens)} out
                   {shownStep.cache_read_tokens ? ` · ${num(shownStep.cache_read_tokens)} cached` : ''}
                   {shownStep.cache_write_tokens ? ` · ${num(shownStep.cache_write_tokens)} cache-written` : ''}
@@ -863,8 +879,19 @@ export default function AgentProposals() {
     }
   };
 
+  const abandon = async (runId: number) => {
+    setStartErr('');
+    try {
+      await agents.abandonRun(runId);
+      qc.invalidateQueries({ queryKey: ['agent-runs'] });
+      qc.invalidateQueries({ queryKey: ['agent-run', runId] });
+    } catch (e) {
+      setStartErr(e instanceof Error ? e.message : 'Failed to abandon the run');
+    }
+  };
+
   return (
-    <div className="page">
+    <div className="page agents-page">
       <div className="orders-header">
         <h2><Bot size={20} style={{ verticalAlign: -3, marginRight: 6 }} />Order Proposals</h2>
         <span className="text-muted" style={{ fontSize: 13 }}>
@@ -877,7 +904,7 @@ export default function AgentProposals() {
       <AgentControlPanel runs={runs} running={running}
                          activeRun={runningRun ?? pausedRun}
                          onRunAll={() => start(false)} onRunScout={() => start(true)}
-                         onAdvance={advance} busyErr={startErr} />
+                         onAdvance={advance} onAbandon={abandon} busyErr={startErr} />
 
       {/* STAGING AREA: the newest proposal, always visible here. Approve all
           or individual lines into the cart - this is the only door to it. */}
@@ -935,7 +962,7 @@ export default function AgentProposals() {
                     <td style={{ whiteSpace: 'nowrap' }}>
                       <span className={STATUS_TAG[r.status]}>{r.status}</span>
                       {r.status === 'paused' && r.stage && (
-                        <span className="text-muted" style={{ fontSize: 12, marginLeft: 5 }}>{r.stage} ✓</span>
+                        <span className="text-muted" style={{ fontSize: 13, marginLeft: 5 }}>{r.stage} ✓</span>
                       )}
                     </td>
                     <td className="right" style={{ whiteSpace: 'nowrap' }}>
@@ -944,7 +971,7 @@ export default function AgentProposals() {
                     <td className="right">{money(r.est_total_usd)}</td>
                     <td className="right text-green">{money(r.est_savings_usd)}</td>
                     <td className="right font-bold">{cost(r.cost_usd)}</td>
-                    <td className="right text-muted" style={{ whiteSpace: 'nowrap', fontSize: 12 }}>
+                    <td className="right text-muted" style={{ whiteSpace: 'nowrap', fontSize: 13 }}>
                       {r.created_at.slice(5, 16)}
                     </td>
                   </tr>
@@ -967,7 +994,7 @@ export default function AgentProposals() {
         </div>
       )}
 
-      <p className="text-muted" style={{ fontSize: 12, marginTop: 10 }}>
+      <p className="text-muted" style={{ fontSize: 13, marginTop: 10 }}>
         Staged proposals appear in the <Link to="/cart">Cart</Link> as a labelled
         “Agent proposal” batch and in <Link to="/alerts">Alerts</Link>. Sending
         always stays manual.

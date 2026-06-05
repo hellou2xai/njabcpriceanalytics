@@ -104,20 +104,23 @@ function ScoutOutput({ report }: { report: { candidates: ScoutCandidate[]; skipp
     <StagePanel title="Scout output: the candidate list"
                 blurb="What the Deal Scout thinks the store should buy this month, and why.">
       <div className="table-container">
-        <table className="catalog-table">
+        <table className="catalog-table agent-wrap-table">
           <thead><tr>
-            <th>Product</th><th>From</th><th>Why now</th>
-            <th className="right">Cases</th><th>Confidence</th><th>Scout's reasoning</th>
+            <th style={{ width: '26%' }}>Product</th>
+            <th style={{ width: '20%' }}>Signal</th>
+            <th>Scout's reasoning</th>
           </tr></thead>
           <tbody>
             {report.candidates.map((c, i) => (
               <tr key={`${c.upc}-${i}`}>
-                <td>{c.product_name}</td>
-                <td>{c.wholesaler}</td>
-                <td><span className="tag tag-blue">{c.reason_code.replace(/_/g, ' ')}</span></td>
-                <td className="right">{c.suggested_cases}</td>
-                <td><span className={CONF_TAG[c.confidence] ?? 'tag tag-gray'}>{c.confidence}</span></td>
-                <td className="text-muted" style={{ fontSize: 12, maxWidth: 420 }}>{c.rationale}</td>
+                <td>{c.product_name}<div className="text-muted" style={{ fontSize: 11 }}>{c.wholesaler}</div></td>
+                <td>
+                  <span className="tag tag-blue">{c.reason_code.replace(/_/g, ' ')}</span>
+                  <div style={{ fontSize: 11, marginTop: 3 }}>
+                    {c.suggested_cases} cs · <span className={CONF_TAG[c.confidence] ?? 'tag tag-gray'}>{c.confidence}</span>
+                  </div>
+                </td>
+                <td className="text-muted" style={{ fontSize: 12 }}>{c.rationale}</td>
               </tr>
             ))}
           </tbody>
@@ -138,26 +141,34 @@ function PlanOutput({ plan }: { plan: { lines: PlanLine[]; summary?: string } })
                 blurb="Which distributor to buy each line from, and what the alternative would have cost.">
       {plan.summary && <p className="text-muted" style={{ fontSize: 12, margin: '2px 0 8px' }}>{plan.summary}</p>}
       <div className="table-container">
-        <table className="catalog-table">
+        <table className="catalog-table agent-wrap-table">
           <thead><tr>
-            <th>Product</th><th>Buy from</th><th className="right">Cases</th>
-            <th className="right">$/case</th><th>Best alternative</th>
-            <th className="right">Saved vs alt</th><th>Planner's note</th>
+            <th style={{ width: '26%' }}>Product</th>
+            <th style={{ width: '18%' }}>Buy</th>
+            <th style={{ width: '20%' }}>vs best alternative</th>
+            <th>Planner's note</th>
           </tr></thead>
           <tbody>
             {plan.lines.map((l, i) => (
               <tr key={`${l.upc}-${i}`}>
                 <td>{l.product_name}</td>
-                <td className="font-bold">{l.chosen_wholesaler}</td>
-                <td className="right">{l.cases}</td>
-                <td className="right">{money(l.effective_case_price, 2)}</td>
-                <td className="text-muted">
-                  {l.alt_wholesaler ? `${l.alt_wholesaler} @ ${money(l.alt_effective_price, 2)}` : 'only source'}
+                <td>
+                  <strong>{l.chosen_wholesaler}</strong>
+                  <div className="text-muted" style={{ fontSize: 11 }}>
+                    {l.cases} cs @ {money(l.effective_case_price, 2)}
+                  </div>
                 </td>
-                <td className={`right ${((l.savings_vs_alt ?? 0) >= 0) ? 'text-green' : 'text-red'}`}>
-                  {l.savings_vs_alt == null ? '—' : money(l.savings_vs_alt, 2)}
+                <td style={{ fontSize: 12 }}>
+                  {l.alt_wholesaler
+                    ? <>
+                        <span className="text-muted">{l.alt_wholesaler} @ {money(l.alt_effective_price, 2)}</span>
+                        <div className={(l.savings_vs_alt ?? 0) >= 0 ? 'text-green' : 'text-red'}>
+                          {l.savings_vs_alt == null ? '' : `${(l.savings_vs_alt >= 0 ? 'saves ' : 'costs ')}${money(Math.abs(l.savings_vs_alt), 2)}`}
+                        </div>
+                      </>
+                    : <span className="text-muted">only source</span>}
                 </td>
-                <td className="text-muted" style={{ fontSize: 12, maxWidth: 360 }}>{l.sourcing_note}</td>
+                <td className="text-muted" style={{ fontSize: 12 }}>{l.sourcing_note}</td>
               </tr>
             ))}
           </tbody>
@@ -315,6 +326,132 @@ function AgentSection({ agent, steps, vetoed, selectedSeq, onSelect }: {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Agent Control Panel: the team, on the page, each agent individually
+// runnable. THIS is the primary surface; runs/traces below are the audit log.
+// ---------------------------------------------------------------------------
+const PANEL_AGENTS: { stage: string; agent: string; button: string; desc: string; coded?: boolean }[] = [
+  { stage: 'scout', agent: 'scout', button: 'Run Scout',
+    desc: 'Reads your store sales + the new price edition and builds the candidate list.' },
+  { stage: 'sourcing', agent: 'sourcing', button: 'Run Sourcing Planner',
+    desc: 'Compares every distributor price per item and picks where to buy.' },
+  { stage: 'gate', agent: 'gate', button: 'Run Money Gate', coded: true,
+    desc: 'Re-verifies every price and margin in code. Vetoes anything that fails.' },
+  { stage: 'proposed', agent: 'proposal', button: 'Build Proposal', coded: true,
+    desc: 'Writes the per-product explanation and opens the review for your approval.' },
+];
+const STAGE_IDX: Record<string, number> = { scout: 0, sourcing: 1, gate: 2, proposed: 3, staged: 3 };
+
+function AgentControlPanel({ runs, running, activeRun, onRunAll, onRunScout, onAdvance, busyErr }: {
+  runs: AgentRun[]; running: boolean; activeRun: AgentRun | undefined;
+  onRunAll: () => void; onRunScout: () => void; onAdvance: (runId: number) => void;
+  busyErr: string;
+}) {
+  const displayRun = activeRun ?? runs[0];
+  const { data: detail } = useQuery({
+    queryKey: ['agent-run', displayRun?.id ?? 0],
+    queryFn: () => agents.runDetail(displayRun!.id),
+    enabled: !!displayRun,
+    refetchInterval: q => q.state.data?.run.status === 'running' ? 2000 : false,
+  });
+  const { data: cfg } = useQuery({ queryKey: ['agent-config'], queryFn: agents.config });
+
+  const scoutReport = parseJson<{ candidates: unknown[] }>(detail?.run.scout_json);
+  const plan = parseJson<{ lines: unknown[] }>(detail?.run.plan_json);
+  const gated = parseJson<{ kept: unknown[]; vetoed: unknown[] }>(detail?.run.gated_json);
+  const proposal = parseJson<{ lines: AgentProposalLine[] }>(detail?.run.proposal_json);
+
+  // How far the displayed run has progressed (-1 = nothing yet). While a run
+  // is live, current_action's "agent:" prefix tells us who is working.
+  const doneIdx = displayRun?.stage != null ? STAGE_IDX[displayRun.stage] ?? -1 : -1;
+  const liveAgent = displayRun?.status === 'running'
+    ? (displayRun.current_action ?? detail?.run.current_action ?? '').split(':')[0] : null;
+
+  const outputs: (string | null)[] = [
+    scoutReport ? `${scoutReport.candidates.length} candidates` : null,
+    plan ? `${plan.lines.length} lines planned` : null,
+    gated ? `${gated.kept.length} kept / ${gated.vetoed.length} vetoed` : null,
+    proposal ? `${proposal.lines.length} lines ready for review` : null,
+  ];
+  const engines = [
+    cfg?.scout_model ?? 'Claude Sonnet', cfg?.sourcing_model ?? 'Claude Sonnet',
+    'deterministic code · $0', 'deterministic code · $0',
+  ];
+
+  return (
+    <div style={{ margin: '10px 0' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <h4 style={{ margin: 0 }}>Your agents</h4>
+        <span className="text-muted" style={{ fontSize: 12 }}>
+          Run them one at a time (each stops and waits for you), or all at once.
+        </span>
+        <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }}
+                onClick={onRunAll} disabled={running}>
+          <Play size={13} style={{ verticalAlign: -2, marginRight: 4 }} />
+          {running ? 'Agents working…' : 'Run all agents'}
+        </button>
+      </div>
+      {busyErr && <p className="text-red" style={{ fontSize: 12 }}>{busyErr}</p>}
+      <div className="agent-control-grid">
+        {PANEL_AGENTS.map((p, i) => {
+          const m = meta(p.agent);
+          const Icon = m.icon;
+          const isDone = i <= doneIdx;
+          const isLive = liveAgent === p.agent
+            || (displayRun?.status === 'running' && !liveAgent && i === doneIdx + 1);
+          const isNext = !running && displayRun?.status === 'paused' && i === doneIdx + 1;
+          const scoutStartable = i === 0 && !running;   // Scout can always start a new cycle
+          const enabled = isNext || scoutStartable;
+          return (
+            <div key={p.stage}
+                 className={`agent-control-card ${isLive ? 'agent-control-card--live' : ''} ${isDone ? 'agent-control-card--done' : ''}`}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <Icon size={15} />
+                <strong>{m.label}</strong>
+                {isDone && <span className="text-green" style={{ marginLeft: 'auto' }}>✓ done</span>}
+                {isLive && <span style={{ marginLeft: 'auto' }}><span className="agent-live-dot" /></span>}
+              </div>
+              <p className="text-muted" style={{ fontSize: 12, margin: '6px 0' }}>{p.desc}</p>
+              <p className="text-muted" style={{ fontSize: 11, margin: '2px 0', fontFamily: 'var(--font-mono)' }}>{engines[i]}</p>
+              {isLive && (
+                <p style={{ fontSize: 12, margin: '4px 0' }}>
+                  <span className="agent-live-dot" />{' '}
+                  {(displayRun?.current_action ?? detail?.run.current_action) || 'working…'}
+                </p>
+              )}
+              {outputs[i] && !isLive && (
+                <p style={{ fontSize: 12, margin: '4px 0' }}>
+                  <strong>Output:</strong> {outputs[i]}
+                  {i === 3 && proposal && (proposal.lines.some(l => l.staged)
+                    ? <span className="tag tag-green" style={{ marginLeft: 6 }}>partly in cart</span>
+                    : <span className="tag tag-amber" style={{ marginLeft: 6 }}>awaiting your review</span>)}
+                </p>
+              )}
+              <div style={{ marginTop: 'auto', paddingTop: 6 }}>
+                {enabled ? (
+                  <button className={`btn btn-sm ${isNext ? 'btn-primary' : 'btn-secondary'}`}
+                          style={{ width: '100%' }}
+                          onClick={() => (i === 0 ? onRunScout() : onAdvance(displayRun!.id))}>
+                    <Play size={12} style={{ verticalAlign: -2, marginRight: 4 }} />
+                    {i === 0 && doneIdx >= 0 ? 'Run Scout (new cycle)' : p.button}
+                  </button>
+                ) : (
+                  <span className="text-muted" style={{ fontSize: 11 }}>
+                    {isLive ? 'running…'
+                      : isDone ? 'finished - output above'
+                      : running ? 'waiting for the run to finish'
+                      : `needs ${PANEL_AGENTS[i - 1] ? meta(PANEL_AGENTS[i - 1].agent).label : 'previous agent'} first`}
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 const VERDICT_TAG: Record<string, [string, string]> = {
   buy_now: ['tag tag-green', 'BUY NOW'], wait: ['tag tag-amber', 'WAIT'],
   neutral: ['tag tag-gray', 'STABLE'], no_forecast: ['tag tag-gray', 'NO FORECAST'],
@@ -381,12 +518,15 @@ function ProposalReview({ runId, lines, ym }: {
         {msg} {msg.startsWith('Added') && <Link to="/cart">Open cart →</Link>}
       </p>}
       <div className="table-container">
-        <table className="catalog-table">
+        <table className="catalog-table agent-wrap-table">
           <thead><tr>
             <th style={{ width: 30 }}></th>
-            <th>Product</th><th>Buy</th><th className="right">$/case</th>
-            <th className="right">Margin</th><th>Why</th><th>Rebate</th><th>Timing</th>
-            <th style={{ width: 90 }}></th>
+            <th style={{ width: '30%' }}>Product <span className="text-muted" style={{ fontWeight: 400 }}>(click for the full why)</span></th>
+            <th style={{ width: '18%' }}>Buy</th>
+            <th className="right" style={{ width: 64 }}>Margin</th>
+            <th style={{ width: '16%' }}>Why</th>
+            <th style={{ width: '14%' }}>Rebate</th>
+            <th style={{ width: 96 }}>Timing</th>
           </tr></thead>
           <tbody>
             {lines.map((l, i) => {
@@ -412,8 +552,12 @@ function ProposalReview({ runId, lines, ym }: {
                         </span>
                       )}
                     </td>
-                    <td>{l.cases} cs · {l.chosen_wholesaler}</td>
-                    <td className="right">{money(l.effective_case_price, 2)}</td>
+                    <td>
+                      <strong>{l.chosen_wholesaler}</strong>
+                      <div className="text-muted" style={{ fontSize: 11 }}>
+                        {l.cases} cs @ {money(l.effective_case_price, 2)}
+                      </div>
+                    </td>
                     <td className="right">{l.gp_pct != null ? `${Math.round(l.gp_pct * 100)}%` : '–'}</td>
                     <td><span className="tag tag-blue">{(l.reason_code ?? 'opportunity').replace(/_/g, ' ')}</span></td>
                     <td style={{ fontSize: 12 }}>
@@ -422,13 +566,10 @@ function ProposalReview({ runId, lines, ym }: {
                         : l.rip ? 'tier below' : '–'}
                     </td>
                     <td>{v && <span className={v[0]}>{v[1]}</span>}</td>
-                    <td className="text-muted" style={{ fontSize: 11 }}>
-                      {expanded ? 'hide detail' : 'why? ▸'}
-                    </td>
                   </tr>
                   {expanded && (
                     <tr key={`${key}-detail`}>
-                      <td colSpan={9} style={{ background: 'var(--bg)' }}>
+                      <td colSpan={7} style={{ background: 'var(--bg)' }}>
                         <div style={{ padding: '8px 10px' }}>
                           {(l.explain_steps ?? []).map(s => (
                             <p key={s.title} style={{ fontSize: 13, margin: '6px 0' }}>
@@ -448,7 +589,7 @@ function ProposalReview({ runId, lines, ym }: {
                 </>
               );
             })}
-            {lines.length === 0 && <tr><td colSpan={9} className="empty">Proposal is empty.</td></tr>}
+            {lines.length === 0 && <tr><td colSpan={7} className="empty">Proposal is empty.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -522,6 +663,12 @@ function RunDetail({ runId }: { runId: number }) {
           the job; the trace below is the audit trail. */}
       {proposal && proposal.lines.length > 0 && (
         <ProposalReview runId={runId} lines={proposal.lines} ym={data.run.ym} />
+      )}
+      {!proposal && data.run.status === 'completed' && (
+        <p className="text-muted" style={{ fontSize: 12 }}>
+          This run predates the proposal-review stage, so it has no per-product
+          explanations. Start a new cycle (Run Scout or Run all agents) to get them.
+        </p>
       )}
       {data.run.summary && !live && <p className="text-muted" style={{ fontSize: 13 }}>{data.run.summary}</p>}
       {data.run.error && <p className="text-red" style={{ fontSize: 13 }}>Error: {data.run.error}</p>}
@@ -680,6 +827,18 @@ export default function AgentProposals() {
     }
   };
 
+  const advance = async (runId: number) => {
+    setStartErr('');
+    try {
+      await agents.advanceStep(runId);
+      setOpen(runId);
+      qc.invalidateQueries({ queryKey: ['agent-runs'] });
+      qc.invalidateQueries({ queryKey: ['agent-run', runId] });
+    } catch (e) {
+      setStartErr(e instanceof Error ? e.message : 'Failed to run the next agent');
+    }
+  };
+
   return (
     <div className="page">
       <div className="orders-header">
@@ -687,42 +846,14 @@ export default function AgentProposals() {
         <span className="text-muted" style={{ fontSize: 13 }}>
           Each run: Scout → Sourcing → money gate → draft cart. The agents never send an order.
         </span>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          {pausedRun ? (
-            // A step run is waiting on a human: continuing IT is the primary
-            // action. Starting a second scout from here was too easy a misclick.
-            <button className="btn btn-secondary btn-sm"
-                    disabled={running}
-                    title={`Run #${pausedRun.id} is paused after the ${pausedRun.stage} stage. Continues with: ${NEXT_AGENT[pausedRun.stage ?? ''] ?? 'next agent'}.`}
-                    onClick={async () => {
-                      setStartErr('');
-                      try {
-                        await agents.advanceStep(pausedRun.id);
-                        setOpen(pausedRun.id);
-                        qc.invalidateQueries({ queryKey: ['agent-runs'] });
-                        qc.invalidateQueries({ queryKey: ['agent-run', pausedRun.id] });
-                      } catch (e) {
-                        setStartErr(e instanceof Error ? e.message : 'Failed to continue');
-                      }
-                    }}>
-              <Play size={14} style={{ verticalAlign: -2, marginRight: 4 }} />
-              Continue run #{pausedRun.id}: {NEXT_AGENT[pausedRun.stage ?? ''] ?? 'next agent'}
-            </button>
-          ) : (
-            <button className="btn btn-secondary btn-sm" onClick={() => start(true)}
-                    disabled={running}
-                    title="Runs ONLY the Deal Scout, then pauses for your review. You advance each later agent yourself.">
-              <Play size={14} style={{ verticalAlign: -2, marginRight: 4 }} />
-              Step-by-step (Scout only)
-            </button>
-          )}
-          <button className="btn btn-primary btn-sm" onClick={() => start(false)} disabled={running}>
-            <Play size={14} style={{ verticalAlign: -2, marginRight: 4 }} />
-            {running ? 'Run in progress…' : 'Run now'}
-          </button>
-        </div>
       </div>
-      {startErr && <p className="text-red" style={{ fontSize: 13 }}>{startErr}</p>}
+
+      {/* The team itself: every agent visible, individually runnable.
+          Run all, or run one -> analyze its output -> move to the next. */}
+      <AgentControlPanel runs={runs} running={running}
+                         activeRun={runningRun ?? pausedRun}
+                         onRunAll={() => start(false)} onRunScout={() => start(true)}
+                         onAdvance={advance} busyErr={startErr} />
 
       <div className="ai-usage-cards">
         <div className="ai-usage-card"><span>Runs</span><strong>{num(runs.length)}</strong></div>
@@ -739,11 +870,10 @@ export default function AgentProposals() {
           <table className="catalog-table">
             <thead>
               <tr>
-                <th></th><th>Run</th><th>Month</th><th>Status</th><th>Trigger</th>
-                <th className="right">Kept</th><th className="right">Vetoed</th>
+                <th style={{ width: 110 }}></th><th>Run</th><th>Status</th>
+                <th className="right">Lines</th>
                 <th className="right">Draft value</th><th className="right">Savings</th>
-                <th className="right">Tokens</th><th className="right">AI cost</th>
-                <th className="right">Time</th><th>Started (UTC)</th>
+                <th className="right">AI cost</th><th className="right">Started</th>
               </tr>
             </thead>
             <tbody>
@@ -756,33 +886,32 @@ export default function AgentProposals() {
                               onClick={e => { e.stopPropagation(); setOpen(open === r.id ? null : r.id); }}>
                         {open === r.id ? <ChevronDown size={13} style={{ verticalAlign: -2 }} />
                                        : <ChevronRight size={13} style={{ verticalAlign: -2 }} />}
-                        {open === r.id ? ' Hide trace' : ' View trace'}
+                        {open === r.id ? ' Hide' : ' Trace'}
                       </button>
                     </td>
-                    <td>#{r.id}</td>
-                    <td>{r.ym}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      #{r.id} <span className="text-muted">· {r.ym}</span>
+                      {r.mode === 'manual' && <span className="tag tag-gray" style={{ marginLeft: 5 }}>step</span>}
+                    </td>
                     <td style={{ whiteSpace: 'nowrap' }}>
                       <span className={STATUS_TAG[r.status]}>{r.status}</span>
                       {r.status === 'paused' && r.stage && (
-                        <span className="text-muted" style={{ fontSize: 11, marginLeft: 5 }}>
-                          {r.stage} done
-                        </span>
+                        <span className="text-muted" style={{ fontSize: 11, marginLeft: 5 }}>{r.stage} ✓</span>
                       )}
-                      {r.mode === 'manual' && <span className="tag tag-gray" style={{ marginLeft: 5 }}>step</span>}
                     </td>
-                    <td className="text-muted">{r.trigger_source}</td>
-                    <td className="right">{num(r.lines_kept)}</td>
-                    <td className="right">{num(r.lines_vetoed)}</td>
+                    <td className="right" style={{ whiteSpace: 'nowrap' }}>
+                      {num(r.lines_kept)}{r.lines_vetoed > 0 && <span className="text-muted"> / {num(r.lines_vetoed)} veto</span>}
+                    </td>
                     <td className="right">{money(r.est_total_usd)}</td>
                     <td className="right text-green">{money(r.est_savings_usd)}</td>
-                    <td className="right">{num(r.input_tokens + r.output_tokens)}</td>
                     <td className="right font-bold">{cost(r.cost_usd)}</td>
-                    <td className="right">{secs(r.duration_ms)}</td>
-                    <td style={{ whiteSpace: 'nowrap' }}>{r.created_at}</td>
+                    <td className="right text-muted" style={{ whiteSpace: 'nowrap', fontSize: 12 }}>
+                      {r.created_at.slice(5, 16)}
+                    </td>
                   </tr>
                   {open === r.id && (
                     <tr key={`${r.id}-detail`}>
-                      <td colSpan={13} style={{ background: 'var(--bg)' }}>
+                      <td colSpan={8} className="agent-detail-cell" style={{ background: 'var(--bg)' }}>
                         <RunDetail runId={r.id} />
                       </td>
                     </tr>
@@ -790,8 +919,8 @@ export default function AgentProposals() {
                 </>
               ))}
               {runs.length === 0 && (
-                <tr><td colSpan={13} className="empty">
-                  No runs yet. Press “Run now” to generate this month's draft order.
+                <tr><td colSpan={8} className="empty">
+                  No runs yet. Use the agent panel above to start one.
                 </td></tr>
               )}
             </tbody>

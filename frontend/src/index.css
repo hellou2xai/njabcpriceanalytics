@@ -369,6 +369,36 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
 }
 .agent-group-stats { margin-left: auto; font-size: 12px; color: var(--text-muted); }
 
+/* Agent run detail lives INSIDE a td, and the app-wide `td { white-space:
+   nowrap }` rule (see the base table styles) would otherwise cascade into
+   every nested element, forcing single-line min-widths that blow the page out
+   to ~5000px. Re-normalize the whole detail subtree; intentional nowraps
+   inside use inline styles, which still win. */
+.agent-detail-cell, .agent-detail-cell td, .agent-detail-cell th {
+  white-space: normal;
+}
+
+/* Agent tables: prose cells WRAP instead of pushing the table wide. The page
+   must fit without a horizontal scrollbar. */
+.agent-wrap-table { table-layout: fixed; }
+.agent-wrap-table th, .agent-wrap-table td {
+  white-space: normal; word-break: break-word; overflow-wrap: anywhere;
+}
+
+/* Agent Control Panel: one card per agent, individually runnable. */
+.agent-control-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(225px, 1fr));
+  gap: 10px; margin-top: 8px;
+}
+.agent-control-card {
+  display: flex; flex-direction: column;
+  background: var(--surface); border-radius: var(--radius);
+  box-shadow: var(--shadow-card); padding: 11px 13px;
+  border: 1.5px solid transparent;
+}
+.agent-control-card--live { border-color: var(--accent); }
+.agent-control-card--done { border-color: rgba(16,185,129,0.45); }
+
 /* Live indicator: pulsing dot while a run streams its actions. */
 .agent-live-dot {
   display: inline-block; width: 9px; height: 9px; border-radius: 50%;

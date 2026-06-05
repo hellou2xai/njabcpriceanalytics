@@ -25,7 +25,7 @@ from backend.pg import get_pg
 
 from . import config as cfg
 from .pos_signals import pos_lapsed, pos_low_stock, pos_velocity
-from .run import run_for_user
+from .run import advance_manual_run, run_for_user, start_manual_run
 
 router = APIRouter(prefix="/api/agents", tags=["agents"])
 
@@ -37,35 +37,66 @@ def _store_for(user_id: int) -> int | None:
     return s["id"] if s else None
 
 
-@router.post("/procurement/run")
-def start_run(user: dict = Depends(require_admin)):
-    store_id = _store_for(user["id"])
+def _guard_can_start(user_id: int) -> int:
+    store_id = _store_for(user_id)
     if store_id is None:
         raise HTTPException(400, "Create a store first - the agents need one.")
     with get_pg() as pg:
         busy = pg.execute(
             "SELECT id FROM agent_runs WHERE user_id=%s AND status='running'",
-            (user["id"],)).fetchone()
+            (user_id,)).fetchone()
     if busy:
         raise HTTPException(409, f"Run {busy['id']} is already in progress.")
-    result: dict = {}
+    return store_id
 
+
+def _in_background(fn, *args, **kwargs):
     def _work():
         try:
-            result.update(run_for_user(user["id"], store_id,
-                                       trigger="manual", user_email=user.get("email")))
+            fn(*args, **kwargs)
         except Exception:
             pass  # the run row carries status='failed' + error
-
     threading.Thread(target=_work, daemon=True).start()
+
+
+@router.post("/procurement/run")
+def start_run(user: dict = Depends(require_admin)):
+    """Full chain: all agents back to back."""
+    store_id = _guard_can_start(user["id"])
+    _in_background(run_for_user, user["id"], store_id,
+                   trigger="manual", user_email=user.get("email"))
     return {"status": "started"}
+
+
+@router.post("/procurement/step")
+def start_step_run(user: dict = Depends(require_admin)):
+    """Stepwise mode, stage 1: run ONLY the Deal Scout, then pause."""
+    store_id = _guard_can_start(user["id"])
+    _in_background(start_manual_run, user["id"], store_id,
+                   user_email=user.get("email"))
+    return {"status": "started", "stage": "scout"}
+
+
+@router.post("/procurement/runs/{run_id}/step")
+def advance_step_run(run_id: int, user: dict = Depends(require_admin)):
+    """Stepwise mode: run exactly one more agent on a paused run."""
+    with get_pg() as pg:
+        run = pg.execute("SELECT user_id, status, stage FROM agent_runs WHERE id=%s",
+                         (run_id,)).fetchone()
+    if not run or run["user_id"] != user["id"]:
+        raise HTTPException(404, "run not found")
+    if run["status"] != "paused":
+        raise HTTPException(409, f"run is {run['status']}, not paused")
+    _guard_can_start(user["id"])
+    _in_background(advance_manual_run, run_id, user.get("email"))
+    return {"status": "started", "after_stage": run["stage"]}
 
 
 @router.get("/procurement/runs")
 def list_runs(limit: int = 20, user: dict = Depends(require_admin)):
     with get_pg() as pg:
         rows = pg.execute(
-            "SELECT id, ym, trigger_source, status, batch_id, candidates, "
+            "SELECT id, ym, trigger_source, status, mode, stage, batch_id, candidates, "
             "lines_kept, lines_vetoed, est_total_usd, est_savings_usd, "
             "input_tokens, output_tokens, cost_usd, duration_ms, summary, "
             "error, current_action, created_at, finished_at "

@@ -34,6 +34,9 @@ ALSO enforced downstream in code, so do not fight them):
   and say so in sourcing_note - but never more than double the scouted
   quantity.
 - Copy effective_case_price exactly from the annotation data; never estimate.
+- Copy each line's upc CHARACTER-FOR-CHARACTER from the candidate data. Never
+  retype, shorten, zero-pad or substitute another identifier (distributor SKUs
+  are NOT UPCs). A mangled upc gets the line vetoed downstream.
 - alt_wholesaler/alt_effective_price = the best source you did NOT choose
   (null if single-sourced). savings_vs_alt = (alt - chosen) x cases when you
   chose the cheaper one, else negative (a deliberate consolidation cost).
@@ -44,25 +47,30 @@ nothing else."""
 
 
 def annotate_candidates(candidates: list[dict]) -> list[dict]:
-    """Deterministic pre-pass: all current sources per candidate UPC."""
-    upcs = [c["upc"] for c in candidates]
+    """Deterministic pre-pass: all current sources per candidate UPC. Joined
+    on the house-normalized UPC (leading zeros stripped) so a scout-echoed
+    identifier still matches the catalog."""
+    norm = lambda u: str(u or "").strip().lstrip("0")
+    upcs = sorted({norm(c["upc"]) for c in candidates if norm(c["upc"])})
     if not upcs:
         return candidates
     ph = ",".join("?" * len(upcs))
     with get_duckdb() as con:
         rows = con.execute(f"""
-            SELECT upc, wholesaler, effective_case_price, frontline_case_price,
+            SELECT LTRIM(CAST(upc AS VARCHAR),'0') un, wholesaler,
+                   effective_case_price, frontline_case_price,
                    rip_code, unit_qty bottles_per_case, has_rip, has_discount
             FROM cpl_enriched
-            WHERE edition = (SELECT MAX(edition) FROM cpl_enriched) AND upc IN ({ph})
-            ORDER BY upc, effective_case_price""", upcs).fetchall()
-    cols = ["upc", "wholesaler", "effective_case_price", "frontline_case_price",
+            WHERE edition = (SELECT MAX(edition) FROM cpl_enriched)
+              AND LTRIM(CAST(upc AS VARCHAR),'0') IN ({ph})
+            ORDER BY 1, effective_case_price""", upcs).fetchall()
+    cols = ["un", "wholesaler", "effective_case_price", "frontline_case_price",
             "rip_code", "bottles_per_case", "has_rip", "has_discount"]
     by_upc: dict[str, list] = {}
     for r in rows:
         d = dict(zip(cols, r))
-        by_upc.setdefault(d.pop("upc"), []).append(d)
-    return [{**c, "per_distributor": by_upc.get(c["upc"], [])} for c in candidates]
+        by_upc.setdefault(d.pop("un"), []).append(d)
+    return [{**c, "per_distributor": by_upc.get(norm(c["upc"]), [])} for c in candidates]
 
 
 def run_sourcing(trace, user_id: int, store_id: int, candidates: list[dict]) -> dict:

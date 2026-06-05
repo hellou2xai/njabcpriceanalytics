@@ -1563,13 +1563,19 @@ export interface SalesRep {
 
 export interface AgentRun {
   id: number; ym: string; trigger_source: string;
-  status: 'running' | 'completed' | 'failed' | 'aborted';
+  status: 'running' | 'paused' | 'completed' | 'failed' | 'aborted';
+  mode: 'auto' | 'manual';
+  stage: 'scout' | 'sourcing' | 'gate' | 'staged' | null;
   batch_id: string | null; candidates: number; lines_kept: number;
   lines_vetoed: number; est_total_usd: number; est_savings_usd: number;
   input_tokens: number; output_tokens: number; cost_usd: number;
   duration_ms: number; summary: string | null; error: string | null;
   current_action: string | null;
   created_at: string; finished_at: string | null;
+}
+
+export interface AgentRunDetailRow extends AgentRun {
+  scout_json?: string | null; plan_json?: string | null; gated_json?: string | null;
 }
 
 export interface AgentStep {
@@ -1606,8 +1612,10 @@ export interface PosSummary {
 
 export const agents = {
   startRun: () => request<{ status: string }>('/api/agents/procurement/run', { method: 'POST' }),
+  startStep: () => request<{ status: string }>('/api/agents/procurement/step', { method: 'POST' }),
+  advanceStep: (runId: number) => request<{ status: string }>(`/api/agents/procurement/runs/${runId}/step`, { method: 'POST' }),
   runs: (limit = 25) => request<{ runs: AgentRun[] }>(`/api/agents/procurement/runs${qs({ limit })}`),
-  runDetail: (id: number) => request<{ run: AgentRun; steps: AgentStep[] }>(`/api/agents/procurement/runs/${id}`),
+  runDetail: (id: number) => request<{ run: AgentRunDetailRow; steps: AgentStep[] }>(`/api/agents/procurement/runs/${id}`),
   config: () => request<AgentConfig>('/api/agents/procurement/config'),
   posSummary: () => request<PosSummary>('/api/agents/pos/summary'),
   posVelocity: (limit = 50) => request<{ rows: PosRow[] }>(`/api/agents/pos/velocity${qs({ limit })}`),

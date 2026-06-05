@@ -3,13 +3,19 @@
     scout (LLM) -> pre-pass (code) -> sourcing (LLM) -> gate (code)
         -> stage draft cart (code) -> alert (code)
 
-Every phase is traced; the run row carries the ROI numbers (cost_usd spent vs
-est_savings_usd found). Run from the repo root:
+Two execution modes over the SAME stage functions:
+- run_for_user(): the full chain in one go (cron + "Run now").
+- start_manual_run() / advance_manual_run(): one agent at a time. Each stage
+  persists its artifact (scout_json / plan_json / gated_json) on the run row
+  and pauses, so the admin can inspect what an agent produced before letting
+  the next one loose.
 
-    python -m procurement_agents.run --email sambit.tripathy@gmail.com
+Every phase is traced; the run row carries the ROI numbers. CLI:
+    python -m procurement_agents.run --email <email> [--step]
 """
 
 import argparse
+import json
 from datetime import date
 
 from backend.db import init_user_db
@@ -20,6 +26,9 @@ from .gate import apply_gate
 from .journal import RunTrace
 from .scout import run_scout
 from .sourcing import run_sourcing
+
+# stage value on the run row -> what has FINISHED. The next agent to run:
+NEXT_STAGE = {"scout": "sourcing", "sourcing": "gate", "gate": "staged"}
 
 
 def _resolve(email: str) -> tuple[int, int | None]:
@@ -33,51 +42,141 @@ def _resolve(email: str) -> tuple[int, int | None]:
         return u["id"], (s["id"] if s else None)
 
 
+# --------------------------- stage functions ---------------------------------
+# Each takes the trace, does ONE agent's work, persists its artifact, and
+# returns the data the next stage needs.
+
+def _stage_scout(trace: RunTrace) -> dict:
+    report = run_scout(trace, trace.user_id, trace.store_id)
+    trace.save_json("scout_json", report)
+    return report
+
+
+def _stage_sourcing(trace: RunTrace, report: dict) -> dict:
+    plan = run_sourcing(trace, trace.user_id, trace.store_id, report["candidates"])
+    trace.save_json("plan_json", plan)
+    return plan
+
+
+def _stage_gate(trace: RunTrace, plan: dict) -> tuple[list, list]:
+    with trace.phase("gate", "money_gate") as ctx:
+        kept, vetoed = apply_gate(trace.user_id, trace.store_id, plan.get("lines", []))
+        ctx["detail"] = {
+            "kept": len(kept), "vetoed": len(vetoed),
+            "veto_reasons": sorted({v["veto_reason"] for v in vetoed}),
+            "vetoed_lines": [{"upc": v["upc"], "name": v.get("product_name"),
+                              "reason": v["veto_reason"],
+                              "detail": v.get("veto_detail")} for v in vetoed],
+        }
+    trace.save_json("gated_json", {"kept": kept, "vetoed": vetoed})
+    return kept, vetoed
+
+
+def _stage_stage(trace: RunTrace, kept: list, vetoed: list) -> tuple[str | None, float, float]:
+    est_total = sum(l["effective_case_price"] * l["cases"] for l in kept)
+    est_savings = sum((l.get("savings_vs_alt") or 0) for l in kept
+                      if (l.get("savings_vs_alt") or 0) > 0)
+    batch_id = None
+    if kept:
+        with trace.phase("cart", "stage_draft_batch") as ctx:
+            batch_id = stage_draft(trace.user_id, kept, trace.ym)
+            ctx["detail"] = {"batch_id": batch_id, "lines": len(kept),
+                             "est_total_usd": round(est_total, 2)}
+        with trace.phase("notify", "alert_digest") as ctx:
+            notify(trace.user_id, trace.ym, kept, vetoed, est_total, est_savings)
+            ctx["detail"] = {"alert": "agent_proposal"}
+    return batch_id, est_total, est_savings
+
+
+# --------------------------- full-chain mode ---------------------------------
+
 def run_for_user(user_id: int, store_id: int, ym: str | None = None,
                  trigger: str = "manual", user_email: str | None = None) -> dict:
     ym = ym or date.today().strftime("%Y-%m")
-    trace = RunTrace(user_id, store_id, ym, trigger, user_email)
+    trace = RunTrace(user_id, store_id, ym, trigger, user_email, mode="auto")
     try:
-        report = run_scout(trace, user_id, store_id)
-        candidates = report["candidates"]
-
-        plan = run_sourcing(trace, user_id, store_id, candidates)
-
-        with trace.phase("gate", "money_gate") as ctx:
-            kept, vetoed = apply_gate(user_id, store_id, plan.get("lines", []))
-            ctx["detail"] = {
-                "kept": len(kept), "vetoed": len(vetoed),
-                "veto_reasons": sorted({v["veto_reason"] for v in vetoed}),
-                "vetoed_lines": [{"upc": v["upc"], "name": v.get("product_name"),
-                                  "reason": v["veto_reason"],
-                                  "detail": v.get("veto_detail")} for v in vetoed],
-            }
-
-        est_total = sum(l["effective_case_price"] * l["cases"] for l in kept)
-        est_savings = sum((l.get("savings_vs_alt") or 0) for l in kept
-                          if (l.get("savings_vs_alt") or 0) > 0)
-
-        batch_id = None
-        if kept:
-            with trace.phase("cart", "stage_draft_batch") as ctx:
-                batch_id = stage_draft(user_id, kept, ym)
-                ctx["detail"] = {"batch_id": batch_id, "lines": len(kept),
-                                 "est_total_usd": round(est_total, 2)}
-            with trace.phase("notify", "alert_digest") as ctx:
-                notify(user_id, ym, kept, vetoed, est_total, est_savings)
-                ctx["detail"] = {"alert": "agent_proposal"}
-
+        report = _stage_scout(trace)
+        plan = _stage_sourcing(trace, report)
+        kept, vetoed = _stage_gate(trace, plan)
+        batch_id, est_total, est_savings = _stage_stage(trace, kept, vetoed)
         summary = (f"{len(kept)} lines staged (~${est_total:,.0f}), "
                    f"{len(vetoed)} vetoed, est sourcing savings ${est_savings:,.0f}. "
                    f"Scout note: {report.get('skipped_note', '')[:300]}")
-        trace.finish("completed", batch_id=batch_id, candidates=len(candidates),
+        trace.finish("completed", stage="staged", batch_id=batch_id,
+                     candidates=len(report["candidates"]),
                      kept=len(kept), vetoed=len(vetoed), est_total=est_total,
                      est_savings=est_savings, summary=summary)
         return {"run_id": trace.run_id, "batch_id": batch_id,
-                "candidates": len(candidates), "kept": len(kept),
+                "candidates": len(report["candidates"]), "kept": len(kept),
                 "vetoed": len(vetoed), "est_total_usd": round(est_total, 2),
                 "est_savings_usd": round(est_savings, 2),
                 "cost_usd": round(trace.cost, 4)}
+    except Exception as e:
+        trace.finish("failed", error=str(e)[:2000])
+        raise
+
+
+# --------------------------- stepwise (manual) mode --------------------------
+
+def start_manual_run(user_id: int, store_id: int, ym: str | None = None,
+                     user_email: str | None = None) -> dict:
+    """Stage 1 only: run the Deal Scout, then pause for review."""
+    ym = ym or date.today().strftime("%Y-%m")
+    trace = RunTrace(user_id, store_id, ym, "manual-step", user_email, mode="manual")
+    try:
+        report = _stage_scout(trace)
+        trace.pause("scout", candidates=len(report["candidates"]),
+                    summary=f"Scout done: {len(report['candidates'])} candidates. "
+                            "Review them, then run the Sourcing Planner.")
+        return {"run_id": trace.run_id, "stage": "scout",
+                "candidates": len(report["candidates"])}
+    except Exception as e:
+        trace.finish("failed", error=str(e)[:2000])
+        raise
+
+
+def advance_manual_run(run_id: int, user_email: str | None = None) -> dict:
+    """Run exactly ONE more agent on a paused manual run."""
+    with get_pg() as pg:
+        run = pg.execute("SELECT * FROM agent_runs WHERE id=%s", (run_id,)).fetchone()
+    if not run:
+        raise ValueError(f"run {run_id} not found")
+    if run["status"] != "paused":
+        raise ValueError(f"run {run_id} is {run['status']}, not paused")
+    stage = run["stage"]
+    if stage not in NEXT_STAGE:
+        raise ValueError(f"run {run_id} has no next stage after '{stage}'")
+
+    trace = RunTrace.attach(run_id, user_email)
+    try:
+        if stage == "scout":
+            report = json.loads(run["scout_json"] or "{}")
+            plan = _stage_sourcing(trace, report)
+            trace.pause("sourcing",
+                        summary=f"Sourcing done: {len(plan.get('lines', []))} lines "
+                                "planned. Review, then run the Money Gate.")
+            return {"run_id": run_id, "stage": "sourcing",
+                    "lines": len(plan.get("lines", []))}
+        if stage == "sourcing":
+            plan = json.loads(run["plan_json"] or "{}")
+            kept, vetoed = _stage_gate(trace, plan)
+            trace.pause("gate", lines_kept=len(kept), lines_vetoed=len(vetoed),
+                        summary=f"Gate done: {len(kept)} kept, {len(vetoed)} vetoed. "
+                                "Review the vetoes, then stage the draft cart.")
+            return {"run_id": run_id, "stage": "gate",
+                    "kept": len(kept), "vetoed": len(vetoed)}
+        # stage == 'gate': final step stages the cart + alert and completes.
+        gated = json.loads(run["gated_json"] or "{}")
+        kept, vetoed = gated.get("kept", []), gated.get("vetoed", [])
+        batch_id, est_total, est_savings = _stage_stage(trace, kept, vetoed)
+        trace.finish("completed", stage="staged", batch_id=batch_id,
+                     candidates=run["candidates"], kept=len(kept),
+                     vetoed=len(vetoed), est_total=est_total,
+                     est_savings=est_savings,
+                     summary=f"{len(kept)} lines staged (~${est_total:,.0f}), "
+                             f"{len(vetoed)} vetoed, est sourcing savings "
+                             f"${est_savings:,.0f}. (Step-by-step run.)")
+        return {"run_id": run_id, "stage": "staged", "batch_id": batch_id}
     except Exception as e:
         trace.finish("failed", error=str(e)[:2000])
         raise
@@ -87,13 +186,21 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--email", required=True)
     ap.add_argument("--ym", default=None)
+    ap.add_argument("--step", action="store_true",
+                    help="start a stepwise run (scout only)")
+    ap.add_argument("--advance", type=int, default=None, metavar="RUN_ID",
+                    help="advance a paused stepwise run by one agent")
     args = ap.parse_args()
     init_user_db()
     user_id, store_id = _resolve(args.email)
     if store_id is None:
         raise SystemExit("user has no store (POS signals need one)")
-    out = run_for_user(user_id, store_id, args.ym, "manual", args.email)
-    print(out)
+    if args.advance:
+        print(advance_manual_run(args.advance, args.email))
+    elif args.step:
+        print(start_manual_run(user_id, store_id, args.ym, args.email))
+    else:
+        print(run_for_user(user_id, store_id, args.ym, "manual", args.email))
 
 
 if __name__ == "__main__":

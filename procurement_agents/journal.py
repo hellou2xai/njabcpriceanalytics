@@ -28,22 +28,78 @@ def _clip(obj, limit=4000) -> str:
 
 
 class RunTrace:
-    """Created once per pipeline run; threaded through every step."""
+    """Created once per pipeline run; threaded through every step. For
+    stepwise (one-agent-at-a-time) execution, attach() re-opens a paused run
+    and carries its accumulated seq / tokens / cost / duration forward."""
 
     def __init__(self, user_id: int, store_id: int | None, ym: str,
-                 trigger: str = "manual", user_email: str | None = None):
+                 trigger: str = "manual", user_email: str | None = None,
+                 mode: str = "auto"):
         self.user_id, self.store_id, self.ym = user_id, store_id, ym
         self.user_email = user_email
         self.seq = 0
         self.input_tokens = self.output_tokens = 0
         self.cost = 0.0
+        self._prev_ms = 0
         self._t0 = time.monotonic()
         with get_pg() as pg:
             row = pg.execute(
-                "INSERT INTO agent_runs (user_id, store_id, ym, trigger_source) "
-                "VALUES (%s,%s,%s,%s) RETURNING id",
-                (user_id, store_id, ym, trigger)).fetchone()
+                "INSERT INTO agent_runs (user_id, store_id, ym, trigger_source, mode) "
+                "VALUES (%s,%s,%s,%s,%s) RETURNING id",
+                (user_id, store_id, ym, trigger, mode)).fetchone()
         self.run_id = row["id"]
+
+    @classmethod
+    def attach(cls, run_id: int, user_email: str | None = None) -> "RunTrace":
+        """Re-open a paused run for its next stage, resuming the counters."""
+        with get_pg() as pg:
+            row = pg.execute("SELECT * FROM agent_runs WHERE id=%s", (run_id,)).fetchone()
+            if not row:
+                raise ValueError(f"run {run_id} not found")
+            seq = pg.execute("SELECT COALESCE(MAX(seq),0) m FROM agent_steps "
+                             "WHERE run_id=%s", (run_id,)).fetchone()["m"]
+            pg.execute("UPDATE agent_runs SET status='running' WHERE id=%s", (run_id,))
+        t = cls.__new__(cls)
+        t.run_id = run_id
+        t.user_id, t.store_id, t.ym = row["user_id"], row["store_id"], row["ym"]
+        t.user_email = user_email
+        t.seq = seq
+        t.input_tokens = row["input_tokens"] or 0
+        t.output_tokens = row["output_tokens"] or 0
+        t.cost = row["cost_usd"] or 0.0
+        t._prev_ms = row["duration_ms"] or 0
+        t._t0 = time.monotonic()
+        return t
+
+    def _elapsed_total_ms(self) -> int:
+        return self._prev_ms + int((time.monotonic() - self._t0) * 1000)
+
+    def save_json(self, column: str, obj) -> None:
+        """Persist a stage artifact (scout_json / plan_json / gated_json)."""
+        assert column in ("scout_json", "plan_json", "gated_json")
+        with get_pg() as pg:
+            pg.execute(f"UPDATE agent_runs SET {column}=%s WHERE id=%s",
+                       (json.dumps(obj, default=str), self.run_id))
+
+    def pause(self, stage: str, **fields) -> None:
+        """End a manual stage: persist counters, mark paused at `stage`.
+        Extra fields (candidates, lines_kept, est_total_usd, ...) update the
+        same-named agent_runs columns."""
+        allowed = {"candidates", "lines_kept", "lines_vetoed",
+                   "est_total_usd", "est_savings_usd", "summary"}
+        sets, vals = [], []
+        for k, v in fields.items():
+            if k in allowed:
+                sets.append(f"{k}=%s")
+                vals.append(v)
+        with get_pg() as pg:
+            pg.execute(
+                "UPDATE agent_runs SET status='paused', stage=%s, "
+                "input_tokens=%s, output_tokens=%s, cost_usd=%s, "
+                f"duration_ms=%s, current_action=NULL"
+                + ("".join(", " + s for s in sets)) + " WHERE id=%s",
+                (stage, self.input_tokens, self.output_tokens,
+                 round(self.cost, 6), self._elapsed_total_ms(), *vals, self.run_id))
 
     def note(self, action: str) -> None:
         """Publish what the run is ABOUT to do (live-trace heartbeat). Cheap
@@ -126,19 +182,20 @@ class RunTrace:
 
     def finish(self, status: str, *, batch_id=None, candidates=0, kept=0,
                vetoed=0, est_total=0.0, est_savings=0.0, summary=None,
-               error=None):
+               error=None, stage=None):
         with get_pg() as pg:
             pg.execute(
-                "UPDATE agent_runs SET status=%s, batch_id=%s, candidates=%s, "
+                "UPDATE agent_runs SET status=%s, stage=COALESCE(%s, stage), "
+                "batch_id=%s, candidates=%s, "
                 "lines_kept=%s, lines_vetoed=%s, est_total_usd=%s, "
                 "est_savings_usd=%s, input_tokens=%s, output_tokens=%s, "
                 "cost_usd=%s, duration_ms=%s, summary=%s, error=%s, "
                 "finished_at=TO_CHAR(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') "
                 "WHERE id=%s",
-                (status, batch_id, candidates, kept, vetoed,
+                (status, stage, batch_id, candidates, kept, vetoed,
                  round(est_total, 2), round(est_savings, 2),
                  self.input_tokens, self.output_tokens, round(self.cost, 6),
-                 int((time.monotonic() - self._t0) * 1000),
+                 self._elapsed_total_ms(),
                  summary, error, self.run_id))
             # The run is over; clear the live-action pointer.
             pg.execute("UPDATE agent_runs SET current_action=NULL WHERE id=%s",

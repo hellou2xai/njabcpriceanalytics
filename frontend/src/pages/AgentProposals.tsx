@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -16,9 +16,147 @@ const num = (v?: number | null) => (Number(v) || 0).toLocaleString();
 const secs = (ms?: number | null) => `${((Number(ms) || 0) / 1000).toFixed(1)}s`;
 
 const STATUS_TAG: Record<AgentRun['status'], string> = {
-  running: 'tag tag-blue', completed: 'tag tag-green',
+  running: 'tag tag-blue', paused: 'tag tag-amber', completed: 'tag tag-green',
   failed: 'tag tag-red', aborted: 'tag tag-amber',
 };
+
+// Stepwise mode: what has finished -> which agent runs next.
+const NEXT_AGENT: Record<string, string> = {
+  scout: 'Sourcing Planner', sourcing: 'Money Gate', gate: 'Stage draft cart',
+};
+
+const CONF_TAG: Record<string, string> = { high: 'tag tag-green', medium: 'tag tag-blue', low: 'tag tag-gray' };
+
+function parseJson<T>(s?: string | null): T | null {
+  if (!s) return null;
+  try { return JSON.parse(s) as T; } catch { return null; }
+}
+
+interface ScoutCandidate {
+  upc: string; product_name: string; wholesaler: string; reason_code: string;
+  rationale: string; suggested_cases: number; confidence: string;
+}
+interface PlanLine {
+  upc: string; product_name: string; chosen_wholesaler: string; cases: number;
+  effective_case_price: number; alt_wholesaler: string | null;
+  alt_effective_price: number | null; savings_vs_alt: number | null;
+  rip_code: string | null; sourcing_note: string; gp_pct?: number | null;
+}
+
+/** Plain-language data panel for one stage's output, so a buyer (not just a
+ *  developer) can analyze what each agent produced. */
+function StagePanel({ title, blurb, children }: {
+  title: string; blurb: string; children: ReactNode;
+}) {
+  const [openPanel, setOpenPanel] = useState(true);
+  return (
+    <div className="agent-group">
+      <div className="agent-group-head" style={{ cursor: 'pointer' }}
+           onClick={() => setOpenPanel(o => !o)}>
+        {openPanel ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <strong>{title}</strong>
+        <span className="text-muted" style={{ fontSize: 12 }}>{blurb}</span>
+      </div>
+      {openPanel && children}
+    </div>
+  );
+}
+
+function ScoutOutput({ report }: { report: { candidates: ScoutCandidate[]; skipped_note?: string } }) {
+  return (
+    <StagePanel title="Scout output: the candidate list"
+                blurb="What the Deal Scout thinks the store should buy this month, and why.">
+      <div className="table-container">
+        <table className="catalog-table">
+          <thead><tr>
+            <th>Product</th><th>From</th><th>Why now</th>
+            <th className="right">Cases</th><th>Confidence</th><th>Scout's reasoning</th>
+          </tr></thead>
+          <tbody>
+            {report.candidates.map((c, i) => (
+              <tr key={`${c.upc}-${i}`}>
+                <td>{c.product_name}</td>
+                <td>{c.wholesaler}</td>
+                <td><span className="tag tag-blue">{c.reason_code.replace(/_/g, ' ')}</span></td>
+                <td className="right">{c.suggested_cases}</td>
+                <td><span className={CONF_TAG[c.confidence] ?? 'tag tag-gray'}>{c.confidence}</span></td>
+                <td className="text-muted" style={{ fontSize: 12, maxWidth: 420 }}>{c.rationale}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {report.skipped_note && (
+        <p className="text-muted" style={{ fontSize: 12, marginTop: 6 }}>
+          <strong>What it left out:</strong> {report.skipped_note}
+        </p>
+      )}
+    </StagePanel>
+  );
+}
+
+function PlanOutput({ plan }: { plan: { lines: PlanLine[]; summary?: string } }) {
+  return (
+    <StagePanel title="Sourcing output: the buying plan"
+                blurb="Which distributor to buy each line from, and what the alternative would have cost.">
+      {plan.summary && <p className="text-muted" style={{ fontSize: 12, margin: '2px 0 8px' }}>{plan.summary}</p>}
+      <div className="table-container">
+        <table className="catalog-table">
+          <thead><tr>
+            <th>Product</th><th>Buy from</th><th className="right">Cases</th>
+            <th className="right">$/case</th><th>Best alternative</th>
+            <th className="right">Saved vs alt</th><th>Planner's note</th>
+          </tr></thead>
+          <tbody>
+            {plan.lines.map((l, i) => (
+              <tr key={`${l.upc}-${i}`}>
+                <td>{l.product_name}</td>
+                <td className="font-bold">{l.chosen_wholesaler}</td>
+                <td className="right">{l.cases}</td>
+                <td className="right">{money(l.effective_case_price, 2)}</td>
+                <td className="text-muted">
+                  {l.alt_wholesaler ? `${l.alt_wholesaler} @ ${money(l.alt_effective_price, 2)}` : 'only source'}
+                </td>
+                <td className={`right ${((l.savings_vs_alt ?? 0) >= 0) ? 'text-green' : 'text-red'}`}>
+                  {l.savings_vs_alt == null ? '—' : money(l.savings_vs_alt, 2)}
+                </td>
+                <td className="text-muted" style={{ fontSize: 12, maxWidth: 360 }}>{l.sourcing_note}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </StagePanel>
+  );
+}
+
+function GateOutput({ gated }: { gated: { kept: PlanLine[]; vetoed: (PlanLine & VetoLine)[] } }) {
+  return (
+    <StagePanel title="Gate output: what survived the money rules"
+                blurb="Verified prices, margins, and the lines headed for the draft cart.">
+      <div className="table-container">
+        <table className="catalog-table">
+          <thead><tr>
+            <th>Product</th><th>Buy from</th><th className="right">Cases</th>
+            <th className="right">$/case (verified)</th><th className="right">Est. margin</th>
+          </tr></thead>
+          <tbody>
+            {gated.kept.map((l, i) => (
+              <tr key={`${l.upc}-${i}`}>
+                <td>{l.product_name}</td>
+                <td>{l.chosen_wholesaler}</td>
+                <td className="right">{l.cases}</td>
+                <td className="right">{money(l.effective_case_price, 2)}</td>
+                <td className="right">{l.gp_pct != null ? `${Math.round(l.gp_pct * 100)}%` : 'n/a'}</td>
+              </tr>
+            ))}
+            {gated.kept.length === 0 && <tr><td colSpan={5} className="empty">Nothing survived the gate.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </StagePanel>
+  );
+}
 
 interface VetoLine { upc: string; name?: string; reason: string; detail?: string }
 
@@ -140,7 +278,9 @@ function AgentSection({ agent, steps, vetoed, selectedSeq, onSelect }: {
 }
 
 function RunDetail({ runId }: { runId: number }) {
+  const qc = useQueryClient();
   const [selected, setSelected] = useState<number | null>(null);
+  const [stepErr, setStepErr] = useState('');
   const { data, isLoading } = useQuery({
     queryKey: ['agent-run', runId],
     queryFn: () => agents.runDetail(runId),
@@ -150,6 +290,23 @@ function RunDetail({ runId }: { runId: number }) {
   });
   if (isLoading || !data) return <p style={{ padding: 12 }}>Loading trace…</p>;
   const live = data.run.status === 'running';
+  const paused = data.run.status === 'paused';
+  const nextAgent = paused && data.run.stage ? NEXT_AGENT[data.run.stage] : null;
+  // Per-stage artifacts: the analyzable data each agent produced.
+  const scoutReport = parseJson<{ candidates: ScoutCandidate[]; skipped_note?: string }>(data.run.scout_json);
+  const plan = parseJson<{ lines: PlanLine[]; summary?: string }>(data.run.plan_json);
+  const gated = parseJson<{ kept: PlanLine[]; vetoed: (PlanLine & VetoLine)[] }>(data.run.gated_json);
+
+  const advance = async () => {
+    setStepErr('');
+    try {
+      await agents.advanceStep(runId);
+      qc.invalidateQueries({ queryKey: ['agent-run', runId] });
+      qc.invalidateQueries({ queryKey: ['agent-runs'] });
+    } catch (e) {
+      setStepErr(e instanceof Error ? e.message : 'Failed to advance');
+    }
+  };
   const gate = data.steps.find(s => s.name === 'money_gate');
   const vetoed = ((gate?.detail?.vetoed_lines ?? []) as VetoLine[]);
   const groups = groupByAgent(data.steps);
@@ -172,6 +329,22 @@ function RunDetail({ runId }: { runId: number }) {
       )}
       {data.run.summary && !live && <p className="text-muted" style={{ fontSize: 13 }}>{data.run.summary}</p>}
       {data.run.error && <p className="text-red" style={{ fontSize: 13 }}>Error: {data.run.error}</p>}
+
+      {/* Stepwise mode: the run is paused between agents, waiting for a human. */}
+      {paused && nextAgent && (
+        <div className="agent-step-detail" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span className="tag tag-amber">paused</span>
+          <span style={{ fontSize: 13 }}>
+            <strong>{meta(data.run.stage === 'scout' ? 'scout' : data.run.stage === 'sourcing' ? 'sourcing' : 'gate').label}</strong>
+            {' '}finished. Review its output below, then continue when ready.
+          </span>
+          <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }} onClick={advance}>
+            <Play size={13} style={{ verticalAlign: -2, marginRight: 4 }} />
+            Run next: {nextAgent}
+          </button>
+          {stepErr && <span className="text-red" style={{ fontSize: 12 }}>{stepErr}</span>}
+        </div>
+      )}
 
       <div className="agent-trace-layout">
         {/* Sidebar: EVERY action, chronological, streaming while live. */}
@@ -248,11 +421,20 @@ function RunDetail({ runId }: { runId: number }) {
             </div>
           )}
 
-          {/* One section per agent: its actions, individually. */}
-          {groups.map((g, i) => (
-            <AgentSection key={`${g.agent}-sec-${i}`} agent={g.agent} steps={g.steps}
-                          vetoed={vetoed} selectedSeq={shownSeq} onSelect={select} />
-          ))}
+          {/* One section per agent (its actions), followed by the readable
+              data that agent produced - the analysis layer for humans. */}
+          {groups.map((g, i) => {
+            const lastOfAgent = !groups.slice(i + 1).some(x => x.agent === g.agent);
+            return (
+              <div key={`${g.agent}-sec-${i}`}>
+                <AgentSection agent={g.agent} steps={g.steps}
+                              vetoed={vetoed} selectedSeq={shownSeq} onSelect={select} />
+                {lastOfAgent && g.agent === 'scout' && scoutReport && <ScoutOutput report={scoutReport} />}
+                {lastOfAgent && g.agent === 'sourcing' && plan && <PlanOutput plan={plan} />}
+                {lastOfAgent && g.agent === 'gate' && gated && <GateOutput gated={gated} />}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -275,24 +457,26 @@ export default function AgentProposals() {
   const running = runs.some(r => r.status === 'running');
 
   // The trace IS the product here, so never land on a closed page: expand the
-  // running run (live stream) or, failing that, the latest run. Only once per
-  // run id, so the user can still collapse it without it fighting back.
+  // running run (live stream), else a paused stepwise run (it's waiting on a
+  // human), else the latest run. Only once per run id, so the user can still
+  // collapse it without it fighting back.
   const runningRun = runs.find(r => r.status === 'running');
+  const pausedRun = runs.find(r => r.status === 'paused');
   useEffect(() => {
-    const target = runningRun ?? runs[0];
+    const target = runningRun ?? pausedRun ?? runs[0];
     if (target && autoOpened !== target.id) {
       setOpen(target.id);
       setAutoOpened(target.id);
     }
-  }, [runningRun, runs, autoOpened]);
+  }, [runningRun, pausedRun, runs, autoOpened]);
   const completed = runs.filter(r => r.status === 'completed');
   const totalCost = completed.reduce((a, r) => a + (r.cost_usd || 0), 0);
   const totalSavings = completed.reduce((a, r) => a + (r.est_savings_usd || 0), 0);
 
-  const startRun = async () => {
+  const start = async (step: boolean) => {
     setStartErr('');
     try {
-      await agents.startRun();
+      await (step ? agents.startStep() : agents.startRun());
       qc.invalidateQueries({ queryKey: ['agent-runs'] });
     } catch (e) {
       setStartErr(e instanceof Error ? e.message : 'Failed to start run');
@@ -306,11 +490,18 @@ export default function AgentProposals() {
         <span className="text-muted" style={{ fontSize: 13 }}>
           Each run: Scout → Sourcing → money gate → draft cart. The agents never send an order.
         </span>
-        <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }}
-                onClick={startRun} disabled={running}>
-          <Play size={14} style={{ verticalAlign: -2, marginRight: 4 }} />
-          {running ? 'Run in progress…' : 'Run now'}
-        </button>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          <button className="btn btn-secondary btn-sm" onClick={() => start(true)}
+                  disabled={running}
+                  title="Run one agent at a time: Scout first, then advance each agent manually after reviewing its output.">
+            <Play size={14} style={{ verticalAlign: -2, marginRight: 4 }} />
+            Step-by-step
+          </button>
+          <button className="btn btn-primary btn-sm" onClick={() => start(false)} disabled={running}>
+            <Play size={14} style={{ verticalAlign: -2, marginRight: 4 }} />
+            {running ? 'Run in progress…' : 'Run now'}
+          </button>
+        </div>
       </div>
       {startErr && <p className="text-red" style={{ fontSize: 13 }}>{startErr}</p>}
 
@@ -351,7 +542,15 @@ export default function AgentProposals() {
                     </td>
                     <td>#{r.id}</td>
                     <td>{r.ym}</td>
-                    <td><span className={STATUS_TAG[r.status]}>{r.status}</span></td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <span className={STATUS_TAG[r.status]}>{r.status}</span>
+                      {r.status === 'paused' && r.stage && (
+                        <span className="text-muted" style={{ fontSize: 11, marginLeft: 5 }}>
+                          {r.stage} done
+                        </span>
+                      )}
+                      {r.mode === 'manual' && <span className="tag tag-gray" style={{ marginLeft: 5 }}>step</span>}
+                    </td>
                     <td className="text-muted">{r.trigger_source}</td>
                     <td className="right">{num(r.lines_kept)}</td>
                     <td className="right">{num(r.lines_vetoed)}</td>

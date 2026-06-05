@@ -547,7 +547,12 @@ def init_user_db():
             ym text NOT NULL,
             trigger_source text NOT NULL DEFAULT 'manual',
             status text NOT NULL DEFAULT 'running'
-                CHECK (status IN ('running','completed','failed','aborted')),
+                CHECK (status IN ('running','paused','completed','failed','aborted')),
+            mode text NOT NULL DEFAULT 'auto',
+            stage text,
+            scout_json text,
+            plan_json text,
+            gated_json text,
             batch_id text,
             candidates integer DEFAULT 0,
             lines_kept integer DEFAULT 0,
@@ -593,6 +598,19 @@ def init_user_db():
         # "sourcing: tool rip_tier_gap"). Written before each action starts so
         # the live trace UI never shows a silent gap during long model turns.
         "ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS current_action text",
+        # Stepwise (one-agent-at-a-time) execution: mode 'auto'|'manual',
+        # stage tracks the last finished agent ('scout'|'sourcing'|'gate'|
+        # 'staged'), and the *_json columns persist each stage's artifact so
+        # the next stage can resume from it. The status CHECK gains 'paused'
+        # (drop+add keeps existing rows; runs every boot, harmless).
+        "ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS mode text DEFAULT 'auto'",
+        "ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS stage text",
+        "ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS scout_json text",
+        "ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS plan_json text",
+        "ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS gated_json text",
+        "ALTER TABLE agent_runs DROP CONSTRAINT IF EXISTS agent_runs_status_check",
+        """ALTER TABLE agent_runs ADD CONSTRAINT agent_runs_status_check
+            CHECK (status IN ('running','paused','completed','failed','aborted'))""",
     ]
     with get_pg() as con:
         for s in stmts:

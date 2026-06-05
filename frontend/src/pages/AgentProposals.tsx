@@ -274,16 +274,17 @@ export default function AgentProposals() {
   const runs = data?.runs ?? [];
   const running = runs.some(r => r.status === 'running');
 
-  // When a run starts, expand it automatically so the live action stream is
-  // visible at once (no black box). Only once per run, so the user can still
-  // collapse it without it fighting back.
+  // The trace IS the product here, so never land on a closed page: expand the
+  // running run (live stream) or, failing that, the latest run. Only once per
+  // run id, so the user can still collapse it without it fighting back.
   const runningRun = runs.find(r => r.status === 'running');
   useEffect(() => {
-    if (runningRun && autoOpened !== runningRun.id) {
-      setOpen(runningRun.id);
-      setAutoOpened(runningRun.id);
+    const target = runningRun ?? runs[0];
+    if (target && autoOpened !== target.id) {
+      setOpen(target.id);
+      setAutoOpened(target.id);
     }
-  }, [runningRun, autoOpened]);
+  }, [runningRun, runs, autoOpened]);
   const completed = runs.filter(r => r.status === 'completed');
   const totalCost = completed.reduce((a, r) => a + (r.cost_usd || 0), 0);
   const totalSavings = completed.reduce((a, r) => a + (r.est_savings_usd || 0), 0);
@@ -340,7 +341,14 @@ export default function AgentProposals() {
                 <>
                   <tr key={r.id} style={{ cursor: 'pointer' }}
                       onClick={() => setOpen(open === r.id ? null : r.id)}>
-                    <td>{open === r.id ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <button className="btn btn-sm btn-secondary"
+                              onClick={e => { e.stopPropagation(); setOpen(open === r.id ? null : r.id); }}>
+                        {open === r.id ? <ChevronDown size={13} style={{ verticalAlign: -2 }} />
+                                       : <ChevronRight size={13} style={{ verticalAlign: -2 }} />}
+                        {open === r.id ? ' Hide trace' : ' View trace'}
+                      </button>
+                    </td>
                     <td>#{r.id}</td>
                     <td>{r.ym}</td>
                     <td><span className={STATUS_TAG[r.status]}>{r.status}</span></td>

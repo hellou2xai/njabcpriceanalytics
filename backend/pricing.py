@@ -865,6 +865,11 @@ def attach_tiers(con, records, ref_date=None) -> None:
         # covered by a partial QD (e.g. Remy: RIP Jun 1-8/11-30 + QD Jun 9-10) is
         # NOT a trap, so it must not be flagged. Only true no-deal runs warn.
         _gk = (rec["wholesaler"], rec["edition"], str(rec.get("upc") or "").lstrip("0"))
+        _uk = str(rec.get("upc") or "").lstrip("0")
+        # QTYs whose discount is available a FULL calendar month (evergreen) for
+        # this UPC — used to tell a genuine partial QD from a sub-month row that
+        # merely DUPLICATES the full-month deal.
+        _fq = full_qty.get((rec["wholesaler"], rec["edition"], _uk), set())
         _wins = list(rip_wins.get(_gk, []))
         # Full dated-deal timeline (ALL windows, not the deduped tiers) for the
         # clickable timing popover. RIP windows share the best-RIP price; partial
@@ -898,29 +903,49 @@ def attach_tiers(con, records, ref_date=None) -> None:
                 _fcp = float(pr["fcp"]); _bcp = float(pr["bcp"])
             except (TypeError, ValueError, KeyError):
                 _fcp = _bcp = None
-            if _fcp is not None and _bcp is not None and _bcp < _fcp - 0.005:
-                pf, pt = _to_date(pr["from_date"]), _to_date(pr["to_date"])
-                if pf and pt:
-                    _wins.append((pf, pt))
-                    k = ("QD", pf, pt)
-                    if k not in seen_w:
-                        seen_w.add(k)
-                        # Best discount tier on this sub-month row → its qty/unit.
-                        _bq, _ba, _bu = None, 0.0, "Cases"
-                        for _j in range(1, 6):
-                            _a = pr.get(f"d{_j}a")
-                            if _a is None or (isinstance(_a, float) and math.isnan(_a)) or _a <= 0:
-                                continue
-                            _mm = re.match(r"^\s*(\d+(?:\.\d+)?)\s*(.*)$", str(pr.get(f"d{_j}q") or ""))
-                            if _mm and float(_a) > _ba:
-                                _ba = float(_a); _bq = int(float(_mm.group(1)))
-                                _bu = "Bottles" if _norm_unit(_mm.group(2) or "") == "bottle" else "Cases"
-                        deal_windows.append({"kind": "QD", "from": pf.isoformat(), "to": pt.isoformat(),
-                                             "qty": _bq, "unit": _bu,
-                                             "eff": round(_bcp, 2), "save": round(_fcp - _bcp, 2)})
+            if _fcp is None or _bcp is None or _bcp >= _fcp - 0.005:
+                continue
+            pf, pt = _to_date(pr["from_date"]), _to_date(pr["to_date"])
+            if not (pf and pt):
+                continue
+            # Best discount tier on this sub-month row → its qty/unit.
+            _bq, _ba, _bu = None, 0.0, "Cases"
+            for _j in range(1, 6):
+                _a = pr.get(f"d{_j}a")
+                if _a is None or (isinstance(_a, float) and math.isnan(_a)) or _a <= 0:
+                    continue
+                _mm = re.match(r"^\s*(\d+(?:\.\d+)?)\s*(.*)$", str(pr.get(f"d{_j}q") or ""))
+                if _mm and float(_a) > _ba:
+                    _ba = float(_a); _bq = int(float(_mm.group(1)))
+                    _bu = "Bottles" if _norm_unit(_mm.group(2) or "") == "bottle" else "Cases"
+            # A sub-month row whose QTY is ALSO sold full-month is a redundant
+            # duplicate of the evergreen deal — NOT a genuine partial QD. Skip it
+            # so it can't masquerade as a dated deal in the timing popover (the
+            # distributor's price file segments the month, repeating the same
+            # full-month QD in each segment). Full-month coverage for gap
+            # detection is handled by the evergreen check below.
+            if _bq is not None and _bq in _fq:
+                continue
+            _wins.append((pf, pt))
+            k = ("QD", pf, pt)
+            if k not in seen_w:
+                seen_w.add(k)
+                deal_windows.append({"kind": "QD", "from": pf.isoformat(), "to": pt.isoformat(),
+                                     "qty": _bq, "unit": _bu,
+                                     "eff": round(_bcp, 2), "save": round(_fcp - _bcp, 2)})
         deal_windows.sort(key=lambda x: x["from"])
         rec["deal_windows"] = deal_windows
-        rec["rip_gaps"] = _gaps_from_windows(_wins, eastern_today())
+        # A full-month (evergreen) deal that beats frontline is active EVERY day,
+        # so there can be no no-deal trap. Gap detection only tracks dated
+        # RIP/QD windows, so account for the evergreen deal explicitly — else a
+        # product with a full-month QD + two dated RIP windows would falsely show
+        # a 'gap' on the days between the RIP windows.
+        _has_evergreen_deal = any(
+            (t.get("price_after") is not None and cp and t["price_after"] < cp - 0.005
+             and not t.get("is_time_sensitive"))
+            for t in rec["tiers"]
+        )
+        rec["rip_gaps"] = [] if _has_evergreen_deal else _gaps_from_windows(_wins, eastern_today())
 
         # Reconcile inline DISCOUNT tiers with the AUTHORITATIVE raw-cpl windows.
         # The enriched cache can mark a discount evergreen even though the raw cpl
@@ -928,8 +953,7 @@ def attach_tiers(con, records, ref_date=None) -> None:
         # showed no partial flag while the header timing badge did). If a qty has
         # a partial QD window AND is NOT in any full-calendar-month raw row, stamp
         # the partial window onto the tier so the inline flag matches the truth.
-        _uk = str(rec.get("upc") or "").lstrip("0")
-        _fq = full_qty.get((rec["wholesaler"], rec["edition"], _uk), set())
+        # (_uk / _fq computed above when building deal_windows.)
         _qdw = {int(w["qty"]): w for w in deal_windows
                 if w.get("kind") == "QD" and w.get("qty") is not None}
         if _qdw:

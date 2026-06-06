@@ -9,7 +9,24 @@ import AddToCartButton from '../components/AddToCartButton';
 import AddToListButton from '../components/AddToListButton';
 import { QtyStepper, loadCart, saveCart, type CartState } from '../components/CatalogTable';
 import PriceSparklines from '../components/PriceSparklines';
+import PartialSticker, { partialDeals } from '../components/PartialSticker';
 import { buildMonths } from '../lib/promotionsSparkline';
+import { windowBadge, fmtDateRange } from '../lib/dealDates';
+
+// Per-tier partial-month flag for the QD / Mix-RIP stacks on the detail page —
+// a deal valid only on certain dates (not the full month). Full-month tiers
+// render nothing.
+function TierWin({ t }: { t: CatalogTier }) {
+  const wb = windowBadge(t);
+  if (!t.is_time_sensitive && !wb) return null;
+  const range = fmtDateRange(t.from_date, t.to_date);
+  return (
+    <span className={`win-badge ${wb?.cls ?? 'win-partial'}${wb?.urgent ? ' urgent' : ''}`}
+      title={`Partial-month — only valid ${range || 'on limited dates'}. Applies only on these dates.`}>
+      {t.is_time_sensitive ? `Partial · ${range || 'limited'}` : wb?.label}{t.is_time_sensitive && wb ? ` · ${wb.label}` : ''}
+    </span>
+  );
+}
 import { useProductSizes, bottlesPerCase, sizeToMl } from '../lib/productSizes';
 import { useComboLink } from '../lib/comboLink';
 import { distributorName, abgSku, skuLabel } from '../lib/distributors';
@@ -146,6 +163,7 @@ function SizeSection({ size, view, cart, updateQty, primaryName }: {
                     {t.save_per_case > 0 && <span className="pd-deal-off"> (${t.save_per_case.toFixed(2)} off)</span>}
                     {tb != null && <> – ${tb.toFixed(2)}/bottle</>}
                     {tBtlOz != null && <span className="pd-oz">{oz(tBtlOz)}</span>}
+                    {' '}<TierWin t={t} />
                   </div>
                 );
               })}
@@ -179,6 +197,7 @@ function SizeSection({ size, view, cart, updateQty, primaryName }: {
           {ripTiers.map((t, i) => (
             <div key={i} className="pd-mixrip-line">
               Buy {t.qty} {unitWord(t.qty, t.unit)} – <strong>${t.amount.toFixed(2)} RIP</strong>
+              {' '}<TierWin t={t} />
               {t.price_after != null && (() => {
                 const mb = btl(t.price_after) ?? t.btl_price_after;
                 return (
@@ -261,6 +280,11 @@ export default function ProductDetail() {
   }, [sizes]);
   const anyDisc = sizes.some(s => s.has_discount);   // quantity discount
   const anyRip = sizes.some(s => s.has_rip);          // RIP
+  // Header partial-deal sticker: the first size carrying a partial-month QD/RIP.
+  const headerMonths = useMemo(() => {
+    for (const s of sizes) { const m = buildMonths(s); if (partialDeals(m).length) return m; }
+    return null;
+  }, [sizes]);
   const comboLink = useComboLink();
   const anyComboUrl = sizes.map(s => comboLink(s.wholesaler, s.upc)).find(Boolean) ?? null;
 
@@ -331,6 +355,7 @@ export default function ProductDetail() {
             <Link to={anyComboUrl} className="pd-deal-badge pd-deal-combo"
               title="Part of a combo bundle — view the combo">🎁 Combo</Link>
           )}
+          {headerMonths && <PartialSticker months={headerMonths} />}
           <div className="pd-identity">
             <ProductThumb src={enrichment?.image_url ?? sizes[0]?.image_url} alt={name} size={120} />
             <div className="pd-identity-meta">

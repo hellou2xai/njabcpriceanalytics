@@ -21,6 +21,7 @@ import { useEffect, useRef, useState, useLayoutEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { catalog } from '../lib/api';
 import { bottlesPerCase } from '../lib/productSizes';
+import { windowBadge, fmtDateRange } from '../lib/dealDates';
 import type { MonthBreakdown, RipTier } from './MonthEffectiveSparkline';
 import type { PricePoint } from '../lib/api';
 
@@ -91,7 +92,15 @@ function RichMonth({ b, pack, current }: { b: MonthBreakdown; pack: number | nul
     return (
       <span className="psk-pop-deal" key={`${kind}${i}`}>
         <span className="psk-pop-buy">Buy {t.qty} {unitWord(t.unit)}
-          <span className={`psk-pill psk-pill-${kind}`}>{kind === 'disc' ? 'Disc' : 'RIP'}</span></span>
+          <span className={`psk-pill psk-pill-${kind}`}>{kind === 'disc' ? 'Disc' : 'RIP'}</span>
+          {(() => {
+            const wb = windowBadge(t);
+            if (!t.ts && !wb) return null;
+            const range = fmtDateRange(t.from_date, t.to_date);
+            return <span className={`win-badge ${wb?.cls ?? 'win-partial'}${wb?.urgent ? ' urgent' : ''}`}
+              title={`Partial-month — only valid ${range || 'limited dates'}`}>
+              {t.ts ? `Partial · ${range || 'limited'}` : wb?.label}</span>;
+          })()}</span>
         <span className="psk-pop-amt">{priceCB(t.eff, pack, b.size)}
           {off != null && off > 0.005 && <span className="psk-off"> (−${off.toFixed(2)})</span>}</span>
       </span>

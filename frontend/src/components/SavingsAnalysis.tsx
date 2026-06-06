@@ -11,7 +11,25 @@ import { Link } from 'react-router-dom';
 import { TrendingUp, Layers, Repeat, CalendarClock, PiggyBank, Sparkles, Clock } from 'lucide-react';
 import type { SavingsAnalysis as Analysis, SavingsRec } from '../lib/api';
 import { distributorName, abgSku, skuLabel } from '../lib/distributors';
+import { windowBadge, fmtDateRange } from '../lib/dealDates';
 import PriceSparklines from './PriceSparklines';
+
+// Flags a recommendation whose deal is a PARTIAL-month (time-sensitive) RIP —
+// only valid on specific dates. The buyer must act inside the window, so the
+// optimizer calls it out explicitly with the date range + live status.
+function PartialFlag({ rec }: { rec: SavingsRec }) {
+  const p = rec.partial;
+  if (!p) return null;
+  const wb = windowBadge({ window_status: p.window_status, days_to_expire: p.days_to_expire,
+    from_date: p.from_date, to_date: p.to_date });
+  const range = fmtDateRange(p.from_date, p.to_date);
+  return (
+    <span className={`win-badge ${wb?.cls ?? 'win-partial'}${wb?.urgent ? ' urgent' : ''}`}
+      title={`Partial-month RIP — only valid ${range || 'on limited dates'}. The saving applies just on these dates.`}>
+      ⏱ Partial · {range || 'limited dates'}{wb ? ` · ${wb.label}` : ''}
+    </span>
+  );
+}
 
 // UPC (always) + vendor item code (ABG/Fedway, when present) for a savings row.
 function Ids({ rec }: { rec: SavingsRec }) {
@@ -84,6 +102,7 @@ function RecCard({ rec, context, onSetQty, onSwap, busy }: {
             <ProductLink rec={rec} />{rec.unit_volume ? ` · ${rec.unit_volume}` : ''}
             <Expiry rec={rec} />
             <Mom rec={rec} />
+            <PartialFlag rec={rec} />
           </div>
           <Ids rec={rec} />
           <div className="sav-rec-text">
@@ -122,6 +141,7 @@ function RecCard({ rec, context, onSetQty, onSwap, busy }: {
             <span className="prod-deal-badge prod-deal-rip">Case Mix</span>
             <strong>RIP {rec.rip_code}</strong> · {rec.members?.length} items
             {rec.description ? <span className="sav-rec-desc"> — {rec.description}</span> : null}
+            <PartialFlag rec={rec} />
           </div>
           <div className="sav-rec-text">
             You have <strong>{rec.current_cases}</strong> of <strong>{rec.target_qty}</strong> cases across these —

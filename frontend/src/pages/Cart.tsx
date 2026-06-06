@@ -5,6 +5,7 @@ import { cart as cartApi, salesReps as repsApi, catalog, type CartItem, type Pro
 import ProductThumb from '../components/ProductThumb';
 import SavingsAnalysis from '../components/SavingsAnalysis';
 import DealSparkline from '../components/DealSparkline';
+import { windowBadge, fmtDateRange } from '../lib/dealDates';
 import { useProductQuickView } from '../components/ProductQuickView';
 import { useDialog } from '../components/Dialog';
 import { shortUnit } from '../components/CatalogTable';
@@ -374,6 +375,17 @@ export default function Cart() {
                 title={t.description || undefined}>
                 {t.source === 'discount' ? 'DISC' : 'RIP'} · Buy {t.qty} {shortUnit(t.unit)} = <strong>${t.amount.toFixed(2)}</strong>
                 {t.save_per_case != null ? ` (save $${t.save_per_case.toFixed(2)}/cs)` : ''}
+                {(() => {
+                  const wb = windowBadge(t);
+                  if (!t.is_time_sensitive && !wb) return null;
+                  const range = fmtDateRange(t.from_date, t.to_date);
+                  return (
+                    <span className={`win-badge ${wb?.cls ?? 'win-partial'}${wb?.urgent ? ' urgent' : ''}`}
+                      style={{ marginLeft: 5 }} title={`Partial-month — only valid ${range || 'limited dates'}`}>
+                      {t.is_time_sensitive ? `Partial · ${range || 'limited'}` : wb?.label}{t.is_time_sensitive && wb ? ` · ${wb.label}` : ''}
+                    </span>
+                  );
+                })()}
               </span>
             ))}
           </div>

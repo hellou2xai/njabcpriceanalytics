@@ -420,6 +420,47 @@ def attach_tiers(con, records, ref_date=None) -> None:
             upc_key = (str(r["rip_code"]), r["wholesaler"], r["edition"], str(r.get("upc") or ""))
             rip_full.setdefault(upc_key, []).extend(tiers_here)
 
+    # Partial-window QUANTITY DISCOUNTS. A dated promo lives as a SEPARATE
+    # sub-month row in the RAW cpl (with its own best_case_price = the BEST QD
+    # for those dates); the enriched cache keeps only the full-month row, so the
+    # partial QD is invisible here. We pull each sub-month row and surface its
+    # best_case_price as ONE partial tier (only the best QD applies on a date —
+    # never stacked), flagged time-sensitive with the date window.
+    part_rows: dict = {}   # (ws, ed, upc_norm) -> [raw partial rows]
+    p_ws = sorted({r["wholesaler"] for r in records if r.get("wholesaler")})
+    p_ed = sorted({r["edition"] for r in records if r.get("edition")})
+    p_un = sorted({str(r.get("upc") or "").lstrip("0") for r in records if r.get("upc") and str(r.get("upc")).lstrip("0")})
+    if p_ws and p_ed and p_un:
+        try:
+            craw = read_parquet(con, "cpl")
+            pp = {}
+            ph_pw = ", ".join(f"$pw{i}" for i in range(len(p_ws)))
+            ph_pe = ", ".join(f"$pe{i}" for i in range(len(p_ed)))
+            ph_pu = ", ".join(f"$pu{i}" for i in range(len(p_un)))
+            for i, v in enumerate(p_ws): pp[f"pw{i}"] = v
+            for i, v in enumerate(p_ed): pp[f"pe{i}"] = v
+            for i, v in enumerate(p_un): pp[f"pu{i}"] = v
+            prows = con.execute(f"""
+                SELECT wholesaler, edition, LTRIM(CAST(upc AS VARCHAR), '0') AS un,
+                       CAST(from_date AS DATE) AS from_date, CAST(to_date AS DATE) AS to_date,
+                       frontline_case_price AS fcp, best_case_price AS bcp,
+                       discount_1_qty AS d1q, discount_1_amt AS d1a,
+                       discount_2_qty AS d2q, discount_2_amt AS d2a,
+                       discount_3_qty AS d3q, discount_3_amt AS d3a,
+                       discount_4_qty AS d4q, discount_4_amt AS d4a,
+                       discount_5_qty AS d5q, discount_5_amt AS d5a
+                FROM {craw}
+                WHERE wholesaler IN ({ph_pw}) AND edition IN ({ph_pe})
+                  AND LTRIM(CAST(upc AS VARCHAR), '0') IN ({ph_pu})
+                  AND from_date IS NOT NULL AND to_date IS NOT NULL
+                  AND NOT (EXTRACT(day FROM CAST(from_date AS DATE)) = 1
+                           AND CAST(to_date AS DATE) = (date_trunc('month', CAST(to_date AS DATE)) + INTERVAL 1 MONTH - INTERVAL 1 DAY))
+            """, pp).fetchdf()
+            for _, r in prows.iterrows():
+                part_rows.setdefault((r["wholesaler"], r["edition"], str(r["un"])), []).append(r)
+        except Exception:
+            part_rows = {}
+
     def _lookup_rips(rec):
         # Prefer the CLUSTER's code (rip_group_code) when present, so a row
         # fanned out under RIP A shows RIP A's tiers even if its CPL-side
@@ -504,6 +545,51 @@ def attach_tiers(con, records, ref_date=None) -> None:
                 "window_status": cpl_win["status"],
                 "days_to_expire": cpl_win["days_to_expire"],
             })
+
+        # Partial-window QD tiers from the raw sub-month rows (see batch above).
+        # Each sub-month row contributes its BEST quantity discount (the qty with
+        # the largest amount, priced at the row's best_case_price — only the best
+        # QD applies on a date, never stacked), flagged time-sensitive with the
+        # date window so the UI shows it as a PARTIAL QD.
+        un_key = str(rec.get("upc") or "").lstrip("0")
+        for pr in part_rows.get((rec["wholesaler"], rec["edition"], un_key), []):
+            # Best discount tier on this sub-month row.
+            best_qty, best_amt, best_unit = None, 0.0, "Cases"
+            for j in range(1, 6):
+                a = pr.get(f"d{j}a")
+                if a is None or (isinstance(a, float) and math.isnan(a)) or a <= 0:
+                    continue
+                mm = re.match(r"^\s*(\d+(?:\.\d+)?)\s*(.*)$", str(pr.get(f"d{j}q") or ""))
+                if not mm:
+                    continue
+                if float(a) > best_amt:
+                    best_amt = float(a)
+                    best_qty = int(float(mm.group(1)))
+                    best_unit = "Bottles" if _norm_unit(mm.group(2) or "") == "bottle" else "Cases"
+            if not best_qty or best_amt <= 0:
+                continue
+            p_front = float(pr["fcp"]) if pr["fcp"] is not None and not (isinstance(pr["fcp"], float) and math.isnan(pr["fcp"])) else cp
+            p_best = (float(pr["bcp"]) if pr["bcp"] is not None and not (isinstance(pr["bcp"], float) and math.isnan(pr["bcp"]))
+                      else round(p_front - best_amt, 2))
+            if p_best is None or p_best >= p_front - 0.005:
+                continue
+            # Skip if a full-month tier at this qty already beats it.
+            if any(d["qty"] == best_qty and (d["unit"] or "").lower() == best_unit.lower()
+                   and (d.get("price_after") or 1e9) <= p_best + 0.005 for d in disc):
+                continue
+            p_win = window_status(pr["from_date"], pr["to_date"], ref_date)
+            disc.append({
+                "source": "discount", "qty": best_qty, "unit": best_unit,
+                "amount": round(p_front - p_best, 2), "save_per_case": round(p_front - p_best, 2),
+                "price_after": round(p_best, 2),
+                "btl_price_after": _btl_after(round(p_best, 2), uq),
+                "save_per_bottle": round((p_front - p_best) / uq, 2) if uq > 0 else None,
+                "roi_pct": round((p_front - p_best) / p_front * 100, 2) if p_front > 0 else 0.0,
+                "is_time_sensitive": True,
+                "from_date": _iso(pr["from_date"]), "to_date": _iso(pr["to_date"]),
+                "window_status": p_win["status"], "days_to_expire": p_win["days_to_expire"],
+            })
+        disc.sort(key=lambda d: d["qty"])
 
         # RIP tiers. When a CPL row matches MULTIPLE RIP codes (e.g. fedway's
         # "10604 120001"), each code can contribute its own ladder — including

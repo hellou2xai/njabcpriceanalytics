@@ -727,6 +727,15 @@ export interface SavingsRec {
   // Month-over-month context (digest only): how this item's best per-case
   // savings compares to last edition.
   mom?: { dir: 'new' | 'up' | 'down' | 'same'; delta: number; text: string };
+  // Set when the recommended deal is a PARTIAL-month (time-sensitive) RIP — only
+  // valid on these dates, so the buyer must act within the window.
+  partial?: {
+    from_date?: string | null;
+    to_date?: string | null;
+    window_status?: WindowStatus | null;
+    days_to_expire?: number | null;
+    time_sensitive?: boolean;
+  };
 }
 export interface SavingsAnalysis {
   captured_total: number;

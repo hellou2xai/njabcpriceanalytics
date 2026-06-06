@@ -358,11 +358,21 @@ def _case_tiers(item: dict, kind: str) -> list[dict]:
     by qty. Bottle-unit tiers are skipped (the analyzer nudges on whole cases).
     Reads the canonical `tiers` attached by _attach_cart_pricing — no new math."""
     out = []
+    try:
+        pack = float(item.get("unit_qty") or 0)
+    except (TypeError, ValueError):
+        pack = 0.0
     for t in (item.get("tiers") or []):
         if t.get("source") != kind:
             continue
-        if str(t.get("unit", "")).lower().startswith("bottle"):
-            continue
+        u = str(t.get("unit", "")).lower()
+        if u.startswith("bottle") or u.startswith("btl"):
+            # A bottle-unit tier is case-equivalent ONLY when the item is sold
+            # 1 bottle per case (e.g. Remy) — then "Buy 1 bottle" IS "Buy 1
+            # case". For true multipacks the per-case math is ambiguous, so we
+            # still skip those (the per-case nudge wouldn't be meaningful).
+            if pack != 1:
+                continue
         try:
             q = int(t["qty"])
         except (TypeError, ValueError):
@@ -379,6 +389,9 @@ def _case_tiers(item: dict, kind: str) -> list[dict]:
             "roi": _fnum(t.get("roi_pct")) or 0.0,
             "window_status": t.get("window_status"),
             "days_to_expire": t.get("days_to_expire"),
+            "is_time_sensitive": bool(t.get("is_time_sensitive")),
+            "from_date": t.get("from_date"),
+            "to_date": t.get("to_date"),
             "description": t.get("description"),
         })
     out.sort(key=lambda x: x["qty"])
@@ -527,6 +540,15 @@ def analyze_lines(items: list[dict]) -> dict:
                 "extra_savings": extra,
                 "window_status": nxt["window_status"], "days_to_expire": nxt["days_to_expire"],
             }
+            # Flag partial-month (time-sensitive) deals: the saving is only
+            # realizable on these dates, so the optimizer must call it out.
+            if nxt.get("is_time_sensitive") or nxt.get("window_status") in ("active", "upcoming", "expired"):
+                payload["partial"] = {
+                    "from_date": nxt.get("from_date"), "to_date": nxt.get("to_date"),
+                    "window_status": nxt.get("window_status"),
+                    "days_to_expire": nxt.get("days_to_expire"),
+                    "time_sensitive": bool(nxt.get("is_time_sensitive")),
+                }
             if best is None or extra > best[0]:
                 best = (extra, payload)
         if best:
@@ -542,10 +564,19 @@ def analyze_lines(items: list[dict]) -> dict:
         sum_cases = sum(int(it.get("qty_cases") or 0) for it in grp)
         tier_map: dict = {}
         desc = None
+        partial = None    # carry a partial-month window if the mix RIP has one
         for it in grp:
             for t in _case_tiers(it, "rip"):
                 tier_map[t["qty"]] = max(tier_map.get(t["qty"], 0.0), t["save"])
                 desc = desc or t.get("description")
+                if partial is None and (t.get("is_time_sensitive")
+                                        or t.get("window_status") in ("active", "upcoming", "expired")):
+                    partial = {
+                        "from_date": t.get("from_date"), "to_date": t.get("to_date"),
+                        "window_status": t.get("window_status"),
+                        "days_to_expire": t.get("days_to_expire"),
+                        "time_sensitive": bool(t.get("is_time_sensitive")),
+                    }
         tiers = [{"qty": q, "save": s} for q, s in sorted(tier_map.items())]
         cur_save, nxt = _next_tier(tiers, sum_cases)
         if not nxt:
@@ -553,13 +584,16 @@ def analyze_lines(items: list[dict]) -> dict:
         extra = round(nxt["save"] * nxt["qty"] - cur_save * sum_cases, 2)
         if extra <= 1.0:
             continue
-        recs.append({
+        rec = {
             "type": "case_mix", "rip_code": rc, "wholesaler": ws, "description": desc,
             "members": [it.get("product_name") for it in grp],
             "line_ids": [it.get("id") for it in grp],
             "current_cases": sum_cases, "target_qty": nxt["qty"],
             "add_cases": nxt["qty"] - sum_cases, "extra_savings": extra,
-        })
+        }
+        if partial:
+            rec["partial"] = partial
+        recs.append(rec)
 
     # --- buy-before-increase (next edition costs more) ---
     protection = 0.0

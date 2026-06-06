@@ -13,8 +13,26 @@
  * so there is exactly one place that turns canonical tiers into UI.
  */
 import type { MonthBreakdown, RipTier } from './MonthEffectiveSparkline';
+import { windowBadge, fmtDateRange } from '../lib/dealDates';
 
 const unitWord = (u: string) => (/btl|bottle/i.test(u) ? 'btl' : 'cs');
+
+// Partial-month (time-sensitive) RIP/discount flag with its date window — so a
+// deal that's only valid part of the month is never mistaken for the dependable
+// full-month price. Full-month / evergreen tiers render nothing.
+function PartialFlag({ t }: { t: RipTier }) {
+  const wb = windowBadge(t);
+  if (!t.ts && !wb) return null;
+  const range = fmtDateRange(t.from_date, t.to_date);
+  const cls = wb ? wb.cls : 'win-partial';
+  const label = t.ts ? `Partial · ${range || 'limited dates'}` : (wb?.label ?? '');
+  return (
+    <span className={`win-badge ${cls}${wb?.urgent ? ' urgent' : ''}`}
+      title={`Partial-month RIP — only valid ${range || 'on limited dates'}${wb ? ` (${wb.label})` : ''}. Not part of the full-month price.`}>
+      {label}{t.ts && wb ? ` · ${wb.label}` : ''}
+    </span>
+  );
+}
 
 export default function DealLadder({ months, pack, emptyText }: {
   months: MonthBreakdown[];
@@ -42,6 +60,7 @@ export default function DealLadder({ months, pack, emptyText }: {
         Buy {t.qty} {unitWord(t.unit)} → <strong>${t.eff.toFixed(2)}/cs</strong>
         {b != null && <span className="prod-deal-btl"> · ${b.toFixed(2)}/btl</span>}
         {off != null && off > 0.005 && <span className="prod-deal-off"> (−${off.toFixed(2)})</span>}
+        <PartialFlag t={t} />
       </div>
     );
   };

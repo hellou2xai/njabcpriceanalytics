@@ -448,6 +448,13 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
 .win-active { background: rgba(16,185,129,0.16); color: var(--green); }
 .win-badge.urgent { background: rgba(239,68,68,0.16); color: var(--red); }
 .win-upcoming { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.win-expired { background: color-mix(in srgb, var(--text-muted) 16%, transparent); color: var(--text-muted); }
+.win-partial { background: color-mix(in srgb, #d97706 16%, transparent); color: #b45309; }
+.prod-partial-sticker { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 800;
+  padding: 1px 7px; border-radius: 999px; white-space: nowrap; vertical-align: middle;
+  background: color-mix(in srgb, #d97706 16%, transparent); color: #b45309; }
+.prod-partial-sticker.urgent { background: rgba(239,68,68,0.16); color: var(--red); }
+.win-badge .lucide { width: 11px; height: 11px; }
 .win-expired { background: rgba(107,114,128,0.18); color: var(--text-muted); }
 /* The "live now" better-than-month price call-out on a catalog row / modal. */
 .live-price { color: var(--green); font-weight: 700; }
@@ -5494,6 +5501,8 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .wn-card-sub { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--text-muted); margin-top: 3px; font-weight: 600; }
 .wn-card-ids { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 10px; color: var(--text-muted); margin-top: 3px; font-variant-numeric: tabular-nums; }
 .wn-card-src { display: inline-flex; gap: 5px; color: var(--text-muted); margin-top: 4px; opacity: .8; }
+.wn-card-stickers { display: flex; flex-wrap: wrap; gap: 4px; }
+.wn-card-stickers:empty { display: none; }
 .sav-rec-ids { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 10px; color: var(--text-muted); margin: 2px 0; font-variant-numeric: tabular-nums; }
 .wn-card-change { font-size: 12px; font-weight: 700; padding: 5px 8px; border-radius: 6px; background: var(--bg); }
 .wn-card-change.wn-opportunity { color: var(--green); background: color-mix(in srgb, var(--green) 9%, var(--surface)); }

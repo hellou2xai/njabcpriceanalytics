@@ -23,6 +23,7 @@ import AddToListButton from './AddToListButton';
 import { QtyStepper, type CartState } from './CatalogTable';
 import PriceSparklines from './PriceSparklines';
 import DealLadder from './DealLadder';
+import PartialSticker from './PartialSticker';
 import { buildMonths } from '../lib/promotionsSparkline';
 import { catalog } from '../lib/api';
 import { useProductSizes, bottlesPerCase } from '../lib/productSizes';
@@ -157,6 +158,7 @@ function SizeRow({ size, cart, updateQty, primaryName }: {
         <span className="prod-size-badges">
           {size.has_discount && <span className="prod-deal-badge prod-deal-qd">QD</span>}
           {size.has_rip && <span className="prod-deal-badge prod-deal-rip">RIP</span>}
+          <PartialSticker months={months} />
           {comboUrl && (
             <Link to={comboUrl} className="prod-combo-sticker" onClick={e => e.stopPropagation()}
               title="This product is part of a combo bundle — view the combo">🎁 Combo</Link>
@@ -265,6 +267,7 @@ function ProductCard({ group, cart, updateQty }: {
             <Store size={12} className="prod-card-dist-icon" />
             {distributorName(group.wholesaler)}
           </div>
+          <div className="prod-card-stickers"><PartialSticker months={repMonths} /></div>
           {/* Sparkline sits next to the name so its hover tooltip opens over the
               left/content area, not off the right edge. */}
           {rep && (

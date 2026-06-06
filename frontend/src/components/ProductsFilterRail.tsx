@@ -117,10 +117,12 @@ export default function ProductsFilterRail({ filters, onChange, items, facets, t
             <TrackedOnlyToggle enabled={!!trackedOnly} onChange={onTrackedChange} />
           </div>
         )}
-        <label className="prod-filter-check">
+        {/* "In QD" (not the vague "Deals"): this drives hasDiscount, i.e. a
+            quantity discount — named like its siblings Has RIP / In combo. */}
+        <label className="prod-filter-check" title="Has a quantity discount (QD) this edition">
           <input type="checkbox" checked={filters.hasDiscount === true}
             onChange={() => onChange({ ...filters, hasDiscount: filters.hasDiscount === true ? undefined : true })} />
-          <span>Deals</span><span className="prod-filter-count">{discCount}</span>
+          <span>In QD</span><span className="prod-filter-count">{discCount}</span>
         </label>
         <label className="prod-filter-check">
           <input type="checkbox" checked={filters.hasRip === true}

@@ -387,6 +387,21 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
 .agents-page .catalog-table td { font-size: 14px; }
 .agents-page .catalog-table th { font-size: 12.5px; }
 
+/* ---- Combos: inline bundle-contents expander (no modal detour) ---- */
+.combo-items-expander { margin: 4px 0 2px; }
+.combo-items-toggle {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font: inherit; font-size: 12.5px; font-weight: 600; color: var(--accent);
+}
+.combo-items-toggle:hover { text-decoration: underline; }
+.combo-items-lines { margin-top: 4px; }
+.combo-item-line {
+  font-size: 12.5px; padding: 3px 0 3px 10px; white-space: normal;
+  border-left: 2px solid var(--border);
+}
+.combo-item-name { font-weight: 600; color: var(--accent); text-decoration: none; }
+.combo-item-name:hover { text-decoration: underline; }
+
 /* ---- QuantityPriceCurve: volume-pricing chart on Product Detail ---- */
 /* Side-by-side ONLY when the size section itself is wide enough (container
    query - the section lives in a ~400px rail today, where the chart stacks
@@ -5313,6 +5328,25 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 
 .products-layout { display: grid; grid-template-columns: 248px 1fr; gap: 20px; align-items: start; }
 @media (max-width: 1023px) { .products-layout { grid-template-columns: 1fr; } }
+/* Collapsed filter rail: a slim sticky strip; the grid takes the width. */
+.products-layout--collapsed { grid-template-columns: 40px 1fr; gap: 14px; }
+.prod-rail-reopen {
+  position: sticky; top: 12px;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 12px 0; width: 40px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); cursor: pointer; color: var(--text-muted);
+}
+.prod-rail-reopen:hover { color: var(--accent); border-color: var(--accent); }
+.prod-rail-reopen-label {
+  writing-mode: vertical-rl; font-size: 12px; font-weight: 600; letter-spacing: 0.03em;
+}
+.prod-filter-rail-actions { display: inline-flex; align-items: center; gap: 6px; }
+.prod-filter-collapse {
+  background: none; border: 0; padding: 2px; cursor: pointer;
+  color: var(--text-muted); border-radius: 6px; line-height: 0;
+}
+.prod-filter-collapse:hover { color: var(--accent); background: var(--bg); }
 
 /* ---- Left filter rail ---- */
 .prod-filter-rail {

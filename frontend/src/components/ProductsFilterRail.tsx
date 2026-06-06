@@ -7,7 +7,7 @@
  * dropdown toolbar) is new.
  */
 import { useMemo, useState, type ReactNode } from 'react';
-import { ChevronUp, SlidersHorizontal, XCircle } from 'lucide-react';
+import { ChevronLeft, ChevronUp, SlidersHorizontal, XCircle } from 'lucide-react';
 import type { CatalogFilters } from './CatalogFilterPanel';
 import { emptyCatalogFilters, countActiveFilters } from './CatalogFilterPanel';
 import type { Product, CatalogFacets } from '../lib/api';
@@ -54,9 +54,11 @@ interface Props {
   facets?: CatalogFacets;
   trackedOnly?: boolean;
   onTrackedChange?: (v: boolean) => void;
+  // When provided, the rail shows a collapse control in its header.
+  onCollapse?: () => void;
 }
 
-export default function ProductsFilterRail({ filters, onChange, items, facets, trackedOnly, onTrackedChange }: Props) {
+export default function ProductsFilterRail({ filters, onChange, items, facets, trackedOnly, onTrackedChange, onCollapse }: Props) {
   const [priceMin, setPriceMin] = useState(filters.priceMin?.toString() ?? '');
   const [priceMax, setPriceMax] = useState(filters.priceMax?.toString() ?? '');
   const [brandSearch, setBrandSearch] = useState('');
@@ -104,11 +106,19 @@ export default function ProductsFilterRail({ filters, onChange, items, facets, t
     <aside className="prod-filter-rail">
       <div className="prod-filter-rail-head">
         <span className="prod-filter-rail-title"><SlidersHorizontal size={16} /> Filters</span>
-        {total > 0 && (
-          <button type="button" className="prod-filter-clear" onClick={clearAll}>
-            <XCircle size={13} /> Clear ({total})
-          </button>
-        )}
+        <span className="prod-filter-rail-actions">
+          {total > 0 && (
+            <button type="button" className="prod-filter-clear" onClick={clearAll}>
+              <XCircle size={13} /> Clear ({total})
+            </button>
+          )}
+          {onCollapse && (
+            <button type="button" className="prod-filter-collapse" onClick={onCollapse}
+                    title="Collapse the filter rail">
+              <ChevronLeft size={15} />
+            </button>
+          )}
+        </span>
       </div>
 
       <Section title="Featured">

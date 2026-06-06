@@ -100,6 +100,51 @@ function SavingsCell({ c }: { c: Combo }) {
   return <span className="text-green font-bold">{$(b.savings)}</span>;
 }
 
+/** Inline bundle contents: one line per component, expandable straight in the
+ *  row (no modal detour). Each line: product link, qty per pack, regular vs
+ *  combo price each, save each. */
+function ComboItemsExpander({ c }: { c: Combo }) {
+  const [open, setOpen] = useState(false);
+  const comps = c.components ?? [];
+  if (comps.length === 0) return null;
+  return (
+    <div className="combo-items-expander" onClick={e => e.stopPropagation()}>
+      <button type="button" className="combo-items-toggle"
+              onClick={() => setOpen(o => !o)}>
+        {open ? '▾ Hide' : '▸ Show'} {comps.length} item{comps.length === 1 ? '' : 's'}
+      </button>
+      {open && (
+        <div className="combo-items-lines">
+          {comps.map((m, i) => {
+            const save = m.frontline_price_each != null && m.combo_price_each != null
+              ? m.frontline_price_each - m.combo_price_each : null;
+            const url = m.product_name
+              ? `/product?w=${encodeURIComponent(c.wholesaler)}&n=${encodeURIComponent(m.product_name)}${m.upc ? `&u=${encodeURIComponent(m.upc)}` : ''}`
+              : null;
+            return (
+              <div key={`${m.upc ?? m.product_name}-${i}`} className="combo-item-line">
+                {url
+                  ? <a href={url} className="combo-item-name">{m.product_name}</a>
+                  : <span className="combo-item-name">{m.product_name ?? 'Unknown item'}</span>}
+                {m.qty_per_pack && <span className="text-muted"> · {m.qty_per_pack}/pack</span>}
+                {m.frontline_price_each != null && (
+                  <span className="text-muted"> · reg {$(m.frontline_price_each)}</span>
+                )}
+                {m.combo_price_each != null && (
+                  <span> → <strong>{$(m.combo_price_each)}</strong> in combo</span>
+                )}
+                {save != null && save > 0.005 && (
+                  <span className="text-green"> (save {$(save)} each)</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ComboCartAdder({ combo }: { combo: Combo }) {
   const qc = useQueryClient();
   const [flash, setFlash] = useState<string | null>(null);
@@ -405,6 +450,7 @@ export default function Combos() {
                     <div className="combo-contains combo-contains-muted">
                       Combo #{r.combo_code}{r.item_count ? ` · ${r.item_count} item${r.item_count !== 1 ? 's' : ''}` : ''}
                     </div>
+                    <ComboItemsExpander c={r} />
                     <ComboCartCell combo={r} />
                   </div>
                 );

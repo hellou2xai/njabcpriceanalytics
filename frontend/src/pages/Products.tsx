@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams, useLocation } from 'react-router-dom';
-import { Search, Sparkles } from 'lucide-react';
+import { Search, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { catalog } from '../lib/api';
 import WholesalerFilter from '../components/WholesalerFilter';
 import RowLimitSelect from '../components/RowLimitSelect';
@@ -42,6 +42,13 @@ export default function Products() {
     return next;
   });
   const [cart, setCartState] = useState<CartState>(loadCart);
+  // Collapsible filter rail (persisted): collapsed = a slim strip, grid full width.
+  const [railCollapsed, setRailCollapsed] = useState(() =>
+    localStorage.getItem('prodFiltersCollapsed') === '1');
+  const toggleRail = (v: boolean) => {
+    setRailCollapsed(v);
+    localStorage.setItem('prodFiltersCollapsed', v ? '1' : '0');
+  };
 
   // URL -> state, so deep links (incl. the assistant's) and Back/Forward work.
   useEffect(() => {
@@ -179,15 +186,24 @@ export default function Products() {
         </p>
       )}
 
-      <div className="products-layout">
-        <ProductsFilterRail
-          filters={filters}
-          onChange={f => { setFilters(f); setPage(0); }}
-          items={items}
-          facets={facets}
-          trackedOnly={trackedOnly}
-          onTrackedChange={v => { setTrackedOnly(v); setPage(0); }}
-        />
+      <div className={`products-layout${railCollapsed ? ' products-layout--collapsed' : ''}`}>
+        {railCollapsed ? (
+          <button type="button" className="prod-rail-reopen" onClick={() => toggleRail(false)}
+                  title="Show filters">
+            <SlidersHorizontal size={15} />
+            <span className="prod-rail-reopen-label">Filters</span>
+          </button>
+        ) : (
+          <ProductsFilterRail
+            filters={filters}
+            onChange={f => { setFilters(f); setPage(0); }}
+            items={items}
+            facets={facets}
+            trackedOnly={trackedOnly}
+            onTrackedChange={v => { setTrackedOnly(v); setPage(0); }}
+            onCollapse={() => toggleRail(true)}
+          />
+        )}
 
         <div className="products-main">
           <div className="products-toolbar">

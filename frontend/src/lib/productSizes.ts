@@ -62,6 +62,8 @@ export interface UseProductSizesResult {
   sizes: Product[];
   isLoading: boolean;
   isFetching: boolean;
+  isError: boolean;     // the SIZES load failed — caller should show retry, not spin
+  refetch: () => void;
   mode?: string;        // 'name_core' | 'wine_name' (from the backend)
 }
 
@@ -73,27 +75,38 @@ export function useProductSizes(
 ): UseProductSizesResult {
   const on = enabled && !!wholesaler && !!productName;
 
-  // 1) Resolve the variant UPC set for this product.
-  const { data: variant } = useQuery({
+  // 1) Resolve the variant UPC set for this product. This is an OPTIMISATION
+  //    (it finds inconsistently-named sizes); it is NOT required to render. So
+  //    we never block on it: if it errors or returns nothing, step 2 falls back
+  //    to the exact-name search. The old gate (`variant !== undefined`) treated
+  //    "errored" and "still loading" identically, so any blip on this call hung
+  //    the page on "Loading sizes…" forever — that is the bug this fixes.
+  const variantQ = useQuery({
     enabled: on,
     staleTime: 60_000,
+    retry: 1,
     queryKey: ['product-variant', wholesaler, productName, upc],
     queryFn: () => catalog.productVariantUpcs(wholesaler, productName, { upc }),
   });
+  // "Settled" = success OR error (no longer pending). On error we proceed with
+  // an empty UPC set, which routes step 2 down the name fallback.
+  const variantSettled = !on || variantQ.isSuccess || variantQ.isError;
   const variantUpcs = useMemo(
-    () => (variant?.upcs ?? []).filter(u => u && u.replace(/^0+/, '')),
-    [variant],
+    () => (variantQ.data?.upcs ?? []).filter(u => u && u.replace(/^0+/, '')),
+    [variantQ.data],
   );
 
   // 2) Load the rows — by exact UPC set (spirits) or by name (wine / fallback).
-  const { data, isLoading, isFetching } = useQuery({
-    enabled: on && variant !== undefined,
+  const sizesQ = useQuery({
+    enabled: on && variantSettled,
     staleTime: 60_000,
+    retry: 1,
     queryKey: ['product-sizes', wholesaler, productName, variantUpcs.join(',')],
     queryFn: () => variantUpcs.length
       ? catalog.search({ wholesaler, upcs: variantUpcs.join(','), include_tiers: true, limit: 200, sort: 'product_name', order: 'asc' })
       : catalog.search({ q: productName, wholesaler, include_tiers: true, limit: 200, sort: 'product_name', order: 'asc' }),
   });
+  const { data, isFetching } = sizesQ;
 
   const sizes = useMemo(() => {
     const rows = (data?.items ?? []) as Product[];
@@ -118,8 +131,13 @@ export function useProductSizes(
 
   return {
     sizes,
-    isLoading: on && (isLoading || variant === undefined),
+    // Loading ONLY while we genuinely expect sizes and have neither data nor an
+    // error yet. A failed variant lookup no longer counts as "loading" (step 2
+    // takes over); a failed sizes search surfaces as isError, not a spinner.
+    isLoading: on && !sizesQ.isSuccess && !sizesQ.isError,
     isFetching,
-    mode: variant?.mode,
+    isError: on && sizesQ.isError,
+    refetch: () => { variantQ.refetch(); sizesQ.refetch(); },
+    mode: variantQ.data?.mode,
   };
 }

@@ -47,11 +47,19 @@ function detailUrl(p: { wholesaler: string; product_name: string; upc?: string |
 // ---- a related-product mini card (case-mix RIP siblings / more from brand) ----
 function MiniCard({ p }: { p: Product }) {
   const eff = p.effective_case_price ?? p.frontline_case_price ?? null;
+  const sku = abgSku(p.wholesaler, p.abg_sku) ? `${skuLabel(p.wholesaler)} ${p.abg_sku}` : null;
   return (
     <Link to={detailUrl(p)} className="pd-mini">
       <ProductThumb src={p.image_url} alt={p.product_name} size={72} />
       <div className="pd-mini-name">{p.product_name}</div>
       <div className="pd-mini-dist"><Store size={11} /> {distributorName(p.wholesaler)}</div>
+      {/* UPC + vendor SKU — shown on every product display, per spec. */}
+      {(sku || p.upc) && (
+        <div className="pd-mini-ids">
+          {sku && <span>SKU: {sku}</span>}
+          {p.upc && <span>UPC: {p.upc}</span>}
+        </div>
+      )}
       <div className="pd-mini-price">
         {eff != null ? `$${eff.toFixed(2)}/cs` : <span className="pd-mini-noprice">Price not available</span>}
       </div>
@@ -229,7 +237,7 @@ export default function ProductDetail() {
 
   // Every size of this product — via the shared "products by size" tool
   // (spirits: name-core variant grouping; wine: grouped by name + vintage).
-  const { sizes, isLoading } = useProductSizes(wholesaler, name, upc);
+  const { sizes, isLoading, isError, refetch } = useProductSizes(wholesaler, name, upc);
 
   const enrichment = detail?.enrichment;
   const product = detail?.product;
@@ -386,7 +394,13 @@ export default function ProductDetail() {
             </button>
           </div>
           <div className="pd-sizes">
-            {isLoading ? <p className="pd-loading">Loading sizes…</p>
+            {isError ? (
+                <div className="pd-loading">
+                  <p>Couldn’t load sizes.</p>
+                  <button type="button" className="btn btn-secondary" onClick={() => refetch()}>Retry</button>
+                </div>
+              )
+              : isLoading ? <p className="pd-loading">Loading sizes…</p>
               : sizes.length === 0 ? <p className="pd-loading">No sizes found.</p>
               : sizes.map((s, i) => (
                 <SizeSection key={`${s.product_name}|${s.upc}|${s.unit_volume}|${i}`}

@@ -237,16 +237,28 @@ function ProductCard({ group, cart, updateQty }: {
   const comboUrl = group.sizes.map(s => comboLink(s.wholesaler, s.upc)).find(Boolean) ?? null;
   const first = group.sizes[0];
 
-  // Compact QD/RIP price summary for the collapsed card, from the representative
-  // (cheapest) size's price fields that the list already returns — no extra
-  // fetch. best_case_price = the 1-case quantity-discount price; effective =
-  // the best-RIP price. (The full per-size tier ladder is in the expanded rows.)
+  // Compact deal summary for the collapsed card (rep = cheapest size), from
+  // fields the list already returns — no extra fetch. The QD tiers carry their
+  // QUANTITY (discount_N_qty), so we show "Buy N cs -> $price". The RIP per-tier
+  // quantity isn't on the list row (it lives in the rip sheet, loaded on
+  // expand), so we show the best RIP as the floor price you can reach.
   const rep = range?.lo ?? first;
   const repPack = rep ? bottlesPerCase(rep.product_name, rep.unit_qty) : null;
-  const qdPrice = rep && rep.has_discount && rep.best_case_price > 0
-    && rep.best_case_price < rep.frontline_case_price - 0.005 ? rep.best_case_price : null;
-  const ripPrice = rep && rep.has_rip
-    && rep.effective_case_price < (rep.best_case_price || rep.frontline_case_price) - 0.005 ? rep.effective_case_price : null;
+  const repFront = rep?.frontline_case_price ?? 0;
+  const qdTiers = (rep ? ([
+    [rep.discount_1_qty, rep.discount_1_amt], [rep.discount_2_qty, rep.discount_2_amt],
+    [rep.discount_3_qty, rep.discount_3_amt], [rep.discount_4_qty, rep.discount_4_amt],
+    [rep.discount_5_qty, rep.discount_5_amt],
+  ] as [string | null | undefined, number | null | undefined][]) : [])
+    .map(([q, a]) => {
+      if (!q || a == null) return null;
+      const m = /(\d+)\s*(cases?|btls?|bottles?)?/i.exec(String(q));
+      return m ? { qty: parseInt(m[1], 10), unit: /b/i.test(m[2] ?? '') ? 'btl' : 'cs', amt: Number(a) } : null;
+    })
+    .filter((t): t is { qty: number; unit: string; amt: number } => t != null && t.amt > 0.005)
+    .sort((a, b) => a.qty - b.qty);
+  const bestQd = qdTiers.length ? repFront - Math.max(...qdTiers.map(t => t.amt)) : repFront;
+  const ripBest = rep && rep.has_rip && rep.effective_case_price < bestQd - 0.005 ? rep.effective_case_price : null;
 
   // The list is paginated by SKU, so a product's sizes can be split across
   // pages. On expand, fetch the FULL size set via the shared "products by size"
@@ -289,22 +301,25 @@ function ProductCard({ group, cart, updateQty }: {
             </span>
           )}
         </div>
-        {(qdPrice || ripPrice) && rep && (
+        {(qdTiers.length > 0 || ripBest != null) && rep && (
           <div className="prod-card-deals">
-            {qdPrice != null && (
-              <span className="prod-deal-line">
-                <span className="prod-deal-badge prod-deal-qd">QD</span>
-                <strong>${qdPrice.toFixed(2)}/cs</strong>
-                {repPack && <span className="prod-deal-btl"> · ${(qdPrice / repPack).toFixed(2)}/btl</span>}
-                {rep.frontline_case_price - qdPrice > 0.005 && <span className="prod-deal-off"> (−${(rep.frontline_case_price - qdPrice).toFixed(2)})</span>}
-              </span>
-            )}
-            {ripPrice != null && (
-              <span className="prod-deal-line">
-                <span className="prod-deal-badge prod-deal-rip">RIP</span>
-                <strong>${ripPrice.toFixed(2)}/cs</strong>
-                {repPack && <span className="prod-deal-btl"> · ${(ripPrice / repPack).toFixed(2)}/btl</span>}
-                {(qdPrice ?? rep.frontline_case_price) - ripPrice > 0.005 && <span className="prod-deal-off"> (RIP −${((qdPrice ?? rep.frontline_case_price) - ripPrice).toFixed(2)})</span>}
+            {qdTiers.map((t, i) => {
+              const after = repFront - t.amt;
+              return (
+                <span key={i} className="prod-deal-line">
+                  <span className="prod-deal-badge prod-deal-qd">QD</span> Buy {t.qty} {t.unit} →{' '}
+                  <strong>${after.toFixed(2)}/cs</strong>
+                  {repPack && <span className="prod-deal-btl"> · ${(after / repPack).toFixed(2)}/btl</span>}
+                  <span className="prod-deal-off"> (−${t.amt.toFixed(2)})</span>
+                </span>
+              );
+            })}
+            {ripBest != null && (
+              <span className="prod-deal-line" title="Best RIP price you can reach — expand for the per-quantity RIP tiers">
+                <span className="prod-deal-badge prod-deal-rip">RIP</span> best{' '}
+                <strong>${ripBest.toFixed(2)}/cs</strong>
+                {repPack && <span className="prod-deal-btl"> · ${(ripBest / repPack).toFixed(2)}/btl</span>}
+                {bestQd - ripBest > 0.005 && <span className="prod-deal-off"> (−${(bestQd - ripBest).toFixed(2)})</span>}
               </span>
             )}
           </div>

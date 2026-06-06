@@ -475,6 +475,10 @@ def analyze_lines(items: list[dict]) -> dict:
             _attach_cart_pricing(dcon, items)        # canonical tiers + prices + rip_code
         except Exception:
             pass
+        try:
+            attach_sku_mapping(dcon, items)          # abg_sku (vendor item code)
+        except Exception:
+            pass
         src = read_parquet(dcon, "cpl_enriched")
         try:
             _pricing.attach_next_month_prices(dcon, src, items)
@@ -511,8 +515,9 @@ def analyze_lines(items: list[dict]) -> dict:
                 continue
             payload = {
                 "type": "tier_gap", "kind": "qd" if kind == "discount" else "rip",
-                "line_id": it.get("id"), "product_name": name, "upc": it.get("upc"),
+                "line_id": it.get("id"), "product_name": name, "upc": it.get("upc"), "abg_sku": it.get("abg_sku"),
                 "wholesaler": it.get("wholesaler"), "unit_volume": it.get("unit_volume"),
+                "unit_qty": it.get("unit_qty"), "vintage": it.get("vintage"),
                 "current_cases": C, "target_qty": nxt["qty"], "add_cases": nxt["qty"] - C,
                 "new_case_price": nxt["price_after"], "save_per_case": round(nxt["save"], 2),
                 # QD/RIP split of the (stacked) saving, so the row can explain it.
@@ -567,9 +572,10 @@ def analyze_lines(items: list[dict]) -> dict:
             total = round(rise * max(C, 1), 2)
             protection += total if C > 0 else 0.0
             recs.append({
-                "type": "buy_before", "line_id": it.get("id"), "upc": it.get("upc"),
+                "type": "buy_before", "line_id": it.get("id"), "upc": it.get("upc"), "abg_sku": it.get("abg_sku"),
                 "product_name": it.get("product_name"), "wholesaler": it.get("wholesaler"),
-                "unit_volume": it.get("unit_volume"), "current_price": round(cur, 2),
+                "unit_volume": it.get("unit_volume"), "unit_qty": it.get("unit_qty"),
+                "vintage": it.get("vintage"), "current_price": round(cur, 2),
                 "next_price": round(nxt, 2), "rise_per_case": rise,
                 "current_cases": C, "total_rise": total,
             })
@@ -593,8 +599,9 @@ def analyze_lines(items: list[dict]) -> dict:
             total = round(sv * max(C, 1), 2)
             swap_total += total if C > 0 else 0.0
             recs.append({
-                "type": "swap", "line_id": it.get("id"), "upc": it.get("upc"),
+                "type": "swap", "line_id": it.get("id"), "upc": it.get("upc"), "abg_sku": it.get("abg_sku"),
                 "product_name": it.get("product_name"), "unit_volume": it.get("unit_volume"),
+                "unit_qty": it.get("unit_qty"), "vintage": it.get("vintage"),
                 "from_wholesaler": it.get("wholesaler"), "to_wholesaler": bestc["w"],
                 "current_price": round(cur, 2), "other_price": round(bestc["ecp"], 2),
                 "save_per_case": sv, "current_cases": C, "total_savings": total,

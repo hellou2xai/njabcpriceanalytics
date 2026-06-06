@@ -10,7 +10,31 @@
 import { Link } from 'react-router-dom';
 import { TrendingUp, Layers, Repeat, CalendarClock, PiggyBank, Sparkles, Clock } from 'lucide-react';
 import type { SavingsAnalysis as Analysis, SavingsRec } from '../lib/api';
-import { distributorName } from '../lib/distributors';
+import { distributorName, abgSku, skuLabel } from '../lib/distributors';
+import PriceSparklines from './PriceSparklines';
+
+// UPC (always) + vendor item code (ABG/Fedway, when present) for a savings row.
+function Ids({ rec }: { rec: SavingsRec }) {
+  const sku = rec.wholesaler && abgSku(rec.wholesaler, rec.abg_sku)
+    ? `${skuLabel(rec.wholesaler)} ${rec.abg_sku}` : null;
+  if (!rec.upc && !sku) return null;
+  return (
+    <div className="sav-rec-ids">{rec.upc && <span>UPC: {rec.upc}</span>}{sku && <span>{sku}</span>}</div>
+  );
+}
+
+// The shared two-line price sparkline (with the 3-month price-schedule hover
+// tooltip) for a savings row. Self-fetches light history; skips group rows
+// (case-mix) which have no single product.
+function RowSpark({ rec }: { rec: SavingsRec }) {
+  if (!rec.product_name || !rec.wholesaler) return null;
+  return (
+    <div className="sav-rec-spark">
+      <PriceSparklines wholesaler={rec.wholesaler} productName={rec.product_name}
+        upc={rec.upc} unitVolume={rec.unit_volume} unitQty={rec.unit_qty} vintage={rec.vintage} />
+    </div>
+  );
+}
 
 const money = (n?: number | null) =>
   n == null ? '—' : `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -61,6 +85,7 @@ function RecCard({ rec, context, onSetQty, onSwap, busy }: {
             <Expiry rec={rec} />
             <Mom rec={rec} />
           </div>
+          <Ids rec={rec} />
           <div className="sav-rec-text">
             Buy <strong>{cs(rec.target_qty)}</strong>{rec.current_cases ? ` (add ${rec.add_cases})` : ''} →{' '}
             <strong>{money(rec.new_case_price)}/cs</strong>
@@ -74,6 +99,7 @@ function RecCard({ rec, context, onSetQty, onSwap, busy }: {
             )}
           </div>
         </div>
+        <RowSpark rec={rec} />
         <div className="sav-rec-right">
           <span className="sav-amt">+{money(rec.extra_savings)}</span>
           {context === 'cart' && rec.line_id != null && onSetQty && (
@@ -103,6 +129,7 @@ function RecCard({ rec, context, onSetQty, onSwap, busy }: {
             <div className="sav-rec-members">{rec.members?.join(' · ')}</div>
           </div>
         </div>
+        <RowSpark rec={rec} />
         <div className="sav-rec-right"><span className="sav-amt">+{money(rec.extra_savings)}</span></div>
       </div>
     );
@@ -114,11 +141,13 @@ function RecCard({ rec, context, onSetQty, onSwap, busy }: {
         <span className="sav-ico is-warn"><CalendarClock size={15} /></span>
         <div className="sav-rec-body">
           <div className="sav-rec-head"><ProductLink rec={rec} />{rec.unit_volume ? ` · ${rec.unit_volume}` : ''}<Mom rec={rec} /></div>
+        <Ids rec={rec} />
           <div className="sav-rec-text">
             Price rises {money(rec.rise_per_case)}/cs next month ({money(rec.current_price)} → {money(rec.next_price)}).
             Lock in now{rec.current_cases ? ` (× ${cs(rec.current_cases)})` : ''}.
           </div>
         </div>
+        <RowSpark rec={rec} />
         <div className="sav-rec-right"><span className="sav-amt is-warn">{money(rec.total_rise)}</span></div>
       </div>
     );
@@ -130,6 +159,7 @@ function RecCard({ rec, context, onSetQty, onSwap, busy }: {
       <span className="sav-ico is-swap"><Repeat size={15} /></span>
       <div className="sav-rec-body">
         <div className="sav-rec-head"><ProductLink rec={rec} />{rec.unit_volume ? ` · ${rec.unit_volume}` : ''}<Mom rec={rec} /></div>
+        <Ids rec={rec} />
         <div className="sav-rec-text">
           {money(rec.save_per_case)}/cs cheaper at <strong>{distributorName(rec.to_wholesaler || '')}</strong>{' '}
           ({money(rec.current_price)} → {money(rec.other_price)})

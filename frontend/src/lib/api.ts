@@ -696,7 +696,10 @@ export interface SavingsRec {
   members?: string[];
   wholesaler?: string;
   upc?: string | null;
+  abg_sku?: string | null;
   unit_volume?: string | null;
+  unit_qty?: string | number | null;
+  vintage?: string | number | null;
   rip_code?: string;
   description?: string | null;
   current_cases?: number;
@@ -738,6 +741,7 @@ export interface DigestCard {
   product_name: string;
   wholesaler: string;
   upc?: string | null;
+  abg_sku?: string | null;
   unit_volume?: string | null;
   unit_qty?: string | number | null;
   vintage?: string | number | null;

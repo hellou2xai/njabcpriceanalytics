@@ -139,6 +139,7 @@ def deal_compare(con, products: list[dict], cap: int = 60) -> list[dict]:
         dc_now, dc_pri = m(ws, cur, un, "casedisc") or 0.0, m(ws, pri, un, "casedisc") or 0.0
         cb_now, cb_pri = m(ws, cur, un, "in_combo") or 0.0, m(ws, pri, un, "in_combo") or 0.0
         eff_cur = m(ws, cur, un, "eff")
+        eff_pri = m(ws, pri, un, "eff") if pri else None
         eff_nxt = m(ws, nxt, un, "eff") if nxt else None
         # Best time to buy: cheapest NET price between now and next edition.
         if eff_cur is not None and eff_nxt is not None and eff_nxt < eff_cur - 0.005:
@@ -163,6 +164,11 @@ def deal_compare(con, products: list[dict], cap: int = 60) -> list[dict]:
             p["prior_edition"] = pri
             p["current_edition"] = cur
             p["next_edition"] = nxt
+            # Effective (what you actually PAY) per edition — so callers can
+            # compare the real price month-over-month, not "savings off list"
+            # (a frontline drop must not read as 'less savings').
+            p["eff_cur"] = round(eff_cur, 2) if eff_cur is not None else None
+            p["eff_prior"] = round(eff_pri, 2) if eff_pri is not None else None
             p["best_buy_window"] = best_window
             p["best_buy_saving"] = best_saving
     return products

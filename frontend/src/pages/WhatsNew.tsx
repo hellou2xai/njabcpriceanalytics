@@ -20,7 +20,7 @@ import ProductThumb from '../components/ProductThumb';
 import PriceSparklines from '../components/PriceSparklines';
 import SavingsAnalysis from '../components/SavingsAnalysis';
 import { buildMonths } from '../lib/promotionsSparkline';
-import { distributorName } from '../lib/distributors';
+import { distributorName, abgSku, skuLabel } from '../lib/distributors';
 
 const money = (n?: number | null) =>
   n == null ? '—' : `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -56,6 +56,7 @@ const SECTIONS: SectionMeta[] = [
 function Card({ c }: { c: DigestCard }) {
   const months = useMemo(() => buildMonths(c), [c]);
   const eff = c.effective_case_price ?? c.frontline_case_price ?? null;
+  const vendorSku = abgSku(c.wholesaler, c.abg_sku) ? `${skuLabel(c.wholesaler)} ${c.abg_sku}` : null;
   return (
     <Link to={detailUrl(c)} className={`wn-card wn-${c.intent}`}>
       <div className="wn-card-top">
@@ -64,6 +65,11 @@ function Card({ c }: { c: DigestCard }) {
           <div className="wn-card-name">{c.product_name}</div>
           <div className="wn-card-sub">
             <Store size={11} /> {distributorName(c.wholesaler)}{c.unit_volume ? ` · ${c.unit_volume}` : ''}
+          </div>
+          {/* UPC always; vendor item code (ABG/Fedway) next to it when present. */}
+          <div className="wn-card-ids">
+            {c.upc && <span>UPC: {c.upc}</span>}
+            {vendorSku && <span>{vendorSku}</span>}
           </div>
           <div className="wn-card-src">
             {c.sources.map(s => { const I = SOURCE_ICON[s]; return I ? <I key={s} size={11} aria-label={s} /> : null; })}

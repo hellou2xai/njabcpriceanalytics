@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends
 from backend.pg import get_pg
 from backend.db import get_duckdb, read_parquet
 from backend.auth import get_current_user
-from backend.enrichment_join import attach_enrichment_image
+from backend.enrichment_join import attach_enrichment_image, attach_sku_mapping
 from backend import pricing as _pricing
 from backend import deal_compare as _dc
 from backend.routers.cart import _attach_cart_pricing, analyze_lines, _fnum
@@ -57,7 +57,7 @@ def _card(p: dict, detail: str, amount, intent: str) -> dict:
         "product_name": p.get("product_name"), "wholesaler": p.get("wholesaler"),
         "upc": p.get("upc"), "unit_volume": p.get("unit_volume"),
         "unit_qty": p.get("unit_qty"), "vintage": p.get("vintage"),
-        "image_url": p.get("image_url"),
+        "abg_sku": p.get("abg_sku"), "image_url": p.get("image_url"),
         "frontline_case_price": _fnum(p.get("frontline_case_price")),
         "effective_case_price": _fnum(p.get("effective_case_price")),
         "has_rip": bool(p.get("has_rip")), "has_discount": bool(p.get("has_discount")),
@@ -109,6 +109,10 @@ def whats_new(user: dict = Depends(get_current_user)):
         except Exception:
             pass
         try:
+            attach_sku_mapping(con, products)         # abg_sku (vendor item code)
+        except Exception:
+            pass
+        try:
             _pricing.attach_price_3mo(con, products)  # price_3mo for the sparkline
         except Exception:
             pass
@@ -130,34 +134,35 @@ def whats_new(user: dict = Depends(get_current_user)):
     savings = analyze_lines(sav_lines)
     savings["recommendations"] = savings.get("recommendations", [])[:6]
 
-    # Month-over-month context for each savings move: how this item's best
-    # per-case savings (RIP + 1-case discount) compares to LAST edition — the
-    # "vs last month" framing the page is about. Pulled from the deal_compare
-    # fields already on `products`; case-mix rows have no single product so stay
-    # un-tagged.
+    # Month-over-month context for each savings move: compare the EFFECTIVE price
+    # you actually pay this edition vs the prior one (NOT savings-off-list — a
+    # frontline/list drop must not read as "less savings" when the real price is
+    # unchanged). Pulled from deal_compare's eff_cur/eff_prior already on
+    # `products`; case-mix rows have no single product so stay un-tagged.
     chg: dict = {}
     for p in products:
         un = str(p.get("upc") or "").lstrip("0")
         if not un:
             continue
-        now = (_fnum(p.get("rip_now")) or 0) + (_fnum(p.get("casedisc_now")) or 0)
-        pri = (_fnum(p.get("rip_prior")) or 0) + (_fnum(p.get("casedisc_prior")) or 0)
-        chg[(p.get("wholesaler"), un)] = (now, pri)
+        chg[(p.get("wholesaler"), un)] = (_fnum(p.get("eff_cur")), _fnum(p.get("eff_prior")))
     for r in savings["recommendations"]:
         un = str(r.get("upc") or "").lstrip("0")
         pair = chg.get((r.get("wholesaler"), un)) if un else None
         if not pair:
             continue
-        now, pri = pair
-        delta = round(now - pri, 2)
-        if pri <= 0.005 and now > 0.005:
-            r["mom"] = {"dir": "new", "delta": round(now, 2), "text": "new this edition"}
-        elif delta > 0.005:
-            r["mom"] = {"dir": "up", "delta": delta, "text": f"${delta:,.2f}/cs better than last month"}
+        now, pri = pair          # effective price now, effective price last edition
+        if now is None:
+            continue
+        if pri is None:
+            r["mom"] = {"dir": "new", "delta": 0.0, "text": "new this edition"}
+            continue
+        delta = round(pri - now, 2)   # positive ⇒ cheaper this edition
+        if delta > 0.005:
+            r["mom"] = {"dir": "up", "delta": delta, "text": f"${delta:,.2f}/cs cheaper than last month"}
         elif delta < -0.005:
-            r["mom"] = {"dir": "down", "delta": delta, "text": f"${abs(delta):,.2f}/cs less than last month"}
+            r["mom"] = {"dir": "down", "delta": delta, "text": f"${abs(delta):,.2f}/cs pricier than last month"}
         else:
-            r["mom"] = {"dir": "same", "delta": 0.0, "text": "same as last month"}
+            r["mom"] = {"dir": "same", "delta": 0.0, "text": "same price as last month"}
 
     buy_before, price_relief, new_rips, deeper_rips, lost_rips, target_hits, expiring = (
         [], [], [], [], [], [], [])

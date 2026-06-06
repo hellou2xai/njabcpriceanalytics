@@ -20,10 +20,13 @@ function TierWin({ t }: { t: CatalogTier }) {
   const wb = windowBadge(t);
   if (!t.is_time_sensitive && !wb) return null;
   const range = fmtDateRange(t.from_date, t.to_date);
+  // Partial deals always render in the prominent amber 'partial' style (red when
+  // expiring), never the subtle blue 'upcoming' — so a partial QD can't be missed.
+  const cls = t.is_time_sensitive ? (wb?.urgent ? 'win-partial urgent' : 'win-partial') : (wb?.cls ?? 'win-partial');
   return (
-    <span className={`win-badge ${wb?.cls ?? 'win-partial'}${wb?.urgent ? ' urgent' : ''}`}
+    <span className={`win-badge ${cls}`}
       title={`Partial-month — only valid ${range || 'on limited dates'}. Applies only on these dates.`}>
-      {t.is_time_sensitive ? `Partial · ${range || 'limited'}` : wb?.label}{t.is_time_sensitive && wb ? ` · ${wb.label}` : ''}
+      {t.is_time_sensitive ? `⏱ Partial · ${range || 'limited'}` : wb?.label}{t.is_time_sensitive && wb ? ` · ${wb.label}` : ''}
     </span>
   );
 }

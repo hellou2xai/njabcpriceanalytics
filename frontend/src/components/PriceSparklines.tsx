@@ -97,9 +97,10 @@ function RichMonth({ b, pack, current }: { b: MonthBreakdown; pack: number | nul
             const wb = windowBadge(t);
             if (!t.ts && !wb) return null;
             const range = fmtDateRange(t.from_date, t.to_date);
-            return <span className={`win-badge ${wb?.cls ?? 'win-partial'}${wb?.urgent ? ' urgent' : ''}`}
+            const cls = t.ts ? (wb?.urgent ? 'win-partial urgent' : 'win-partial') : (wb?.cls ?? 'win-partial');
+            return <span className={`win-badge ${cls}`}
               title={`Partial-month — only valid ${range || 'limited dates'}`}>
-              {t.ts ? `Partial · ${range || 'limited'}` : wb?.label}</span>;
+              {t.ts ? `⏱ Partial · ${range || 'limited'}` : wb?.label}</span>;
           })()}</span>
         <span className="psk-pop-amt">{priceCB(t.eff, pack, b.size)}
           {off != null && off > 0.005 && <span className="psk-off"> (−${off.toFixed(2)})</span>}</span>

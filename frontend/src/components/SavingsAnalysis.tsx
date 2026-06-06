@@ -24,8 +24,8 @@ function PartialFlag({ rec }: { rec: SavingsRec }) {
     from_date: p.from_date, to_date: p.to_date });
   const range = fmtDateRange(p.from_date, p.to_date);
   return (
-    <span className={`win-badge ${wb?.cls ?? 'win-partial'}${wb?.urgent ? ' urgent' : ''}`}
-      title={`Partial-month RIP — only valid ${range || 'on limited dates'}. The saving applies just on these dates.`}>
+    <span className={`win-badge ${wb?.urgent ? 'win-partial urgent' : 'win-partial'}`}
+      title={`Partial-month deal — only valid ${range || 'on limited dates'}. The saving applies just on these dates.`}>
       ⏱ Partial · {range || 'limited dates'}{wb ? ` · ${wb.label}` : ''}
     </span>
   );

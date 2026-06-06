@@ -24,11 +24,13 @@ function PartialFlag({ t }: { t: RipTier }) {
   const wb = windowBadge(t);
   if (!t.ts && !wb) return null;
   const range = fmtDateRange(t.from_date, t.to_date);
-  const cls = wb ? wb.cls : 'win-partial';
-  const label = t.ts ? `Partial · ${range || 'limited dates'}` : (wb?.label ?? '');
+  // Always the prominent amber 'partial' style (red when expiring) — never the
+  // subtle blue 'upcoming' — so a partial deal can't be overlooked.
+  const cls = t.ts ? (wb?.urgent ? 'win-partial urgent' : 'win-partial') : (wb?.cls ?? 'win-partial');
+  const label = t.ts ? `⏱ Partial · ${range || 'limited dates'}` : (wb?.label ?? '');
   return (
-    <span className={`win-badge ${cls}${wb?.urgent ? ' urgent' : ''}`}
-      title={`Partial-month RIP — only valid ${range || 'on limited dates'}${wb ? ` (${wb.label})` : ''}. Not part of the full-month price.`}>
+    <span className={`win-badge ${cls}`}
+      title={`Partial-month deal — only valid ${range || 'on limited dates'}${wb ? ` (${wb.label})` : ''}. Not part of the full-month price.`}>
       {label}{t.ts && wb ? ` · ${wb.label}` : ''}
     </span>
   );

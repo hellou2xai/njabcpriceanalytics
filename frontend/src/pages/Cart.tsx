@@ -379,10 +379,11 @@ export default function Cart() {
                   const wb = windowBadge(t);
                   if (!t.is_time_sensitive && !wb) return null;
                   const range = fmtDateRange(t.from_date, t.to_date);
+                  const cls = t.is_time_sensitive ? (wb?.urgent ? 'win-partial urgent' : 'win-partial') : (wb?.cls ?? 'win-partial');
                   return (
-                    <span className={`win-badge ${wb?.cls ?? 'win-partial'}${wb?.urgent ? ' urgent' : ''}`}
+                    <span className={`win-badge ${cls}`}
                       style={{ marginLeft: 5 }} title={`Partial-month — only valid ${range || 'limited dates'}`}>
-                      {t.is_time_sensitive ? `Partial · ${range || 'limited'}` : wb?.label}{t.is_time_sensitive && wb ? ` · ${wb.label}` : ''}
+                      {t.is_time_sensitive ? `⏱ Partial · ${range || 'limited'}` : wb?.label}{t.is_time_sensitive && wb ? ` · ${wb.label}` : ''}
                     </span>
                   );
                 })()}

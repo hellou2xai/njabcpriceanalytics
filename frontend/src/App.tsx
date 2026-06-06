@@ -15,6 +15,7 @@ import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Catalog from './pages/Catalog';
 import Products from './pages/Products';
+import WhatsNew from './pages/WhatsNew';
 import ProductDetail from './pages/ProductDetail';
 import CatalogFontTest from './pages/CatalogFontTest';
 import CelarAssistant from './pages/CelarAssistant';
@@ -119,6 +120,7 @@ function AuthenticatedApp() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/catalog" element={<Catalog />} />
             <Route path="/products" element={<Products />} />
+            <Route path="/whats-new" element={<WhatsNew />} />
             <Route path="/product" element={<ProductDetail />} />
             <Route path="/admin/catalog-font-test" element={<CatalogFontTest />} />
             <Route path="/assistant" element={<CelarAssistant />} />

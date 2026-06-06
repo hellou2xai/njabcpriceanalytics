@@ -5442,6 +5442,58 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pd-mini-name { font-size: 13px; font-weight: 700; color: var(--text); line-height: 1.3; }
 .pd-mini-dist { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--text-muted); margin-top: 4px; font-weight: 600; }
 .pd-mini-size { font-size: 11px; font-weight: 600; color: var(--text); margin-top: 3px; }
+/* ---- What's New for You (personalized digest) ---- */
+.wn-page { max-width: 1280px; }
+.wn-hero { border-radius: var(--radius); padding: 20px 22px; margin-bottom: 18px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 16%, var(--surface)), color-mix(in srgb, var(--green) 12%, var(--surface)));
+  border: 1px solid var(--border); }
+.wn-hero-head h1 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 22px; }
+.wn-hero-sub { color: var(--text-muted); margin: 4px 0 0; font-size: 13.5px; font-weight: 600; }
+.wn-stats { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+.wn-stat { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: var(--radius-sm);
+  background: var(--surface); border: 1px solid var(--border); min-width: 160px; }
+.wn-stat.is-opp { border-color: color-mix(in srgb, var(--green) 40%, var(--border)); background: color-mix(in srgb, var(--green) 8%, var(--surface)); }
+.wn-stat.is-prot { border-color: color-mix(in srgb, #d97706 40%, var(--border)); }
+.wn-stat-ico { display: inline-flex; color: var(--text-muted); }
+.wn-stat.is-opp .wn-stat-ico { color: var(--green); }
+.wn-stat.is-prot .wn-stat-ico { color: #d97706; }
+.wn-stat-val { font-size: 22px; font-weight: 800; line-height: 1; color: var(--text); font-variant-numeric: tabular-nums; }
+.wn-stat.is-opp .wn-stat-val { color: var(--green); }
+.wn-stat-lbl { font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .02em; margin-top: 3px; }
+.wn-muted { color: var(--text-muted); }
+.wn-empty, .wn-allclear { text-align: center; padding: 32px; color: var(--text-muted); border: 1px dashed var(--border); border-radius: var(--radius); }
+.wn-empty svg { color: var(--accent); } .wn-empty h3 { margin: 10px 0 6px; color: var(--text); }
+.wn-empty p { max-width: 520px; margin: 0 auto; font-size: 13.5px; }
+.wn-allclear { display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--green); font-weight: 600; }
+.wn-section { margin: 22px 0; }
+.wn-section-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px; }
+.wn-section-ico { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 9px; background: var(--bg); color: var(--text-muted); flex: 0 0 auto; }
+.wn-tone-risk .wn-section-ico { background: color-mix(in srgb, #d97706 16%, var(--surface)); color: #d97706; }
+.wn-tone-good .wn-section-ico { background: color-mix(in srgb, var(--green) 16%, var(--surface)); color: var(--green); }
+.wn-tone-bad .wn-section-ico { background: color-mix(in srgb, var(--red) 14%, var(--surface)); color: var(--red); }
+.wn-tone-info .wn-section-ico { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--accent); }
+.wn-section-head h2 { margin: 0; font-size: 16px; display: flex; align-items: center; gap: 8px; }
+.wn-section-count { font-size: 12px; font-weight: 700; color: var(--text-muted); background: var(--bg); border-radius: 10px; padding: 1px 8px; }
+.wn-section-head p { margin: 2px 0 0; font-size: 12.5px; color: var(--text-muted); }
+.wn-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(248px, 1fr)); gap: 10px; }
+.wn-card { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); text-decoration: none; color: inherit; transition: border-color .15s, box-shadow .15s; border-left-width: 3px; }
+.wn-card:hover { box-shadow: 0 2px 12px rgba(0,0,0,.07); }
+.wn-card.wn-opportunity { border-left-color: var(--green); }
+.wn-card.wn-risk { border-left-color: #d97706; }
+.wn-card.wn-info { border-left-color: var(--accent); }
+.wn-card-top { display: flex; gap: 10px; }
+.wn-card-id { min-width: 0; flex: 1; }
+.wn-card-name { font-size: 13px; font-weight: 700; color: var(--text); line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.wn-card-sub { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--text-muted); margin-top: 3px; font-weight: 600; }
+.wn-card-src { display: inline-flex; gap: 5px; color: var(--text-muted); margin-top: 4px; opacity: .8; }
+.wn-card-change { font-size: 12px; font-weight: 700; padding: 5px 8px; border-radius: 6px; background: var(--bg); }
+.wn-card-change.wn-opportunity { color: var(--green); background: color-mix(in srgb, var(--green) 9%, var(--surface)); }
+.wn-card-change.wn-risk { color: #b45309; background: color-mix(in srgb, #d97706 10%, var(--surface)); }
+.wn-card-change.wn-info { color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.wn-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.wn-card-price { font-size: 15px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+.wn-card-unit { font-size: 11px; font-weight: 600; color: var(--text-muted); }
+
 /* ---- Analyze for Savings panel (cart + lists) ---- */
 .sav-panel { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 14px; margin: 12px 0; }
 .sav-panel.sav-empty { color: var(--text-muted); text-align: center; }

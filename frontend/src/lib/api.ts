@@ -728,6 +728,38 @@ export interface SavingsAnalysis {
   recommendations: SavingsRec[];
 }
 
+// ---- What's New for You (personalized monthly digest) ----
+export interface DigestCard {
+  product_name: string;
+  wholesaler: string;
+  upc?: string | null;
+  unit_volume?: string | null;
+  unit_qty?: string | number | null;
+  vintage?: string | number | null;
+  image_url?: string | null;
+  frontline_case_price?: number | null;
+  effective_case_price?: number | null;
+  has_rip: boolean;
+  has_discount: boolean;
+  rip_code?: string | null;
+  price_3mo?: Price3moBlock[] | null;
+  sources: string[];
+  change_detail: string;
+  change_amount: number;
+  intent: 'opportunity' | 'risk' | 'info';
+}
+export interface WhatsNew {
+  edition: string | null;
+  prev_edition: string | null;
+  next_edition: string | null;
+  tracked_count: number;
+  savings: SavingsAnalysis;
+  sections: Record<string, DigestCard[]>;
+}
+export const digest = {
+  whatsNew: () => request<WhatsNew>('/api/whats-new'),
+};
+
 export const lists = {
   list: () => request<ProductList[]>('/api/lists'),
   analyze: (id: number) => request<SavingsAnalysis>(`/api/lists/${id}/analyze`),

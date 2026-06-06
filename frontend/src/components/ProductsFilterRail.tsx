@@ -13,18 +13,9 @@ import { emptyCatalogFilters, countActiveFilters } from './CatalogFilterPanel';
 import type { Product, CatalogFacets } from '../lib/api';
 import { distributorName } from '../lib/distributors';
 import TrackedOnlyToggle from './TrackedOnlyToggle';
+import { sizeToMl } from '../lib/productSizes';
 
-function toMl(label: string): number {
-  const s = (label || '').toUpperCase().trim();
-  const m = s.match(/^([\d.]+)\s*(ML|L|LIT|LITER|OZ)?/);
-  if (!m) return Number.MAX_SAFE_INTEGER;
-  const n = parseFloat(m[1]);
-  if (isNaN(n)) return Number.MAX_SAFE_INTEGER;
-  const unit = m[2] || 'ML';
-  if (unit.startsWith('L')) return n * 1000;
-  if (unit === 'OZ') return n * 29.5735;
-  return n;
-}
+const toMl = sizeToMl;   // one canonical size parser (handles bare "LITER", "1.75L", …)
 
 function buildFacet(items: Product[], key: keyof Product): Map<string, number> {
   const m = new Map<string, number>();

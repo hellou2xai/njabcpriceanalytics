@@ -10,23 +10,14 @@ import AddToListButton from '../components/AddToListButton';
 import { QtyStepper, loadCart, saveCart, type CartState } from '../components/CatalogTable';
 import PriceSparklines from '../components/PriceSparklines';
 import { buildMonths } from '../lib/promotionsSparkline';
-import { useProductSizes, bottlesPerCase } from '../lib/productSizes';
+import { useProductSizes, bottlesPerCase, sizeToMl } from '../lib/productSizes';
 import { useComboLink } from '../lib/comboLink';
 import { distributorName, abgSku, skuLabel } from '../lib/distributors';
 import type { Product, CatalogTier } from '../lib/api';
 
 // ---- size / oz helpers ----
-function toMl(label?: string | null): number {
-  const s = (label || '').toUpperCase().trim();
-  const m = s.match(/^([\d.]+)\s*(ML|L|LIT|LITER|OZ)?/);
-  if (!m) return Number.MAX_SAFE_INTEGER;
-  const n = parseFloat(m[1]);
-  if (isNaN(n)) return Number.MAX_SAFE_INTEGER;
-  const unit = m[2] || 'ML';
-  if (unit.startsWith('L')) return n * 1000;
-  if (unit === 'OZ') return n * 29.5735;
-  return n;
-}
+// One canonical size parser (handles bare "LITER", "1.75L", "750ML", …).
+const toMl = sizeToMl;
 function ozPerBottle(uv?: string | null): number | null {
   const ml = toMl(uv);
   return ml === Number.MAX_SAFE_INTEGER ? null : ml / 29.5735;
@@ -309,6 +300,13 @@ export default function ProductDetail() {
 
   const specs = enrichment?.specs ? Object.entries(enrichment.specs).filter(([, v]) => v != null && String(v) !== '') : [];
   const hasDesc = !!enrichment?.description && enrichment.description !== 'No description found.';
+  // UPC + vendor item code for the header, from the seed SKU the attributes
+  // describe (its Size/Pack Size are already shown). Per-size codes still live
+  // in each size section below.
+  const headSku = product ?? sizes[0];
+  const headerUpc = headSku?.upc ?? null;
+  const headerVendorSku = headSku && abgSku(headSku.wholesaler, headSku.abg_sku)
+    ? `${skuLabel(headSku.wholesaler)} ${headSku.abg_sku}` : null;
 
   if (!wholesaler || !name) {
     return <div className="page"><p>Product not specified.</p><Link to="/products" className="link-btn">← Back to Products</Link></div>;
@@ -345,6 +343,8 @@ export default function ProductDetail() {
                 {specs.map(([k, v]) => (
                   <div key={k}><dt>{k}</dt><dd>{String(v)}</dd></div>
                 ))}
+                {headerVendorSku && <div><dt>Vendor item code</dt><dd>{headerVendorSku}</dd></div>}
+                {headerUpc && <div><dt>UPC</dt><dd>{headerUpc}</dd></div>}
                 {brand && <div><dt>Producer</dt><dd>{brand}</dd></div>}
                 {brand && (
                   <div><dt></dt><dd><Link to={`/products?brands=${encodeURIComponent(brand)}`} className="pd-link">View all {brand}</Link></dd></div>

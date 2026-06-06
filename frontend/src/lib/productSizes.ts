@@ -26,13 +26,19 @@ import type { Product } from './api';
 // smallest -> largest. Unknowns sort last.
 export function sizeToMl(label?: string | null): number {
   const s = (label || '').toUpperCase().trim();
-  const m = s.match(/^([\d.]+)\s*(ML|L|LIT|LITER|OZ)?/);
+  // Number is OPTIONAL: a bare unit means 1 of it, so "LITER"/"LTR"/"L" = 1L =
+  // 1000mL (without this, "LITER" couldn't be parsed and sorted AFTER "1.75L").
+  // Longest unit alternatives first so "LITER" isn't short-matched as "L".
+  const m = s.match(/^([\d.]+)?\s*(MILLILITERS?|MILLILITRES?|LITERS?|LITRES?|ML|CL|LTR|LT|L|OZ)?\b/);
   if (!m) return Number.MAX_SAFE_INTEGER;
-  const n = parseFloat(m[1]);
+  const unit = m[2] || (m[1] ? 'ML' : '');
+  if (!unit) return Number.MAX_SAFE_INTEGER;
+  const n = m[1] ? parseFloat(m[1]) : 1;          // bare unit ("LITER") => 1
   if (isNaN(n)) return Number.MAX_SAFE_INTEGER;
-  const unit = m[2] || 'ML';
-  if (unit.startsWith('L')) return n * 1000;
   if (unit === 'OZ') return n * 29.5735;
+  if (unit === 'CL') return n * 10;
+  if (unit.startsWith('ML') || unit.startsWith('MILLIL')) return n;
+  if (unit.startsWith('L')) return n * 1000;       // L, LT, LTR, LITER, LITRE
   return n;
 }
 

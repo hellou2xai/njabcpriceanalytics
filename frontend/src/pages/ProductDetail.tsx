@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { CheckCircle2, ChevronDown, Store, ChevronRight } from 'lucide-react';
+import { ChevronDown, Store, ChevronRight } from 'lucide-react';
 import { catalog } from '../lib/api';
 import ProductThumb from '../components/ProductThumb';
 import FavoriteButton from '../components/FavoriteButton';
@@ -176,8 +176,6 @@ function SizeSection({ size, view, cart, updateQty, primaryName }: {
           ))}
         </div>
       )}
-
-      <div className="pd-instock"><CheckCircle2 size={14} /> In stock</div>
 
       <div className="pd-size-order">
         <div className="pd-steppers">

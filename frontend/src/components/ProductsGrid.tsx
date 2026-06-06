@@ -14,7 +14,7 @@
  */
 import { Fragment, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronDown, CheckCircle2, Store } from 'lucide-react';
+import { ChevronDown, Store } from 'lucide-react';
 import FavoriteButton from './FavoriteButton';
 import ProductThumb from './ProductThumb';
 import AddToCartButton from './AddToCartButton';
@@ -155,7 +155,6 @@ function SizeRow({ size, cart, updateQty, primaryName }: {
           months={buildMonths(size)} />
       </div>
       <div className="prod-size-order">
-        <span className="prod-instock"><CheckCircle2 size={13} /> Available</span>
         <div className="prod-size-steppers">
           <QtyStepper label="Bottles" value={qty.units} onChange={v => updateQty(cartKey, 'units', v)} />
           <QtyStepper label="Cases" value={qty.cases} onChange={v => updateQty(cartKey, 'cases', v)} />
@@ -234,7 +233,7 @@ function ProductCard({ group, cart, updateQty }: {
           )}
           <div className="prod-card-options">
             {anyDeal && <span className="prod-card-deal">Deal</span>}
-            <span className="prod-card-instock"><CheckCircle2 size={13} /> {optionCount} option{optionCount === 1 ? '' : 's'} in stock</span>
+            <span className="prod-card-sizes">{optionCount} size{optionCount === 1 ? '' : 's'}</span>
           </div>
         </div>
         <ChevronDown size={20} className={`prod-card-chev${expanded ? ' is-open' : ''}`} />

@@ -875,6 +875,15 @@ def attach_tiers(con, records, ref_date=None) -> None:
                         key=lambda t: t["price_after"], default=None)
         rip_price = _rip_best["price_after"] if _rip_best else None
         for (wf, wt) in rip_wins.get(_gk, []):
+            # ONLY genuinely DATED (partial-month) RIP windows belong in
+            # deal_windows — that list drives the "Dated deal · when?" sticker.
+            # An explicit full-calendar-month window (Jun 1-30) is evergreen for
+            # the month, NOT a dated deal; including it falsely flagged every
+            # RIP whose sheet happens to carry full-month dates (the QD branch
+            # below already excludes full-month rows — this restores symmetry).
+            # Gap detection still uses the UNFILTERED _wins, so traps are intact.
+            if not is_time_sensitive_window(wf, wt):
+                continue
             k = ("RIP", wf, wt)
             if k in seen_w:
                 continue

@@ -65,7 +65,10 @@ import ResetPassword from './pages/ResetPassword';
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { staleTime: 60_000, retry: 1 },
+    // refetchOnWindowFocus: when you return to a long-lived tab after a deploy,
+    // queries re-fetch so the data can't sit stale (the recurring "it's not
+    // showing" was a tab serving cached results from before a backend change).
+    queries: { staleTime: 60_000, retry: 1, refetchOnWindowFocus: true },
   },
 });
 

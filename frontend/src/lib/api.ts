@@ -719,6 +719,9 @@ export interface SavingsRec {
   total_savings?: number;
   window_status?: string | null;
   days_to_expire?: number | null;
+  // Month-over-month context (digest only): how this item's best per-case
+  // savings compares to last edition.
+  mom?: { dir: 'new' | 'up' | 'down' | 'same'; delta: number; text: string };
 }
 export interface SavingsAnalysis {
   captured_total: number;

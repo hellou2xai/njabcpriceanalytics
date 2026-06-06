@@ -28,6 +28,13 @@ function ProductLink({ rec }: { rec: SavingsRec }) {
   );
 }
 
+// "vs last month" chip (digest only).
+function Mom({ rec }: { rec: SavingsRec }) {
+  if (!rec.mom) return null;
+  const icon = rec.mom.dir === 'down' ? '▼' : rec.mom.dir === 'same' ? '=' : '▲';
+  return <span className={`sav-mom sav-mom-${rec.mom.dir}`} title="Compared with last month">{icon} {rec.mom.text}</span>;
+}
+
 function Expiry({ rec }: { rec: SavingsRec }) {
   if (rec.window_status !== 'active' || rec.days_to_expire == null || rec.days_to_expire > 14) return null;
   return (
@@ -52,10 +59,15 @@ function RecCard({ rec, context, onSetQty, onSwap, busy }: {
             <span className={`prod-deal-badge ${isRip ? 'prod-deal-rip' : 'prod-deal-qd'}`}>{isRip ? 'RIP' : 'QD'}</span>
             <ProductLink rec={rec} />{rec.unit_volume ? ` · ${rec.unit_volume}` : ''}
             <Expiry rec={rec} />
+            <Mom rec={rec} />
           </div>
           <div className="sav-rec-text">
             Buy <strong>{cs(rec.target_qty)}</strong>{rec.current_cases ? ` (add ${rec.add_cases})` : ''} →{' '}
-            <strong>{money(rec.new_case_price)}/cs</strong> · save {money(rec.save_per_case)}/cs
+            <strong>{money(rec.new_case_price)}/cs</strong>
+            {rec.new_case_price != null && rec.save_per_case != null && (
+              <span className="sav-from"> from {money(rec.new_case_price + rec.save_per_case)}/cs</span>
+            )}
+            {' '}· save {money(rec.save_per_case)}/cs
           </div>
         </div>
         <div className="sav-rec-right">
@@ -97,7 +109,7 @@ function RecCard({ rec, context, onSetQty, onSwap, busy }: {
       <div className="sav-rec">
         <span className="sav-ico is-warn"><CalendarClock size={15} /></span>
         <div className="sav-rec-body">
-          <div className="sav-rec-head"><ProductLink rec={rec} />{rec.unit_volume ? ` · ${rec.unit_volume}` : ''}</div>
+          <div className="sav-rec-head"><ProductLink rec={rec} />{rec.unit_volume ? ` · ${rec.unit_volume}` : ''}<Mom rec={rec} /></div>
           <div className="sav-rec-text">
             Price rises {money(rec.rise_per_case)}/cs next month ({money(rec.current_price)} → {money(rec.next_price)}).
             Lock in now{rec.current_cases ? ` (× ${cs(rec.current_cases)})` : ''}.
@@ -113,7 +125,7 @@ function RecCard({ rec, context, onSetQty, onSwap, busy }: {
     <div className="sav-rec">
       <span className="sav-ico is-swap"><Repeat size={15} /></span>
       <div className="sav-rec-body">
-        <div className="sav-rec-head"><ProductLink rec={rec} />{rec.unit_volume ? ` · ${rec.unit_volume}` : ''}</div>
+        <div className="sav-rec-head"><ProductLink rec={rec} />{rec.unit_volume ? ` · ${rec.unit_volume}` : ''}<Mom rec={rec} /></div>
         <div className="sav-rec-text">
           {money(rec.save_per_case)}/cs cheaper at <strong>{distributorName(rec.to_wholesaler || '')}</strong>{' '}
           ({money(rec.current_price)} → {money(rec.other_price)})

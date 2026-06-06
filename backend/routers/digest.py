@@ -130,6 +130,35 @@ def whats_new(user: dict = Depends(get_current_user)):
     savings = analyze_lines(sav_lines)
     savings["recommendations"] = savings.get("recommendations", [])[:6]
 
+    # Month-over-month context for each savings move: how this item's best
+    # per-case savings (RIP + 1-case discount) compares to LAST edition — the
+    # "vs last month" framing the page is about. Pulled from the deal_compare
+    # fields already on `products`; case-mix rows have no single product so stay
+    # un-tagged.
+    chg: dict = {}
+    for p in products:
+        un = str(p.get("upc") or "").lstrip("0")
+        if not un:
+            continue
+        now = (_fnum(p.get("rip_now")) or 0) + (_fnum(p.get("casedisc_now")) or 0)
+        pri = (_fnum(p.get("rip_prior")) or 0) + (_fnum(p.get("casedisc_prior")) or 0)
+        chg[(p.get("wholesaler"), un)] = (now, pri)
+    for r in savings["recommendations"]:
+        un = str(r.get("upc") or "").lstrip("0")
+        pair = chg.get((r.get("wholesaler"), un)) if un else None
+        if not pair:
+            continue
+        now, pri = pair
+        delta = round(now - pri, 2)
+        if pri <= 0.005 and now > 0.005:
+            r["mom"] = {"dir": "new", "delta": round(now, 2), "text": "new this edition"}
+        elif delta > 0.005:
+            r["mom"] = {"dir": "up", "delta": delta, "text": f"${delta:,.2f}/cs better than last month"}
+        elif delta < -0.005:
+            r["mom"] = {"dir": "down", "delta": delta, "text": f"${abs(delta):,.2f}/cs less than last month"}
+        else:
+            r["mom"] = {"dir": "same", "delta": 0.0, "text": "same as last month"}
+
     buy_before, price_relief, new_rips, deeper_rips, lost_rips, target_hits, expiring = (
         [], [], [], [], [], [], [])
     for p in products:

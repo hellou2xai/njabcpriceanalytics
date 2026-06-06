@@ -5306,6 +5306,7 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .prod-card-name { background: none; border: 0; padding: 0; text-align: left; cursor: pointer; font-size: 16px; font-weight: 700; color: var(--text); }
 .prod-card-name:hover { color: var(--accent); text-decoration: underline; }
 .prod-card-type { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+.prod-card-spark { display: inline-block; margin-top: 6px; }
 /* Neutral distributor chip (replaces the Provi accent-lightning "your
    distributor" signal) — a muted pill that matches the app's chip vocabulary. */
 .prod-card-dist { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-muted); margin-top: 5px; font-weight: 600; background: var(--surface-hover); border: 1px solid var(--border); padding: 2px 8px; border-radius: 999px; }

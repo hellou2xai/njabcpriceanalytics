@@ -1016,6 +1016,10 @@ export interface Product {
   // so the buyer sees every rebate the SKU is eligible for.
   rip_all_codes?: string[] | null;
   brand?: string;
+  // Family grouping for the Products list: a product's differently-named sizes
+  // share product_group; product_display is the clean family title.
+  product_group?: string | null;
+  product_display?: string | null;
   discount_1_qty?: string | null;
   discount_1_amt?: number | null;
   discount_2_qty?: string | null;

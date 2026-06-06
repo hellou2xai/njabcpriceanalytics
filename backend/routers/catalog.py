@@ -196,9 +196,13 @@ def _cpl_clean_brand_view(con) -> str:
             )
             SELECT nk, arg_max(brand, c) AS canon FROM cnt GROUP BY nk
         """)
+        # Per-UPC map: canonical brand + the enrichment NAME (used to group a
+        # product's differently-named sizes into one family on the list).
         con.execute(f"""
             CREATE OR REPLACE TEMP TABLE _pe_brand AS
-            SELECT LTRIM(CAST(pe.upc AS VARCHAR), '0') AS un, ANY_VALUE(bc.canon) AS brand
+            SELECT LTRIM(CAST(pe.upc AS VARCHAR), '0') AS un,
+                   ANY_VALUE(bc.canon) AS brand,
+                   ANY_VALUE(pe.name) AS enr_name
             FROM {pe} pe
             JOIN _brand_canon bc ON bc.nk = {nk.replace('brand', 'pe.brand')}
             WHERE pe.brand IS NOT NULL AND pe.brand <> '' AND pe.upc IS NOT NULL
@@ -206,14 +210,14 @@ def _cpl_clean_brand_view(con) -> str:
         """)
         con.execute(f"""
             CREATE OR REPLACE TEMP VIEW _cpl_cb AS
-            SELECT c.*, pe.brand AS brand_clean
+            SELECT c.*, pe.brand AS brand_clean, pe.enr_name AS enr_name
             FROM {base} c
             LEFT JOIN _pe_brand pe
               ON LTRIM(CAST(c.upc AS VARCHAR), '0') = pe.un
         """)
         return "_cpl_cb"
     except Exception:
-        con.execute(f"CREATE OR REPLACE TEMP VIEW _cpl_cb AS SELECT *, brand AS brand_clean FROM {base}")
+        con.execute(f"CREATE OR REPLACE TEMP VIEW _cpl_cb AS SELECT *, brand AS brand_clean, CAST(NULL AS VARCHAR) AS enr_name FROM {base}")
         return "_cpl_cb"
 
 
@@ -1349,7 +1353,7 @@ def search_products(
         rows = con.execute(f"""
             {data_cte_full}
             SELECT wholesaler, edition, upc, product_name, product_type,
-                   brand_clean AS brand,
+                   brand_clean AS brand, enr_name,
                    unit_qty, unit_volume, vintage, frontline_case_price, frontline_unit_price,
                    best_case_price, best_unit_price, effective_case_price,
                    has_discount, has_rip, has_closeout, discount_pct,
@@ -1383,6 +1387,26 @@ def search_products(
             for k, v in list(rec.items()):
                 if isinstance(v, float) and _math.isnan(v):
                     rec[k] = None
+
+        # Family grouping key for the Products list, so a product's
+        # differently-named sizes collapse into ONE card. Spirits group by the
+        # enrichment-name core (catalogue-name core when un-enriched); wine
+        # groups by product_name (its vintages share a card). The display name
+        # prefers the clean enrichment name with the size suffix stripped.
+        for rec in records:
+            pname = rec.get("product_name") or ""
+            ptype = (rec.get("product_type") or "")
+            brand = rec.get("brand") or ""
+            enr = rec.get("enr_name")
+            if "wine" in ptype.lower():
+                core, display = "w:" + pname.lower().strip(), pname
+            elif enr:
+                core, display = "e:" + _product_core(enr), _display_name(enr)
+            else:
+                core, display = "c:" + _catalog_core(pname), pname
+            rec["product_group"] = f"{brand}|{core}"
+            rec["product_display"] = display or pname
+            rec.pop("enr_name", None)   # internal only
 
         # When the toggle is on, attach the FULL list of RIP codes per UPC
         # (a single UPC can stack across several rebates). Done as a separate
@@ -3465,6 +3489,14 @@ def _product_core(name: Optional[str]) -> str:
     s = _VARIANT_SIZE_RE.sub(" ", s)
     s = _VARIANT_PUNCT_RE.sub(" ", s)
     return re.sub(r"\s+", " ", s).strip()
+
+
+def _display_name(enr_name: Optional[str]) -> str:
+    """A clean product title from the enrichment name: strip the size suffix
+    ("... 1 Liter", "... 750 mL") but keep the original casing."""
+    s = _VARIANT_SIZE_RE.sub(" ", enr_name or "")
+    s = re.sub(r"\s+", " ", s).strip(" ,-")
+    return s or (enr_name or "")
 
 
 def _catalog_core(name: Optional[str]) -> str:

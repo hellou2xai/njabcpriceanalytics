@@ -51,24 +51,30 @@ function toMl(label?: string | null): number {
 interface ProductGroup {
   key: string;
   wholesaler: string;
-  productName: string;
+  productName: string;        // a representative SKU name (detail link / expand seed)
+  displayName: string;        // clean family title shown on the card
   productType: string;
   brand?: string;
   imageUrl?: string | null;
   sizes: Product[];          // one Product row per size, sorted small -> large
 }
 
+// Group by the server-provided product family key so a product's
+// differently-named sizes (GLENFID MALT 12Y 12P / 12YR / 6P …) collapse into
+// ONE card. Falls back to product_name when the key is absent.
 function groupByProduct(items: Product[]): ProductGroup[] {
   const map = new Map<string, ProductGroup>();
   const order: string[] = [];
   for (const it of items) {
-    const key = `${it.wholesaler}|${it.product_name}`;
+    const fam = (it.product_group && it.product_group.trim()) ? it.product_group : it.product_name;
+    const key = `${it.wholesaler}|${fam}`;
     let g = map.get(key);
     if (!g) {
       g = {
         key,
         wholesaler: it.wholesaler,
         productName: it.product_name,
+        displayName: it.product_display || it.product_name,
         productType: it.product_type,
         brand: it.brand,
         imageUrl: it.image_url,
@@ -190,13 +196,22 @@ function ProductCard({ group, cart, updateQty }: {
           <Link to={detailUrl(group.wholesaler, group.productName, first?.upc)}
             className="prod-card-name" onClick={e => e.stopPropagation()}
             title="Open full product details">
-            {group.productName}
+            {group.displayName}
           </Link>
           <div className="prod-card-type">{[group.productType, group.brand].filter(Boolean).join(' · ')}</div>
           <div className="prod-card-dist">
             <Store size={12} className="prod-card-dist-icon" />
             {distributorName(group.wholesaler)}
           </div>
+          {/* Sparkline sits next to the name so its hover tooltip opens over the
+              left/content area, not off the right edge. */}
+          {(range?.lo ?? first) && (
+            <span className="prod-card-spark" onClick={e => e.stopPropagation()}>
+              <PriceSparklines wholesaler={group.wholesaler} productName={(range?.lo ?? first).product_name}
+                upc={(range?.lo ?? first).upc} unitVolume={(range?.lo ?? first).unit_volume}
+                unitQty={(range?.lo ?? first).unit_qty} vintage={(range?.lo ?? first).vintage} />
+            </span>
+          )}
         </div>
         <div className="prod-card-right">
           {range && (
@@ -211,13 +226,6 @@ function ProductCard({ group, cart, updateQty }: {
             {anyDeal && <span className="prod-card-deal">Deal</span>}
             <span className="prod-card-instock"><CheckCircle2 size={13} /> {optionCount} option{optionCount === 1 ? '' : 's'} in stock</span>
           </div>
-          {(range?.lo ?? first) && (
-            <span onClick={e => e.stopPropagation()}>
-              <PriceSparklines wholesaler={group.wholesaler} productName={(range?.lo ?? first).product_name}
-                upc={(range?.lo ?? first).upc} unitVolume={(range?.lo ?? first).unit_volume}
-                unitQty={(range?.lo ?? first).unit_qty} vintage={(range?.lo ?? first).vintage} />
-            </span>
-          )}
         </div>
         <ChevronDown size={20} className={`prod-card-chev${expanded ? ' is-open' : ''}`} />
       </div>
@@ -261,6 +269,9 @@ export default function ProductsGrid({ items, cart, updateQty }: Props) {
 // Exposed so the page header can show "Showing N products" matching the cards.
 export function countProductGroups(items: Product[]): number {
   const seen = new Set<string>();
-  for (const it of items) seen.add(`${it.wholesaler}|${it.product_name}`);
+  for (const it of items) {
+    const fam = (it.product_group && it.product_group.trim()) ? it.product_group : it.product_name;
+    seen.add(`${it.wholesaler}|${fam}`);
+  }
   return seen.size;
 }

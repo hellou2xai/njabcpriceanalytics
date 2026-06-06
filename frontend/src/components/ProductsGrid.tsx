@@ -23,7 +23,7 @@ import AddToListButton from './AddToListButton';
 import { QtyStepper, type CartState } from './CatalogTable';
 import PriceSparklines from './PriceSparklines';
 import DealLadder from './DealLadder';
-import DealTimingSticker from './DealTimingSticker';
+import DealTimingSticker, { everyDayFromTiers } from './DealTimingSticker';
 import { buildMonths } from '../lib/promotionsSparkline';
 import { catalog } from '../lib/api';
 import { useProductSizes, bottlesPerCase } from '../lib/productSizes';
@@ -158,7 +158,8 @@ function SizeRow({ size, cart, updateQty, primaryName }: {
         <span className="prod-size-badges">
           {size.has_discount && <span className="prod-deal-badge prod-deal-qd">QD</span>}
           {size.has_rip && <span className="prod-deal-badge prod-deal-rip">RIP</span>}
-          <DealTimingSticker deals={size.deal_windows ?? []} gaps={size.rip_gaps} />
+          <DealTimingSticker deals={size.deal_windows ?? []} gaps={size.rip_gaps}
+            everyDay={everyDayFromTiers(size.tiers, size.frontline_case_price)} />
           {comboUrl && (
             <Link to={comboUrl} className="prod-combo-sticker" onClick={e => e.stopPropagation()}
               title="This product is part of a combo bundle — view the combo">🎁 Combo</Link>
@@ -268,7 +269,8 @@ function ProductCard({ group, cart, updateQty }: {
             {distributorName(group.wholesaler)}
           </div>
           <div className="prod-card-stickers" onClick={e => e.stopPropagation()}>
-            <DealTimingSticker deals={repRow?.deal_windows ?? []} gaps={repRow?.rip_gaps} />
+            <DealTimingSticker deals={repRow?.deal_windows ?? []} gaps={repRow?.rip_gaps}
+              everyDay={everyDayFromTiers(repRow?.tiers, repRow?.frontline_case_price)} />
           </div>
           {/* Sparkline sits next to the name so its hover tooltip opens over the
               left/content area, not off the right edge. */}

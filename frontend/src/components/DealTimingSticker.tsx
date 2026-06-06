@@ -46,15 +46,42 @@ export function datedFromTiers(tiers: CatalogTier[] | undefined, frontline?: num
   }));
 }
 
+// The best EVERGREEN (full-month) deal — shown in the popover so the buyer sees
+// what covers the days BETWEEN dated windows. Without it, two non-adjacent RIP
+// windows next to "no gap to avoid" reads as a contradiction.
+export function everyDayFromTiers(tiers: CatalogTier[] | undefined, frontline?: number | null): DatedDeal | null {
+  if (frontline == null) return null;
+  const ever = (tiers ?? []).filter(t => !t.is_time_sensitive && (t.price_after ?? Infinity) < frontline - 0.005);
+  if (!ever.length) return null;
+  const b = ever.reduce((a, c) => ((c.price_after ?? Infinity) < (a.price_after ?? Infinity) ? c : a));
+  return { kind: b.source === 'rip' ? 'RIP' : 'QD', qty: b.qty, unit: b.unit,
+    from: null, to: null, eff: b.price_after ?? null, save: frontline - (b.price_after ?? 0) };
+}
+
+export function everyDayFromMonths(months: MonthBreakdown[]): DatedDeal | null {
+  const cur = months.length ? months[months.length - 1] : null;
+  if (!cur || cur.frontline == null) return null;
+  const front = cur.frontline;
+  const cand = [
+    ...(cur.discountTiers ?? []).map(t => ({ t, kind: 'QD' as const })),
+    ...(cur.ripTiers ?? []).map(t => ({ t, kind: 'RIP' as const })),
+  ].filter(c => !c.t.ts && c.t.eff < front - 0.005);
+  if (!cand.length) return null;
+  const b = cand.reduce((a, c) => (c.t.eff < a.t.eff ? c : a));
+  return { kind: b.kind, qty: b.t.qty, unit: b.t.unit, from: null, to: null,
+    eff: b.t.eff, save: front - b.t.eff };
+}
+
 const unit1 = (qty: number, unit: string) => {
   const u = /btl|bottle/i.test(unit) ? 'bottle' : 'case';
   return qty === 1 ? u : `${u}s`;
 };
 
-export default function DealTimingSticker({ deals, gaps, label }: {
+export default function DealTimingSticker({ deals, gaps, label, everyDay }: {
   deals: DatedDeal[];
   gaps?: RipGap[] | null;
   label?: string;
+  everyDay?: DatedDeal | null;
 }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement | null>(null);
@@ -94,6 +121,18 @@ export default function DealTimingSticker({ deals, gaps, label }: {
         <div ref={popRef} className="dts-pop" style={{ position: 'fixed', left: pos.left, top: pos.top }}
           onClick={e => e.stopPropagation()}>
           <div className="dts-pop-title">When each deal applies this month</div>
+          {everyDay && (
+            <div className="dts-pop-row dts-pop-everyday">
+              <span className={`dts-pill dts-${everyDay.kind.toLowerCase()}`}>{everyDay.kind}</span>
+              <span className="dts-pop-when">Every day this month</span>
+              <span className="dts-pop-price">
+                {everyDay.qty != null ? `buy ${everyDay.qty} ${unit1(everyDay.qty, everyDay.unit ?? 'case')} → ` : ''}{money(everyDay.eff)}/cs{everyDay.save ? ` (save ${money(everyDay.save)})` : ''}
+              </span>
+            </div>
+          )}
+          {sorted.length > 0 && everyDay && (
+            <div className="dts-pop-sub">Deeper on these dates:</div>
+          )}
           {sorted.map((d, i) => (
             <div key={i} className="dts-pop-row">
               <span className={`dts-pill dts-${d.kind.toLowerCase()}`}>{d.kind}</span>

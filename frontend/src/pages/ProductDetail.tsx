@@ -9,7 +9,7 @@ import AddToCartButton from '../components/AddToCartButton';
 import AddToListButton from '../components/AddToListButton';
 import { QtyStepper, loadCart, saveCart, type CartState } from '../components/CatalogTable';
 import PriceSparklines from '../components/PriceSparklines';
-import DealTimingSticker from '../components/DealTimingSticker';
+import DealTimingSticker, { everyDayFromTiers, type DatedDeal } from '../components/DealTimingSticker';
 import { buildMonths } from '../lib/promotionsSparkline';
 import { windowBadge, fmtDateRange } from '../lib/dealDates';
 
@@ -304,6 +304,16 @@ export default function ProductDetail() {
     }
     return out;
   }, [sizes]);
+  // Best full-month (evergreen) deal across sizes — shown in the popover so the
+  // buyer sees what covers the days between dated windows.
+  const headerEveryDay = useMemo<DatedDeal | null>(() => {
+    let best: DatedDeal | null = null;
+    for (const s of sizes) {
+      const e = everyDayFromTiers(s.tiers, s.frontline_case_price);
+      if (e && (!best || (e.save ?? 0) > (best.save ?? 0))) best = e;
+    }
+    return best;
+  }, [sizes]);
   const comboLink = useComboLink();
   const anyComboUrl = sizes.map(s => comboLink(s.wholesaler, s.upc)).find(Boolean) ?? null;
 
@@ -375,7 +385,7 @@ export default function ProductDetail() {
               title="Part of a combo bundle — view the combo">🎁 Combo</Link>
           )}
           {(headerDeals.length > 0 || headerGaps.length > 0) && (
-            <DealTimingSticker deals={headerDeals} gaps={headerGaps} />
+            <DealTimingSticker deals={headerDeals} gaps={headerGaps} everyDay={headerEveryDay} />
           )}
           <div className="pd-identity">
             <ProductThumb src={enrichment?.image_url ?? sizes[0]?.image_url} alt={name} size={120} />

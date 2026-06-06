@@ -5,7 +5,7 @@ import { cart as cartApi, salesReps as repsApi, catalog, type CartItem, type Pro
 import ProductThumb from '../components/ProductThumb';
 import SavingsAnalysis from '../components/SavingsAnalysis';
 import DealSparkline from '../components/DealSparkline';
-import DealTimingSticker from '../components/DealTimingSticker';
+import DealTimingSticker, { everyDayFromTiers } from '../components/DealTimingSticker';
 import { windowBadge, fmtDateRange } from '../lib/dealDates';
 import { useProductQuickView } from '../components/ProductQuickView';
 import { useDialog } from '../components/Dialog';
@@ -370,7 +370,8 @@ export default function Cart() {
         {/* Buy-timing trap / dated-deal explainer (clickable). */}
         {((it.deal_windows?.length ?? 0) > 0 || (it.rip_gaps?.length ?? 0) > 0) && (
           <div style={{ marginLeft: 68, marginTop: 4 }}>
-            <DealTimingSticker deals={it.deal_windows ?? []} gaps={it.rip_gaps} />
+            <DealTimingSticker deals={it.deal_windows ?? []} gaps={it.rip_gaps}
+              everyDay={everyDayFromTiers(it.tiers, it.frontline_case_price)} />
           </div>
         )}
 

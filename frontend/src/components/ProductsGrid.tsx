@@ -131,10 +131,15 @@ function SizeRow({ size, cart, updateQty, primaryName }: {
   const sku = abgSku(size.wholesaler, size.abg_sku) ? `${skuLabel(size.wholesaler)} ${size.abg_sku}` : size.upc;
   const btlPrice = pack ? size.effective_case_price / pack : size.frontline_unit_price;
   // Current-month quantity-discount + RIP tier ladders, shown inline so the
-  // buyer gets every number without hovering the sparkline.
-  const tiers = size.tiers ?? [];
-  const discTiers = tiers.filter(t => t.source === 'discount').sort((a, b) => a.qty - b.qty);
-  const ripTiers = tiers.filter(t => t.source === 'rip').sort((a, b) => a.qty - b.qty);
+  // buyer gets every number without hovering the sparkline. Driven from the
+  // SAME price_3mo data the sparkline uses (via buildMonths), so the inline
+  // deals can never disagree with the chart (the row's flat `tiers` array can
+  // be dropped on the multi-UPC variant search while price_3mo survives).
+  const months = buildMonths(size);
+  const cur = months.length ? months[months.length - 1] : null;
+  const frontline = cur?.frontline ?? size.frontline_case_price;
+  const discTiers = [...(cur?.discountTiers ?? [])].sort((a, b) => a.qty - b.qty);
+  const ripTiers = [...(cur?.ripTiers ?? [])].sort((a, b) => a.qty - b.qty);
   const btlOf = (c?: number | null) => (pack && c != null ? c / pack : null);
   const uw = (u: string) => (/btl|bottle/i.test(u) ? 'btl' : 'cs');
   return (
@@ -167,33 +172,37 @@ function SizeRow({ size, cart, updateQty, primaryName }: {
         </div>
         <PriceSparklines wholesaler={size.wholesaler} productName={size.product_name}
           upc={size.upc} unitVolume={size.unit_volume} unitQty={size.unit_qty} vintage={size.vintage}
-          months={buildMonths(size)} />
+          months={months} />
       </div>
-      {/* Inline RIP + quantity-discount details for the current month, so all
-          numbers are visible without touching the sparkline. */}
+      {/* Inline RIP + quantity-discount tiers for the current month — tier qty,
+          $ off, price-after, for BOTH case and bottle — so all numbers are
+          visible without touching the sparkline. */}
       <div className="prod-size-deals">
         {discTiers.length === 0 && ripTiers.length === 0 && (
           <span className="prod-deals-none">No deals this month</span>
         )}
         {discTiers.map((t, i) => {
-          const b = btlOf(t.price_after);
+          const b = btlOf(t.eff);
+          const off = frontline != null && t.eff < frontline ? frontline - t.eff : null;
           return (
             <div key={`d${i}`} className="prod-deal-line">
               <span className="prod-deal-badge prod-deal-qd">QD</span> Buy {t.qty} {uw(t.unit)} →{' '}
-              <strong>${(t.price_after ?? 0).toFixed(2)}/cs</strong>
-              {t.save_per_case > 0 && <span className="prod-deal-off"> (−${t.save_per_case.toFixed(2)})</span>}
+              <strong>${t.eff.toFixed(2)}/cs</strong>
               {b != null && <span className="prod-deal-btl"> · ${b.toFixed(2)}/btl</span>}
+              {off != null && off > 0.005 && <span className="prod-deal-off"> (−${off.toFixed(2)})</span>}
             </div>
           );
         })}
         {ripTiers.map((t, i) => {
-          const b = btlOf(t.price_after);
+          const b = btlOf(t.eff);
+          const off = (t.ripOnlySave != null && Number.isFinite(t.ripOnlySave))
+            ? Number(t.ripOnlySave) : (frontline != null ? frontline - t.eff : null);
           return (
             <div key={`r${i}`} className="prod-deal-line">
               <span className="prod-deal-badge prod-deal-rip">RIP</span> Buy {t.qty} {uw(t.unit)} →{' '}
-              <strong>${t.amount.toFixed(2)} RIP</strong>
-              {t.price_after != null && <span className="prod-deal-after"> → ${t.price_after.toFixed(2)}/cs</span>}
+              <strong>${t.eff.toFixed(2)}/cs</strong>
               {b != null && <span className="prod-deal-btl"> · ${b.toFixed(2)}/btl</span>}
+              {off != null && off > 0.005 && <span className="prod-deal-off"> (RIP −${off.toFixed(2)})</span>}
             </div>
           );
         })}
@@ -280,13 +289,14 @@ function ProductCard({ group, cart, updateQty }: {
             </span>
           )}
         </div>
-        {(qdPrice || ripPrice) && (
+        {(qdPrice || ripPrice) && rep && (
           <div className="prod-card-deals">
             {qdPrice != null && (
               <span className="prod-deal-line">
                 <span className="prod-deal-badge prod-deal-qd">QD</span>
                 <strong>${qdPrice.toFixed(2)}/cs</strong>
                 {repPack && <span className="prod-deal-btl"> · ${(qdPrice / repPack).toFixed(2)}/btl</span>}
+                {rep.frontline_case_price - qdPrice > 0.005 && <span className="prod-deal-off"> (−${(rep.frontline_case_price - qdPrice).toFixed(2)})</span>}
               </span>
             )}
             {ripPrice != null && (
@@ -294,6 +304,7 @@ function ProductCard({ group, cart, updateQty }: {
                 <span className="prod-deal-badge prod-deal-rip">RIP</span>
                 <strong>${ripPrice.toFixed(2)}/cs</strong>
                 {repPack && <span className="prod-deal-btl"> · ${(ripPrice / repPack).toFixed(2)}/btl</span>}
+                {(qdPrice ?? rep.frontline_case_price) - ripPrice > 0.005 && <span className="prod-deal-off"> (RIP −${((qdPrice ?? rep.frontline_case_price) - ripPrice).toFixed(2)})</span>}
               </span>
             )}
           </div>

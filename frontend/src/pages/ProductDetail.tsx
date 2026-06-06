@@ -9,6 +9,7 @@ import AddToCartButton from '../components/AddToCartButton';
 import AddToListButton from '../components/AddToListButton';
 import { QtyStepper, loadCart, saveCart, type CartState } from '../components/CatalogTable';
 import PriceSparklines from '../components/PriceSparklines';
+import QuantityPriceCurve from '../components/QuantityPriceCurve';
 import DealTimingSticker, { everyDayFromTiers, type DatedDeal } from '../components/DealTimingSticker';
 import { buildMonths } from '../lib/promotionsSparkline';
 import { windowBadge, fmtDateRange } from '../lib/dealDates';
@@ -150,6 +151,8 @@ function SizeSection({ size, view, cart, updateQty, primaryName }: {
           upc={size.upc} unitVolume={size.unit_volume} />
       </div>
 
+      <div className="pd-size-cols">
+      <div className="pd-size-main">
       {showDeals && discTiers.length > 0 && (
         <div className="pd-deals">
           <button type="button" className="pd-deals-toggle" onClick={() => setDealsOpen(o => !o)}>
@@ -219,6 +222,13 @@ function SizeSection({ size, view, cart, updateQty, primaryName }: {
           ))}
         </div>
       )}
+      </div>
+
+      {/* Volume-pricing curve: per-case + per-bottle price vs case quantity,
+          from the SAME canonical tiers (this UPC / vintage) as the ladders. */}
+      <QuantityPriceCurve frontline={headlineCase} tiers={tiers} pack={pack}
+        sizeLabel={`${size.unit_volume ?? ''}${hasVintage ? ` · ${size.vintage}` : ''}`} />
+      </div>
 
       <div className="pd-size-order">
         <div className="pd-steppers">

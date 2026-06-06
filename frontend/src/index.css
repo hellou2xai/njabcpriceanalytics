@@ -387,6 +387,51 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
 .agents-page .catalog-table td { font-size: 14px; }
 .agents-page .catalog-table th { font-size: 12.5px; }
 
+/* ---- QuantityPriceCurve: volume-pricing chart on Product Detail ---- */
+/* Side-by-side ONLY when the size section itself is wide enough (container
+   query - the section lives in a ~400px rail today, where the chart stacks
+   full-width below the price block instead of crushing the ladders). */
+.pd-size { container-type: inline-size; }
+.pd-size-cols { display: grid; grid-template-columns: 1fr; gap: 12px; align-items: start; }
+@container (min-width: 780px) {
+  .pd-size-cols { grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); gap: 16px; }
+}
+
+/* Transparent by design: the chart sits straight on the page surface. */
+.qpc { background: transparent; min-width: 0; }
+.qpc-title { font-size: 13px; font-weight: 700; margin: 2px 0 2px; }
+.qpc-title .text-muted { font-weight: 400; }
+.qpc-legend {
+  display: flex; gap: 14px; flex-wrap: wrap; margin-top: 2px;
+  font-size: 12px; color: var(--text-muted);
+}
+.qpc-swatch {
+  display: inline-block; width: 14px; height: 3px; border-radius: 2px;
+  vertical-align: middle; margin-right: 4px;
+}
+.qpc-swatch--dash { height: 0; border-top: 2px dashed; background: none !important; }
+.qpc-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+/* Decision tooltip: everything the buyer needs at this quantity. */
+.qpc-tip {
+  background: var(--surface); border-radius: 10px; box-shadow: var(--shadow-card);
+  border: 1px solid var(--border); padding: 10px 12px; font-size: 13px;
+  max-width: 290px;
+}
+.qpc-tip-head { margin-bottom: 6px; font-size: 13px; }
+.qpc-tip-row {
+  display: flex; justify-content: space-between; gap: 14px; padding: 1.5px 0;
+}
+.qpc-tip-save strong { color: var(--green); }
+.qpc-tip-deal {
+  margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border);
+  font-size: 12.5px;
+}
+.qpc-tip-next {
+  margin-top: 5px; font-size: 12.5px; color: var(--accent-strong, var(--accent));
+}
+.qpc-warn { color: #b45309; font-weight: 600; }
+
 /* Agent run detail lives INSIDE a td, and the app-wide `td { white-space:
    nowrap }` rule (see the base table styles) would otherwise cascade into
    every nested element, forcing single-line min-widths that blow the page out

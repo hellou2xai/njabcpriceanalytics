@@ -21,6 +21,18 @@ from backend.routers.cart import _attach_cart_pricing, analyze_lines, _fnum
 router = APIRouter(prefix="/api/whats-new", tags=["digest"])
 
 SECTION_CAP = 14
+_MON = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+
+def _fmt_range(a, b) -> str:
+    import re
+    def f(d):
+        if not d:
+            return ''
+        m = re.match(r'(\d{4})-(\d{1,2})-(\d{1,2})', str(d))
+        return f"{_MON[int(m.group(2))]} {int(m.group(3))}" if m else str(d)
+    fa, fb = f(a), f(b)
+    return f"{fa}–{fb}" if fa and fb else (fa or fb)
 
 
 def _tracked(uid: int) -> list[dict]:
@@ -164,8 +176,8 @@ def whats_new(user: dict = Depends(get_current_user)):
         else:
             r["mom"] = {"dir": "same", "delta": 0.0, "text": "same price as last month"}
 
-    buy_before, price_relief, new_rips, deeper_rips, lost_rips, target_hits, expiring = (
-        [], [], [], [], [], [], [])
+    buy_before, price_relief, new_rips, deeper_rips, lost_rips, target_hits, expiring, partial = (
+        [], [], [], [], [], [], [], [])
     for p in products:
         rc = p.get("rip_change")
         win, save = p.get("best_buy_window"), _fnum(p.get("best_buy_saving"))
@@ -194,12 +206,31 @@ def whats_new(user: dict = Depends(get_current_user)):
         if ed is not None and ed <= 14:
             expiring.append(_card(p, f"RIP expires in {ed} day{'s' if ed != 1 else ''}", -ed, "risk"))
 
+        # Partial-month (time-sensitive) QD/RIP — limited-date deals. The savings
+        # analyzer favours the smallest tier, so a partial QD (e.g. Buy 10 cases,
+        # Jun 9–10) would otherwise never be flagged. Surface it explicitly.
+        pts = [t for t in (p.get("tiers") or []) if t.get("is_time_sensitive")]
+        if pts:
+            best = max(pts, key=lambda t: _fnum(t.get("save_per_case")) or 0.0)
+            kind = "QD" if best.get("source") == "discount" else "RIP"
+            pa = _fnum(best.get("price_after"))
+            sv = _fnum(best.get("save_per_case")) or 0.0
+            rng = _fmt_range(best.get("from_date"), best.get("to_date"))
+            win = best.get("window_status")
+            price_txt = f" → ${pa:,.2f}/cs" if pa is not None else ""
+            un = str(best.get("unit") or "").lower()
+            if best.get("qty") == 1 and un.endswith("s"):
+                un = un[:-1]
+            detail = (f"Partial {kind} · {rng}: buy {best.get('qty')} {un}{price_txt} (save ${sv:,.2f}/cs)")
+            partial.append(_card(p, detail, sv, "risk" if win == "active" else "info"))
+
     def top(lst, reverse=True):
         return sorted(lst, key=lambda c: (c.get("change_amount") or 0), reverse=reverse)[:SECTION_CAP]
 
     sections = {
-        "buy_before": top(buy_before),
         "expiring": sorted(expiring, key=lambda c: (c.get("change_amount") or 0), reverse=True)[:SECTION_CAP],
+        "partial": top(partial),
+        "buy_before": top(buy_before),
         "new_rips": top(new_rips),
         "deeper_rips": top(deeper_rips),
         "target_hits": top(target_hits),

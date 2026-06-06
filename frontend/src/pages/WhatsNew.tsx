@@ -46,6 +46,7 @@ const SOURCE_ICON: Record<string, typeof Star> = { favorite: Star, cart: Shoppin
 interface SectionMeta { key: string; title: string; subtitle: string; icon: typeof Clock; tone: 'risk' | 'good' | 'bad' | 'info'; }
 const SECTIONS: SectionMeta[] = [
   { key: 'expiring', title: 'Expiring soon', subtitle: 'RIPs on your items ending in days — act now', icon: Clock, tone: 'risk' },
+  { key: 'partial', title: 'Limited-time deals', subtitle: 'Partial-month QD/RIP — only valid on certain dates', icon: CalendarClock, tone: 'risk' },
   { key: 'buy_before', title: 'Buy before prices rise', subtitle: 'Locks in this edition’s price', icon: CalendarClock, tone: 'risk' },
   { key: 'new_rips', title: 'New RIPs on your items', subtitle: 'Rebates that just appeared this edition', icon: BadgeDollarSign, tone: 'good' },
   { key: 'deeper_rips', title: 'RIPs got deeper', subtitle: 'Bigger rebate than last month', icon: TrendingUp, tone: 'good' },

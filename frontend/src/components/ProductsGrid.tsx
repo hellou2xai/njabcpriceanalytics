@@ -92,18 +92,28 @@ function groupByProduct(items: Product[]): ProductGroup[] {
   return order.map(k => map.get(k)!);
 }
 
+// True per-bottle list price, correcting slash-multipacks (unit_qty = trays)
+// the same way every other per-bottle surface does.
+function bottleUnitPrice(s: Product): number | null {
+  const pack = bottlesPerCase(s.product_name, s.unit_qty);
+  if (pack && s.frontline_case_price != null) return s.frontline_case_price / pack;
+  return s.frontline_unit_price ?? null;
+}
+
 // "$0.83 (50mL) – $19.29 (1.75L)" — the per-bottle price range across the
-// product's sizes, each end labelled with its own size. Front-page pricing
-// (which deal to surface) is intentionally simple here; it'll be refined later.
-function priceRange(sizes: Product[]): { lo: Product; hi: Product } | null {
-  const priced = sizes.filter(s => s.frontline_unit_price != null);
+// product's sizes, each end labelled with its own size. Uses the corrected
+// per-bottle price so a 50mL 120-pack reads $2.99, not $35.90/tray.
+function priceRange(sizes: Product[]): { lo: Product; hi: Product; loPrice: number; hiPrice: number } | null {
+  const priced = sizes
+    .map(s => ({ s, p: bottleUnitPrice(s) }))
+    .filter((x): x is { s: Product; p: number } => x.p != null);
   if (priced.length === 0) return null;
   let lo = priced[0], hi = priced[0];
-  for (const s of priced) {
-    if (s.frontline_unit_price < lo.frontline_unit_price) lo = s;
-    if (s.frontline_unit_price > hi.frontline_unit_price) hi = s;
+  for (const x of priced) {
+    if (x.p < lo.p) lo = x;
+    if (x.p > hi.p) hi = x;
   }
-  return { lo, hi };
+  return { lo: lo.s, hi: hi.s, loPrice: lo.p, hiPrice: hi.p };
 }
 
 function SizeRow({ size, cart, updateQty, primaryName }: {
@@ -216,9 +226,9 @@ function ProductCard({ group, cart, updateQty }: {
         <div className="prod-card-right">
           {range && (
             <div className="prod-card-range">
-              ${range.lo.frontline_unit_price.toFixed(2)} <span className="prod-card-range-size">({range.lo.unit_volume})</span>
+              ${range.loPrice.toFixed(2)} <span className="prod-card-range-size">({range.lo.unit_volume})</span>
               {range.hi !== range.lo && (
-                <> – ${range.hi.frontline_unit_price.toFixed(2)} <span className="prod-card-range-size">({range.hi.unit_volume})</span></>
+                <> – ${range.hiPrice.toFixed(2)} <span className="prod-card-range-size">({range.hi.unit_volume})</span></>
               )}
             </div>
           )}

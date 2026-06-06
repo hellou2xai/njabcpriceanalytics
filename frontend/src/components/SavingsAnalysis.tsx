@@ -7,6 +7,7 @@
  * (the canonical pricing tiers) — this component only presents and, on the cart,
  * lets the buyer APPLY a nudge (bump qty / switch distributor).
  */
+import { Link } from 'react-router-dom';
 import { TrendingUp, Layers, Repeat, CalendarClock, PiggyBank, Sparkles, Clock } from 'lucide-react';
 import type { SavingsAnalysis as Analysis, SavingsRec } from '../lib/api';
 import { distributorName } from '../lib/distributors';
@@ -14,6 +15,18 @@ import { distributorName } from '../lib/distributors';
 const money = (n?: number | null) =>
   n == null ? '—' : `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const cs = (n?: number) => `${n} ${n === 1 ? 'case' : 'cases'}`;
+
+// Product name → its full detail page, when we have enough to build the link.
+function ProductLink({ rec }: { rec: SavingsRec }) {
+  if (!rec.product_name || !rec.wholesaler) return <strong>{rec.product_name}</strong>;
+  const q = new URLSearchParams({ w: rec.wholesaler, n: rec.product_name });
+  if (rec.upc) q.set('u', String(rec.upc));
+  return (
+    <Link to={`/product?${q.toString()}`} className="sav-pname" onClick={e => e.stopPropagation()}>
+      <strong>{rec.product_name}</strong>
+    </Link>
+  );
+}
 
 function Expiry({ rec }: { rec: SavingsRec }) {
   if (rec.window_status !== 'active' || rec.days_to_expire == null || rec.days_to_expire > 14) return null;
@@ -37,7 +50,7 @@ function RecCard({ rec, context, onSetQty, onSwap, busy }: {
         <div className="sav-rec-body">
           <div className="sav-rec-head">
             <span className={`prod-deal-badge ${isRip ? 'prod-deal-rip' : 'prod-deal-qd'}`}>{isRip ? 'RIP' : 'QD'}</span>
-            <strong>{rec.product_name}</strong>{rec.unit_volume ? ` · ${rec.unit_volume}` : ''}
+            <ProductLink rec={rec} />{rec.unit_volume ? ` · ${rec.unit_volume}` : ''}
             <Expiry rec={rec} />
           </div>
           <div className="sav-rec-text">
@@ -84,7 +97,7 @@ function RecCard({ rec, context, onSetQty, onSwap, busy }: {
       <div className="sav-rec">
         <span className="sav-ico is-warn"><CalendarClock size={15} /></span>
         <div className="sav-rec-body">
-          <div className="sav-rec-head"><strong>{rec.product_name}</strong>{rec.unit_volume ? ` · ${rec.unit_volume}` : ''}</div>
+          <div className="sav-rec-head"><ProductLink rec={rec} />{rec.unit_volume ? ` · ${rec.unit_volume}` : ''}</div>
           <div className="sav-rec-text">
             Price rises {money(rec.rise_per_case)}/cs next month ({money(rec.current_price)} → {money(rec.next_price)}).
             Lock in now{rec.current_cases ? ` (× ${cs(rec.current_cases)})` : ''}.
@@ -100,7 +113,7 @@ function RecCard({ rec, context, onSetQty, onSwap, busy }: {
     <div className="sav-rec">
       <span className="sav-ico is-swap"><Repeat size={15} /></span>
       <div className="sav-rec-body">
-        <div className="sav-rec-head"><strong>{rec.product_name}</strong>{rec.unit_volume ? ` · ${rec.unit_volume}` : ''}</div>
+        <div className="sav-rec-head"><ProductLink rec={rec} />{rec.unit_volume ? ` · ${rec.unit_volume}` : ''}</div>
         <div className="sav-rec-text">
           {money(rec.save_per_case)}/cs cheaper at <strong>{distributorName(rec.to_wholesaler || '')}</strong>{' '}
           ({money(rec.current_price)} → {money(rec.other_price)})

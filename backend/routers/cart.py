@@ -507,7 +507,7 @@ def analyze_lines(items: list[dict]) -> dict:
                 continue
             payload = {
                 "type": "tier_gap", "kind": "qd" if kind == "discount" else "rip",
-                "line_id": it.get("id"), "product_name": name,
+                "line_id": it.get("id"), "product_name": name, "upc": it.get("upc"),
                 "wholesaler": it.get("wholesaler"), "unit_volume": it.get("unit_volume"),
                 "current_cases": C, "target_qty": nxt["qty"], "add_cases": nxt["qty"] - C,
                 "new_case_price": nxt["price_after"], "save_per_case": round(nxt["save"], 2),
@@ -560,7 +560,7 @@ def analyze_lines(items: list[dict]) -> dict:
             total = round(rise * max(C, 1), 2)
             protection += total if C > 0 else 0.0
             recs.append({
-                "type": "buy_before", "line_id": it.get("id"),
+                "type": "buy_before", "line_id": it.get("id"), "upc": it.get("upc"),
                 "product_name": it.get("product_name"), "wholesaler": it.get("wholesaler"),
                 "unit_volume": it.get("unit_volume"), "current_price": round(cur, 2),
                 "next_price": round(nxt, 2), "rise_per_case": rise,

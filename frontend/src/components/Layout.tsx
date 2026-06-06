@@ -37,6 +37,7 @@ const NAV_GROUPS: {
     header: 'Catalog',
     items: [
       { path: '/catalog', label: 'Catalog', icon: Package },
+      { path: '/products', label: 'Products', icon: LayoutGrid },
       { path: '/new-items', label: 'New Items', icon: Sparkles },
       { path: '/combos', label: 'Combos', icon: Combine },
     ],

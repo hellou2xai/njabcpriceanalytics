@@ -5529,6 +5529,7 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .sav-pname { text-decoration: none; color: inherit; }
 .sav-pname:hover strong { color: var(--accent); text-decoration: underline; }
 .sav-from { color: var(--text-muted); text-decoration: line-through; }
+.sav-split { color: var(--text); font-weight: 600; }
 .sav-mom { display: inline-flex; align-items: center; gap: 3px; font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 9px; white-space: nowrap; }
 .sav-mom-new { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
 .sav-mom-up { color: var(--green); background: color-mix(in srgb, var(--green) 12%, var(--surface)); }

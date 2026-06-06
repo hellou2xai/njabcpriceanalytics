@@ -68,6 +68,10 @@ function RecCard({ rec, context, onSetQty, onSwap, busy }: {
               <span className="sav-from"> from {money(rec.new_case_price + rec.save_per_case)}/cs</span>
             )}
             {' '}· save {money(rec.save_per_case)}/cs
+            {/* When the saving stacks a quantity discount AND a RIP, show the split. */}
+            {(rec.rip_save_per_case ?? 0) > 0.005 && (rec.qd_save_per_case ?? 0) > 0.005 && (
+              <span className="sav-split"> = QD {money(rec.qd_save_per_case)} + RIP {money(rec.rip_save_per_case)}</span>
+            )}
           </div>
         </div>
         <div className="sav-rec-right">

@@ -704,6 +704,8 @@ export interface SavingsRec {
   add_cases?: number;
   new_case_price?: number | null;
   save_per_case?: number;
+  qd_save_per_case?: number;   // QD portion of a (stacked) RIP-tier saving
+  rip_save_per_case?: number;  // RIP portion
   rebate_amount?: number;
   roi_pct?: number;
   extra_savings?: number;

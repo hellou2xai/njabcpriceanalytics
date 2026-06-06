@@ -370,6 +370,10 @@ def _case_tiers(item: dict, kind: str) -> list[dict]:
         out.append({
             "qty": q,
             "save": _fnum(t.get("save_per_case")) or 0.0,
+            # For a RIP tier the canonical `save_per_case` STACKS the quantity
+            # discount, so carry the split so the UI can show "QD $A + RIP $B".
+            "rip_save": _fnum(t.get("rip_only_save_per_case")) or 0.0,
+            "qd_save": _fnum(t.get("stacked_disc_per_case")) or 0.0,
             "price_after": _fnum(t.get("price_after")),
             "amount": _fnum(t.get("amount")) or 0.0,
             "roi": _fnum(t.get("roi_pct")) or 0.0,
@@ -511,6 +515,9 @@ def analyze_lines(items: list[dict]) -> dict:
                 "wholesaler": it.get("wholesaler"), "unit_volume": it.get("unit_volume"),
                 "current_cases": C, "target_qty": nxt["qty"], "add_cases": nxt["qty"] - C,
                 "new_case_price": nxt["price_after"], "save_per_case": round(nxt["save"], 2),
+                # QD/RIP split of the (stacked) saving, so the row can explain it.
+                "qd_save_per_case": round(nxt.get("qd_save", 0.0), 2),
+                "rip_save_per_case": round(nxt.get("rip_save", 0.0), 2),
                 "rebate_amount": round(nxt["amount"], 2), "roi_pct": nxt["roi"],
                 "extra_savings": extra,
                 "window_status": nxt["window_status"], "days_to_expire": nxt["days_to_expire"],

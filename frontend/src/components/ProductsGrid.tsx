@@ -12,8 +12,9 @@
  * Everything else (semantic search, filters, facets, the cart) is the same
  * machinery the Catalog page uses — this is purely a new presentation layer.
  */
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, Store } from 'lucide-react';
 import FavoriteButton from './FavoriteButton';
 import ProductThumb from './ProductThumb';
@@ -21,7 +22,9 @@ import AddToCartButton from './AddToCartButton';
 import AddToListButton from './AddToListButton';
 import { QtyStepper, type CartState } from './CatalogTable';
 import PriceSparklines from './PriceSparklines';
+import DealLadder from './DealLadder';
 import { buildMonths } from '../lib/promotionsSparkline';
+import { catalog } from '../lib/api';
 import { useProductSizes, bottlesPerCase } from '../lib/productSizes';
 import { useComboLink } from '../lib/comboLink';
 import { distributorName, abgSku, skuLabel } from '../lib/distributors';
@@ -136,12 +139,6 @@ function SizeRow({ size, cart, updateQty, primaryName }: {
   // deals can never disagree with the chart (the row's flat `tiers` array can
   // be dropped on the multi-UPC variant search while price_3mo survives).
   const months = buildMonths(size);
-  const cur = months.length ? months[months.length - 1] : null;
-  const frontline = cur?.frontline ?? size.frontline_case_price;
-  const discTiers = [...(cur?.discountTiers ?? [])].sort((a, b) => a.qty - b.qty);
-  const ripTiers = [...(cur?.ripTiers ?? [])].sort((a, b) => a.qty - b.qty);
-  const btlOf = (c?: number | null) => (pack && c != null ? c / pack : null);
-  const uw = (u: string) => (/btl|bottle/i.test(u) ? 'btl' : 'cs');
   return (
     <div className="prod-size-row">
       <Link to={detailUrl(size.wholesaler, size.product_name, size.upc)} className="prod-size-id"
@@ -174,41 +171,11 @@ function SizeRow({ size, cart, updateQty, primaryName }: {
           upc={size.upc} unitVolume={size.unit_volume} unitQty={size.unit_qty} vintage={size.vintage}
           months={months} />
       </div>
-      {/* Inline RIP + quantity-discount tiers for the current month — tier qty,
-          $ off, price-after, for BOTH case and bottle — so all numbers are
-          visible without touching the sparkline. */}
+      {/* Inline RIP + quantity-discount tiers for the current month — one shared
+          DealLadder (tier qty, total $ off, price-after for BOTH case + bottle)
+          so the numbers always match the sparkline tooltip. */}
       <div className="prod-size-deals">
-        {discTiers.length === 0 && ripTiers.length === 0 && (
-          <span className="prod-deals-none">No deals this month</span>
-        )}
-        {discTiers.map((t, i) => {
-          const b = btlOf(t.eff);
-          const off = frontline != null && t.eff < frontline ? frontline - t.eff : null;
-          return (
-            <div key={`d${i}`} className="prod-deal-line">
-              <span className="prod-deal-badge prod-deal-qd">QD</span> Buy {t.qty} {uw(t.unit)} →{' '}
-              <strong>${t.eff.toFixed(2)}/cs</strong>
-              {b != null && <span className="prod-deal-btl"> · ${b.toFixed(2)}/btl</span>}
-              {off != null && off > 0.005 && <span className="prod-deal-off"> (−${off.toFixed(2)})</span>}
-            </div>
-          );
-        })}
-        {ripTiers.map((t, i) => {
-          const b = btlOf(t.eff);
-          // TOTAL savings off list (list − net price) — the SAME figure the
-          // price-schedule tooltip and the QD line show, so the buyer reads one
-          // consistent "−$X off list" everywhere, not a confusing RIP-only
-          // increment (−$10) that looks tiny next to the real $80.80 saving.
-          const off = frontline != null && t.eff < frontline ? frontline - t.eff : null;
-          return (
-            <div key={`r${i}`} className="prod-deal-line">
-              <span className="prod-deal-badge prod-deal-rip">RIP</span> Buy {t.qty} {uw(t.unit)} →{' '}
-              <strong>${t.eff.toFixed(2)}/cs</strong>
-              {b != null && <span className="prod-deal-btl"> · ${b.toFixed(2)}/btl</span>}
-              {off != null && off > 0.005 && <span className="prod-deal-off"> (−${off.toFixed(2)})</span>}
-            </div>
-          );
-        })}
+        <DealLadder months={months} pack={pack} emptyText="No deals this month" />
       </div>
       <div className="prod-size-order">
         <div className="prod-size-steppers">
@@ -240,28 +207,32 @@ function ProductCard({ group, cart, updateQty }: {
   const comboUrl = group.sizes.map(s => comboLink(s.wholesaler, s.upc)).find(Boolean) ?? null;
   const first = group.sizes[0];
 
-  // Compact deal summary for the collapsed card (rep = cheapest size), from
-  // fields the list already returns — no extra fetch. The QD tiers carry their
-  // QUANTITY (discount_N_qty), so we show "Buy N cs -> $price". The RIP per-tier
-  // quantity isn't on the list row (it lives in the rip sheet, loaded on
-  // expand), so we show the best RIP as the floor price you can reach.
+  // Collapsed-card deal summary: the REAL current-month QD + RIP tier ladder for
+  // the rep (cheapest) size, from the SAME canonical price_3mo the expanded rows
+  // and sparkline use — no invented "best RIP". The list row omits price_3mo for
+  // speed, so we fetch the rep's tiers lazily (only once the card scrolls into
+  // view) and feed that ONE fetch to both the ladder and the sparkline (the
+  // sparkline runs with noSelfFetch so the page never fires two requests/card).
   const rep = range?.lo ?? first;
   const repPack = rep ? bottlesPerCase(rep.product_name, rep.unit_qty) : null;
-  const repFront = rep?.frontline_case_price ?? 0;
-  const qdTiers = (rep ? ([
-    [rep.discount_1_qty, rep.discount_1_amt], [rep.discount_2_qty, rep.discount_2_amt],
-    [rep.discount_3_qty, rep.discount_3_amt], [rep.discount_4_qty, rep.discount_4_amt],
-    [rep.discount_5_qty, rep.discount_5_amt],
-  ] as [string | null | undefined, number | null | undefined][]) : [])
-    .map(([q, a]) => {
-      if (!q || a == null) return null;
-      const m = /(\d+)\s*(cases?|btls?|bottles?)?/i.exec(String(q));
-      return m ? { qty: parseInt(m[1], 10), unit: /b/i.test(m[2] ?? '') ? 'btl' : 'cs', amt: Number(a) } : null;
-    })
-    .filter((t): t is { qty: number; unit: string; amt: number } => t != null && t.amt > 0.005)
-    .sort((a, b) => a.qty - b.qty);
-  const bestQd = qdTiers.length ? repFront - Math.max(...qdTiers.map(t => t.amt)) : repFront;
-  const ripBest = rep && rep.has_rip && rep.effective_case_price < bestQd - 0.005 ? rep.effective_case_price : null;
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const [inView, setInView] = useState(false);
+  useEffect(() => {
+    if (inView || !cardRef.current) return;
+    const io = new IntersectionObserver(es => {
+      for (const e of es) if (e.isIntersecting) { setInView(true); io.disconnect(); break; }
+    }, { rootMargin: '150px' });
+    io.observe(cardRef.current);
+    return () => io.disconnect();
+  }, [inView]);
+  const { data: repTierData } = useQuery({
+    enabled: inView && !!rep?.wholesaler && !!rep?.upc,
+    staleTime: 5 * 60_000,
+    queryKey: ['rep-tiers', rep?.wholesaler, rep?.upc],
+    queryFn: () => catalog.search({ wholesaler: rep!.wholesaler, upcs: String(rep!.upc), include_tiers: true, limit: 1 }),
+  });
+  const repRow = (repTierData?.items?.[0] as Product | undefined) ?? rep;
+  const repMonths = repRow ? buildMonths(repRow) : [];
 
   // The list is paginated by SKU, so a product's sizes can be split across
   // pages. On expand, fetch the FULL size set via the shared "products by size"
@@ -273,7 +244,7 @@ function ProductCard({ group, cart, updateQty }: {
   const optionCount = sizes.length;
 
   return (
-    <div className={`prod-card${expanded ? ' is-expanded' : ''}`}>
+    <div className={`prod-card${expanded ? ' is-expanded' : ''}`} ref={cardRef}>
       <div className="prod-card-head" onClick={() => setExpanded(e => !e)}>
         <div className="prod-card-fav" onClick={e => e.stopPropagation()}>
           <FavoriteButton productName={group.productName} wholesaler={group.wholesaler}
@@ -296,35 +267,17 @@ function ProductCard({ group, cart, updateQty }: {
           </div>
           {/* Sparkline sits next to the name so its hover tooltip opens over the
               left/content area, not off the right edge. */}
-          {(range?.lo ?? first) && (
+          {rep && (
             <span className="prod-card-spark" onClick={e => e.stopPropagation()}>
-              <PriceSparklines wholesaler={group.wholesaler} productName={(range?.lo ?? first).product_name}
-                upc={(range?.lo ?? first).upc} unitVolume={(range?.lo ?? first).unit_volume}
-                unitQty={(range?.lo ?? first).unit_qty} vintage={(range?.lo ?? first).vintage} />
+              <PriceSparklines wholesaler={rep.wholesaler} productName={rep.product_name}
+                upc={rep.upc} unitVolume={rep.unit_volume} unitQty={rep.unit_qty} vintage={rep.vintage}
+                months={repMonths.length ? repMonths : undefined} noSelfFetch={!!rep.upc} />
             </span>
           )}
         </div>
-        {(qdTiers.length > 0 || ripBest != null) && rep && (
+        {repMonths.length > 0 && (
           <div className="prod-card-deals">
-            {qdTiers.map((t, i) => {
-              const after = repFront - t.amt;
-              return (
-                <span key={i} className="prod-deal-line">
-                  <span className="prod-deal-badge prod-deal-qd">QD</span> Buy {t.qty} {t.unit} →{' '}
-                  <strong>${after.toFixed(2)}/cs</strong>
-                  {repPack && <span className="prod-deal-btl"> · ${(after / repPack).toFixed(2)}/btl</span>}
-                  <span className="prod-deal-off"> (−${t.amt.toFixed(2)})</span>
-                </span>
-              );
-            })}
-            {ripBest != null && (
-              <span className="prod-deal-line" title="Best RIP price you can reach — expand for the per-quantity RIP tiers">
-                <span className="prod-deal-badge prod-deal-rip">RIP</span> best{' '}
-                <strong>${ripBest.toFixed(2)}/cs</strong>
-                {repPack && <span className="prod-deal-btl"> · ${(ripBest / repPack).toFixed(2)}/btl</span>}
-                {bestQd - ripBest > 0.005 && <span className="prod-deal-off"> (−${(bestQd - ripBest).toFixed(2)})</span>}
-              </span>
-            )}
+            <DealLadder months={repMonths} pack={repPack} />
           </div>
         )}
         <div className="prod-card-right">

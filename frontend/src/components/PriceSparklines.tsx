@@ -34,6 +34,10 @@ interface Props {
   // When the caller already has the row (with price_3mo), pass the built months
   // for a no-request, rich (quantity-deal) tooltip. Omit to self-fetch light.
   months?: MonthBreakdown[];
+  // When the caller is itself fetching the rich (price_3mo) data and will pass
+  // `months` once it lands, set this so the sparkline does NOT also self-fetch
+  // the light history — one fetch powers both the chart and the deal ladder.
+  noSelfFetch?: boolean;
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -122,7 +126,7 @@ function LightMonth({ p, pack, size, current }: { p: PricePoint; pack: number | 
   );
 }
 
-export default function PriceSparklines({ wholesaler, productName, upc, unitVolume, unitQty, vintage, months }: Props) {
+export default function PriceSparklines({ wholesaler, productName, upc, unitVolume, unitQty, vintage, months, noSelfFetch }: Props) {
   const ref = useRef<HTMLSpanElement | null>(null);
   const popRef = useRef<HTMLSpanElement | null>(null);
   const [visible, setVisible] = useState(false);
@@ -145,7 +149,7 @@ export default function PriceSparklines({ wholesaler, productName, upc, unitVolu
 
   // LIGHT price history (no tier ladder) for the self-fetch layers.
   const { data: hist } = useQuery({
-    enabled: !hasOwn && visible && !!wholesaler && !!productName,
+    enabled: !hasOwn && !noSelfFetch && visible && !!wholesaler && !!productName,
     staleTime: 5 * 60_000,
     queryKey: ['price-history', wholesaler, productName, upc, unitVolume, unitQty, vtg],
     queryFn: () => catalog.priceHistory(wholesaler, productName, {

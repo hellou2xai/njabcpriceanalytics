@@ -142,7 +142,10 @@ function SizeSection({ size, view, cart, updateQty, primaryName }: {
           </button>
           {dealsOpen && (
             <div className="pd-deals-body">
-              <div className="pd-deals-label">Quantity</div>
+              {/* These are quantity-DISCOUNT tiers (QD), not just "quantity". */}
+              <div className="pd-deals-label">
+                <span className="prod-deal-badge prod-deal-qd">QD</span> Quantity Discount
+              </div>
               {discTiers.map((t, i) => {
                 const tb = btl(t.price_after) ?? t.btl_price_after;
                 const tBtlOz = ozB && tb != null ? tb / ozB : null;

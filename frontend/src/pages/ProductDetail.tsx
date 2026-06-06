@@ -107,6 +107,11 @@ function SizeSection({ size, view, cart, updateQty, primaryName }: {
   const comboUrl = comboLink(size.wholesaler, size.upc);
   // Per-bottle from the corrected pack (so a 50mL 120-pack reads $2.99, not $35.90).
   const btl = (caseVal: number | null | undefined) => (caseVal != null && pack ? caseVal / pack : null);
+  // Consistent buy-unit: when the item is 1 bottle/case, "Buy 1 bottle" and
+  // "Buy 1 case" are the SAME thing, so the QD (cases) and RIP (bottles) source
+  // units mustn't read differently — show everything as the ordering unit (case).
+  const buyUnit = (qty: number, unit: string) =>
+    (pack === 1 ? (qty === 1 ? 'case' : 'cases') : unitWord(qty, unit));
 
   const headlineCase = size.frontline_case_price;
   const headlineBtl = btl(headlineCase) ?? size.frontline_unit_price;
@@ -159,7 +164,7 @@ function SizeSection({ size, view, cart, updateQty, primaryName }: {
                 const tBtlOz = ozB && tb != null ? tb / ozB : null;
                 return (
                   <div key={i} className="pd-deal-line">
-                    Buy {t.qty} {unitWord(t.qty, t.unit)} – <strong>${(t.price_after ?? 0).toFixed(2)}/case</strong>
+                    Buy {t.qty} {buyUnit(t.qty, t.unit)} – <strong>${(t.price_after ?? 0).toFixed(2)}/case</strong>
                     {t.save_per_case > 0 && <span className="pd-deal-off"> (${t.save_per_case.toFixed(2)} off)</span>}
                     {tb != null && <> – ${tb.toFixed(2)}/bottle</>}
                     {tBtlOz != null && <span className="pd-oz">{oz(tBtlOz)}</span>}
@@ -196,7 +201,7 @@ function SizeSection({ size, view, cart, updateQty, primaryName }: {
           {ripTiers[0]?.description && <div className="pd-mixrip-desc">{ripTiers[0].description}</div>}
           {ripTiers.map((t, i) => (
             <div key={i} className="pd-mixrip-line">
-              Buy {t.qty} {unitWord(t.qty, t.unit)} – <strong>${t.amount.toFixed(2)} RIP</strong>
+              Buy {t.qty} {buyUnit(t.qty, t.unit)} – <strong>${t.amount.toFixed(2)} RIP</strong>
               {' '}<TierWin t={t} />
               {t.price_after != null && (() => {
                 const mb = btl(t.price_after) ?? t.btl_price_after;

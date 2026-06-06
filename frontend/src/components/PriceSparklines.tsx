@@ -91,7 +91,7 @@ function RichMonth({ b, pack, current }: { b: MonthBreakdown; pack: number | nul
     const off = b.frontline != null && t.eff < b.frontline ? b.frontline - t.eff : null;
     return (
       <span className="psk-pop-deal" key={`${kind}${i}`}>
-        <span className="psk-pop-buy">Buy {t.qty} {unitWord(t.unit)}
+        <span className="psk-pop-buy">Buy {t.qty} {pack === 1 ? 'cs' : unitWord(t.unit)}
           <span className={`psk-pill psk-pill-${kind}`}>{kind === 'disc' ? 'Disc' : 'RIP'}</span>
           {(() => {
             const wb = windowBadge(t);

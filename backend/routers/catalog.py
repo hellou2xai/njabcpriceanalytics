@@ -3423,6 +3423,169 @@ def get_rip_siblings(
     return {"edition": edition, "rip_code": rc, "items": records}
 
 
+# Strip size / volume / pack tokens from a product name so different-sized SKUs
+# of the SAME product collapse to one "core". The catalogue's own names are
+# inconsistent across sizes ("GLENFID MALT 12Y 12P", "GLENFID MALT 12YR"), but
+# the Go-UPC enrichment names share a stable core ("Glenfiddich 12 Year Old
+# Single Malt Scotch Whisky" + a size suffix), so we normalise THAT.
+_VARIANT_SIZE_RE = re.compile(
+    r'\b\d+(?:[.,]\d+)?\s*(?:ml|cl|lt|ltr|liter|litre|liters|l|oz|pk|pack|p)\b', re.I)
+_VARIANT_PUNCT_RE = re.compile(r'[^a-z0-9 ]+')
+# Pack/case tokens that appear in catalogue names: "12P", "6PK", "96/12",
+# "1X96", "24CT". These are packaging, not the product.
+_VARIANT_PACK_RE = re.compile(
+    r'\b\d+\s*(?:p|pk|pack|ct|cnt)\b|\b\d+\s*[x/]\s*\d+\b', re.I)
+# Age tokens — normalise "12Y" / "12YR" / "12 YEAR" / "12YO" to a single form so
+# size variants of the same age unify but 12 never merges with 15.
+_VARIANT_AGE_RE = re.compile(r'\b(\d+)\s*(?:yr|yrs|yo|years|year|y)\b', re.I)
+
+
+def _product_core(name: Optional[str]) -> str:
+    """Core of a Go-UPC ENRICHMENT name: drop only the size suffix. Names are
+    already clean + descriptive, so cask/edition variants stay distinct."""
+    s = (name or "").lower()
+    s = _VARIANT_SIZE_RE.sub(" ", s)
+    s = _VARIANT_PUNCT_RE.sub(" ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _catalog_core(name: Optional[str]) -> str:
+    """Best-effort core of a raw CATALOGUE name (used for un-enriched SKUs):
+    strip pack + size tokens, normalise the age token, keep the rest (so
+    'SHERRY' / 'FESTIVE' descriptors still separate products). Can't fix brand
+    abbreviation variance (GLENFID vs GLENFIDDICH), so it only groups SKUs whose
+    base name is otherwise consistent and differs by pack/size."""
+    s = (name or "").lower()
+    s = _VARIANT_PACK_RE.sub(" ", s)
+    s = _VARIANT_SIZE_RE.sub(" ", s)
+    s = _VARIANT_PUNCT_RE.sub(" ", s)
+    s = _VARIANT_AGE_RE.sub(lambda m: f"{m.group(1)}yr", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _norm_vintage(v) -> str:
+    """Collapse non-vintage markers to one bucket. For WINE, same-name SKUs of
+    DIFFERENT vintages are different products (different price/year), so the
+    grouping must also match vintage; for spirits the vintage is blank/NV and
+    this is a no-op."""
+    s = str(v if v is not None else "").strip().lower()
+    return "" if s in ("", "nv", "0", "none", "nan", "n/a") else re.sub(r"[^0-9]", "", s) or ""
+
+
+@router.get("/product-variant-upcs/{wholesaler}/{product_name:path}")
+def product_variant_upcs(
+    wholesaler: str,
+    product_name: str,
+    upc: Optional[str] = None,
+):
+    """Every UPC that is the SAME product as (wholesaler, product_name) across
+    its different sizes, grouped by the normalised Go-UPC enrichment name.
+
+    Our catalogue names sizes inconsistently, so an exact product_name match
+    misses most sizes (e.g. Glenfiddich 12 is 'GLENFID MALT 12Y 12P' in 1L but
+    'GLENFID MALT 12YR' in 750mL). We resolve the seed SKU's enrichment name,
+    strip its size tokens to a core, and return every SKU in the current edition
+    whose enrichment-name core matches (same brand) — plus every exact
+    product_name match as a guaranteed floor. The detail page then loads those
+    UPCs via /search?upcs=… so all sizes show on one page. Returns an empty list
+    when there's no enrichment to group on (caller falls back to exact name)."""
+    with get_duckdb() as con:
+        src = read_parquet(con, "cpl_enriched")
+        en = read_parquet(con, "product_enrichment")
+        # current edition for this wholesaler (latest on-or-before today)
+        cym = _current_yyyy_mm()
+        row_ed = con.execute(
+            f"""SELECT MAX(CASE WHEN edition <= $c THEN edition END) AS cur,
+                       MAX(edition) AS latest
+                FROM {src} WHERE wholesaler = $w""",
+            {"w": wholesaler, "c": cym},
+        ).fetchone()
+        edition = (row_ed[0] or row_ed[1]) if row_ed else None
+        if not edition:
+            return {"upcs": [], "core": None, "edition": None}
+
+        # Per-UPC enrichment name/brand map (deduped).
+        en_sub = f"""(
+            SELECT LTRIM(CAST(upc AS VARCHAR), '0') AS un,
+                   ANY_VALUE(name) AS name, ANY_VALUE(brand) AS brand
+            FROM {en} GROUP BY 1
+        )"""
+
+        # 1) Resolve the seed row's enrichment name/brand + type/vintage/upc.
+        seed_row = con.execute(f"""
+            SELECT pe.name AS enr_name, pe.brand AS enr_brand,
+                   c.product_type AS ptype, c.vintage AS vintage,
+                   LTRIM(CAST(c.upc AS VARCHAR), '0') AS un
+            FROM {src} c
+            LEFT JOIN {en_sub} pe ON LTRIM(CAST(c.upc AS VARCHAR), '0') = pe.un
+            WHERE c.wholesaler = $w AND c.edition = $e
+              AND ({"LTRIM(CAST(c.upc AS VARCHAR),'0') = $u" if upc else "c.product_name = $pn"})
+            LIMIT 1
+        """, {"w": wholesaler, "e": edition,
+              **({"u": str(upc).lstrip("0")} if upc else {"pn": product_name})}).fetchone()
+        seed_enr_name = seed_row[0] if seed_row else None
+        seed_brand = seed_row[1] if seed_row else None
+        seed_ptype = (seed_row[2] if seed_row else None) or ""
+        seed_vintage = _norm_vintage(seed_row[3]) if seed_row else ""
+        seed_un = (seed_row[4] if seed_row else None) or (str(upc).lstrip("0") if upc else None)
+
+        # WINE: a wine's identity is its product_name + vintage. Its barcode is
+        # frequently the '0' placeholder (shared across unrelated wines), so the
+        # UPC isn't a safe key. The existing name fetch already returns every
+        # vintage of the wine, so we signal the caller to use that path rather
+        # than fuzzy name-matching (which could merge unrelated wines).
+        if "wine" in seed_ptype.lower():
+            return {"upcs": [], "core": None, "edition": edition, "mode": "wine_name"}
+
+        core = _product_core(seed_enr_name) if seed_enr_name else None
+        cat_core = _catalog_core(product_name)
+        cat_ok = len(cat_core.split()) >= 2     # skip too-generic single-token cores
+
+        # 2) Candidate rows — bounded to the same brand-name prefix (first 4
+        #    chars of the catalogue name) OR the same clean enrichment brand, so
+        #    we never scan the whole edition.
+        prefix = (product_name or "")[:4].lower() + "%"
+        df = con.execute(f"""
+            SELECT c.upc AS upc, c.product_name AS product_name, c.vintage AS vintage,
+                   pe.name AS enr_name, pe.brand AS enr_brand
+            FROM {src} c
+            LEFT JOIN {en_sub} pe ON LTRIM(CAST(c.upc AS VARCHAR), '0') = pe.un
+            WHERE c.wholesaler = $w AND c.edition = $e
+              AND (LOWER(c.product_name) LIKE $pref
+                   {"OR pe.brand = $sb" if seed_brand else ""})
+        """, {"w": wholesaler, "e": edition, "pref": prefix,
+              **({"sb": seed_brand} if seed_brand else {})}).fetchdf()
+
+        upcs: set[str] = set()
+        for r in df.itertuples():
+            # Skip placeholder/blank barcodes: a '0' UPC isn't searchable and
+            # would over-match in /search?upcs=. (Exact-name rows are still
+            # covered by the caller's name fallback.)
+            if not r.upc or not str(r.upc).lstrip("0"):
+                continue
+            # Same vintage as the seed (no-op for NV spirits; keeps a vintage
+            # spirit/port from merging across years).
+            if _norm_vintage(r.vintage) != seed_vintage:
+                continue
+            # (a) exact catalogue name — guaranteed floor.
+            if r.product_name == product_name:
+                upcs.add(str(r.upc)); continue
+            inc = False
+            # (b) enrichment-name core match (same brand when known).
+            if core and r.enr_name and _product_core(r.enr_name) == core:
+                if not (seed_brand and r.enr_brand and r.enr_brand != seed_brand):
+                    inc = True
+            # (c) catalogue-name core fallback (covers un-enriched sizes that
+            #     differ only by pack/size).
+            if not inc and cat_ok and _catalog_core(r.product_name) == cat_core:
+                inc = True
+            if inc:
+                upcs.add(str(r.upc))
+
+    return {"upcs": sorted(upcs), "core": core, "cat_core": cat_core,
+            "edition": edition, "mode": "name_core"}
+
+
 @router.get("/price-history/{wholesaler}/{product_name:path}")
 def get_price_history(
     wholesaler: str,

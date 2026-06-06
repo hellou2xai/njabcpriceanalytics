@@ -5462,3 +5462,27 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pd-instock { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; color: var(--green); margin-top: 12px; }
 .pd-size-order { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
 .pd-steppers { display: flex; flex-direction: column; gap: 5px; }
+
+/* ---- PriceSparklines: two tiny transparent sparklines, shown at every layer ---- */
+.psk { display: inline-flex; position: relative; vertical-align: middle; }
+.psk-charts { display: inline-flex; flex-direction: column; gap: 1px; }
+.psk-row { display: inline-flex; align-items: center; gap: 5px; }
+.psk-tag { font-size: 8px; font-weight: 700; letter-spacing: .02em; color: var(--text-muted); width: 18px; flex-shrink: 0; text-transform: uppercase; }
+.psk-svg { background: transparent; display: block; }
+.psk-val { font-size: 9.5px; font-weight: 700; font-variant-numeric: tabular-nums; min-width: 26px; text-align: right; }
+.pd-schedule-spark { margin-top: 2px; display: inline-block; }
+.pd-mini .psk { margin-top: 6px; }
+/* hover popover (fixed-positioned so it escapes any table/card overflow) */
+.psk-pop {
+  z-index: 1300; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); box-shadow: var(--shadow-pop, 0 8px 28px rgba(15,23,41,.18));
+  padding: 8px 10px; min-width: 200px; display: flex; flex-direction: column; gap: 7px;
+  font-variant-numeric: tabular-nums; cursor: default; text-align: left;
+}
+.psk-pop-title { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.psk-pop-block { display: flex; flex-direction: column; gap: 1px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.psk-pop-block:last-child { border-bottom: 0; padding-bottom: 0; }
+.psk-pop-month { font-size: 11px; font-weight: 700; color: var(--text); }
+.psk-pop-line { display: flex; gap: 8px; font-size: 12px; color: var(--text); }
+.psk-pop-line em { font-style: normal; color: var(--text-muted); width: 54px; flex-shrink: 0; }
+.psk-pop-rip strong, .psk-pop-rip { color: var(--green); }

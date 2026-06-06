@@ -81,6 +81,12 @@ export const catalog = {
     request<{ edition: string | null; rip_code: string; items: Product[] }>(
       `/api/catalog/rip-siblings/${encodeURIComponent(wholesaler)}/${encodeURIComponent(ripCode)}${qs(opts ?? {})}`
     ),
+  // Every UPC that is the SAME product across sizes (spirits: enrichment /
+  // catalog-name core grouping; wine: returns [] -> caller groups by name).
+  productVariantUpcs: (wholesaler: string, name: string, opts?: { upc?: string }) =>
+    request<{ upcs: string[]; core: string | null; edition: string | null; mode?: string }>(
+      `/api/catalog/product-variant-upcs/${encodeURIComponent(wholesaler)}/${encodeURIComponent(name)}${qs(opts ?? {})}`
+    ),
   aiQuery: (question: string, history?: AiChatTurn[]) =>
     request<CatalogAiResponse>('/api/catalog/ai-query', {
       method: 'POST',

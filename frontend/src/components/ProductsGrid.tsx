@@ -14,16 +14,15 @@
  */
 import { Fragment, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, CheckCircle2, Store } from 'lucide-react';
 import FavoriteButton from './FavoriteButton';
 import ProductThumb from './ProductThumb';
 import AddToCartButton from './AddToCartButton';
 import AddToListButton from './AddToListButton';
 import { QtyStepper, type CartState } from './CatalogTable';
-import PriceScheduleModal from './PriceScheduleModal';
+import PriceSparklines from './PriceSparklines';
+import { useProductSizes } from '../lib/productSizes';
 import { distributorName, abgSku, skuLabel } from '../lib/distributors';
-import { catalog } from '../lib/api';
 import type { Product } from '../lib/api';
 
 // Full-page product-detail deep link for a product family.
@@ -100,11 +99,10 @@ function priceRange(sizes: Product[]): { lo: Product; hi: Product } | null {
   return { lo, hi };
 }
 
-function SizeRow({ size, cart, updateQty, onSchedule }: {
+function SizeRow({ size, cart, updateQty }: {
   size: Product;
   cart: CartState;
   updateQty: (key: string, field: 'cases' | 'units', value: number) => void;
-  onSchedule: (p: Product) => void;
 }) {
   const cartKey = `${size.product_name}|${size.wholesaler}|${size.upc ?? ''}|${size.unit_volume ?? ''}`;
   const qty = cart[cartKey] ?? { cases: 0, units: 0 };
@@ -131,9 +129,8 @@ function SizeRow({ size, cart, updateQty, onSchedule }: {
           <span className="prod-size-btl">${btlPrice.toFixed(2)}/bottle</span>
           <span className="prod-size-case">${size.effective_case_price.toFixed(2)}/case</span>
         </div>
-        <button type="button" className="prod-schedule-link" onClick={() => onSchedule(size)}>
-          See price schedule
-        </button>
+        <PriceSparklines wholesaler={size.wholesaler} productName={size.product_name}
+          upc={size.upc} unitVolume={size.unit_volume} unitQty={size.unit_qty} vintage={size.vintage} />
       </div>
       <div className="prod-size-order">
         <span className="prod-instock"><CheckCircle2 size={13} /> Available</span>
@@ -153,11 +150,10 @@ function SizeRow({ size, cart, updateQty, onSchedule }: {
   );
 }
 
-function ProductCard({ group, cart, updateQty, onSchedule }: {
+function ProductCard({ group, cart, updateQty }: {
   group: ProductGroup;
   cart: CartState;
   updateQty: (key: string, field: 'cases' | 'units', value: number) => void;
-  onSchedule: (p: Product) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const range = priceRange(group.sizes);
@@ -165,23 +161,12 @@ function ProductCard({ group, cart, updateQty, onSchedule }: {
   const first = group.sizes[0];
 
   // The list is paginated by SKU, so a product's sizes can be split across
-  // pages — the page may hold only some of them. On expand, fetch the FULL
-  // size list for this product (with tiers, for the price schedule) so every
-  // size is always shown regardless of where the page boundary fell.
-  const { data: full, isFetching } = useQuery({
-    enabled: expanded,
-    queryKey: ['product-sizes', group.wholesaler, group.productName],
-    staleTime: 60_000,
-    queryFn: () => catalog.search({
-      q: group.productName, wholesaler: group.wholesaler,
-      include_tiers: true, limit: 200, sort: 'product_name', order: 'asc',
-    }),
-  });
-  const sizes = useMemo(() => {
-    const rows = (full?.items ?? []).filter(
-      r => r.product_name === group.productName && r.wholesaler === group.wholesaler);
-    return rows.length ? rows.sort((a, b) => toMl(a.unit_volume) - toMl(b.unit_volume)) : group.sizes;
-  }, [full, group]);
+  // pages. On expand, fetch the FULL size set via the shared "products by size"
+  // tool (handles spirits' inconsistent names + wine's vintages) so every size
+  // always shows regardless of where the page boundary fell.
+  const { sizes: fullSizes, isFetching } = useProductSizes(
+    group.wholesaler, group.productName, first?.upc, expanded);
+  const sizes = fullSizes.length ? fullSizes : group.sizes;
   const optionCount = sizes.length;
 
   return (
@@ -220,15 +205,22 @@ function ProductCard({ group, cart, updateQty, onSchedule }: {
             {anyDeal && <span className="prod-card-deal">Deal</span>}
             <span className="prod-card-instock"><CheckCircle2 size={13} /> {optionCount} option{optionCount === 1 ? '' : 's'} in stock</span>
           </div>
+          {(range?.lo ?? first) && (
+            <span onClick={e => e.stopPropagation()}>
+              <PriceSparklines wholesaler={group.wholesaler} productName={(range?.lo ?? first).product_name}
+                upc={(range?.lo ?? first).upc} unitVolume={(range?.lo ?? first).unit_volume}
+                unitQty={(range?.lo ?? first).unit_qty} vintage={(range?.lo ?? first).vintage} />
+            </span>
+          )}
         </div>
         <ChevronDown size={20} className={`prod-card-chev${expanded ? ' is-open' : ''}`} />
       </div>
       {expanded && (
         <div className="prod-card-body">
-          {isFetching && !full && <div className="prod-size-loading">Loading all sizes…</div>}
+          {isFetching && fullSizes.length === 0 && <div className="prod-size-loading">Loading all sizes…</div>}
           {sizes.map((size, i) => (
             <SizeRow key={`${size.upc ?? ''}|${size.unit_volume ?? ''}|${i}`}
-              size={size} cart={cart} updateQty={updateQty} onSchedule={onSchedule} />
+              size={size} cart={cart} updateQty={updateQty} />
           ))}
         </div>
       )}
@@ -244,7 +236,6 @@ interface Props {
 
 export default function ProductsGrid({ items, cart, updateQty }: Props) {
   const groups = useMemo(() => groupByProduct(items), [items]);
-  const [schedule, setSchedule] = useState<Product | null>(null);
 
   if (groups.length === 0) {
     return <div className="prod-empty">No products match the current search and filters.</div>;
@@ -254,10 +245,9 @@ export default function ProductsGrid({ items, cart, updateQty }: Props) {
     <div className="prod-grid">
       {groups.map(g => (
         <Fragment key={g.key}>
-          <ProductCard group={g} cart={cart} updateQty={updateQty} onSchedule={setSchedule} />
+          <ProductCard group={g} cart={cart} updateQty={updateQty} />
         </Fragment>
       ))}
-      {schedule && <PriceScheduleModal item={schedule} onClose={() => setSchedule(null)} />}
     </div>
   );
 }

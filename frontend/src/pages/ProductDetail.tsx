@@ -8,7 +8,8 @@ import FavoriteButton from '../components/FavoriteButton';
 import AddToCartButton from '../components/AddToCartButton';
 import AddToListButton from '../components/AddToListButton';
 import { QtyStepper, loadCart, saveCart, type CartState } from '../components/CatalogTable';
-import PriceScheduleModal from '../components/PriceScheduleModal';
+import PriceSparklines from '../components/PriceSparklines';
+import { useProductSizes } from '../lib/productSizes';
 import { distributorName, abgSku, skuLabel } from '../lib/distributors';
 import type { Product, CatalogTier } from '../lib/api';
 
@@ -52,17 +53,18 @@ function MiniCard({ p }: { p: Product }) {
       <div className="pd-mini-price">
         {eff != null ? `$${eff.toFixed(2)}/cs` : <span className="pd-mini-noprice">Price not available</span>}
       </div>
+      <PriceSparklines wholesaler={p.wholesaler} productName={p.product_name}
+        upc={p.upc} unitVolume={p.unit_volume} unitQty={p.unit_qty} vintage={p.vintage} />
     </Link>
   );
 }
 
 // ---- one size section in the right rail ----
-function SizeSection({ size, view, cart, updateQty, onSchedule }: {
+function SizeSection({ size, view, cart, updateQty }: {
   size: Product;
   view: 'deals' | 'bottles';
   cart: CartState;
   updateQty: (key: string, field: 'cases' | 'units', value: number) => void;
-  onSchedule: (p: Product) => void;
 }) {
   const [dealsOpen, setDealsOpen] = useState(true);
   const cartKey = `${size.product_name}|${size.wholesaler}|${size.upc ?? ''}|${size.unit_volume ?? ''}`;
@@ -129,8 +131,14 @@ function SizeSection({ size, view, cart, updateQty, onSchedule }: {
         </div>
         <div className="pd-price-line">
           <strong>${headlineCase.toFixed(2)}/case</strong><span className="pd-oz">{oz(caseOz)}</span>
-          <button type="button" className="pd-schedule-link" onClick={() => onSchedule(size)}>See price schedule</button>
         </div>
+        {/* Two price sparklines (1-case-discount + best-RIP) with a hover
+            tooltip exposing the 3-month schedule — replaces the old
+            "See price schedule" link. */}
+        <span className="pd-schedule-spark">
+          <PriceSparklines wholesaler={size.wholesaler} productName={size.product_name}
+            upc={size.upc} unitVolume={size.unit_volume} unitQty={size.unit_qty} vintage={size.vintage} />
+        </span>
       </div>
 
       {/* Case-mix RIP tiers, by RIP tier — surfaced like the reference "Mix RIP" box. */}
@@ -175,7 +183,6 @@ export default function ProductDetail() {
   const upc = params.get('u') ?? undefined;
 
   const [cart, setCartState] = useState<CartState>(loadCart);
-  const [schedule, setSchedule] = useState<Product | null>(null);
   const [view, setView] = useState<'deals' | 'bottles'>('deals');
 
   // Scroll to top whenever we navigate to a different product (related cards
@@ -200,18 +207,9 @@ export default function ProductDetail() {
     queryFn: () => catalog.product(wholesaler, name, { upc }),
   });
 
-  // Every size of this product (one row per SKU), with tiers, sorted small->large.
-  const { data: searchData, isLoading } = useQuery({
-    enabled: !!wholesaler && !!name,
-    queryKey: ['pd-sizes', wholesaler, name],
-    queryFn: () => catalog.search({ q: name, wholesaler, include_tiers: true, limit: 200, sort: 'product_name', order: 'asc' }),
-  });
-  const sizes = useMemo(() => {
-    const rows = (searchData?.items ?? []) as Product[];
-    return rows
-      .filter(r => r.product_name === name && r.wholesaler === wholesaler)
-      .sort((a, b) => toMl(a.unit_volume) - toMl(b.unit_volume));
-  }, [searchData, name, wholesaler]);
+  // Every size of this product — via the shared "products by size" tool
+  // (spirits: name-core variant grouping; wine: grouped by name + vintage).
+  const { sizes, isLoading } = useProductSizes(wholesaler, name, upc);
 
   const enrichment = detail?.enrichment;
   const product = detail?.product;
@@ -364,13 +362,11 @@ export default function ProductDetail() {
               : sizes.length === 0 ? <p className="pd-loading">No sizes found.</p>
               : sizes.map((s, i) => (
                 <SizeSection key={`${s.upc}|${s.unit_volume}|${i}`}
-                  size={s} view={view} cart={cart} updateQty={updateQty} onSchedule={setSchedule} />
+                  size={s} view={view} cart={cart} updateQty={updateQty} />
               ))}
           </div>
         </div>
       </div>
-
-      {schedule && <PriceScheduleModal item={schedule} onClose={() => setSchedule(null)} />}
     </div>
   );
 }

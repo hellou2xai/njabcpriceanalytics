@@ -49,9 +49,16 @@ export function datedFromTiers(tiers: CatalogTier[] | undefined, frontline?: num
 // The best EVERGREEN (full-month) deal — shown in the popover so the buyer sees
 // what covers the days BETWEEN dated windows. Without it, two non-adjacent RIP
 // windows next to "no gap to avoid" reads as a contradiction.
+// A single-CASE QD (buy 1 case) is the baseline case price — an incentive to buy
+// a case vs loose bottles — NOT a month-long deal. Excluded so it never poses as
+// the "every day" deal (and the backend excludes it from gap suppression too).
+const isCaseUnit = (u?: string | null) => !/btl|bottle/i.test(u ?? '');
+const isMonthlongQD = (qty: number, unit?: string | null) => !(qty === 1 && isCaseUnit(unit));
+
 export function everyDayFromTiers(tiers: CatalogTier[] | undefined, frontline?: number | null): DatedDeal | null {
   if (frontline == null) return null;
-  const ever = (tiers ?? []).filter(t => !t.is_time_sensitive && (t.price_after ?? Infinity) < frontline - 0.005);
+  const ever = (tiers ?? []).filter(t => !t.is_time_sensitive && (t.price_after ?? Infinity) < frontline - 0.005
+    && (t.source !== 'discount' || isMonthlongQD(t.qty, t.unit)));
   if (!ever.length) return null;
   const b = ever.reduce((a, c) => ((c.price_after ?? Infinity) < (a.price_after ?? Infinity) ? c : a));
   return { kind: b.source === 'rip' ? 'RIP' : 'QD', qty: b.qty, unit: b.unit,
@@ -63,7 +70,7 @@ export function everyDayFromMonths(months: MonthBreakdown[]): DatedDeal | null {
   if (!cur || cur.frontline == null) return null;
   const front = cur.frontline;
   const cand = [
-    ...(cur.discountTiers ?? []).map(t => ({ t, kind: 'QD' as const })),
+    ...(cur.discountTiers ?? []).filter(t => isMonthlongQD(t.qty, t.unit)).map(t => ({ t, kind: 'QD' as const })),
     ...(cur.ripTiers ?? []).map(t => ({ t, kind: 'RIP' as const })),
   ].filter(c => !c.t.ts && c.t.eff < front - 0.005);
   if (!cand.length) return null;

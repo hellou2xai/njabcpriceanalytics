@@ -940,9 +940,17 @@ def attach_tiers(con, records, ref_date=None) -> None:
         # RIP/QD windows, so account for the evergreen deal explicitly — else a
         # product with a full-month QD + two dated RIP windows would falsely show
         # a 'gap' on the days between the RIP windows.
+        #
+        # EXCLUDE a single-CASE QD (qty 1, unit case): that is not a quantity
+        # deal, it's the baseline case price — the incentive to buy a case
+        # instead of loose bottles. Counting it as a month-long deal would mask a
+        # real RIP gap (e.g. Louis XIII: RIP Jun 1-8 + Jun 11-30, only a 1-case
+        # QD otherwise → Jun 9-10 IS a no-RIP trap). Real QDs require 2+ cases.
         _has_evergreen_deal = any(
             (t.get("price_after") is not None and cp and t["price_after"] < cp - 0.005
-             and not t.get("is_time_sensitive"))
+             and not t.get("is_time_sensitive")
+             and not (t.get("source") == "discount" and int(t.get("qty") or 0) == 1
+                      and not _is_bottle_unit(t.get("unit"))))
             for t in rec["tiers"]
         )
         rec["rip_gaps"] = [] if _has_evergreen_deal else _gaps_from_windows(_wins, eastern_today())

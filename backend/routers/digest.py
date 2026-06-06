@@ -70,6 +70,7 @@ def _card(p: dict, detail: str, amount, intent: str) -> dict:
         "upc": p.get("upc"), "unit_volume": p.get("unit_volume"),
         "unit_qty": p.get("unit_qty"), "vintage": p.get("vintage"),
         "abg_sku": p.get("abg_sku"), "image_url": p.get("image_url"),
+        "rip_gaps": p.get("rip_gaps") or [], "deal_windows": p.get("deal_windows") or [],
         "frontline_case_price": _fnum(p.get("frontline_case_price")),
         "effective_case_price": _fnum(p.get("effective_case_price")),
         "has_rip": bool(p.get("has_rip")), "has_discount": bool(p.get("has_discount")),

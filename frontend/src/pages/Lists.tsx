@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, ShoppingCart, Pencil, ClipboardList, Sparkles } from 'lucide-react';
 import { lists as listsApi, cart as cartApi, type ListItem } from '../lib/api';
 import SavingsAnalysis from '../components/SavingsAnalysis';
+import DealTimingSticker from '../components/DealTimingSticker';
 import { ContextMenuProvider } from '../components/ContextMenu';
 import { useProductQuickView } from '../components/ProductQuickView';
 import ProductThumb from '../components/ProductThumb';
@@ -296,6 +297,11 @@ function ListRow({ it, selected, toggle, onRemove }: {
               {it.product_name}
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{it.upc}{abgSku(it.wholesaler, it.abg_sku) ? ` · ${skuLabel(it.wholesaler)} ${it.abg_sku}` : ''}</div>
+            {(it.rip_gaps?.length ?? 0) > 0 && (
+              <div style={{ marginTop: 4 }} onClick={e => e.stopPropagation()}>
+                <DealTimingSticker deals={[]} gaps={it.rip_gaps} />
+              </div>
+            )}
           </div>
         </div>
       </td>

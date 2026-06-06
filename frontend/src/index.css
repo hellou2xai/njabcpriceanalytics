@@ -454,6 +454,29 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
   padding: 1px 7px; border-radius: 999px; white-space: nowrap; vertical-align: middle;
   background: color-mix(in srgb, #d97706 16%, transparent); color: #b45309; }
 .prod-partial-sticker.urgent { background: rgba(239,68,68,0.16); color: var(--red); }
+
+/* Clickable deal-timing sticker + explanation popover */
+.dts { display: inline-flex; }
+.dts-sticker { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 800;
+  padding: 2px 8px; border-radius: 999px; cursor: pointer; white-space: nowrap; border: 1px solid transparent;
+  background: color-mix(in srgb, #d97706 16%, transparent); color: #b45309; }
+.dts-sticker:hover { border-color: #d97706; }
+.dts-sticker.trap { background: rgba(239,68,68,0.14); color: var(--red); }
+.dts-sticker.trap:hover { border-color: var(--red); }
+.dts-pop { z-index: 1000; width: 320px; max-width: 92vw; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: 0 8px 28px rgba(0,0,0,.16); padding: 12px 14px; }
+.dts-pop-title { font-size: 12px; font-weight: 800; color: var(--text); text-transform: uppercase; letter-spacing: .02em; margin-bottom: 8px; display: block; }
+.dts-pop-row { display: flex; align-items: baseline; gap: 6px; font-size: 12.5px; color: var(--text); padding: 3px 0; flex-wrap: wrap; }
+.dts-pill { font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 6px; }
+.dts-qd { background: color-mix(in srgb, var(--accent) 16%, var(--surface)); color: var(--accent); }
+.dts-rip { background: color-mix(in srgb, var(--green) 16%, var(--surface)); color: var(--green); }
+.dts-pop-when { font-weight: 700; }
+.dts-pop-price { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.dts-pop-trap { display: flex; gap: 6px; align-items: flex-start; margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--border);
+  font-size: 12.5px; color: #b45309; }
+.dts-pop-trap svg { color: var(--red); flex: 0 0 auto; margin-top: 1px; }
+.dts-pop-ok { display: flex; gap: 6px; align-items: center; margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--border);
+  font-size: 12px; color: var(--green); }
 .win-badge .lucide { width: 11px; height: 11px; }
 .win-expired { background: rgba(107,114,128,0.18); color: var(--text-muted); }
 /* The "live now" better-than-month price call-out on a catalog row / modal. */

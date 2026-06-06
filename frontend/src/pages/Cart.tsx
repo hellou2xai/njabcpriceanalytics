@@ -5,6 +5,7 @@ import { cart as cartApi, salesReps as repsApi, catalog, type CartItem, type Pro
 import ProductThumb from '../components/ProductThumb';
 import SavingsAnalysis from '../components/SavingsAnalysis';
 import DealSparkline from '../components/DealSparkline';
+import DealTimingSticker from '../components/DealTimingSticker';
 import { windowBadge, fmtDateRange } from '../lib/dealDates';
 import { useProductQuickView } from '../components/ProductQuickView';
 import { useDialog } from '../components/Dialog';
@@ -365,6 +366,13 @@ export default function Cart() {
           )}
           <button className="btn btn-secondary btn-sm" title="Remove" onClick={() => del.mutate(it.id)}><Trash2 size={14} /></button>
         </div>
+
+        {/* Buy-timing trap / dated-deal explainer (clickable). */}
+        {((it.deal_windows?.length ?? 0) > 0 || (it.rip_gaps?.length ?? 0) > 0) && (
+          <div style={{ marginLeft: 68, marginTop: 4 }}>
+            <DealTimingSticker deals={it.deal_windows ?? []} gaps={it.rip_gaps} />
+          </div>
+        )}
 
         {/* Deal tiers, same info as the catalogue, to tweak qty last minute. Combo
             lines hide these (the bundle is the deal). */}

@@ -642,6 +642,9 @@ export interface ListItem {
   // Latest CPL rip_code for this UPC, attached server-side so the Lists UI
   // can sub-group lines by RIP rebate the same way the cart does.
   rip_code?: string | null;
+  // No-RIP "avoid these days" windows between dated RIP windows.
+  rip_gaps?: { from: string; to: string; days: number }[];
+  deal_windows?: { kind: 'QD' | 'RIP'; qty?: number | null; unit?: string | null; from: string; to: string; eff: number | null; save: number | null }[];
 }
 export interface ListDetail { id: number; name: string; created_at: string; updated_at: string; items: ListItem[]; }
 
@@ -663,6 +666,8 @@ export interface CartItem {
   live_rip_amt?: number | null;
   live_better_than_month?: boolean | null;
   tiers?: CatalogTier[];
+  rip_gaps?: { from: string; to: string; days: number }[];
+  deal_windows?: { kind: 'QD' | 'RIP'; qty?: number | null; unit?: string | null; from: string; to: string; eff: number | null; save: number | null }[];
   // True only while the whole bundle is still in the cart (combo pricing applies).
   combo_intact?: boolean;
   // RIP rebate code this line currently rolls up under (enriched from the
@@ -760,6 +765,8 @@ export interface DigestCard {
   has_rip: boolean;
   has_discount: boolean;
   rip_code?: string | null;
+  rip_gaps?: { from: string; to: string; days: number }[];
+  deal_windows?: { kind: 'QD' | 'RIP'; qty?: number | null; unit?: string | null; from: string; to: string; eff: number | null; save: number | null }[];
   price_3mo?: Price3moBlock[] | null;
   sources: string[];
   change_detail: string;
@@ -1125,6 +1132,9 @@ export interface Product {
   discount_5_qty?: string | null;
   discount_5_amt?: number | null;
   tiers?: CatalogTier[];
+  // No-RIP "avoid these days" windows between dated RIP windows.
+  rip_gaps?: { from: string; to: string; days: number }[];
+  deal_windows?: { kind: 'QD' | 'RIP'; qty?: number | null; unit?: string | null; from: string; to: string; eff: number | null; save: number | null }[];
   // Last 3 EXISTING editions (1-case-discount + best-RIP prices + per-edition
   // tiers) for the two-line 3-month sparkline (pricing.attach_price_3mo).
   price_3mo?: Price3moBlock[] | null;

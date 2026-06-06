@@ -18,7 +18,7 @@ import {
 import { digest, type DigestCard, type WhatsNew as WhatsNewData } from '../lib/api';
 import ProductThumb from '../components/ProductThumb';
 import PriceSparklines from '../components/PriceSparklines';
-import PartialSticker from '../components/PartialSticker';
+import DealTimingSticker from '../components/DealTimingSticker';
 import SavingsAnalysis from '../components/SavingsAnalysis';
 import { buildMonths } from '../lib/promotionsSparkline';
 import { distributorName, abgSku, skuLabel } from '../lib/distributors';
@@ -78,7 +78,7 @@ function Card({ c }: { c: DigestCard }) {
           </div>
         </div>
       </div>
-      <div className="wn-card-stickers"><PartialSticker months={months} /></div>
+      <div className="wn-card-stickers"><DealTimingSticker deals={c.deal_windows ?? []} gaps={c.rip_gaps} /></div>
       <div className={`wn-card-change wn-${c.intent}`}>{c.change_detail}</div>
       <div className="wn-card-foot">
         <span className="wn-card-price">{money(eff)}<span className="wn-card-unit">/cs</span></span>

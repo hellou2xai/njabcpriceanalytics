@@ -117,10 +117,15 @@ def get_list(list_id: int, user: dict = Depends(get_current_user)):
             "SELECT * FROM list_items WHERE list_id=%s ORDER BY created_at DESC", (list_id,)
         ).fetchall()]
     if items:
+        from backend import pricing as _pricing
         with get_duckdb() as dcon:
             attach_enrichment_image(dcon, items)
             attach_sku_mapping(dcon, items)
             _attach_rip_code_for_list_items(dcon, items)
+            try:
+                _pricing.attach_rip_gaps(dcon, items)   # no-RIP "avoid these days" windows
+            except Exception:
+                pass
     return {**dict(lst), "items": items}
 
 

@@ -292,6 +292,95 @@ def best_disc_at(disc_tiers: list[dict], cases_bought: float, pack: float) -> fl
 # in routers/catalog.py:_attach_discount_rip_tiers; behaviour preserved.
 # ---------------------------------------------------------------------------
 
+def _gaps_from_windows(wins, today):
+    """No-RIP day gaps BETWEEN dated windows. `wins` = list of (from, to) dates.
+    Merges overlapping windows, returns [{from, to, days}] for gaps that aren't
+    entirely past."""
+    import datetime as _dt
+    wins = sorted(set(w for w in wins if w[0] and w[1]))
+    gaps = []
+    if len(wins) <= 1:
+        return gaps
+    merged = [wins[0]]
+    for f, t in wins[1:]:
+        if f <= merged[-1][1] + _dt.timedelta(days=1):
+            merged[-1] = (merged[-1][0], max(merged[-1][1], t))
+        else:
+            merged.append((f, t))
+    for i in range(len(merged) - 1):
+        gstart = merged[i][1] + _dt.timedelta(days=1)
+        gend = merged[i + 1][0] - _dt.timedelta(days=1)
+        if gend >= gstart and gend >= today:
+            gaps.append({"from": gstart.isoformat(), "to": gend.isoformat(), "days": (gend - gstart).days + 1})
+    return gaps
+
+
+def attach_rip_gaps(con, records) -> None:
+    """Set rec['rip_gaps'] = no-RIP windows BETWEEN a product's dated RIP windows
+    (matched by UPC across ALL codes, using each UPC's latest edition). For
+    surfaces that don't run attach_tiers (e.g. the lists page). No-op on empty."""
+    for rec in records:
+        rec.setdefault("rip_gaps", [])
+    if not records:
+        return
+    rip_src = read_parquet(con, "rip")
+    ws_l = sorted({r["wholesaler"] for r in records if r.get("wholesaler")})
+    un_l = sorted({str(r.get("upc") or "").lstrip("0") for r in records
+                   if r.get("upc") and str(r.get("upc")).lstrip("0")})
+    if not ws_l or not un_l:
+        return
+    try:
+        prm = {}
+        pw = ", ".join(f"$w{i}" for i in range(len(ws_l)))
+        pu = ", ".join(f"$u{i}" for i in range(len(un_l)))
+        for i, v in enumerate(ws_l): prm[f"w{i}"] = v
+        for i, v in enumerate(un_l): prm[f"u{i}"] = v
+        df = con.execute(f"""
+            WITH w AS (
+              SELECT wholesaler, edition, LTRIM(CAST(upc AS VARCHAR), '0') AS un,
+                     from_date, to_date,
+                     MAX(edition) OVER (PARTITION BY wholesaler, LTRIM(CAST(upc AS VARCHAR), '0')) AS led
+              FROM {rip_src}
+              WHERE wholesaler IN ({pw}) AND LTRIM(CAST(upc AS VARCHAR), '0') IN ({pu})
+                AND from_date IS NOT NULL AND to_date IS NOT NULL
+                AND (rip_amt_1 > 0 OR rip_amt_2 > 0 OR rip_amt_3 > 0 OR rip_amt_4 > 0)
+            )
+            SELECT wholesaler, un, from_date, to_date FROM w WHERE edition = led
+        """, prm).fetchdf()
+    except Exception:
+        return
+    wins: dict = {}
+    for _, r in df.iterrows():
+        wf, wt = _to_date(r["from_date"]), _to_date(r["to_date"])
+        if wf and wt:
+            wins.setdefault((r["wholesaler"], str(r["un"])), []).append((wf, wt))
+    # Also union in partial-QD windows (sub-month cpl rows that beat the
+    # full-month price): a RIP gap covered by a QD is NOT a trap.
+    try:
+        craw = read_parquet(con, "cpl")
+        df2 = con.execute(f"""
+            SELECT wholesaler, LTRIM(CAST(upc AS VARCHAR), '0') AS un, from_date, to_date
+            FROM {craw}
+            WHERE wholesaler IN ({pw}) AND LTRIM(CAST(upc AS VARCHAR), '0') IN ({pu})
+              AND from_date IS NOT NULL AND to_date IS NOT NULL
+              AND CAST(to_date AS DATE) >= CURRENT_DATE
+              AND best_case_price IS NOT NULL AND frontline_case_price IS NOT NULL
+              AND best_case_price < frontline_case_price - 0.005
+              AND NOT (EXTRACT(day FROM CAST(from_date AS DATE)) = 1
+                       AND CAST(to_date AS DATE) = (date_trunc('month', CAST(to_date AS DATE)) + INTERVAL 1 MONTH - INTERVAL 1 DAY))
+        """, prm).fetchdf()
+        for _, r in df2.iterrows():
+            wf, wt = _to_date(r["from_date"]), _to_date(r["to_date"])
+            if wf and wt:
+                wins.setdefault((r["wholesaler"], str(r["un"])), []).append((wf, wt))
+    except Exception:
+        pass
+    today = eastern_today()
+    for rec in records:
+        key = (rec.get("wholesaler"), str(rec.get("upc") or "").lstrip("0"))
+        rec["rip_gaps"] = _gaps_from_windows(wins.get(key, []), today)
+
+
 def attach_tiers(con, records, ref_date=None) -> None:
     """Attach a ``tiers`` list (CPL discount tiers + stacked RIP tiers) to each
     record, mirroring what the catalog table renders as expandable sub-rows.
@@ -357,6 +446,7 @@ def attach_tiers(con, records, ref_date=None) -> None:
     uniq_ws = sorted({k[1] for k in keys})
     uniq_ed = sorted({k[2] for k in keys})
     rip_full: dict = {}    # (code, ws, ed, upc) -> [tiers]  (the only valid match)
+    rip_wins: dict = {}    # (ws, ed, upc_norm) -> [(from_date, to_date)] for gap detection
     if uniq_codes:
         # Pull all RIP rows matching any (code, ws, ed) on this page, then split
         # into per-UPC and code-level buckets so we can fall back when a
@@ -460,6 +550,39 @@ def attach_tiers(con, records, ref_date=None) -> None:
                 part_rows.setdefault((r["wholesaler"], r["edition"], str(r["un"])), []).append(r)
         except Exception:
             part_rows = {}
+
+    # All RIP windows per UPC across EVERY code (for gap detection). The cpl
+    # row's rip_code names only one code, but a no-RIP gap can fall between two
+    # DIFFERENT codes (112263 Jun 1-8 + 112264 Jun 11-30 → Jun 9-10), so match
+    # by UPC, not code.
+    g_ws = sorted({rec["wholesaler"] for rec in records if rec.get("wholesaler")})
+    g_ed = sorted({rec["edition"] for rec in records if rec.get("edition")})
+    g_un = sorted({str(rec.get("upc") or "").lstrip("0") for rec in records
+                   if rec.get("upc") and str(rec.get("upc")).lstrip("0")})
+    if g_ws and g_ed and g_un:
+        try:
+            gp = {}
+            gw = ", ".join(f"$gw{i}" for i in range(len(g_ws)))
+            ge = ", ".join(f"$ge{i}" for i in range(len(g_ed)))
+            gu = ", ".join(f"$gu{i}" for i in range(len(g_un)))
+            for i, v in enumerate(g_ws): gp[f"gw{i}"] = v
+            for i, v in enumerate(g_ed): gp[f"ge{i}"] = v
+            for i, v in enumerate(g_un): gp[f"gu{i}"] = v
+            gwins = con.execute(f"""
+                SELECT wholesaler, edition, LTRIM(CAST(upc AS VARCHAR), '0') AS un,
+                       from_date, to_date
+                FROM {rip_src}
+                WHERE wholesaler IN ({gw}) AND edition IN ({ge})
+                  AND LTRIM(CAST(upc AS VARCHAR), '0') IN ({gu})
+                  AND from_date IS NOT NULL AND to_date IS NOT NULL
+                  AND (rip_amt_1 > 0 OR rip_amt_2 > 0 OR rip_amt_3 > 0 OR rip_amt_4 > 0)
+            """, gp).fetchdf()
+            for _, r in gwins.iterrows():
+                wf, wt = _to_date(r["from_date"]), _to_date(r["to_date"])
+                if wf and wt:
+                    rip_wins.setdefault((r["wholesaler"], r["edition"], str(r["un"])), []).append((wf, wt))
+        except Exception:
+            pass
 
     def _lookup_rips(rec):
         # Prefer the CLUSTER's code (rip_group_code) when present, so a row
@@ -662,6 +785,59 @@ def attach_tiers(con, records, ref_date=None) -> None:
             })
         rips.sort(key=lambda x: x["qty"])
         rec["tiers"] = disc + rips
+
+        # Deal gaps: days where NO dated deal is active — gaps in the UNION of
+        # this product's RIP windows AND its partial-QD windows. A RIP gap that's
+        # covered by a partial QD (e.g. Remy: RIP Jun 1-8/11-30 + QD Jun 9-10) is
+        # NOT a trap, so it must not be flagged. Only true no-deal runs warn.
+        _gk = (rec["wholesaler"], rec["edition"], str(rec.get("upc") or "").lstrip("0"))
+        _wins = list(rip_wins.get(_gk, []))
+        # Full dated-deal timeline (ALL windows, not the deduped tiers) for the
+        # clickable timing popover. RIP windows share the best-RIP price; partial
+        # QD windows use their own best_case_price.
+        deal_windows = []
+        seen_w = set()
+        _rip_best = min((t for t in rips if t.get("price_after") is not None),
+                        key=lambda t: t["price_after"], default=None)
+        rip_price = _rip_best["price_after"] if _rip_best else None
+        for (wf, wt) in rip_wins.get(_gk, []):
+            k = ("RIP", wf, wt)
+            if k in seen_w:
+                continue
+            seen_w.add(k)
+            deal_windows.append({"kind": "RIP", "from": wf.isoformat(), "to": wt.isoformat(),
+                                 "qty": _rip_best["qty"] if _rip_best else None,
+                                 "unit": _rip_best["unit"] if _rip_best else None,
+                                 "eff": rip_price,
+                                 "save": round(cp - rip_price, 2) if (rip_price is not None and cp) else None})
+        for pr in part_rows.get(_gk, []):
+            try:
+                _fcp = float(pr["fcp"]); _bcp = float(pr["bcp"])
+            except (TypeError, ValueError, KeyError):
+                _fcp = _bcp = None
+            if _fcp is not None and _bcp is not None and _bcp < _fcp - 0.005:
+                pf, pt = _to_date(pr["from_date"]), _to_date(pr["to_date"])
+                if pf and pt:
+                    _wins.append((pf, pt))
+                    k = ("QD", pf, pt)
+                    if k not in seen_w:
+                        seen_w.add(k)
+                        # Best discount tier on this sub-month row → its qty/unit.
+                        _bq, _ba, _bu = None, 0.0, "Cases"
+                        for _j in range(1, 6):
+                            _a = pr.get(f"d{_j}a")
+                            if _a is None or (isinstance(_a, float) and math.isnan(_a)) or _a <= 0:
+                                continue
+                            _mm = re.match(r"^\s*(\d+(?:\.\d+)?)\s*(.*)$", str(pr.get(f"d{_j}q") or ""))
+                            if _mm and float(_a) > _ba:
+                                _ba = float(_a); _bq = int(float(_mm.group(1)))
+                                _bu = "Bottles" if _norm_unit(_mm.group(2) or "") == "bottle" else "Cases"
+                        deal_windows.append({"kind": "QD", "from": pf.isoformat(), "to": pt.isoformat(),
+                                             "qty": _bq, "unit": _bu,
+                                             "eff": round(_bcp, 2), "save": round(_fcp - _bcp, 2)})
+        deal_windows.sort(key=lambda x: x["from"])
+        rec["deal_windows"] = deal_windows
+        rec["rip_gaps"] = _gaps_from_windows(_wins, eastern_today())
 
 
 # ---------------------------------------------------------------------------

@@ -9,7 +9,7 @@ import AddToCartButton from '../components/AddToCartButton';
 import AddToListButton from '../components/AddToListButton';
 import { QtyStepper, loadCart, saveCart, type CartState } from '../components/CatalogTable';
 import PriceSparklines from '../components/PriceSparklines';
-import PartialSticker, { partialDeals } from '../components/PartialSticker';
+import DealTimingSticker from '../components/DealTimingSticker';
 import { buildMonths } from '../lib/promotionsSparkline';
 import { windowBadge, fmtDateRange } from '../lib/dealDates';
 
@@ -288,10 +288,21 @@ export default function ProductDetail() {
   }, [sizes]);
   const anyDisc = sizes.some(s => s.has_discount);   // quantity discount
   const anyRip = sizes.some(s => s.has_rip);          // RIP
-  // Header partial-deal sticker: the first size carrying a partial-month QD/RIP.
-  const headerMonths = useMemo(() => {
-    for (const s of sizes) { const m = buildMonths(s); if (partialDeals(m).length) return m; }
-    return null;
+  // Header deal-timing sticker: the product's dated deal windows + no-deal gaps
+  // across all sizes (deduped).
+  const headerDeals = useMemo(() => {
+    const seen = new Set<string>(); const out: NonNullable<Product['deal_windows']> = [];
+    for (const s of sizes) for (const d of (s.deal_windows ?? [])) {
+      const k = `${d.kind}|${d.from}|${d.to}`; if (!seen.has(k)) { seen.add(k); out.push(d); }
+    }
+    return out;
+  }, [sizes]);
+  const headerGaps = useMemo(() => {
+    const seen = new Set<string>(); const out: { from: string; to: string; days: number }[] = [];
+    for (const s of sizes) for (const g of (s.rip_gaps ?? [])) {
+      const k = `${g.from}|${g.to}`; if (!seen.has(k)) { seen.add(k); out.push(g); }
+    }
+    return out;
   }, [sizes]);
   const comboLink = useComboLink();
   const anyComboUrl = sizes.map(s => comboLink(s.wholesaler, s.upc)).find(Boolean) ?? null;
@@ -363,7 +374,9 @@ export default function ProductDetail() {
             <Link to={anyComboUrl} className="pd-deal-badge pd-deal-combo"
               title="Part of a combo bundle — view the combo">🎁 Combo</Link>
           )}
-          {headerMonths && <PartialSticker months={headerMonths} />}
+          {(headerDeals.length > 0 || headerGaps.length > 0) && (
+            <DealTimingSticker deals={headerDeals} gaps={headerGaps} />
+          )}
           <div className="pd-identity">
             <ProductThumb src={enrichment?.image_url ?? sizes[0]?.image_url} alt={name} size={120} />
             <div className="pd-identity-meta">

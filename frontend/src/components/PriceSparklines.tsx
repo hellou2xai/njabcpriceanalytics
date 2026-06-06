@@ -3,25 +3,26 @@
  * show a product/SKU (Products list cards + size rows, the detail page size
  * sections, related/case-mix cards…). One component, one look.
  *
- * Per the rule: TWO small sparklines on a transparent background —
+ * TWO small sparklines on a transparent background —
  *   • top  ("1cs") = case price after the 1-case discount;
  *   • bottom ("RIP") = the best effective price (best RIP applied).
- * Hovering exposes the FULL price-schedule (the old "See price schedule" modal
- * content): per month, the list-price headline plus the Quantity Deals, each
- * with its case + bottle price.
+ * Hovering exposes the price schedule (per month: list / 1-case / best RIP, and
+ * the quantity deals when we have the rich data).
  *
- * Data comes from the backend `price_3mo` blocks (via buildMonths). When a
- * parent already has the size row (size rows / detail sections) it passes
- * `months` so no extra request is made; otherwise (collapsed cards, mini cards)
- * the component lazily self-fetches the one SKU with tiers and builds them.
+ * Data sources, by cost:
+ *  - When the caller already has the row (size rows / detail sections), it
+ *    passes `months` (from price_3mo) → no request, and the tooltip shows the
+ *    full quantity-deal schedule.
+ *  - Otherwise (collapsed cards, mini cards) it lazily self-fetches the LIGHT
+ *    price-history endpoint (no tier ladder) — so a page with dozens of these
+ *    doesn't fire dozens of expensive `include_tiers` searches and stall.
  */
 import { useEffect, useRef, useState, useLayoutEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { catalog } from '../lib/api';
-import { buildMonths } from '../lib/promotionsSparkline';
 import { bottlesPerCase } from '../lib/productSizes';
 import type { MonthBreakdown, RipTier } from './MonthEffectiveSparkline';
-import type { Product } from '../lib/api';
+import type { PricePoint } from '../lib/api';
 
 interface Props {
   wholesaler: string;
@@ -31,7 +32,7 @@ interface Props {
   unitQty?: string | number | null;
   vintage?: string | number | null;
   // When the caller already has the row (with price_3mo), pass the built months
-  // to avoid a second fetch. Omit to let the component self-fetch.
+  // for a no-request, rich (quantity-deal) tooltip. Omit to self-fetch light.
   months?: MonthBreakdown[];
 }
 
@@ -41,8 +42,7 @@ function fmtMonth(ed?: string | null): string {
   const m = /^(\d{4})-(\d{1,2})/.exec(ed);
   return m ? `${MONTHS[parseInt(m[2], 10) - 1] ?? ''} ${m[1]}`.trim() : ed;
 }
-const unitWord = (qty: number, unit: string) =>
-  /btl|bottle/i.test(unit) ? (qty === 1 ? 'btl' : 'btl') : (qty === 1 ? 'cs' : 'cs');
+const unitWord = (unit: string) => (/btl|bottle/i.test(unit) ? 'btl' : 'cs');
 
 // One tiny line: green if cheaper now than at the start, red if pricier, grey
 // if flat. Transparent background, current value printed at the right.
@@ -70,47 +70,59 @@ function Spark({ values, label }: { values: (number | null | undefined)[]; label
   );
 }
 
-// One month block of the schedule popover: list-price headline + the quantity
-// deals (discount + RIP tiers), each as case + bottle.
-function MonthSchedule({ b, pack, current }: { b: MonthBreakdown; pack: number | null; current: boolean }) {
-  const cb = (caseVal?: number | null) => {
-    if (caseVal == null) return '—';
-    const btl = pack ? ` · $${(caseVal / pack).toFixed(2)}${b.size ? ` (${b.size})` : '/btl'}` : '';
-    return `$${caseVal.toFixed(2)}/cs${btl}`;
-  };
-  const sortedDisc = [...(b.discountTiers ?? [])].sort((a, c) => a.qty - c.qty);
-  const sortedRip = [...(b.ripTiers ?? [])].sort((a, c) => a.qty - c.qty);
+// A month line "List / 1-case / Best RIP" with case + bottle (shared by both
+// the rich and the light tooltip).
+function priceCB(caseVal: number | null | undefined, pack: number | null, size?: string | null) {
+  if (caseVal == null) return '—';
+  const btl = pack ? ` · $${(caseVal / pack).toFixed(2)}${size ? ` (${size})` : '/btl'}` : '';
+  return `$${caseVal.toFixed(2)}/cs${btl}`;
+}
+
+// Rich month block (from price_3mo): list headline + quantity deals.
+function RichMonth({ b, pack, current }: { b: MonthBreakdown; pack: number | null; current: boolean }) {
+  const disc = [...(b.discountTiers ?? [])].sort((a, c) => a.qty - c.qty);
+  const rip = [...(b.ripTiers ?? [])].sort((a, c) => a.qty - c.qty);
   const tierLine = (t: RipTier, kind: 'disc' | 'rip', i: number) => {
     const off = b.frontline != null && t.eff < b.frontline ? b.frontline - t.eff : null;
     return (
       <span className="psk-pop-deal" key={`${kind}${i}`}>
-        <span className="psk-pop-buy">
-          Buy {t.qty} {unitWord(t.qty, t.unit)}
-          <span className={`psk-pill psk-pill-${kind}`}>{kind === 'disc' ? 'Disc' : 'RIP'}</span>
-        </span>
-        <span className="psk-pop-amt">
-          {cb(t.eff)}{off != null && off > 0.005 && <span className="psk-off"> (−${off.toFixed(2)})</span>}
-        </span>
+        <span className="psk-pop-buy">Buy {t.qty} {unitWord(t.unit)}
+          <span className={`psk-pill psk-pill-${kind}`}>{kind === 'disc' ? 'Disc' : 'RIP'}</span></span>
+        <span className="psk-pop-amt">{priceCB(t.eff, pack, b.size)}
+          {off != null && off > 0.005 && <span className="psk-off"> (−${off.toFixed(2)})</span>}</span>
       </span>
     );
   };
   return (
     <span className="psk-pop-block">
       <span className="psk-pop-month">{fmtMonth(b.edition)}{current ? ' · current' : ''}</span>
-      <span className="psk-pop-line"><em>List</em>{cb(b.frontline)}</span>
-      {(sortedDisc.length > 0 || sortedRip.length > 0) && (
+      <span className="psk-pop-line"><em>List</em>{priceCB(b.frontline, pack, b.size)}</span>
+      {(disc.length > 0 || rip.length > 0) && (
         <span className="psk-pop-deals">
           <span className="psk-pop-deals-h">Quantity deals</span>
-          {sortedDisc.map((t, i) => tierLine(t, 'disc', i))}
-          {sortedRip.map((t, i) => tierLine(t, 'rip', i))}
+          {disc.map((t, i) => tierLine(t, 'disc', i))}
+          {rip.map((t, i) => tierLine(t, 'rip', i))}
         </span>
       )}
     </span>
   );
 }
 
-export default function PriceSparklines({ wholesaler, productName, upc, unitVolume, vintage, months }: Props) {
-  const vtg = vintage != null && !['', '0', 'nv', 'none'].includes(String(vintage).toLowerCase()) ? String(vintage) : '';
+// Light month block (from price-history): list / 1-case / best RIP.
+function LightMonth({ p, pack, size, current }: { p: PricePoint; pack: number | null; size?: string | null; current: boolean }) {
+  const disc = p.best_case_price && p.best_case_price > 0 && p.best_case_price < p.frontline_case_price - 0.005 ? p.best_case_price : null;
+  const showRip = p.effective_case_price < (disc ?? p.frontline_case_price) - 0.005;
+  return (
+    <span className="psk-pop-block">
+      <span className="psk-pop-month">{fmtMonth(p.edition)}{current ? ' · current' : ''}</span>
+      <span className="psk-pop-line"><em>List</em>{priceCB(p.frontline_case_price, pack, size)}</span>
+      {disc != null && <span className="psk-pop-line"><em>1-case</em>{priceCB(disc, pack, size)}</span>}
+      {showRip && <span className="psk-pop-line psk-pop-rip"><em>Best RIP</em>{priceCB(p.effective_case_price, pack, size)}</span>}
+    </span>
+  );
+}
+
+export default function PriceSparklines({ wholesaler, productName, upc, unitVolume, unitQty, vintage, months }: Props) {
   const ref = useRef<HTMLSpanElement | null>(null);
   const popRef = useRef<HTMLSpanElement | null>(null);
   const [visible, setVisible] = useState(false);
@@ -119,40 +131,49 @@ export default function PriceSparklines({ wholesaler, productName, upc, unitVolu
   const [pos, setPos] = useState<{ left: number; top: number; below: boolean } | null>(null);
 
   const hasOwn = !!(months && months.length);
+  const vtg = vintage != null && !['', '0', 'nv', 'none'].includes(String(vintage).toLowerCase()) ? String(vintage) : '';
 
-  // Lazy: only fetch (when no months were passed) once scrolled into view.
+  // Lazy: only fetch (when no months passed) once scrolled into view.
   useEffect(() => {
     if (hasOwn || !ref.current || visible) return;
     const io = new IntersectionObserver(es => {
       for (const e of es) if (e.isIntersecting) { setVisible(true); io.disconnect(); break; }
-    }, { rootMargin: '160px' });
+    }, { rootMargin: '120px' });
     io.observe(ref.current);
     return () => io.disconnect();
   }, [visible, hasOwn]);
 
-  const { data } = useQuery({
-    enabled: !hasOwn && visible && !!wholesaler && !!productName && !!upc,
+  // LIGHT price history (no tier ladder) for the self-fetch layers.
+  const { data: hist } = useQuery({
+    enabled: !hasOwn && visible && !!wholesaler && !!productName,
     staleTime: 5 * 60_000,
-    queryKey: ['psk-size', wholesaler, productName, upc, unitVolume, vtg],
-    queryFn: () => catalog.search({
-      wholesaler, upcs: String(upc), include_tiers: true, limit: 16, sort: 'product_name', order: 'asc',
+    queryKey: ['price-history', wholesaler, productName, upc, unitVolume, unitQty, vtg],
+    queryFn: () => catalog.priceHistory(wholesaler, productName, {
+      upc: upc || undefined, unit_volume: unitVolume || undefined,
+      unit_qty: unitQty != null ? String(unitQty) : undefined, vintage: vtg || undefined,
     }),
   });
-  const fetchedMonths = (() => {
-    if (hasOwn) return months!;
-    const rows = (data?.items ?? []) as Product[];
-    // Match the exact size AND vintage (a wine barcode carries several
-    // vintages); fall back gracefully.
-    const sameSize = rows.filter(r => (r.unit_volume ?? '') === (unitVolume ?? ''));
-    const row = (vtg ? sameSize.find(r => String(r.vintage ?? '') === vtg) : null)
-      ?? sameSize[0] ?? rows[0];
-    return row ? buildMonths(row) : [];
-  })();
 
-  const blocks = fetchedMonths.filter(m => m.bestEff != null || m.disc1 != null || m.frontline != null);
-  const discSeries = blocks.map(m => m.disc1 ?? m.frontline);   // 1-case discount price
-  const ripSeries = blocks.map(m => m.bestEff);                 // best RIP price
-  const last3 = [...blocks].reverse().slice(0, 3);              // newest first
+  const pack = bottlesPerCase(productName, unitQty);
+
+  // Build the two series + tooltip blocks from whichever source we have.
+  let discSeries: (number | null | undefined)[] = [];
+  let ripSeries: (number | null | undefined)[] = [];
+  let richBlocks: MonthBreakdown[] = [];
+  let lightBlocks: PricePoint[] = [];
+  if (hasOwn) {
+    const blocks = months!.filter(m => m.bestEff != null || m.disc1 != null || m.frontline != null);
+    discSeries = blocks.map(m => m.disc1 ?? m.frontline);
+    ripSeries = blocks.map(m => m.bestEff);
+    richBlocks = [...blocks].reverse().slice(0, 3);
+  } else {
+    const h = hist?.history ?? [];
+    discSeries = h.map(p => (p.best_case_price && p.best_case_price > 0 ? p.best_case_price : p.frontline_case_price));
+    ripSeries = h.map(p => p.effective_case_price);
+    lightBlocks = [...h].reverse().slice(0, 3);
+  }
+  const hasData = discSeries.some(v => v != null) || ripSeries.some(v => v != null);
+  const blockCount = hasOwn ? richBlocks.length : lightBlocks.length;
 
   useLayoutEffect(() => {
     if (!hover || !rect) { setPos(null); return; }
@@ -168,7 +189,9 @@ export default function PriceSparklines({ wholesaler, productName, upc, unitVolu
   const onEnter = () => { const el = ref.current; if (el) setRect(el.getBoundingClientRect()); setHover(true); };
   const onLeave = () => setHover(false);
 
-  if (blocks.length === 0 && (hasOwn || (visible && data))) return null;
+  // Nothing to draw (no months, history loaded empty) → render nothing.
+  if (!hasOwn && hist && !hasData) return null;
+  if (hasOwn && !hasData) return null;
 
   return (
     <span className="psk" ref={ref} onMouseEnter={onEnter} onMouseLeave={onLeave} onClick={e => e.stopPropagation()}>
@@ -176,14 +199,13 @@ export default function PriceSparklines({ wholesaler, productName, upc, unitVolu
         <Spark values={discSeries} label="1cs" />
         <Spark values={ripSeries} label="RIP" />
       </span>
-      {hover && pos && last3.length > 0 && (
+      {hover && pos && blockCount > 0 && (
         <span className={`psk-pop${pos.below ? ' psk-pop-below' : ''}`} ref={popRef}
               style={{ position: 'fixed', left: pos.left, top: pos.top }}>
           <span className="psk-pop-title">Price schedule{vtg ? ` · ${vtg} vintage` : ''}</span>
-          {last3.map((b, i) => (
-            <MonthSchedule key={i} b={b} current={i === 0}
-              pack={bottlesPerCase(productName, b.pack ?? undefined)} />
-          ))}
+          {hasOwn
+            ? richBlocks.map((b, i) => <RichMonth key={i} b={b} current={i === 0} pack={bottlesPerCase(productName, b.pack ?? undefined)} />)
+            : lightBlocks.map((p, i) => <LightMonth key={i} p={p} pack={pack} size={unitVolume} current={i === 0} />)}
         </span>
       )}
     </span>

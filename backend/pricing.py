@@ -590,10 +590,16 @@ def attach_tiers(con, records, ref_date=None) -> None:
         except Exception:
             full_qty = {}
 
-    # All RIP windows per UPC across EVERY code (for gap detection). The cpl
-    # row's rip_code names only one code, but a no-RIP gap can fall between two
-    # DIFFERENT codes (112263 Jun 1-8 + 112264 Jun 11-30 → Jun 9-10), so match
-    # by UPC, not code.
+    # All RIP windows + TIERS per UPC across EVERY code. The cpl row's rip_code
+    # names only ONE code, but the SAME product UPC can be listed under several
+    # codes — Remy's Buy-1-cs RIP is code 112263 (Jun 1-8) AND code 112264
+    # (Jun 11-30). A strict by-code lookup only ever sees the row's own code, so
+    # the "next RIP date" window (a different code that ALSO lists this UPC) was
+    # invisible in the tier ladder. Matching by UPC surfaces every layer and is
+    # still canonical — every tier returned EXPLICITLY lists this product's UPC
+    # (no code-level fallback). Used both for gap detection (rip_wins) and to
+    # feed the ladder every window (rip_by_upc).
+    rip_by_upc: dict = {}  # (ws, ed, upc_norm) -> [tiers]  (all codes listing this UPC)
     g_ws = sorted({rec["wholesaler"] for rec in records if rec.get("wholesaler")})
     g_ed = sorted({rec["edition"] for rec in records if rec.get("edition")})
     g_un = sorted({str(rec.get("upc") or "").lstrip("0") for rec in records
@@ -609,7 +615,11 @@ def attach_tiers(con, records, ref_date=None) -> None:
             for i, v in enumerate(g_un): gp[f"gu{i}"] = v
             gwins = con.execute(f"""
                 SELECT wholesaler, edition, LTRIM(CAST(upc AS VARCHAR), '0') AS un,
-                       from_date, to_date
+                       rip_description, from_date, to_date,
+                       rip_unit_1, rip_qty_1, rip_amt_1,
+                       rip_unit_2, rip_qty_2, rip_amt_2,
+                       rip_unit_3, rip_qty_3, rip_amt_3,
+                       rip_unit_4, rip_qty_4, rip_amt_4
                 FROM {rip_src}
                 WHERE wholesaler IN ({gw}) AND edition IN ({ge})
                   AND LTRIM(CAST(upc AS VARCHAR), '0') IN ({gu})
@@ -618,8 +628,36 @@ def attach_tiers(con, records, ref_date=None) -> None:
             """, gp).fetchdf()
             for _, r in gwins.iterrows():
                 wf, wt = _to_date(r["from_date"]), _to_date(r["to_date"])
+                ukey = (r["wholesaler"], r["edition"], str(r["un"]))
                 if wf and wt:
-                    rip_wins.setdefault((r["wholesaler"], r["edition"], str(r["un"])), []).append((wf, wt))
+                    rip_wins.setdefault(ukey, []).append((wf, wt))
+                # Build the tier dicts for this window (same shape as rip_full).
+                u_ts = is_time_sensitive_window(r.get("from_date"), r.get("to_date"))
+                u_win = window_status(r.get("from_date"), r.get("to_date"), ref_date)
+                u_from = _iso(r.get("from_date"))
+                u_to = _iso(r.get("to_date"))
+                for j in range(1, 5):
+                    amt = r.get(f"rip_amt_{j}")
+                    qty = r.get(f"rip_qty_{j}")
+                    unit = r.get(f"rip_unit_{j}")
+                    try:
+                        af = float(amt) if amt is not None else 0.0
+                        qf = float(qty) if qty is not None else 0.0
+                    except (TypeError, ValueError):
+                        continue
+                    if math.isnan(af) or math.isnan(qf) or af <= 0 or qf <= 0:
+                        continue
+                    rip_by_upc.setdefault(ukey, []).append({
+                        "qty": int(qf),
+                        "unit": str(unit) if unit else "Cases",
+                        "amount": af,
+                        "description": str(r.get("rip_description") or "") or None,
+                        "is_time_sensitive": u_ts,
+                        "from_date": u_from,
+                        "to_date": u_to,
+                        "window_status": u_win["status"],
+                        "days_to_expire": u_win["days_to_expire"],
+                    })
         except Exception:
             pass
 
@@ -645,6 +683,12 @@ def attach_tiers(con, records, ref_date=None) -> None:
             upc_key = (rc, ws, ed, upc)
             if upc_key in rip_full:
                 out.extend(rip_full[upc_key])
+        # ALSO pull every RIP window this UPC is listed under across ALL codes,
+        # so a "next RIP date" living under a DIFFERENT code (Remy: Buy-1-cs RIP
+        # under 112263 Jun 1-8 AND 112264 Jun 11-30) shows as its own layer. This
+        # is still canonical — these rows EXPLICITLY list this UPC. Exact-window
+        # duplicates with the code lookup collapse in the dedup below.
+        out.extend(rip_by_upc.get((ws, ed, str(upc).lstrip("0")), []))
         return out
 
     def _uq(rec) -> float:
@@ -753,35 +797,24 @@ def attach_tiers(con, records, ref_date=None) -> None:
             })
         disc.sort(key=lambda d: d["qty"])
 
-        # RIP tiers. When a CPL row matches MULTIPLE RIP codes (e.g. fedway's
-        # "10604 120001"), each code can contribute its own ladder — including
-        # tiers at the same qty. derive.py keeps the BEST rebate per SKU via
-        # MAX(code_best_rip); the runtime tier ladder must do the same or the
-        # popover renders e.g. two "Buy 5 cs" rows with different amounts and
-        # confuses the buyer. Dedupe by (qty, unit) keeping the highest
-        # amount; non-time-sensitive rows win over time-sensitive ones at the
-        # same qty so partial-window noise doesn't shadow the real tier.
+        # RIP tiers. Show EVERY distinct RIP layer. A single qty can be offered
+        # in SEVERAL dated windows — Remy's Buy-1-cs RIP runs Jun 1-8 AND
+        # Jun 11-30 (with a QD-covered gap between). Collapsing them to one tier
+        # per (qty, unit) hid the later window — the buyer never saw the "next
+        # RIP date". So dedupe ONLY EXACT-duplicate windows: same qty + unit AND
+        # same from/to dates (genuine RIP-sheet dupes, e.g. a SKU matching two
+        # codes that both list the same window), keeping the highest amount.
+        # Distinct windows — and an evergreen tier vs a dated one — all survive.
         rips_raw = _lookup_rips(rec)
-        best_by_qty: dict = {}
+        by_win: dict = {}
         for t in rips_raw:
-            key = (t["qty"], (t["unit"] or "").lower())
-            cur = best_by_qty.get(key)
-            cur_ts = bool(cur and cur.get("is_time_sensitive"))
-            new_ts = bool(t.get("is_time_sensitive"))
-            replace = (
-                cur is None
-                or (cur_ts and not new_ts)
-                or (cur_ts == new_ts and float(t["amount"]) > float(cur["amount"]))
-            )
-            if replace:
-                best_by_qty[key] = t
-        seen = set()
+            wk = (t["qty"], (t["unit"] or "").lower(),
+                  _iso(t.get("from_date")), _iso(t.get("to_date")))
+            cur = by_win.get(wk)
+            if cur is None or float(t["amount"]) > float(cur["amount"]):
+                by_win[wk] = t
         rips = []
-        for t in best_by_qty.values():
-            sig = (t["qty"], (t["unit"] or "").lower(), round(t["amount"], 2))
-            if sig in seen:
-                continue
-            seen.add(sig)
+        for t in by_win.values():
             is_bottle = _is_bottle_unit(t["unit"])
             rip_per_case_v = round(_rip_per_case(t["amount"], t["qty"], t["unit"], uq), 2)
             # Case-equivalent of the RIP qty so we can look up the best stackable
@@ -822,7 +855,9 @@ def attach_tiers(con, records, ref_date=None) -> None:
                 "window_status": t.get("window_status"),
                 "days_to_expire": t.get("days_to_expire"),
             })
-        rips.sort(key=lambda x: x["qty"])
+        # qty first, then by window start so a qty's earliest window leads and
+        # its later ("next RIP date") window follows directly beneath it.
+        rips.sort(key=lambda x: (x["qty"], str(x.get("from_date") or "")))
         rec["tiers"] = disc + rips
 
         # Deal gaps: days where NO dated deal is active — gaps in the UNION of

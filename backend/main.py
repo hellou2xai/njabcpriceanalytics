@@ -16,11 +16,32 @@ import os
 import sys
 from pathlib import Path
 
+import math as _math
 from fastapi import FastAPI, Depends, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from dotenv import load_dotenv
+
+
+def _json_sanitize(o):
+    """Recursively replace NaN/Inf floats with None so a stray NaN from the
+    pandas/parquet data can never break JSON serialization (FastAPI's default
+    json.dumps uses allow_nan=False and 500s on NaN — the prod cart /
+    product-variant-upcs failures)."""
+    if isinstance(o, float):
+        return o if _math.isfinite(o) else None
+    if isinstance(o, dict):
+        return {k: _json_sanitize(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [_json_sanitize(v) for v in o]
+    return o
+
+
+class CleanJSONResponse(JSONResponse):
+    """App-wide JSON response that nulls out non-finite floats before encoding."""
+    def render(self, content) -> bytes:
+        return super().render(_json_sanitize(content))
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -36,6 +57,7 @@ app = FastAPI(
     title="NJ ABC Price Intelligence",
     version="0.1.0",
     description="Wholesale beverage price analytics for New Jersey ABC licensees",
+    default_response_class=CleanJSONResponse,   # NaN/Inf -> null, app-wide
 )
 
 # CORS â€” allow React dev server

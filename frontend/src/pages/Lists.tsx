@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2, ShoppingCart, Pencil, ClipboardList } from 'lucide-react';
+import { Plus, Trash2, ShoppingCart, Pencil, ClipboardList, Sparkles } from 'lucide-react';
 import { lists as listsApi, cart as cartApi, type ListItem } from '../lib/api';
+import SavingsAnalysis from '../components/SavingsAnalysis';
 import { ContextMenuProvider } from '../components/ContextMenu';
 import { useProductQuickView } from '../components/ProductQuickView';
 import ProductThumb from '../components/ProductThumb';
@@ -35,7 +36,15 @@ export default function Lists() {
     enabled: activeId != null,
   });
 
-  useEffect(() => { setSelected(new Set()); }, [activeId]);
+  useEffect(() => { setSelected(new Set()); setShowSavings(false); }, [activeId]);
+
+  // Analyze this list for savings (same engine as the cart). A list has no
+  // quantities, so the result reads as "what you could save if you order these".
+  const [showSavings, setShowSavings] = useState(false);
+  const { data: savings, isFetching: savingsBusy } = useQuery({
+    queryKey: ['list-analyze', activeId], queryFn: () => listsApi.analyze(activeId as number),
+    enabled: showSavings && activeId != null,
+  });
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['lists'] });
@@ -156,12 +165,21 @@ export default function Lists() {
                   onClick={() => removeItems.mutate(selIds)}>
                   <Trash2 size={14} /> Delete selected
                 </button>
+                <button className="btn btn-secondary btn-sm" disabled={items.length === 0}
+                  title="Find tier-gap, case-mix and price-rise savings on this list"
+                  onClick={() => setShowSavings(s => !s)}>
+                  <Sparkles size={14} /> {showSavings ? 'Hide Savings' : 'Analyze for Savings'}
+                </button>
                 <label style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}
                   title="Sub-group list items that share a RIP rebate code, with a colour band per RIP">
                   <input type="checkbox" checked={groupByRip} onChange={e => toggleGroupByRip(e.target.checked)} />
                   Group by RIP
                 </label>
               </div>
+
+              {showSavings && (
+                <SavingsAnalysis data={savings} loading={savingsBusy && !savings} context="list" />
+              )}
 
               <ContextMenuProvider onView={open}>
                 {buckets ? (

@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Trash2, Clock, Send, ShoppingCart, Plus, Search, ArrowUpFromLine, Eraser } from 'lucide-react';
-import { cart as cartApi, salesReps as repsApi, catalog, type CartItem, type Product } from '../lib/api';
+import { Trash2, Clock, Send, ShoppingCart, Plus, Search, ArrowUpFromLine, Eraser, Sparkles } from 'lucide-react';
+import { cart as cartApi, salesReps as repsApi, catalog, type CartItem, type Product, type SavingsRec } from '../lib/api';
 import ProductThumb from '../components/ProductThumb';
+import SavingsAnalysis from '../components/SavingsAnalysis';
 import DealSparkline from '../components/DealSparkline';
 import { useProductQuickView } from '../components/ProductQuickView';
 import { useDialog } from '../components/Dialog';
@@ -222,7 +223,22 @@ export default function Cart() {
   // now clusters lines by SEND BATCH so RIP sends already arrive grouped; the
   // rip-merge toggle is opt-in for cross-batch exposure.
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['cart'] });
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['cart'] });
+    qc.invalidateQueries({ queryKey: ['cart-analyze'] });   // keep savings live
+  };
+  // Analyze for Savings — live panel (refetches whenever the cart changes).
+  const [showSavings, setShowSavings] = useState(false);
+  const { data: savings, isFetching: savingsBusy } = useQuery({
+    queryKey: ['cart-analyze'], queryFn: cartApi.analyze, enabled: showSavings,
+  });
+  const swap = useMutation({
+    mutationFn: (rec: SavingsRec) => cartApi.swapDistributor({
+      from_distributor: rec.from_wholesaler!, to_distributor: rec.to_wholesaler!,
+      upcs: rec.upc ? [String(rec.upc)] : undefined,
+    }),
+    onSuccess: invalidate,
+  });
   const upd = useMutation({
     mutationFn: (v: { id: number; patch: Parameters<typeof cartApi.update>[1] }) => cartApi.update(v.id, v.patch),
     onSuccess: invalidate,
@@ -397,12 +413,24 @@ export default function Cart() {
           >
             <Eraser size={16} /> {clearActive.isPending ? 'Clearing...' : 'Clear All Cart'}
           </button>
+          <button className="btn btn-secondary" disabled={active.length === 0}
+            title="Find tier-gap, case-mix, price-rise and distributor-swap savings on this cart"
+            onClick={() => setShowSavings(s => !s)}>
+            <Sparkles size={16} /> {showSavings ? 'Hide Savings' : 'Analyze for Savings'}
+          </button>
           <button className="btn btn-primary" data-tour="cart-send" disabled={active.length === 0 || send.isPending}
             onClick={() => { setResult(null); send.mutate(); }}>
             <Send size={16} /> {send.isPending ? 'Sending...' : 'Send All Orders to Reps'}
           </button>
         </div>
       </div>
+
+      {showSavings && active.length > 0 && (
+        <SavingsAnalysis data={savings} loading={savingsBusy && !savings} context="cart"
+          busy={upd.isPending || swap.isPending}
+          onSetQty={(id, cases) => upd.mutate({ id, patch: { qty_cases: cases } })}
+          onSwap={(rec) => swap.mutate(rec)} />
+      )}
 
       {active.length > 0 && (
         <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>

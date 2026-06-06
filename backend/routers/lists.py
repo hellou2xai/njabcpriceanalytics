@@ -83,6 +83,24 @@ def delete_list(list_id: int, user: dict = Depends(get_current_user)):
     return {"status": "deleted"}
 
 
+@router.get("/{list_id}/analyze")
+def analyze_list(list_id: int, user: dict = Depends(get_current_user)):
+    """Analyze a saved list for savings — same engine as the cart. A list has no
+    quantities (it's a wishlist), so every line is treated as qty 0: the result
+    reads as 'what you could save if you order these' (entry-tier nudges +
+    case-mix qualification across the list)."""
+    from backend.routers.cart import analyze_lines
+    with get_pg() as con:
+        _owned(con, list_id, user["id"])
+        items = [dict(r) for r in con.execute(
+            "SELECT * FROM list_items WHERE list_id=%s ORDER BY created_at DESC", (list_id,)
+        ).fetchall()]
+    for it in items:
+        it.setdefault("qty_cases", 0)
+        it.setdefault("qty_units", 0)
+    return analyze_lines(items)
+
+
 @router.get("/{list_id}")
 def get_list(list_id: int, user: dict = Depends(get_current_user)):
     """One list with its items, each carrying a Go-UPC image_url for thumbnails

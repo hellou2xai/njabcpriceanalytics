@@ -5442,6 +5442,36 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pd-mini-name { font-size: 13px; font-weight: 700; color: var(--text); line-height: 1.3; }
 .pd-mini-dist { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--text-muted); margin-top: 4px; font-weight: 600; }
 .pd-mini-size { font-size: 11px; font-weight: 600; color: var(--text); margin-top: 3px; }
+/* ---- Analyze for Savings panel (cart + lists) ---- */
+.sav-panel { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 14px; margin: 12px 0; }
+.sav-panel.sav-empty { color: var(--text-muted); text-align: center; }
+.sav-stats { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+.sav-stat { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: var(--radius-sm); background: var(--bg); border: 1px solid var(--border); min-width: 140px; }
+.sav-stat.is-opportunity { background: color-mix(in srgb, var(--green) 12%, var(--surface)); border-color: color-mix(in srgb, var(--green) 35%, var(--border)); }
+.sav-stat.is-protect { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); border-color: color-mix(in srgb, var(--accent) 30%, var(--border)); }
+.sav-stat-ico { display: inline-flex; color: var(--text-muted); }
+.sav-stat.is-opportunity .sav-stat-ico { color: var(--green); }
+.sav-stat-val { font-size: 18px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; line-height: 1.1; }
+.sav-stat.is-opportunity .sav-stat-val { color: var(--green); }
+.sav-stat-lbl { font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .02em; }
+.sav-allset { padding: 10px; color: var(--text-muted); font-size: 13px; text-align: center; }
+.sav-recs { display: flex; flex-direction: column; gap: 8px; }
+.sav-rec { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); }
+.sav-ico { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 7px; flex: 0 0 auto; color: #fff; }
+.sav-ico.is-qd { background: var(--accent); }
+.sav-ico.is-rip, .sav-ico.is-mix { background: var(--green); }
+.sav-ico.is-warn { background: var(--amber, #d97706); }
+.sav-ico.is-swap { background: #7c3aed; }
+.sav-rec-body { flex: 1 1 auto; min-width: 0; }
+.sav-rec-head { font-size: 13px; color: var(--text); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.sav-rec-desc, .sav-rec-members { color: var(--text-muted); font-weight: 500; }
+.sav-rec-text { font-size: 12.5px; color: var(--text-muted); margin-top: 3px; font-variant-numeric: tabular-nums; }
+.sav-rec-text strong { color: var(--text); }
+.sav-rec-members { font-size: 11px; margin-top: 3px; }
+.sav-rec-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex: 0 0 auto; }
+.sav-amt { font-size: 14px; font-weight: 800; color: var(--green); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sav-amt.is-warn { color: var(--amber, #d97706); }
+.sav-expiry { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 700; color: var(--amber, #d97706); }
 .pd-mini-ids { display: flex; flex-wrap: wrap; gap: 2px 8px; font-size: 10px; color: var(--text-muted); margin-top: 4px; font-variant-numeric: tabular-nums; }
 .pd-mini-price { font-size: 13px; font-weight: 700; color: var(--green); margin-top: 4px; font-variant-numeric: tabular-nums; }
 .pd-mini-noprice { color: var(--text-muted); font-weight: 500; }

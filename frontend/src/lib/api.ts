@@ -686,8 +686,51 @@ export interface CartBatchItemIn {
   qty_units?: number;
 }
 
+// ---- Analyze for Savings (cart + lists) ----
+export interface SavingsRec {
+  type: 'tier_gap' | 'case_mix' | 'buy_before' | 'swap';
+  kind?: 'qd' | 'rip';
+  line_id?: number;
+  line_ids?: number[];
+  product_name?: string;
+  members?: string[];
+  wholesaler?: string;
+  upc?: string | null;
+  unit_volume?: string | null;
+  rip_code?: string;
+  description?: string | null;
+  current_cases?: number;
+  target_qty?: number;
+  add_cases?: number;
+  new_case_price?: number | null;
+  save_per_case?: number;
+  rebate_amount?: number;
+  roi_pct?: number;
+  extra_savings?: number;
+  // buy_before
+  current_price?: number;
+  next_price?: number;
+  rise_per_case?: number;
+  total_rise?: number;
+  // swap
+  from_wholesaler?: string;
+  to_wholesaler?: string;
+  other_price?: number;
+  total_savings?: number;
+  window_status?: string | null;
+  days_to_expire?: number | null;
+}
+export interface SavingsAnalysis {
+  captured_total: number;
+  opportunity_total: number;
+  protection_total: number;
+  line_count: number;
+  recommendations: SavingsRec[];
+}
+
 export const lists = {
   list: () => request<ProductList[]>('/api/lists'),
+  analyze: (id: number) => request<SavingsAnalysis>(`/api/lists/${id}/analyze`),
   create: (name: string) => request<ProductList>('/api/lists', { method: 'POST', body: JSON.stringify({ name }) }),
   rename: (id: number, name: string) => request(`/api/lists/${id}`, { method: 'PUT', body: JSON.stringify({ name }) }),
   remove: (id: number) => request(`/api/lists/${id}`, { method: 'DELETE' }),
@@ -702,6 +745,7 @@ export const lists = {
 
 export const cart = {
   get: () => request<{ items: CartItem[]; group_notes: Record<string, string> }>('/api/cart'),
+  analyze: () => request<SavingsAnalysis>('/api/cart/analyze'),
   groupNote: (wholesaler: string, note: string) =>
     request('/api/cart/group-note', { method: 'POST', body: JSON.stringify({ wholesaler, note }) }),
   add: (item: Partial<CartItem>) => request('/api/cart', { method: 'POST', body: JSON.stringify(item) }),

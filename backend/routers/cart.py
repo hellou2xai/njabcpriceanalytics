@@ -155,7 +155,13 @@ def _attach_cart_pricing(dcon, items):
                        e.effective_case_price AS ecp, e.unit_qty AS uq,
                        e.has_discount AS hd, e.has_rip AS hr,
                        e.discount_pct AS dp, e.total_savings_per_case AS ts,
-                       CAST(e.rip_code AS VARCHAR) AS rc
+                       CAST(e.rip_code AS VARCHAR) AS rc,
+                       e.edition AS ed,
+                       e.discount_1_qty AS d1q, e.discount_1_amt AS d1a,
+                       e.discount_2_qty AS d2q, e.discount_2_amt AS d2a,
+                       e.discount_3_qty AS d3q, e.discount_3_amt AS d3a,
+                       e.discount_4_qty AS d4q, e.discount_4_amt AS d4a,
+                       e.discount_5_qty AS d5q, e.discount_5_amt AS d5a
                 FROM {src} e JOIN latest l ON e.wholesaler=l.wholesaler AND e.edition=l.ed
                 WHERE LTRIM(e.upc,'0') IN ({ph})
             """, prm).fetchdf()
@@ -181,6 +187,13 @@ def _attach_cart_pricing(dcon, items):
         if r is not None:
             it["frontline_case_price"] = cl(r["fcp"])
             it["frontline_unit_price"] = cl(r["fup"])
+            # Fields attach_tiers needs to build the discount/RIP ladder (edition
+            # for the RIP-sheet join, the per-tier discount columns, and the
+            # cluster code). Without these the cart tiers come back empty.
+            it["edition"] = r["ed"]
+            for i in range(1, 6):
+                it[f"discount_{i}_qty"] = r.get(f"d{i}q")
+                it[f"discount_{i}_amt"] = cl(r.get(f"d{i}a"))
             ecp = cl(r["ecp"])
             it["effective_case_price"] = ecp
             try:                                  # unit_qty (bottles/case) is stored as text
@@ -202,6 +215,12 @@ def _attach_cart_pricing(dcon, items):
             else:
                 rc_s = str(rc).strip()
                 it["rip_code"] = rc_s if rc_s and rc_s.lower() not in ("none", "nan", "0", "") else None
+    # Every item MUST carry an `edition` key: pricing._lookup_rips reads
+    # rec["edition"] directly, so a single unmatched line (no catalogue row, so
+    # no edition set above) raised KeyError and aborted the WHOLE tier pass —
+    # silently emptying tiers for every line after it. Default the unmatched.
+    for it in items:
+        it.setdefault("edition", None)
     try:
         _attach_discount_rip_tiers(dcon, items)  # adds a `tiers` list per item
     except Exception:
@@ -322,6 +341,272 @@ def get_cart(user: dict = Depends(get_current_user)):
         rep = reps.get(it.get("sales_rep_id"))
         it["sales_rep_name"] = rep["name"] if rep else None
     return {"items": items, "group_notes": group_notes}
+
+
+def _fnum(v):
+    """float-or-None (drops NaN)."""
+    import math as _m
+    try:
+        f = float(v)
+        return None if _m.isnan(f) else f
+    except (TypeError, ValueError):
+        return None
+
+
+def _case_tiers(item: dict, kind: str) -> list[dict]:
+    """The case-unit tiers of one kind ('discount'|'rip') for a cart line, sorted
+    by qty. Bottle-unit tiers are skipped (the analyzer nudges on whole cases).
+    Reads the canonical `tiers` attached by _attach_cart_pricing — no new math."""
+    out = []
+    for t in (item.get("tiers") or []):
+        if t.get("source") != kind:
+            continue
+        if str(t.get("unit", "")).lower().startswith("bottle"):
+            continue
+        try:
+            q = int(t["qty"])
+        except (TypeError, ValueError):
+            continue
+        out.append({
+            "qty": q,
+            "save": _fnum(t.get("save_per_case")) or 0.0,
+            "price_after": _fnum(t.get("price_after")),
+            "amount": _fnum(t.get("amount")) or 0.0,
+            "roi": _fnum(t.get("roi_pct")) or 0.0,
+            "window_status": t.get("window_status"),
+            "days_to_expire": t.get("days_to_expire"),
+            "description": t.get("description"),
+        })
+    out.sort(key=lambda x: x["qty"])
+    return out
+
+
+def _next_tier(tiers: list[dict], cases: float):
+    """Best save you already get at `cases`, and the next deeper tier above it."""
+    cur_save = 0.0
+    for t in tiers:
+        if t["qty"] <= max(cases, 0):
+            cur_save = max(cur_save, t["save"])
+    nxt = next((t for t in tiers if t["qty"] > cases and t["save"] > cur_save + 0.005), None)
+    return cur_save, nxt
+
+
+def _mix_rip_codes(dcon, src, items) -> set:
+    """Which (wholesaler, rip_code) in the cart are CASE-MIX rebates — i.e. the
+    code spans >1 distinct product, so cases are pooled ACROSS items to hit a
+    tier (vs a single-item RIP, handled per line)."""
+    codes = sorted({str(it["rip_code"]) for it in items if it.get("rip_code")})
+    if not codes:
+        return set()
+    ph = ", ".join(f"$c{i}" for i in range(len(codes)))
+    prm = {f"c{i}": c for i, c in enumerate(codes)}
+    try:
+        df = dcon.execute(f"""
+            WITH latest AS (SELECT wholesaler, MAX(edition) AS ed FROM {src} GROUP BY wholesaler)
+            SELECT e.wholesaler AS w, CAST(e.rip_code AS VARCHAR) AS rc,
+                   COUNT(DISTINCT LTRIM(CAST(e.upc AS VARCHAR), '0')) AS n
+            FROM {src} e JOIN latest l ON e.wholesaler = l.wholesaler AND e.edition = l.ed
+            WHERE CAST(e.rip_code AS VARCHAR) IN ({ph})
+            GROUP BY 1, 2
+        """, prm).fetchdf()
+    except Exception:
+        return set()
+    return {(r["w"], str(r["rc"])) for _, r in df.iterrows() if int(r["n"]) > 1}
+
+
+def _cross_distributor(dcon, src, items) -> dict:
+    """Map normalized UPC -> [(wholesaler, unit_volume, effective_case_price)] in
+    each wholesaler's latest edition, so we can spot the same item cheaper at the
+    other house."""
+    norms = sorted({str(it.get("upc") or "").lstrip("0") for it in items if it.get("upc")})
+    norms = [u for u in norms if u]
+    if not norms:
+        return {}
+    ph = ", ".join(f"$u{i}" for i in range(len(norms)))
+    prm = {f"u{i}": u for i, u in enumerate(norms)}
+    try:
+        df = dcon.execute(f"""
+            WITH latest AS (SELECT wholesaler, MAX(edition) AS ed FROM {src} GROUP BY wholesaler)
+            SELECT e.wholesaler AS w, LTRIM(CAST(e.upc AS VARCHAR), '0') AS un,
+                   e.unit_volume AS uv, e.effective_case_price AS ecp, e.product_name AS pn
+            FROM {src} e JOIN latest l ON e.wholesaler = l.wholesaler AND e.edition = l.ed
+            WHERE LTRIM(CAST(e.upc AS VARCHAR), '0') IN ({ph})
+        """, prm).fetchdf()
+    except Exception:
+        return {}
+    out: dict = {}
+    for _, r in df.iterrows():
+        out.setdefault(str(r["un"]), []).append({
+            "w": r["w"], "uv": r["uv"] or "", "ecp": _fnum(r["ecp"]), "pn": r["pn"] or "",
+        })
+    return out
+
+
+@router.get("/analyze")
+def analyze_cart(user: dict = Depends(get_current_user)):
+    """Analyze the ACTIVE cart for savings (see analyze_lines)."""
+    with get_pg() as con:
+        items = [dict(r) for r in con.execute(
+            "SELECT * FROM cart_items WHERE user_id=%s AND COALESCE(saved_for_later,0)=0 ORDER BY created_at",
+            (user["id"],)).fetchall()]
+    return analyze_lines(items)
+
+
+def analyze_lines(items: list[dict]) -> dict:
+    """'Analyze for Savings' engine over a set of order lines — each a dict with
+    wholesaler / upc / unit_volume / product_name / qty_cases. Shared by the cart
+    AND the lists page. Reuses the canonical pricing (discount/RIP tier ladder),
+    next-month prices, and cross-distributor prices to surface tier-gap nudges,
+    case-mix qualification, buy-before-a-rise, and distributor swaps — returning
+    recommendations + headline totals. No new pricing math: every number comes
+    from the same engines the catalog and cart already use."""
+    if not items:
+        return {"captured_total": 0.0, "opportunity_total": 0.0,
+                "protection_total": 0.0, "line_count": 0, "recommendations": []}
+
+    from backend.db import read_parquet
+    from backend import pricing as _pricing
+    with get_duckdb() as dcon:
+        try:
+            _attach_cart_pricing(dcon, items)        # canonical tiers + prices + rip_code
+        except Exception:
+            pass
+        src = read_parquet(dcon, "cpl_enriched")
+        try:
+            _pricing.attach_next_month_prices(dcon, src, items)
+        except Exception:
+            pass
+        mix = _mix_rip_codes(dcon, src, items)
+        cross = _cross_distributor(dcon, src, items)
+
+    recs: list[dict] = []
+    captured = 0.0
+
+    # --- captured savings (what they're ALREADY saving vs list) ---
+    for it in items:
+        F, E = _fnum(it.get("frontline_case_price")), _fnum(it.get("effective_case_price"))
+        C = int(it.get("qty_cases") or 0)
+        if F and E and C > 0 and F > E:
+            captured += (F - E) * C
+
+    # --- per-line tier-gap (QD always; RIP only for single-item codes) ---
+    for it in items:
+        C = int(it.get("qty_cases") or 0)
+        name = it.get("product_name") or "Item"
+        is_mix = (it.get("wholesaler"), str(it.get("rip_code"))) in mix
+        best = None     # (extra, payload)
+        for kind in ("discount", "rip"):
+            if kind == "rip" and is_mix:
+                continue   # mix RIPs handled by the case-mix block below
+            tiers = _case_tiers(it, kind)
+            cur_save, nxt = _next_tier(tiers, C)
+            if not nxt:
+                continue
+            extra = round(nxt["save"] * nxt["qty"] - cur_save * C, 2)
+            if extra <= 1.0:
+                continue
+            payload = {
+                "type": "tier_gap", "kind": "qd" if kind == "discount" else "rip",
+                "line_id": it.get("id"), "product_name": name,
+                "wholesaler": it.get("wholesaler"), "unit_volume": it.get("unit_volume"),
+                "current_cases": C, "target_qty": nxt["qty"], "add_cases": nxt["qty"] - C,
+                "new_case_price": nxt["price_after"], "save_per_case": round(nxt["save"], 2),
+                "rebate_amount": round(nxt["amount"], 2), "roi_pct": nxt["roi"],
+                "extra_savings": extra,
+                "window_status": nxt["window_status"], "days_to_expire": nxt["days_to_expire"],
+            }
+            if best is None or extra > best[0]:
+                best = (extra, payload)
+        if best:
+            recs.append(best[1])
+
+    # --- case-mix qualification (pool cases across items sharing a mix RIP) ---
+    groups: dict = {}
+    for it in items:
+        key = (it.get("wholesaler"), str(it.get("rip_code")))
+        if key in mix:
+            groups.setdefault(key, []).append(it)
+    for (ws, rc), grp in groups.items():
+        sum_cases = sum(int(it.get("qty_cases") or 0) for it in grp)
+        tier_map: dict = {}
+        desc = None
+        for it in grp:
+            for t in _case_tiers(it, "rip"):
+                tier_map[t["qty"]] = max(tier_map.get(t["qty"], 0.0), t["save"])
+                desc = desc or t.get("description")
+        tiers = [{"qty": q, "save": s} for q, s in sorted(tier_map.items())]
+        cur_save, nxt = _next_tier(tiers, sum_cases)
+        if not nxt:
+            continue
+        extra = round(nxt["save"] * nxt["qty"] - cur_save * sum_cases, 2)
+        if extra <= 1.0:
+            continue
+        recs.append({
+            "type": "case_mix", "rip_code": rc, "wholesaler": ws, "description": desc,
+            "members": [it.get("product_name") for it in grp],
+            "line_ids": [it.get("id") for it in grp],
+            "current_cases": sum_cases, "target_qty": nxt["qty"],
+            "add_cases": nxt["qty"] - sum_cases, "extra_savings": extra,
+        })
+
+    # --- buy-before-increase (next edition costs more) ---
+    protection = 0.0
+    for it in items:
+        cur = _fnum(it.get("effective_case_price"))
+        nxt = _fnum(it.get("next_effective_case_price")) or _fnum(it.get("next_case_price"))
+        C = int(it.get("qty_cases") or 0)
+        if cur and nxt and nxt > cur + 0.5:
+            rise = round(nxt - cur, 2)
+            total = round(rise * max(C, 1), 2)
+            protection += total if C > 0 else 0.0
+            recs.append({
+                "type": "buy_before", "line_id": it.get("id"),
+                "product_name": it.get("product_name"), "wholesaler": it.get("wholesaler"),
+                "unit_volume": it.get("unit_volume"), "current_price": round(cur, 2),
+                "next_price": round(nxt, 2), "rise_per_case": rise,
+                "current_cases": C, "total_rise": total,
+            })
+
+    # --- cross-distributor swap (same UPC cheaper at the other house) ---
+    swap_total = 0.0
+    for it in items:
+        un = str(it.get("upc") or "").lstrip("0")
+        cur = _fnum(it.get("effective_case_price"))
+        if not un or cur is None:
+            continue
+        cands = [c for c in cross.get(un, [])
+                 if c["w"] != it.get("wholesaler") and c["ecp"] is not None
+                 and (not it.get("unit_volume") or c["uv"] == it.get("unit_volume"))]
+        if not cands:
+            continue
+        bestc = min(cands, key=lambda c: c["ecp"])
+        if bestc["ecp"] < cur - 2.0:
+            C = int(it.get("qty_cases") or 0)
+            sv = round(cur - bestc["ecp"], 2)
+            total = round(sv * max(C, 1), 2)
+            swap_total += total if C > 0 else 0.0
+            recs.append({
+                "type": "swap", "line_id": it.get("id"), "upc": it.get("upc"),
+                "product_name": it.get("product_name"), "unit_volume": it.get("unit_volume"),
+                "from_wholesaler": it.get("wholesaler"), "to_wholesaler": bestc["w"],
+                "current_price": round(cur, 2), "other_price": round(bestc["ecp"], 2),
+                "save_per_case": sv, "current_cases": C, "total_savings": total,
+                "extra_savings": total if C > 0 else 0.0,
+            })
+
+    opportunity = round(sum(r.get("extra_savings", 0.0) for r in recs
+                            if r["type"] in ("tier_gap", "case_mix", "swap")), 2)
+    # Sort: biggest dollar impact first.
+    def _impact(r):
+        return r.get("extra_savings", 0.0) or r.get("total_rise", 0.0) or 0.0
+    recs.sort(key=_impact, reverse=True)
+    return {
+        "captured_total": round(captured, 2),
+        "opportunity_total": opportunity,
+        "protection_total": round(protection, 2),
+        "line_count": len(items),
+        "recommendations": recs,
+    }
 
 
 @router.post("")

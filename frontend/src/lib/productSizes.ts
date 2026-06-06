@@ -80,21 +80,18 @@ export function useProductSizes(
     const kept = variantUpcs.length
       ? rows.filter(r => r.wholesaler === wholesaler)
       : rows.filter(r => r.product_name === productName && r.wholesaler === wholesaler);
-    // One barcode can have several catalogue rows (seasonal / gift packaging:
-    // "MAKERS MARK" vs "MAKERS MARK 250TH" vs "...PHILLY", all the same UPC +
-    // size + price). Collapse to one row per (UPC, size, vintage), keeping the
-    // richest pricing then the shortest (base) name.
-    const byKey = new Map<string, Product>();
-    for (const r of kept) {
-      const k = `${String(r.upc ?? '').replace(/^0+/, '')}|${r.unit_volume ?? ''}|${String(r.vintage ?? '')}`;
-      const ex = byKey.get(k);
-      if (!ex) { byKey.set(k, r); continue; }
-      const tiers = (p: Product) => (p.tiers?.length ?? 0);
-      if (tiers(r) > tiers(ex) || (tiers(r) === tiers(ex) && (r.product_name?.length ?? 0) < (ex.product_name?.length ?? 0))) {
-        byKey.set(k, r);
-      }
-    }
-    return [...byKey.values()].sort((a, b) => sizeToMl(a.unit_volume) - sizeToMl(b.unit_volume));
+    // Collapse only EXACT duplicates (same name + size + vintage + upc). We do
+    // NOT merge same-barcode variants like "MAKERS MARK 250TH" or a Festive
+    // pack — those are distinct orderable SKUs (own cart line) the buyer must be
+    // able to pick. They're disambiguated by their name on the row.
+    const seen = new Set<string>();
+    const deduped = kept.filter(r => {
+      const k = `${r.product_name ?? ''}|${r.unit_volume ?? ''}|${String(r.vintage ?? '')}|${String(r.upc ?? '').replace(/^0+/, '')}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    return deduped.sort((a, b) => sizeToMl(a.unit_volume) - sizeToMl(b.unit_volume));
   }, [data, productName, wholesaler, variantUpcs]);
 
   return {

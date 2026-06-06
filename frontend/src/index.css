@@ -5435,6 +5435,8 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pd-size-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .pd-size-title { font-size: 16px; font-weight: 700; color: var(--text); display: flex; align-items: baseline; gap: 7px; }
 .pd-size-vintage-lead { font-size: 15px; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
+.pd-size-variant { font-size: 12px; font-weight: 600; color: var(--accent); margin-top: 1px; }
+.prod-size-variant { font-size: 12px; font-weight: 600; color: var(--accent); margin-top: 1px; }
 .pd-size-pack { font-size: 13px; color: var(--text-muted); margin-top: 1px; }
 .pd-size-ids { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: var(--text-muted); margin-top: 3px; }
 .pd-size-upc { color: var(--text-muted); }

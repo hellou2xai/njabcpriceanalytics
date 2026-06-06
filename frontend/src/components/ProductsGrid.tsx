@@ -100,10 +100,11 @@ function priceRange(sizes: Product[]): { lo: Product; hi: Product } | null {
   return { lo, hi };
 }
 
-function SizeRow({ size, cart, updateQty }: {
+function SizeRow({ size, cart, updateQty, primaryName }: {
   size: Product;
   cart: CartState;
   updateQty: (key: string, field: 'cases' | 'units', value: number) => void;
+  primaryName?: string;
 }) {
   const cartKey = `${size.product_name}|${size.wholesaler}|${size.upc ?? ''}|${size.unit_volume ?? ''}`;
   const qty = cart[cartKey] ?? { cases: 0, units: 0 };
@@ -116,6 +117,9 @@ function SizeRow({ size, cart, updateQty }: {
       <Link to={detailUrl(size.wholesaler, size.product_name, size.upc)} className="prod-size-id"
         title="Open full product details">
         <div className="prod-size-name">{size.unit_volume || '—'} Bottle</div>
+        {primaryName && size.product_name && size.product_name !== primaryName && (
+          <div className="prod-size-variant">{size.product_name}</div>
+        )}
         <div className="prod-size-pack">{pack ? `${pack} bottles/case` : 'single unit'}</div>
         {sku && <div className="prod-size-sku">SKU: {sku}</div>}
         {size.vintage != null && String(size.vintage) !== '0' && String(size.vintage).trim() !== '' && (
@@ -221,8 +225,8 @@ function ProductCard({ group, cart, updateQty }: {
         <div className="prod-card-body">
           {isFetching && fullSizes.length === 0 && <div className="prod-size-loading">Loading all sizes…</div>}
           {sizes.map((size, i) => (
-            <SizeRow key={`${size.upc ?? ''}|${size.unit_volume ?? ''}|${i}`}
-              size={size} cart={cart} updateQty={updateQty} />
+            <SizeRow key={`${size.product_name}|${size.upc ?? ''}|${size.unit_volume ?? ''}|${i}`}
+              size={size} cart={cart} updateQty={updateQty} primaryName={group.productName} />
           ))}
         </div>
       )}

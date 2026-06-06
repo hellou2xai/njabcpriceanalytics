@@ -61,11 +61,12 @@ function MiniCard({ p }: { p: Product }) {
 }
 
 // ---- one size section in the right rail ----
-function SizeSection({ size, view, cart, updateQty }: {
+function SizeSection({ size, view, cart, updateQty, primaryName }: {
   size: Product;
   view: 'deals' | 'bottles';
   cart: CartState;
   updateQty: (key: string, field: 'cases' | 'units', value: number) => void;
+  primaryName?: string;
 }) {
   const [dealsOpen, setDealsOpen] = useState(true);
   const cartKey = `${size.product_name}|${size.wholesaler}|${size.upc ?? ''}|${size.unit_volume ?? ''}`;
@@ -92,6 +93,11 @@ function SizeSection({ size, view, cart, updateQty }: {
             {hasVintage && <span className="pd-size-vintage-lead">{size.vintage}</span>}
             {size.unit_volume || '—'} Bottle
           </div>
+          {/* Variant / edition name (e.g. "...250TH", a Festive pack) so the
+              buyer can tell same-size SKUs apart and order the right one. */}
+          {primaryName && size.product_name && size.product_name !== primaryName && (
+            <div className="pd-size-variant">{size.product_name}</div>
+          )}
           <div className="pd-size-pack">{pack ? `${pack} bottles/case` : 'single unit'}</div>
           <div className="pd-size-ids">
             {sku && <span>SKU: {sku}</span>}
@@ -365,8 +371,8 @@ export default function ProductDetail() {
             {isLoading ? <p className="pd-loading">Loading sizes…</p>
               : sizes.length === 0 ? <p className="pd-loading">No sizes found.</p>
               : sizes.map((s, i) => (
-                <SizeSection key={`${s.upc}|${s.unit_volume}|${i}`}
-                  size={s} view={view} cart={cart} updateQty={updateQty} />
+                <SizeSection key={`${s.product_name}|${s.upc}|${s.unit_volume}|${i}`}
+                  size={s} view={view} cart={cart} updateQty={updateQty} primaryName={name} />
               ))}
           </div>
         </div>

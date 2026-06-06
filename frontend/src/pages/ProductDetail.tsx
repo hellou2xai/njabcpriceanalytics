@@ -243,7 +243,8 @@ export default function ProductDetail() {
     for (const [k, v] of counts) if (v > n) { best = k; n = v; }
     return best;
   }, [sizes]);
-  const anyDeal = sizes.some(s => s.has_discount || s.has_rip);
+  const anyDisc = sizes.some(s => s.has_discount);   // quantity discount
+  const anyRip = sizes.some(s => s.has_rip);          // RIP rebate
 
   // Other products in the same Case Mix RIP — all visible, no "view all".
   const { data: ripSiblings } = useQuery({
@@ -299,7 +300,8 @@ export default function ProductDetail() {
       <div className="pd-layout">
         {/* ---- Left column: identity + info + related ---- */}
         <div className="pd-left">
-          {anyDeal && <span className="pd-deal-badge">DEAL</span>}
+          {anyDisc && <span className="pd-deal-badge pd-deal-qd">QD</span>}
+          {anyRip && <span className="pd-deal-badge pd-deal-rip">RIP</span>}
           <div className="pd-identity">
             <ProductThumb src={enrichment?.image_url ?? sizes[0]?.image_url} alt={name} size={120} />
             <div className="pd-identity-meta">

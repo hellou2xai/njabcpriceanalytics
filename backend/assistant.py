@@ -3414,7 +3414,13 @@ _SCREEN_ROUTES = {
 
 # Pages whose grid filters in place by a ?q= search term/UPC. A UPC typed on one
 # of these stays on the page (filters it); elsewhere it falls back to the catalog.
-_Q_FILTER_PATHS = {"/catalog", "/price-increases", "/price-drops", "/time-sensitive", "/major-discounts"}
+_Q_FILTER_PATHS = {"/catalog", "/products", "/price-increases", "/price-drops", "/time-sensitive", "/major-discounts"}
+
+# Grid pages that read the FULL structured filter set (q, region, varietal,
+# categories, divisions, sizes, has_rip, has_discount, price min/max, sort).
+# Catalog also takes catalog-only filters (group_by_rip, price-trend, upcs);
+# Products takes everything else (it has no RIP-cluster / price-trend view).
+_GRID_FILTER_PATHS = ("/catalog", "/products")
 
 # Per-screen scope: each page's assistant only helps with THAT page's subject.
 # Keyed by the page label the frontend sends. Catalog is the broad browse view;
@@ -3505,14 +3511,14 @@ def _build_screen(args: dict, page_path: str | None = None,
     # 'only show prices going up' stays California. Naming a new scope replaces.
     sets_scope = bool(args.get("q") or args.get("region") or args.get("varietal")
                       or args.get("categories") or args.get("distributors"))
-    if base == "/catalog" and page_query and not sets_scope:
+    if base in _GRID_FILTER_PATHS and page_query and not sets_scope:
         prior = parse_qs(page_query.lstrip("?"))
         for k in ("region", "varietal", "categories", "divisions", "sizes",
                   "hasRip", "hasDiscount", "priceMin", "priceMax", "q",
                   "group_by_rip"):
             if prior.get(k):
                 q[k] = prior[k][0]
-    if base == "/catalog":
+    if base in _GRID_FILTER_PATHS:
         if isinstance(args.get("categories"), list) and args["categories"]:
             # Smart category handling: keep real product-type categories, but
             # fold subtypes the catalog can't filter by (tequila, vodka, IPA,
@@ -3538,18 +3544,21 @@ def _build_screen(args: dict, page_path: str | None = None,
             q["sort"] = args["sort"]
         if args.get("order") in ("asc", "desc"):
             q["order"] = args["order"]
-        if args.get("group_by_rip") is True:
-            q["group_by_rip"] = "1"   # group products into Case-Mix RIP clusters
-        # 'prices going up / down' -> the catalog's price-trend filter. The
-        # grid reads ?price_increase=1 / ?price_drop=1 and narrows in place,
-        # so the user stays on the catalog instead of jumping to another page.
-        pt = (args.get("price_trend") or "").lower()
-        if pt in ("increase", "up", "rising", "rise"):
-            q["price_increase"] = "1"
-            q.pop("price_drop", None)
-        elif pt in ("drop", "down", "decrease", "falling", "fall"):
-            q["price_drop"] = "1"
-            q.pop("price_increase", None)
+        # Catalog-only filters: the Products page has no Case-Mix RIP clustering
+        # or price-trend view, so don't put these on a /products path.
+        if base == "/catalog":
+            if args.get("group_by_rip") is True:
+                q["group_by_rip"] = "1"   # group products into Case-Mix RIP clusters
+            # 'prices going up / down' -> the catalog's price-trend filter. The
+            # grid reads ?price_increase=1 / ?price_drop=1 and narrows in place,
+            # so the user stays on the catalog instead of jumping to another page.
+            pt = (args.get("price_trend") or "").lower()
+            if pt in ("increase", "up", "rising", "rise"):
+                q["price_increase"] = "1"
+                q.pop("price_drop", None)
+            elif pt in ("drop", "down", "decrease", "falling", "fall"):
+                q["price_drop"] = "1"
+                q.pop("price_increase", None)
     # Semantic hints — region + varietal — apply to ANY route. Today only
     # /catalog actually consumes them server-side (via region_semantics /
     # varietal_semantics), but the URL carries them on other routes too so
@@ -3578,7 +3587,7 @@ def _build_screen(args: dict, page_path: str | None = None,
     # actually changes. A real refinement ('prices going up') sets price_trend/
     # has_*/sort, so its query differs from the prior and never trips this.
     _raw_label = (args.get("label") or "").strip()
-    if base == "/catalog" and page_query and _raw_label:
+    if base in _GRID_FILTER_PATHS and page_query and _raw_label:
         _prior = {k: v[0] for k, v in parse_qs(page_query.lstrip("?")).items()}
         if {k: str(v) for k, v in q.items()} == _prior:
             q = {"q": _raw_label}

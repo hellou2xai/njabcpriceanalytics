@@ -125,7 +125,6 @@ function SizeRow({ size, cart, updateQty, primaryName }: {
   const cartKey = `${size.product_name}|${size.wholesaler}|${size.upc ?? ''}|${size.unit_volume ?? ''}`;
   const qty = cart[cartKey] ?? { cases: 0, units: 0 };
   const pack = bottlesPerCase(size.product_name, size.unit_qty);
-  const hasDeal = size.has_discount || size.has_rip;
   const sku = abgSku(size.wholesaler, size.abg_sku) ? `${skuLabel(size.wholesaler)} ${size.abg_sku}` : size.upc;
   const btlPrice = pack ? size.effective_case_price / pack : size.frontline_unit_price;
   return (
@@ -143,9 +142,10 @@ function SizeRow({ size, cart, updateQty, primaryName }: {
         )}
       </Link>
       <div className="prod-size-price">
-        {hasDeal && (
-          <span className="prod-deal-badge">Deal</span>
-        )}
+        <span className="prod-size-badges">
+          {size.has_discount && <span className="prod-deal-badge prod-deal-qd">QD</span>}
+          {size.has_rip && <span className="prod-deal-badge prod-deal-rip">RIP</span>}
+        </span>
         <div className="prod-size-amounts">
           <span className="prod-size-btl">${btlPrice.toFixed(2)}/bottle</span>
           <span className="prod-size-case">${size.effective_case_price.toFixed(2)}/case</span>
@@ -178,7 +178,8 @@ function ProductCard({ group, cart, updateQty }: {
 }) {
   const [expanded, setExpanded] = useState(false);
   const range = priceRange(group.sizes);
-  const anyDeal = group.sizes.some(s => s.has_discount || s.has_rip);
+  const anyDisc = group.sizes.some(s => s.has_discount);   // quantity discount
+  const anyRip = group.sizes.some(s => s.has_rip);          // RIP rebate
   const first = group.sizes[0];
 
   // The list is paginated by SKU, so a product's sizes can be split across
@@ -232,7 +233,8 @@ function ProductCard({ group, cart, updateQty }: {
             </div>
           )}
           <div className="prod-card-options">
-            {anyDeal && <span className="prod-card-deal">Deal</span>}
+            {anyDisc && <span className="prod-card-deal prod-deal-qd">QD</span>}
+            {anyRip && <span className="prod-card-deal prod-deal-rip">RIP</span>}
             <span className="prod-card-sizes">{optionCount} size{optionCount === 1 ? '' : 's'}</span>
           </div>
         </div>

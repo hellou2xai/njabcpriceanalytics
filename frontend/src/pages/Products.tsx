@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams, useLocation } from 'react-router-dom';
-import { Search } from 'lucide-react';
+import { Search, Sparkles } from 'lucide-react';
 import { catalog } from '../lib/api';
 import WholesalerFilter from '../components/WholesalerFilter';
 import RowLimitSelect from '../components/RowLimitSelect';
@@ -156,8 +156,17 @@ export default function Products() {
 
       <div className="search-bar products-search">
         <Search size={16} className="products-search-icon" />
-        <input type="text" placeholder="Search products, brands, regions or distributors…"
+        <input type="text" placeholder="Search products, brands, regions, varietals…"
           value={q} onChange={e => { setQ(e.target.value); setPage(0); }} />
+        {/* Semantic / natural-language search via the AI assistant: it parses
+            "California cabernet under $200 on a RIP" into region/varietal/price/
+            deal filters and drives this grid. */}
+        <button type="button" className="products-ai-btn"
+          title="Ask the AI to find products by region, varietal, price or deal"
+          onClick={() => window.dispatchEvent(new CustomEvent('celr-open-assistant',
+            { detail: q.trim() ? { question: q.trim() } : undefined }))}>
+          <Sparkles size={15} /> Ask AI
+        </button>
         <span className="search-count">{isLoading ? 'Searching…' : `${total.toLocaleString()} items`}</span>
       </div>
       {data?.corrected_query && data.corrected_query.toLowerCase() !== q.trim().toLowerCase() && (

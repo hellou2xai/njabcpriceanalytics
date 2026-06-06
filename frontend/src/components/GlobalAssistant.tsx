@@ -23,7 +23,8 @@ export default function GlobalAssistant() {
   // Friendly label for the current screen so the assistant prioritizes the
   // right tools (e.g. Orders -> get_orders, Promotions -> find_deals).
   const PAGE_LABELS: Record<string, string> = {
-    '/': 'Dashboard', '/catalog': 'Catalog', '/new-items': 'New Items', '/combos': 'Combos',
+    '/': 'Dashboard', '/catalog': 'Catalog', '/products': 'Products', '/product': 'Product detail',
+    '/new-items': 'New Items', '/combos': 'Combos',
     '/time-sensitive': 'Time-Sensitive Deals', '/major-discounts': 'Major Discounts',
     '/price-drops': 'Price Drops', '/price-increases': 'Price Increases',
     '/watchlist': 'Favorites', '/lists': 'Lists', '/orders': 'Orders', '/cart': 'Cart',
@@ -31,6 +32,26 @@ export default function GlobalAssistant() {
   };
   const pageLabel = PAGE_LABELS[location.pathname]
     ?? (location.pathname.startsWith('/orders/') ? 'Order detail' : undefined);
+
+  // Example prompts surfaced for the grid pages (semantic search the assistant
+  // drives via show_on_screen -> ?region/varietal/q/categories/price filters).
+  const SUGGESTIONS: Record<string, string[]> = {
+    '/products': [
+      'Show California cabernets under $200/case',
+      'Single malt scotch on a RIP rebate',
+      'Tequila reposado with a quantity discount',
+      'Bourbon between $300 and $500 a case',
+    ],
+    '/product': ['Compare this to similar products', 'Cheapest size per bottle', 'Is there a RIP rebate?'],
+  };
+  const suggestions = SUGGESTIONS[location.pathname];
+
+  // Let any page open the dock (e.g. the Products "Ask AI" button).
+  useEffect(() => {
+    const openIt = () => setOpen(true);
+    window.addEventListener('celr-open-assistant', openIt);
+    return () => window.removeEventListener('celr-open-assistant', openIt);
+  }, []);
 
   // Push the page: publish the dock width as a CSS var the main content reads.
   // Also nudge a resize event so any fixed-position floaters (CartFab) can
@@ -82,7 +103,7 @@ export default function GlobalAssistant() {
         <span className="ai-resizer-grip" />
       </div>
       <AssistantChat onClose={() => setOpen(false)} pageContext={pageLabel} pagePath={location.pathname}
-        pageQuery={location.search}
+        pageQuery={location.search} suggestions={suggestions}
         subtitle={pageLabel ? `On ${pageLabel} — ask, compare, or act on products.` : undefined} />
     </div>
   );

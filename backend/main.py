@@ -77,6 +77,57 @@ app.include_router(ai_feedback.router)
 app.include_router(procurement_agents_router)
 
 
+# --- Observability: capture EVERY unhandled error with its full traceback ---
+# Render only keeps stderr, which isn't easy to grep live, so we (a) always log
+# the traceback and (b) return it IN THE RESPONSE to ADMIN callers, so a 500 in
+# prod is diagnosable by curling the failing endpoint with an admin token. Also
+# kept in a small ring buffer, exposed at /api/admin/errors for the in-app view.
+import logging as _logging
+import traceback as _traceback
+from collections import deque as _deque
+from fastapi import Request as _Request
+from fastapi.responses import JSONResponse as _JSONResponse
+
+_err_log = _logging.getLogger("celr.errors")
+RECENT_ERRORS: "_deque" = _deque(maxlen=100)
+
+
+@app.exception_handler(Exception)
+async def _capture_unhandled(request: "_Request", exc: Exception):
+    tb = _traceback.format_exc()
+    entry = {"path": str(request.url.path), "method": request.method,
+             "error": f"{type(exc).__name__}: {exc}", "traceback": tb,
+             "query": str(request.url.query)}
+    try:
+        from backend.db import NOW_UTC  # noqa
+        import datetime as _dt
+        entry["at"] = _dt.datetime.now(_dt.timezone.utc).isoformat()
+    except Exception:
+        pass
+    RECENT_ERRORS.appendleft(entry)
+    _err_log.error("UNHANDLED %s %s\n%s", request.method, request.url.path, tb)
+    body = {"detail": "Internal Server Error"}
+    # Admins see the traceback inline so prod issues are diagnosable on the spot.
+    try:
+        from backend.auth import _token_from_header, _user_for_token
+        from backend.pg import get_pg
+        tok = _token_from_header(request.headers.get("authorization"))
+        if tok:
+            with get_pg() as con:
+                u = _user_for_token(con, tok)
+            if u and u.get("is_admin"):
+                body.update({"error": entry["error"], "traceback": tb, "path": entry["path"]})
+    except Exception:
+        pass
+    return _JSONResponse(status_code=500, content=body)
+
+
+@app.get("/api/admin/errors")
+def _recent_errors(user: dict = Depends(require_admin)):
+    """Recent unhandled server errors (admin only) — the in-app prod error view."""
+    return {"count": len(RECENT_ERRORS), "errors": list(RECENT_ERRORS)}
+
+
 @app.on_event("startup")
 def startup():
     """Create the user-state tables in Postgres, then warm the pricing cache."""

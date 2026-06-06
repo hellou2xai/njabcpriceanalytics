@@ -89,12 +89,14 @@ function MiniCard({ p }: { p: Product }) {
 }
 
 // ---- one size section in the right rail ----
-function SizeSection({ size, view, cart, updateQty, primaryName }: {
+function SizeSection({ size, view, cart, updateQty, primaryName, alt }: {
   size: Product;
   view: 'deals' | 'bottles';
   cart: CartState;
   updateQty: (key: string, field: 'cases' | 'units', value: number) => void;
   primaryName?: string;
+  // Zebra striping so individual sizes are easy to tell apart at a glance.
+  alt?: boolean;
 }) {
   const [dealsOpen, setDealsOpen] = useState(true);
   const cartKey = `${size.product_name}|${size.wholesaler}|${size.upc ?? ''}|${size.unit_volume ?? ''}`;
@@ -124,7 +126,7 @@ function SizeSection({ size, view, cart, updateQty, primaryName }: {
   const showDeals = view === 'deals';
 
   return (
-    <div className="pd-size">
+    <div className={`pd-size${alt ? ' pd-size--alt' : ''}`}>
       <div className="pd-size-head">
         <div>
           <div className="pd-size-title">
@@ -147,8 +149,6 @@ function SizeSection({ size, view, cart, updateQty, primaryName }: {
             )}
           </div>
         </div>
-        <AddToListButton productName={size.product_name} wholesaler={size.wholesaler}
-          upc={size.upc} unitVolume={size.unit_volume} />
       </div>
 
       <div className="pd-size-cols">
@@ -235,8 +235,14 @@ function SizeSection({ size, view, cart, updateQty, primaryName }: {
           <QtyStepper label="Bottles" value={qty.units} onChange={v => updateQty(cartKey, 'units', v)} />
           <QtyStepper label="Cases" value={qty.cases} onChange={v => updateQty(cartKey, 'cases', v)} />
         </div>
-        <AddToCartButton productName={size.product_name} wholesaler={size.wholesaler}
-          upc={size.upc} unitVolume={size.unit_volume} qtyCases={qty.cases} qtyUnits={qty.units} />
+        {/* Add-to-list sits directly under add-to-cart: the two "save this"
+            actions live together instead of list hiding up in the header. */}
+        <div className="pd-order-actions">
+          <AddToCartButton productName={size.product_name} wholesaler={size.wholesaler}
+            upc={size.upc} unitVolume={size.unit_volume} qtyCases={qty.cases} qtyUnits={qty.units} />
+          <AddToListButton productName={size.product_name} wholesaler={size.wholesaler}
+            upc={size.upc} unitVolume={size.unit_volume} />
+        </div>
       </div>
     </div>
   );
@@ -276,6 +282,17 @@ export default function ProductDetail() {
   // Every size of this product — via the shared "products by size" tool
   // (spirits: name-core variant grouping; wine: grouped by name + vintage).
   const { sizes, isLoading, isError, refetch } = useProductSizes(wholesaler, name, upc);
+
+  // The size the user actually CLICKED (the ?u= UPC) leads the list; the rest
+  // keep their smallest-to-largest order. Matched on the house-normalized UPC.
+  const orderedSizes = useMemo(() => {
+    const norm = (u?: string | null) => String(u ?? '').replace(/^0+/, '');
+    const target = norm(upc);
+    if (!target) return sizes;
+    const clicked = sizes.filter(s => norm(s.upc) === target);
+    if (clicked.length === 0) return sizes;
+    return [...clicked, ...sizes.filter(s => norm(s.upc) !== target)];
+  }, [sizes, upc]);
 
   const enrichment = detail?.enrichment;
   const product = detail?.product;
@@ -478,9 +495,10 @@ export default function ProductDetail() {
               )
               : isLoading ? <p className="pd-loading">Loading sizes…</p>
               : sizes.length === 0 ? <p className="pd-loading">No sizes found.</p>
-              : sizes.map((s, i) => (
+              : orderedSizes.map((s, i) => (
                 <SizeSection key={`${s.product_name}|${s.upc}|${s.unit_volume}|${i}`}
-                  size={s} view={view} cart={cart} updateQty={updateQty} primaryName={name} />
+                  size={s} view={view} cart={cart} updateQty={updateQty} primaryName={name}
+                  alt={i % 2 === 1} />
               ))}
           </div>
         </div>

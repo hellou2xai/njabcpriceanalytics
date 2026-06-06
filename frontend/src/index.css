@@ -5638,6 +5638,11 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pd-loading { padding: 24px; color: var(--text-muted); }
 .pd-size { padding: 16px; border-bottom: 1px solid var(--border); }
 .pd-size:last-child { border-bottom: 0; }
+/* Zebra striping: alternate white / gray so individual sizes are easy to
+   tell apart while scrolling the rail. */
+.pd-size--alt { background: var(--bg); }
+/* The save-this actions stacked together: cart first, list right below. */
+.pd-order-actions { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
 .pd-size-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .pd-size-title { font-size: 16px; font-weight: 700; color: var(--text); display: flex; align-items: baseline; gap: 7px; }
 .pd-size-vintage-lead { font-size: 15px; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }

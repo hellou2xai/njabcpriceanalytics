@@ -19,6 +19,7 @@ import { useEffect, useRef, useState, useLayoutEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { catalog } from '../lib/api';
 import { buildMonths } from '../lib/promotionsSparkline';
+import { bottlesPerCase } from '../lib/productSizes';
 import type { MonthBreakdown, RipTier } from './MonthEffectiveSparkline';
 import type { Product } from '../lib/api';
 
@@ -71,8 +72,7 @@ function Spark({ values, label }: { values: (number | null | undefined)[]; label
 
 // One month block of the schedule popover: list-price headline + the quantity
 // deals (discount + RIP tiers), each as case + bottle.
-function MonthSchedule({ b, current }: { b: MonthBreakdown; current: boolean }) {
-  const pack = b.pack && b.pack > 0 ? b.pack : null;
+function MonthSchedule({ b, pack, current }: { b: MonthBreakdown; pack: number | null; current: boolean }) {
   const cb = (caseVal?: number | null) => {
     if (caseVal == null) return '—';
     const btl = pack ? ` · $${(caseVal / pack).toFixed(2)}${b.size ? ` (${b.size})` : '/btl'}` : '';
@@ -180,7 +180,10 @@ export default function PriceSparklines({ wholesaler, productName, upc, unitVolu
         <span className={`psk-pop${pos.below ? ' psk-pop-below' : ''}`} ref={popRef}
               style={{ position: 'fixed', left: pos.left, top: pos.top }}>
           <span className="psk-pop-title">Price schedule{vtg ? ` · ${vtg} vintage` : ''}</span>
-          {last3.map((b, i) => <MonthSchedule key={i} b={b} current={i === 0} />)}
+          {last3.map((b, i) => (
+            <MonthSchedule key={i} b={b} current={i === 0}
+              pack={bottlesPerCase(productName, b.pack ?? undefined)} />
+          ))}
         </span>
       )}
     </span>

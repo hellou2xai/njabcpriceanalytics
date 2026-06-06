@@ -10,7 +10,7 @@ import AddToListButton from '../components/AddToListButton';
 import { QtyStepper, loadCart, saveCart, type CartState } from '../components/CatalogTable';
 import PriceSparklines from '../components/PriceSparklines';
 import { buildMonths } from '../lib/promotionsSparkline';
-import { useProductSizes } from '../lib/productSizes';
+import { useProductSizes, bottlesPerCase } from '../lib/productSizes';
 import { distributorName, abgSku, skuLabel } from '../lib/distributors';
 import type { Product, CatalogTier } from '../lib/api';
 
@@ -71,16 +71,19 @@ function SizeSection({ size, view, cart, updateQty, primaryName }: {
   const [dealsOpen, setDealsOpen] = useState(true);
   const cartKey = `${size.product_name}|${size.wholesaler}|${size.upc ?? ''}|${size.unit_volume ?? ''}`;
   const qty = cart[cartKey] ?? { cases: 0, units: 0 };
-  const pack = size.unit_qty && Number(size.unit_qty) > 0 ? Number(size.unit_qty) : null;
+  // True bottles-per-case (corrects slash-multipacks where unit_qty is trays).
+  const pack = bottlesPerCase(size.product_name, size.unit_qty);
   const ozB = ozPerBottle(size.unit_volume);
   const tiers: CatalogTier[] = size.tiers ?? [];
   const discTiers = tiers.filter(t => t.source === 'discount').sort((a, b) => a.qty - b.qty);
   const ripTiers = tiers.filter(t => t.source === 'rip').sort((a, b) => a.qty - b.qty);
   const sku = abgSku(size.wholesaler, size.abg_sku) ? `${skuLabel(size.wholesaler)} ${size.abg_sku}` : size.upc;
   const hasVintage = size.vintage != null && !['', '0', 'nv'].includes(String(size.vintage).trim().toLowerCase());
+  // Per-bottle from the corrected pack (so a 50mL 120-pack reads $2.99, not $35.90).
+  const btl = (caseVal: number | null | undefined) => (caseVal != null && pack ? caseVal / pack : null);
 
   const headlineCase = size.frontline_case_price;
-  const headlineBtl = size.frontline_unit_price;
+  const headlineBtl = btl(headlineCase) ?? size.frontline_unit_price;
   const caseOz = ozB && pack ? headlineCase / (ozB * pack) : null;
   const btlOz = ozB ? headlineBtl / ozB : null;
   const showDeals = view === 'deals';
@@ -119,12 +122,13 @@ function SizeSection({ size, view, cart, updateQty, primaryName }: {
             <div className="pd-deals-body">
               <div className="pd-deals-label">Quantity</div>
               {discTiers.map((t, i) => {
-                const tBtlOz = ozB && t.btl_price_after != null ? t.btl_price_after / ozB : null;
+                const tb = btl(t.price_after) ?? t.btl_price_after;
+                const tBtlOz = ozB && tb != null ? tb / ozB : null;
                 return (
                   <div key={i} className="pd-deal-line">
                     Buy {t.qty} {unitWord(t.qty, t.unit)} – <strong>${(t.price_after ?? 0).toFixed(2)}/case</strong>
                     {t.save_per_case > 0 && <span className="pd-deal-off"> (${t.save_per_case.toFixed(2)} off)</span>}
-                    {t.btl_price_after != null && <> – ${t.btl_price_after.toFixed(2)}/bottle</>}
+                    {tb != null && <> – ${tb.toFixed(2)}/bottle</>}
                     {tBtlOz != null && <span className="pd-oz">{oz(tBtlOz)}</span>}
                   </div>
                 );
@@ -159,14 +163,15 @@ function SizeSection({ size, view, cart, updateQty, primaryName }: {
           {ripTiers.map((t, i) => (
             <div key={i} className="pd-mixrip-line">
               Buy {t.qty} {unitWord(t.qty, t.unit)} – <strong>${t.amount.toFixed(2)} RIP</strong>
-              {t.price_after != null && (
-                <span className="pd-mixrip-after">
-                  {' → '}${t.price_after.toFixed(2)}/case
-                  {(t.btl_price_after != null || pack) && (
-                    <> · ${(t.btl_price_after ?? (t.price_after / (pack as number))).toFixed(2)}/bottle</>
-                  )}
-                </span>
-              )}
+              {t.price_after != null && (() => {
+                const mb = btl(t.price_after) ?? t.btl_price_after;
+                return (
+                  <span className="pd-mixrip-after">
+                    {' → '}${t.price_after.toFixed(2)}/case
+                    {mb != null && <> · ${mb.toFixed(2)}/bottle</>}
+                  </span>
+                );
+              })()}
             </div>
           ))}
         </div>

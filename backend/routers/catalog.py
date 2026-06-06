@@ -179,11 +179,29 @@ def _cpl_clean_brand_view(con) -> str:
         if not has_pe_brand:
             raise RuntimeError("no enrichment brand column")
         pe = read_parquet(con, "product_enrichment")
+        # Brands have near-duplicate spellings ("Jack Daniel's" vs "Jack
+        # Daniels", "DeKuyper" vs "Dekuyper", "Moet & Chandon" vs "Moet and
+        # Chandon"). Canonicalise to the MOST COMMON spelling per normalised key
+        # (lowercased, '&'->'and', punctuation stripped) so the brand facet +
+        # filter show one entry per brand.
+        nk = ("trim(regexp_replace(regexp_replace("
+              "replace(lower(brand), '&', ' and '), '[^a-z0-9 ]', '', 'g'), "
+              "'\\s+', ' ', 'g'))")
+        con.execute(f"""
+            CREATE OR REPLACE TEMP TABLE _brand_canon AS
+            WITH cnt AS (
+                SELECT brand, COUNT(*) AS c, {nk} AS nk
+                FROM {pe} WHERE brand IS NOT NULL AND brand <> ''
+                GROUP BY brand
+            )
+            SELECT nk, arg_max(brand, c) AS canon FROM cnt GROUP BY nk
+        """)
         con.execute(f"""
             CREATE OR REPLACE TEMP TABLE _pe_brand AS
-            SELECT LTRIM(CAST(upc AS VARCHAR), '0') AS un, ANY_VALUE(brand) AS brand
-            FROM {pe}
-            WHERE brand IS NOT NULL AND brand <> '' AND upc IS NOT NULL
+            SELECT LTRIM(CAST(pe.upc AS VARCHAR), '0') AS un, ANY_VALUE(bc.canon) AS brand
+            FROM {pe} pe
+            JOIN _brand_canon bc ON bc.nk = {nk.replace('brand', 'pe.brand')}
+            WHERE pe.brand IS NOT NULL AND pe.brand <> '' AND pe.upc IS NOT NULL
             GROUP BY 1
         """)
         con.execute(f"""

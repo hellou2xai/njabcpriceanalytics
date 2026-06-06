@@ -36,6 +36,28 @@ export function sizeToMl(label?: string | null): number {
   return n;
 }
 
+/**
+ * True bottles-per-case for per-bottle math.
+ *
+ * For most SKUs this is just `unit_qty`. But slash-multipacks encode the real
+ * count in the NAME while `unit_qty` is the number of inner TRAYS: e.g.
+ * "MAKERS MARK 120/12" (50mL) has unit_qty=10 — that's 10 trays of 12 = 120
+ * bottles, so case ÷ 10 = the per-TRAY price ($35.90), not per-bottle. The name
+ * "X/Y" self-validates (X ÷ Y must equal unit_qty), so when it does we trust X
+ * as the true bottle count (case ÷ 120 = $2.99/bottle). When it doesn't match,
+ * we never override — so this can only ever fix a known-wrong case.
+ */
+export function bottlesPerCase(productName?: string | null, unitQty?: string | number | null): number | null {
+  const q = Number(unitQty);
+  const qq = q > 0 ? q : null;
+  const m = /\b(\d{2,3})\s*\/\s*(\d{1,2})\b/.exec(productName || '');
+  if (m && qq) {
+    const X = parseInt(m[1], 10), Y = parseInt(m[2], 10);
+    if (Y > 0 && Math.round(X / Y) === Math.round(qq)) return X;   // self-validating
+  }
+  return qq;
+}
+
 export interface UseProductSizesResult {
   sizes: Product[];
   isLoading: boolean;

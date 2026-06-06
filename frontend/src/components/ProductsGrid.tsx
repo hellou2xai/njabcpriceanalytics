@@ -22,7 +22,7 @@ import AddToListButton from './AddToListButton';
 import { QtyStepper, type CartState } from './CatalogTable';
 import PriceSparklines from './PriceSparklines';
 import { buildMonths } from '../lib/promotionsSparkline';
-import { useProductSizes } from '../lib/productSizes';
+import { useProductSizes, bottlesPerCase } from '../lib/productSizes';
 import { distributorName, abgSku, skuLabel } from '../lib/distributors';
 import type { Product } from '../lib/api';
 
@@ -108,7 +108,7 @@ function SizeRow({ size, cart, updateQty, primaryName }: {
 }) {
   const cartKey = `${size.product_name}|${size.wholesaler}|${size.upc ?? ''}|${size.unit_volume ?? ''}`;
   const qty = cart[cartKey] ?? { cases: 0, units: 0 };
-  const pack = size.unit_qty && Number(size.unit_qty) > 0 ? Number(size.unit_qty) : null;
+  const pack = bottlesPerCase(size.product_name, size.unit_qty);
   const hasDeal = size.has_discount || size.has_rip;
   const sku = abgSku(size.wholesaler, size.abg_sku) ? `${skuLabel(size.wholesaler)} ${size.abg_sku}` : size.upc;
   const btlPrice = pack ? size.effective_case_price / pack : size.frontline_unit_price;

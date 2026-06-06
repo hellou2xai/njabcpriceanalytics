@@ -120,7 +120,9 @@ function ScheduleBlock({ b, caption, empty }:
         <span className="ps-block-month">{label.trim()}</span>
         <span className="ps-block-tag">{caption}</span>
       </div>
-      <div className="ps-block-headline">{priceCB(b.bestEff ?? b.afterDiscount ?? b.frontline)}</div>
+      {/* Headline = LIST / frontline price (no discount), case + bottle. The
+          discounted tiers live in the Quantity Deals below. */}
+      <div className="ps-block-headline">{priceCB(b.frontline ?? b.bestEff ?? b.afterDiscount)}</div>
       {hasDeals && (
         <div className="ps-deals">
           <div className="ps-deals-title">Quantity Deals</div>

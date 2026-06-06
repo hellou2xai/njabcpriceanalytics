@@ -209,12 +209,21 @@ export default function ProductDetail() {
   const enrichment = detail?.enrichment;
   const product = detail?.product;
   const brand = enrichment?.brand ?? product?.brand ?? sizes[0]?.brand ?? null;
+  // Pick the case-mix RIP code shared by the MOST sizes (the product's primary
+  // rebate), not just the first size's — a single 100mL pack often carries a
+  // different one-off code than the rest of the line.
   const ripCode = useMemo(() => {
+    const counts = new Map<string, number>();
     for (const s of sizes) {
       const c = s.rip_group_code ?? s.rip_code;
-      if (c && !['None', 'nan', '0', ''].includes(String(c))) return String(c);
+      if (c && !['None', 'nan', '0', ''].includes(String(c))) {
+        const k = String(c);
+        counts.set(k, (counts.get(k) ?? 0) + 1);
+      }
     }
-    return null;
+    let best: string | null = null, n = 0;
+    for (const [k, v] of counts) if (v > n) { best = k; n = v; }
+    return best;
   }, [sizes]);
   const anyDeal = sizes.some(s => s.has_discount || s.has_rip);
 

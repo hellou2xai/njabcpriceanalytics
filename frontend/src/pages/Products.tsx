@@ -31,6 +31,10 @@ export default function Products() {
   const [page, setPage] = useState(0);
   const [limit, setLimit] = useState(60);
   const [trackedOnly, setTrackedOnly] = useState(false);
+  // Sort is by product_name by default so a product's sizes arrive contiguously
+  // and group cleanly. Price sorts are offered too (server-side).
+  const [sort, setSort] = useState<'product_name' | 'frontline_case_price' | 'effective_case_price'>('product_name');
+  const [order, setOrder] = useState<'asc' | 'desc'>('asc');
   const [filters, setFilters] = useState<CatalogFilters>(() => {
     const next: CatalogFilters = { ...emptyCatalogFilters };
     if (params.get('hasRip') === '1') next.hasRip = true;
@@ -111,16 +115,17 @@ export default function Products() {
   const filterKey = JSON.stringify(filters);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['products', q, wholesaler, page, limit, trackedOnly, filterKey, region, varietal],
+    queryKey: ['products', q, wholesaler, sort, order, page, limit, trackedOnly, filterKey, region, varietal],
     queryFn: () => catalog.search({
       q,
       wholesaler: wholesaler || undefined,
-      // Sort by name so a product's sizes arrive contiguously and group cleanly.
-      sort: 'product_name', order: 'asc',
+      sort, order,
       limit, offset: page * limit,
       ...filterParams,
       tracked_only: trackedOnly || undefined,
-      include_tiers: true,
+      // The collapsed cards only need price + deal flags, not the full tier
+      // ladder — so we skip include_tiers here (it makes the search ~8x slower).
+      // Tiers are fetched per product on expand and on the detail page.
       region: region || undefined,
       varietal: varietal || undefined,
     }),
@@ -183,7 +188,25 @@ export default function Products() {
                   {' '}<span className="products-showing-sub">({total.toLocaleString()} sizes)</span></>
               )}
             </span>
-            <RowLimitSelect value={limit} onChange={v => { setLimit(v); setPage(0); }} />
+            <div className="products-toolbar-right">
+              <label className="products-sort">
+                <span>Sort by</span>
+                <select
+                  value={`${sort}:${order}`}
+                  onChange={e => {
+                    const [s, o] = e.target.value.split(':') as [typeof sort, typeof order];
+                    setSort(s); setOrder(o); setPage(0);
+                  }}
+                >
+                  <option value="product_name:asc">Name (A–Z)</option>
+                  <option value="product_name:desc">Name (Z–A)</option>
+                  <option value="frontline_case_price:asc">Price (low → high)</option>
+                  <option value="frontline_case_price:desc">Price (high → low)</option>
+                  <option value="effective_case_price:asc">Best price (low → high)</option>
+                </select>
+              </label>
+              <RowLimitSelect value={limit} onChange={v => { setLimit(v); setPage(0); }} />
+            </div>
           </div>
 
           {isLoading ? <p>Loading…</p> : (

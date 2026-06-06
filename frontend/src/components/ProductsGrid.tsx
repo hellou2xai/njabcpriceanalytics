@@ -14,6 +14,7 @@
  */
 import { Fragment, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, Tag, CheckCircle2, Zap } from 'lucide-react';
 import FavoriteButton from './FavoriteButton';
 import ProductThumb from './ProductThumb';
@@ -22,6 +23,7 @@ import AddToListButton from './AddToListButton';
 import { QtyStepper, type CartState } from './CatalogTable';
 import PriceScheduleModal from './PriceScheduleModal';
 import { distributorName, abgSku, skuLabel } from '../lib/distributors';
+import { catalog } from '../lib/api';
 import type { Product } from '../lib/api';
 
 // Full-page product-detail deep link for a product family.
@@ -112,14 +114,15 @@ function SizeRow({ size, cart, updateQty, onSchedule }: {
   const btlPrice = pack ? size.effective_case_price / pack : size.frontline_unit_price;
   return (
     <div className="prod-size-row">
-      <div className="prod-size-id">
+      <Link to={detailUrl(size.wholesaler, size.product_name, size.upc)} className="prod-size-id"
+        title="Open full product details">
         <div className="prod-size-name">{size.unit_volume || '—'} Bottle</div>
         <div className="prod-size-pack">{pack ? `${pack} bottles/case` : 'single unit'}</div>
         {sku && <div className="prod-size-sku">SKU: {sku}</div>}
         {size.vintage != null && String(size.vintage) !== '0' && String(size.vintage).trim() !== '' && (
           <span className="tag tag-blue prod-size-vintage">Vintage {size.vintage}</span>
         )}
-      </div>
+      </Link>
       <div className="prod-size-price">
         {hasDeal && (
           <span className="prod-deal-badge"><Tag size={12} /> Deal</span>
@@ -158,9 +161,28 @@ function ProductCard({ group, cart, updateQty, onSchedule }: {
 }) {
   const [expanded, setExpanded] = useState(false);
   const range = priceRange(group.sizes);
-  const optionCount = group.sizes.length;
   const anyDeal = group.sizes.some(s => s.has_discount || s.has_rip);
   const first = group.sizes[0];
+
+  // The list is paginated by SKU, so a product's sizes can be split across
+  // pages — the page may hold only some of them. On expand, fetch the FULL
+  // size list for this product (with tiers, for the price schedule) so every
+  // size is always shown regardless of where the page boundary fell.
+  const { data: full, isFetching } = useQuery({
+    enabled: expanded,
+    queryKey: ['product-sizes', group.wholesaler, group.productName],
+    staleTime: 60_000,
+    queryFn: () => catalog.search({
+      q: group.productName, wholesaler: group.wholesaler,
+      include_tiers: true, limit: 200, sort: 'product_name', order: 'asc',
+    }),
+  });
+  const sizes = useMemo(() => {
+    const rows = (full?.items ?? []).filter(
+      r => r.product_name === group.productName && r.wholesaler === group.wholesaler);
+    return rows.length ? rows.sort((a, b) => toMl(a.unit_volume) - toMl(b.unit_volume)) : group.sizes;
+  }, [full, group]);
+  const optionCount = sizes.length;
 
   return (
     <div className={`prod-card${expanded ? ' is-expanded' : ''}`}>
@@ -203,7 +225,8 @@ function ProductCard({ group, cart, updateQty, onSchedule }: {
       </div>
       {expanded && (
         <div className="prod-card-body">
-          {group.sizes.map((size, i) => (
+          {isFetching && !full && <div className="prod-size-loading">Loading all sizes…</div>}
+          {sizes.map((size, i) => (
             <SizeRow key={`${size.upc ?? ''}|${size.unit_volume ?? ''}|${i}`}
               size={size} cart={cart} updateQty={updateQty} onSchedule={onSchedule} />
           ))}

@@ -3318,12 +3318,20 @@ def get_rip_siblings(
         if rip_upcs:
             ph = ", ".join(f"$u{i}" for i in range(len(rip_upcs)))
             uprm = {**{"w": wholesaler, "e": edition}, **{f"u{i}": u for i, u in enumerate(rip_upcs)}}
+            # Degrade gracefully when the parquet predates the rip_windows column
+            # (same guard the catalog search uses). Without it this SELECT
+            # references a missing column and 500s the whole siblings panel.
+            has_rip_windows = bool(con.execute(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = 'cpl_enriched' AND column_name = 'rip_windows'"
+            ).fetchone())
+            rip_windows_expr = "rip_windows" if has_rip_windows else "CAST(NULL AS VARCHAR) AS rip_windows"
             df = con.execute(f"""
                 SELECT wholesaler, edition, upc, product_name, brand, vintage,
                        product_type, unit_volume, unit_qty, unit_volume_std,
                        frontline_case_price, frontline_unit_price,
                        best_case_price, best_unit_price,
-                       effective_case_price, rip_savings, rip_windows, total_savings_per_case,
+                       effective_case_price, rip_savings, {rip_windows_expr}, total_savings_per_case,
                        has_discount, has_rip, has_closeout, discount_pct,
                        rip_code, combo_code
                 FROM {src}

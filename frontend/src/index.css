@@ -5335,9 +5335,10 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 /* ---- Expanded size rows ---- */
 .prod-card-body { border-top: 1px solid var(--border); }
 .prod-size-row {
-  display: grid; grid-template-columns: 1.4fr 1fr auto; gap: 16px; align-items: center;
+  display: grid; grid-template-columns: 1.3fr 1fr 1.5fr auto; gap: 16px; align-items: center;
   padding: 14px 16px 14px 64px; border-bottom: 1px solid var(--border);
 }
+@media (max-width: 1100px) { .prod-size-row { grid-template-columns: 1.3fr 1fr auto; } .prod-size-deals { grid-column: 1 / -1; } }
 .prod-size-row:last-child { border-bottom: 0; }
 @media (max-width: 720px) { .prod-size-row { grid-template-columns: 1fr; padding-left: 16px; gap: 10px; } }
 .prod-size-name { font-size: 15px; font-weight: 700; color: var(--text); }
@@ -5346,9 +5347,17 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .prod-size-vintage { margin-top: 4px; display: inline-block; }
 .prod-size-price { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
 .prod-deal-badge { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); }
-.prod-size-amounts { display: flex; flex-direction: column; }
-.prod-size-btl { font-size: 15px; font-weight: 700; color: var(--green); font-variant-numeric: tabular-nums; }
-.prod-size-case { font-size: 13px; color: var(--text); font-variant-numeric: tabular-nums; }
+.prod-size-amounts { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+/* Case price is the buying unit -> prominent; bottle secondary, same line. */
+.prod-size-case { font-size: 15px; font-weight: 700; color: var(--green); font-variant-numeric: tabular-nums; }
+.prod-size-btl { font-size: 13px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+/* Inline current-month deal ladder (QD + RIP). */
+.prod-size-deals { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.prod-deal-line { font-size: 12px; color: var(--text); font-variant-numeric: tabular-nums; display: flex; align-items: baseline; gap: 4px; flex-wrap: wrap; }
+.prod-deal-line .prod-deal-badge { flex-shrink: 0; }
+.prod-deal-off { color: var(--green); }
+.prod-deal-after, .prod-deal-btl { color: var(--text-muted); }
+.prod-deals-none { font-size: 12px; color: var(--text-muted); font-style: italic; }
 .prod-schedule-link { background: none; border: 0; padding: 0; color: var(--accent); font-size: 12px; font-weight: 600; cursor: pointer; text-decoration: underline; }
 .prod-size-order { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
 .prod-instock { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--green); font-weight: 600; }

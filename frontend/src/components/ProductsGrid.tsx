@@ -130,6 +130,13 @@ function SizeRow({ size, cart, updateQty, primaryName }: {
   const comboUrl = comboLink(size.wholesaler, size.upc);
   const sku = abgSku(size.wholesaler, size.abg_sku) ? `${skuLabel(size.wholesaler)} ${size.abg_sku}` : size.upc;
   const btlPrice = pack ? size.effective_case_price / pack : size.frontline_unit_price;
+  // Current-month quantity-discount + RIP tier ladders, shown inline so the
+  // buyer gets every number without hovering the sparkline.
+  const tiers = size.tiers ?? [];
+  const discTiers = tiers.filter(t => t.source === 'discount').sort((a, b) => a.qty - b.qty);
+  const ripTiers = tiers.filter(t => t.source === 'rip').sort((a, b) => a.qty - b.qty);
+  const btlOf = (c?: number | null) => (pack && c != null ? c / pack : null);
+  const uw = (u: string) => (/btl|bottle/i.test(u) ? 'btl' : 'cs');
   return (
     <div className="prod-size-row">
       <Link to={detailUrl(size.wholesaler, size.product_name, size.upc)} className="prod-size-id"
@@ -153,13 +160,43 @@ function SizeRow({ size, cart, updateQty, primaryName }: {
               title="This product is part of a combo bundle — view the combo">🎁 Combo</Link>
           )}
         </span>
+        {/* Case price first (the buying unit), then bottle — both on one line. */}
         <div className="prod-size-amounts">
-          <span className="prod-size-btl">${btlPrice.toFixed(2)}/bottle</span>
           <span className="prod-size-case">${size.effective_case_price.toFixed(2)}/case</span>
+          <span className="prod-size-btl">${btlPrice.toFixed(2)}/bottle</span>
         </div>
         <PriceSparklines wholesaler={size.wholesaler} productName={size.product_name}
           upc={size.upc} unitVolume={size.unit_volume} unitQty={size.unit_qty} vintage={size.vintage}
           months={buildMonths(size)} />
+      </div>
+      {/* Inline RIP + quantity-discount details for the current month, so all
+          numbers are visible without touching the sparkline. */}
+      <div className="prod-size-deals">
+        {discTiers.length === 0 && ripTiers.length === 0 && (
+          <span className="prod-deals-none">No deals this month</span>
+        )}
+        {discTiers.map((t, i) => {
+          const b = btlOf(t.price_after);
+          return (
+            <div key={`d${i}`} className="prod-deal-line">
+              <span className="prod-deal-badge prod-deal-qd">QD</span> Buy {t.qty} {uw(t.unit)} →{' '}
+              <strong>${(t.price_after ?? 0).toFixed(2)}/cs</strong>
+              {t.save_per_case > 0 && <span className="prod-deal-off"> (−${t.save_per_case.toFixed(2)})</span>}
+              {b != null && <span className="prod-deal-btl"> · ${b.toFixed(2)}/btl</span>}
+            </div>
+          );
+        })}
+        {ripTiers.map((t, i) => {
+          const b = btlOf(t.price_after);
+          return (
+            <div key={`r${i}`} className="prod-deal-line">
+              <span className="prod-deal-badge prod-deal-rip">RIP</span> Buy {t.qty} {uw(t.unit)} →{' '}
+              <strong>${t.amount.toFixed(2)} RIP</strong>
+              {t.price_after != null && <span className="prod-deal-after"> → ${t.price_after.toFixed(2)}/cs</span>}
+              {b != null && <span className="prod-deal-btl"> · ${b.toFixed(2)}/btl</span>}
+            </div>
+          );
+        })}
       </div>
       <div className="prod-size-order">
         <div className="prod-size-steppers">

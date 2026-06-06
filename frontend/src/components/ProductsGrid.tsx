@@ -195,14 +195,17 @@ function SizeRow({ size, cart, updateQty, primaryName }: {
         })}
         {ripTiers.map((t, i) => {
           const b = btlOf(t.eff);
-          const off = (t.ripOnlySave != null && Number.isFinite(t.ripOnlySave))
-            ? Number(t.ripOnlySave) : (frontline != null ? frontline - t.eff : null);
+          // TOTAL savings off list (list − net price) — the SAME figure the
+          // price-schedule tooltip and the QD line show, so the buyer reads one
+          // consistent "−$X off list" everywhere, not a confusing RIP-only
+          // increment (−$10) that looks tiny next to the real $80.80 saving.
+          const off = frontline != null && t.eff < frontline ? frontline - t.eff : null;
           return (
             <div key={`r${i}`} className="prod-deal-line">
               <span className="prod-deal-badge prod-deal-rip">RIP</span> Buy {t.qty} {uw(t.unit)} →{' '}
               <strong>${t.eff.toFixed(2)}/cs</strong>
               {b != null && <span className="prod-deal-btl"> · ${b.toFixed(2)}/btl</span>}
-              {off != null && off > 0.005 && <span className="prod-deal-off"> (RIP −${off.toFixed(2)})</span>}
+              {off != null && off > 0.005 && <span className="prod-deal-off"> (−${off.toFixed(2)})</span>}
             </div>
           );
         })}

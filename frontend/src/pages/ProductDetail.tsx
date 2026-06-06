@@ -48,10 +48,17 @@ function detailUrl(p: { wholesaler: string; product_name: string; upc?: string |
 function MiniCard({ p }: { p: Product }) {
   const eff = p.effective_case_price ?? p.frontline_case_price ?? null;
   const sku = abgSku(p.wholesaler, p.abg_sku) ? `${skuLabel(p.wholesaler)} ${p.abg_sku}` : null;
+  const pack = bottlesPerCase(p.product_name, p.unit_qty);
+  const hasVintage = p.vintage != null && !['', '0', 'nv'].includes(String(p.vintage).trim().toLowerCase());
   return (
     <Link to={detailUrl(p)} className="pd-mini">
       <ProductThumb src={p.image_url} alt={p.product_name} size={72} />
       <div className="pd-mini-name">{p.product_name}</div>
+      {/* Size / volume + pack — every product card must say what size it is, so
+          buyers can tell the 750mL from the 1.75L at a glance. */}
+      <div className="pd-mini-size">
+        {p.unit_volume || '—'}{pack ? ` · ${pack} btl/cs` : ''}{hasVintage ? ` · ${p.vintage}` : ''}
+      </div>
       <div className="pd-mini-dist"><Store size={11} /> {distributorName(p.wholesaler)}</div>
       {/* UPC + vendor SKU — shown on every product display, per spec. */}
       {(sku || p.upc) && (

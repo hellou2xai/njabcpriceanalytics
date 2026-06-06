@@ -551,6 +551,45 @@ def attach_tiers(con, records, ref_date=None) -> None:
         except Exception:
             part_rows = {}
 
+    # Which discount QTYs appear in a FULL-calendar-month raw cpl row, per UPC.
+    # The enriched cache can mark a discount evergreen even when the raw cpl only
+    # has that qty in a PARTIAL window (dedup bug → prod Remy "Buy 10" looked
+    # full-month). Knowing the truly-full-month qtys lets us flag the rest as
+    # partial from the authoritative raw windows.
+    full_qty: dict = {}
+    if p_ws and p_ed and p_un:
+        try:
+            craw = read_parquet(con, "cpl")
+            fq = con.execute(f"""
+                SELECT wholesaler, edition, LTRIM(CAST(upc AS VARCHAR), '0') AS un,
+                       discount_1_qty AS d1q, discount_1_amt AS d1a,
+                       discount_2_qty AS d2q, discount_2_amt AS d2a,
+                       discount_3_qty AS d3q, discount_3_amt AS d3a,
+                       discount_4_qty AS d4q, discount_4_amt AS d4a,
+                       discount_5_qty AS d5q, discount_5_amt AS d5a
+                FROM {craw}
+                WHERE wholesaler IN ({ph_pw}) AND edition IN ({ph_pe})
+                  AND LTRIM(CAST(upc AS VARCHAR), '0') IN ({ph_pu})
+                  AND (from_date IS NULL OR to_date IS NULL
+                       OR (EXTRACT(day FROM CAST(from_date AS DATE)) = 1
+                           AND CAST(to_date AS DATE) = (date_trunc('month', CAST(to_date AS DATE)) + INTERVAL 1 MONTH - INTERVAL 1 DAY)))
+            """, pp).fetchdf()
+            for _, r in fq.iterrows():
+                s = full_qty.setdefault((r["wholesaler"], r["edition"], str(r["un"])), set())
+                for j in range(1, 6):
+                    a = r.get(f"d{j}a")
+                    try:
+                        af = float(a) if a is not None else 0.0
+                    except (TypeError, ValueError):
+                        af = 0.0
+                    if af <= 0 or math.isnan(af):
+                        continue
+                    mm = re.match(r"^\s*(\d+(?:\.\d+)?)", str(r.get(f"d{j}q") or ""))
+                    if mm:
+                        s.add(int(float(mm.group(1))))
+        except Exception:
+            full_qty = {}
+
     # All RIP windows per UPC across EVERY code (for gap detection). The cpl
     # row's rip_code names only one code, but a no-RIP gap can fall between two
     # DIFFERENT codes (112263 Jun 1-8 + 112264 Jun 11-30 → Jun 9-10), so match
@@ -838,6 +877,33 @@ def attach_tiers(con, records, ref_date=None) -> None:
         deal_windows.sort(key=lambda x: x["from"])
         rec["deal_windows"] = deal_windows
         rec["rip_gaps"] = _gaps_from_windows(_wins, eastern_today())
+
+        # Reconcile inline DISCOUNT tiers with the AUTHORITATIVE raw-cpl windows.
+        # The enriched cache can mark a discount evergreen even though the raw cpl
+        # only has that qty in a PARTIAL window (dedup bug → prod Remy "Buy 10"
+        # showed no partial flag while the header timing badge did). If a qty has
+        # a partial QD window AND is NOT in any full-calendar-month raw row, stamp
+        # the partial window onto the tier so the inline flag matches the truth.
+        _uk = str(rec.get("upc") or "").lstrip("0")
+        _fq = full_qty.get((rec["wholesaler"], rec["edition"], _uk), set())
+        _qdw = {int(w["qty"]): w for w in deal_windows
+                if w.get("kind") == "QD" and w.get("qty") is not None}
+        if _qdw:
+            for t in rec["tiers"]:
+                if t.get("source") != "discount" or t.get("is_time_sensitive"):
+                    continue
+                try:
+                    tq = int(t.get("qty"))
+                except (TypeError, ValueError):
+                    continue
+                w = _qdw.get(tq)
+                if w and tq not in _fq:
+                    ws_ = window_status(w["from"], w["to"], ref_date)
+                    t["is_time_sensitive"] = True
+                    t["from_date"] = w["from"]
+                    t["to_date"] = w["to"]
+                    t["window_status"] = ws_["status"]
+                    t["days_to_expire"] = ws_["days_to_expire"]
 
 
 # ---------------------------------------------------------------------------

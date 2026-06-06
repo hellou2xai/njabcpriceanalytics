@@ -228,6 +228,17 @@ function ProductCard({ group, cart, updateQty }: {
   const comboUrl = group.sizes.map(s => comboLink(s.wholesaler, s.upc)).find(Boolean) ?? null;
   const first = group.sizes[0];
 
+  // Compact QD/RIP price summary for the collapsed card, from the representative
+  // (cheapest) size's price fields that the list already returns — no extra
+  // fetch. best_case_price = the 1-case quantity-discount price; effective =
+  // the best-RIP price. (The full per-size tier ladder is in the expanded rows.)
+  const rep = range?.lo ?? first;
+  const repPack = rep ? bottlesPerCase(rep.product_name, rep.unit_qty) : null;
+  const qdPrice = rep && rep.has_discount && rep.best_case_price > 0
+    && rep.best_case_price < rep.frontline_case_price - 0.005 ? rep.best_case_price : null;
+  const ripPrice = rep && rep.has_rip
+    && rep.effective_case_price < (rep.best_case_price || rep.frontline_case_price) - 0.005 ? rep.effective_case_price : null;
+
   // The list is paginated by SKU, so a product's sizes can be split across
   // pages. On expand, fetch the FULL size set via the shared "products by size"
   // tool (handles spirits' inconsistent names + wine's vintages) so every size
@@ -269,6 +280,24 @@ function ProductCard({ group, cart, updateQty }: {
             </span>
           )}
         </div>
+        {(qdPrice || ripPrice) && (
+          <div className="prod-card-deals">
+            {qdPrice != null && (
+              <span className="prod-deal-line">
+                <span className="prod-deal-badge prod-deal-qd">QD</span>
+                <strong>${qdPrice.toFixed(2)}/cs</strong>
+                {repPack && <span className="prod-deal-btl"> · ${(qdPrice / repPack).toFixed(2)}/btl</span>}
+              </span>
+            )}
+            {ripPrice != null && (
+              <span className="prod-deal-line">
+                <span className="prod-deal-badge prod-deal-rip">RIP</span>
+                <strong>${ripPrice.toFixed(2)}/cs</strong>
+                {repPack && <span className="prod-deal-btl"> · ${(ripPrice / repPack).toFixed(2)}/btl</span>}
+              </span>
+            )}
+          </div>
+        )}
         <div className="prod-card-right">
           {range && (
             <div className="prod-card-range">

@@ -6,7 +6,6 @@ import { catalog } from '../lib/api';
 import WholesalerFilter from '../components/WholesalerFilter';
 import RowLimitSelect from '../components/RowLimitSelect';
 import { useResultCount } from '../lib/resultCount';
-import { useProductQuickView } from '../components/ProductQuickView';
 import { loadCart, saveCart, type CartState } from '../components/CatalogTable';
 import ProductsFilterRail from '../components/ProductsFilterRail';
 import ProductsGrid, { countProductGroups } from '../components/ProductsGrid';
@@ -39,7 +38,6 @@ export default function Products() {
     return next;
   });
   const [cart, setCartState] = useState<CartState>(loadCart);
-  const { open } = useProductQuickView();
 
   // URL -> state, so deep links (incl. the assistant's) and Back/Forward work.
   useEffect(() => {
@@ -189,7 +187,7 @@ export default function Products() {
           </div>
 
           {isLoading ? <p>Loading…</p> : (
-            <ProductsGrid items={items} cart={cart} updateQty={updateQty} open={open} />
+            <ProductsGrid items={items} cart={cart} updateQty={updateQty} />
           )}
 
           <div className="pagination">

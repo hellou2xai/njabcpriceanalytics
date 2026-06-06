@@ -13,6 +13,7 @@
  * machinery the Catalog page uses — this is purely a new presentation layer.
  */
 import { Fragment, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { ChevronDown, Tag, CheckCircle2, Zap } from 'lucide-react';
 import FavoriteButton from './FavoriteButton';
 import ProductThumb from './ProductThumb';
@@ -20,13 +21,15 @@ import AddToCartButton from './AddToCartButton';
 import AddToListButton from './AddToListButton';
 import { QtyStepper, type CartState } from './CatalogTable';
 import PriceScheduleModal from './PriceScheduleModal';
-import { useProductQuickView } from './ProductQuickView';
 import { distributorName, abgSku, skuLabel } from '../lib/distributors';
 import type { Product } from '../lib/api';
 
-// Exact type of the quick-view opener, so the prop is contravariance-clean
-// under strictFunctionTypes (matching what the page hands down).
-type OpenFn = ReturnType<typeof useProductQuickView>['open'];
+// Full-page product-detail deep link for a product family.
+function detailUrl(wholesaler: string, productName: string, upc?: string | null): string {
+  const q = new URLSearchParams({ w: wholesaler, n: productName });
+  if (upc) q.set('u', String(upc));
+  return `/product?${q.toString()}`;
+}
 
 // Parse a size label ("750ML", "1.75L", "16OZ") to millilitres so sizes sort
 // smallest -> largest. Unknowns sort last. (Same heuristic the catalog filter
@@ -147,11 +150,10 @@ function SizeRow({ size, cart, updateQty, onSchedule }: {
   );
 }
 
-function ProductCard({ group, cart, updateQty, open, onSchedule }: {
+function ProductCard({ group, cart, updateQty, onSchedule }: {
   group: ProductGroup;
   cart: CartState;
   updateQty: (key: string, field: 'cases' | 'units', value: number) => void;
-  open: OpenFn;
   onSchedule: (p: Product) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -167,13 +169,16 @@ function ProductCard({ group, cart, updateQty, open, onSchedule }: {
           <FavoriteButton productName={group.productName} wholesaler={group.wholesaler}
             upc={first?.upc} unitVolume={first?.unit_volume} />
         </div>
-        <ProductThumb src={group.imageUrl} alt={group.productName} size={56} />
+        <Link to={detailUrl(group.wholesaler, group.productName, first?.upc)}
+          className="prod-card-thumb-link" onClick={e => e.stopPropagation()}>
+          <ProductThumb src={group.imageUrl} alt={group.productName} size={56} />
+        </Link>
         <div className="prod-card-meta">
-          <button type="button" className="prod-card-name"
-            onClick={e => { e.stopPropagation(); open(group.productName, group.wholesaler, undefined, { upc: first?.upc, unitVolume: first?.unit_volume }); }}
-            title="Open product details">
+          <Link to={detailUrl(group.wholesaler, group.productName, first?.upc)}
+            className="prod-card-name" onClick={e => e.stopPropagation()}
+            title="Open full product details">
             {group.productName}
-          </button>
+          </Link>
           <div className="prod-card-type">{[group.productType, group.brand].filter(Boolean).join(' · ')}</div>
           <div className="prod-card-dist">
             <Zap size={12} className="prod-card-dist-icon" />
@@ -212,10 +217,9 @@ interface Props {
   items: Product[];
   cart: CartState;
   updateQty: (key: string, field: 'cases' | 'units', value: number) => void;
-  open: OpenFn;
 }
 
-export default function ProductsGrid({ items, cart, updateQty, open }: Props) {
+export default function ProductsGrid({ items, cart, updateQty }: Props) {
   const groups = useMemo(() => groupByProduct(items), [items]);
   const [schedule, setSchedule] = useState<Product | null>(null);
 
@@ -227,7 +231,7 @@ export default function ProductsGrid({ items, cart, updateQty, open }: Props) {
     <div className="prod-grid">
       {groups.map(g => (
         <Fragment key={g.key}>
-          <ProductCard group={g} cart={cart} updateQty={updateQty} open={open} onSchedule={setSchedule} />
+          <ProductCard group={g} cart={cart} updateQty={updateQty} onSchedule={setSchedule} />
         </Fragment>
       ))}
       {schedule && <PriceScheduleModal item={schedule} onClose={() => setSchedule(null)} />}

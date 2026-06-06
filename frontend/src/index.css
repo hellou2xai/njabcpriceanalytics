@@ -5362,3 +5362,89 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 .ps-pill { display: inline-block; font-size: 9px; font-weight: 800; letter-spacing: .03em; padding: 1px 5px; border-radius: 4px; vertical-align: middle; }
 .ps-pill-disc { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent-strong); }
 .ps-pill-rip { background: color-mix(in srgb, var(--green) 18%, transparent); color: var(--green); }
+
+/* ============================================================
+   Product detail page (full page)
+   ============================================================ */
+.pd-breadcrumb { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-muted); margin-bottom: 14px; flex-wrap: wrap; }
+.pd-breadcrumb a { color: var(--text-muted); text-decoration: none; }
+.pd-breadcrumb a:hover { color: var(--accent); }
+.pd-breadcrumb a::after, .pd-crumb:not(:last-child)::after { content: '›'; margin-left: 6px; color: var(--text-muted); }
+.pd-crumb { color: var(--text); }
+
+.pd-layout { display: grid; grid-template-columns: 1fr 420px; gap: 28px; align-items: start; }
+@media (max-width: 1023px) { .pd-layout { grid-template-columns: 1fr; } }
+
+/* ---- Left column ---- */
+.pd-deal-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 800; letter-spacing: .04em; color: var(--green); margin-bottom: 8px; }
+.pd-identity { display: flex; gap: 18px; align-items: flex-start; }
+.pd-identity-meta { flex: 1; min-width: 0; }
+.pd-identity-titlerow { display: flex; align-items: center; gap: 10px; }
+.pd-title { margin: 0; font-size: 26px; font-weight: 800; color: var(--text); }
+.pd-attrs { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 12px 0 0; font-size: 13px; }
+.pd-attrs > div { display: contents; }
+.pd-attrs dt { color: var(--text-muted); font-weight: 600; }
+.pd-attrs dd { margin: 0; color: var(--text); }
+.pd-link { color: var(--accent); text-decoration: none; font-weight: 600; }
+.pd-link:hover { text-decoration: underline; }
+.pd-sold-by { display: inline-flex; align-items: center; gap: 4px; color: var(--accent); font-weight: 600; }
+
+.pd-section { margin-top: 26px; }
+.pd-section h2 { font-size: 17px; font-weight: 700; color: var(--text); margin: 0 0 8px; display: flex; align-items: center; gap: 8px; }
+.pd-section p { font-size: 14px; line-height: 1.6; color: var(--text); margin: 0; }
+.pd-section-sub { font-size: 13px; color: var(--text-muted); margin: -2px 0 10px !important; }
+.pd-section-head-row { justify-content: space-between; }
+.pd-viewall { font-size: 13px; color: var(--accent); text-decoration: none; display: inline-flex; align-items: center; gap: 2px; font-weight: 600; }
+.pd-rip-tag { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 5px; background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); }
+.pd-ai p { background: var(--accent-weak); border-radius: var(--radius-sm); padding: 10px 12px; }
+
+.pd-related-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.pd-related-row { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 6px; }
+.pd-related-row .pd-mini { flex: 0 0 160px; }
+.pd-mini { display: block; text-decoration: none; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; background: var(--surface); transition: border-color .15s, box-shadow .15s; }
+.pd-mini:hover { border-color: var(--accent); box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+.pd-mini .product-thumb, .pd-mini img { margin: 0 auto 8px; display: block; }
+.pd-mini-name { font-size: 13px; font-weight: 700; color: var(--text); line-height: 1.3; }
+.pd-mini-dist { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--accent); margin-top: 4px; font-weight: 600; }
+.pd-mini-price { font-size: 13px; font-weight: 700; color: var(--green); margin-top: 4px; }
+.pd-mini-noprice { color: var(--text-muted); font-weight: 500; }
+
+/* ---- Right column: size sections ---- */
+.pd-right { position: sticky; top: 12px; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface); align-self: start; max-height: calc(100vh - 24px); display: flex; flex-direction: column; }
+@media (max-width: 1023px) { .pd-right { position: static; max-height: none; } }
+.pd-right-tabs { display: flex; background: var(--accent-strong); }
+.pd-tab { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 12px; background: none; border: 0; color: rgba(255,255,255,.7); font-weight: 700; font-size: 14px; cursor: pointer; }
+.pd-tab.is-active { background: var(--surface); color: var(--text); }
+.pd-sizes { overflow-y: auto; }
+.pd-loading { padding: 24px; color: var(--text-muted); }
+.pd-size { padding: 16px; border-bottom: 1px solid var(--border); }
+.pd-size:last-child { border-bottom: 0; }
+.pd-size-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.pd-size-title { font-size: 16px; font-weight: 700; color: var(--text); }
+.pd-size-pack { font-size: 13px; color: var(--text-muted); margin-top: 1px; }
+.pd-size-ids { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+.pd-size-upc { color: var(--text-muted); }
+
+.pd-deals { margin-top: 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.pd-deals-toggle { width: 100%; display: flex; align-items: center; gap: 6px; padding: 7px 10px; background: var(--surface-hover); border: 0; cursor: pointer; font-size: 12px; font-weight: 700; color: var(--green); }
+.pd-deals-chev { margin-left: auto; transition: transform .15s; color: var(--text-muted); }
+.pd-deals-chev.is-open { transform: rotate(180deg); }
+.pd-deals-body { padding: 8px 10px; }
+.pd-deals-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 3px; }
+.pd-deal-line { font-size: 12.5px; color: var(--text); padding: 2px 0; }
+.pd-deal-off { color: var(--green); }
+.pd-oz { color: var(--text-muted); }
+
+.pd-size-price { margin-top: 12px; }
+.pd-price-line { display: flex; align-items: baseline; gap: 8px; font-size: 14px; color: var(--text); padding: 1px 0; }
+.pd-schedule-link { margin-left: auto; background: none; border: 0; padding: 0; color: var(--accent); font-size: 12px; font-weight: 600; cursor: pointer; text-decoration: underline; }
+
+.pd-mixrip { margin-top: 12px; border: 1px dashed var(--border); border-radius: var(--radius-sm); padding: 8px 10px; background: color-mix(in srgb, var(--green) 5%, transparent); }
+.pd-mixrip-head { font-size: 12px; font-weight: 800; color: var(--green); }
+.pd-mixrip-desc { font-size: 11px; color: var(--text-muted); margin: 2px 0 4px; }
+.pd-mixrip-line { font-size: 12.5px; color: var(--text); padding: 1px 0; }
+.pd-mixrip-after { color: var(--text-muted); }
+
+.pd-instock { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; color: var(--green); margin-top: 12px; }
+.pd-size-order { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+.pd-steppers { display: flex; flex-direction: column; gap: 5px; }

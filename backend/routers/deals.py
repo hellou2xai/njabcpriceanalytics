@@ -956,6 +956,109 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
                 "ai_blurb": blurb_map.get((r["wholesaler"], un or "", r["edition"])) if un else None,
             })
 
+        # ---- SECOND SOURCE: dated RIP-SHEET windows -------------------------
+        # The CPL rows above only cover dated PRICE lines. Time-sensitive RIPs
+        # live on the RIP sheet with their own sub-month from/to — a product on
+        # a full-month CPL row can still carry a "RIP valid 6/10–6/20". Without
+        # this source ~170 dated-RIP products per month were invisible here.
+        seen = {(o["wholesaler"], (o["upc"] or "").lstrip("0"), o["from_date"], o["to_date"])
+                for o in out}
+        ripsrc = read_parquet(con, "rip")
+        rip_rows = con.execute(f"""
+            WITH dated AS (
+                SELECT wholesaler, edition, CAST(rip_code AS VARCHAR) AS rip_code,
+                       LTRIM(CAST(upc AS VARCHAR),'0') AS un,
+                       CAST(from_date AS DATE) AS from_date, CAST(to_date AS DATE) AS to_date,
+                       ANY_VALUE(rip_unit_1) AS u1, ANY_VALUE(rip_qty_1) AS q1, ANY_VALUE(rip_amt_1) AS a1
+                FROM {ripsrc}
+                WHERE from_date IS NOT NULL AND to_date IS NOT NULL
+                  AND NOT (EXTRACT(day FROM CAST(from_date AS DATE)) = 1
+                           AND CAST(to_date AS DATE) = (date_trunc('month', CAST(to_date AS DATE)) + INTERVAL 1 MONTH - INTERVAL 1 DAY))
+                  {active_clause}
+                  AND ({' OR '.join(conds)})
+                  AND upc IS NOT NULL
+                  AND LTRIM(CAST(upc AS VARCHAR),'0') NOT IN ('', '0', 'None', 'nan')
+                GROUP BY 1,2,3,4,5,6
+            )
+            SELECT d.wholesaler, d.edition, d.rip_code, d.un, d.from_date, d.to_date,
+                   d.u1, d.q1, d.a1,
+                   date_diff('day', CURRENT_DATE, d.to_date) AS days_to_expire,
+                   e.product_name, e.product_type, e.unit_volume, e.unit_qty,
+                   CAST(e.upc AS VARCHAR) AS upc, e.vintage, e.brand,
+                   e.frontline_case_price, e.effective_case_price,
+                   e.has_discount, e.has_closeout
+            FROM dated d
+            JOIN {src} e
+              ON e.wholesaler = d.wholesaler AND e.edition = d.edition
+             AND LTRIM(CAST(e.upc AS VARCHAR),'0') = d.un
+            QUALIFY ROW_NUMBER() OVER (
+                PARTITION BY d.wholesaler, d.un, d.from_date, d.to_date
+                ORDER BY e.effective_case_price ASC NULLS LAST) = 1
+            ORDER BY d.to_date ASC
+        """, params).fetchdf()
+
+        from backend import rip_utils as _ru
+        for _, r in rip_rows.iterrows():
+            key = (r["wholesaler"], r["un"], str(r["from_date"])[:10], str(r["to_date"])[:10])
+            if key in seen:
+                continue  # the CPL-row source already carries this window
+            seen.add(key)
+            dte = r["days_to_expire"]
+            if not include_past and dte == dte and dte is not None and int(dte) < 0:
+                continue
+            # Per-case value of the ENTRY tier (bottle-unit rebates converted
+            # via bottles/case), the same conversion the assistant's RIP tools
+            # use - never the bulk-max.
+            pack = _n(r["unit_qty"])
+            per_case = None
+            try:
+                q1, a1 = _n(r["q1"]), _n(r["a1"])
+                if q1 and a1:
+                    per_case = _ru.rip_per_case(a1, q1, _str(r["u1"]), pack)
+            except Exception:
+                per_case = None
+            frontline = _n(r["frontline_case_price"])
+            eff = _n(r["effective_case_price"])
+            eff_with_rip = (eff - per_case) if (eff is not None and per_case) else eff
+            saving = (frontline - eff_with_rip) if (frontline is not None and eff_with_rip is not None
+                                                    and frontline > eff_with_rip) else None
+            kinds = ["RIP"]
+            if bool(r["has_closeout"]):
+                kinds.insert(0, "Closeout")
+            if bool(r["has_discount"]):
+                kinds.append("Discount")
+            out.append({
+                "wholesaler": r["wholesaler"],
+                "edition": r["edition"],
+                "product_name": r["product_name"],
+                "product_type": _str(r["product_type"]),
+                "unit_volume": _str(r["unit_volume"]),
+                "unit_qty": _str(r["unit_qty"]),
+                "upc": _str(r["upc"]),
+                "brand": _str(r["brand"]),
+                "vintage": _str(r["vintage"]),
+                "from_date": str(r["from_date"])[:10],
+                "to_date": str(r["to_date"])[:10],
+                "days_to_expire": int(dte) if dte == dte and dte is not None else None,
+                "frontline_case_price": frontline,
+                "effective_case_price": eff_with_rip,
+                "total_savings_per_case": _n(saving),
+                "discount_pct": (round(saving / frontline * 100, 2)
+                                 if saving is not None and frontline else None),
+                "rip_savings": _n(per_case),
+                "has_rip": True,
+                "has_discount": bool(r["has_discount"]),
+                "has_closeout": bool(r["has_closeout"]),
+                "deal_kind": " / ".join(kinds),
+                "ai_blurb": blurb_map.get((r["wholesaler"], r["un"], r["edition"])),
+            })
+
+        # Merge order: soonest-ending first, then biggest saving (same as the
+        # SQL ordering of the first source), re-capped at the limit.
+        out.sort(key=lambda o: (o["to_date"] or "9999",
+                                -(o["total_savings_per_case"] or 0)))
+        out = out[:limit]
+
         # Add product images (Go-UPC enrichment) for the card view.
         attach_enrichment_image(con, out)
         attach_sku_mapping(con, out)

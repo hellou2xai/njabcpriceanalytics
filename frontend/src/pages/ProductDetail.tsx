@@ -9,6 +9,7 @@ import AddToCartButton from '../components/AddToCartButton';
 import AddToListButton from '../components/AddToListButton';
 import { QtyStepper, loadCart, saveCart, type CartState } from '../components/CatalogTable';
 import PriceSparklines from '../components/PriceSparklines';
+import { buildMonths } from '../lib/promotionsSparkline';
 import { useProductSizes } from '../lib/productSizes';
 import { distributorName, abgSku, skuLabel } from '../lib/distributors';
 import type { Product, CatalogTier } from '../lib/api';
@@ -75,6 +76,7 @@ function SizeSection({ size, view, cart, updateQty }: {
   const discTiers = tiers.filter(t => t.source === 'discount').sort((a, b) => a.qty - b.qty);
   const ripTiers = tiers.filter(t => t.source === 'rip').sort((a, b) => a.qty - b.qty);
   const sku = abgSku(size.wholesaler, size.abg_sku) ? `${skuLabel(size.wholesaler)} ${size.abg_sku}` : size.upc;
+  const hasVintage = size.vintage != null && !['', '0', 'nv'].includes(String(size.vintage).trim().toLowerCase());
 
   const headlineCase = size.frontline_case_price;
   const headlineBtl = size.frontline_unit_price;
@@ -86,14 +88,15 @@ function SizeSection({ size, view, cart, updateQty }: {
     <div className="pd-size">
       <div className="pd-size-head">
         <div>
-          <div className="pd-size-title">{size.unit_volume || '—'} Bottle</div>
+          <div className="pd-size-title">
+            {hasVintage && <span className="pd-size-vintage-lead">{size.vintage}</span>}
+            {size.unit_volume || '—'} Bottle
+          </div>
           <div className="pd-size-pack">{pack ? `${pack} bottles/case` : 'single unit'}</div>
           <div className="pd-size-ids">
             {sku && <span>SKU: {sku}</span>}
             {size.upc && <span className="pd-size-upc">UPC: {size.upc}</span>}
-            {size.vintage != null && String(size.vintage) !== '0' && String(size.vintage).trim() !== '' && (
-              <span className="tag tag-blue">Vintage {size.vintage}</span>
-            )}
+            {hasVintage && <span className="tag tag-blue">Vintage {size.vintage}</span>}
           </div>
         </div>
         <AddToListButton productName={size.product_name} wholesaler={size.wholesaler}
@@ -137,7 +140,8 @@ function SizeSection({ size, view, cart, updateQty }: {
             "See price schedule" link. */}
         <span className="pd-schedule-spark">
           <PriceSparklines wholesaler={size.wholesaler} productName={size.product_name}
-            upc={size.upc} unitVolume={size.unit_volume} unitQty={size.unit_qty} vintage={size.vintage} />
+            upc={size.upc} unitVolume={size.unit_volume} unitQty={size.unit_qty} vintage={size.vintage}
+            months={buildMonths(size)} />
         </span>
       </div>
 

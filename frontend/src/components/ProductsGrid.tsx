@@ -21,6 +21,7 @@ import AddToCartButton from './AddToCartButton';
 import AddToListButton from './AddToListButton';
 import { QtyStepper, type CartState } from './CatalogTable';
 import PriceSparklines from './PriceSparklines';
+import { buildMonths } from '../lib/promotionsSparkline';
 import { useProductSizes } from '../lib/productSizes';
 import { distributorName, abgSku, skuLabel } from '../lib/distributors';
 import type { Product } from '../lib/api';
@@ -130,7 +131,8 @@ function SizeRow({ size, cart, updateQty }: {
           <span className="prod-size-case">${size.effective_case_price.toFixed(2)}/case</span>
         </div>
         <PriceSparklines wholesaler={size.wholesaler} productName={size.product_name}
-          upc={size.upc} unitVolume={size.unit_volume} unitQty={size.unit_qty} vintage={size.vintage} />
+          upc={size.upc} unitVolume={size.unit_volume} unitQty={size.unit_qty} vintage={size.vintage}
+          months={buildMonths(size)} />
       </div>
       <div className="prod-size-order">
         <span className="prod-instock"><CheckCircle2 size={13} /> Available</span>

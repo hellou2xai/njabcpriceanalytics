@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Tag, CheckCircle2, ChevronDown, Zap, ChevronRight } from 'lucide-react';
+import { CheckCircle2, ChevronDown, Store, ChevronRight } from 'lucide-react';
 import { catalog } from '../lib/api';
 import ProductThumb from '../components/ProductThumb';
 import FavoriteButton from '../components/FavoriteButton';
@@ -48,7 +48,7 @@ function MiniCard({ p }: { p: Product }) {
     <Link to={detailUrl(p)} className="pd-mini">
       <ProductThumb src={p.image_url} alt={p.product_name} size={72} />
       <div className="pd-mini-name">{p.product_name}</div>
-      <div className="pd-mini-dist"><Zap size={11} /> {distributorName(p.wholesaler)}</div>
+      <div className="pd-mini-dist"><Store size={11} /> {distributorName(p.wholesaler)}</div>
       <div className="pd-mini-price">
         {eff != null ? `$${eff.toFixed(2)}/cs` : <span className="pd-mini-noprice">Price not available</span>}
       </div>
@@ -101,7 +101,7 @@ function SizeSection({ size, view, cart, updateQty, onSchedule }: {
       {showDeals && discTiers.length > 0 && (
         <div className="pd-deals">
           <button type="button" className="pd-deals-toggle" onClick={() => setDealsOpen(o => !o)}>
-            <Tag size={12} /> {discTiers.length} Deal{discTiers.length === 1 ? '' : 's'}
+            {discTiers.length} Deal{discTiers.length === 1 ? '' : 's'}
             <ChevronDown size={13} className={`pd-deals-chev${dealsOpen ? ' is-open' : ''}`} />
           </button>
           {dealsOpen && (
@@ -141,7 +141,14 @@ function SizeSection({ size, view, cart, updateQty, onSchedule }: {
           {ripTiers.map((t, i) => (
             <div key={i} className="pd-mixrip-line">
               Buy {t.qty} {unitWord(t.qty, t.unit)} – <strong>${t.amount.toFixed(2)} RIP</strong>
-              {t.price_after != null && <span className="pd-mixrip-after"> → ${t.price_after.toFixed(2)}/case</span>}
+              {t.price_after != null && (
+                <span className="pd-mixrip-after">
+                  {' → '}${t.price_after.toFixed(2)}/case
+                  {(t.btl_price_after != null || pack) && (
+                    <> · ${(t.btl_price_after ?? (t.price_after / (pack as number))).toFixed(2)}/bottle</>
+                  )}
+                </span>
+              )}
             </div>
           ))}
         </div>
@@ -281,7 +288,7 @@ export default function ProductDetail() {
       <div className="pd-layout">
         {/* ---- Left column: identity + info + related ---- */}
         <div className="pd-left">
-          {anyDeal && <span className="pd-deal-badge"><Tag size={14} /> DEAL</span>}
+          {anyDeal && <span className="pd-deal-badge">DEAL</span>}
           <div className="pd-identity">
             <ProductThumb src={enrichment?.image_url ?? sizes[0]?.image_url} alt={name} size={120} />
             <div className="pd-identity-meta">
@@ -298,7 +305,7 @@ export default function ProductDetail() {
                 {brand && (
                   <div><dt></dt><dd><Link to={`/products?brands=${encodeURIComponent(brand)}`} className="pd-link">View all {brand}</Link></dd></div>
                 )}
-                <div><dt>Sold by</dt><dd><span className="pd-sold-by"><Zap size={12} /> {distributorName(wholesaler)}</span></dd></div>
+                <div><dt>Sold by</dt><dd><span className="pd-sold-by"><Store size={12} /> {distributorName(wholesaler)}</span></dd></div>
               </dl>
             </div>
           </div>
@@ -335,7 +342,7 @@ export default function ProductDetail() {
                 <span>More from {brand}</span>
                 {brand && <Link to={`/products?brands=${encodeURIComponent(brand)}`} className="pd-viewall">View All <ChevronRight size={14} /></Link>}
               </h2>
-              <div className="pd-related-row">
+              <div className="pd-related-grid">
                 {brandProducts.map((p, i) => <MiniCard key={`${p.wholesaler}|${p.product_name}|${i}`} p={p} />)}
               </div>
             </section>
@@ -346,7 +353,7 @@ export default function ProductDetail() {
         <div className="pd-right">
           <div className="pd-right-tabs">
             <button type="button" className={`pd-tab${view === 'deals' ? ' is-active' : ''}`} onClick={() => setView('deals')}>
-              <Tag size={13} /> Deals
+              Deals
             </button>
             <button type="button" className={`pd-tab${view === 'bottles' ? ' is-active' : ''}`} onClick={() => setView('bottles')}>
               Bottles

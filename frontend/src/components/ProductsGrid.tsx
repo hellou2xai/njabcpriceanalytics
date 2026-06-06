@@ -15,7 +15,7 @@
 import { Fragment, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronDown, Tag, CheckCircle2, Zap } from 'lucide-react';
+import { ChevronDown, CheckCircle2, Store } from 'lucide-react';
 import FavoriteButton from './FavoriteButton';
 import ProductThumb from './ProductThumb';
 import AddToCartButton from './AddToCartButton';
@@ -125,7 +125,7 @@ function SizeRow({ size, cart, updateQty, onSchedule }: {
       </Link>
       <div className="prod-size-price">
         {hasDeal && (
-          <span className="prod-deal-badge"><Tag size={12} /> Deal</span>
+          <span className="prod-deal-badge">Deal</span>
         )}
         <div className="prod-size-amounts">
           <span className="prod-size-btl">${btlPrice.toFixed(2)}/bottle</span>
@@ -203,7 +203,7 @@ function ProductCard({ group, cart, updateQty, onSchedule }: {
           </Link>
           <div className="prod-card-type">{[group.productType, group.brand].filter(Boolean).join(' · ')}</div>
           <div className="prod-card-dist">
-            <Zap size={12} className="prod-card-dist-icon" />
+            <Store size={12} className="prod-card-dist-icon" />
             {distributorName(group.wholesaler)}
           </div>
         </div>
@@ -217,7 +217,7 @@ function ProductCard({ group, cart, updateQty, onSchedule }: {
             </div>
           )}
           <div className="prod-card-options">
-            {anyDeal && <span className="prod-card-deal"><Tag size={11} /> Deal</span>}
+            {anyDeal && <span className="prod-card-deal">Deal</span>}
             <span className="prod-card-instock"><CheckCircle2 size={13} /> {optionCount} option{optionCount === 1 ? '' : 's'} in stock</span>
           </div>
         </div>

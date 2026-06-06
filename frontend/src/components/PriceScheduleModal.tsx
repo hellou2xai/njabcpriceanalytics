@@ -170,10 +170,25 @@ export default function PriceScheduleModal({ item, onClose }: { item: Product; o
   }, [onClose]);
 
   const months = buildMonths(item);                       // oldest -> newest, existing editions
-  const current = months.length ? months[months.length - 1] : null;
-  const last = months.length >= 2 ? months[months.length - 2] : null;
+  const desc = [...months].reverse();                     // newest -> oldest
+  const current = desc[0] ?? null;
   const currEdition = current?.edition ?? item.edition ?? null;
   const next = buildNextMonth(item, currEdition);
+
+  // Always aim to show THREE months of real data. When a next month exists we
+  // show Current / Next / Last (like the reference); when it doesn't (the
+  // current edition is the latest on file), we show the three most recent
+  // existing months instead of wasting a panel on an empty "NEXT".
+  const panels: { b: MonthBreakdown | null; caption: string }[] = [
+    { b: current, caption: 'CURRENT' },
+  ];
+  if (next) {
+    panels.push({ b: next, caption: 'NEXT' });
+    panels.push({ b: desc[1] ?? null, caption: 'LAST' });
+  } else {
+    panels.push({ b: desc[1] ?? null, caption: 'LAST' });
+    panels.push({ b: desc[2] ?? null, caption: 'EARLIER' });
+  }
 
   const pack = item.unit_qty && Number(item.unit_qty) > 0 ? Number(item.unit_qty) : null;
 
@@ -192,9 +207,9 @@ export default function PriceScheduleModal({ item, onClose }: { item: Product; o
           </div>
         </div>
         <div className="ps-blocks">
-          <ScheduleBlock b={current} caption="CURRENT" />
-          <ScheduleBlock b={next} caption="NEXT" empty={!next} />
-          <ScheduleBlock b={last} caption="LAST" empty={!last} />
+          {panels.map((p, i) => (
+            <ScheduleBlock key={i} b={p.b} caption={p.caption} empty={!p.b} />
+          ))}
         </div>
       </div>
     </div>

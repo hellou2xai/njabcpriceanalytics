@@ -162,6 +162,43 @@ def _in_filter(where, params, column, csv, prefix):
     where.append(f"UPPER(CAST({column} AS VARCHAR)) IN ({', '.join(keys)})")
 
 
+def _cpl_clean_brand_view(con) -> str:
+    """A view over cpl_enriched with an extra `brand_clean` column: the Go-UPC
+    enrichment brand (joined by normalised UPC), which is clean (~5k distinct
+    real brands like 'Smirnoff', 'Jim Beam'). The catalogue's own `brand`
+    column is polluted with full product descriptions (~18k distinct values),
+    so brand facets / filters / display read `brand_clean` instead. Degrades to
+    `brand_clean = brand` when the enrichment table or its brand column is
+    unavailable. One temp table + one view per request (cheap)."""
+    base = read_parquet(con, "cpl_enriched")
+    try:
+        has_pe_brand = con.execute(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'product_enrichment' AND column_name = 'brand'"
+        ).fetchone()
+        if not has_pe_brand:
+            raise RuntimeError("no enrichment brand column")
+        pe = read_parquet(con, "product_enrichment")
+        con.execute(f"""
+            CREATE OR REPLACE TEMP TABLE _pe_brand AS
+            SELECT LTRIM(CAST(upc AS VARCHAR), '0') AS un, ANY_VALUE(brand) AS brand
+            FROM {pe}
+            WHERE brand IS NOT NULL AND brand <> '' AND upc IS NOT NULL
+            GROUP BY 1
+        """)
+        con.execute(f"""
+            CREATE OR REPLACE TEMP VIEW _cpl_cb AS
+            SELECT c.*, pe.brand AS brand_clean
+            FROM {base} c
+            LEFT JOIN _pe_brand pe
+              ON LTRIM(CAST(c.upc AS VARCHAR), '0') = pe.un
+        """)
+        return "_cpl_cb"
+    except Exception:
+        con.execute(f"CREATE OR REPLACE TEMP VIEW _cpl_cb AS SELECT *, brand AS brand_clean FROM {base}")
+        return "_cpl_cb"
+
+
 def _q_clause(q: str, extra_aliases: dict | None = None,
               name_col: str = "product_name", brand_col: str = "brand",
               upc_col: str = "upc", enrich_table: str | None = None,
@@ -614,7 +651,10 @@ def search_products(
 ):
     """Full-text search with faceted filtering. Defaults to latest edition to avoid duplicates."""
     with get_duckdb() as con:
-        src = read_parquet(con, "cpl_enriched")
+        # cpl_enriched + a clean `brand_clean` column (enrichment brand). The
+        # raw `brand` column is description-polluted, so brand filter + display
+        # read brand_clean.
+        src = _cpl_clean_brand_view(con)
 
         # Pre-compute the "current" edition per wholesaler: the latest edition
         # whose YYYY-MM is on-or-before today. So if today is 2026-05-22 and
@@ -817,7 +857,9 @@ def search_products(
         # Multi-select panel filters (applied server-side so they span all pages).
         _in_filter(where, params, "wholesaler", divisions, "div_")
         _in_filter(where, params, "product_type", categories, "cat_")
-        _in_filter(where, params, "brand", brands, "brnd_")
+        # Brand filter matches the clean enrichment brand (brand_clean), so a
+        # picked brand like "Smirnoff" actually selects the right rows.
+        _in_filter(where, params, "brand_clean", brands, "brnd_")
         # Size filters on the standardized bucket so e.g. "750ML" also matches a
         # bottle stored as "25.33OZ". COALESCE keeps it working if the cache
         # predates the unit_volume_std column.
@@ -1289,6 +1331,7 @@ def search_products(
         rows = con.execute(f"""
             {data_cte_full}
             SELECT wholesaler, edition, upc, product_name, product_type,
+                   brand_clean AS brand,
                    unit_qty, unit_volume, vintage, frontline_case_price, frontline_unit_price,
                    best_case_price, best_unit_price, effective_case_price,
                    has_discount, has_rip, has_closeout, discount_pct,
@@ -2871,7 +2914,8 @@ def search_facets(
     results you actually see. `total` reflects every active filter.
     """
     with get_duckdb() as con:
-        src = read_parquet(con, "cpl_enriched")
+        # cpl_enriched + clean enrichment brand (see _cpl_clean_brand_view).
+        src = _cpl_clean_brand_view(con)
 
         if not edition:
             current_ym = _current_yyyy_mm()
@@ -2927,7 +2971,7 @@ def search_facets(
 
         add_in("div", "wholesaler", divisions, "fdiv_")
         add_in("cat", "product_type", categories, "fcat_")
-        add_in("brand", "brand", brands, "fbrnd_")
+        add_in("brand", "brand_clean", brands, "fbrnd_")
         add_in("size", "COALESCE(unit_volume_std, unit_volume)", sizes, "fsize_")
         if min_price is not None or max_price is not None:
             parts, pp = [], {}
@@ -2990,7 +3034,7 @@ def search_facets(
             # Exclude product_type='Combo' (a handful of bundle-header rows); the
             # real "in a combo" concept is the In combo filter, counted above.
             "categories": grouped("product_type", "cat", "product_type <> 'Combo'"),
-            "brands": grouped("brand", "brand"),
+            "brands": grouped("brand_clean", "brand"),
             "sizes": grouped("COALESCE(unit_volume_std, unit_volume)", "size"),
         }
 

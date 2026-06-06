@@ -3484,8 +3484,10 @@ _VARIANT_AGE_RE = re.compile(r'\b(\d+)\s*(?:yr|yrs|yo|years|year|y)\b', re.I)
 
 def _product_core(name: Optional[str]) -> str:
     """Core of a Go-UPC ENRICHMENT name: drop only the size suffix. Names are
-    already clean + descriptive, so cask/edition variants stay distinct."""
-    s = (name or "").lower()
+    already clean + descriptive, so cask/edition variants stay distinct.
+    Coerces non-strings (a NaN float from the parquet is TRUTHY, so `name or ''`
+    wouldn't guard it — that crashed prod product-variant-upcs)."""
+    s = (name if isinstance(name, str) else "").lower()
     s = _VARIANT_SIZE_RE.sub(" ", s)
     s = _VARIANT_PUNCT_RE.sub(" ", s)
     return re.sub(r"\s+", " ", s).strip()
@@ -3494,9 +3496,10 @@ def _product_core(name: Optional[str]) -> str:
 def _display_name(enr_name: Optional[str]) -> str:
     """A clean product title from the enrichment name: strip the size suffix
     ("... 1 Liter", "... 750 mL") but keep the original casing."""
-    s = _VARIANT_SIZE_RE.sub(" ", enr_name or "")
+    safe = enr_name if isinstance(enr_name, str) else ""
+    s = _VARIANT_SIZE_RE.sub(" ", safe)
     s = re.sub(r"\s+", " ", s).strip(" ,-")
-    return s or (enr_name or "")
+    return s or safe
 
 
 def _catalog_core(name: Optional[str]) -> str:
@@ -3505,7 +3508,7 @@ def _catalog_core(name: Optional[str]) -> str:
     'SHERRY' / 'FESTIVE' descriptors still separate products). Can't fix brand
     abbreviation variance (GLENFID vs GLENFIDDICH), so it only groups SKUs whose
     base name is otherwise consistent and differs by pack/size."""
-    s = (name or "").lower()
+    s = (name if isinstance(name, str) else "").lower()
     s = _VARIANT_PACK_RE.sub(" ", s)
     s = _VARIANT_SIZE_RE.sub(" ", s)
     s = _VARIANT_PUNCT_RE.sub(" ", s)

@@ -13,7 +13,7 @@ import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   Sparkles, Clock, CalendarClock, BadgeDollarSign, TrendingUp, TrendingDown,
-  Target, ArrowDownRight, Store, PiggyBank, Star, ShoppingCart, ClipboardList,
+  Target, ArrowDownRight, Store, PiggyBank, Star, ShoppingCart, ClipboardList, Info,
 } from 'lucide-react';
 import { digest, type DigestCard, type WhatsNew as WhatsNewData } from '../lib/api';
 import ProductThumb from '../components/ProductThumb';
@@ -119,6 +119,17 @@ export default function WhatsNew() {
               <div className="wn-stat-lbl">products tracked</div></div>
           </div>
         </div>
+      </div>
+
+      {/* What's on this page — sets expectations up top. */}
+      <div className="wn-note">
+        <Info size={16} />
+        <span>
+          This page shows only the products <strong>you track</strong> — your{' '}
+          <Link to="/watchlist">Favorites</Link>, <Link to="/cart">Cart</Link> and{' '}
+          <Link to="/lists">Lists</Link> — that <strong>changed this edition</strong> (new or expiring rebates,
+          price moves, target hits). Click any product to open its full details.
+        </span>
       </div>
 
       {isLoading && <p className="wn-muted">Loading your digest…</p>}

@@ -169,7 +169,7 @@ function SizeSection({ size, view, cart, updateQty, primaryName }: {
                   <div key={i} className="pd-deal-line">
                     Buy {t.qty} {buyUnit(t.qty, t.unit)} – <strong>${(t.price_after ?? 0).toFixed(2)}/case</strong>
                     {t.save_per_case > 0 && <span className="pd-deal-off"> (${t.save_per_case.toFixed(2)} off)</span>}
-                    {tb != null && <> – ${tb.toFixed(2)}/bottle</>}
+                    {tb != null && <> – ${tb.toFixed(2)}/bottle{size.unit_volume ? ` (${size.unit_volume})` : ''}</>}
                     {tBtlOz != null && <span className="pd-oz">{oz(tBtlOz)}</span>}
                     {' '}<TierWin t={t} />
                   </div>
@@ -211,7 +211,7 @@ function SizeSection({ size, view, cart, updateQty, primaryName }: {
                 return (
                   <span className="pd-mixrip-after">
                     {' → '}${t.price_after.toFixed(2)}/case
-                    {mb != null && <> · ${mb.toFixed(2)}/bottle</>}
+                    {mb != null && <> · ${mb.toFixed(2)}/bottle{size.unit_volume ? ` (${size.unit_volume})` : ''}</>}
                   </span>
                 );
               })()}

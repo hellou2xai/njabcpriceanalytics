@@ -23,6 +23,7 @@ import { QtyStepper, type CartState } from './CatalogTable';
 import PriceSparklines from './PriceSparklines';
 import { buildMonths } from '../lib/promotionsSparkline';
 import { useProductSizes, bottlesPerCase } from '../lib/productSizes';
+import { useComboLink } from '../lib/comboLink';
 import { distributorName, abgSku, skuLabel } from '../lib/distributors';
 import type { Product } from '../lib/api';
 
@@ -125,6 +126,8 @@ function SizeRow({ size, cart, updateQty, primaryName }: {
   const cartKey = `${size.product_name}|${size.wholesaler}|${size.upc ?? ''}|${size.unit_volume ?? ''}`;
   const qty = cart[cartKey] ?? { cases: 0, units: 0 };
   const pack = bottlesPerCase(size.product_name, size.unit_qty);
+  const comboLink = useComboLink();
+  const comboUrl = comboLink(size.wholesaler, size.upc);
   const sku = abgSku(size.wholesaler, size.abg_sku) ? `${skuLabel(size.wholesaler)} ${size.abg_sku}` : size.upc;
   const btlPrice = pack ? size.effective_case_price / pack : size.frontline_unit_price;
   return (
@@ -145,6 +148,10 @@ function SizeRow({ size, cart, updateQty, primaryName }: {
         <span className="prod-size-badges">
           {size.has_discount && <span className="prod-deal-badge prod-deal-qd">QD</span>}
           {size.has_rip && <span className="prod-deal-badge prod-deal-rip">RIP</span>}
+          {comboUrl && (
+            <Link to={comboUrl} className="prod-combo-sticker" onClick={e => e.stopPropagation()}
+              title="This product is part of a combo bundle — view the combo">🎁 Combo</Link>
+          )}
         </span>
         <div className="prod-size-amounts">
           <span className="prod-size-btl">${btlPrice.toFixed(2)}/bottle</span>
@@ -179,7 +186,9 @@ function ProductCard({ group, cart, updateQty }: {
   const [expanded, setExpanded] = useState(false);
   const range = priceRange(group.sizes);
   const anyDisc = group.sizes.some(s => s.has_discount);   // quantity discount
-  const anyRip = group.sizes.some(s => s.has_rip);          // RIP rebate
+  const anyRip = group.sizes.some(s => s.has_rip);          // RIP
+  const comboLink = useComboLink();
+  const comboUrl = group.sizes.map(s => comboLink(s.wholesaler, s.upc)).find(Boolean) ?? null;
   const first = group.sizes[0];
 
   // The list is paginated by SKU, so a product's sizes can be split across
@@ -235,6 +244,10 @@ function ProductCard({ group, cart, updateQty }: {
           <div className="prod-card-options">
             {anyDisc && <span className="prod-card-deal prod-deal-qd">QD</span>}
             {anyRip && <span className="prod-card-deal prod-deal-rip">RIP</span>}
+            {comboUrl && (
+              <Link to={comboUrl} className="prod-combo-sticker" onClick={e => e.stopPropagation()}
+                title="Part of a combo bundle — view the combo">🎁 Combo</Link>
+            )}
             <span className="prod-card-sizes">{optionCount} size{optionCount === 1 ? '' : 's'}</span>
           </div>
         </div>

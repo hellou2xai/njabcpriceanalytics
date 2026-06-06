@@ -134,7 +134,7 @@ export default function ProductsFilterRail({ filters, onChange, items, facets, t
         <label className="prod-filter-check">
           <input type="checkbox" checked={filters.hasRip === true}
             onChange={() => onChange({ ...filters, hasRip: filters.hasRip === true ? undefined : true })} />
-          <span>Has RIP rebate</span><span className="prod-filter-count">{ripCount}</span>
+          <span>Has RIP</span><span className="prod-filter-count">{ripCount}</span>
         </label>
         <label className="prod-filter-check">
           <input type="checkbox" checked={filters.inCombo === true}

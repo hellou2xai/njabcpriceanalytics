@@ -11,6 +11,7 @@ import { QtyStepper, loadCart, saveCart, type CartState } from '../components/Ca
 import PriceSparklines from '../components/PriceSparklines';
 import { buildMonths } from '../lib/promotionsSparkline';
 import { useProductSizes, bottlesPerCase } from '../lib/productSizes';
+import { useComboLink } from '../lib/comboLink';
 import { distributorName, abgSku, skuLabel } from '../lib/distributors';
 import type { Product, CatalogTier } from '../lib/api';
 
@@ -79,6 +80,8 @@ function SizeSection({ size, view, cart, updateQty, primaryName }: {
   const ripTiers = tiers.filter(t => t.source === 'rip').sort((a, b) => a.qty - b.qty);
   const sku = abgSku(size.wholesaler, size.abg_sku) ? `${skuLabel(size.wholesaler)} ${size.abg_sku}` : size.upc;
   const hasVintage = size.vintage != null && !['', '0', 'nv'].includes(String(size.vintage).trim().toLowerCase());
+  const comboLink = useComboLink();
+  const comboUrl = comboLink(size.wholesaler, size.upc);
   // Per-bottle from the corrected pack (so a 50mL 120-pack reads $2.99, not $35.90).
   const btl = (caseVal: number | null | undefined) => (caseVal != null && pack ? caseVal / pack : null);
 
@@ -106,6 +109,10 @@ function SizeSection({ size, view, cart, updateQty, primaryName }: {
             {sku && <span>SKU: {sku}</span>}
             {size.upc && <span className="pd-size-upc">UPC: {size.upc}</span>}
             {hasVintage && <span className="tag tag-blue">Vintage {size.vintage}</span>}
+            {comboUrl && (
+              <Link to={comboUrl} className="prod-combo-sticker"
+                title="Part of a combo bundle — view the combo">🎁 Combo</Link>
+            )}
           </div>
         </div>
         <AddToListButton productName={size.product_name} wholesaler={size.wholesaler}
@@ -244,7 +251,9 @@ export default function ProductDetail() {
     return best;
   }, [sizes]);
   const anyDisc = sizes.some(s => s.has_discount);   // quantity discount
-  const anyRip = sizes.some(s => s.has_rip);          // RIP rebate
+  const anyRip = sizes.some(s => s.has_rip);          // RIP
+  const comboLink = useComboLink();
+  const anyComboUrl = sizes.map(s => comboLink(s.wholesaler, s.upc)).find(Boolean) ?? null;
 
   // Other products in the same Case Mix RIP — all visible, no "view all".
   const { data: ripSiblings } = useQuery({
@@ -302,6 +311,10 @@ export default function ProductDetail() {
         <div className="pd-left">
           {anyDisc && <span className="pd-deal-badge pd-deal-qd">QD</span>}
           {anyRip && <span className="pd-deal-badge pd-deal-rip">RIP</span>}
+          {anyComboUrl && (
+            <Link to={anyComboUrl} className="pd-deal-badge pd-deal-combo"
+              title="Part of a combo bundle — view the combo">🎁 Combo</Link>
+          )}
           <div className="pd-identity">
             <ProductThumb src={enrichment?.image_url ?? sizes[0]?.image_url} alt={name} size={120} />
             <div className="pd-identity-meta">
@@ -341,7 +354,7 @@ export default function ProductDetail() {
           {ripCode && (ripSiblings?.items?.length ?? 0) > 0 && (
             <section className="pd-section">
               <h2>Other products in this Case Mix RIP <span className="pd-rip-tag">RIP {ripCode}</span></h2>
-              <p className="pd-section-sub">Buy these together to qualify for the rebate.</p>
+              <p className="pd-section-sub">Buy these together to qualify for the RIP.</p>
               <div className="pd-related-grid">
                 {ripSiblings!.items.map((p, i) => <MiniCard key={`${p.upc}|${i}`} p={p} />)}
               </div>

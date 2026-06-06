@@ -38,11 +38,11 @@ export default function GlobalAssistant() {
   const SUGGESTIONS: Record<string, string[]> = {
     '/products': [
       'Show California cabernets under $200/case',
-      'Single malt scotch on a RIP rebate',
+      'Single malt scotch on a RIP',
       'Tequila reposado with a quantity discount',
       'Bourbon between $300 and $500 a case',
     ],
-    '/product': ['Compare this to similar products', 'Cheapest size per bottle', 'Is there a RIP rebate?'],
+    '/product': ['Compare this to similar products', 'Cheapest size per bottle', 'Is there a RIP?'],
   };
   const suggestions = SUGGESTIONS[location.pathname];
 

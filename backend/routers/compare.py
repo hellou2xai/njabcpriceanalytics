@@ -141,6 +141,22 @@ def _common_rows(con, src: str, slugs: list[str], eds: dict[str, str]) -> list[d
     physical size many ways ('12OZ' vs '355ML', '24' vs '2 12-Packs')."""
     ed_pred, ed_params = _edition_pred(slugs, eds)
     vn = _pricing.vintage_norm_sql("vintage")
+    # Exclude a row as "part of a combo bundle" ONLY when its combo_code is a
+    # real code in that wholesaler's COMBO sheet. Some distributors (Shore
+    # Point, Jersey Beverage) repurpose the CPL combo-code column for internal
+    # cross-reference codes — a blanket non-empty test would silently drop
+    # most of their catalogue from every comparison.
+    combo_pred = "TRUE"
+    has_combo_tbl = bool(con.execute(
+        "SELECT 1 FROM information_schema.tables WHERE table_name = 'combo'"
+    ).fetchone())
+    if has_combo_tbl:
+        combo_src = read_parquet(con, "combo")
+        combo_pred = f"""NOT EXISTS (
+            SELECT 1 FROM {combo_src} cb
+            WHERE cb.wholesaler = e.wholesaler AND cb.edition = e.edition
+              AND cb.combo_code = e.combo_code
+        )"""
     sql = f"""
         SELECT wholesaler, edition, upc, product_name, product_type, brand,
                unit_qty, unit_volume, vintage,
@@ -152,10 +168,11 @@ def _common_rows(con, src: str, slugs: list[str], eds: dict[str, str]) -> list[d
                TRY_CAST(unit_qty AS DOUBLE) AS uqd,
                {vn} AS vintage_norm,
                UPPER(product_type) IN ('WINE','SPARKLING','VERMOUTH') AS vintage_sensitive
-        FROM {src}
+        FROM {src} e
         WHERE {ed_pred}
           AND {_VALID_UPC}
-          AND (combo_code IS NULL OR combo_code = '' OR combo_code = '0')
+          AND (combo_code IS NULL OR combo_code = '' OR combo_code = '0'
+               OR {combo_pred})
     """
     df = con.execute(sql, ed_params).df()
     recs = [_nan_clean(r) for r in df.to_dict(orient="records")]

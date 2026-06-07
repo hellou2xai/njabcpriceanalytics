@@ -36,7 +36,78 @@ function breakdown(c: Combo) {
 const VERDICT_LABEL: Record<string, string> = {
   worth_it: '✅ Worth it', marginal: '≈ Marginal',
   buy_separately: '⚠️ Buy separately', unknown: 'ℹ️ Unverified',
+  volume_ladder: '📊 Volume deal',
 };
+
+/** Mix-and-match volume deal: members you may mix + a per-case price ladder
+ *  that deepens with quantity. Replaces the fixed-bundle view for these. */
+function VolumeLadder({ c }: { c: Combo }) {
+  const tiers = c.volume_tiers ?? [];
+  const members = c.volume_members ?? [];
+  if (tiers.length === 0) return null;
+  const best = tiers[tiers.length - 1];   // deepest (most cases)
+  return (
+    <>
+      <div className="combo-detail-summary" style={{ marginTop: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
+          <span className="combo-pct-badge">📊 Volume deal</span>
+          <span style={{ fontSize: 13 }}>
+            Mix any of <strong>{members.length}</strong> flavor{members.length === 1 ? '' : 's'};
+            the per-case price drops as you buy more. From <strong>{$(best.list_each)}</strong>/cs list
+            down to <strong className="text-green">{$(best.combo_each)}</strong>/cs
+            {best.save_pct != null && <> ({best.save_pct.toFixed(0)}% off)</>} at {best.min_units}+ cases.
+          </span>
+        </div>
+      </div>
+
+      <h4>Price by volume</h4>
+      <div style={{ overflowX: 'auto' }}>
+        <table className="combo-detail-table">
+          <thead>
+            <tr>
+              <th>Buy (any mix)</th>
+              <th className="right">List / case</th>
+              <th className="right">Combo / case</th>
+              <th className="right">You save / case</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tiers.map((t, i) => (
+              <tr key={i}>
+                <td><strong>{t.min_units}+</strong> cases</td>
+                <td className="right">{$(t.list_each)}</td>
+                <td className="right text-green">{$(t.combo_each)}</td>
+                <td className="right">
+                  {t.save_each != null
+                    ? <span className="text-green font-bold">{$(t.save_each)}{t.save_pct != null ? ` (${t.save_pct.toFixed(0)}%)` : ''}</span>
+                    : '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <h4>Flavors you can mix</h4>
+      <table className="combo-detail-table">
+        <tbody>
+          {members.map((m, i) => (
+            <tr key={i}>
+              <td><div style={{ fontWeight: 600 }}>{m.product_name}</div>
+                {m.upc && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{m.upc}</div>}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <p className="combo-detail-note">
+        <strong>How it's figured:</strong> a mix-and-match volume deal — you may combine any of the
+        flavors above to hit a tier, and the whole order bills at that tier's per-case price.
+        "Save" is list − combo per case. There is no fixed pack to buy.
+      </p>
+    </>
+  );
+}
 
 // The economics block: ADVERTISED savings (distributor's claim) vs EFFECTIVE
 // savings (vs the realistic one-case price), the three summed baselines, and a
@@ -105,7 +176,34 @@ function SavingsCell({ c }: { c: Combo }) {
  *  combo price each, save each. */
 function ComboItemsExpander({ c }: { c: Combo }) {
   const [open, setOpen] = useState(false);
+  const ladder = c.is_volume_ladder && (c.volume_tiers?.length ?? 0) > 0;
   const comps = c.components ?? [];
+  if (ladder) {
+    const tiers = c.volume_tiers ?? [];
+    const members = c.volume_members ?? [];
+    return (
+      <div className="combo-items-expander" onClick={e => e.stopPropagation()}>
+        <button type="button" className="combo-items-toggle" onClick={() => setOpen(o => !o)}>
+          {open ? '▾ Hide' : '▸ Show'} volume tiers ({members.length} flavor{members.length === 1 ? '' : 's'})
+        </button>
+        {open && (
+          <div className="combo-items-lines">
+            {tiers.map((t, i) => (
+              <div key={i} className="combo-item-line">
+                <strong>{t.min_units}+ cases</strong>
+                <span className="text-muted"> · list {$(t.list_each)}/cs</span>
+                <span> → <strong>{$(t.combo_each)}</strong>/cs</span>
+                {t.save_pct != null && <span className="text-green"> ({t.save_pct.toFixed(0)}% off)</span>}
+              </div>
+            ))}
+            <div className="combo-item-line text-muted" style={{ fontSize: 11 }}>
+              Mix any of: {members.map(m => m.product_name).filter(Boolean).join(', ')}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
   if (comps.length === 0) return null;
   return (
     <div className="combo-items-expander" onClick={e => e.stopPropagation()}>
@@ -202,17 +300,34 @@ function ComboDetailModal({ c, onClose }: { c: Combo; onClose: () => void }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
   const contents = c.comments ? c.comments.replace(/^\s*contains:\s*/i, '') : null;
-  const items = c.item_count ?? c.components?.length ?? 0;
+  const ladder = c.is_volume_ladder && (c.volume_tiers?.length ?? 0) > 0;
+  const items = ladder ? (c.volume_members?.length ?? 0)
+    : (c.item_count ?? c.components?.length ?? 0);
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal combo-detail-modal" onClick={e => e.stopPropagation()}>
         <button className="modal-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
 
-        <h3 style={{ margin: 0 }}>📦 Bundle breakdown</h3>
+        <h3 style={{ margin: 0 }}>📦 {ladder ? 'Volume deal' : 'Bundle'} breakdown</h3>
         <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '4px 0 0' }}>
-          {distributorName(c.wholesaler)} · Combo #{c.combo_code} · {items} {items === 1 ? 'product' : 'products'}
+          {distributorName(c.wholesaler)} · Combo #{c.combo_code} · {items} {ladder ? 'flavor' : 'product'}{items === 1 ? '' : 's'}
         </p>
         {contents && <p className="combo-detail-contents">{contents}</p>}
+
+        {/* Mix-and-match VOLUME deal: tier ladder, not a fixed bundle. */}
+        {ladder ? (
+          <>
+            <VolumeLadder c={c} />
+            {c.valid_through && (
+              <div className="combo-detail-dates">
+                <strong>Deal dates:</strong>{' '}
+                {c.valid_from ? `${fmtDate(c.valid_from)} through ` : 'through '}
+                <strong>{fmtDate(c.valid_through)}</strong>.
+              </div>
+            )}
+            <div className="combo-detail-actions"><ComboCartAdder combo={c} /></div>
+          </>
+        ) : (<>
 
         {/* Worth-it economics (advertised vs effective, vs one-case price). */}
         <EconomicsBlock c={c} />
@@ -336,6 +451,7 @@ function ComboDetailModal({ c, onClose }: { c: Combo; onClose: () => void }) {
         <div className="combo-detail-actions">
           <ComboCartAdder combo={c} />
         </div>
+        </>)}
       </div>
     </div>
   );

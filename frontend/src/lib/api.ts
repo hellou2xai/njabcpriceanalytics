@@ -1597,7 +1597,9 @@ export interface ComboEconomics {
   save_vs_separate?: number | null;       // effective (vs one-case)
   save_vs_frontline?: number | null;      // vs list
   pct_vs_separate?: number | null;
-  verdict?: 'worth_it' | 'marginal' | 'buy_separately' | 'unknown';
+  verdict?: 'worth_it' | 'marginal' | 'buy_separately' | 'unknown' | 'volume_ladder';
+  is_volume_ladder?: boolean;
+  min_save_pct?: number | null; max_save_pct?: number | null;
   any_component_missing_price?: boolean;
   components_total?: number; components_priced?: number;
   unverified_reason?: string | null;
@@ -1613,6 +1615,14 @@ export interface Combo {
   valid_from?: string | null; valid_through?: string | null;
   next_valid_from?: string | null; next_valid_through?: string | null;
   economics?: ComboEconomics;
+  // Mix-and-match VOLUME deals (e.g. Shore Point Sun Crunch): instead of a
+  // fixed bundle, you mix any member and the per-case price drops with volume.
+  is_volume_ladder?: boolean;
+  volume_members?: { product_name: string | null; upc: string | null }[] | null;
+  volume_tiers?: {
+    min_units: number; list_each: number; combo_each: number;
+    save_each: number | null; save_pct: number | null;
+  }[] | null;
 }
 
 export interface RipPromo {

@@ -443,7 +443,13 @@ def get_combos(
                 # Water) list the SAME pack UPC once per flavor — often with a
                 # $0 duplicate half — which previously showed as several rows.
                 g = {"comments": None, "curr": None, "next": None,
-                     "comp_curr": {}, "comp_next": {}}
+                     "comp_curr": {}, "comp_next": {},
+                     # Raw tier rows for volume-ladder detection: per UPC, the
+                     # set of distinct qty_per_pack values seen, and the full
+                     # (qty, combo_each, list_each, name) rows. A fixed bundle
+                     # has ONE qty per UPC; a mix-and-match VOLUME ladder repeats
+                     # the same UPC at several qty tiers (2/10/52/104 ...).
+                     "tier_rows": [], "qtys_by_upc": {}}
                 combos[(ws, code)] = g
             if not g["comments"]:
                 g["comments"] = _s(r.get("comments"))
@@ -455,6 +461,17 @@ def get_combos(
                     "qty_per_pack": _s(r.get("qty_per_pack")),
                     "frontline_price_each": _f(r.get("frontline_price_each")),
                     "combo_price_each": _f(r.get("combo_price_each"))}
+            # Track every (qty, prices) row for the CURRENT slot so a volume
+            # ladder can be detected and rebuilt later.
+            if slot == "curr":
+                qn = None
+                try:
+                    qn = int(float(comp["qty_per_pack"])) if comp["qty_per_pack"] else None
+                except (TypeError, ValueError):
+                    qn = None
+                if qn:
+                    g["tier_rows"].append({**comp, "qty_n": qn})
+                    g["qtys_by_upc"].setdefault(comp["upc"], set()).add(qn)
             # Key by UPC (the reliable identifier — every combo row has one); fall
             # back to a sig only when a row lacks a UPC. On a UPC clash keep the
             # row with the higher combo_price_each so the $0 duplicate halves drop.
@@ -475,6 +492,52 @@ def get_combos(
                 continue
             comps = list((g["comp_curr"] if curr else g["comp_next"]).values())
             savings, combo_price = base["total_savings"], base["combo_pack_price"]
+
+            # ---- VOLUME-LADDER detection + rebuild ------------------------
+            # A mix-and-match volume deal repeats the same UPC at multiple qty
+            # tiers (the per-case price drops as you buy more). The fixed-bundle
+            # math is wrong for these: the headline pack price would be one
+            # tier's LIST extension while the component table shows another
+            # tier. Rebuild as a clean tier ladder instead.
+            is_ladder = curr is not None and any(
+                len(qs) > 1 for qs in g["qtys_by_upc"].values())
+            volume_members = None
+            volume_tiers = None
+            if is_ladder:
+                # Distinct flavors (members you may mix).
+                seen_u, volume_members = set(), []
+                for tr in g["tier_rows"]:
+                    if tr["upc"] and tr["upc"] not in seen_u:
+                        seen_u.add(tr["upc"])
+                        volume_members.append({"product_name": tr["product_name"], "upc": tr["upc"]})
+                # One ladder rung per distinct qty: per-case combo price (these
+                # are consistent across flavors at a given qty), list, saving.
+                by_qty: dict = {}
+                for tr in g["tier_rows"]:
+                    q = tr["qty_n"]
+                    ce, le = tr["combo_price_each"], tr["frontline_price_each"]
+                    if q is None or ce is None:
+                        continue
+                    prev = by_qty.get(q)
+                    # keep the lowest per-case combo price seen at this qty
+                    if prev is None or ce < prev["combo_each"]:
+                        by_qty[q] = {"min_units": q, "combo_each": ce,
+                                     "list_each": le,
+                                     "save_each": (le - ce) if le is not None else None,
+                                     "save_pct": round((le - ce) / le * 100, 1)
+                                                 if le else None}
+                volume_tiers = [by_qty[q] for q in sorted(by_qty)]
+                # Headline = the DEEPEST tier (most cases): what you actually pay
+                # for that volume, and the saving off list. combo_pack_price now
+                # carries PAY (not the list extension), so breakdown()'s
+                # regular = pay + savings recovers the true list.
+                if volume_tiers:
+                    deep = max(volume_tiers, key=lambda t: t["min_units"])
+                    u = deep["min_units"]
+                    pay = u * deep["combo_each"]
+                    lst = u * (deep["list_each"] or deep["combo_each"])
+                    combo_price = round(pay, 2)
+                    savings = round(lst - pay, 2)
             next_price = nxt["combo_pack_price"] if nxt else None
             next_savings = nxt["total_savings"] if nxt else None
             availability = "continues" if (curr and nxt) else ("ending" if curr else "new")
@@ -528,6 +591,10 @@ def get_combos(
                 # A combo on a SPECIFIC date window (not the whole month) is
                 # time-sensitive, same rule as CPL lines.
                 "time_sensitive": _window_is_time_sensitive(base.get("from_date"), base.get("to_date")),
+                # Volume-ladder payload (None for normal fixed bundles).
+                "is_volume_ladder": bool(is_ladder),
+                "volume_members": volume_members,
+                "volume_tiers": volume_tiers,
             })
 
         items.sort(key=lambda x: x["total_savings"] or 0, reverse=True)
@@ -603,8 +670,19 @@ def compute_combo_economics(con, combos, cym=None):
         except (TypeError, ValueError):
             return None
 
+    # Volume-ladder combos carry their own per-tier truth; the fixed-bundle
+    # reconciliation doesn't apply, so give them a clear verdict and skip.
+    for c in combos:
+        if c.get("is_volume_ladder"):
+            tiers = c.get("volume_tiers") or []
+            best = min((t["save_pct"] for t in tiers if t.get("save_pct") is not None), default=None)
+            top = max((t["save_pct"] for t in tiers if t.get("save_pct") is not None), default=None)
+            c["economics"] = {"verdict": "volume_ladder",
+                              "is_volume_ladder": True,
+                              "min_save_pct": best, "max_save_pct": top}
+    fixed = [c for c in combos if not c.get("is_volume_ladder")]
     keys = sorted({(c.get("wholesaler"), str(comp.get("upc") or "").lstrip("0"))
-                   for c in combos for comp in (c.get("components") or [])
+                   for c in fixed for comp in (c.get("components") or [])
                    if c.get("wholesaler") and str(comp.get("upc") or "").lstrip("0")})
     info: dict = {}
     if keys:
@@ -659,7 +737,7 @@ def compute_combo_economics(con, combos, cym=None):
         except Exception:
             pass
 
-    for c in combos:
+    for c in fixed:
         ws = c.get("wholesaler")
         pack = _ff(c.get("combo_pack_price"))
         rc = []

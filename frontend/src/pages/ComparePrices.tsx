@@ -211,12 +211,19 @@ export default function ComparePrices() {
               ? { borderColor: accent[o.wholesaler], color: accent[o.wholesaler] } : undefined}
             onClick={() => toggle(o.wholesaler)}
             disabled={!selected.includes(o.wholesaler) && selected.length >= 3}
-            title={`${o.products.toLocaleString()} products · edition ${o.edition ?? '–'}`}
+            title={!selected.includes(o.wholesaler) && selected.length >= 3
+              ? 'Maximum 3 — deselect one first'
+              : `${o.products.toLocaleString()} products · edition ${o.edition ?? '–'}`}
           >
             {distributorName(o.wholesaler)}
             <span className="cmp-chip-n">{o.products.toLocaleString()}</span>
           </button>
         ))}
+        {selected.length > 0 && (
+          <button className="cmp-clear" onClick={() => { setSelected([]); setExpanded(null); }}>
+            Clear
+          </button>
+        )}
       </div>
 
       {!ready && (
@@ -433,7 +440,18 @@ export default function ComparePrices() {
                 })}
                 {rows.length === 0 && (
                   <tr><td colSpan={nCols} className="cmp-none">
-                    No common products match the filters.
+                    {data.total_common === 0 ? (
+                      <>
+                        These {selected.length} distributors have <strong>no products in common</strong> —
+                        they likely serve different categories (beer houses overlap with beer houses,
+                        wine/spirits houses with each other). Deselect one and try again.
+                      </>
+                    ) : onlyDiff ? (
+                      <>All {data.total_common.toLocaleString()} common products matching the filters
+                        are priced identically — untick “Only differences” to see them.</>
+                    ) : (
+                      <>No common products match the filters.</>
+                    )}
                   </td></tr>
                 )}
               </tbody>

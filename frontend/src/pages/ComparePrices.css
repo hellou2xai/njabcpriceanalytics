@@ -17,6 +17,10 @@
 .cmp-chip.on { background: var(--surface); font-weight: 700; }
 .cmp-chip:disabled { opacity: .4; cursor: not-allowed; }
 .cmp-chip-n { font-size: 11px; font-weight: 400; color: var(--text-muted); }
+.cmp-clear {
+  border: none; background: none; color: var(--accent); cursor: pointer;
+  font-size: 12.5px; text-decoration: underline; padding: 4px 6px;
+}
 
 .cmp-empty {
   padding: 28px; border: 1px dashed var(--border); border-radius: 10px;

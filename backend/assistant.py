@@ -2021,7 +2021,118 @@ def _t_discontinued(con, args):
              "effective_case_price": _num(r.effective_case_price)} for r in df.itertuples(index=False)]
 
 
+def _t_timing_traps(con, args):
+    """BUY-TIMING TRAPS: products whose dated QD/RIP windows leave UNCOVERED
+    day(s) inside the current month — e.g. back-to-back RIP codes June 1-16
+    and June 18-30 leave June 17 with no rebate, so an order landing that day
+    earns nothing. Sources both dated CPL price lines AND dated RIP-sheet
+    windows (same two sources as the Time-Sensitive page)."""
+    from datetime import timedelta
+    from backend.db import read_parquet
+    cym = _current_ym()
+    ws_f = str(args.get("distributor") or "").strip().lower()
+    match = str(args.get("match") or "").strip().lower()
+    limit = min(int(args.get("limit") or 60), 300)
+    craw = read_parquet(con, "cpl")
+    ripsrc = read_parquet(con, "rip")
+    sub_cpl = ("c.from_date IS NOT NULL AND c.to_date IS NOT NULL "
+               "AND NOT (EXTRACT(day FROM CAST(c.from_date AS DATE)) = 1 "
+               "AND CAST(c.to_date AS DATE) = (date_trunc('month', CAST(c.to_date AS DATE)) + INTERVAL 1 MONTH - INTERVAL 1 DAY))")
+    sub_rip = sub_cpl.replace("c.", "r.")
+    rows = con.execute(f"""
+        WITH eds AS (SELECT wholesaler, MAX(edition) AS ed FROM cpl_enriched
+                     WHERE edition <= ? GROUP BY wholesaler),
+        w AS (
+            SELECT c.wholesaler, LTRIM(CAST(c.upc AS VARCHAR),'0') AS un,
+                   CAST(c.from_date AS DATE) AS f, CAST(c.to_date AS DATE) AS t
+            FROM {craw} c JOIN eds ON eds.wholesaler = c.wholesaler AND eds.ed = c.edition
+            WHERE {sub_cpl}
+              AND LTRIM(CAST(c.upc AS VARCHAR),'0') NOT IN ('', '0', 'None', 'nan')
+            UNION
+            SELECT r.wholesaler, LTRIM(CAST(r.upc AS VARCHAR),'0') AS un,
+                   CAST(r.from_date AS DATE) AS f, CAST(r.to_date AS DATE) AS t
+            FROM {ripsrc} r JOIN eds ON eds.wholesaler = r.wholesaler AND eds.ed = r.edition
+            WHERE {sub_rip}
+              AND r.upc IS NOT NULL
+              AND LTRIM(CAST(r.upc AS VARCHAR),'0') NOT IN ('', '0', 'None', 'nan')
+        )
+        SELECT wholesaler, un, f, t FROM w ORDER BY wholesaler, un, f
+    """, [cym]).fetchall()
+
+    # Merge each product's windows and find the uncovered days BETWEEN them.
+    by_key: dict = {}
+    for ws, un, f, t in rows:
+        if ws_f and str(ws).lower() != ws_f:
+            continue
+        by_key.setdefault((ws, un), []).append((f, t))
+    trapped: dict = {}
+    for key, wins in by_key.items():
+        wins.sort()
+        merged = [list(wins[0])]
+        for f, t in wins[1:]:
+            if f <= merged[-1][1] + timedelta(days=1):
+                merged[-1][1] = max(merged[-1][1], t)
+            else:
+                merged.append([f, t])
+        gaps = []
+        for a, b in zip(merged, merged[1:]):
+            gs, ge = a[1] + timedelta(days=1), b[0] - timedelta(days=1)
+            if gs <= ge:
+                gaps.append({"from": str(gs), "to": str(ge), "days": (ge - gs).days + 1})
+        if gaps:
+            trapped[key] = {"windows": [{"from": str(f), "to": str(t)} for f, t in
+                                        ((m[0], m[1]) for m in merged)],
+                            "gaps": gaps}
+    if not trapped:
+        return {"count": 0, "note": "No buy-timing traps this month — every "
+                                    "dated deal's windows are contiguous."}
+
+    # Identity + prices from the enriched catalog (cheapest row per product).
+    keys = list(trapped.keys())[:1000]
+    ph = ",".join("(?,?)" for _ in keys)
+    flat = [v for k in keys for v in k]
+    ident = con.execute(f"""
+        SELECT wholesaler, LTRIM(CAST(upc AS VARCHAR),'0') AS un,
+               ANY_VALUE(CAST(upc AS VARCHAR)) AS upc,
+               ANY_VALUE(product_name) AS product_name,
+               ANY_VALUE(unit_volume) AS unit_volume,
+               MIN(frontline_case_price) AS frontline_case_price,
+               MIN(effective_case_price) AS effective_case_price
+        FROM cpl_enriched
+        WHERE edition = (SELECT MAX(edition) FROM cpl_enriched WHERE edition <= '{cym}')
+          AND (wholesaler, LTRIM(CAST(upc AS VARCHAR),'0')) IN ({ph})
+        GROUP BY 1, 2
+    """, flat).fetchall()
+    out = []
+    for ws, un, upc, name, vol, front, eff in ident:
+        info = trapped.get((ws, un))
+        if not info:
+            continue
+        if match and match not in str(name or "").lower():
+            continue
+        gap_txt = "; ".join(
+            (g["from"] if g["from"] == g["to"] else f"{g['from']} to {g['to']}")
+            for g in info["gaps"])
+        out.append({
+            "wholesaler": ws, "upc": upc, "product_name": name,
+            "unit_volume": vol,
+            "frontline_case_price": front, "effective_case_price": eff,
+            "windows": info["windows"], "gaps": info["gaps"],
+            "gap_days_total": sum(g["days"] for g in info["gaps"]),
+            "note": f"No active dated deal on {gap_txt} — an order landing "
+                    f"then earns no rebate/discount from these windows.",
+        })
+    out.sort(key=lambda r: (-r["gap_days_total"], str(r["product_name"])))
+    return {"count": len(out), "traps": out[:limit]}
+
+
 _DATA_TOOLS = {
+    "timing_traps": (_t_timing_traps,
+        "BUY-TIMING TRAPS: products whose dated QD/RIP windows leave uncovered day(s) inside the current month "
+        "(e.g. RIP codes Jun 1-16 + Jun 18-30 leave Jun 17 with NO rebate — an order landing that day earns "
+        "nothing). Args: distributor, match (brand/product), limit. Returns per product: the merged deal windows, "
+        "the gap dates, and a plain-language warning. Use for 'buy-timing trap', 'rebate gap', 'days with no "
+        "deal/RIP', 'gap between deal windows', 'when should I NOT order'."),
     "category_breakdown": (_t_category_breakdown, "Product counts and average case price per category (current edition)."),
     "price_timeline": (_t_price_timeline, "Month-over-month price comparison for ONE product across editions. Follows the product by UPC (stable across editions even when the name changes) and returns, per distributor, a per-edition series of frontline + effective case price, RIP savings and discount flag, each with the month-over-month delta and %, plus a summary (cheapest / dearest month, net change, latest vs prior, trend up/down/flat). Use for ANY 'price over months / over time', 'how has X's price changed', 'compare X prices across months', 'price history/trend for X'. Pass `distributor` to focus one supplier and `months` to cap recent editions. A line chart of effective $/case over months is attached automatically."),
     "rip_lookup": (_t_rip_lookup, "RIP rebate lookup by brand/product NAME (e.g. 'sutter home') or by a RIP code. A UPC can have MULTIPLE codes and codes differ BY DISTRIBUTOR; returns matched products (each with all its codes), a by_distributor code map, and per-code tiers + description + product count. Use for any 'what RIP / rebate / RIP code' question. Pass month='May' / '2026-05' when the user names a month, so a rebate from a past edition that has since expired is still found (rebates change every edition)."),
@@ -2073,9 +2184,16 @@ def _t_find_deals(con, args, ctx):
             con, kind="closeout", min_effective_pct_of_frontline=floor, limit=limit,
         )
     if kind_raw in ("time_sensitive", "time-sensitive", "ending", "expiring"):
-        return _pricing.rank_best_deals(
-            con, kind="time_sensitive", min_effective_pct_of_frontline=floor, limit=limit,
-        )
+        # SAME source as the Time-Sensitive PAGE (dated CPL price lines AND
+        # dated RIP-sheet windows) so chat answers can never miss deals the
+        # page shows. The page endpoint output is shape-compatible with the
+        # chat formatter (product_name / wholesaler / to_date / savings).
+        from backend.routers.deals import time_sensitive as _ts_endpoint
+        ws = (args.get("distributor") or "").strip().lower() or None
+        rows = _ts_endpoint(ws, False, limit)
+        if not include_stocking:
+            rows = [r for r in rows if not _is_stocking_row(r)]
+        return rows
     # Default: biggest savings.
     return _pricing.rank_best_deals(
         con, kind="savings",
@@ -3815,15 +3933,22 @@ _SYSTEM = (
     "vs frontline totals, the per-component table (combo-each vs best-separate-each + cost each way), and the "
     "caveat that a combo forces buying every component at the listed quantity. NEVER call a combo a saving "
     "without checking it against buying the components separately at their own best deal. "
-    "(C) TIME-SENSITIVE — 'what's expiring / ending soon / dated deals' (find_deals time_sensitive|clearance): a "
-    "table PRODUCT | SIZE | DISTRIBUTOR | CASE PRICE | SAVE/CS | ENDS, ordered by SOONEST end date first, led "
-    "by a one-line takeaway. "
+    "(C) TIME-SENSITIVE — 'what's expiring / ending soon / dated deals / partial-month QD or RIP' (find_deals "
+    "time_sensitive|clearance): a table PRODUCT | SIZE | DISTRIBUTOR | CASE PRICE | SAVE/CS | ENDS, ordered by "
+    "SOONEST end date first, led by a one-line takeaway. This now includes dated RIP-SHEET windows, not just "
+    "dated price lines. "
+    "(C2) BUY-TIMING TRAPS — 'timing trap', 'rebate gap', 'days with no deal/RIP', 'gap between windows', "
+    "'when should I NOT order' (timing_traps, optional distributor/match): products whose dated QD/RIP windows "
+    "leave uncovered day(s) this month. Show PRODUCT | DISTRIBUTOR | DEAL WINDOWS | GAP DAYS and warn plainly "
+    "that an order landing on a gap day earns no rebate; suggest ordering inside a window. For ONE product's "
+    "trap question, pass match=<name>. "
     "(D) PRICE DROPS / INCREASES — 'what's going down/up next month' (price_movers drop|increase): a table "
     "PRODUCT | SIZE | DISTRIBUTOR | THIS MONTH | NEXT MONTH | delta/cs, ordered by biggest move; if next "
     "edition isn't published yet, say so plainly and show this-month pricing instead of inventing next-month "
     "numbers. NEVER fabricate a price, date, rebate or saving — use only the tool's numbers. "
     "Other tools: compare_distributors (one product across all distributors, by UPC or name — show a "
     "table + a bar chart of effective price by distributor), find_deals (time_sensitive|discount|clearance), "
+    "timing_traps (rebate-gap days), "
     "price_movers (drop|increase), and the signed-in user's get_cart / get_favorites / get_lists / get_orders. "
     "ALL FOUR cart tools (optimize_cart, cart_timing, cart_rip_tiers, analyze_cart) take source=cart|favorites|"
     "list (+ optional list_name) — so EVERYTHING below works for a LIST or the WISHLIST too, not just the cart. "

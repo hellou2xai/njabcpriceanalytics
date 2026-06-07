@@ -18,6 +18,7 @@ import { buildSparkProps } from '../lib/promotionsSparkline';
 import VintageSticker from '../components/VintageSticker';
 import { useProductQuickView } from '../components/ProductQuickView';
 import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
+import { AI_EXPLAINERS_ENABLED } from '../lib/flags';
 
 const money = (v?: number | null) => (v == null ? '-' : `$${Number(v).toFixed(2)}`);
 
@@ -387,7 +388,7 @@ function DealCard({ d, open }: { d: TimeSensitiveDeal; open: (n: string, w: stri
         <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text)' }}>{fmtDateRange(d.from_date, d.to_date)}</span>
       </div>
 
-      {d.ai_blurb && (
+      {AI_EXPLAINERS_ENABLED && d.ai_blurb && (
         <div className="deal-card-ai" title="AI explanation, refreshed with each data load">
           <span className="deal-ai-mark">✨</span> {d.ai_blurb}
         </div>

@@ -56,6 +56,7 @@ const noOverflow = async (page) =>
   check('detail: volume-pricing chart', !!(await page.$('.qpc')));
   check('detail: list-under-cart actions', !!(await page.$('.pd-order-actions')));
   check('detail: no horizontal overflow', await noOverflow(page));
+  check('detail: AI explainer is off', !/What this means|AI explainer/i.test(body));
   // The sparkline tooltip must show FULL tiers with rebate-alone RIP amounts.
   const spark = await page.$('.psk');
   if (spark) {

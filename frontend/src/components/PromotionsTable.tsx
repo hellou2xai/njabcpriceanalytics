@@ -1,5 +1,6 @@
 import SortableTable from './SortableTable';
 import { distributorName } from '../lib/distributors';
+import { AI_EXPLAINERS_ENABLED } from '../lib/flags';
 
 /** The canonical promotion row shape. Every Promotions page adapts its native
  *  rows to this shape before handing them to PromotionsTable, so the table
@@ -128,7 +129,8 @@ export default function PromotionsTable({ rows, exportName, onRowClick }: Props)
             render: r => r.ai_blurb
               ? <span title={r.ai_blurb as string} style={{ color: 'var(--accent)', fontSize: 12 }}>✨ hover</span>
               : <span className="text-muted">-</span> },
-        ]}
+        // Drop the AI-note column entirely while explainers are off.
+        ].filter(col => AI_EXPLAINERS_ENABLED || col.key !== 'ai_blurb')}
       />
     </div>
   );

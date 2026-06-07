@@ -3,6 +3,7 @@ import { useSearchParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, Store, ChevronRight } from 'lucide-react';
 import { catalog } from '../lib/api';
+import { AI_EXPLAINERS_ENABLED } from '../lib/flags';
 import ProductThumb from '../components/ProductThumb';
 import FavoriteButton from '../components/FavoriteButton';
 import AddToCartButton from '../components/AddToCartButton';
@@ -444,7 +445,7 @@ export default function ProductDetail() {
             </section>
           )}
 
-          {detail?.ai_blurb && (
+          {AI_EXPLAINERS_ENABLED && detail?.ai_blurb && (
             <section className="pd-section pd-ai">
               <h2>What this means</h2>
               <p>{detail.ai_blurb}</p>

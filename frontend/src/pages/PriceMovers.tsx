@@ -15,6 +15,7 @@ import PromotionsPager from '../components/PromotionsPager';
 import PromotionsTable, { type PromotionRow } from '../components/PromotionsTable';
 import MonthEffectiveSparkline from '../components/MonthEffectiveSparkline';
 import { buildSparkProps } from '../lib/promotionsSparkline';
+import { AI_EXPLAINERS_ENABLED } from '../lib/flags';
 import VintageSticker from '../components/VintageSticker';
 import { useProductQuickView } from '../components/ProductQuickView';
 import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
@@ -386,7 +387,7 @@ function MoverCard({ d, isDrop, open }: { d: PriceMover; isDrop: boolean; open: 
         <span className="text-muted" style={{ fontSize: 11 }}>Edition {fmtEdition(d.edition)}</span>
       </div>
 
-      {d.ai_blurb && (
+      {AI_EXPLAINERS_ENABLED && d.ai_blurb && (
         <div className="deal-card-ai" title="AI explanation of this price change">
           <span className="deal-ai-mark">✨</span> {d.ai_blurb}
         </div>

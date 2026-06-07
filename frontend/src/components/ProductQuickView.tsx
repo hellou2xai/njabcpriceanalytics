@@ -10,6 +10,7 @@ import ProductThumb from './ProductThumb';
 import AddToCartButton from './AddToCartButton';
 import { distributorName, abgSku, skuLabel } from '../lib/distributors';
 import { windowBadge } from '../lib/dealDates';
+import { AI_EXPLAINERS_ENABLED } from '../lib/flags';
 import type { TierWindow } from '../lib/api';
 
 // Inline window-status badge (Active now / Expires in N days / Starts DD MMM)
@@ -230,8 +231,9 @@ function QuickViewModal({
   const p = detail?.product;
   const pB = detailB?.product;
 
-  // Sort state for the All Editions Breakdown table
-  const [bSort, setBSort] = useState<{ key: string; dir: 'asc' | 'desc' }>({ key: 'edition', dir: 'asc' });
+  // Sort state for the All Editions Breakdown table. Default newest-first
+  // (edition desc) so the current month leads and history reads downward.
+  const [bSort, setBSort] = useState<{ key: string; dir: 'asc' | 'desc' }>({ key: 'edition', dir: 'desc' });
   const toggleSort = (key: string) =>
     setBSort(s => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
   const sortArrow = (key: string) => (bSort.key === key ? (bSort.dir === 'asc' ? ' ▲' : ' ▼') : '');
@@ -312,7 +314,7 @@ function QuickViewModal({
               );
             })()}
 
-            {detail?.ai_blurb && (
+            {AI_EXPLAINERS_ENABLED && detail?.ai_blurb && (
               <div className="pv-ai-blurb">
                 <div className="pv-ai-blurb-head">
                   <span className="pv-ai-blurb-icon" aria-hidden="true">✨</span>

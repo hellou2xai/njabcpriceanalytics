@@ -780,6 +780,15 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
 .fav-btn.active { color: #f59e0b; }
 .fav-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* Closeout flag (Compare Prices only): the red "X" sibling of the fav star. */
+.closeout-btn {
+  background: none; border: none; cursor: pointer; padding: 2px;
+  color: #a1a1aa; transition: color 0.15s; display: inline-flex;
+}
+.closeout-btn:hover { color: var(--red); }
+.closeout-btn.active { color: var(--red); }
+.closeout-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
 .fav-note {
   font-size: 11px; color: var(--text-muted); font-style: italic;
   max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

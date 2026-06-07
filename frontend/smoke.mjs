@@ -83,6 +83,15 @@ const noOverflow = async (page) =>
     check('combos: component lines expand', (await page.$$('.combo-item-line')).length > 0);
   }
 
+  // ---- Compare Prices: closeout flag + admin review form ------------------
+  await page.goto(BASE + '/compare-prices?d=allied,fedway', { waitUntil: 'networkidle' });
+  await page.waitForTimeout(4000); await dismiss(page);
+  check('compare: closeout flag button present', (await page.$$('.closeout-btn')).length > 0);
+  await page.goto(BASE + '/admin/closeout-flags', { waitUntil: 'networkidle' });
+  await page.waitForTimeout(2000); await dismiss(page);
+  check('admin: closeout flags page renders',
+    ((await page.textContent('.page').catch(() => '')) ?? '').includes('User Closeout Flags'));
+
   // ---- Celr AI Agents ------------------------------------------------------
   await page.goto(BASE + '/agents/proposals', { waitUntil: 'networkidle' });
   await page.waitForTimeout(2500); await dismiss(page);

@@ -8,6 +8,7 @@ import { distributorName } from '../lib/distributors';
 import { useProductQuickView } from '../components/ProductQuickView';
 import AddToCartButton from '../components/AddToCartButton';
 import FavoriteButton from '../components/FavoriteButton';
+import CloseoutFlagButton from '../components/CloseoutFlagButton';
 import './ComparePrices.css';
 
 const money = (v?: number | null) => (v == null ? '–' : `$${Number(v).toFixed(2)}`);
@@ -511,6 +512,12 @@ export default function ComparePrices() {
                             />
                           )}
                           <FavoriteButton
+                            productName={r.product_name}
+                            wholesaler={winner && winner !== 'tie' ? winner : selected[0]}
+                            upc={r.upc ?? undefined}
+                            unitVolume={r.unit_volume ?? undefined}
+                          />
+                          <CloseoutFlagButton
                             productName={r.product_name}
                             wholesaler={winner && winner !== 'tie' ? winner : selected[0]}
                             upc={r.upc ?? undefined}

@@ -291,6 +291,50 @@ def remove_from_watchlist(item_id: int, user: dict = Depends(get_current_user)):
     return {"status": "removed"}
 
 
+class CloseoutFlag(BaseModel):
+    product_name: str
+    wholesaler: str
+    upc: Optional[str] = None
+    unit_volume: Optional[str] = None
+    note: Optional[str] = None
+
+
+@router.get("/closeout-flags")
+def get_closeout_flags(user: dict = Depends(get_current_user)):
+    """The signed-in user's own closeout flags (drives the X toggle state on
+    the Compare Prices page)."""
+    with get_pg() as con:
+        rows = con.execute(
+            "SELECT * FROM closeout_flags WHERE user_id = %s ORDER BY created_at DESC",
+            (user["id"],)).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.post("/closeout-flags")
+def add_closeout_flag(item: CloseoutFlag, user: dict = Depends(get_current_user)):
+    with get_pg() as con:
+        cur = con.execute(
+            """INSERT INTO closeout_flags (user_id, product_name, wholesaler, upc, unit_volume, note)
+               VALUES (%s, %s, %s, %s, %s, %s)
+               ON CONFLICT(user_id, product_name, wholesaler, unit_volume) DO UPDATE SET
+                   note = excluded.note, status = 'open'
+               RETURNING id""",
+            (user["id"], item.product_name, item.wholesaler, item.upc, item.unit_volume, item.note))
+        _audit(con, "closeout_flags", cur.fetchone()["id"], "insert", new_values=item.model_dump())
+    return {"status": "flagged"}
+
+
+@router.delete("/closeout-flags/{item_id}")
+def remove_closeout_flag(item_id: int, user: dict = Depends(get_current_user)):
+    with get_pg() as con:
+        old = con.execute("SELECT * FROM closeout_flags WHERE id = %s AND user_id = %s",
+                          (item_id, user["id"])).fetchone()
+        con.execute("DELETE FROM closeout_flags WHERE id = %s AND user_id = %s",
+                    (item_id, user["id"]))
+        _audit(con, "closeout_flags", item_id, "delete", old_values=dict(old) if old else None)
+    return {"status": "removed"}
+
+
 @router.put("/watchlist/{item_id}/target-price")
 def set_target_price(item_id: int, target_price: float = Body(...), user: dict = Depends(get_current_user)):
     with get_pg() as con:

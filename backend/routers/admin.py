@@ -7,12 +7,57 @@ the owner; set ADMIN_EMAILS on the server to add more.
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
 from backend.pg import get_pg
 from backend.auth import require_admin, _is_admin
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+
+# ---- User Closeout Flags (Compare Prices "X" flags, reviewed manually) ----
+
+_CLOSEOUT_STATUSES = ("open", "reviewed", "actioned", "dismissed")
+
+
+@router.get("/closeout-flags")
+def admin_closeout_flags(status: Optional[str] = None, user: dict = Depends(require_admin)):
+    """Every user's closeout flags for the review form, newest first, joined to
+    the flagging user's email. Optional ?status= filter."""
+    where, params = "", []
+    if status and status in _CLOSEOUT_STATUSES:
+        where = "WHERE f.status = %s"
+        params.append(status)
+    with get_pg() as con:
+        rows = con.execute(
+            f"""SELECT f.id, f.user_id, u.email AS user_email, f.product_name,
+                       f.wholesaler, f.upc, f.unit_volume, f.note, f.status, f.created_at
+                FROM closeout_flags f LEFT JOIN users u ON u.id = f.user_id
+                {where}
+                ORDER BY (f.status = 'open') DESC, f.created_at DESC""",
+            params).fetchall()
+        counts = con.execute(
+            "SELECT status, COUNT(*) n FROM closeout_flags GROUP BY status").fetchall()
+    return {"flags": [dict(r) for r in rows],
+            "counts": {c["status"]: c["n"] for c in counts}}
+
+
+@router.put("/closeout-flags/{flag_id}/status")
+def admin_set_closeout_status(flag_id: int, status: str = Body(..., embed=True),
+                              user: dict = Depends(require_admin)):
+    """Move a flag through the review workflow (open -> reviewed/actioned/dismissed)."""
+    if status not in _CLOSEOUT_STATUSES:
+        raise HTTPException(status_code=400, detail=f"status must be one of {_CLOSEOUT_STATUSES}")
+    with get_pg() as con:
+        con.execute("UPDATE closeout_flags SET status = %s WHERE id = %s", (status, flag_id))
+    return {"status": "updated", "new_status": status}
+
+
+@router.delete("/closeout-flags/{flag_id}")
+def admin_delete_closeout_flag(flag_id: int, user: dict = Depends(require_admin)):
+    with get_pg() as con:
+        con.execute("DELETE FROM closeout_flags WHERE id = %s", (flag_id,))
+    return {"status": "deleted"}
 
 
 @router.get("/stats")

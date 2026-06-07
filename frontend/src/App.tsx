@@ -48,6 +48,7 @@ import Admin from './pages/Admin';
 import AdminActivity from './pages/AdminActivity';
 import AdminAiUsage from './pages/AdminAiUsage';
 import AdminAiFeedback from './pages/AdminAiFeedback';
+import AdminCloseoutFlags from './pages/AdminCloseoutFlags';
 import AgentProposals from './pages/AgentProposals';
 import AgentStoreFeed from './pages/AgentStoreFeed';
 import AgentSettings from './pages/AgentSettings';
@@ -159,6 +160,7 @@ function AuthenticatedApp() {
             <Route path="/admin/activity" element={<AdminActivity />} />
             <Route path="/admin/ai-usage" element={<AdminAiUsage />} />
             <Route path="/admin/ai-feedback" element={<AdminAiFeedback />} />
+            <Route path="/admin/closeout-flags" element={<AdminCloseoutFlags />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/qa" element={<QA />} />
             <Route path="/cart" element={<Cart />} />

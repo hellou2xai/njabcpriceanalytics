@@ -141,6 +141,25 @@ def init_user_db():
         )""",
         """CREATE UNIQUE INDEX IF NOT EXISTS idx_watchlist_user_item
             ON watchlist(user_id, product_name, wholesaler, unit_volume)""",
+        # User-flagged closeout candidates from the Compare Prices page (an "X"
+        # toggle, the closeout sibling of the favorites star). Captured per
+        # user; reviewed/actioned manually by an admin via the "User Closeout
+        # Flags" form. One row per (user, wholesaler, product, size).
+        f"""CREATE TABLE IF NOT EXISTS closeout_flags (
+            id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            user_id integer REFERENCES users(id) ON DELETE CASCADE,
+            upc text,
+            product_name text NOT NULL,
+            wholesaler text NOT NULL,
+            unit_volume text,
+            note text,
+            status text NOT NULL DEFAULT 'open'
+                CHECK (status IN ('open','reviewed','actioned','dismissed')),
+            created_at text DEFAULT {NOW_UTC}
+        )""",
+        """CREATE UNIQUE INDEX IF NOT EXISTS idx_closeout_user_item
+            ON closeout_flags(user_id, product_name, wholesaler, unit_volume)""",
+        "CREATE INDEX IF NOT EXISTS idx_closeout_status ON closeout_flags(status)",
         f"""CREATE TABLE IF NOT EXISTS orders (
             id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
             user_id integer REFERENCES users(id) ON DELETE CASCADE,

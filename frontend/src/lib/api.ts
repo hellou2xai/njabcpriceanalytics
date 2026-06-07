@@ -674,6 +674,29 @@ export const watchlist = {
     request(`/api/watchlist/${id}/notes`, { method: 'PUT', body: JSON.stringify(notes) }),
 };
 
+export interface CloseoutFlag {
+  id: number; user_id: number; product_name: string; wholesaler: string;
+  upc?: string | null; unit_volume?: string | null; note?: string | null;
+  status: 'open' | 'reviewed' | 'actioned' | 'dismissed'; created_at: string;
+  user_email?: string | null;
+}
+
+export const closeout = {
+  mine: () => request<CloseoutFlag[]>('/api/closeout-flags'),
+  add: (item: { product_name: string; wholesaler: string; upc?: string; unit_volume?: string; note?: string }) =>
+    request<{ status: string }>('/api/closeout-flags', { method: 'POST', body: JSON.stringify(item) }),
+  remove: (id: number) => request<{ status: string }>(`/api/closeout-flags/${id}`, { method: 'DELETE' }),
+  // admin review
+  all: (status?: string) =>
+    request<{ flags: CloseoutFlag[]; counts: Record<string, number> }>(
+      `/api/admin/closeout-flags${status ? `?status=${status}` : ''}`),
+  setStatus: (id: number, status: string) =>
+    request<{ status: string }>(`/api/admin/closeout-flags/${id}/status`,
+      { method: 'PUT', body: JSON.stringify({ status }) }),
+  adminRemove: (id: number) =>
+    request<{ status: string }>(`/api/admin/closeout-flags/${id}`, { method: 'DELETE' }),
+};
+
 export const orders = {
   list: (status?: string) => request<Order[]>(`/api/orders${qs({ status })}`),
   plan: (status?: string) => request<PlanOrder[]>(`/api/orders/plan${qs({ status })}`),

@@ -340,19 +340,17 @@ def compare_products(
         }
         rows.append(row)
 
-    # ---- filters -----------------------------------------------------------
+    # ---- search/category filters narrow BOTH the grid and the summary ------
     if q:
         qq = q.lower()
         rows = [r for r in rows if qq in (r["product_name"] or "").lower()
                 or qq in (r["brand"] or "").lower()]
     if product_type:
         rows = [r for r in rows if (r["product_type"] or "").lower() == product_type.lower()]
-    if only_differences:
-        rows = [r for r in rows if r["winner_effective"] not in (None, "tie")]
-    if min_spread > 0:
-        rows = [r for r in rows if (r["spread"] or 0) >= min_spread]
 
-    # ---- smart analysis (over the filtered set) ----------------------------
+    # ---- smart analysis (over the full common set for this search context;
+    #      only_differences / min_spread are display filters and must NOT
+    #      zero out the ties / common-products scoreboard) -------------------
     wins = {w: 0 for w in slugs}
     wins_front = {w: 0 for w in slugs}
     ties = 0
@@ -409,6 +407,14 @@ def compare_products(
                 f"${total_spread:,.2f} per case-each versus always picking the most expensive."
             )
 
+    total = len(rows)  # common universe for this search context
+
+    # ---- display filters (grid only — summary above is already computed) ---
+    if only_differences:
+        rows = [r for r in rows if r["winner_effective"] not in (None, "tie")]
+    if min_spread > 0:
+        rows = [r for r in rows if (r["spread"] or 0) >= min_spread]
+
     # ---- sort + limit ------------------------------------------------------
     keymap = {
         "spread": lambda r: r["spread"] or 0,
@@ -421,7 +427,6 @@ def compare_products(
     }
     rows.sort(key=keymap.get(sort, keymap["spread"]),
               reverse=(order != "asc") if sort != "product" else (order == "desc"))
-    total = len(rows)
     rows = rows[:limit]
 
     return {

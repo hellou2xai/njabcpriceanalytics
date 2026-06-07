@@ -79,7 +79,8 @@ export default function ComparePrices() {
     params.get('d')?.split(',').filter(Boolean) ?? []);
   const [q, setQ] = useState(params.get('q') ?? '');
   const [ptype, setPtype] = useState(params.get('type') ?? '');
-  const [onlyDiff, setOnlyDiff] = useState(params.get('diff') === '1');
+  // default ON: open straight to the rows where distributors actually differ
+  const [onlyDiff, setOnlyDiff] = useState(params.get('diff') !== '0');
   const [minSpread, setMinSpread] = useState(params.get('min') ?? '');
   const [sortKey, setSortKey] = useState(params.get('s') ?? 'product');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(params.get('dir') === 'desc' ? 'desc' : 'asc');
@@ -98,7 +99,7 @@ export default function ComparePrices() {
     if (selected.length) next.set('d', selected.join(','));
     if (q) next.set('q', q);
     if (ptype) next.set('type', ptype);
-    if (onlyDiff) next.set('diff', '1');
+    if (!onlyDiff) next.set('diff', '0');
     if (minSpread) next.set('min', minSpread);
     if (sortKey !== 'product') next.set('s', sortKey);
     if (sortDir !== 'asc') next.set('dir', sortDir);
@@ -276,7 +277,7 @@ export default function ComparePrices() {
               <option value="">All categories</option>
               {types.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
-            <label className="cmp-check">
+            <label className="cmp-check" title="Untick to include products priced identically at every selected distributor">
               <input type="checkbox" checked={onlyDiff} onChange={e => setOnlyDiff(e.target.checked)} />
               Only differences
             </label>

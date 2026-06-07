@@ -4,6 +4,9 @@ export const DISTRIBUTOR_NAMES: Record<string, string> = {
   high_grade: 'Highgrade',
   opici: 'Opici',
   peerless: 'Peerless',
+  kramer: 'Kramer',
+  shore_point: 'Shore Point',
+  jersey_beverage: 'Jersey Beverage',
 };
 
 export function distributorName(code: string): string {

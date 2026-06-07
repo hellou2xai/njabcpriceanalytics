@@ -27,6 +27,7 @@ import PriceMovers from './pages/PriceMovers';
 import MajorDiscounts from './pages/MajorDiscounts';
 import Todo from './pages/Todo';
 import Discounts from './pages/Discounts';
+import ComparePrices from './pages/ComparePrices';
 import Clearance from './pages/Clearance';
 import Combos from './pages/Combos';
 import Rips from './pages/Rips';
@@ -135,6 +136,7 @@ function AuthenticatedApp() {
             <Route path="/price-increases" element={<PriceMovers direction="up" />} />
             <Route path="/major-discounts" element={<MajorDiscounts />} />
             <Route path="/discounts" element={<Discounts />} />
+            <Route path="/compare-prices" element={<ComparePrices />} />
             <Route path="/clearance" element={<Clearance />} />
             <Route path="/combos" element={<Combos />} />
             <Route path="/rips" element={<Rips />} />

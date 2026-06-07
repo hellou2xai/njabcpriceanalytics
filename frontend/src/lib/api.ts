@@ -388,6 +388,85 @@ export const deals = {
     request<TimeSensitiveDeal[]>(`/api/deals/time-sensitive${qs(params ?? {})}`),
 };
 
+// ---- Compare Prices (2-3 distributors, common UPCs only) ----
+export interface CompareOption {
+  wholesaler: string;
+  edition: string | null;
+  products: number;
+}
+
+export interface ComparePrice {
+  upc: string | null;
+  edition: string;
+  product_name: string;
+  frontline: number | null;
+  after_qd: number | null;
+  effective: number | null;
+  btl_effective: number | null;
+  rip_savings: number | null;
+  has_discount: boolean;
+  has_rip: boolean;
+}
+
+export interface CompareRow {
+  match_key: string;
+  upc_norm: string;
+  size_key: string;
+  product_name: string;
+  product_type: string | null;
+  brand: string | null;
+  unit_qty: string | null;
+  unit_volume: string | null;
+  vintage: string | null;
+  upc: string | null;
+  prices: Record<string, ComparePrice>;
+  winner_frontline: string | null;
+  winner_after_qd: string | null;
+  winner_effective: string | null;
+  spread: number | null;
+  spread_pct: number | null;
+  deal_flip: boolean;
+}
+
+export interface CompareSummary {
+  common_products: number;
+  wins_effective: Record<string, number>;
+  wins_frontline: Record<string, number>;
+  ties: number;
+  deal_flips: number;
+  total_spread: number;
+  top_spreads: { product_name: string; spread: number | null; winner: string | null; unit_volume: string | null }[];
+  by_type: Record<string, Record<string, number>>;
+  insights: string[];
+}
+
+export interface CompareResponse {
+  wholesalers: string[];
+  editions: Record<string, string>;
+  total_common: number;
+  rows: CompareRow[];
+  summary: CompareSummary;
+}
+
+export interface CompareLadder {
+  product_name: string | null;
+  upc: string | null;
+  edition: string | null;
+  frontline: number | null;
+  after_qd: number | null;
+  effective: number | null;
+  tiers: CatalogTier[];
+}
+
+export const compare = {
+  options: () => request<CompareOption[]>('/api/compare/options'),
+  products: (params: Record<string, unknown>) =>
+    request<CompareResponse>(`/api/compare/products${qs(params)}`),
+  tiers: (params: Record<string, unknown>) =>
+    request<{ wholesalers: string[]; ladders: Record<string, CompareLadder> }>(
+      `/api/compare/tiers${qs(params)}`),
+};
+
 // ---- Beta feedback ----
 export interface FeedbackItem {
   id: number;

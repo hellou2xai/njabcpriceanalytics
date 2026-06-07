@@ -140,6 +140,9 @@ DISTRIBUTOR_NAMES = {
     "high_grade": "Highgrade",
     "opici": "Opici",
     "peerless": "Peerless",
+    "kramer": "Kramer",
+    "shore_point": "Shore Point",
+    "jersey_beverage": "Jersey Beverage",
 }
 
 

@@ -1,5 +1,7 @@
 /* Compare Prices page */
 
+.cmp-head h2 { margin: 0 0 14px; }
+
 .cmp-picker {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   margin-bottom: 14px;

@@ -145,7 +145,11 @@ export default function ComparePrices() {
 
   return (
     <div className="page">
-      <h2><Scale size={20} style={{ verticalAlign: '-3px', marginRight: 8 }} />Compare Prices</h2>
+      {/* wrapper keeps this h2 out of the global `.page > h2` sticky rule,
+          whose negative margins clipped the picker row below it */}
+      <div className="cmp-head">
+        <h2><Scale size={20} style={{ verticalAlign: '-3px', marginRight: 8 }} />Compare Prices</h2>
+      </div>
 
       {/* ---- distributor picker ---- */}
       <div className="cmp-picker">

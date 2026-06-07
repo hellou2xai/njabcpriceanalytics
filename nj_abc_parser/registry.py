@@ -18,8 +18,10 @@ from nj_abc_parser.wholesalers.fedway import CONFIG as FEDWAY
 from nj_abc_parser.wholesalers.opici import CONFIG as OPICI
 from nj_abc_parser.wholesalers.peerless import CONFIG as PEERLESS
 from nj_abc_parser.wholesalers.high_grade import CONFIG as HIGH_GRADE
+from nj_abc_parser.wholesalers.kramer import CONFIG as KRAMER
+from nj_abc_parser.wholesalers.shore_point import CONFIG as SHORE_POINT
 
-REGISTRY = [ALLIED, FEDWAY, OPICI, PEERLESS, HIGH_GRADE]
+REGISTRY = [ALLIED, FEDWAY, OPICI, PEERLESS, HIGH_GRADE, KRAMER, SHORE_POINT]
 
 
 def list_wholesalers() -> list[dict]:

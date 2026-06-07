@@ -113,15 +113,18 @@ Steps (next scheduled run: 17 June 2026):
    (`--wholesaler allied` for one distributor; `--derive-only` to just rebuild
    the derived tables; `--dry-run` to parse without writing.)
 3. Load Parquet into Postgres. This is a FULL REPLACE, so Postgres always mirrors
-   exactly what is in `parquet_output`. Local target:
+   exactly what is in `parquet_output`. The monthly load targets BOTH databases
+   in one command (local from `DATABASE_URL`, prod from
+   `RENDER_EXTERNAL_DATABASE_URL`, both in `.env` which syncs via OneDrive —
+   so this same command works from any machine):
    ```
-   python scripts/ingest_to_postgres.py
+   python scripts/ingest_to_postgres.py --all
    ```
-   Render target (the database's External URL, which includes `sslmode=require`):
-   ```
-   python scripts/ingest_to_postgres.py --database-url "postgresql://celr:...@dpg-....render.com/celr?sslmode=require"
-   ```
-4. Refresh the running app's cache so it picks up the new data:
+   (`--prod` for prod only, no flag for local only, or `--database-url "..."`
+   for an explicit target.) After a local ingest the stale local DuckDB cache
+   files are swept automatically, so the next local backend start rebuilds
+   from the fresh data.
+4. Refresh the running PROD app's cache so it picks up the new data:
    - the "Reload pricing cache" button on the Admin page, or
    - `POST /api/admin/reload-pricing` (admin), or
    - a Manual Deploy in Render (a restart rebuilds the cache).

@@ -81,9 +81,15 @@ export default function ComparePrices() {
   const [ptype, setPtype] = useState(params.get('type') ?? '');
   const [onlyDiff, setOnlyDiff] = useState(params.get('diff') === '1');
   const [minSpread, setMinSpread] = useState(params.get('min') ?? '');
-  const [sort, setSort] = useState(params.get('sort') ?? 'spread');
+  const [sortKey, setSortKey] = useState(params.get('s') ?? 'product');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>(params.get('dir') === 'desc' ? 'desc' : 'asc');
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [shown, setShown] = useState(100);
+  const PAGE_SIZES = [50, 100, 250, 500, 1000];
+  const [pageSize, setPageSize] = useState(() => {
+    const v = parseInt(params.get('pp') ?? '100', 10);
+    return PAGE_SIZES.includes(v) ? v : 100;
+  });
+  const [shown, setShown] = useState(pageSize);
   const { open } = useProductQuickView();
 
   // URL sync (shareable / survives Back)
@@ -94,9 +100,14 @@ export default function ComparePrices() {
     if (ptype) next.set('type', ptype);
     if (onlyDiff) next.set('diff', '1');
     if (minSpread) next.set('min', minSpread);
-    if (sort !== 'spread') next.set('sort', sort);
+    if (sortKey !== 'product') next.set('s', sortKey);
+    if (sortDir !== 'asc') next.set('dir', sortDir);
+    if (pageSize !== 100) next.set('pp', String(pageSize));
     if (next.toString() !== params.toString()) setSearchParams(next, { replace: true });
-  }, [selected, q, ptype, onlyDiff, minSpread, sort]);
+  }, [selected, q, ptype, onlyDiff, minSpread, sortKey, sortDir, pageSize]);
+
+  // page-size change resets the visible window
+  useEffect(() => { setShown(pageSize); }, [pageSize]);
 
   const { data: options } = useQuery({
     queryKey: ['compare-options'],
@@ -105,21 +116,20 @@ export default function ComparePrices() {
 
   const ready = selected.length >= 2 && selected.length <= 3;
   const { data, isLoading, error } = useQuery({
-    queryKey: ['compare-products', selected, q, ptype, onlyDiff, minSpread, sort],
+    queryKey: ['compare-products', selected, q, ptype, onlyDiff, minSpread],
     queryFn: () => compare.products({
       wholesalers: selected.join(','),
       q: q || undefined,
       product_type: ptype || undefined,
       only_differences: onlyDiff || undefined,
       min_spread: minSpread ? parseFloat(minSpread) : undefined,
-      sort,
     }),
     enabled: ready,
   });
 
   const toggle = (w: string) => {
     setExpanded(null);
-    setShown(100);
+    setShown(pageSize);
     setSelected(s => s.includes(w) ? s.filter(x => x !== w)
       : s.length >= 3 ? s : [...s, w]);
   };
@@ -139,7 +149,45 @@ export default function ComparePrices() {
   const winnerName = (w: string | null) =>
     w == null ? '–' : w === 'tie' ? 'Tie' : distributorName(w);
 
-  const rows = data?.rows ?? [];
+  // ---- client-side sorting: every column is sortable ----
+  const clickSort = (key: string, numericDefault: 'asc' | 'desc' = 'asc') => {
+    setShown(pageSize);
+    if (sortKey === key) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir(key === 'product' || key === 'winner' ? 'asc' : numericDefault);
+    }
+  };
+
+  const arrow = (key: string) =>
+    sortKey === key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
+
+  const rows = useMemo(() => {
+    const base = [...(data?.rows ?? [])];
+    const dir = sortDir === 'asc' ? 1 : -1;
+    const missing = sortDir === 'asc' ? Infinity : -Infinity;
+    const val = (r: (typeof base)[number]): string | number => {
+      if (sortKey === 'product') return (r.product_name || '').toLowerCase();
+      if (sortKey === 'winner') return r.winner_effective === 'tie' ? 'zzz-tie'
+        : (r.winner_effective ? distributorName(r.winner_effective).toLowerCase() : 'zzzz');
+      if (sortKey === 'spread') return r.spread ?? missing;
+      if (sortKey === 'spread_pct') return r.spread_pct ?? missing;
+      const [w, field] = sortKey.split('::');
+      const p = r.prices[w] as Record<string, unknown> | undefined;
+      const v = p?.[field];
+      return typeof v === 'number' ? v : missing;
+    };
+    base.sort((a, b) => {
+      const va = val(a), vb = val(b);
+      if (typeof va === 'string' || typeof vb === 'string') {
+        return String(va) < String(vb) ? -dir : String(va) > String(vb) ? dir : 0;
+      }
+      return (va as number) < (vb as number) ? -dir : (va as number) > (vb as number) ? dir : 0;
+    });
+    return base;
+  }, [data, sortKey, sortDir]);
+
   const sum = data?.summary;
   const nCols = selected.length * 3 + 4;
 
@@ -222,7 +270,7 @@ export default function ComparePrices() {
             <input
               placeholder="Search product or brand…"
               value={q}
-              onChange={e => { setQ(e.target.value); setShown(100); }}
+              onChange={e => { setQ(e.target.value); setShown(pageSize); }}
             />
             <select value={ptype} onChange={e => setPtype(e.target.value)}>
               <option value="">All categories</option>
@@ -240,12 +288,13 @@ export default function ComparePrices() {
               value={minSpread}
               onChange={e => setMinSpread(e.target.value)}
             />
-            <select value={sort} onChange={e => setSort(e.target.value)}>
-              <option value="spread">Biggest $ spread</option>
-              <option value="spread_pct">Biggest % spread</option>
-              <option value="effective">Lowest price</option>
-              <option value="product">Product name</option>
-            </select>
+            <span className="cmp-hint">Click any column header to sort</span>
+            <label className="cmp-pp">
+              Rows/page
+              <select value={pageSize} onChange={e => setPageSize(parseInt(e.target.value, 10))}>
+                {PAGE_SIZES.map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>
             <span className="cmp-count">{rows.length.toLocaleString()} rows</span>
           </div>
 
@@ -254,7 +303,9 @@ export default function ComparePrices() {
             <table className="dense-table cmp-table">
               <thead>
                 <tr>
-                  <th rowSpan={2}>Product</th>
+                  <th rowSpan={2} className="cmp-sortable" onClick={() => clickSort('product')}>
+                    Product{arrow('product')}
+                  </th>
                   {selected.map(w => (
                     <th key={w} colSpan={3} className="cmp-group-head"
                         style={{ borderBottom: `2px solid ${accent[w]}` }}>
@@ -262,18 +313,26 @@ export default function ComparePrices() {
                       <span className="cmp-ed">{data.editions[w]}</span>
                     </th>
                   ))}
-                  <th rowSpan={2}>Spread</th>
-                  <th rowSpan={2}>Winner</th>
+                  <th rowSpan={2} className="cmp-sortable" onClick={() => clickSort('spread', 'desc')}>
+                    Spread{arrow('spread')}
+                  </th>
+                  <th rowSpan={2} className="cmp-sortable" onClick={() => clickSort('winner')}>
+                    Winner{arrow('winner')}
+                  </th>
                   <th rowSpan={2}></th>
                 </tr>
                 <tr>
                   {selected.map(w => (
                     <Fragment key={w}>
-                      <th className="cmp-layer">List</th>
-                      <th className="cmp-layer">After QD</th>
-                      <th className="cmp-layer"
+                      <th className="cmp-layer cmp-sortable" onClick={() => clickSort(`${w}::frontline`)}>
+                        List{arrow(`${w}::frontline`)}
+                      </th>
+                      <th className="cmp-layer cmp-sortable" onClick={() => clickSort(`${w}::after_qd`)}>
+                        After QD{arrow(`${w}::after_qd`)}
+                      </th>
+                      <th className="cmp-layer cmp-sortable" onClick={() => clickSort(`${w}::effective`)}
                           title="Effective price: after quantity discounts + best full-month RIP rebate">
-                        After RIP
+                        After RIP{arrow(`${w}::effective`)}
                       </th>
                     </Fragment>
                   ))}
@@ -380,8 +439,9 @@ export default function ComparePrices() {
             </table>
           </div>
           {rows.length > shown && (
-            <button className="btn cmp-more" onClick={() => setShown(s => s + 200)}>
-              Show more ({(rows.length - shown).toLocaleString()} remaining)
+            <button className="btn cmp-more" onClick={() => setShown(s => s + pageSize)}>
+              Show {Math.min(pageSize, rows.length - shown).toLocaleString()} more
+              ({(rows.length - shown).toLocaleString()} remaining)
             </button>
           )}
         </>

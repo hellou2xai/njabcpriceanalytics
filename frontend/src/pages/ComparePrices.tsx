@@ -8,6 +8,7 @@ import { distributorName } from '../lib/distributors';
 import { useProductQuickView } from '../components/ProductQuickView';
 import AddToCartButton from '../components/AddToCartButton';
 import FavoriteButton from '../components/FavoriteButton';
+import DealSparkline from '../components/DealSparkline';
 import './ComparePrices.css';
 
 const money = (v?: number | null) => (v == null ? '–' : `$${Number(v).toFixed(2)}`);
@@ -39,7 +40,21 @@ function LadderPanel({ slugs, params }: { slugs: string[]; params: Record<string
         const lad = data.ladders[w];
         return (
           <div key={w} className="cmp-ladder">
-            <div className="cmp-ladder-head">{distributorName(w)}</div>
+            <div className="cmp-ladder-head">
+              <span>{distributorName(w)}</span>
+              {lad && (
+                <DealSparkline
+                  wholesaler={w}
+                  productName={lad.product_name ?? ''}
+                  interactive
+                  upc={lad.upc ?? undefined}
+                  unitVolume={lad.unit_volume ?? undefined}
+                  unitQty={lad.unit_qty ?? undefined}
+                  vintage={lad.vintage ?? undefined}
+                  curEdition={lad.edition}
+                />
+              )}
+            </div>
             {!lad ? <div className="cmp-ladder-none">Not found</div> : (
               <>
                 <div className="cmp-ladder-line cmp-ladder-front">

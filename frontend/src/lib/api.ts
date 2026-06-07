@@ -452,6 +452,9 @@ export interface CompareLadder {
   product_name: string | null;
   upc: string | null;
   edition: string | null;
+  unit_qty: string | null;
+  unit_volume: string | null;
+  vintage: string | null;
   frontline: number | null;
   after_qd: number | null;
   effective: number | null;

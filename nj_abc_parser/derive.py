@@ -393,6 +393,38 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
             WHERE rip_code IS NOT NULL
             GROUP BY wholesaler, edition, rip_code, upc, from_date, to_date
         ),
+        -- How many DISTINCT listings share each (wholesaler, edition, UPC).
+        -- "Listing" = the same identity the `joined` CTE partitions on
+        -- (product_name, unit_volume, vintage). One UPC is reused across
+        -- vintages/pack sizes (a $395 2021 cab and a $690 2023 cab can carry
+        -- the SAME UPC). This count drives the RIP-applicability rule below:
+        --   single listing  -> RIP-sheet presence by UPC is enough (the CPL
+        --                       rip_code is unreliable, esp. opici which stores
+        --                       a free-text label that won't byte-match);
+        --   many listings    -> each CPL row must carry its OWN valid code that
+        --                       matches the sheet, so a RIP can never bleed from
+        --                       one vintage onto another.
+        listing_counts AS (
+            SELECT wholesaler, edition, CAST(upc AS VARCHAR) AS upc_s,
+                   COUNT(DISTINCT (
+                       product_name,
+                       COALESCE(unit_volume, ''),
+                       COALESCE(CAST(vintage AS VARCHAR), '')
+                   )) AS n_listings
+            FROM read_parquet('{pdir}/cpl/**/data.parquet', hive_partitioning=true, union_by_name=true)
+            GROUP BY wholesaler, edition, CAST(upc AS VARCHAR)
+        ),
+        -- Best full-month RIP per (wholesaler, edition, UPC) across EVERY code
+        -- listing that UPC. Used only on the single-listing path, where there is
+        -- exactly one product behind the UPC so any code on the sheet for it
+        -- applies. Inherits the full-month gate from rip_per_code_upc.
+        rip_per_upc_any AS (
+            SELECT wholesaler, edition, CAST(upc AS VARCHAR) AS upc_s,
+                   MAX(best_case_per_case)     AS best_case_per_case,
+                   MAX(best_bottle_per_bottle) AS best_bottle_per_bottle
+            FROM rip_per_code_upc
+            GROUP BY wholesaler, edition, CAST(upc AS VARCHAR)
+        ),
         -- NOTE: the previous code-level fallback (rip_per_code CTE) is
         -- intentionally removed. The canonical rule is: a RIP applies to a
         -- product ONLY when the RIP sheet has a row explicitly pairing this
@@ -434,13 +466,23 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
                     ), 2)
                 ))) AS VARCHAR) AS rip_windows
             FROM cpl_codes cc
+            LEFT JOIN listing_counts lc
+                ON lc.wholesaler = cc.wholesaler
+                AND lc.edition = cc.edition
+                AND lc.upc_s = CAST(cc.upc AS VARCHAR)
             JOIN rip_windows_per_code_upc rw
                 ON cc.wholesaler = rw.wholesaler
                 AND cc.edition = rw.edition
-                AND cc.single_code = rw.rip_code
                 AND cc.upc = rw.upc
-                AND cc.single_code != ''
-                AND cc.single_code != '0'
+                -- Single listing (real UPC, not an all-same-digit stub): any
+                -- code's window for this UPC. Many listings: only the window
+                -- under THIS row's own valid matching code.
+                AND (
+                    (COALESCE(lc.n_listings, 1) <= 1
+                     AND LENGTH(REPLACE(CAST(cc.upc AS VARCHAR), LEFT(CAST(cc.upc AS VARCHAR), 1), '')) > 0)
+                    OR (cc.single_code = rw.rip_code
+                        AND cc.single_code != '' AND cc.single_code != '0')
+                )
             WHERE GREATEST(
                     COALESCE(rw.best_case_per_case, 0),
                     COALESCE(rw.best_bottle_per_bottle, 0) * COALESCE(TRY_CAST(cc.unit_qty AS DOUBLE), 1)
@@ -451,15 +493,38 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
             SELECT
                 cc.* EXCLUDE (single_code),
                 -- Combine per-case (case tiers) and per-bottle×pack (bottle tiers).
-                -- Strict (code, UPC) join only — no code-level fallback. If the
-                -- RIP sheet doesn't explicitly list this UPC under the code,
-                -- no RIP applies for this product (best_rip_amt is 0).
-                GREATEST(
-                    COALESCE(r1.best_case_per_case, 0),
-                    COALESCE(r1.best_bottle_per_bottle, 0)
-                        * COALESCE(TRY_CAST(cc.unit_qty AS DOUBLE), 1)
-                ) AS code_best_rip
+                -- Applicability follows listing_counts:
+                --   single listing -> best RIP across ANY code for this UPC
+                --     (rip_per_upc_any), because the CPL rip_code is unreliable
+                --     (opici stores a free-text label) but there's only one
+                --     product behind the UPC so sheet presence is unambiguous;
+                --   many listings  -> strict (code, UPC) match on THIS row's own
+                --     valid code (rip_per_code_upc), so a RIP never bleeds from
+                --     one vintage onto another. 0/blank/non-matching code = none.
+                CASE
+                    -- Single-listing lenient path, but NOT for placeholder UPCs
+                    -- (e.g. '11111111111111'): an all-same-digit stub is a code-
+                    -- level catch-all on the sheet, not a real product pairing,
+                    -- so it falls through to the strict code match instead.
+                    WHEN COALESCE(lc.n_listings, 1) <= 1
+                         AND LENGTH(REPLACE(CAST(cc.upc AS VARCHAR), LEFT(CAST(cc.upc AS VARCHAR), 1), '')) > 0 THEN
+                        GREATEST(
+                            COALESCE(ru.best_case_per_case, 0),
+                            COALESCE(ru.best_bottle_per_bottle, 0)
+                                * COALESCE(TRY_CAST(cc.unit_qty AS DOUBLE), 1)
+                        )
+                    ELSE
+                        GREATEST(
+                            COALESCE(r1.best_case_per_case, 0),
+                            COALESCE(r1.best_bottle_per_bottle, 0)
+                                * COALESCE(TRY_CAST(cc.unit_qty AS DOUBLE), 1)
+                        )
+                END AS code_best_rip
             FROM cpl_codes cc
+            LEFT JOIN listing_counts lc
+                ON lc.wholesaler = cc.wholesaler
+                AND lc.edition = cc.edition
+                AND lc.upc_s = CAST(cc.upc AS VARCHAR)
             LEFT JOIN rip_per_code_upc r1
                 ON cc.wholesaler = r1.wholesaler
                 AND cc.edition = r1.edition
@@ -467,6 +532,10 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
                 AND cc.upc = r1.upc
                 AND cc.single_code != ''
                 AND cc.single_code != '0'
+            LEFT JOIN rip_per_upc_any ru
+                ON ru.wholesaler = cc.wholesaler
+                AND ru.edition = cc.edition
+                AND ru.upc_s = CAST(cc.upc AS VARCHAR)
         ),
         joined AS (
             -- Collapse per-code rows back to one row per CPL line by taking

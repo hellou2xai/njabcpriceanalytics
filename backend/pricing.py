@@ -661,6 +661,33 @@ def attach_tiers(con, records, ref_date=None) -> None:
         except Exception:
             pass
 
+    # Per-UPC listing count, so the UPC-broad windows below apply ONLY on the
+    # single-listing path. A UPC reused across vintages (multi-listing) must not
+    # borrow another vintage's RIP by UPC alone — it needs its own valid code
+    # (the strict rip_full match). Mirrors the single-vs-multi rule in
+    # nj_abc_parser/derive.py so the live ladder agrees with the precomputed
+    # effective price + semantic search. "Listing" = (product_name, unit_volume,
+    # vintage), the same identity derive.py partitions on.
+    multi_listing: set = set()
+    if g_ws and g_ed and g_un:
+        try:
+            craw_lc = read_parquet(con, "cpl")
+            lc = con.execute(f"""
+                SELECT wholesaler, edition, LTRIM(CAST(upc AS VARCHAR), '0') AS un,
+                       COUNT(DISTINCT (product_name,
+                                       COALESCE(unit_volume, ''),
+                                       COALESCE(CAST(vintage AS VARCHAR), ''))) AS n
+                FROM {craw_lc}
+                WHERE wholesaler IN ({gw}) AND edition IN ({ge})
+                  AND LTRIM(CAST(upc AS VARCHAR), '0') IN ({gu})
+                GROUP BY wholesaler, edition, LTRIM(CAST(upc AS VARCHAR), '0')
+            """, gp).fetchdf()
+            for _, r in lc.iterrows():
+                if int(r["n"]) > 1:
+                    multi_listing.add((r["wholesaler"], r["edition"], str(r["un"])))
+        except Exception:
+            pass
+
     def _lookup_rips(rec):
         # Prefer the CLUSTER's code (rip_group_code) when present, so a row
         # fanned out under RIP A shows RIP A's tiers even if its CPL-side
@@ -685,10 +712,19 @@ def attach_tiers(con, records, ref_date=None) -> None:
                 out.extend(rip_full[upc_key])
         # ALSO pull every RIP window this UPC is listed under across ALL codes,
         # so a "next RIP date" living under a DIFFERENT code (Remy: Buy-1-cs RIP
-        # under 112263 Jun 1-8 AND 112264 Jun 11-30) shows as its own layer. This
-        # is still canonical — these rows EXPLICITLY list this UPC. Exact-window
+        # under 112263 Jun 1-8 AND 112264 Jun 11-30) shows as its own layer.
+        # SINGLE-LISTING ONLY: when the UPC is reused across vintages, this
+        # UPC-broad pull would leak one vintage's RIP onto another, so we skip
+        # it and rely on the strict (code, ws, ed, upc) match above. Exact-window
         # duplicates with the code lookup collapse in the dedup below.
-        out.extend(rip_by_upc.get((ws, ed, str(upc).lstrip("0")), []))
+        un = str(upc).lstrip("0")
+        # Stub/placeholder UPCs (all the same digit, e.g. '11111111111111') are
+        # code-level catch-alls on the sheet, not real product pairings — never
+        # take the lenient UPC-broad path for them (matches derive.py).
+        _u = str(upc)
+        is_stub = (not _u) or (len(set(_u)) <= 1)
+        if not is_stub and (ws, ed, un) not in multi_listing:
+            out.extend(rip_by_upc.get((ws, ed, un), []))
         return out
 
     def _uq(rec) -> float:

@@ -1040,7 +1040,25 @@ def search_products(
         if group_by_rip:
             rip_src_cte = read_parquet(con, "rip")
             rip_cte_sql = f"""
-                WITH rip_groups AS (
+                WITH mix_listing_counts AS (
+                    -- Distinct listings per (wholesaler, edition, UPC). One UPC
+                    -- is reused across vintages, so single-vs-multi decides RIP
+                    -- membership: single-listing joins a group by UPC alone (the
+                    -- CPL code is unreliable, esp. opici text labels); multi-
+                    -- listing requires the row's OWN code to match the group's,
+                    -- so a vintage never inherits another vintage's rebate.
+                    -- Mirrors nj_abc_parser/derive.py + pricing.attach_tiers.
+                    SELECT wholesaler AS lc_ws, edition AS lc_ed,
+                           CAST(upc AS VARCHAR) AS lc_upc,
+                           COUNT(DISTINCT (
+                               product_name,
+                               COALESCE(unit_volume, ''),
+                               COALESCE(CAST(vintage AS VARCHAR), '')
+                           )) AS n_listings
+                    FROM {src}
+                    GROUP BY wholesaler, edition, CAST(upc AS VARCHAR)
+                ),
+                rip_groups AS (
                     SELECT wholesaler AS rg_wholesaler,
                            edition    AS rg_edition,
                            CAST(upc AS VARCHAR) AS rg_upc,
@@ -1109,11 +1127,26 @@ def search_products(
                     FROM rip_groups rg
                 )
             """
-            rip_join_sql = """
+            rip_join_sql = r"""
+                LEFT JOIN mix_listing_counts mlc
+                  ON mlc.lc_ws  = wholesaler
+                 AND mlc.lc_ed  = edition
+                 AND mlc.lc_upc = CAST(upc AS VARCHAR)
                 LEFT JOIN rip_memberships rm
                   ON rm.rg_wholesaler = wholesaler
                  AND rm.rg_edition    = edition
                  AND rm.rg_upc        = CAST(upc AS VARCHAR)
+                 -- Single listing (real UPC, not an all-same-digit stub): member
+                 -- by UPC. Many listings: member only of the code(s) THIS row
+                 -- actually carries, so a wrong-vintage row (code 0 / blank /
+                 -- different code) drops out of the cluster.
+                 AND (
+                     (COALESCE(mlc.n_listings, 1) <= 1
+                      AND LENGTH(REPLACE(CAST(upc AS VARCHAR), LEFT(CAST(upc AS VARCHAR), 1), '')) > 0)
+                     OR list_contains(
+                          string_split(REGEXP_REPLACE(COALESCE(CAST(rip_code AS VARCHAR), ''), '\s+', ' '), ' '),
+                          rm.membership_code)
+                 )
                 LEFT JOIN rip_cluster_sizes rcs
                   ON rcs.rcs_wholesaler = wholesaler
                  AND rcs.rcs_edition    = edition
@@ -1299,6 +1332,10 @@ def search_products(
                    rcs.cluster_members AS rip_group_member_count,
                    CASE
                        WHEN rm.rip_group_min IS NULL THEN false
+                       -- Single-listing real UPC qualifies by sheet presence, so
+                       -- a non-matching CPL code is NOT a mismatch here.
+                       WHEN COALESCE(mlc.n_listings, 1) <= 1
+                            AND LENGTH(REPLACE(CAST(upc AS VARCHAR), LEFT(CAST(upc AS VARCHAR), 1), '')) > 0 THEN false
                        WHEN rip_code IS NULL OR CAST(rip_code AS VARCHAR) IN ('', '0') THEN true
                        WHEN list_contains(rm.rip_group_codes, CAST(rip_code AS VARCHAR)) THEN false
                        ELSE true

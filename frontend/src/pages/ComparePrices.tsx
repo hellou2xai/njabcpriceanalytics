@@ -2,13 +2,12 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Zap, Scale } from 'lucide-react';
-import { compare } from '../lib/api';
-import type { CatalogTier } from '../lib/api';
+import { compare, catalog } from '../lib/api';
+import type { CatalogTier, CompareLadder } from '../lib/api';
 import { distributorName } from '../lib/distributors';
 import { useProductQuickView } from '../components/ProductQuickView';
 import AddToCartButton from '../components/AddToCartButton';
 import FavoriteButton from '../components/FavoriteButton';
-import DealSparkline from '../components/DealSparkline';
 import './ComparePrices.css';
 
 const money = (v?: number | null) => (v == null ? '–' : `$${Number(v).toFixed(2)}`);
@@ -27,6 +26,100 @@ function WinnerCell({
   );
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const fmtMonth = (ed: string) => {
+  const m = /^(\d{4})-(\d{1,2})/.exec(ed);
+  return m ? `${MONTHS[parseInt(m[2], 10) - 1]} ${m[1].slice(2)}` : ed;
+};
+
+interface HistPoint {
+  edition: string;
+  frontline_case_price?: number | null;
+  best_case_price?: number | null;
+  effective_case_price?: number | null;
+}
+
+/** Per-distributor sparkline: up to 3 lines across editions — List,
+ *  After QD (best_case_price) and After RIP (effective). Lines collapse
+ *  onto each other when layers are equal; hover any point for the month's
+ *  full three-price readout. */
+function TriSparkline({ wholesaler, ladder }: { wholesaler: string; ladder: CompareLadder }) {
+  const { data } = useQuery({
+    queryKey: ['price-history', wholesaler, ladder.product_name, ladder.upc,
+               ladder.unit_volume, ladder.unit_qty, ladder.vintage],
+    queryFn: () => catalog.priceHistory(wholesaler, ladder.product_name!, {
+      upc: ladder.upc ?? undefined,
+      unit_volume: ladder.unit_volume ?? undefined,
+      unit_qty: ladder.unit_qty ?? undefined,
+      vintage: ladder.vintage ?? undefined,
+    }),
+    enabled: !!ladder.product_name,
+    staleTime: 5 * 60_000,
+  });
+
+  const points: HistPoint[] = (data?.history ?? []) as HistPoint[];
+  if (points.length === 1) {
+    // first month on record (e.g. newly onboarded distributor) — no trend yet
+    return <span className="cmp-tri-flat">{fmtMonth(points[0].edition)} only — no history yet</span>;
+  }
+  if (points.length < 2) return null;
+
+  const LAYERS: { key: keyof HistPoint; label: string; color: string; dash?: string }[] = [
+    { key: 'frontline_case_price', label: 'List', color: 'var(--text-muted)', dash: '4 3' },
+    { key: 'best_case_price', label: 'After QD', color: '#2563eb' },
+    { key: 'effective_case_price', label: 'After RIP', color: '#16a34a' },
+  ];
+  const vals = points.flatMap(p => LAYERS.map(l => p[l.key]))
+    .filter((v): v is number => typeof v === 'number');
+  if (!vals.length) return null;
+
+  const W = 230, H = 56, padX = 6, padY = 6;
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const span = Math.max(0.0001, max - min);
+  const x = (i: number) => padX + (i / (points.length - 1)) * (W - padX * 2);
+  const y = (v: number) => padY + (1 - (v - min) / span) * (H - padY * 2);
+  const money = (v?: number | null) => (typeof v === 'number' ? `$${v.toFixed(2)}` : '–');
+  const tip = (p: HistPoint) =>
+    `${fmtMonth(p.edition)} · List ${money(p.frontline_case_price)}`
+    + ` · After QD ${money(p.best_case_price)} · After RIP ${money(p.effective_case_price)}`;
+
+  // which layers actually exist (a no-RIP product collapses to 2 lines)
+  const present = LAYERS.filter(l =>
+    points.some(p => typeof p[l.key] === 'number'));
+
+  return (
+    <span className="cmp-tri">
+      <svg width={W} height={H}>
+        {present.map(l => {
+          const pts = points
+            .map((p, i) => ({ i, v: p[l.key] }))
+            .filter((q): q is { i: number; v: number } => typeof q.v === 'number');
+          if (pts.length < 2) return null;
+          const d = pts.map((q, j) =>
+            `${j === 0 ? 'M' : 'L'}${x(q.i).toFixed(1)},${y(q.v).toFixed(1)}`).join(' ');
+          return <path key={l.label} d={d} fill="none" stroke={l.color}
+                       strokeWidth={1.6} strokeDasharray={l.dash} />;
+        })}
+        {points.map((p, i) => {
+          const v = p.effective_case_price ?? p.best_case_price ?? p.frontline_case_price;
+          if (typeof v !== 'number') return null;
+          return (
+            <circle key={p.edition} cx={x(i)} cy={y(v)} r={5}
+                    fill="transparent" stroke="none" pointerEvents="all">
+              <title>{tip(p)}</title>
+            </circle>
+          );
+        })}
+      </svg>
+      <span className="cmp-tri-leg">
+        <span style={{ color: 'var(--text-muted)' }}>┄ List</span>
+        <span style={{ color: '#2563eb' }}>— QD</span>
+        <span style={{ color: '#16a34a' }}>— RIP</span>
+      </span>
+    </span>
+  );
+}
+
 function LadderPanel({ slugs, params }: { slugs: string[]; params: Record<string, unknown> }) {
   const { data, isLoading } = useQuery({
     queryKey: ['compare-tiers', params],
@@ -42,18 +135,7 @@ function LadderPanel({ slugs, params }: { slugs: string[]; params: Record<string
           <div key={w} className="cmp-ladder">
             <div className="cmp-ladder-head">
               <span>{distributorName(w)}</span>
-              {lad && (
-                <DealSparkline
-                  wholesaler={w}
-                  productName={lad.product_name ?? ''}
-                  interactive
-                  upc={lad.upc ?? undefined}
-                  unitVolume={lad.unit_volume ?? undefined}
-                  unitQty={lad.unit_qty ?? undefined}
-                  vintage={lad.vintage ?? undefined}
-                  curEdition={lad.edition}
-                />
-              )}
+              {lad && <TriSparkline wholesaler={w} ladder={lad} />}
             </div>
             {!lad ? <div className="cmp-ladder-none">Not found</div> : (
               <>

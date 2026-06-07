@@ -20,6 +20,22 @@ const fmtDate = (d?: string | null): string | null => {
   return new Date(y, m - 1, day).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
+// "3   C" -> "3 cases", "6 B" -> "6 bottles". The source qty_per_pack is a
+// terse code; spell it out so "1 C" can't be misread as a quantity of 1 bottle.
+function qtyLabel(raw?: string | null): string {
+  if (!raw) return '—';
+  const m = /(\d+(?:\.\d+)?)\s*([A-Za-z]*)/.exec(String(raw).trim());
+  if (!m) return String(raw);
+  const n = m[1];
+  const u = m[2].toLowerCase();
+  const word = u.startsWith('c') ? 'case' : u.startsWith('b') ? 'bottle' : (u || 'unit');
+  return `${n} ${word}${Number(n) === 1 ? '' : 's'}`;
+}
+// Per the economics row, label whether the "each" prices are per bottle or
+// per case so a per-bottle price against a case quantity isn't ambiguous.
+const unitSuffix = (u?: 'bottle' | 'case' | null) =>
+  u === 'bottle' ? '/btl' : u === 'case' ? '/cs' : '';
+
 // Regular value implied by the combo price + stated savings, and the % off.
 function breakdown(c: Combo) {
   const combo = Number(c.combo_pack_price) || 0;
@@ -381,10 +397,15 @@ function ComboDetailModal({ c, onClose }: { c: Combo; onClose: () => void }) {
                     const cmb = comp.combo_price_each;
                     const save = reg != null && cmb != null ? reg - cmb : null;
                     const pct = save != null && reg ? (save / reg) * 100 : null;
-                    // The vintage we priced (a UPC can span years — we use the
-                    // latest), matched from the server economics by UPC.
-                    const vintage = c.economics?.components?.find(
-                      e => e.upc && comp.upc && e.upc === String(comp.upc).replace(/^0+/, ''))?.vintage;
+                    // Economics row for this component (matched by UPC): carries
+                    // the priced vintage, the per-unit basis (bottle vs case),
+                    // and the line totals that build the bundle's list/combo.
+                    const ec = c.economics?.components?.find(
+                      e => e.upc && comp.upc && e.upc === String(comp.upc).replace(/^0+/, ''));
+                    const vintage = ec?.vintage;
+                    const sfx = unitSuffix(ec?.price_unit);
+                    const lineList = ec?.frontline_cost;
+                    const lineCombo = ec?.combo_cost;
                     return (
                       <tr key={i}>
                         <td>
@@ -392,13 +413,22 @@ function ComboDetailModal({ c, onClose }: { c: Combo; onClose: () => void }) {
                             {comp.product_name}{vintage ? <span className="text-muted"> · '{String(vintage).slice(-2)}</span> : ''}
                           </div>
                           {comp.upc && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{comp.upc}{abgSku(c.wholesaler, comp.abg_sku) ? ` · ${skuLabel(c.wholesaler)} ${comp.abg_sku}` : ''}</div>}
+                          {/* The per-line contribution to the bundle totals, so
+                              a per-bottle price against a case qty is unambiguous. */}
+                          {lineList != null && lineCombo != null && (
+                            <div style={{ fontSize: 11, marginTop: 2 }}>
+                              <span className="text-muted">line: </span>
+                              <span className="text-muted" style={{ textDecoration: 'line-through' }}>{$(lineList)}</span>
+                              {' '}<span className="text-green font-bold">{$(lineCombo)}</span>
+                            </div>
+                          )}
                         </td>
-                        <td>{comp.qty_per_pack ?? '—'}</td>
-                        <td className="right">{$(reg)}</td>
-                        <td className="right text-green">{$(cmb)}</td>
+                        <td>{qtyLabel(comp.qty_per_pack)}</td>
+                        <td className="right">{$(reg)}<span className="text-muted">{sfx}</span></td>
+                        <td className="right text-green">{$(cmb)}<span className="text-muted">{sfx}</span></td>
                         <td className="right">
                           {save != null
-                            ? <span className="text-green font-bold">{$(save)}{pct != null ? ` (${pct.toFixed(0)}%)` : ''}</span>
+                            ? <span className="text-green font-bold">{$(save)}{sfx}{pct != null ? ` (${pct.toFixed(0)}%)` : ''}</span>
                             : '—'}
                         </td>
                       </tr>
@@ -443,8 +473,10 @@ function ComboDetailModal({ c, onClose }: { c: Combo; onClose: () => void }) {
         )}
 
         <p className="combo-detail-note">
-          <strong>How it's figured:</strong> Savings = Regular value − Combo price. "Each" prices are per the
-          distributor's listed unit (bottle or case, as shown under <em>Qty in pack</em>). The bundle price is fixed —
+          <strong>How it's figured:</strong> Savings = Regular value − Combo price. "Each" prices are tagged
+          <em> /btl</em> (per bottle) or <em>/cs</em> (per case) to match how the distributor lists them; the
+          <em> line:</em> figure under each product is that item's full contribution to the bundle
+          (quantity × each), struck-through at list and green at the combo price. The bundle price is fixed —
           you buy the whole pack together.
         </p>
 

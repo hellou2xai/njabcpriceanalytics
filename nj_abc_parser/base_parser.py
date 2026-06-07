@@ -316,13 +316,19 @@ class NJABCParser:
         for col in ["from_date", "to_date"]:
             df[col] = pd.to_datetime(df[col], errors="coerce")
 
-        # Numeric price columns
+        # Numeric price columns — strip currency formatting first
+        # (e.g., Jersey Beverage submits best_unit_price as "$29.00")
         price_cols = [
             "frontline_case_price", "frontline_unit_price",
             "best_case_price", "best_unit_price", "split_case_surcharge",
         ]
         for col in price_cols:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+            df[col] = pd.to_numeric(
+                df[col].apply(
+                    lambda x: re.sub(r"[$,\s]", "", x) if isinstance(x, str) else x
+                ),
+                errors="coerce",
+            )
 
         # Discount tiers — qty as string (may contain "5 Cases"), amount as numeric
         for i in range(1, 6):

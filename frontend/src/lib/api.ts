@@ -468,7 +468,75 @@ export const compare = {
   tiers: (params: Record<string, unknown>) =>
     request<{ wholesalers: string[]; ladders: Record<string, CompareLadder> }>(
       `/api/compare/tiers${qs(params)}`),
+  rips: (params: Record<string, unknown>) =>
+    request<CompareRipResponse>(`/api/compare/rips${qs(params)}`),
 };
+
+// ---- Compare RIPs (RIP outcome across 2-3 distributors) ----
+export interface RipTierRow {
+  cases_to_unlock: number | null;
+  raw_qty: number | null;
+  unit: string | null;
+  rebate_per_case: number | null;
+  price_after: number | null;
+  window_status: string | null;
+  is_time_sensitive: boolean;
+  from_date: string | null;
+  to_date: string | null;
+}
+export interface CompareRipDist {
+  frontline: number | null;
+  abv_proof: string | null;
+  landed_at_n: number | null;
+  landed_at_1: number | null;
+  rip_at_1: number | null;
+  rip_at_n: number | null;
+  rip_btl_at_1: number | null;
+  rip_btl_at_n: number | null;
+  min_cases: number | null;
+  case_mix: number | null;
+  is_combination: boolean;
+  rip_tiers: RipTierRow[];
+  rip_code: string | null;
+  product_name: string | null;
+  upc: string | null;
+}
+export interface RipBreakeven { from: number; to: number | null; winner: string | null }
+export interface RipCurvePoint { cases: number; landed: Record<string, number | null>; winner: string | null }
+export interface CompareRipRow {
+  match_key: string;
+  upc_norm: string;
+  size_key: string;
+  product_name: string;
+  product_type: string | null;
+  brand: string | null;
+  unit_qty: string | null;
+  unit_volume: string | null;
+  proof_match: boolean;
+  dists: Record<string, CompareRipDist>;
+  winner_at_n: string | null;
+  spread_at_n: number | null;
+  breakeven: RipBreakeven[];
+  curve: RipCurvePoint[];
+  flips: boolean;
+  has_difference: boolean;
+  verdict: { pick: string | null; text: string };
+}
+export interface CompareRipResponse {
+  wholesalers: string[];
+  editions: Record<string, string>;
+  cases: number;
+  total_common: number;
+  rows: CompareRipRow[];
+  summary: {
+    common_rip_products: number;
+    wins_at_n: Record<string, number>;
+    ties: number;
+    flips: number;
+    least_money: Record<string, number>;
+    insights: string[];
+  };
+}
 
 // ---- Beta feedback ----
 export interface FeedbackItem {

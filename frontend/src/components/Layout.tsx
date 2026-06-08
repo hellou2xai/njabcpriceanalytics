@@ -6,7 +6,7 @@ import {
   Sun, Moon, LogOut, BadgeDollarSign, ClipboardList, LayoutGrid,
   ChevronLeft, ChevronRight, ChevronDown, StickyNote, UserCog, Settings, Shield, Sparkles, BookOpen, ListTodo,
   Activity, Clock, Percent, Compass, ArrowDownRight, ArrowUpRight, ThumbsUp,
-  Bot, Database, Settings2, Newspaper, Scale, XCircle,
+  Bot, Database, Settings2, Newspaper, Scale, XCircle, Layers,
 } from 'lucide-react';
 import { alerts as alertsApi, orders as ordersApi, cart as cartApi } from '../lib/api';
 import WhatsAppShareButton from './WhatsAppShare';
@@ -48,6 +48,7 @@ const NAV_GROUPS: {
     items: [
       { path: '/time-sensitive', label: 'Time-Sensitive Deals', icon: Clock },
       { path: '/compare-prices', label: 'Compare Prices', icon: Scale },
+      { path: '/compare-rips', label: 'Compare RIPs', icon: Layers },
       { path: '/price-drops', label: 'Price Drops', icon: ArrowDownRight },
       { path: '/price-increases', label: 'Price Increases', icon: ArrowUpRight },
     ],

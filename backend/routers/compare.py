@@ -159,11 +159,14 @@ def _common_rows(con, src: str, slugs: list[str], eds: dict[str, str]) -> list[d
         )"""
     sql = f"""
         SELECT wholesaler, edition, upc, product_name, product_type, brand,
-               unit_qty, unit_volume, vintage,
+               unit_qty, unit_volume, vintage, abv_proof,
                frontline_case_price, frontline_unit_price,
                best_case_price, best_unit_price,
                effective_case_price, rip_savings, total_savings_per_case,
                has_discount, has_rip, rip_code,
+               discount_1_qty, discount_1_amt, discount_2_qty, discount_2_amt,
+               discount_3_qty, discount_3_amt, discount_4_qty, discount_4_amt,
+               discount_5_qty, discount_5_amt,
                LTRIM(upc, '0') AS upc_norm,
                TRY_CAST(unit_qty AS DOUBLE) AS uqd,
                {vn} AS vintage_norm,
@@ -510,3 +513,403 @@ def compare_tiers(
             "tiers": rec.get("tiers", []),
         }
     return {"wholesalers": slugs, "ladders": out}
+
+
+# ===========================================================================
+# RIP comparison — RIP outcome is a landed-$/case curve as a function of cases
+# bought; the same product can RIP completely differently across distributors.
+# ===========================================================================
+
+def _is_btl_unit(unit) -> bool:
+    return "bottle" in (str(unit or "").lower()) or "btl" in str(unit or "").lower()
+
+
+def _norm_proof(v) -> Optional[float]:
+    """Normalise a proof/ABV cell to a comparable proof number. '40%'/'40' ABV
+    -> 80 proof; '80'/'80 proof' -> 80. None for blank/junk."""
+    if v is None:
+        return None
+    s = str(v).strip().lower()
+    if not s or s in ("na", "n/a", "none"):
+        return None
+    is_abv = "%" in s
+    m = re.search(r"(\d+(?:\.\d+)?)", s)
+    if not m:
+        return None
+    x = float(m.group(1))
+    if is_abv or x <= 50:  # ABV given (or a low number that must be ABV)
+        x *= 2
+    return round(x, 1)
+
+
+def _cases_threshold(tier: dict, pack: float) -> Optional[float]:
+    """A tier's qty expressed in CASES (bottle-unit tiers / pack)."""
+    q = tier.get("qty")
+    if q is None:
+        return None
+    if _is_btl_unit(tier.get("unit")) and pack and pack > 0:
+        return q / pack
+    return float(q)
+
+
+def _landed_at(tiers: list, frontline: Optional[float], n_cases: float, pack: float) -> Optional[float]:
+    """Best landed $/case at n_cases — min price_after over every QD/RIP tier
+    whose threshold is cleared at n_cases (tiers already stack QD+RIP)."""
+    best = frontline if frontline is not None else None
+    for t in tiers:
+        pa = t.get("price_after")
+        thr = _cases_threshold(t, pack)
+        if pa is None or thr is None:
+            continue
+        if n_cases + 1e-9 >= thr and (best is None or pa < best):
+            best = pa
+    return round(best, 2) if best is not None else None
+
+
+def _rip_rebate_at(tiers: list, n_cases: float, pack: float) -> float:
+    """Best RIP-only rebate $/case at n_cases (source == 'rip')."""
+    best = 0.0
+    for t in tiers:
+        if t.get("source") != "rip":
+            continue
+        thr = _cases_threshold(t, pack)
+        if thr is None or n_cases + 1e-9 < thr:
+            continue
+        save = t.get("rip_only_save_per_case")
+        if save is None:
+            save = t.get("save_per_case") or 0.0
+        if save > best:
+            best = save
+    return round(best, 2)
+
+
+def _min_cases_to_rip(tiers: list, pack: float) -> Optional[int]:
+    """Fewest cases that unlock ANY RIP rebate (the 'less money required' metric)."""
+    import math as _m
+    mins = []
+    for t in tiers:
+        if t.get("source") != "rip":
+            continue
+        thr = _cases_threshold(t, pack)
+        if thr is not None and thr > 0:
+            mins.append(_m.ceil(thr - 1e-9))
+    return min(mins) if mins else None
+
+
+def _rip_tier_rows(tiers: list, pack: float) -> list[dict]:
+    """Normalised RIP tiers for the side-by-side table."""
+    import math as _m
+    rows = []
+    for t in tiers:
+        if t.get("source") != "rip":
+            continue
+        thr = _cases_threshold(t, pack)
+        rows.append({
+            "cases_to_unlock": _m.ceil(thr - 1e-9) if thr is not None else None,
+            "raw_qty": t.get("qty"),
+            "unit": t.get("unit"),
+            "rebate_per_case": t.get("rip_only_save_per_case")
+                if t.get("rip_only_save_per_case") is not None else t.get("save_per_case"),
+            "price_after": t.get("price_after"),
+            "window_status": t.get("window_status"),
+            "is_time_sensitive": bool(t.get("is_time_sensitive")),
+            "from_date": t.get("from_date"),
+            "to_date": t.get("to_date"),
+        })
+    rows.sort(key=lambda r: (r["cases_to_unlock"] if r["cases_to_unlock"] is not None else 1e9))
+    return rows
+
+
+def _case_mix_sizes(con, src: str, slugs: list[str], eds: dict[str, str]) -> dict[tuple, int]:
+    """(wholesaler, rip_code) -> number of distinct products sharing that RIP
+    code at that distributor — how wide you can MIX cases to reach a tier."""
+    ed_pred, ed_params = _edition_pred(slugs, eds)
+    sql = f"""
+        WITH base AS (
+            SELECT wholesaler,
+                   LTRIM(upc,'0') || '|' || COALESCE(unit_volume,'')
+                     || '|' || COALESCE(CAST(TRY_CAST(unit_qty AS DOUBLE) AS VARCHAR),'') AS ident,
+                   UNNEST(string_split(REGEXP_REPLACE(rip_code, '\\s+', ' '), ' ')) AS code
+            FROM {src} e
+            WHERE {ed_pred} AND has_rip AND rip_code IS NOT NULL AND rip_code <> ''
+        )
+        SELECT wholesaler, code, COUNT(DISTINCT ident) AS n
+        FROM base WHERE code <> '' AND code <> '0'
+        GROUP BY wholesaler, code
+    """
+    rows = con.execute(sql, ed_params).fetchall()
+    return {(w, c): int(n) for w, c, n in rows}
+
+
+def _product_case_mix(rec: dict, mix: dict, w: str) -> Optional[int]:
+    codes = [c.strip() for c in re.split(r"\s+", str(rec.get("rip_code") or "")) if c.strip()]
+    sizes = [mix.get((w, c)) for c in codes if (w, c) in mix]
+    return max(sizes) if sizes else None
+
+
+def _rip_verdict(row: dict, slugs: list[str], n: float) -> dict:
+    """Plain-language recommendation over the structured break-even data — which
+    distributor's RIP is the better buy and why. Deterministic (no LLM): every
+    row gets one instantly, derived from spread, thresholds, flips and combos."""
+    ni = int(n)
+    d = row["dists"]
+    w, sp = row["winner_at_n"], row["spread_at_n"]
+    mins = {x: d[x]["min_cases"] for x in slugs if d[x]["min_cases"]}
+    soonest = min(mins, key=mins.get) if mins else None
+    parts, pick = [], w
+
+    if w and w != "tie" and sp:
+        parts.append(f"{w.title()} is the better RIP at {ni} case(s) — "
+                     f"${sp:.2f}/case lower landed cost.")
+    elif w == "tie":
+        parts.append(f"Landed cost ties at {ni} case(s).")
+        pick = "tie"
+    else:
+        parts.append(f"No clear RIP edge at {ni} case(s).")
+
+    if soonest and len(set(mins.values())) > 1:
+        c = mins[soonest]
+        parts.append(f"{soonest.title()} unlocks its rebate soonest "
+                     f"({c} case{'s' if c != 1 else ''} down).")
+        if pick in (None, "tie"):
+            pick = soonest
+
+    if row["flips"]:
+        be = "; ".join(
+            f"{r['from']}{('–' + str(r['to'])) if r['to'] else '+'} cs → {r['winner']}"
+            for r in row["breakeven"] if r["winner"])
+        parts.append(f"Best choice shifts with volume — {be}.")
+
+    combos = [x for x in slugs if d[x]["is_combination"]]
+    if combos and len(combos) < len(slugs):
+        cm = d[combos[0]]["case_mix"]
+        parts.append(f"{combos[0].title()}'s RIP is a combination"
+                     + (f" (mix across {cm} items)" if cm else "")
+                     + " — easier to hit the tier.")
+
+    return {"pick": pick, "text": " ".join(parts)}
+
+
+@router.get("/rips")
+def compare_rips(
+    wholesalers: str = Query("allied,fedway,opici", description="2-3 comma-separated slugs"),
+    cases: float = Query(5, ge=1, description="Cases you plan to buy (drives winner@N)"),
+    q: str = Query(""),
+    product_type: str = Query(""),
+    only_differences: bool = Query(False),
+    sort: str = Query("spread", description="spread | product | min_cases | best1"),
+    order: str = Query("desc"),
+    limit: int = Query(2000, ge=1, le=50000),
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    """Compare RIP OUTCOMES across 2-3 distributors for every product they ALL
+    carry a RIP on. Each distributor's RIP is normalised to a landed-$/case
+    ladder; we report the winner at the chosen volume, the full break-even
+    map, the min cases to unlock a rebate, the best 1-case outcome, and the
+    case-mix breadth."""
+    import math as _m
+    with get_duckdb() as con:
+        src = read_parquet(con, "cpl_enriched")
+        slugs = _parse_wholesalers(wholesalers, con)
+        eds = _editions_for(con, src, slugs)
+        raw = _common_rows(con, src, slugs, eds)
+
+        by_key: dict[str, dict[str, dict]] = {}
+        for r in raw:
+            by_key.setdefault(r["match_key"], {})[r["wholesaler"]] = r
+
+        # Keep only products that ALL selected distributors RIP.
+        keys = [k for k, per in by_key.items()
+                if len(per) == len(slugs) and all(per[w].get("has_rip") for w in slugs)]
+        flat = [by_key[k][w] for k in keys for w in slugs]
+        _pricing.attach_tiers(con, flat)
+        mix = _case_mix_sizes(con, src, slugs, eds)
+
+    n = float(cases)
+    rows = []
+    for key in keys:
+        per = by_key[key]
+        any_row = per[slugs[0]]
+        dists, packs, tiers_by_w = {}, {}, {}
+        for w in slugs:
+            rec = per[w]
+            pack = rec.get("uqd") or 1.0
+            tiers = rec.get("tiers", []) or []
+            packs[w] = pack
+            tiers_by_w[w] = tiers
+            case_mix = _product_case_mix(rec, mix, w)
+            rip_n = _rip_rebate_at(tiers, n, pack)
+            rip_1 = _rip_rebate_at(tiers, 1, pack)
+            # Combination RIP: the qualifying quantity can be MIXED across more
+            # than one product/size under the same code (statute's combination
+            # logic) — true when the code spans >1 listing or a tier says so.
+            is_combo = bool(case_mix and case_mix > 1) or any(
+                "combo" in str(t.get("description") or "").lower()
+                or "combination" in str(t.get("description") or "").lower()
+                for t in tiers if t.get("source") == "rip")
+            dists[w] = {
+                "frontline": rec.get("frontline_case_price"),
+                "abv_proof": rec.get("abv_proof"),
+                "landed_at_n": _landed_at(tiers, rec.get("frontline_case_price"), n, pack),
+                "landed_at_1": _landed_at(tiers, rec.get("frontline_case_price"), 1, pack),
+                "rip_at_1": rip_1,
+                "rip_at_n": rip_n,
+                # per-bottle normalisation (rebate $ spread over the pack)
+                "rip_btl_at_1": round(rip_1 / pack, 2) if pack else None,
+                "rip_btl_at_n": round(rip_n / pack, 2) if pack else None,
+                "min_cases": _min_cases_to_rip(tiers, pack),
+                "case_mix": case_mix,
+                "is_combination": is_combo,
+                "rip_tiers": _rip_tier_rows(tiers, pack),
+                "rip_code": rec.get("rip_code"),
+                "product_name": rec.get("product_name"),
+                "upc": rec.get("upc"),
+            }
+
+        # winner at N
+        landed_n = {w: d["landed_at_n"] for w, d in dists.items() if d["landed_at_n"] is not None}
+        winner_n = None
+        spread_n = None
+        if landed_n:
+            lo, hi = min(landed_n.values()), max(landed_n.values())
+            winners = [w for w, v in landed_n.items() if abs(v - lo) < _TIE_EPS]
+            winner_n = "tie" if len(winners) > 1 else winners[0]
+            spread_n = round(hi - lo, 2)
+
+        # break-even map + curve: landed cost only changes at tier thresholds
+        bpset = {1, int(_m.ceil(n))}
+        for w in slugs:
+            for t in tiers_by_w[w]:
+                thr = _cases_threshold(t, packs[w])
+                if thr is not None:
+                    bpset.add(max(1, int(_m.ceil(thr - 1e-9))))
+        breakpoints = sorted(bpset)[:24]
+        curve = []
+        for b in breakpoints:
+            landed = {w: _landed_at(tiers_by_w[w], per[w].get("frontline_case_price"), b, packs[w])
+                      for w in slugs}
+            vals = {w: v for w, v in landed.items() if v is not None}
+            win = None
+            if vals:
+                lo = min(vals.values())
+                ws = [w for w, v in vals.items() if abs(v - lo) < _TIE_EPS]
+                win = "tie" if len(ws) > 1 else ws[0]
+            curve.append({"cases": b, "landed": landed, "winner": win})
+        # collapse consecutive same-winner breakpoints into ranges
+        ranges = []
+        for pt in curve:
+            if ranges and ranges[-1]["winner"] == pt["winner"]:
+                ranges[-1]["to"] = pt["cases"]
+            else:
+                ranges.append({"from": pt["cases"], "to": pt["cases"], "winner": pt["winner"]})
+        if ranges:
+            ranges[-1]["to"] = None  # last range is open-ended (N+)
+
+        # statute: a RIP comparison is only valid for like proof + size. Size
+        # is already part of the match key; flag any proof disagreement so the
+        # UI can warn (rare — same UPC usually means same proof).
+        proofs = {_norm_proof(d["abv_proof"]) for d in dists.values()
+                  if _norm_proof(d["abv_proof"]) is not None}
+        rows.append({
+            "match_key": key,
+            "upc_norm": key.split("|")[0],
+            "size_key": key.split("|")[1] if "|" in key else "",
+            "product_name": min((d["product_name"] for d in dists.values()), key=len),
+            "product_type": any_row.get("product_type"),
+            "proof_match": len(proofs) <= 1,
+            "brand": any_row.get("brand"),
+            "unit_qty": any_row.get("unit_qty"),
+            "unit_volume": any_row.get("unit_volume"),
+            "dists": dists,
+            "winner_at_n": winner_n,
+            "spread_at_n": spread_n,
+            "breakeven": ranges,
+            "curve": curve,
+            "flips": len({r["winner"] for r in ranges if r["winner"]}) > 1,
+            # the landed CHOICE differs: one distributor is cheaper at the
+            # chosen volume, or the winner flips as volume grows. (Structural
+            # differences that don't change what you pay are not counted.)
+            "has_difference": bool(
+                (spread_n and spread_n > 0)
+                or len({r["winner"] for r in ranges if r["winner"]}) > 1),
+        })
+
+    # filters
+    if q:
+        qq = q.lower()
+        rows = [r for r in rows if qq in (r["product_name"] or "").lower()
+                or qq in (r["brand"] or "").lower()]
+    if product_type:
+        rows = [r for r in rows if (r["product_type"] or "").lower() == product_type.lower()]
+
+    # AI verdict per row (deterministic, over the break-even data)
+    for r in rows:
+        r["verdict"] = _rip_verdict(r, slugs, n)
+
+    # summary
+    wins = {w: 0 for w in slugs}
+    ties = 0
+    flips = 0
+    least_money = {w: 0 for w in slugs}   # who needs fewest cases to unlock
+    for r in rows:
+        if r["winner_at_n"] == "tie":
+            ties += 1
+        elif r["winner_at_n"] in wins:
+            wins[r["winner_at_n"]] += 1
+        if r["flips"]:
+            flips += 1
+        mins = {w: r["dists"][w]["min_cases"] for w in slugs if r["dists"][w]["min_cases"]}
+        if mins:
+            lo = min(mins.values())
+            for w, v in mins.items():
+                if v == lo:
+                    least_money[w] += 1
+
+    total = len(rows)  # full common-RIP universe for this search context
+
+    # display filter (grid only — summary above already computed over all)
+    if only_differences:
+        rows = [r for r in rows if r["has_difference"]]
+
+    keymap = {
+        "spread": lambda r: r["spread_at_n"] or 0,
+        "product": lambda r: (r["product_name"] or "").lower(),
+        "min_cases": lambda r: min((d["min_cases"] or 1e9 for d in r["dists"].values()), default=1e9),
+        "best1": lambda r: max((d["rip_at_1"] or 0 for d in r["dists"].values()), default=0),
+    }
+    rows.sort(key=keymap.get(sort, keymap["spread"]),
+              reverse=(order != "asc") if sort != "product" else (order == "desc"))
+    rows = rows[:limit]
+
+    insights = []
+    if total:
+        lead = max(wins, key=lambda w: wins[w])
+        if wins[lead]:
+            insights.append(
+                f"At {int(n)} case(s), {lead} gives the best RIP outcome on "
+                f"{wins[lead]} of {total} shared-RIP products.")
+        lm = max(least_money, key=lambda w: least_money[w])
+        if least_money[lm]:
+            insights.append(
+                f"{lm} requires the fewest cases to unlock a RIP on "
+                f"{least_money[lm]} products (least money down).")
+        if flips:
+            insights.append(
+                f"{flips} product(s) change the best-RIP distributor as your "
+                f"volume grows — check the break-even before you commit.")
+
+    return {
+        "wholesalers": slugs,
+        "editions": eds,
+        "cases": n,
+        "total_common": total,
+        "rows": rows,
+        "summary": {
+            "common_rip_products": total,
+            "wins_at_n": wins,
+            "ties": ties,
+            "flips": flips,
+            "least_money": least_money,
+            "insights": insights,
+        },
+    }

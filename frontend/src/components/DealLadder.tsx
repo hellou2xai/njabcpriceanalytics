@@ -49,13 +49,16 @@ export default function DealLadder({ months, pack, emptyText }: {
   const cur = months.length ? months[months.length - 1] : null;
   const frontline = cur?.frontline ?? null;
   // Sort by the deal's EFFECTIVE WINDOW first (evergreen/full-month before
-  // dated; earlier windows before later), then by qty — so a month split into
-  // back-to-back dated codes reads as two coherent blocks instead of the
-  // windows interleaving tier by tier.
+  // dated; earlier windows before later), then by CASE-EQUIVALENT qty — so a
+  // bottle-unit tier (shown as a fraction of a case) and case-unit tiers form
+  // ONE clean ascending "buy more → pay less" ladder instead of interleaving
+  // (2cs, 3btl, 5cs, 6btl read as a jumbled pile that looks like many RIPs).
+  const caseQty = (t: RipTier) =>
+    (/btl|bottle/i.test(t.unit) && pack && pack > 0 ? t.qty / pack : t.qty);
   const byWindow = (a: RipTier, b: RipTier) =>
     (a.from_date ?? '0000').localeCompare(b.from_date ?? '0000')
     || (a.to_date ?? '9999').localeCompare(b.to_date ?? '9999')
-    || a.qty - b.qty;
+    || caseQty(a) - caseQty(b);
   const disc = [...(cur?.discountTiers ?? [])].sort(byWindow);
   const rip = [...(cur?.ripTiers ?? [])].sort(byWindow);
   const btlOf = (c?: number | null) => (pack && c != null ? c / pack : null);

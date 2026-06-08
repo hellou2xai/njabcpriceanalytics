@@ -260,10 +260,13 @@ def semantic_search(
         params,
     ).fetchdf().to_dict(orient="records")
 
-    # Re-attach the relevance score, sort by it, dedupe by (ws, upc, vol)
-    # and cap at the requested limit. Many enriched UPCs match multiple
-    # CPL rows (different vintages, pack sizes); the highest-score row
-    # per identity wins.
+    # Re-attach the relevance score, sort by it, dedupe by the full SKU
+    # identity and cap at the requested limit. Many enriched UPCs match
+    # multiple CPL rows (different vintages AND pack sizes — one UPC can carry
+    # a 3-pack and a 6-pack); the highest-score row per identity wins. unit_qty
+    # (normalised, "12" == "12.0") is part of the key so distinct case sizes
+    # are not collapsed and silently dropped (mirrors derive.py / attach_tiers).
+    from backend.pricing import uq_key
     seen = set()
     out: list[dict] = []
     for r in rows:
@@ -271,7 +274,8 @@ def semantic_search(
         if not upc_n:
             continue
         r["score"] = upc_to_score.get(upc_n, 0.0)
-        key = (r.get("wholesaler"), upc_n, r.get("unit_volume"), r.get("vintage"))
+        key = (r.get("wholesaler"), upc_n, r.get("unit_volume"),
+               uq_key(r.get("unit_qty")), r.get("vintage"))
         if key in seen:
             continue
         seen.add(key)

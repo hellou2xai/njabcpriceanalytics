@@ -14,9 +14,10 @@ interface Props {
   wholesaler: string;
   upc?: string;
   unitVolume?: string;
+  unitQty?: string;
 }
 
-export default function CloseoutFlagButton({ productName, wholesaler, upc, unitVolume }: Props) {
+export default function CloseoutFlagButton({ productName, wholesaler, upc, unitVolume, unitQty }: Props) {
   const qc = useQueryClient();
   const [popover, setPopover] = useState(false);
   const [note, setNote] = useState('');
@@ -24,10 +25,11 @@ export default function CloseoutFlagButton({ productName, wholesaler, upc, unitV
   const { data: flags } = useQuery({ queryKey: ['closeout-mine'], queryFn: closeout.mine });
   const match = flags?.find(f =>
     f.product_name === productName && f.wholesaler === wholesaler
-    && (f.unit_volume ?? '') === (unitVolume ?? ''));
+    && (f.unit_volume ?? '') === (unitVolume ?? '')
+    && (f.unit_qty ?? '') === (unitQty ?? ''));
 
   const addMut = useMutation({
-    mutationFn: () => closeout.add({ product_name: productName, wholesaler, upc, unit_volume: unitVolume, note: note || undefined }),
+    mutationFn: () => closeout.add({ product_name: productName, wholesaler, upc, unit_volume: unitVolume, unit_qty: unitQty, note: note || undefined }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['closeout-mine'] }); setPopover(false); setNote(''); },
   });
   const removeMut = useMutation({

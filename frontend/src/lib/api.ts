@@ -676,14 +676,14 @@ export const watchlist = {
 
 export interface CloseoutFlag {
   id: number; user_id: number; product_name: string; wholesaler: string;
-  upc?: string | null; unit_volume?: string | null; note?: string | null;
+  upc?: string | null; unit_volume?: string | null; unit_qty?: string | null; note?: string | null;
   status: 'open' | 'reviewed' | 'actioned' | 'dismissed'; created_at: string;
   user_email?: string | null;
 }
 
 export const closeout = {
   mine: () => request<CloseoutFlag[]>('/api/closeout-flags'),
-  add: (item: { product_name: string; wholesaler: string; upc?: string; unit_volume?: string; note?: string }) =>
+  add: (item: { product_name: string; wholesaler: string; upc?: string; unit_volume?: string; unit_qty?: string; note?: string }) =>
     request<{ status: string }>('/api/closeout-flags', { method: 'POST', body: JSON.stringify(item) }),
   remove: (id: number) => request<{ status: string }>(`/api/closeout-flags/${id}`, { method: 'DELETE' }),
   // admin review

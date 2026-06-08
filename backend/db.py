@@ -152,13 +152,21 @@ def init_user_db():
             product_name text NOT NULL,
             wholesaler text NOT NULL,
             unit_volume text,
+            unit_qty text NOT NULL DEFAULT '',
             note text,
             status text NOT NULL DEFAULT 'open'
                 CHECK (status IN ('open','reviewed','actioned','dismissed')),
             created_at text DEFAULT {NOW_UTC}
         )""",
+        # unit_qty (pack/case size) is part of the SKU identity: one UPC can
+        # carry two case sizes that share name + bottle size + vintage and
+        # differ only in pack count (e.g. a 3-pack and a 6-pack). Without it a
+        # closeout flag on one size silently bleeds onto the other. Migrate
+        # existing tables, then key the unique index + upsert on it.
+        "ALTER TABLE closeout_flags ADD COLUMN IF NOT EXISTS unit_qty text NOT NULL DEFAULT ''",
+        "DROP INDEX IF EXISTS idx_closeout_user_item",
         """CREATE UNIQUE INDEX IF NOT EXISTS idx_closeout_user_item
-            ON closeout_flags(user_id, product_name, wholesaler, unit_volume)""",
+            ON closeout_flags(user_id, product_name, wholesaler, unit_volume, unit_qty)""",
         "CREATE INDEX IF NOT EXISTS idx_closeout_status ON closeout_flags(status)",
         f"""CREATE TABLE IF NOT EXISTS orders (
             id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

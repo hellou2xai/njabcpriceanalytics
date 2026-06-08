@@ -76,7 +76,7 @@ export default function AdminCloseoutFlags() {
                   <td>{f.user_email ?? `user ${f.user_id}`}</td>
                   <td>{f.product_name}</td>
                   <td>{distributorName(f.wholesaler)}</td>
-                  <td>{f.unit_volume ?? '—'}</td>
+                  <td>{f.unit_volume ?? '—'}{f.unit_qty ? ` · ${f.unit_qty}pk` : ''}</td>
                   <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{f.upc ?? '—'}</td>
                   <td className="text-muted" style={{ maxWidth: 240 }}>{f.note ?? '—'}</td>
                   <td><span className={STATUS_TAG[f.status] ?? 'tag tag-gray'}>{f.status}</span></td>

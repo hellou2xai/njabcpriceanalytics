@@ -522,6 +522,7 @@ export default function ComparePrices() {
                             wholesaler={winner && winner !== 'tie' ? winner : selected[0]}
                             upc={r.upc ?? undefined}
                             unitVolume={r.unit_volume ?? undefined}
+                            unitQty={r.unit_qty ?? undefined}
                           />
                         </td>
                       </tr>

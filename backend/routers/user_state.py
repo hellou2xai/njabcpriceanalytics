@@ -296,6 +296,7 @@ class CloseoutFlag(BaseModel):
     wholesaler: str
     upc: Optional[str] = None
     unit_volume: Optional[str] = None
+    unit_qty: Optional[str] = None
     note: Optional[str] = None
 
 
@@ -314,12 +315,13 @@ def get_closeout_flags(user: dict = Depends(get_current_user)):
 def add_closeout_flag(item: CloseoutFlag, user: dict = Depends(get_current_user)):
     with get_pg() as con:
         cur = con.execute(
-            """INSERT INTO closeout_flags (user_id, product_name, wholesaler, upc, unit_volume, note)
-               VALUES (%s, %s, %s, %s, %s, %s)
-               ON CONFLICT(user_id, product_name, wholesaler, unit_volume) DO UPDATE SET
+            """INSERT INTO closeout_flags (user_id, product_name, wholesaler, upc, unit_volume, unit_qty, note)
+               VALUES (%s, %s, %s, %s, %s, %s, %s)
+               ON CONFLICT(user_id, product_name, wholesaler, unit_volume, unit_qty) DO UPDATE SET
                    note = excluded.note, status = 'open'
                RETURNING id""",
-            (user["id"], item.product_name, item.wholesaler, item.upc, item.unit_volume, item.note))
+            (user["id"], item.product_name, item.wholesaler, item.upc, item.unit_volume,
+             item.unit_qty or "", item.note))
         _audit(con, "closeout_flags", cur.fetchone()["id"], "insert", new_values=item.model_dump())
     return {"status": "flagged"}
 

@@ -25,7 +25,6 @@ export default function KPICard({ label, value, sub, color, to, title, icon }: P
   return (
     <div
       className={`kpi-card${clickable ? ' kpi-card-clickable' : ''}`}
-      style={{ borderLeftColor: accent }}
       onClick={clickable ? handleClick : undefined}
       onKeyDown={clickable ? handleKey : undefined}
       role={clickable ? 'button' : undefined}

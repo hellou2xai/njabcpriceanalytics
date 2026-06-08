@@ -472,6 +472,8 @@ export const compare = {
     request<CompareRipResponse>(`/api/compare/rips${qs(params)}`),
   price360: (params: Record<string, unknown>) =>
     request<Price360Response>(`/api/compare/price360${qs(params)}`),
+  rateshop: (params: Record<string, unknown>) =>
+    request<RateShopResponse>(`/api/compare/rateshop${qs(params)}`),
   editionOptions: (wholesaler: string) =>
     request<EditionOptions>(`/api/compare/editions/options?wholesaler=${wholesaler}`),
   editions: (params: Record<string, unknown>) =>
@@ -521,6 +523,46 @@ export interface EditionCompareResponse {
 }
 
 // ---- Price 360 (holistic per-product net-cost label) ----
+// ---- Rate Shop (clarity-first: net-at-volume + conditions + break-even) ----
+export interface RateShopCondition { type: string; text: string }
+export interface RateShopOffer {
+  wholesaler: string;
+  edition: string | null;
+  product_name: string | null;
+  upc: string | null;
+  frontline_case: number | null;
+  frontline_btl: number | null;
+  net_case: number | null;
+  net_btl: number | null;
+  savings_case: number;
+  savings_pct: number;
+  applied_kind: string | null;
+  applied_code: string | null;
+  conditions: RateShopCondition[];
+  stretch: { to_cases: number; extra_per_case: number; price_after: number } | null;
+  case_mix: number | null;
+  single_sku: boolean;
+  compliance: { flags: string[]; pre_approval: boolean };
+  abv_proof: string | null;
+  qd_tiers: Price360Tier[];
+  rip_tiers: Price360Tier[];
+  rank: number;
+  is_winner: boolean;
+}
+export interface RateShopResponse {
+  found: boolean;
+  note?: string;
+  cases?: number;
+  size_key?: string;
+  available_sizes?: { match_key: string; size_key: string; unit_volume: string | null; unit_qty: string | null; vintage: string | null; n_distributors: number }[];
+  product?: { product_name: string; upc: string | null; unit_volume: string | null; unit_qty: string | null; abv_proof: string | null; product_type: string | null; brand: string | null };
+  tie?: boolean;
+  verdict?: string;
+  breakeven?: { from: number; to: number | null; winner: string | null }[];
+  curve?: { cases: number; net: Record<string, number | null>; winner: string | null }[];
+  offers?: RateShopOffer[];
+}
+
 export interface Price360Tier {
   cases_to_unlock: number | null;
   unit: string | null;

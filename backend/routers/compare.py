@@ -1581,3 +1581,199 @@ def compare_editions(
     with get_duckdb() as con:
         return edition_comparison(con, wholesaler, older, newer, scope, match,
                                   change, sort, order, limit)
+
+
+# ===========================================================================
+# Rate Shop — the clarity-first flagship: one product, MY quantity, one ranked
+# answer with net-at-volume, the conditions to capture each price, a break-even
+# band across volume, and a stretch-to-next-tier nudge. Reuses every engine
+# helper above; no new pricing math.
+# ===========================================================================
+
+def _applied_tier_at(tiers: list, frontline: Optional[float], n: float, pack: float):
+    """Best landed price at n cases and the tier that produces it (or None =
+    base/frontline)."""
+    best = frontline if frontline is not None else None
+    best_t = None
+    for t in tiers:
+        thr = _cases_threshold(t, pack)
+        pa = t.get("price_after")
+        if thr is None or pa is None:
+            continue
+        if n + 1e-9 >= thr and (best is None or pa < best - 1e-9):
+            best, best_t = pa, t
+    return (round(best, 2) if best is not None else None), best_t
+
+
+def _next_tier_above(tiers: list, n: float, pack: float, current: Optional[float]):
+    """The nearest tier above n cases that beats the current price (for the
+    'stretch to unlock' nudge)."""
+    cand = None
+    for t in tiers:
+        thr = _cases_threshold(t, pack)
+        pa = t.get("price_after")
+        if thr is None or pa is None or current is None:
+            continue
+        if thr > n + 1e-9 and pa < current - 0.005:
+            if cand is None or thr < cand[0]:
+                cand = (thr, t, pa)
+    return cand
+
+
+def _rateshop_conditions(applied_t, pack: float, case_mix, is_combination, compliance) -> list:
+    """What the buyer must DO to capture this offer's price at the chosen volume."""
+    import math as _m
+    conds = []
+    if applied_t is not None:
+        thr = _cases_threshold(applied_t, pack)
+        is_rip = applied_t.get("source") == "rip"
+        if thr is not None:
+            conds.append({"type": "qty", "text": f"buy ≥{_m.ceil(thr - 1e-9)} cs"})
+        if is_rip:
+            if applied_t.get("is_time_sensitive") and applied_t.get("window_status") != "expired":
+                fd, td = applied_t.get("from_date"), applied_t.get("to_date")
+                conds.append({"type": "window",
+                              "text": f"valid {str(fd)[5:] if fd else '?'}–{str(td)[5:] if td else '?'}"})
+            conds.append({"type": "invoice", "text": "single invoice"})
+            if is_combination and case_mix:
+                conds.append({"type": "combo", "text": f"mix across {case_mix} items"})
+    if compliance.get("pre_approval"):
+        conds.append({"type": "preapproval", "text": "needs pre-approval"})
+    return conds
+
+
+@router.get("/rateshop")
+def rateshop(
+    match: str = Query(..., description="Product name or UPC"),
+    cases: float = Query(5, ge=1, description="How many cases you plan to buy"),
+    size: str = Query(""),
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    """Rate Shop: every distributor's offer for ONE product at the quantity the
+    buyer actually plans to purchase — true landed net cost (case + bottle), the
+    conditions to capture it, a break-even map across volume, and a stretch
+    nudge. Ranks by net-at-volume (authoritative)."""
+    import math as _m
+    n = float(cases)
+    with get_duckdb() as con:
+        src = read_parquet(con, "cpl_enriched")
+        key, recs, available = _fetch_product_offers(con, src, match, size or None)
+        if not recs:
+            return {"found": False, "match": match, "note": "No product matched a valid barcode."}
+        _pricing.attach_tiers(con, recs)
+        all_slugs = list({r["wholesaler"] for r in recs})
+        eds = _editions_for(con, src, all_slugs)
+        mix = _case_mix_sizes(con, src, all_slugs, eds)
+
+    offers, tiers_by_w, packs = [], {}, {}
+    for rec in recs:
+        w = rec["wholesaler"]
+        pack = rec.get("uqd") or 1.0
+        tiers = rec.get("tiers", []) or []
+        packs[w], tiers_by_w[w] = pack, tiers
+        frontline = rec.get("frontline_case_price")
+        net_n, applied = _applied_tier_at(tiers, frontline, n, pack)
+        case_mix = _product_case_mix(rec, mix, w)
+        is_combo = bool(case_mix and case_mix > 1)
+        comp = _compliance_flags(tiers, pack)
+        conds = _rateshop_conditions(applied, pack, case_mix, is_combo, comp)
+        nxt = _next_tier_above(tiers, n, pack, net_n)
+        stretch = None
+        if nxt:
+            thr_n, t_n, pa_n = nxt
+            stretch = {"to_cases": _m.ceil(thr_n - 1e-9),
+                       "extra_per_case": round((net_n or 0) - pa_n, 2),
+                       "price_after": pa_n}
+        sav = round((frontline or 0) - (net_n or 0), 2) if frontline and net_n is not None else 0.0
+        offers.append({
+            "wholesaler": w, "edition": rec.get("edition"),
+            "product_name": rec.get("product_name"), "upc": rec.get("upc"),
+            "frontline_case": frontline, "frontline_btl": rec.get("frontline_unit_price"),
+            "net_case": net_n, "net_btl": round(net_n / pack, 2) if (net_n is not None and pack) else None,
+            "savings_case": sav, "savings_pct": round(sav / frontline * 100, 1) if frontline else 0.0,
+            "applied_kind": (None if applied is None else ("RIP" if applied.get("source") == "rip" else "QD")),
+            "applied_code": (applied.get("code") if applied else None),
+            "conditions": conds,
+            "stretch": stretch,
+            "case_mix": case_mix, "single_sku": not is_combo,
+            "compliance": comp, "abv_proof": rec.get("abv_proof"),
+            "qd_tiers": _p360_tier_rows(tiers, pack, "discount"),
+            "rip_tiers": _p360_tier_rows(tiers, pack, "rip"),
+        })
+
+    # rank by net-at-volume (authoritative); co-winners on ties
+    nets = [o["net_case"] for o in offers if o["net_case"] is not None]
+    min_net = min(nets) if nets else None
+    offers.sort(key=lambda o: o["net_case"] if o["net_case"] is not None else 1e9)
+    for o in offers:
+        nc = o["net_case"]
+        o["rank"] = 1 + sum(1 for x in offers if x["net_case"] is not None and nc is not None and x["net_case"] < nc - 0.005)
+        o["is_winner"] = nc is not None and min_net is not None and abs(nc - min_net) < 0.005
+    n_winners = sum(1 for o in offers if o["is_winner"])
+
+    # break-even across volume — net cost changes only at tier thresholds
+    bpset = {1, int(_m.ceil(n))}
+    for w in all_slugs:
+        for t in tiers_by_w[w]:
+            thr = _cases_threshold(t, packs[w])
+            if thr is not None:
+                bpset.add(max(1, int(_m.ceil(thr - 1e-9))))
+    fronts = {o["wholesaler"]: o["frontline_case"] for o in offers}
+    curve = []
+    for b in sorted(bpset)[:24]:
+        landed = {w: _applied_tier_at(tiers_by_w[w], fronts.get(w), b, packs[w])[0] for w in all_slugs}
+        vals = {w: v for w, v in landed.items() if v is not None}
+        win = None
+        if vals:
+            lo = min(vals.values())
+            ws = [w for w, v in vals.items() if abs(v - lo) < _TIE_EPS]
+            win = "tie" if len(ws) > 1 else ws[0]
+        curve.append({"cases": b, "net": landed, "winner": win})
+    ranges = []
+    for pt in curve:
+        if ranges and ranges[-1]["winner"] == pt["winner"]:
+            ranges[-1]["to"] = pt["cases"]
+        else:
+            ranges.append({"from": pt["cases"], "to": pt["cases"], "winner": pt["winner"]})
+    if ranges:
+        ranges[-1]["to"] = None
+
+    # plain-language verdict at the chosen volume
+    win = offers[0] if offers else None
+    verdict = ""
+    if win and win["net_case"] is not None:
+        if n_winners > 1:
+            verdict = (f"At {int(n)} case(s), {n_winners} distributors tie at "
+                       f"${win['net_case']:.2f}/case — pick on service or delivery.")
+        else:
+            runner = next((o for o in offers if not o["is_winner"] and o["net_case"] is not None), None)
+            gap = f" — ${runner['net_case'] - win['net_case']:.2f}/cs cheaper than {distributorName_safe(runner['wholesaler'])}" if runner else ""
+            verdict = f"At {int(n)} case(s), buy from {distributorName_safe(win['wholesaler'])}: ${win['net_case']:.2f}/case{gap}."
+        flips = len({r['winner'] for r in ranges if r['winner'] and r['winner'] != 'tie'}) > 1
+        if flips:
+            be = "; ".join(f"{r['from']}{('–'+str(r['to'])) if r['to'] else '+'} cs → "
+                           f"{('tie' if r['winner']=='tie' else distributorName_safe(r['winner']))}"
+                           for r in ranges if r["winner"])
+            verdict += f" Best choice shifts with volume: {be}."
+
+    meta = recs[0]
+    return {
+        "found": True, "cases": n, "size_key": (key.split("|")[1] if key and "|" in key else ""),
+        "available_sizes": available,
+        "product": {
+            "product_name": min((o["product_name"] for o in offers), key=len),
+            "upc": meta.get("upc"), "unit_volume": meta.get("unit_volume"),
+            "unit_qty": meta.get("unit_qty"), "abv_proof": meta.get("abv_proof"),
+            "product_type": meta.get("product_type"), "brand": meta.get("brand"),
+        },
+        "tie": n_winners > 1, "verdict": verdict,
+        "breakeven": ranges, "curve": curve, "offers": offers,
+    }
+
+
+def distributorName_safe(slug: str) -> str:
+    try:
+        from backend.routers.catalog import DISTRIBUTOR_NAMES
+        return DISTRIBUTOR_NAMES.get(slug, slug)
+    except Exception:
+        return slug

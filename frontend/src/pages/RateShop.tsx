@@ -69,6 +69,13 @@ function OfferCard({ o, accent, cases, unitVolume, unitQty, onProduct }: {
           {o.frontline_case != null && o.frontline_case !== o.net_case && <span className="rs-front">{money(o.frontline_case)}</span>}
         </div>
         <div className="rs-netbtl">{money(o.net_btl)}/bottle net{o.savings_case > 0 ? ` · saves ${money(o.savings_case)}/cs (${pct(o.savings_pct)})` : ''}</div>
+        {o.timing && (
+          <div className={`rs-timing rs-timing-${o.timing.dir}`} title="Based on next month's effective price for this product">
+            {o.timing.dir === 'drop'
+              ? <>↓ drops to ~{money(o.timing.next_case)}/cs next month — consider waiting</>
+              : <>↑ rises to ~{money(o.timing.next_case)}/cs next month — buy now</>}
+          </div>
+        )}
 
         {/* conditions — what you must do to capture this price */}
         <div className="rs-conds">

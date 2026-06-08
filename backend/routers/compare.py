@@ -1164,6 +1164,7 @@ def _fetch_product_offers(con, src: str, match: str, size_key: Optional[str] = N
                unit_qty, unit_volume, vintage, abv_proof,
                frontline_case_price, frontline_unit_price,
                best_case_price, best_unit_price, effective_case_price,
+               next_effective_case_price,
                rip_savings, has_discount, has_rip, rip_code, rip_windows,
                discount_1_qty, discount_1_amt, discount_2_qty, discount_2_amt,
                discount_3_qty, discount_3_amt, discount_4_qty, discount_4_amt,
@@ -1642,28 +1643,21 @@ def _rateshop_conditions(applied_t, pack: float, case_mix, is_combination, compl
     return conds
 
 
-@router.get("/rateshop")
-def rateshop(
-    match: str = Query(..., description="Product name or UPC"),
-    cases: float = Query(5, ge=1, description="How many cases you plan to buy"),
-    size: str = Query(""),
-    user: Optional[dict] = Depends(get_optional_user),
-):
-    """Rate Shop: every distributor's offer for ONE product at the quantity the
-    buyer actually plans to purchase — true landed net cost (case + bottle), the
-    conditions to capture it, a break-even map across volume, and a stretch
-    nudge. Ranks by net-at-volume (authoritative)."""
+def rateshop_data(con, match: str, cases: float = 5, size_key: Optional[str] = None) -> dict:
+    """Rate Shop core (shared by the HTTP endpoint and the assistant tool):
+    every distributor's offer for ONE product at the quantity the buyer plans
+    to purchase — true landed net cost, conditions, break-even, stretch nudge,
+    timing. Ranks by net-at-volume."""
     import math as _m
     n = float(cases)
-    with get_duckdb() as con:
-        src = read_parquet(con, "cpl_enriched")
-        key, recs, available = _fetch_product_offers(con, src, match, size or None)
-        if not recs:
-            return {"found": False, "match": match, "note": "No product matched a valid barcode."}
-        _pricing.attach_tiers(con, recs)
-        all_slugs = list({r["wholesaler"] for r in recs})
-        eds = _editions_for(con, src, all_slugs)
-        mix = _case_mix_sizes(con, src, all_slugs, eds)
+    src = read_parquet(con, "cpl_enriched")
+    key, recs, available = _fetch_product_offers(con, src, match, size_key)
+    if not recs:
+        return {"found": False, "match": match, "note": "No product matched a valid barcode."}
+    _pricing.attach_tiers(con, recs)
+    all_slugs = list({r["wholesaler"] for r in recs})
+    eds = _editions_for(con, src, all_slugs)
+    mix = _case_mix_sizes(con, src, all_slugs, eds)
 
     offers, tiers_by_w, packs = [], {}, {}
     for rec in recs:
@@ -1685,12 +1679,22 @@ def rateshop(
                        "extra_per_case": round((net_n or 0) - pa_n, 2),
                        "price_after": pa_n}
         sav = round((frontline or 0) - (net_n or 0), 2) if frontline and net_n is not None else 0.0
+        # timing: is this product cheaper (or pricier) next CPL period?
+        next_eff = rec.get("next_effective_case_price")
+        cur_eff = rec.get("effective_case_price")
+        timing = None
+        if next_eff is not None and cur_eff is not None:
+            delta = round(next_eff - cur_eff, 2)
+            if abs(delta) >= 0.50:
+                timing = {"dir": "drop" if delta < 0 else "rise",
+                          "next_case": round(next_eff, 2), "delta": delta}
         offers.append({
             "wholesaler": w, "edition": rec.get("edition"),
             "product_name": rec.get("product_name"), "upc": rec.get("upc"),
             "frontline_case": frontline, "frontline_btl": rec.get("frontline_unit_price"),
             "net_case": net_n, "net_btl": round(net_n / pack, 2) if (net_n is not None and pack) else None,
             "savings_case": sav, "savings_pct": round(sav / frontline * 100, 1) if frontline else 0.0,
+            "timing": timing,
             "applied_kind": (None if applied is None else ("RIP" if applied.get("source") == "rip" else "QD")),
             "applied_code": (applied.get("code") if applied else None),
             "conditions": conds,
@@ -1769,6 +1773,20 @@ def rateshop(
         "tie": n_winners > 1, "verdict": verdict,
         "breakeven": ranges, "curve": curve, "offers": offers,
     }
+
+
+@router.get("/rateshop")
+def rateshop(
+    match: str = Query(..., description="Product name or UPC"),
+    cases: float = Query(5, ge=1, description="How many cases you plan to buy"),
+    size: str = Query(""),
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    """Rate Shop: best distributor for ONE product at the quantity you plan to
+    buy — true landed net cost, the conditions to capture it, a break-even map,
+    a stretch nudge and next-month timing. Ranks by net-at-volume."""
+    with get_duckdb() as con:
+        return rateshop_data(con, match, float(cases), size or None)
 
 
 def distributorName_safe(slug: str) -> str:

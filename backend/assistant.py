@@ -1526,6 +1526,20 @@ def _t_edition_compare(con, args):
                               sort="net_delta", order="desc", limit=lim)
 
 
+def _t_rate_shop(con, args):
+    """Rate Shop: best distributor for ONE product at the buyer's volume."""
+    from backend.routers.compare import rateshop_data
+    match = (args.get("match") or args.get("q") or "").strip()
+    if not match:
+        return {"found": False, "note": "Name a product (or UPC) to rate-shop."}
+    cases = args.get("cases")
+    try:
+        cases = float(cases) if cases else 5
+    except (TypeError, ValueError):
+        cases = 5
+    return rateshop_data(con, match, cases, None)
+
+
 def _t_price_360(con, args):
     """Holistic Price 360 label for ONE product across every distributor."""
     from backend.routers.compare import price360_offers
@@ -2203,6 +2217,7 @@ _DATA_TOOLS = {
     "rip_tier_gap": (_t_rip_tier_gap, "'Almost there' RIP tier gap for a brand/product (or rip_code), given optional cases the buyer plans (`have`): the rebate tier ladder, how many MORE cases reach each tier, the incremental rebate for stretching, and the next tier to aim for. Use for 'how close am I to the next rebate', 'worth buying more to hit the tier'."),
     "distributor_arbitrage": (_t_distributor_arbitrage, "Catalog-wide cross-distributor arbitrage: same product (UPC) sold by 2+ distributors, ranked by how much cheaper the cheapest is vs the dearest (effective case price). Optional category, min_savings_pct. Use for 'where can I save by switching distributor', 'biggest price gaps between distributors'."),
     "edition_compare": (_t_edition_compare, "Compare ONE distributor across two CPL editions (price-file periods), defaulting to the latest two, and surface what changed in effective NET cost terms (not raw frontline). Returns a summary (counts that rose/fell/added/removed/RIP-changed) and per-product the net-cost change (case + bottle, $ + %) PLUS which underlying layer moved (frontline / discount / RIP gained/lost/modified), with added vs removed labelled. Args: distributor (required), older + newer (editions like '2026-05'; omit for latest two), match (a product, switches to single-product scope), change (increase|decrease|added|removed|rip), limit. Use for 'what changed at Fedway from May to June', 'biggest price increases this edition at Allied', 'which products did Opici drop', 'how did X's price change month over month at Fedway'."),
+    "rate_shop": (_t_rate_shop, "RATE SHOP the best distributor for ONE product AT THE QUANTITY the buyer plans to buy — the clearest 'who's actually cheapest for me'. Returns each distributor's true landed NET cost per case at that volume (best qualifying QD/RIP tier), ranked cheapest-at-volume first, PLUS the exact conditions to capture each price (buy ≥N cs, single invoice, valid dates, mix across M items, pre-approval), a break-even map (which distributor wins at which volume), a stretch nudge (buy a little more to unlock a deeper rebate), and next-month timing (buy now vs wait). Args: match (product name or UPC), cases (how many cases, default 5). Use for 'where should I buy X', 'who's cheapest for X if I buy N cases', 'best price on X for my order', 'should I buy X now or wait'."),
     "price_360": (_t_price_360, "PRICE 360 holistic label for ONE product across EVERY distributor that carries it: each offer reduced to one effective NET cost (case AND bottle) after all layers — frontline, single-case discount, quantity-discount tiers and RIP — ranked cheapest net cost first. Keeps invoice cost (legal, discounts only) separate from economic net cost (incl. rebates), flags when they diverge, gives a fixed-weight 0-100 value score, NJ-ABC pre-approval flags (>50 cases / missing small-qty tier / >$1,000 rebate), and flags any runner-up whose bigger rebate still costs more. Args: match (product name or UPC), reach_mode (soft|hard|off, default soft). Use for 'what's the real/true cost of X', 'best overall deal on Y across distributors', 'who's actually cheapest on Z after everything', 'price 360 for X'."),
     "compare_rip_outcomes": (_t_compare_rip_outcomes, "Compare how ONE product's RIP rebate plays out ACROSS 2-3 distributors — a RIP is a volume-tiered rebate, so the SAME product can RIP very differently (different tiers, different minimum cases to unlock, combination-mix vs single-product). Returns each distributor's landed $/case at the chosen volume, best rebate at 1 case, min cases to unlock (least money down), case-mix breadth, the full BREAK-EVEN map (which distributor wins at which volume), and a plain-language verdict. Args: match (product name or UPC), distributors (array of slugs; default allied/fedway/opici), cases (default 5). Use for 'compare the RIP on X between Allied and Fedway', 'whose rebate on Y is better', 'who wins the RIP if I buy N cases', 'is Allied or Opici's RIP better on Z'."),
     "best_gp_deals": (_t_best_gp_deals, "Best gross-profit deals: products ranked by discount depth / GP% (savings vs list). Optional category, distributor, min_pct. Use for 'best margin deals', 'highest GP%', 'deepest discounts by percent'."),

@@ -568,6 +568,7 @@ export interface RateShopOffer {
   savings_pct: number;
   applied_kind: string | null;
   applied_code: string | null;
+  timing: { dir: 'drop' | 'rise'; next_case: number; delta: number } | null;
   conditions: RateShopCondition[];
   stretch: { to_cases: number; extra_per_case: number; price_after: number } | null;
   case_mix: number | null;

@@ -1,0 +1,16 @@
+.psb { position: relative; flex: 1; min-width: 260px; max-width: 480px; }
+.psb-icon { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none; }
+.psb-input {
+  width: 100%; padding: 9px 12px 9px 34px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--surface); color: var(--text); font-size: 14px;
+}
+.psb-list {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 50;
+  margin: 0; padding: 4px; list-style: none; max-height: 340px; overflow-y: auto;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+}
+.psb-item { padding: 7px 10px; border-radius: 7px; cursor: pointer; display: flex; flex-direction: column; gap: 1px; }
+.psb-item.psb-hi { background: var(--surface-hover); }
+.psb-name { font-size: 13.5px; font-weight: 600; }
+.psb-meta { font-size: 11px; color: var(--text-muted); }

@@ -26,6 +26,21 @@ Instructions for Claude Code (and human contributors) working in this repo.
   - Product embeddings: rebuild with `python scripts/build_semantic_index.py`
     (`--all` to re-embed from scratch); see `backend/voyage_embed.py`.
 
+## Product search must be smart/semantic EVERYWHERE
+- EVERY product search box in the app (Price 360, Compare Prices/RIPs, Edition
+  Comparison, Catalog, Products, and any new screen) must resolve the query
+  through the smart/semantic search stack — never raw `name LIKE '%q%'`
+  substring matching. A retailer typing "absolut vodka", "tito's", a misspelling,
+  or a barcode must land on the right product.
+- Use the shared `ProductSearchBox` typeahead component (suggestions from
+  `/api/catalog/search`, which already does aliases + spell-fix + UPC resolve);
+  selecting a suggestion passes the exact product (name + UPC) downstream. Do
+  not hand-roll a plain `<input>` that posts free text to a substring matcher.
+- Backend endpoints that resolve a `match` (e.g. `price360`, `compare_rip_outcomes`)
+  should accept a UPC and prefer it; the smart resolution happens at the search
+  box. When a name must be resolved server-side, fall back to `semantic_search`,
+  not bare `LIKE`.
+
 ## Two machines — sync via git, NOT OneDrive
 - This project exists as two working copies under OneDrive: `RIP_ABC` (office)
   and `RIP_ABC _Laptop` (home), both clones of GitHub

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Target, Crown, AlertTriangle, ChevronDown, ChevronRight, Info } from 'lucide-react';
+import { Target, Crown, AlertTriangle, Info } from 'lucide-react';
 import { compare } from '../lib/api';
 import type { Price360Offer } from '../lib/api';
 import { distributorName } from '../lib/distributors';
+import ProductSearchBox from '../components/ProductSearchBox';
 import './ComparePrices.css';
 import './Price360.css';
 
@@ -17,8 +18,6 @@ const REACH_LABEL: Record<string, string> = {
 };
 
 function OfferCard({ offer, onProduct }: { offer: Price360Offer; onProduct: (n: string, w: string) => void }) {
-  const [showScore, setShowScore] = useState(false);
-  const [showTiers, setShowTiers] = useState(false);
   const o = offer;
   const reach = o.reachability;
   return (
@@ -77,37 +76,37 @@ function OfferCard({ offer, onProduct }: { offer: Price360Offer; onProduct: (n: 
         </div>
       </div>
 
-      {/* value score */}
+      {/* value score — breakdown + RIP tiers shown by default */}
       <div className="p360-score">
-        <button className="p360-scorebtn" onClick={() => setShowScore(s => !s)} title="Composite value score (fixed weights) — tap for breakdown">
+        <div className="p360-scorebtn" title="Composite value score (0–100, fixed published weights)">
           <span className="p360-scoreval">{o.value_score.toFixed(0)}</span>
-          <span className="p360-scorelbl">score <Info size={9} /></span>
-        </button>
-        {showScore && (
-          <div className="p360-scorebreak">
-            <div>Net cost <b>{o.score_breakdown.net_cost}</b>/{o.score_breakdown.weights.net_cost}</div>
-            <div>Savings <b>{o.score_breakdown.savings}</b>/{o.score_breakdown.weights.savings}</div>
-            <div>Stability <b>{o.score_breakdown.stability}</b>/{o.score_breakdown.weights.stability}</div>
-            <div>Compliance <b>{o.score_breakdown.compliance}</b>/{o.score_breakdown.weights.compliance}</div>
-          </div>
-        )}
+          <span className="p360-scorelbl">value score <Info size={9} /></span>
+        </div>
+        <div className="p360-scorebreak">
+          <div title="How close this is to the cheapest net cost in the set (70% of the score — net cost is authoritative)">
+            Net cost <b>{o.score_breakdown.net_cost}</b>/{o.score_breakdown.weights.net_cost}</div>
+          <div title="Reachability-adjusted savings vs frontline (15%)">
+            Savings <b>{o.score_breakdown.savings}</b>/{o.score_breakdown.weights.savings}</div>
+          <div title="Full-month RIP scores higher than a dated/expiring one (10%)">
+            Stability <b>{o.score_breakdown.stability}</b>/{o.score_breakdown.weights.stability}</div>
+          <div title="Full marks unless the RIP needs NJ-ABC pre-approval (5%)">
+            Compliance <b>{o.score_breakdown.compliance}</b>/{o.score_breakdown.weights.compliance}</div>
+        </div>
         {o.rip_tiers.length > 0 && (
-          <button className="p360-tierstoggle" onClick={() => setShowTiers(s => !s)}>
-            {showTiers ? <ChevronDown size={11} /> : <ChevronRight size={11} />} RIP tiers
-          </button>
-        )}
-        {showTiers && (
-          <table className="p360-tiers">
-            <tbody>
-              {o.rip_tiers.map((t, i) => (
-                <tr key={i}>
-                  <td>{t.cases_to_unlock ?? t.raw_qty} cs</td>
-                  <td className="text-green">−{money(t.rebate_per_case)}</td>
-                  <td>{money(t.price_after)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="p360-tierwrap">
+            <div className="p360-tierhdr">RIP tiers — buy → rebate → net/cs</div>
+            <table className="p360-tiers">
+              <tbody>
+                {o.rip_tiers.map((t, i) => (
+                  <tr key={i}>
+                    <td>{t.cases_to_unlock ?? t.raw_qty} cs</td>
+                    <td className="text-green">−{money(t.rebate_per_case)}</td>
+                    <td>{money(t.price_after)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>
@@ -146,8 +145,14 @@ export default function Price360() {
       </div>
 
       <form className="p360-search" onSubmit={submit}>
-        <input placeholder="Product name or UPC (e.g. Campari, Tito's, 088110…)" value={input}
-          onChange={e => setInput(e.target.value)} />
+        <ProductSearchBox
+          value={input}
+          onChange={setInput}
+          onSelect={p => setMatch(p.upc || p.product_name)}
+          onSubmit={() => setMatch(input.trim())}
+          placeholder="Search a product (smart search) — e.g. Campari, Tito's, Absolut 80…"
+          autoFocus
+        />
         <button className="btn" type="submit">Show 360</button>
         <label className="p360-reach">
           Rebates:
@@ -193,6 +198,15 @@ export default function Price360() {
             <span className="p360-count">{data.offers!.length} distributor{data.offers!.length !== 1 ? 's' : ''}</span>
           </div>
 
+          <div className="p360-howto">
+            Each card is one distributor's offer. <strong>Net cost</strong> (big number) is the true
+            cost per case after every layer — frontline minus single-case discount, quantity discounts
+            and RIP rebates — with rebates you're unlikely to reach discounted by your order history.
+            <strong> Invoice</strong> is the legal cost basis (discounts only); the gap to Net is the RIP
+            rebate. The <strong>value score</strong> (right) is net-cost-dominant: 70 net cost · 15 savings ·
+            10 stability · 5 compliance. The <strong>RIP tiers</strong> show what you pay per case at each
+            buy-quantity. Lowest net cost wins.
+          </div>
           <div className="p360-offers">
             {data.offers!.map(o => <OfferCard key={o.wholesaler + o.rank} offer={o} onProduct={goToProduct} />)}
           </div>

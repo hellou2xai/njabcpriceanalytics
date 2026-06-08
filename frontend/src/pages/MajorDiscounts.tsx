@@ -19,6 +19,7 @@ import { AI_EXPLAINERS_ENABLED } from '../lib/flags';
 import VintageSticker from '../components/VintageSticker';
 import { useProductQuickView } from '../components/ProductQuickView';
 import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
+import { useAuth } from '../contexts/AuthContext';
 
 const money = (v?: number | null) => (v == null ? '-' : `$${Number(v).toFixed(2)}`);
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -28,7 +29,28 @@ function fmtEdition(ed?: string | null): string {
   return m ? `${MONTHS[parseInt(m[2], 10) - 1]} ${m[1]}` : ed;
 }
 
+// Admin-only: the same discount data is available to regular users via the
+// Catalog "In QD" filter and the per-product detail page. This dense ranker is
+// kept as an internal admin tool. The exported component gates on is_admin so
+// the implementation's hooks never run when the gate denies access.
 export default function MajorDiscounts() {
+  const { user } = useAuth();
+  if (!user?.is_admin) {
+    return (
+      <div className="page">
+        <div className="orders-header"><h2>Major Discounts</h2></div>
+        <p className="text-muted" style={{ marginTop: 8 }}>
+          This page is admin-only. The same quantity-discount information is on the{' '}
+          <a href="/products" style={{ color: 'var(--accent)' }}>Products</a> page — filter by
+          {' '}<strong>In QD</strong> to see every product with a quantity discount this edition.
+        </p>
+      </div>
+    );
+  }
+  return <MajorDiscountsImpl />;
+}
+
+function MajorDiscountsImpl() {
   const { open } = useProductQuickView();
   const [params] = useSearchParams();
   const [wholesaler, setWholesaler] = useState('');

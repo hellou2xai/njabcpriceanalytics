@@ -35,6 +35,14 @@ function fmtEdShort(ed?: string | null): string {
   const m = /^(\d{4})-(\d{1,2})/.exec(ed);
   return m ? MONTHS[parseInt(m[2], 10) - 1] : ed;
 }
+/** The edition one calendar month before `ed` (e.g. "2026-06" -> "2026-05"). */
+function prevEdition(ed?: string | null): string | null {
+  if (!ed) return null;
+  const m = /^(\d{4})-(\d{1,2})/.exec(ed);
+  if (!m) return null;
+  const y = parseInt(m[1], 10); const mo = parseInt(m[2], 10);
+  return `${mo === 1 ? y - 1 : y}-${String(mo === 1 ? 12 : mo - 1).padStart(2, '0')}`;
+}
 /** Sticker text per validity using the row's cur/next edition labels. */
 function activeLabel(validity?: string, cur?: string | null, next?: string | null): string {
   const curM = fmtEdShort(cur);
@@ -69,16 +77,14 @@ export default function PriceMovers({ direction }: Props) {
   const [sort, setSort] = useState<'biggest-pct' | 'biggest-dollar' | 'name'>('biggest-pct');
   const [limit, setLimit] = useState(60);
   const [page, setPage] = useState(0);
-  // `both` = show every product on the page (the user's "show all" semantic).
-  // `current_only` = rose last→this. `next_only` = will rise this→next.
-  // A product can satisfy both transitions, so memberships overlap.
-  // Default the validity to next_only: "show only what's going to move
-  // this month -> next" (user feedback: "Show only whats going to move").
-  // Rows whose move was actually prev -> cur (the rise already happened)
-  // drop off the page unless the user explicitly switches the filter to
-  // current_only or both — those buyers usually want to know what's
-  // about to change, not what already did.
-  const [validity, setValidity] = useState<'current_only' | 'next_only' | 'both'>('next_only');
+  // `current_only` = changed last->this (the two most recent editions LOADED in
+  // the system). `next_only` = will change this->next. `both` = either.
+  // Default to current_only: the page ALWAYS compares the last two months of
+  // prices actually loaded, so it shows data even when no future edition has
+  // been ingested yet (the old next_only default left the page empty whenever
+  // next month wasn't loaded). The next-month projection stays available, but
+  // only when a future edition actually exists (see hasNext below).
+  const [validity, setValidity] = useState<'current_only' | 'next_only' | 'both'>('current_only');
   const [view, setView] = useState<'cards' | 'table'>(() => (localStorage.getItem('pm-view') as 'cards' | 'table') || 'cards');
   useEffect(() => { localStorage.setItem('pm-view', view); }, [view]);
 
@@ -102,6 +108,29 @@ export default function PriceMovers({ direction }: Props) {
       .map(([product_type, count]) => ({ product_type, count }))
       .sort((a, b) => b.count - a.count);
   }, [data]);
+
+  // The editions actually loaded in the system, derived from the data. `curEd`
+  // is the most recent edition present; `prevEd` the one before it (the two
+  // months we compare by default); `nextEd` exists only if a future edition was
+  // ingested. Drives the "Comparing prices for…" header and whether the
+  // next-month projection is even offered.
+  const eds = useMemo(() => {
+    let curEd: string | null = null;
+    let nextEd: string | null = null;
+    for (const d of data ?? []) {
+      const c = d.cur_edition ?? d.edition ?? null;
+      if (c && (!curEd || c > curEd)) curEd = c;
+      const n = d.next_edition ?? null;
+      if (n && (!nextEd || n > nextEd)) nextEd = n;
+    }
+    return { curEd, prevEd: prevEdition(curEd), nextEd, hasNext: !!nextEd };
+  }, [data]);
+
+  // Which two months the page is currently comparing, given the validity pick.
+  const compare = useMemo(() => {
+    if (validity === 'next_only' && eds.nextEd) return { from: eds.curEd, to: eds.nextEd };
+    return { from: eds.prevEd, to: eds.curEd };   // current_only + both both start here
+  }, [validity, eds]);
 
   const items = useMemo(() => {
     let res: PriceMover[] = data ?? [];
@@ -163,11 +192,13 @@ export default function PriceMovers({ direction }: Props) {
   const sections: FilterSection[] = [
     { type: 'text', key: 'q', title: 'Search', placeholder: 'Product or brand', value: q, onChange: setQ },
     { type: 'pills', key: 'wholesaler', title: 'Distributor', options: ALL_DISTRIBUTORS, value: wholesaler, onChange: setWholesaler },
-    { type: 'pills', key: 'validity', title: isDrop ? 'When the drop hits' : 'When the rise hits',
+    { type: 'pills', key: 'validity', title: 'Months compared',
       options: [
-        { value: 'both',         label: 'Both (show all)' },
-        { value: 'current_only', label: isDrop ? 'This month (vs last)' : 'This month (vs last)' },
-        { value: 'next_only',    label: 'Next month (vs this)' },
+        { value: 'current_only', label: 'Last 2 months loaded' },
+        { value: 'both',         label: 'Show all' },
+        // Only offer the next-month projection when a future edition is loaded;
+        // otherwise it would silently show nothing.
+        ...(eds.hasNext ? [{ value: 'next_only', label: 'Next month (vs this)' }] : []),
       ],
       value: validity, onChange: (v) => setValidity(v as 'current_only' | 'next_only' | 'both') },
     { type: 'select', key: 'product_type', title: 'Category', placeholder: 'All categories',
@@ -207,13 +238,30 @@ export default function PriceMovers({ direction }: Props) {
       </div>
       <p className="text-muted" style={{ marginTop: 0, fontSize: 13 }}>
         {isDrop
-          ? 'Products whose frontline case price went down in the latest edition versus the prior one. Bigger drops at the top.'
-          : 'Products whose frontline case price went up in the latest edition versus the prior one. Bigger rises at the top.'}
+          ? 'Products whose effective case price went down between the two most recent editions loaded in the system. Bigger drops at the top.'
+          : 'Products whose effective case price went up between the two most recent editions loaded in the system. Bigger rises at the top.'}
       </p>
+
+      {/* Which two months are being compared. The page always compares the two
+          most recent editions loaded; this header makes that explicit. */}
+      <div className="pm-compare-banner" style={{ borderLeftColor: accent }}>
+        <span className="pm-compare-label">Comparing prices for</span>
+        {compare.from && compare.to ? (
+          <span className="pm-compare-months">
+            <strong>{fmtEdition(compare.from)}</strong>
+            <span className="pm-compare-arrow">→</span>
+            <strong>{fmtEdition(compare.to)}</strong>
+          </span>
+        ) : (
+          <span className="pm-compare-months text-muted">
+            {isLoading ? 'loading…' : 'the two most recent editions'}
+          </span>
+        )}
+      </div>
 
       <div className="catalog-layout">
         <FilterSidebar storageKey={`pm-${direction}-filters`} sections={sections}
-          onReset={() => { setQ(''); setWholesaler(''); setValidity('next_only'); setProductType(''); setMinChange(''); setMinDollar(''); setHasRip(''); setSizes([]); setTrackedOnly(false); setSort('biggest-pct'); }} />
+          onReset={() => { setQ(''); setWholesaler(''); setValidity('current_only'); setProductType(''); setMinChange(''); setMinDollar(''); setHasRip(''); setSizes([]); setTrackedOnly(false); setSort('biggest-pct'); }} />
 
         <div className="catalog-results">
           <PromotionsToolbar

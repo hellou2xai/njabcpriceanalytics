@@ -104,18 +104,21 @@ export default function ProductsFilterRail({ filters, onChange, items, facets, t
 
   return (
     <aside className="prod-filter-rail">
+      {/* Collapse handle: a tab on the rail's right edge, vertically centered
+          (not tucked in the header) so it sits at the middle of the rail. */}
+      {onCollapse && (
+        <button type="button" className="prod-filter-collapse-handle" onClick={onCollapse}
+                title="Collapse the filter rail" aria-label="Collapse the filter rail">
+          <ChevronLeft size={16} />
+        </button>
+      )}
+      <div className="prod-filter-rail-body">
       <div className="prod-filter-rail-head">
         <span className="prod-filter-rail-title"><SlidersHorizontal size={16} /> Filters</span>
         <span className="prod-filter-rail-actions">
           {total > 0 && (
             <button type="button" className="prod-filter-clear" onClick={clearAll}>
               <XCircle size={13} /> Clear ({total})
-            </button>
-          )}
-          {onCollapse && (
-            <button type="button" className="prod-filter-collapse" onClick={onCollapse}
-                    title="Collapse the filter rail">
-              <ChevronLeft size={15} />
             </button>
           )}
         </span>
@@ -215,6 +218,7 @@ export default function ProductsFilterRail({ filters, onChange, items, facets, t
           ))}
         </div>
       </Section>
+      </div>
     </aside>
   );
 }

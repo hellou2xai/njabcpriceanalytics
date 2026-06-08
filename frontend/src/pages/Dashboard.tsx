@@ -109,23 +109,6 @@ export default function Dashboard() {
     }),
   });
 
-  const { data: alliedExclusive } = useQuery({
-    queryKey: ['exclusive', 'allied'],
-    enabled: isAdmin,   // distributor-exclusive lists are admin-only
-    queryFn: () => catalog.distributorExclusive({
-      distributor: 'allied', compared_to: 'fedway',
-      sort: 'frontline_case_price', order: 'desc', limit: 50000,
-    }),
-  });
-  const { data: fedwayExclusive } = useQuery({
-    queryKey: ['exclusive', 'fedway'],
-    enabled: isAdmin,   // distributor-exclusive lists are admin-only
-    queryFn: () => catalog.distributorExclusive({
-      distributor: 'fedway', compared_to: 'allied',
-      sort: 'frontline_case_price', order: 'desc', limit: 50000,
-    }),
-  });
-
   const { data: qaReport } = useQuery({
     queryKey: ['qa-anomalies'],
     queryFn: () => catalog.qaAnomalies({ limit_per_check: 50 }),
@@ -190,10 +173,6 @@ export default function Dashboard() {
         <NotesTile data={myNotes} open={open} />
       </div>
 
-      {/* Pro Insights teaser block. Four sample-data tiles + a drill-down
-          modal that previews what the POS-integrated upgrade unlocks. */}
-      <ProInsightsTiles />
-
       <div className="section-label">Insights &amp; Opportunities</div>
       <div className="dashboard-tile-grid">
         <NewItemsTile data={newItems} open={open} />
@@ -204,10 +183,13 @@ export default function Dashboard() {
         <CrossDistTile data={crossDist} label="Allied Cheaper" accent="var(--green)" open={open} />
         <CrossDistTile data={crossDistB} label="Fedway Cheaper" accent="#8b5cf6" open={open} />
         <CrossDistTile data={crossOpiciCombined} label="OPICI Cheaper" accent="#0ea5e9" open={open} />
-        {isAdmin && <ExclusiveTile data={alliedExclusive} label="Allied Exclusive" open={open} />}
-        {isAdmin && <ExclusiveTile data={fedwayExclusive} label="Fedway Exclusive" open={open} />}
         {isAdmin && <QATile data={qaReport} />}
       </div>
+
+      {/* Pro Insights teaser block. Sample-data tiles + a drill-down modal that
+          previews what the POS-integrated upgrade unlocks. Sits at the END of
+          the dashboard (below the live data) since it's a preview, not data. */}
+      <ProInsightsTiles />
     </div>
   );
 }
@@ -506,6 +488,9 @@ function PriceChangesTile({ data, open }: { data: any; open: (n: string, w: stri
   const [limit, setLimit] = useState(50);
   const items = (data?.items ?? []) as any[];
   const tileCount = (data?.total ?? items.length) as number;
+  // The two months actually compared (earlier -> later), for column + subtitle labels.
+  const fromLabel = data?.current_ym ? monthLabel(data.current_ym) : 'Earlier';
+  const toLabel = data?.next_ym ? monthLabel(data.next_ym) : 'Latest';
   const productTypes = useMemo(() => [...new Set(items.map(d => d.product_type).filter(Boolean))].sort(), [items]);
   const dirFiltered = useMemo(() => {
     let r = items;
@@ -523,7 +508,7 @@ function PriceChangesTile({ data, open }: { data: any; open: (n: string, w: stri
       accent="#f97316"
       count={tileCount.toLocaleString()}
       countLabel="products"
-      subtitle={data ? `${monthLabel(data.current_ym)} → ${monthLabel(data.next_ym)}` : ''}
+      subtitle={data ? `Comparing ${fromLabel} → ${toLabel} (last 2 editions loaded)` : ''}
       preview={items.slice(0, 3).map((r, i) => (
         <div key={i} className="dashboard-tile-preview-row">
           <span className="dashboard-tile-preview-name">{r.product_name}</span>
@@ -561,9 +546,9 @@ function PriceChangesTile({ data, open }: { data: any; open: (n: string, w: stri
                 render: r => r.vintage
                   ? <span className="tag tag-blue">{r.vintage as string}</span>
                   : <span className="text-muted">—</span> },
-              { key: 'curr_case_price', label: 'This Month', align: 'right', sortable: true,
+              { key: 'curr_case_price', label: fromLabel, align: 'right', sortable: true,
                 render: r => fmt$(r.curr_case_price as number) },
-              { key: 'next_case_price', label: 'Next Month', align: 'right', sortable: true,
+              { key: 'next_case_price', label: toLabel, align: 'right', sortable: true,
                 render: r => fmt$(r.next_case_price as number) },
               { key: 'delta_pct', label: 'Δ %', align: 'right', sortable: true,
                 render: r => {
@@ -571,9 +556,9 @@ function PriceChangesTile({ data, open }: { data: any; open: (n: string, w: stri
                   const cls = d < 0 ? 'text-green' : d > 0 ? 'text-yellow' : '';
                   return <span className={cls}>{d > 0 ? '+' : ''}{d.toFixed(1)}%</span>;
                 }},
-              { key: 'curr_rip_savings', label: 'This RIP', align: 'right',
+              { key: 'curr_rip_savings', label: `${fromLabel} RIP`, align: 'right',
                 render: r => (r.curr_rip_savings as number) > 0 ? <span className="source-badge source-rip">${(r.curr_rip_savings as number).toFixed(2)}/cs</span> : '—' },
-              { key: 'next_rip_savings', label: 'Next RIP', align: 'right',
+              { key: 'next_rip_savings', label: `${toLabel} RIP`, align: 'right',
                 render: r => (r.next_rip_savings as number) > 0 ? <span className="source-badge source-rip">${(r.next_rip_savings as number).toFixed(2)}/cs</span> : '—' },
             ]}
             data={filtered}
@@ -694,85 +679,6 @@ function CrossDistTile({ data, label, accent, open }: {
                 unitVolume: r.unit_volume as string,
               },
               { upc: r.a_upc as string, unitVolume: r.unit_volume as string },
-            )}
-          />
-        </>
-      )}
-    />
-  );
-}
-
-function ExclusiveTile({ data, label, open }: {
-  data: any; label: string;
-  open: (n: string, w: string, c?: any, opts?: any) => void;
-}) {
-  const [limit, setLimit] = useState(50);
-  const items = (data?.items ?? []) as any[];
-  const tileCount = (data?.total ?? items.length) as number;
-  const productTypes = useMemo(() => [...new Set(items.map(d => d.product_type).filter(Boolean))].sort(), [items]);
-  const { filtered, state, set } = useTableFilters(items, {
-    nameKeys: ['product_name'], upcKeys: ['upc', 'upc_norm'], productTypeKey: 'product_type',
-    priceKey: 'frontline_case_price', discountKey: 'has_discount', ripKey: 'has_rip',
-  });
-  return (
-    <DashboardTile
-      title={label}
-      accent={label.includes('Allied') ? '#3b82f6' : '#8b5cf6'}
-      count={tileCount.toLocaleString()}
-      countLabel="exclusive"
-      subtitle="No counterpart at the other distributor"
-      preview={items.slice(0, 3).map((r, i) => (
-        <div key={i} className="dashboard-tile-preview-row">
-          <span className="dashboard-tile-preview-name">{r.product_name}</span>
-          <span className="dashboard-tile-preview-value">${r.frontline_case_price?.toFixed(0)}</span>
-        </div>
-      ))}
-      modalContent={() => (
-        <>
-          <TileFilterBar
-            state={state} set={set} productTypes={productTypes} showPrice
-            showDeals={{ discount: true, rip: true }}
-            rightSlot={<>
-              <RowLimitSelect value={limit} onChange={setLimit} />
-              <span className="text-muted" style={{ fontSize: 12 }}>{filtered.length} results</span>
-            </>}
-          />
-          <SortableTable
-            columns={[
-              { key: 'product_name', label: 'Product', sortable: true,
-                render: r => (
-                  <div>
-                    <div style={{ fontWeight: 600 }}>{r.product_name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                      {r.upc_norm} · {r.unit_qty ? `${r.unit_qty} × ` : ''}{r.unit_volume} · {r.product_type}
-                    </div>
-                  </div>
-                )},
-              { key: 'frontline_case_price', label: 'Case', align: 'right', sortable: true,
-                render: r => fmt$(r.frontline_case_price as number) },
-              { key: 'effective_case_price', label: 'Effective', align: 'right', sortable: true,
-                render: r => (
-                  <div style={{ lineHeight: 1.2 }}>
-                    <div>${(r.effective_case_price as number ?? 0).toFixed(2)}/cs</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>${(r.effective_per_bottle as number ?? 0).toFixed(2)}/btl</div>
-                  </div>
-                )},
-              { key: 'deals', label: 'Deal',
-                render: r => {
-                  if (!r.has_discount && !r.has_rip) return <span className="text-muted">—</span>;
-                  return <div style={{ display: 'flex', gap: 3 }}>
-                    {r.has_discount && <span className="source-badge source-discount">DISC</span>}
-                    {r.has_rip && <span className="source-badge source-rip">RIP</span>}
-                  </div>;
-                }},
-            ]}
-            data={filtered}
-            pageSize={limit}
-            exportName="distributor-exclusive"
-            onRowClick={r => open(
-              r.product_name as string, r.wholesaler as string,
-              undefined,
-              { upc: r.upc as string, unitVolume: r.unit_volume as string },
             )}
           />
         </>

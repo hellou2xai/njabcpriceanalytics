@@ -58,18 +58,18 @@ export function DashboardTile({
         title={isLink ? `Open ${title}` : undefined}
         style={accent ? { borderLeftColor: accent } : undefined}
       >
-        <div className="dashboard-tile-head">
+        {isLink
+          ? <ArrowUpRight size={14} className="dashboard-tile-zoom" />
+          : <Maximize2 size={14} className="dashboard-tile-zoom" />}
+        <div className="dashboard-tile-top">
           <span className="dashboard-tile-title">{title}</span>
-          {isLink
-            ? <ArrowUpRight size={14} className="dashboard-tile-zoom" />
-            : <Maximize2 size={14} className="dashboard-tile-zoom" />}
+          {count !== undefined && (
+            <span className="dashboard-tile-metric">
+              <span className="dashboard-tile-count" style={accent ? { color: accent } : undefined}>{count}</span>
+              {countLabel && <span className="dashboard-tile-count-label">{countLabel}</span>}
+            </span>
+          )}
         </div>
-        {count !== undefined && (
-          <div className="dashboard-tile-count" style={accent ? { color: accent } : undefined}>
-            {count}
-            {countLabel && <span className="dashboard-tile-count-label">{countLabel}</span>}
-          </div>
-        )}
         {subtitle && <div className="dashboard-tile-subtitle">{subtitle}</div>}
         {preview && <div className="dashboard-tile-preview">{preview}</div>}
       </button>

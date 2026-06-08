@@ -47,7 +47,6 @@ const NAV_GROUPS: {
     header: 'Promotions',
     items: [
       { path: '/time-sensitive', label: 'Time-Sensitive Deals', icon: Clock },
-      { path: '/major-discounts', label: 'Major Discounts', icon: Percent },
       { path: '/compare-prices', label: 'Compare Prices', icon: Scale },
       { path: '/price-drops', label: 'Price Drops', icon: ArrowDownRight },
       { path: '/price-increases', label: 'Price Increases', icon: ArrowUpRight },
@@ -89,6 +88,7 @@ const NAV_GROUPS: {
       { path: '/admin/ai-feedback', label: 'AI Feedback', icon: ThumbsUp, adminOnly: true },
       { path: '/admin/closeout-flags', label: 'User Closeout Flags', icon: XCircle, adminOnly: true },
       { path: '/admin/activity', label: 'Activity', icon: Activity, adminOnly: true },
+      { path: '/major-discounts', label: 'Major Discounts', icon: Percent, adminOnly: true },
       { path: '/rip-products', label: 'RIP Products', icon: BadgeDollarSign, adminOnly: true },
       { path: '/discounts', label: 'Top Discounts', icon: Percent, adminOnly: true },
       { path: '/more', label: 'Addnl Pages', icon: LayoutGrid, adminOnly: true },

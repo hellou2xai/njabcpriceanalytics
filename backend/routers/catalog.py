@@ -2036,16 +2036,22 @@ def price_comparison(
     order: str = Query("desc", description="asc or desc"),
     limit: int = Query(50, ge=1, le=50000),
 ):
-    """This-month vs next-month price comparison.
+    """Month-over-month price comparison across the two most recent editions
+    LOADED in the system (per wholesaler).
 
-    For each (wholesaler, upc, product_name) that exists in both the current
-    edition and the next edition, return the current and next prices and the
-    delta. Used by the dashboard for the "What's changing next month?" table.
+    For each (wholesaler, upc, product_name) present in both the latest edition
+    and the one right before it, return the earlier and latest prices and the
+    delta. Used by the dashboard "Price Changes" tile. It always compares the
+    last two months of data on hand, so it shows results even when no future
+    edition has been ingested yet (the old this->next compare was empty whenever
+    next month wasn't loaded). `current_ym`/`next_ym` name the two months
+    compared (earlier -> later) for the header.
     """
+    def _ed_ok(x) -> bool:
+        return x is not None and not (isinstance(x, float) and x != x) and str(x) != "nan"
+
     with get_duckdb() as con:
         src = read_parquet(con, "cpl_enriched")
-        current_ym = _current_yyyy_mm()
-        next_ym = _next_yyyy_mm()
 
         params = {}
         ws_filter = ""
@@ -2057,38 +2063,42 @@ def price_comparison(
             pt_filter = " AND c.product_type = $product_type"
             params["product_type"] = product_type
 
-        # current-month edition per wholesaler (latest <= current_ym)
-        curr_eds = con.execute(f"""
+        # The two most recent editions LOADED per wholesaler: cur_ed = newest,
+        # prev_ed = the one right before it. We compare prev_ed -> cur_ed.
+        eds_df = con.execute(f"""
+            WITH e AS (SELECT DISTINCT wholesaler, edition FROM {src} WHERE edition IS NOT NULL)
             SELECT wholesaler,
-                   COALESCE(MAX(CASE WHEN edition <= $current_ym THEN edition END), MAX(edition)) AS ed
-            FROM {src} GROUP BY wholesaler
-        """, {"current_ym": current_ym}).fetchdf()
-        curr_map = dict(zip(curr_eds["wholesaler"], curr_eds["ed"]))
+                   MAX(edition) AS cur_ed,
+                   MAX(CASE WHEN edition < (
+                         SELECT MAX(edition) FROM e e2 WHERE e2.wholesaler = e.wholesaler
+                       ) THEN edition END) AS prev_ed
+            FROM e GROUP BY wholesaler
+        """).fetchdf()
+        cur_map = dict(zip(eds_df["wholesaler"], eds_df["cur_ed"]))
+        prev_map = dict(zip(eds_df["wholesaler"], eds_df["prev_ed"]))
 
-        # next-month edition per wholesaler (smallest edition > current_ed, or fall back to next_ym)
-        next_eds_df = con.execute(f"""
-            SELECT wholesaler, MIN(edition) AS ed
-            FROM {src}
-            WHERE edition > $current_ym
-            GROUP BY wholesaler
-        """, {"current_ym": current_ym}).fetchdf()
-        next_map = dict(zip(next_eds_df["wholesaler"], next_eds_df["ed"]))
+        # Global two most-recent editions, for the header label.
+        all_eds = sorted({str(e) for e in con.execute(
+            f"SELECT DISTINCT edition FROM {src} WHERE edition IS NOT NULL"
+        ).fetchdf()["edition"]})
+        next_ym = all_eds[-1] if all_eds else _current_yyyy_mm()
+        current_ym = all_eds[-2] if len(all_eds) >= 2 else next_ym
 
-        # Build per-wholesaler edition pair filters
+        # Per-wholesaler edition pair filters: c = prev (earlier), n = cur (latest).
         pair_clauses = []
-        for i, ws in enumerate(sorted(set(curr_map) | set(next_map))):
-            ce = curr_map.get(ws)
-            ne = next_map.get(ws)
-            if not ce or not ne:
+        for i, ws in enumerate(sorted(set(cur_map) | set(prev_map))):
+            ce = prev_map.get(ws)   # earlier edition -> the "c" (current_*) side
+            ne = cur_map.get(ws)    # latest edition  -> the "n" (next_*) side
+            if not _ed_ok(ce) or not _ed_ok(ne):
                 continue
             params[f"ws_{i}"] = ws
-            params[f"ce_{i}"] = ce
-            params[f"ne_{i}"] = ne
+            params[f"ce_{i}"] = str(ce)
+            params[f"ne_{i}"] = str(ne)
             pair_clauses.append(
                 f"(c.wholesaler = $ws_{i} AND c.edition = $ce_{i} AND n.wholesaler = $ws_{i} AND n.edition = $ne_{i})"
             )
         if not pair_clauses:
-            return {"current_ym": current_ym, "next_ym": next_ym, "items": []}
+            return {"current_ym": current_ym, "next_ym": next_ym, "total": 0, "returned": 0, "items": []}
 
         dir_clause = ""
         if direction == "up":

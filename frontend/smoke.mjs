@@ -45,7 +45,7 @@ const noOverflow = async (page) =>
   await page.waitForTimeout(2500); await dismiss(page);
   check('products: cards render', (await page.$$('.prod-card, [class*=prod-group], .products-layout')).length > 0);
   check('products: no horizontal overflow', await noOverflow(page));
-  check('products: filter rail collapsible', !!(await page.$('.prod-filter-collapse')));
+  check('products: filter rail collapsible', !!(await page.$('.prod-filter-collapse-handle')));
   check('products: In QD filter label', (await page.textContent('.prod-filter-rail').catch(() => '') ?? '').includes('In QD'));
 
   // ---- Product Detail (Laphroaig Boot: QD + dated RIPs) --------------------
@@ -73,6 +73,15 @@ const noOverflow = async (page) =>
   const tsHead = (await page.textContent('.page').catch(() => '')) ?? '';
   const tsCount = parseInt(tsHead.match(/(\d+)\s*deals/)?.[1] ?? '0', 10);
   check('time-sensitive: deals present', tsCount > 0, `${tsCount} deals`);
+
+  // ---- Price Drops: data present + "comparing months" header ---------------
+  await page.goto(BASE + '/price-drops', { waitUntil: 'networkidle' });
+  await page.waitForTimeout(2500); await dismiss(page);
+  const pdHead = (await page.textContent('.page').catch(() => '')) ?? '';
+  const pdCount = parseInt(pdHead.match(/([\d,]+)\s*product/)?.[1]?.replace(/,/g, '') ?? '0', 10);
+  check('price-drops: products present', pdCount > 0, `${pdCount} products`);
+  const pdBanner = (await page.textContent('.pm-compare-banner').catch(() => '')) ?? '';
+  check('price-drops: month-compare header', /Comparing prices for/i.test(pdBanner), pdBanner.slice(0, 60));
 
   // ---- Combos --------------------------------------------------------------
   await page.goto(BASE + '/combos?code=203034', { waitUntil: 'networkidle' });

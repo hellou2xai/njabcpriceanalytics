@@ -6,6 +6,7 @@ import { compare } from '../lib/api';
 import type { CompareRipRow } from '../lib/api';
 import { distributorName } from '../lib/distributors';
 import ProductSearchBox from '../components/ProductSearchBox';
+import RowActions from '../components/RowActions';
 import './ComparePrices.css';
 import './CompareRips.css';
 
@@ -167,7 +168,7 @@ export default function CompareRips() {
 
   const rows = data?.rows ?? [];
   const sum = data?.summary;
-  const nCols = selected.length + 4;
+  const nCols = selected.length + 5;
 
   return (
     <div className="page">
@@ -272,6 +273,7 @@ export default function CompareRips() {
                   <th>Gap</th>
                   <th>Best @{cases}</th>
                   <th>AI verdict</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -316,6 +318,15 @@ export default function CompareRips() {
                         <td className="rip-verdict-cell">
                           <span className="rip-verdict-badge"><Sparkles size={11} /></span>
                           {r.verdict.text}
+                        </td>
+                        <td className="cmp-actions">
+                          <RowActions
+                            productName={r.dists[win && win !== 'tie' ? win : selected[0]]?.product_name ?? r.product_name}
+                            wholesaler={win && win !== 'tie' ? win : selected[0]}
+                            upc={r.dists[win && win !== 'tie' ? win : selected[0]]?.upc ?? undefined}
+                            unitVolume={r.unit_volume ?? undefined}
+                            unitQty={r.unit_qty ?? undefined}
+                          />
                         </td>
                       </tr>
                       {isOpen && (

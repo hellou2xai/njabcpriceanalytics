@@ -622,6 +622,33 @@ def _rip_tier_rows(tiers: list, pack: float) -> list[dict]:
     return rows
 
 
+def _p360_tier_rows(tiers: list, pack: float, source: str) -> list[dict]:
+    """Labeled tier ladder for the Price 360 breakdown — QD or RIP, each with
+    the resulting case AND bottle price, sorted by cases-to-unlock."""
+    import math as _m
+    rows = []
+    for t in tiers:
+        if t.get("source") != source:
+            continue
+        thr = _cases_threshold(t, pack)
+        pa = t.get("price_after")
+        save = (t.get("rip_only_save_per_case")
+                if source == "rip" and t.get("rip_only_save_per_case") is not None
+                else t.get("save_per_case"))
+        rows.append({
+            "cases_to_unlock": _m.ceil(thr - 1e-9) if thr is not None else None,
+            "unit": t.get("unit"),
+            "save_per_case": save,
+            "price_after": pa,
+            "price_after_btl": round(pa / pack, 2) if pa is not None and pack else None,
+            "window_status": t.get("window_status"),
+            "is_time_sensitive": bool(t.get("is_time_sensitive")),
+            "from_date": t.get("from_date"), "to_date": t.get("to_date"),
+        })
+    rows.sort(key=lambda r: (r["cases_to_unlock"] if r["cases_to_unlock"] is not None else 1e9))
+    return rows
+
+
 def _case_mix_sizes(con, src: str, slugs: list[str], eds: dict[str, str]) -> dict[tuple, int]:
     """(wholesaler, rip_code) -> number of distinct products sharing that RIP
     code at that distributor — how wide you can MIX cases to reach a tier."""
@@ -1221,7 +1248,9 @@ def price360_offers(con, match: str, typical_map: Optional[dict] = None,
             "compliance": comp,
             "case_mix": case_mix, "single_sku": not (case_mix and case_mix > 1),
             "abv_proof": rec.get("abv_proof"),
-            "rip_tiers": _rip_tier_rows(tiers, pack),
+            "unit_volume": rec.get("unit_volume"), "unit_qty": rec.get("unit_qty"),
+            "qd_tiers": _p360_tier_rows(tiers, pack, "discount"),
+            "rip_tiers": _p360_tier_rows(tiers, pack, "rip"),
             "full_month": bool(full_month),
             "_pack": pack,
         })

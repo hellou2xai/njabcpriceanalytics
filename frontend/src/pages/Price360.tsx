@@ -6,6 +6,7 @@ import { compare } from '../lib/api';
 import type { Price360Offer } from '../lib/api';
 import { distributorName } from '../lib/distributors';
 import ProductSearchBox from '../components/ProductSearchBox';
+import RowActions from '../components/RowActions';
 import './ComparePrices.css';
 import './Price360.css';
 
@@ -17,9 +18,13 @@ const REACH_LABEL: Record<string, string> = {
   unknown: 'No order history', no_rip: 'No RIP',
 };
 
-function OfferCard({ offer, onProduct, tie }: { offer: Price360Offer; onProduct: (n: string, w: string) => void; tie: boolean }) {
+function OfferCard({ offer, onProduct, tie, unitVolume, unitQty }: {
+  offer: Price360Offer; onProduct: (n: string, w: string) => void; tie: boolean;
+  unitVolume?: string; unitQty?: string;
+}) {
   const o = offer;
   const reach = o.reachability;
+  const [showScore, setShowScore] = useState(false);   // breakdown hidden by default
   return (
     <div className={`p360-card${o.is_winner ? ' p360-win' : ''}`}>
       <div className="p360-rank">
@@ -74,40 +79,70 @@ function OfferCard({ offer, onProduct, tie }: { offer: Price360Offer; onProduct:
             </span>
           )}
         </div>
+
+        <div className="p360-actions">
+          <RowActions
+            productName={o.product_name ?? ''}
+            wholesaler={o.wholesaler}
+            upc={o.upc ?? undefined}
+            unitVolume={unitVolume}
+            unitQty={unitQty}
+          />
+        </div>
       </div>
 
-      {/* value score — breakdown + RIP tiers shown by default */}
+      {/* value score — breakdown is collapsed by default (tap the score) */}
       <div className="p360-score">
-        <div className="p360-scorebtn" title="Composite value score (0–100, fixed published weights)">
+        <button className="p360-scorebtn" onClick={() => setShowScore(s => !s)}
+          title="Composite value score (0–100, fixed published weights). Tap for the breakdown.">
           <span className="p360-scoreval">{o.value_score.toFixed(0)}</span>
-          <span className="p360-scorelbl">value score <Info size={9} /></span>
-        </div>
-        <div className="p360-scorebreak">
-          <div title="How close this is to the cheapest net cost in the set (70% of the score — net cost is authoritative)">
-            Net cost <b>{o.score_breakdown.net_cost}</b>/{o.score_breakdown.weights.net_cost}</div>
-          <div title="Reachability-adjusted savings vs frontline (15%)">
-            Savings <b>{o.score_breakdown.savings}</b>/{o.score_breakdown.weights.savings}</div>
-          <div title="Full-month RIP scores higher than a dated/expiring one (10%)">
-            Stability <b>{o.score_breakdown.stability}</b>/{o.score_breakdown.weights.stability}</div>
-          <div title="Full marks unless the RIP needs NJ-ABC pre-approval (5%)">
-            Compliance <b>{o.score_breakdown.compliance}</b>/{o.score_breakdown.weights.compliance}</div>
-        </div>
-        {o.rip_tiers.length > 0 && (
-          <div className="p360-tierwrap">
-            <div className="p360-tierhdr">RIP tiers — buy → rebate → net/cs</div>
-            <table className="p360-tiers">
-              <tbody>
-                {o.rip_tiers.map((t, i) => (
-                  <tr key={i}>
-                    <td>{t.cases_to_unlock ?? t.raw_qty} cs</td>
-                    <td className="text-green">−{money(t.rebate_per_case)}</td>
-                    <td>{money(t.price_after)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <span className="p360-scorelbl">value score {showScore ? <ChevronDown size={9} /> : <Info size={9} />}</span>
+        </button>
+        {showScore && (
+          <div className="p360-scorebreak">
+            <div title="How close this is to the cheapest net cost in the set (70% of the score — net cost is authoritative)">
+              Net cost <b>{o.score_breakdown.net_cost}</b>/{o.score_breakdown.weights.net_cost}</div>
+            <div title="Reachability-adjusted savings vs frontline (15%)">
+              Savings <b>{o.score_breakdown.savings}</b>/{o.score_breakdown.weights.savings}</div>
+            <div title="Full-month RIP scores higher than a dated/expiring one (10%)">
+              Stability <b>{o.score_breakdown.stability}</b>/{o.score_breakdown.weights.stability}</div>
+            <div title="Full marks unless the RIP needs NJ-ABC pre-approval (5%)">
+              Compliance <b>{o.score_breakdown.compliance}</b>/{o.score_breakdown.weights.compliance}</div>
           </div>
         )}
+        {/* full labeled price breakdown — Base / QD / RIP, case + bottle */}
+        <div className="p360-tierwrap">
+          <div className="p360-tierhdr">Price breakdown · {unitQty} × {unitVolume}</div>
+          <table className="p360-tiers">
+            <thead>
+              <tr><th></th><th>buy</th><th>/case</th><th>/bottle</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span className="p360-tb p360-tb-base">BASE</span></td>
+                <td>—</td>
+                <td><strong>{money(o.frontline_case)}</strong></td>
+                <td>{money(o.frontline_btl)}</td>
+              </tr>
+              {o.qd_tiers.map((t, i) => (
+                <tr key={`q${i}`}>
+                  <td><span className="p360-tb p360-tb-qd">QD</span></td>
+                  <td>{t.cases_to_unlock} cs</td>
+                  <td><strong>{money(t.price_after)}</strong>{t.save_per_case ? <span className="p360-tsave"> −{money(t.save_per_case)}</span> : null}</td>
+                  <td>{money(t.price_after_btl)}</td>
+                </tr>
+              ))}
+              {o.rip_tiers.map((t, i) => (
+                <tr key={`r${i}`}>
+                  <td><span className="p360-tb p360-tb-rip">RIP</span></td>
+                  <td>{t.cases_to_unlock} cs</td>
+                  <td><strong>{money(t.price_after)}</strong>{t.save_per_case ? <span className="p360-tsave"> −{money(t.save_per_case)}</span> : null}</td>
+                  <td>{money(t.price_after_btl)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
@@ -210,17 +245,15 @@ export default function Price360() {
           )}
 
           {!collapsed && <div className="p360-howto">
-            Each card is one distributor's offer. <strong>Net cost</strong> (big number) is the true
-            cost per case after every layer — frontline minus single-case discount, quantity discounts
-            and RIP rebates — with rebates you're unlikely to reach discounted by your order history.
-            <strong> Invoice</strong> is the legal cost basis (discounts only); the gap to Net is the RIP
-            rebate. The <strong>value score</strong> (right) is net-cost-dominant: 70 net cost · 15 savings ·
-            10 stability · 5 compliance. The <strong>RIP tiers</strong> show what you pay per case at each
-            buy-quantity. Lowest net cost wins.
+            <div><strong>Net cost</strong> — the true cost per case after every layer (frontline − single-case discount − quantity discounts − RIP rebates), with rebates you're unlikely to reach discounted by your order history. Lowest wins.</div>
+            <div><strong>Invoice</strong> — the legal cost basis (discounts only); the gap to Net is the RIP rebate.</div>
+            <div><strong>Value score</strong> — net-cost-dominant: 70 net cost · 15 savings · 10 stability · 5 compliance.</div>
+            <div><strong>RIP tiers</strong> — what you pay per case at each buy-quantity.</div>
           </div>}
           {!collapsed && (
             <div className="p360-offers">
-              {data.offers!.map(o => <OfferCard key={o.wholesaler + o.rank} offer={o} onProduct={goToProduct} tie={!!data.tie} />)}
+              {data.offers!.map(o => <OfferCard key={o.wholesaler + o.rank} offer={o} onProduct={goToProduct}
+                tie={!!data.tie} unitVolume={data.product!.unit_volume ?? undefined} unitQty={data.product!.unit_qty ?? undefined} />)}
             </div>
           )}
 

@@ -5,9 +5,7 @@ import { ChevronDown, ChevronRight, Zap, Scale } from 'lucide-react';
 import { compare, catalog } from '../lib/api';
 import type { CatalogTier, CompareLadder } from '../lib/api';
 import { distributorName } from '../lib/distributors';
-import AddToCartButton from '../components/AddToCartButton';
-import FavoriteButton from '../components/FavoriteButton';
-import CloseoutFlagButton from '../components/CloseoutFlagButton';
+import RowActions from '../components/RowActions';
 import './ComparePrices.css';
 
 const money = (v?: number | null) => (v == null ? '–' : `$${Number(v).toFixed(2)}`);
@@ -501,24 +499,9 @@ export default function ComparePrices() {
                             </span>
                           ) : <span className="cmp-tie-label">Tie</span>}
                         </td>
-                        <td onClick={e => e.stopPropagation()} className="cmp-actions">
-                          {winner && winner !== 'tie' && (
-                            <AddToCartButton
-                              productName={r.prices[winner]?.product_name ?? r.product_name}
-                              wholesaler={winner}
-                              upc={r.prices[winner]?.upc ?? undefined}
-                              unitVolume={r.unit_volume ?? undefined}
-                              qtyCases={1}
-                            />
-                          )}
-                          <FavoriteButton
-                            productName={r.product_name}
-                            wholesaler={winner && winner !== 'tie' ? winner : selected[0]}
-                            upc={r.upc ?? undefined}
-                            unitVolume={r.unit_volume ?? undefined}
-                          />
-                          <CloseoutFlagButton
-                            productName={r.product_name}
+                        <td className="cmp-actions">
+                          <RowActions
+                            productName={r.prices[winner && winner !== 'tie' ? winner : selected[0]]?.product_name ?? r.product_name}
                             wholesaler={winner && winner !== 'tie' ? winner : selected[0]}
                             upc={r.upc ?? undefined}
                             unitVolume={r.unit_volume ?? undefined}

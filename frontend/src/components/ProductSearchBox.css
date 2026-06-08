@@ -1,7 +1,7 @@
 .psb { position: relative; flex: 1; min-width: 260px; max-width: 480px; }
-.psb-icon { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none; }
+.psb-icon { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none; }
 .psb-input {
-  width: 100%; padding: 11px 12px 11px 36px; border: 1px solid var(--border);
+  width: 100%; padding: 11px 12px 11px 42px; border: 1px solid var(--border);
   border-radius: 8px; background: var(--surface); color: var(--text);
   font-size: 16px; font-weight: 500;
 }

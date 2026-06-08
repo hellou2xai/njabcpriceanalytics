@@ -521,6 +521,17 @@ export interface EditionCompareResponse {
 }
 
 // ---- Price 360 (holistic per-product net-cost label) ----
+export interface Price360Tier {
+  cases_to_unlock: number | null;
+  unit: string | null;
+  save_per_case: number | null;
+  price_after: number | null;
+  price_after_btl: number | null;
+  window_status: string | null;
+  is_time_sensitive: boolean;
+  from_date: string | null;
+  to_date: string | null;
+}
 export interface Price360Offer {
   wholesaler: string;
   edition: string | null;
@@ -542,7 +553,10 @@ export interface Price360Offer {
   case_mix: number | null;
   single_sku: boolean;
   abv_proof: string | null;
-  rip_tiers: RipTierRow[];
+  unit_volume: string | null;
+  unit_qty: string | null;
+  qd_tiers: Price360Tier[];
+  rip_tiers: Price360Tier[];
   full_month: boolean;
   value_score: number;
   score_breakdown: { net_cost: number; savings: number; stability: number; compliance: number; weights: Record<string, number> };

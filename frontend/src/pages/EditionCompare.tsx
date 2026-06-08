@@ -6,6 +6,7 @@ import { compare } from '../lib/api';
 import type { EditionRow } from '../lib/api';
 import { distributorName, DISTRIBUTOR_NAMES } from '../lib/distributors';
 import ProductSearchBox from '../components/ProductSearchBox';
+import RowActions from '../components/RowActions';
 import './ComparePrices.css';
 import './EditionCompare.css';
 
@@ -169,10 +170,21 @@ export default function EditionCompare() {
                   <th>Net {data.newer}</th>
                   <th>Change</th>
                   <th>What moved</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
-                {rows.slice(0, shown).map(r => (
+                {rows.slice(0, shown).map(r => {
+                  // full price breakdown for the "what changed" tooltip
+                  const tip = r.status !== 'both' ? '' : [
+                    `${data.older} → ${data.newer}`,
+                    `Net cost:  ${money(r.net_a_case)} → ${money(r.net_b_case)}` +
+                      (r.net_delta_case != null ? `  (${r.net_delta_case > 0 ? '+' : ''}$${r.net_delta_case.toFixed(2)}, ${pct(r.net_delta_pct)})` : ''),
+                    `Frontline: ${money(r.frontline_a)} → ${money(r.frontline_b)}`,
+                    `Invoice (after discount): ${money(r.invoice_a)} → ${money(r.invoice_b)}`,
+                    `RIP rebate: ${money(r.rip_a)} → ${money(r.rip_b)}`,
+                  ].join('\n');
+                  return (
                   <tr key={r.ident} className={`${r.status === 'both' && (!r.net_delta_case || Math.abs(r.net_delta_case) < 0.005) ? 'ec-nochange' : ''}`}>
                     <td className="ec-prod">
                       <span className="ec-prodname" onClick={() => goToProduct(r.product_name)}>{r.product_name}</span>
@@ -180,16 +192,23 @@ export default function EditionCompare() {
                     </td>
                     <td className="ec-num">{r.status === 'added' ? '—' : money(r.net_a_case)}<span className="cmp-sub">{r.status === 'added' ? '' : `${money(r.net_a_btl)}/btl`}</span></td>
                     <td className="ec-num">{r.status === 'removed' ? '—' : money(r.net_b_case)}<span className="cmp-sub">{r.status === 'removed' ? '' : `${money(r.net_b_btl)}/btl`}</span></td>
-                    <td><DeltaPill r={r} /></td>
-                    <td className="ec-layers">
+                    <td title={tip}><DeltaPill r={r} /></td>
+                    <td className="ec-layers" title={tip}>
                       {r.layers.map(l => (
                         <span key={l} className={`ec-layer ${l.startsWith('rip') ? 'ec-layer-rip' : ''}`}>{LAYER_LABEL[l] ?? l}</span>
                       ))}
                     </td>
+                    <td className="cmp-actions">
+                      {r.status !== 'removed' && (
+                        <RowActions productName={r.product_name} wholesaler={wholesaler}
+                          upc={r.upc ?? undefined} unitVolume={r.unit_volume ?? undefined} unitQty={r.unit_qty ?? undefined} />
+                      )}
+                    </td>
                   </tr>
-                ))}
+                  );
+                })}
                 {rows.length === 0 && (
-                  <tr><td colSpan={5} className="cmp-none">No products match this change filter.</td></tr>
+                  <tr><td colSpan={6} className="cmp-none">No products match this change filter.</td></tr>
                 )}
               </tbody>
             </table>

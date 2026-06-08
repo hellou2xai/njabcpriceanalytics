@@ -16,6 +16,8 @@ Endpoints:
   GET /api/compare/options   — distributors + product counts for the picker
   GET /api/compare/products  — the comparison grid + smart analysis summary
   GET /api/compare/tiers     — full side-by-side tier ladders for one product
+  GET /api/compare/rips      — RIP-outcome comparison (landed curve + break-even)
+  GET /api/compare/price360  — one holistic per-product label ranking every offer
 """
 import math
 import re
@@ -1036,3 +1038,273 @@ def assistant_rip_comparison(con, match: str, wholesalers: Optional[list[str]] =
         "dists": dists,
         "verdict": _rip_verdict(row, present, n)["text"],
     }
+
+
+# ===========================================================================
+# Price 360 — one holistic label per product comparing every wholesaler offer
+# across all price layers, reduced to a reachability-adjusted effective net
+# cost. Invoice cost (legal, discounts only) is kept separate from economic
+# net cost (rebates incl. RIP). Score weights are FIXED + PUBLISHED.
+# ===========================================================================
+
+# Published, fixed value-score weights (sum 100). Identical for every offer.
+PRICE360_WEIGHTS = {"net_cost": 70, "savings": 15, "stability": 10, "compliance": 5}
+
+# NJ ABC RIP statutory limits (for the pre-approval flag).
+_RIP_MAX_CASES = 50
+_RIP_MAX_REBATE = 1000.0
+_RIP_SMALL_QTY_CASES = 5
+
+
+def _compliance_flags(tiers: list, pack: float) -> dict:
+    """NJ ABC RIP limit checks → pre-approval flags (#17)."""
+    rip = [t for t in tiers if t.get("source") == "rip"]
+    flags = []
+    if any((_cases_threshold(t, pack) or 0) > _RIP_MAX_CASES for t in rip):
+        flags.append(f"RIP tier over {_RIP_MAX_CASES} cases")
+    if any((t.get("amount") or 0) > _RIP_MAX_REBATE for t in rip):
+        flags.append(f"single rebate over ${int(_RIP_MAX_REBATE):,}")
+    if rip and not any((_cases_threshold(t, pack) or 1e9) <= _RIP_SMALL_QTY_CASES for t in rip):
+        flags.append(f"no small-quantity tier (≤{_RIP_SMALL_QTY_CASES} cases)")
+    return {"flags": flags, "pre_approval": bool(flags)}
+
+
+def _reachability(rip_rebate_case: float, qualifying: Optional[int],
+                  typical_cases: Optional[float], mode: str) -> dict:
+    """Soft/hard/off reachability (#13/14). Returns the likelihood (0..1) the
+    retailer hits the qualifying quantity and the rebate value to actually
+    credit. Soft scales the rebate by likelihood; hard zeroes it if unreachable;
+    off always credits full value (badge only). No history -> full value."""
+    if not rip_rebate_case or not qualifying:
+        return {"status": "no_rip", "likelihood": 1.0, "credited_rebate": 0.0,
+                "qualifying": qualifying, "typical": typical_cases}
+    if typical_cases is None:
+        return {"status": "unknown", "likelihood": 1.0,
+                "credited_rebate": round(rip_rebate_case, 2),
+                "qualifying": qualifying, "typical": None}
+    ratio = typical_cases / qualifying if qualifying else 1.0
+    if mode == "hard":
+        like = 1.0 if ratio >= 1 else 0.0
+    elif mode == "off":
+        like = 1.0
+    else:  # soft
+        like = max(0.0, min(1.0, ratio))
+    status = ("likely" if ratio >= 1 else ("partial" if ratio > 0 else "unreachable"))
+    return {"status": status, "likelihood": round(like, 2),
+            "credited_rebate": round(rip_rebate_case * like, 2),
+            "qualifying": qualifying, "typical": round(typical_cases, 1)}
+
+
+def _value_score(net_case: Optional[float], min_net: Optional[float],
+                 adj_savings_pct: float, full_month: bool, compliant: bool) -> dict:
+    """Net-cost-dominant 0-100 composite (#8/20). Net cost dominates so the
+    score never contradicts the net-cost ranking. Weights are PRICE360_WEIGHTS."""
+    w = PRICE360_WEIGHTS
+    net = w["net_cost"] * (min_net / net_case) if (net_case and min_net) else 0.0
+    sav = w["savings"] * max(0.0, min(1.0, adj_savings_pct / 25.0))
+    stab = w["stability"] * (1.0 if full_month else 0.5)
+    comp = w["compliance"] * (1.0 if compliant else 0.0)
+    total = round(net + sav + stab + comp, 1)
+    return {"score": min(100.0, total), "breakdown": {
+        "net_cost": round(net, 1), "savings": round(sav, 1),
+        "stability": round(stab, 1), "compliance": round(comp, 1),
+        "weights": w}}
+
+
+def _fetch_product_offers(con, src: str, match: str) -> tuple[Optional[str], list[dict]]:
+    """Resolve `match` to the product identity carried by the MOST distributors,
+    return (identity_key, one best row per distributor) — every offer is the
+    same UPC + size, so directly comparable."""
+    all_slugs = [r[0] for r in con.execute(f"SELECT DISTINCT wholesaler FROM {src}").fetchall()]
+    eds = _editions_for(con, src, all_slugs)
+    ed_pred, ed_params = _edition_pred(all_slugs, eds)
+    m = (match or "").strip()
+    digits = re.sub(r"\D", "", m)
+    is_upc = len(digits) >= 8
+    match_pred = "LTRIM(upc,'0') = ?" if is_upc else "lower(product_name) LIKE ?"
+    match_param = digits.lstrip("0") if is_upc else f"%{m.lower()}%"
+    # Resolve the text to UPCs first, then pull EVERY distributor carrying those
+    # UPCs — the same barcode is often named differently per distributor (Allied
+    # 'CAMPARI APERITIVO' vs Fedway 'CAMPARI BITTERS'), so a name-only filter
+    # would silently drop offers. (No combo-code exclusion: a product's
+    # standalone CPL price is a valid offer regardless of combo linkage, and a
+    # blanket combo_code filter wrongly drops Allied/Shore-Point internal codes.)
+    base = f"{ed_pred} AND {_VALID_UPC}"
+    params = list(ed_params) + list(ed_params) + [match_param]
+    vn = _pricing.vintage_norm_sql("vintage")
+    df = con.execute(f"""
+        SELECT wholesaler, edition, upc, product_name, product_type, brand,
+               unit_qty, unit_volume, vintage, abv_proof,
+               frontline_case_price, frontline_unit_price,
+               best_case_price, best_unit_price, effective_case_price,
+               rip_savings, has_discount, has_rip, rip_code, rip_windows,
+               discount_1_qty, discount_1_amt, discount_2_qty, discount_2_amt,
+               discount_3_qty, discount_3_amt, discount_4_qty, discount_4_amt,
+               discount_5_qty, discount_5_amt,
+               LTRIM(upc,'0') AS upc_norm, TRY_CAST(unit_qty AS DOUBLE) AS uqd,
+               {vn} AS vintage_norm,
+               UPPER(product_type) IN ('WINE','SPARKLING','VERMOUTH') AS vintage_sensitive
+        FROM {src} e WHERE {base}
+          AND LTRIM(upc,'0') IN (
+              SELECT DISTINCT LTRIM(upc,'0') FROM {src}
+              WHERE {base} AND {match_pred})
+    """, params).df()
+    recs = [_nan_clean(r) for r in df.to_dict(orient="records")]
+    if not recs:
+        return None, []
+    for r in recs:
+        r["match_key"] = "|".join([
+            r["upc_norm"], _size_key(r.get("unit_volume")), _pack_norm(r.get("unit_qty")),
+            (r.get("vintage_norm") or "") if r.get("vintage_sensitive") else ""])
+    # identity carried by the most distributors
+    by_key: dict[str, dict] = {}
+    for r in recs:
+        by_key.setdefault(r["match_key"], {})
+        cur = by_key[r["match_key"]].get(r["wholesaler"])
+        if cur is None or (r.get("effective_case_price") or 1e9) < (cur.get("effective_case_price") or 1e9):
+            by_key[r["match_key"]][r["wholesaler"]] = r
+    best_key = max(by_key, key=lambda k: len(by_key[k]))
+    return best_key, list(by_key[best_key].values())
+
+
+def price360_offers(con, match: str, typical_map: Optional[dict] = None,
+                    reach_mode: str = "soft") -> dict:
+    """The Price 360 label data: every wholesaler offer for one product, each
+    reduced to a reachability-adjusted effective net cost, ranked cheapest
+    first. Reuses pricing.attach_tiers; no pricing math re-implemented."""
+    src = read_parquet(con, "cpl_enriched")
+    key, recs = _fetch_product_offers(con, src, match)
+    if not recs:
+        return {"found": False, "match": match, "note": "No product matched a valid barcode."}
+    _pricing.attach_tiers(con, recs)
+    all_slugs = list({r["wholesaler"] for r in recs})
+    eds = _editions_for(con, src, all_slugs)
+    mix = _case_mix_sizes(con, src, all_slugs, eds)
+    typical_map = typical_map or {}
+
+    offers = []
+    for rec in recs:
+        w = rec["wholesaler"]
+        pack = rec.get("uqd") or 1.0
+        tiers = rec.get("tiers", []) or []
+        invoice_case = rec.get("best_case_price")            # legal cost basis (discounts only)
+        economic_case = rec.get("effective_case_price")      # after RIP rebates
+        frontline_case = rec.get("frontline_case_price")
+        rip_rebate = round(max(0.0, (invoice_case or 0) - (economic_case or 0)), 2) \
+            if invoice_case is not None and economic_case is not None else 0.0
+        qualifying = _min_cases_to_rip(tiers, pack)
+        reach = _reachability(rip_rebate, qualifying,
+                              typical_map.get(rec["upc_norm"]), reach_mode)
+        # reachability-adjusted net: invoice minus the credited (reachable) rebate
+        net_case = round((invoice_case if invoice_case is not None else frontline_case or 0)
+                         - reach["credited_rebate"], 2)
+        case_mix = _product_case_mix(rec, mix, w)
+        comp = _compliance_flags(tiers, pack)
+        full_month = any(t.get("source") == "rip" and t.get("window_status") in (None, "whole_month", "evergreen", "active")
+                         and not t.get("is_time_sensitive") for t in tiers) or rip_rebate == 0
+        sav_case = round((frontline_case or 0) - net_case, 2) if frontline_case else 0.0
+        sav_pct = round(sav_case / frontline_case * 100, 1) if frontline_case else 0.0
+        offers.append({
+            "wholesaler": w, "edition": rec.get("edition"),
+            "product_name": rec.get("product_name"), "upc": rec.get("upc"),
+            "frontline_case": frontline_case,
+            "frontline_btl": rec.get("frontline_unit_price"),
+            "invoice_case": invoice_case,
+            "invoice_btl": rec.get("best_unit_price"),
+            "net_case": net_case, "net_btl": round(net_case / pack, 2) if pack else None,
+            "rip_rebate_full": rip_rebate,
+            "rip_rebate_credited": reach["credited_rebate"],
+            "savings_case": sav_case, "savings_pct": sav_pct,
+            "reachability": reach,
+            "divergence": bool(economic_case is not None and invoice_case is not None
+                               and economic_case < invoice_case - 0.005),
+            "compliance": comp,
+            "case_mix": case_mix, "single_sku": not (case_mix and case_mix > 1),
+            "abv_proof": rec.get("abv_proof"),
+            "rip_tiers": _rip_tier_rows(tiers, pack),
+            "full_month": bool(full_month),
+            "_pack": pack,
+        })
+
+    # rank by reachability-adjusted net cost (authoritative)
+    ranked = [o for o in offers if o["net_case"] is not None]
+    min_net = min((o["net_case"] for o in ranked), default=None)
+    max_rebate = max((o["rip_rebate_full"] for o in offers), default=0)
+    for o in offers:
+        sc = _value_score(o["net_case"], min_net, o["savings_pct"],
+                          o["full_month"], not o["compliance"]["pre_approval"])
+        o["value_score"] = sc["score"]
+        o["score_breakdown"] = sc["breakdown"]
+    offers.sort(key=lambda o: (o["net_case"] if o["net_case"] is not None else 1e9))
+    for i, o in enumerate(offers):
+        o["rank"] = i + 1
+        o["is_winner"] = i == 0
+        # "bigger rebate, costs more" (#11): biggest headline rebate yet a
+        # STRICTLY higher net cost than the winner — the rebate misleads.
+        o["rebate_misleads"] = bool(
+            not o["is_winner"] and max_rebate > 0
+            and o["rip_rebate_full"] >= max_rebate - 0.005
+            and min_net is not None and o["net_case"] is not None
+            and o["net_case"] > min_net + 0.005)
+        o.pop("_pack", None)
+
+    meta = recs[0]
+    # Same UPC + size => directly comparable. A differing filed proof is a data
+    # warning, not a different product, so it never blocks ranking (#4/5).
+    proofs = {_norm_proof(o["abv_proof"]) for o in offers if _norm_proof(o["abv_proof"]) is not None}
+    return {
+        "found": True,
+        "product": {
+            "product_name": min((o["product_name"] for o in offers), key=len),
+            "upc": meta.get("upc"), "unit_volume": meta.get("unit_volume"),
+            "unit_qty": meta.get("unit_qty"), "abv_proof": meta.get("abv_proof"),
+            "product_type": meta.get("product_type"), "brand": meta.get("brand"),
+        },
+        "comparability": "direct",
+        "proof_warning": len(proofs) > 1,
+        "reach_mode": reach_mode,
+        "weights": PRICE360_WEIGHTS,
+        "offers": offers,
+    }
+
+
+def _typical_cases_map(user_id: int, upc_norms: list[str]) -> dict:
+    """Median cases this retailer historically orders per UPC (for soft
+    reachability). Empty when there's no order history."""
+    if not user_id or not upc_norms:
+        return {}
+    try:
+        from backend.pg import get_pg
+        with get_pg() as pg:
+            ph = ", ".join(["%s"] * len(upc_norms))
+            rows = pg.execute(
+                f"""SELECT LTRIM(ol.upc, '0') AS u, AVG(ol.qty_cases) AS avg_cs
+                    FROM order_lines ol JOIN orders o ON o.id = ol.order_id
+                    WHERE o.user_id = %s AND ol.qty_cases > 0
+                      AND LTRIM(ol.upc, '0') IN ({ph})
+                    GROUP BY 1""",
+                (user_id, *upc_norms)).fetchall()
+        return {dict(r)["u"]: float(dict(r)["avg_cs"]) for r in rows if dict(r)["avg_cs"]}
+    except Exception:
+        return {}
+
+
+@router.get("/price360")
+def price360(
+    match: str = Query(..., description="Product name or UPC"),
+    reach_mode: str = Query("soft", description="soft | hard | off (reachability)"),
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    """Price 360 label: every wholesaler's offer for ONE product, each reduced
+    to a reachability-adjusted effective net cost (case + bottle), ranked
+    cheapest first, with invoice vs economic cost kept separate, a fixed-weight
+    value score, NJ-ABC pre-approval flags, and full layer traceability."""
+    if reach_mode not in ("soft", "hard", "off"):
+        reach_mode = "soft"
+    with get_duckdb() as con:
+        src = read_parquet(con, "cpl_enriched")
+        key, recs = _fetch_product_offers(con, src, match)
+        upc_norms = list({r["upc_norm"] for r in recs}) if recs else []
+    typical = _typical_cases_map(user.get("id") if user else 0, upc_norms) if recs else {}
+    with get_duckdb() as con:
+        return price360_offers(con, match, typical, reach_mode)

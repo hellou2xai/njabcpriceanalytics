@@ -1506,6 +1506,21 @@ def _t_closeouts(con, args):
     )
 
 
+def _t_price_360(con, args):
+    """Holistic Price 360 label for ONE product across every distributor."""
+    from backend.routers.compare import price360_offers
+    match = (args.get("match") or args.get("q") or "").strip()
+    if not match:
+        return {"found": False, "note": "Name a product (or UPC) for the Price 360 label."}
+    mode = (args.get("reach_mode") or "soft").strip().lower()
+    if mode not in ("soft", "hard", "off"):
+        mode = "soft"
+    # The assistant has no order-history context here, so reachability credits
+    # full rebate value (status 'unknown') — the page applies the retailer's
+    # real history.
+    return price360_offers(con, match, None, mode)
+
+
 def _t_compare_rip_outcomes(con, args):
     """Compare how ONE product's RIP plays out across 2-3 distributors."""
     from backend.routers.compare import assistant_rip_comparison
@@ -2167,6 +2182,7 @@ _DATA_TOOLS = {
     "size_value": (_t_size_value, "SIZE / VALUE efficiency for a brand/product: effective price per BOTTLE and per LITER (after discounts + RIP) across every size, ranked by best value-per-litre, plus near-free UPSIZE opportunities (e.g. when 750ML and 1L cost almost the same per bottle). Use for 'best value size', 'price per liter', '750 vs 1L', 'is the bigger bottle worth it'."),
     "rip_tier_gap": (_t_rip_tier_gap, "'Almost there' RIP tier gap for a brand/product (or rip_code), given optional cases the buyer plans (`have`): the rebate tier ladder, how many MORE cases reach each tier, the incremental rebate for stretching, and the next tier to aim for. Use for 'how close am I to the next rebate', 'worth buying more to hit the tier'."),
     "distributor_arbitrage": (_t_distributor_arbitrage, "Catalog-wide cross-distributor arbitrage: same product (UPC) sold by 2+ distributors, ranked by how much cheaper the cheapest is vs the dearest (effective case price). Optional category, min_savings_pct. Use for 'where can I save by switching distributor', 'biggest price gaps between distributors'."),
+    "price_360": (_t_price_360, "PRICE 360 holistic label for ONE product across EVERY distributor that carries it: each offer reduced to one effective NET cost (case AND bottle) after all layers — frontline, single-case discount, quantity-discount tiers and RIP — ranked cheapest net cost first. Keeps invoice cost (legal, discounts only) separate from economic net cost (incl. rebates), flags when they diverge, gives a fixed-weight 0-100 value score, NJ-ABC pre-approval flags (>50 cases / missing small-qty tier / >$1,000 rebate), and flags any runner-up whose bigger rebate still costs more. Args: match (product name or UPC), reach_mode (soft|hard|off, default soft). Use for 'what's the real/true cost of X', 'best overall deal on Y across distributors', 'who's actually cheapest on Z after everything', 'price 360 for X'."),
     "compare_rip_outcomes": (_t_compare_rip_outcomes, "Compare how ONE product's RIP rebate plays out ACROSS 2-3 distributors — a RIP is a volume-tiered rebate, so the SAME product can RIP very differently (different tiers, different minimum cases to unlock, combination-mix vs single-product). Returns each distributor's landed $/case at the chosen volume, best rebate at 1 case, min cases to unlock (least money down), case-mix breadth, the full BREAK-EVEN map (which distributor wins at which volume), and a plain-language verdict. Args: match (product name or UPC), distributors (array of slugs; default allied/fedway/opici), cases (default 5). Use for 'compare the RIP on X between Allied and Fedway', 'whose rebate on Y is better', 'who wins the RIP if I buy N cases', 'is Allied or Opici's RIP better on Z'."),
     "best_gp_deals": (_t_best_gp_deals, "Best gross-profit deals: products ranked by discount depth / GP% (savings vs list). Optional category, distributor, min_pct. Use for 'best margin deals', 'highest GP%', 'deepest discounts by percent'."),
     "closeouts": (_t_closeouts, "Closeout / last-chance buys being cleared this edition (won't return next month), ranked by savings. Optional category, distributor. Use for 'closeouts', 'last chance', 'what's being discontinued/cleared'."),
@@ -3285,6 +3301,7 @@ def _tool_specs() -> list:
         "distributors": {"type": "array", "items": {"type": "string"},
                          "description": "For compare_rip_outcomes: the 2-3 distributor slugs to compare (allied, fedway, opici, peerless, high_grade, kramer, shore_point, jersey_beverage). Default allied/fedway/opici."},
         "cases": {"type": "number", "description": "For compare_rip_outcomes: how many cases the buyer plans to buy (drives the winner@volume; default 5)."},
+        "reach_mode": {"type": "string", "enum": ["soft", "hard", "off"], "description": "For price_360: how to value rebates the retailer may not reach — soft (discount by likelihood), hard (zero if unreachable), off (full value). Default soft."},
     }
     for name, (_fn, desc) in _DATA_TOOLS.items():
         specs.append({"name": name, "description": desc,

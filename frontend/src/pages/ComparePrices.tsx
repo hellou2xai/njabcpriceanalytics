@@ -1,11 +1,10 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Zap, Scale } from 'lucide-react';
 import { compare, catalog } from '../lib/api';
 import type { CatalogTier, CompareLadder } from '../lib/api';
 import { distributorName } from '../lib/distributors';
-import { useProductQuickView } from '../components/ProductQuickView';
 import AddToCartButton from '../components/AddToCartButton';
 import FavoriteButton from '../components/FavoriteButton';
 import CloseoutFlagButton from '../components/CloseoutFlagButton';
@@ -189,7 +188,9 @@ export default function ComparePrices() {
     return PAGE_SIZES.includes(v) ? v : 100;
   });
   const [shown, setShown] = useState(pageSize);
-  const { open } = useProductQuickView();
+  const navigate = useNavigate();
+  const goToProduct = (name: string, wholesaler?: string) =>
+    navigate(`/products?q=${encodeURIComponent(name)}${wholesaler ? `&wholesaler=${wholesaler}` : ''}`);
 
   // URL sync (shareable / survives Back)
   useEffect(() => {
@@ -458,8 +459,7 @@ export default function ComparePrices() {
                             onClick={e => {
                               e.stopPropagation();
                               const w = winner && winner !== 'tie' ? winner : selected[0];
-                              open(r.prices[w]?.product_name ?? r.product_name, w, undefined,
-                                { upc: r.prices[w]?.upc ?? undefined, unitVolume: r.unit_volume ?? undefined });
+                              goToProduct(r.prices[w]?.product_name ?? r.product_name, w);
                             }}
                           >
                             {r.product_name}

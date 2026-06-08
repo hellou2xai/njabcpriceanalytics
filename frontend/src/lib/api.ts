@@ -470,7 +470,54 @@ export const compare = {
       `/api/compare/tiers${qs(params)}`),
   rips: (params: Record<string, unknown>) =>
     request<CompareRipResponse>(`/api/compare/rips${qs(params)}`),
+  price360: (params: Record<string, unknown>) =>
+    request<Price360Response>(`/api/compare/price360${qs(params)}`),
 };
+
+// ---- Price 360 (holistic per-product net-cost label) ----
+export interface Price360Offer {
+  wholesaler: string;
+  edition: string | null;
+  product_name: string | null;
+  upc: string | null;
+  frontline_case: number | null;
+  frontline_btl: number | null;
+  invoice_case: number | null;
+  invoice_btl: number | null;
+  net_case: number | null;
+  net_btl: number | null;
+  rip_rebate_full: number;
+  rip_rebate_credited: number;
+  savings_case: number;
+  savings_pct: number;
+  reachability: { status: string; likelihood: number; credited_rebate: number; qualifying: number | null; typical: number | null };
+  divergence: boolean;
+  compliance: { flags: string[]; pre_approval: boolean };
+  case_mix: number | null;
+  single_sku: boolean;
+  abv_proof: string | null;
+  rip_tiers: RipTierRow[];
+  full_month: boolean;
+  value_score: number;
+  score_breakdown: { net_cost: number; savings: number; stability: number; compliance: number; weights: Record<string, number> };
+  rank: number;
+  is_winner: boolean;
+  rebate_misleads: boolean;
+}
+export interface Price360Response {
+  found: boolean;
+  note?: string;
+  match?: string;
+  product?: {
+    product_name: string; upc: string | null; unit_volume: string | null;
+    unit_qty: string | null; abv_proof: string | null; product_type: string | null; brand: string | null;
+  };
+  comparability?: string;
+  proof_warning?: boolean;
+  reach_mode?: string;
+  weights?: Record<string, number>;
+  offers?: Price360Offer[];
+}
 
 // ---- Compare RIPs (RIP outcome across 2-3 distributors) ----
 export interface RipTierRow {

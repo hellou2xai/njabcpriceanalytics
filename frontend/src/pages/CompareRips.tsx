@@ -1,11 +1,10 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Zap, Layers, Sparkles, AlertTriangle } from 'lucide-react';
 import { compare } from '../lib/api';
 import type { CompareRipRow } from '../lib/api';
 import { distributorName } from '../lib/distributors';
-import { useProductQuickView } from '../components/ProductQuickView';
 import './ComparePrices.css';
 import './CompareRips.css';
 
@@ -124,7 +123,9 @@ export default function CompareRips() {
   const [sort, setSort] = useState(params.get('sort') ?? 'spread');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [shown, setShown] = useState(100);
-  const { open } = useProductQuickView();
+  const navigate = useNavigate();
+  const goToProduct = (name: string, wholesaler?: string) =>
+    navigate(`/products?q=${encodeURIComponent(name)}${wholesaler ? `&wholesaler=${wholesaler}` : ''}`);
 
   useEffect(() => {
     const next = new URLSearchParams();
@@ -282,8 +283,7 @@ export default function CompareRips() {
                           <span className="cmp-prod-name" onClick={e => {
                             e.stopPropagation();
                             const w = win && win !== 'tie' ? win : selected[0];
-                            open(r.dists[w]?.product_name ?? r.product_name, w, undefined,
-                              { upc: r.dists[w]?.upc ?? undefined, unitVolume: r.unit_volume ?? undefined });
+                            goToProduct(r.dists[w]?.product_name ?? r.product_name, w);
                           }}>{r.product_name}</span>
                           <span className="cmp-size">{r.unit_qty} × {r.unit_volume}</span>
                           {!r.proof_match && (

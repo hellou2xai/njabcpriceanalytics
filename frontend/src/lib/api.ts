@@ -578,6 +578,8 @@ export interface Price360Response {
   weights?: Record<string, number>;
   tie?: boolean;
   n_winners?: number;
+  size_key?: string;
+  available_sizes?: { match_key: string; size_key: string; unit_volume: string | null; unit_qty: string | null; vintage: string | null; n_distributors: number }[];
   offers?: Price360Offer[];
 }
 

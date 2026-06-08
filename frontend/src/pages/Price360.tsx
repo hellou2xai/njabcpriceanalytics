@@ -154,25 +154,30 @@ export default function Price360() {
   const [match, setMatch] = useState(params.get('match') ?? '');
   const [input, setInput] = useState(params.get('match') ?? '');
   const [reach, setReach] = useState(params.get('reach') ?? 'soft');
+  const [size, setSize] = useState(params.get('size') ?? '');   // size_key (blank = most-carried)
   const [collapsed, setCollapsed] = useState(false);   // distributors open by default
 
   useEffect(() => {
     const next = new URLSearchParams();
     if (match) next.set('match', match);
     if (reach !== 'soft') next.set('reach', reach);
+    if (size) next.set('size', size);
     if (next.toString() !== params.toString()) setSearchParams(next, { replace: true });
-  }, [match, reach]);
+  }, [match, reach, size]);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['price360', match, reach],
-    queryFn: () => compare.price360({ match, reach_mode: reach }),
+    queryKey: ['price360', match, reach, size],
+    queryFn: () => compare.price360({ match, reach_mode: reach, size: size || undefined }),
     enabled: !!match,
   });
 
   const goToProduct = (name: string, wholesaler?: string) =>
     navigate(`/products?q=${encodeURIComponent(name)}${wholesaler ? `&wholesaler=${wholesaler}` : ''}`);
 
-  const submit = (e: React.FormEvent) => { e.preventDefault(); setMatch(input.trim()); };
+  const submit = (e: React.FormEvent) => { e.preventDefault(); setSize(''); setMatch(input.trim()); };
+
+  const sizeLabel = (s: { unit_qty: string | null; unit_volume: string | null; vintage: string | null }) =>
+    `${s.unit_qty ?? '?'} × ${s.unit_volume ?? '?'}${s.vintage ? ` · ${s.vintage}` : ''}`;
 
   return (
     <div className="page">
@@ -184,8 +189,8 @@ export default function Price360() {
         <ProductSearchBox
           value={input}
           onChange={setInput}
-          onSelect={p => setMatch(p.upc || p.product_name)}
-          onSubmit={() => setMatch(input.trim())}
+          onSelect={p => { setSize(''); setMatch(p.upc || p.product_name); }}
+          onSubmit={() => { setSize(''); setMatch(input.trim()); }}
           placeholder="Search a product (smart search) — e.g. Campari, Tito's, Absolut 80…"
           autoFocus
         />
@@ -235,6 +240,20 @@ export default function Price360() {
             )}
             <span className="p360-count">{data.offers!.length} distributor{data.offers!.length !== 1 ? 's' : ''}</span>
           </button>
+
+          {(data.available_sizes?.length ?? 0) > 1 && (
+            <div className="p360-sizes">
+              <span className="p360-sizes-lbl">Size:</span>
+              {data.available_sizes!.map(s => (
+                <button key={s.match_key}
+                  className={`p360-sizechip${(data.size_key ?? '') === s.size_key ? ' on' : ''}`}
+                  onClick={() => setSize(s.size_key)}
+                  title={`${s.n_distributors} distributor${s.n_distributors !== 1 ? 's' : ''}`}>
+                  {sizeLabel(s)}
+                </button>
+              ))}
+            </div>
+          )}
 
           {data.tie && !collapsed && (
             <div className="p360-tienote">

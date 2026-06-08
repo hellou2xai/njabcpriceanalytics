@@ -1138,7 +1138,7 @@ def _value_score(net_case: Optional[float], min_net: Optional[float],
         "weights": w}}
 
 
-def _fetch_product_offers(con, src: str, match: str) -> tuple[Optional[str], list[dict]]:
+def _fetch_product_offers(con, src: str, match: str, size_key: Optional[str] = None):
     """Resolve `match` to the product identity carried by the MOST distributors,
     return (identity_key, one best row per distributor) — every offer is the
     same UPC + size, so directly comparable."""
@@ -1190,17 +1190,38 @@ def _fetch_product_offers(con, src: str, match: str) -> tuple[Optional[str], lis
         cur = by_key[r["match_key"]].get(r["wholesaler"])
         if cur is None or (r.get("effective_case_price") or 1e9) < (cur.get("effective_case_price") or 1e9):
             by_key[r["match_key"]][r["wholesaler"]] = r
-    best_key = max(by_key, key=lambda k: len(by_key[k]))
-    return best_key, list(by_key[best_key].values())
+    # every distinct size found for this product (for the size selector),
+    # deduped by size bucket — keep the listing carried by the most distributors.
+    seen: dict[str, dict] = {}
+    for k, per in by_key.items():
+        rep = next(iter(per.values()))
+        sk = k.split("|")[1] if "|" in k else ""
+        vstr = str(rep.get("vintage") or "").strip()
+        if vstr.lower() in ("", "0", "0.0", "nan", "none"):
+            vstr = ""
+        entry = {"match_key": k, "size_key": sk,
+                 "unit_volume": rep.get("unit_volume"), "unit_qty": rep.get("unit_qty"),
+                 "vintage": vstr or None, "n_distributors": len(per)}
+        cur = seen.get(sk)
+        if cur is None or entry["n_distributors"] > cur["n_distributors"]:
+            seen[sk] = entry
+    available = sorted(seen.values(), key=lambda a: -a["n_distributors"])
+    chosen = None
+    if size_key:
+        chosen = next((k for k in by_key
+                       if (k.split("|")[1] if "|" in k else "") == size_key), None)
+    if not chosen:
+        chosen = max(by_key, key=lambda k: len(by_key[k]))
+    return chosen, list(by_key[chosen].values()), available
 
 
 def price360_offers(con, match: str, typical_map: Optional[dict] = None,
-                    reach_mode: str = "soft") -> dict:
+                    reach_mode: str = "soft", size_key: Optional[str] = None) -> dict:
     """The Price 360 label data: every wholesaler offer for one product, each
     reduced to a reachability-adjusted effective net cost, ranked cheapest
     first. Reuses pricing.attach_tiers; no pricing math re-implemented."""
     src = read_parquet(con, "cpl_enriched")
-    key, recs = _fetch_product_offers(con, src, match)
+    key, recs, available = _fetch_product_offers(con, src, match, size_key)
     if not recs:
         return {"found": False, "match": match, "note": "No product matched a valid barcode."}
     _pricing.attach_tiers(con, recs)
@@ -1300,6 +1321,8 @@ def price360_offers(con, match: str, typical_map: Optional[dict] = None,
         "weights": PRICE360_WEIGHTS,
         "tie": n_winners > 1,
         "n_winners": n_winners,
+        "size_key": (key.split("|")[1] if key and "|" in key else ""),
+        "available_sizes": available,
         "offers": offers,
     }
 
@@ -1329,6 +1352,7 @@ def _typical_cases_map(user_id: int, upc_norms: list[str]) -> dict:
 def price360(
     match: str = Query(..., description="Product name or UPC"),
     reach_mode: str = Query("soft", description="soft | hard | off (reachability)"),
+    size: str = Query("", description="size_key to scope to one size (else most-carried)"),
     user: Optional[dict] = Depends(get_optional_user),
 ):
     """Price 360 label: every wholesaler's offer for ONE product, each reduced
@@ -1339,11 +1363,11 @@ def price360(
         reach_mode = "soft"
     with get_duckdb() as con:
         src = read_parquet(con, "cpl_enriched")
-        key, recs = _fetch_product_offers(con, src, match)
+        key, recs, _av = _fetch_product_offers(con, src, match, size or None)
         upc_norms = list({r["upc_norm"] for r in recs}) if recs else []
     typical = _typical_cases_map(user.get("id") if user else 0, upc_norms) if recs else {}
     with get_duckdb() as con:
-        return price360_offers(con, match, typical, reach_mode)
+        return price360_offers(con, match, typical, reach_mode, size or None)
 
 
 # ===========================================================================

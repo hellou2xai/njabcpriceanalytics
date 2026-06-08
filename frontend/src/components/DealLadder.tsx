@@ -64,9 +64,20 @@ export default function DealLadder({ months, pack, emptyText }: {
     return emptyText ? <span className="prod-deals-none">{emptyText}</span> : null;
   }
 
-  // When the item is 1 bottle/case, a bottle-unit tier IS a case tier — show 'cs'
-  // so QD (cases) and RIP (bottles) don't read with different units.
+  // Prefer CASES for the buy quantity so the whole ladder reads in the same
+  // unit as the /cs prices. A bottle-unit tier (e.g. "24 btl") is converted to
+  // cases via the pack size ("1 cs"); when the item is 1 bottle/case a bottle
+  // tier IS a case tier. Falls back to bottles only when the pack is unknown.
   const uw = (u: string) => (pack === 1 ? 'cs' : unitWord(u));
+  const fmtCs = (n: number) => {
+    const r = Math.round(n * 100) / 100;
+    return Number.isInteger(r) ? String(r) : String(r);
+  };
+  const buyLabel = (t: RipTier) => {
+    const isBtl = /btl|bottle/i.test(t.unit);
+    if (isBtl && pack && pack > 0) return `${fmtCs(t.qty / pack)} cs`;
+    return `${t.qty} ${uw(t.unit)}`;
+  };
   const line = (kind: 'qd' | 'rip', t: RipTier, i: number) => {
     const b = btlOf(t.eff);
     const off = frontline != null && t.eff < frontline ? frontline - t.eff : null;
@@ -75,7 +86,7 @@ export default function DealLadder({ months, pack, emptyText }: {
     return (
       <div key={`${kind}${i}`} className="prod-deal-line">
         <span className={`prod-deal-badge prod-deal-${kind}`}>{kind === 'qd' ? 'QD' : 'RIP'}</span>{' '}
-        Buy {t.qty} {uw(t.unit)} → <strong>${t.eff.toFixed(2)}/cs</strong>
+        Buy {buyLabel(t)} → <strong>${t.eff.toFixed(2)}/cs</strong>
         {b != null && <span className="prod-deal-btl"> · ${b.toFixed(2)}/btl</span>}
         {kind === 'rip' && ripSave != null && ripSave > 0.005 && (
           <span className="prod-deal-off"

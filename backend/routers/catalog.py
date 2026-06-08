@@ -2129,6 +2129,21 @@ def price_comparison(
             "COALESCE({0}.discount_5_amt, 0))"
         )
         sql = f"""
+            WITH upc_ed_ref AS (
+                -- Per (UPC, edition) cross-distributor reference: the highest
+                -- case price any distributor lists for that UPC and how many
+                -- distributors carry it. Lets us spot a distributor whose price
+                -- is a wild outlier vs peers (a likely unit/pack data error) so
+                -- the row can be kept out of the Month-over-Month movers and left
+                -- to QA: Data Quality Anomalies instead.
+                SELECT LTRIM(CAST(upc AS VARCHAR), '0') AS un, edition,
+                       MAX(frontline_case_price) AS max_price,
+                       COUNT(DISTINCT wholesaler) AS n_dist
+                FROM {src}
+                WHERE frontline_case_price > 0 AND upc IS NOT NULL
+                  AND CAST(upc AS VARCHAR) NOT IN ('', '0')
+                GROUP BY 1, 2
+            )
             SELECT
                 c.wholesaler,
                 c.upc,
@@ -2162,7 +2177,9 @@ def price_comparison(
                 (n.effective_case_price - c.effective_case_price) AS effective_delta,
                 CASE WHEN c.effective_case_price > 0
                      THEN (n.effective_case_price - c.effective_case_price) / c.effective_case_price * 100
-                     ELSE 0 END AS effective_delta_pct
+                     ELSE 0 END AS effective_delta_pct,
+                rc.max_price AS curr_xdist_max, rc.n_dist AS curr_n_dist,
+                rn.max_price AS next_xdist_max, rn.n_dist AS next_n_dist
             FROM {src} c
             JOIN {src} n
               ON c.wholesaler = n.wholesaler
@@ -2181,6 +2198,8 @@ def price_comparison(
                  UPPER(c.product_type) NOT IN ('WINE', 'SPARKLING', 'VERMOUTH')
                  OR ({_vintage_norm_sql('c.vintage')}) IS NOT DISTINCT FROM ({_vintage_norm_sql('n.vintage')})
              )
+            LEFT JOIN upc_ed_ref rc ON rc.un = LTRIM(CAST(c.upc AS VARCHAR), '0') AND rc.edition = c.edition
+            LEFT JOIN upc_ed_ref rn ON rn.un = LTRIM(CAST(n.upc AS VARCHAR), '0') AND rn.edition = n.edition
             WHERE ({' OR '.join(pair_clauses)})
               -- Drop rows with stub UPCs ('0', empty, all-zeros, all-nines, too short).
               -- These are placeholders that the wholesaler uses across many
@@ -2207,6 +2226,21 @@ def price_comparison(
                   OR c.has_discount <> n.has_discount
                   OR ABS(COALESCE(c.rip_savings, 0) - COALESCE(n.rip_savings, 0)) > 0.01
                   OR ABS({max_disc.format('c')} - {max_disc.format('n')}) > 0.01
+              )
+              -- Suppress likely unit/data anomalies: an extreme month-over-month
+              -- swing (>=150%) where one side's case price is under half the
+              -- cross-distributor max for that UPC/edition (>=2 distributors
+              -- carry it). That pattern is a price-book unit error (e.g. a
+              -- per-pack price entered as a per-case price), not a real move; it
+              -- still surfaces in QA: Data Quality Anomalies.
+              AND NOT (
+                  ABS(CASE WHEN c.frontline_case_price > 0
+                           THEN (n.frontline_case_price - c.frontline_case_price) / c.frontline_case_price * 100
+                           ELSE 0 END) >= 150
+                  AND (
+                      (rc.n_dist >= 2 AND c.frontline_case_price < 0.5 * rc.max_price)
+                      OR (rn.n_dist >= 2 AND n.frontline_case_price < 0.5 * rn.max_price)
+                  )
               )
             -- Wine placeholder dedup: the source sometimes lists the same SKU
             -- twice — once with its real vintage and once with a '0'/NULL

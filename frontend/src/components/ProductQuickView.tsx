@@ -244,6 +244,23 @@ function QuickViewModal({
     const idx = parseInt(m, 10) - 1;
     return idx >= 0 && idx < 12 ? `${names[idx]} ${ym.split('-')[0]}` : ym;
   };
+  // Panel label that names the month AND its relationship to the ACTUAL current
+  // month — so a breakdown that compares the two most recent LOADED editions
+  // (e.g. May vs Jun, opened from Price Changes) labels Jun as "This month" and
+  // May as "Last month" instead of the slot-based "this/next" which was off by
+  // one when the later edition is the current month.
+  const monthPanelLabel = (ym: string) => {
+    const now = new Date();
+    const curYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const md = (a: string, b: string) => {
+      const [ay, am] = a.split('-').map(Number);
+      const [by, bm] = b.split('-').map(Number);
+      return (ay - by) * 12 + (am - bm);
+    };
+    const d = md(ym, curYM);
+    const rel = d === 0 ? 'This month' : d === -1 ? 'Last month' : d === 1 ? 'Next month' : '';
+    return rel ? `${rel} · ${monthLabel(ym)}` : monthLabel(ym);
+  };
 
   const compactTier = (qty: number, unit: string, amt: number) => {
     const u = unit.toLowerCase().startsWith('case') || unit.toLowerCase() === 'c' ? 'cs' : 'btl';
@@ -284,7 +301,23 @@ function QuickViewModal({
 
             {detail?.enrichment && (() => {
               const en = detail.enrichment;
-              const specs = en.specs ? Object.entries(en.specs).filter(([, v]) => v != null && String(v) !== '') : [];
+              // unit_qty (from the price book) is the authoritative pricing unit
+              // — per-unit price is case_price / unit_qty. Go-UPC sometimes
+              // reports a "Bottles per Case" that counts individual bottles in a
+              // master case (e.g. 120 = 10 packs x 12) which disagrees with the
+              // 10-unit case we price against. Drop that spec when it conflicts,
+              // so it can't imply the per-unit price should be case / 120.
+              const _uq = Number(p?.unit_qty) || 0;
+              const _isPackCountKey = (k: string) =>
+                /bottles?\s*(per|\/)\s*case|units?\s*per\s*case|case\s*pack|bottle\s*count/i.test(k);
+              const specs = en.specs ? Object.entries(en.specs).filter(([k, v]) => {
+                if (v == null || String(v) === '') return false;
+                if (_uq > 0 && _isPackCountKey(k)) {
+                  const num = parseFloat(String(v).replace(/[^\d.]/g, ''));
+                  if (!isNaN(num) && Math.round(num) !== Math.round(_uq)) return false;
+                }
+                return true;
+              }) : [];
               const path = en.category_path?.filter(Boolean) ?? [];
               const hasDesc = en.description && en.description !== 'No description found.';
               if (!hasDesc && specs.length === 0 && path.length === 0 && !en.region) return null;
@@ -422,10 +455,10 @@ function QuickViewModal({
               if (monthMode && detailNext && effectiveMonths) {
                 sides = [];
                 if (hasPrev && detailPrev) {
-                  sides.push(side(detailPrev.product, `Last month · ${monthLabel(prevEd!)}`, detailPrev.rip_tiers, detailPrev.discount_tiers));
+                  sides.push(side(detailPrev.product, monthPanelLabel(prevEd!), detailPrev.rip_tiers, detailPrev.discount_tiers));
                 }
-                sides.push(side(p, `This month · ${monthLabel(effectiveMonths.curr)}`, detail.rip_tiers, detail.discount_tiers));
-                sides.push(side(detailNext.product, `Next month · ${monthLabel(effectiveMonths.next)}`, detailNext.rip_tiers, detailNext.discount_tiers));
+                sides.push(side(p, monthPanelLabel(effectiveMonths.curr), detail.rip_tiers, detail.discount_tiers));
+                sides.push(side(detailNext.product, monthPanelLabel(effectiveMonths.next), detailNext.rip_tiers, detailNext.discount_tiers));
               } else {
                 sides = [side(p, distributorName(wholesaler), detail.rip_tiers, detail.discount_tiers)];
                 if (compareWith && pB && detailB) sides.push(side(pB, distributorName(compareWith.wholesaler), detailB.rip_tiers, detailB.discount_tiers));

@@ -177,6 +177,8 @@ export default function ComparePrices() {
   // default ON: open straight to the rows where distributors actually differ
   const [onlyDiff, setOnlyDiff] = useState(params.get('diff') !== '0');
   const [minSpread, setMinSpread] = useState(params.get('min') ?? '');
+  // 0 = each distributor's best deal (deepest tier); >0 = landed price at that volume
+  const [cases, setCases] = useState(params.get('cs') ?? '0');
   const [sortKey, setSortKey] = useState(params.get('s') ?? 'product');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(params.get('dir') === 'desc' ? 'desc' : 'asc');
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -198,11 +200,12 @@ export default function ComparePrices() {
     if (ptype) next.set('type', ptype);
     if (!onlyDiff) next.set('diff', '0');
     if (minSpread) next.set('min', minSpread);
+    if (cases && cases !== '0') next.set('cs', cases);
     if (sortKey !== 'product') next.set('s', sortKey);
     if (sortDir !== 'asc') next.set('dir', sortDir);
     if (pageSize !== 100) next.set('pp', String(pageSize));
     if (next.toString() !== params.toString()) setSearchParams(next, { replace: true });
-  }, [selected, q, ptype, onlyDiff, minSpread, sortKey, sortDir, pageSize]);
+  }, [selected, q, ptype, onlyDiff, minSpread, cases, sortKey, sortDir, pageSize]);
 
   // page-size change resets the visible window
   useEffect(() => { setShown(pageSize); }, [pageSize]);
@@ -214,13 +217,14 @@ export default function ComparePrices() {
 
   const ready = selected.length >= 2 && selected.length <= 3;
   const { data, isLoading, error } = useQuery({
-    queryKey: ['compare-products', selected, q, ptype, onlyDiff, minSpread],
+    queryKey: ['compare-products', selected, q, ptype, onlyDiff, minSpread, cases],
     queryFn: () => compare.products({
       wholesalers: selected.join(','),
       q: q || undefined,
       product_type: ptype || undefined,
       only_differences: onlyDiff || undefined,
       min_spread: minSpread ? parseFloat(minSpread) : undefined,
+      cases: cases && cases !== '0' ? parseFloat(cases) : undefined,
     }),
     enabled: ready,
   });
@@ -246,6 +250,8 @@ export default function ComparePrices() {
 
   const winnerName = (w: string | null) =>
     w == null ? '–' : w === 'tie' ? 'Tie' : distributorName(w);
+
+  const atVol = !!(cases && cases !== '0');
 
   // ---- client-side sorting: every column is sortable ----
   const clickSort = (key: string, numericDefault: 'asc' | 'desc' = 'asc') => {
@@ -393,6 +399,19 @@ export default function ComparePrices() {
               value={minSpread}
               onChange={e => setMinSpread(e.target.value)}
             />
+            <label className="cmp-pp" title="“Best deal” shows each distributor's deepest tier (max volume). Pick a quantity to see the price you'd actually pay at that volume — the cheaper distributor can change with volume.">
+              Volume
+              <select value={cases} onChange={e => { setCases(e.target.value); setShown(pageSize); }}>
+                <option value="0">Best deal</option>
+                <option value="1">1 cs</option>
+                <option value="2">2 cs</option>
+                <option value="3">3 cs</option>
+                <option value="5">5 cs</option>
+                <option value="10">10 cs</option>
+                <option value="25">25 cs</option>
+                <option value="50">50 cs</option>
+              </select>
+            </label>
             <span className="cmp-hint">Click any column header to sort</span>
             <label className="cmp-pp">
               Rows/page
@@ -401,6 +420,12 @@ export default function ComparePrices() {
               </select>
             </label>
             <span className="cmp-count">{rows.length.toLocaleString()} rows</span>
+          </div>
+
+          <div className={`cmp-basis${atVol ? ' cmp-basis-vol' : ''}`}>
+            {atVol
+              ? <>Deal columns show the <strong>landed price at {cases} case(s)</strong> — the discount/RIP you'd actually qualify for at that volume. The cheaper distributor can change as you change volume.</>
+              : <>Deal columns show each distributor's <strong>best deal</strong> (deepest QD + RIP tier), which can need a high volume to reach. Set <strong>Volume</strong> above to see the price at the quantity you plan to buy.</>}
           </div>
 
           {/* ---- comparison grid ---- */}
@@ -432,12 +457,13 @@ export default function ComparePrices() {
                       <th className="cmp-layer cmp-sortable" onClick={() => clickSort(`${w}::frontline`)}>
                         List{arrow(`${w}::frontline`)}
                       </th>
-                      <th className="cmp-layer cmp-sortable" onClick={() => clickSort(`${w}::after_qd`)}>
-                        After QD{arrow(`${w}::after_qd`)}
+                      <th className="cmp-layer cmp-sortable" onClick={() => clickSort(`${w}::after_qd`)}
+                          title={atVol ? `Price after the quantity discount you'd qualify for at ${cases} case(s)` : "Best (deepest) quantity-discount price — may need a high volume to reach"}>
+                        {atVol ? `QD @${cases}cs` : 'Best QD'}{arrow(`${w}::after_qd`)}
                       </th>
                       <th className="cmp-layer cmp-sortable" onClick={() => clickSort(`${w}::effective`)}
-                          title="Effective price: after quantity discounts + best full-month RIP rebate">
-                        After RIP{arrow(`${w}::effective`)}
+                          title={atVol ? `Landed price at ${cases} case(s): after QD + the best RIP rebate you can actually reach at that volume` : "Best effective price: after quantity discounts + best full-month RIP rebate (deepest tier)"}>
+                        {atVol ? `Net @${cases}cs` : 'Best net'}{arrow(`${w}::effective`)}
                       </th>
                     </Fragment>
                   ))}

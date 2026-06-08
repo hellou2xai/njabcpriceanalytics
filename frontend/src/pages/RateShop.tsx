@@ -201,7 +201,9 @@ function ProductResult({ match, label, cases, onRemove, goToProduct }: {
           <div className="rs-product">
             <span className="rs-pname" onClick={() => goToProduct(data.product!.product_name)}>{data.product.product_name}</span>
             <span className="rs-meta">{data.product.unit_qty} × {data.product.unit_volume}{data.product.abv_proof ? ` · ${data.product.abv_proof}` : ''}{data.product.product_type ? ` · ${data.product.product_type}` : ''}</span>
-            <span className="rs-conf" title="All offers are the same barcode + size — directly comparable">🟢 verified match</span>
+            {data.proof_warning
+              ? <span className="rs-conf rs-conf-warn" title="Same barcode + size, but the distributors filed DIFFERENT proof/ABV for it — confirm it's the same product before comparing.">⚠️ proof differs — verify</span>
+              : <span className="rs-conf" title="Same barcode + size + matching filed proof — directly comparable">🟢 verified match</span>}
             <button className="rs-remove" onClick={onRemove} title="Remove this product">✕</button>
           </div>
           {(data.available_sizes?.length ?? 0) > 1 && (

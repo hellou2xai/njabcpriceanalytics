@@ -269,6 +269,7 @@ def compare_products(
     product_type: str = Query(""),
     only_differences: bool = Query(False),
     min_spread: float = Query(0.0, ge=0),
+    cases: float = Query(0, ge=0, description="Buy quantity; 0 = each distributor's best deal"),
     sort: str = Query("spread", description="spread | spread_pct | product | effective"),
     order: str = Query("desc"),
     limit: int = Query(2000, ge=1, le=50000),
@@ -276,12 +277,44 @@ def compare_products(
 ):
     """The comparison grid: products common to ALL selected distributors with
     the three price layers per distributor, per-layer winners, and a smart
-    analysis summary."""
+    analysis summary.
+
+    `cases` controls whether the After-QD / After-RIP columns are each
+    distributor's BEST deal (cases=0, deepest tier) or the landed price AT THAT
+    VOLUME — so a low-volume buyer isn't shown a winner they can't actually reach.
+    At-volume uses the canonical tier ladder (attach_tiers) + `_applied_tier_at`,
+    never a re-implemented formula."""
+    n_cases = cases if cases and cases > 0 else None
     with get_duckdb() as con:
         src = read_parquet(con, "cpl_enriched")
         slugs = _parse_wholesalers(wholesalers, con)
         eds = _editions_for(con, src, slugs)
         raw = _common_rows(con, src, slugs, eds)
+        # At-volume mode: attach the canonical QD+RIP ladder (one batched RIP
+        # query for the whole page) and rewrite each distributor's best/effective
+        # to the price reachable at `cases`, so winners/spread/flip reflect the
+        # actual buy quantity rather than the deepest tier.
+        if n_cases:
+            _pricing.attach_tiers(con, raw)
+            for d in raw:
+                pack = float(d.get("uqd") or 0)
+                tiers = d.get("tiers") or []
+                front = d.get("frontline_case_price")
+                net = _applied_tier_at(tiers, front, n_cases, pack)[0]
+                qd = None
+                for t in tiers:
+                    if t.get("source") != "discount":
+                        continue
+                    thr = _cases_threshold(t, pack)
+                    pa = t.get("price_after")
+                    if thr is not None and pa is not None and n_cases + 1e-9 >= thr:
+                        qd = pa if qd is None else min(qd, pa)
+                if qd is None:
+                    qd = front
+                d["best_case_price"] = qd
+                d["effective_case_price"] = net if net is not None else qd
+                d["rip_savings"] = (round((qd or 0) - net, 2)
+                                    if net is not None and qd is not None and qd - net > 0.005 else None)
 
     # Pivot: match_key -> {wholesaler: row}
     by_key: dict[str, dict[str, dict]] = {}
@@ -438,6 +471,8 @@ def compare_products(
         "wholesalers": slugs,
         "editions": eds,
         "total_common": total,
+        "cases": (n_cases or 0),
+        "volume_basis": ("at_volume" if n_cases else "best_deal"),
         "rows": rows,
         "summary": {
             "common_products": total,
@@ -1789,9 +1824,14 @@ def rateshop_data(con, match: str, cases: float = 5, size_key: Optional[str] = N
             verdict += f" Best choice shifts with volume: {be}."
 
     meta = recs[0]
+    # Same UPC + size => directly comparable. A differing FILED proof across
+    # distributors is a data-quality warning (not a different product), so the UI
+    # must not assert an unqualified "verified match" — mirror Price 360 (#E audit).
+    proofs = {_norm_proof(o.get("abv_proof")) for o in offers if _norm_proof(o.get("abv_proof")) is not None}
     return {
         "found": True, "cases": n, "size_key": (key.split("|")[1] if key and "|" in key else ""),
         "available_sizes": available,
+        "proof_warning": len(proofs) > 1,
         "product": {
             "product_name": min((o["product_name"] for o in offers), key=len),
             "upc": meta.get("upc"), "unit_volume": meta.get("unit_volume"),

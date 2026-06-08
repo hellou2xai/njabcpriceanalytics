@@ -444,6 +444,8 @@ export interface CompareResponse {
   wholesalers: string[];
   editions: Record<string, string>;
   total_common: number;
+  cases?: number;
+  volume_basis?: 'at_volume' | 'best_deal';
   rows: CompareRow[];
   summary: CompareSummary;
 }
@@ -586,6 +588,7 @@ export interface RateShopResponse {
   note?: string;
   cases?: number;
   size_key?: string;
+  proof_warning?: boolean;
   available_sizes?: { match_key: string; size_key: string; unit_volume: string | null; unit_qty: string | null; vintage: string | null; n_distributors: number }[];
   product?: { product_name: string; upc: string | null; unit_volume: string | null; unit_qty: string | null; abv_proof: string | null; product_type: string | null; brand: string | null };
   tie?: boolean;

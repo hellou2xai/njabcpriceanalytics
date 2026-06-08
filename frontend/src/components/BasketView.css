@@ -1,0 +1,20 @@
+.rs-modes, .bv-source { display: inline-flex; gap: 4px; margin-bottom: 16px; padding: 3px; background: var(--surface-hover); border-radius: 10px; }
+.rs-modebtn { border: none; background: none; padding: 7px 14px; border-radius: 8px; font-size: 13.5px; font-weight: 600; color: var(--text-muted); cursor: pointer; }
+.rs-modebtn.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+
+.bv-cards { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.bv-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; min-width: 150px; }
+.bv-card-hero { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
+.bv-card-n { font-size: 22px; font-weight: 800; }
+.bv-card-n.bv-pos { color: var(--green); }
+.bv-card-l { font-size: 12px; color: var(--text-muted); margin-top: 3px; max-width: 260px; }
+
+.bv-prod { min-width: 220px; }
+.bv-prod .cmp-size { display: block; font-size: 11px; color: var(--text-muted); }
+.bv-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bv-winner { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
+.bv-switch { font-size: 9.5px; font-weight: 700; color: var(--orange); background: color-mix(in srgb, var(--orange) 12%, transparent); padding: 1px 6px; border-radius: 7px; margin-left: 4px; }
+.bv-pos { color: var(--green); font-weight: 600; }
+.bv-nomatch { opacity: 0.55; }
+.bv-opts { font-size: 11px; color: var(--text-muted); cursor: help; }
+.bv-foot { margin-top: 12px; font-size: 11.5px; color: var(--text-muted); max-width: 760px; line-height: 1.5; }

@@ -5,6 +5,7 @@ import { ShoppingBag, Crown, TrendingUp, Clock, Layers as MixIcon, FileText, Ale
 import { compare } from '../lib/api';
 import type { RateShopOffer, RateShopCondition } from '../lib/api';
 import { distributorName } from '../lib/distributors';
+import BasketView from '../components/BasketView';
 import ProductSearchBox from '../components/ProductSearchBox';
 import RowActions from '../components/RowActions';
 import './ComparePrices.css';
@@ -119,14 +120,16 @@ export default function RateShop() {
   const [input, setInput] = useState(params.get('match') ?? '');
   const [cases, setCases] = useState(parseInt(params.get('cases') ?? '5', 10) || 5);
   const [size, setSize] = useState(params.get('size') ?? '');
+  const [mode, setMode] = useState<'product' | 'basket'>(params.get('mode') === 'basket' ? 'basket' : 'product');
 
   useEffect(() => {
     const next = new URLSearchParams();
+    if (mode === 'basket') next.set('mode', 'basket');
     if (match) next.set('match', match);
     if (cases !== 5) next.set('cases', String(cases));
     if (size) next.set('size', size);
     if (next.toString() !== params.toString()) setSearchParams(next, { replace: true });
-  }, [match, cases, size]);
+  }, [match, cases, size, mode]);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['rateshop', match, cases, size],
@@ -150,6 +153,14 @@ export default function RateShop() {
     <div className="page">
       <div className="cmp-head"><h2><ShoppingBag size={20} style={{ verticalAlign: '-3px', marginRight: 8 }} />Rate Shop</h2></div>
 
+      <div className="rs-modes">
+        <button className={`rs-modebtn${mode === 'product' ? ' on' : ''}`} onClick={() => setMode('product')}>One product</button>
+        <button className={`rs-modebtn${mode === 'basket' ? ' on' : ''}`} onClick={() => setMode('basket')}>My order (basket)</button>
+      </div>
+
+      {mode === 'basket' && <BasketView />}
+
+      {mode === 'product' && <>
       <form className="rs-search" onSubmit={submit}>
         <ProductSearchBox value={input} onChange={setInput}
           onSelect={p => { setSize(''); setMatch(p.upc || p.product_name); }}
@@ -213,6 +224,7 @@ export default function RateShop() {
           </div>
         </>
       )}
+      </>}
     </div>
   );
 }

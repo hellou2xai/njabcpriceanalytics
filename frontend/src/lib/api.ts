@@ -474,6 +474,8 @@ export const compare = {
     request<Price360Response>(`/api/compare/price360${qs(params)}`),
   rateshop: (params: Record<string, unknown>) =>
     request<RateShopResponse>(`/api/compare/rateshop${qs(params)}`),
+  basket: (source: string) =>
+    request<BasketResponse>(`/api/compare/basket?source=${source}`),
   editionOptions: (wholesaler: string) =>
     request<EditionOptions>(`/api/compare/editions/options?wholesaler=${wholesaler}`),
   editions: (params: Record<string, unknown>) =>
@@ -523,6 +525,34 @@ export interface EditionCompareResponse {
 }
 
 // ---- Price 360 (holistic per-product net-cost label) ----
+// ---- Basket rate shopping (optimal split vs single-sourcing) ----
+export interface BasketLine {
+  product_name: string;
+  unit_volume: string | null;
+  qty: number;
+  upc: string | null;
+  prices: Record<string, number>;
+  best_w: string | null;
+  best_net: number | null;
+  current_w: string;
+  no_match: boolean;
+  saving_vs_current?: number;
+}
+export interface BasketResponse {
+  found: boolean;
+  source: string;
+  note?: string;
+  line_count?: number;
+  split_total?: number;
+  split_distributors?: string[];
+  current_total?: number;
+  saving_vs_current?: number;
+  best_single?: { wholesaler: string; total: number; covered: number; covers_all: boolean } | null;
+  saving_vs_single?: number | null;
+  single_source?: { wholesaler: string; total: number; covered: number; covers_all: boolean }[];
+  lines?: BasketLine[];
+}
+
 // ---- Rate Shop (clarity-first: net-at-volume + conditions + break-even) ----
 export interface RateShopCondition { type: string; text: string }
 export interface RateShopOffer {

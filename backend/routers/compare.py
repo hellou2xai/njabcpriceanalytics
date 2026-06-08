@@ -26,7 +26,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from backend import pricing as _pricing
-from backend.auth import get_optional_user
+from backend.auth import get_optional_user, get_current_user
 from backend.db import get_duckdb, read_parquet
 from backend.size_std import _to_ml
 
@@ -1777,3 +1777,136 @@ def distributorName_safe(slug: str) -> str:
         return DISTRIBUTOR_NAMES.get(slug, slug)
     except Exception:
         return slug
+
+
+# ===========================================================================
+# Basket rate shopping — for the buyer's whole order (cart / favorites): the
+# optimal split (each line from its cheapest distributor) vs single-sourcing.
+# ===========================================================================
+
+def _read_basket_lines(user_id: int, source: str) -> list[dict]:
+    from backend.pg import get_pg
+    with get_pg() as pg:
+        if source == "favorites":
+            rows = pg.execute(
+                "SELECT product_name, wholesaler, upc, unit_volume, 1 AS qty "
+                "FROM watchlist WHERE user_id = %s", (user_id,)).fetchall()
+        else:  # cart
+            rows = pg.execute(
+                "SELECT product_name, wholesaler, upc, unit_volume, "
+                "GREATEST(COALESCE(qty_cases,0),1) AS qty "
+                "FROM cart_items WHERE user_id = %s AND COALESCE(saved_for_later,0)=0",
+                (user_id,)).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        un = str(d.get("upc") or "").lstrip("0")
+        if not un or len(un) < 8:
+            continue
+        out.append({"product_name": d.get("product_name"), "wholesaler": d.get("wholesaler"),
+                    "upc": d.get("upc"), "upc_norm": un,
+                    "unit_volume": d.get("unit_volume"), "qty": float(d.get("qty") or 1)})
+    return out
+
+
+@router.get("/basket")
+def basket(source: str = Query("cart", description="cart | favorites"),
+           user: dict = Depends(get_current_user)):
+    """Basket rate shopping: price every line of the buyer's cart (or favorites)
+    across all distributors at the line's quantity, then compute the OPTIMAL
+    SPLIT (each line from its cheapest distributor) vs single-sourcing the whole
+    order — and what splitting saves."""
+    lines = _read_basket_lines(user["id"], source if source in ("cart", "favorites") else "cart")
+    if not lines:
+        return {"found": False, "source": source,
+                "note": f"Your {source} is empty (or has no valid-barcode lines)."}
+
+    with get_duckdb() as con:
+        src = read_parquet(con, "cpl_enriched")
+        all_slugs = [r[0] for r in con.execute(f"SELECT DISTINCT wholesaler FROM {src}").fetchall()]
+        eds = _editions_for(con, src, all_slugs)
+        ed_pred, ed_params = _edition_pred(all_slugs, eds)
+        upcs = sorted({l["upc_norm"] for l in lines})
+        vn = _pricing.vintage_norm_sql("vintage")
+        ph = ", ".join("?" * len(upcs))
+        df = con.execute(f"""
+            SELECT wholesaler, edition, upc, product_name, unit_qty, unit_volume, vintage,
+                   frontline_case_price, frontline_unit_price, best_case_price,
+                   effective_case_price, rip_code,
+                   discount_1_qty, discount_1_amt, discount_2_qty, discount_2_amt,
+                   discount_3_qty, discount_3_amt, discount_4_qty, discount_4_amt,
+                   discount_5_qty, discount_5_amt,
+                   LTRIM(upc,'0') AS upc_norm, TRY_CAST(unit_qty AS DOUBLE) AS uqd
+            FROM {src} e
+            WHERE {ed_pred} AND {_VALID_UPC} AND LTRIM(upc,'0') IN ({ph})
+        """, ed_params + upcs).df()
+        recs = [_nan_clean(r) for r in df.to_dict(orient="records")]
+        _pricing.attach_tiers(con, recs)
+
+    # index: (upc_norm, size_key) -> {wholesaler: best rec}
+    idx: dict = {}
+    for r in recs:
+        k = (r["upc_norm"], _size_key(r.get("unit_volume")))
+        idx.setdefault(k, {})
+        cur = idx[k].get(r["wholesaler"])
+        if cur is None or (r.get("effective_case_price") or 1e9) < (cur.get("effective_case_price") or 1e9):
+            idx[k][r["wholesaler"]] = r
+
+    out_lines = []
+    dist_totals: dict = {}   # wholesaler -> {total, covered, lines}
+    split_total = 0.0
+    current_total = 0.0
+    for ln in lines:
+        k = (ln["upc_norm"], _size_key(ln.get("unit_volume")))
+        per = idx.get(k) or {}
+        n = ln["qty"]
+        prices = {}
+        for w, rec in per.items():
+            pack = rec.get("uqd") or 1.0
+            net, _t = _applied_tier_at(rec.get("tiers", []) or [], rec.get("frontline_case_price"), n, pack)
+            if net is not None:
+                prices[w] = round(net, 2)
+        if not prices:
+            out_lines.append({"product_name": ln["product_name"], "unit_volume": ln["unit_volume"],
+                              "qty": n, "upc": ln["upc"], "prices": {}, "best_w": None,
+                              "best_net": None, "current_w": ln["wholesaler"], "no_match": True})
+            continue
+        best_w = min(prices, key=prices.get)
+        best_net = prices[best_w]
+        line_cost = best_net * n
+        split_total += line_cost
+        cur_w = ln["wholesaler"]
+        cur_net = prices.get(cur_w, best_net)
+        current_total += cur_net * n
+        for w, p in prices.items():
+            dt = dist_totals.setdefault(w, {"total": 0.0, "covered": 0, "lines": 0})
+            dt["total"] += p * n
+            dt["covered"] += 1
+        out_lines.append({
+            "product_name": ln["product_name"], "unit_volume": ln["unit_volume"], "qty": n,
+            "upc": ln["upc"], "prices": prices, "best_w": best_w, "best_net": best_net,
+            "current_w": cur_w, "no_match": False,
+            "saving_vs_current": round((cur_net - best_net) * n, 2),
+        })
+
+    n_lines = sum(1 for l in out_lines if not l["no_match"])
+    # single-source candidates: distributors that carry EVERY matched line
+    single = []
+    for w, dt in dist_totals.items():
+        single.append({"wholesaler": w, "total": round(dt["total"], 2),
+                       "covered": dt["covered"], "covers_all": dt["covered"] == n_lines})
+    single.sort(key=lambda s: (not s["covers_all"], s["total"]))
+    best_single = next((s for s in single if s["covers_all"]), None)
+
+    split_distributors = sorted({l["best_w"] for l in out_lines if l["best_w"]})
+    return {
+        "found": True, "source": source, "line_count": n_lines,
+        "split_total": round(split_total, 2),
+        "split_distributors": split_distributors,
+        "current_total": round(current_total, 2),
+        "saving_vs_current": round(current_total - split_total, 2),
+        "best_single": best_single,
+        "saving_vs_single": round(best_single["total"] - split_total, 2) if best_single else None,
+        "single_source": single[:8],
+        "lines": out_lines,
+    }

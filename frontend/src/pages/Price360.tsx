@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Target, Crown, AlertTriangle, Info } from 'lucide-react';
+import { Target, Crown, AlertTriangle, Info, ChevronDown, ChevronRight } from 'lucide-react';
 import { compare } from '../lib/api';
 import type { Price360Offer } from '../lib/api';
 import { distributorName } from '../lib/distributors';
@@ -17,13 +17,13 @@ const REACH_LABEL: Record<string, string> = {
   unknown: 'No order history', no_rip: 'No RIP',
 };
 
-function OfferCard({ offer, onProduct }: { offer: Price360Offer; onProduct: (n: string, w: string) => void }) {
+function OfferCard({ offer, onProduct, tie }: { offer: Price360Offer; onProduct: (n: string, w: string) => void; tie: boolean }) {
   const o = offer;
   const reach = o.reachability;
   return (
     <div className={`p360-card${o.is_winner ? ' p360-win' : ''}`}>
       <div className="p360-rank">
-        {o.is_winner ? <Crown size={15} /> : `#${o.rank}`}
+        {o.is_winner ? <Crown size={18} /> : `#${o.rank}`}
       </div>
       <div className="p360-main">
         <div className="p360-dist">
@@ -31,7 +31,7 @@ function OfferCard({ offer, onProduct }: { offer: Price360Offer; onProduct: (n: 
             {distributorName(o.wholesaler)}
           </button>
           <span className="p360-cpl" title="CPL period (source edition)">{o.edition}</span>
-          {o.is_winner && <span className="p360-best">Best buy</span>}
+          {o.is_winner && <span className="p360-best">{tie ? 'Tied best buy' : 'Best buy'}</span>}
         </div>
         {/* headline: net cost dominant */}
         <div className="p360-headline">
@@ -119,6 +119,7 @@ export default function Price360() {
   const [match, setMatch] = useState(params.get('match') ?? '');
   const [input, setInput] = useState(params.get('match') ?? '');
   const [reach, setReach] = useState(params.get('reach') ?? 'soft');
+  const [collapsed, setCollapsed] = useState(false);   // distributors open by default
 
   useEffect(() => {
     const next = new URLSearchParams();
@@ -180,10 +181,12 @@ export default function Price360() {
 
       {data?.found && data.product && (
         <>
-          <div className="p360-product">
-            <button className="p360-pname" onClick={() => goToProduct(data.product!.product_name)}>
+          {/* product on top — its distributor offers collapse below (open by default) */}
+          <button className="p360-product" onClick={() => setCollapsed(c => !c)}>
+            {collapsed ? <ChevronRight size={20} /> : <ChevronDown size={20} />}
+            <span className="p360-pname" onClick={e => { e.stopPropagation(); goToProduct(data.product!.product_name); }}>
               {data.product.product_name}
-            </button>
+            </span>
             <span className="p360-meta">
               {data.product.unit_qty} × {data.product.unit_volume}
               {data.product.abv_proof ? ` · ${data.product.abv_proof}` : ''}
@@ -192,13 +195,21 @@ export default function Price360() {
             <span className="p360-comparable">Directly comparable</span>
             {data.proof_warning && (
               <span className="p360-proofwarn" title="Distributors filed different proof/ABV for this barcode — verify it's the same item">
-                <AlertTriangle size={11} /> proof differs across distributors
+                <AlertTriangle size={12} /> proof differs across distributors
               </span>
             )}
             <span className="p360-count">{data.offers!.length} distributor{data.offers!.length !== 1 ? 's' : ''}</span>
-          </div>
+          </button>
 
-          <div className="p360-howto">
+          {data.tie && !collapsed && (
+            <div className="p360-tienote">
+              <Info size={14} /> {data.n_winners} distributors are tied at the same net cost
+              (${data.offers!.find(o => o.is_winner)?.net_case?.toFixed(2)}/cs) — they're equally
+              the best buy. Pick on service, delivery or rep relationship.
+            </div>
+          )}
+
+          {!collapsed && <div className="p360-howto">
             Each card is one distributor's offer. <strong>Net cost</strong> (big number) is the true
             cost per case after every layer — frontline minus single-case discount, quantity discounts
             and RIP rebates — with rebates you're unlikely to reach discounted by your order history.
@@ -206,10 +217,12 @@ export default function Price360() {
             rebate. The <strong>value score</strong> (right) is net-cost-dominant: 70 net cost · 15 savings ·
             10 stability · 5 compliance. The <strong>RIP tiers</strong> show what you pay per case at each
             buy-quantity. Lowest net cost wins.
-          </div>
-          <div className="p360-offers">
-            {data.offers!.map(o => <OfferCard key={o.wholesaler + o.rank} offer={o} onProduct={goToProduct} />)}
-          </div>
+          </div>}
+          {!collapsed && (
+            <div className="p360-offers">
+              {data.offers!.map(o => <OfferCard key={o.wholesaler + o.rank} offer={o} onProduct={goToProduct} tie={!!data.tie} />)}
+            </div>
+          )}
 
           <div className="p360-foot">
             Net cost is authoritative — offers rank by reachability-adjusted effective net cost,

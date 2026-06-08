@@ -1236,17 +1236,22 @@ def price360_offers(con, match: str, typical_map: Optional[dict] = None,
         o["value_score"] = sc["score"]
         o["score_breakdown"] = sc["breakdown"]
     offers.sort(key=lambda o: (o["net_case"] if o["net_case"] is not None else 1e9))
-    for i, o in enumerate(offers):
-        o["rank"] = i + 1
-        o["is_winner"] = i == 0
+    for o in offers:
+        nc = o["net_case"]
+        # competition ranking: every offer tied at the lowest net cost is a
+        # co-winner (rank 1) — identical offers are never arbitrarily ordered.
+        o["rank"] = 1 + sum(1 for x in offers if x["net_case"] is not None
+                            and nc is not None and x["net_case"] < nc - 0.005)
+        o["is_winner"] = nc is not None and min_net is not None and abs(nc - min_net) < 0.005
         # "bigger rebate, costs more" (#11): biggest headline rebate yet a
         # STRICTLY higher net cost than the winner — the rebate misleads.
         o["rebate_misleads"] = bool(
             not o["is_winner"] and max_rebate > 0
             and o["rip_rebate_full"] >= max_rebate - 0.005
-            and min_net is not None and o["net_case"] is not None
-            and o["net_case"] > min_net + 0.005)
+            and min_net is not None and nc is not None
+            and nc > min_net + 0.005)
         o.pop("_pack", None)
+    n_winners = sum(1 for o in offers if o["is_winner"])
 
     meta = recs[0]
     # Same UPC + size => directly comparable. A differing filed proof is a data
@@ -1264,6 +1269,8 @@ def price360_offers(con, match: str, typical_map: Optional[dict] = None,
         "proof_warning": len(proofs) > 1,
         "reach_mode": reach_mode,
         "weights": PRICE360_WEIGHTS,
+        "tie": n_winners > 1,
+        "n_winners": n_winners,
         "offers": offers,
     }
 

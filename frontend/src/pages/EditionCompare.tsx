@@ -5,6 +5,7 @@ import { CalendarClock, ArrowRight, ArrowDownRight, ArrowUpRight, PlusCircle, Mi
 import { compare } from '../lib/api';
 import type { EditionRow } from '../lib/api';
 import { distributorName, DISTRIBUTOR_NAMES } from '../lib/distributors';
+import ProductSearchBox from '../components/ProductSearchBox';
 import './ComparePrices.css';
 import './EditionCompare.css';
 
@@ -144,7 +145,9 @@ export default function EditionCompare() {
 
           {/* filters */}
           <div className="cmp-filters">
-            <input placeholder="Search product or brand…" value={q} onChange={e => { setQ(e.target.value); setShown(100); }} />
+            <ProductSearchBox value={q} placeholder="Search product or brand…"
+              onChange={v => { setQ(v); setShown(100); }}
+              onSelect={p => { setQ(p.product_name); setShown(100); }} />
             <select value={change} onChange={e => { setChange(e.target.value); setShown(100); }}>
               {CHANGES.map(c => <option key={c.v} value={c.v}>{c.label}</option>)}
             </select>

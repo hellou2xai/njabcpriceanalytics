@@ -562,6 +562,8 @@ export interface Price360Response {
   proof_warning?: boolean;
   reach_mode?: string;
   weights?: Record<string, number>;
+  tie?: boolean;
+  n_winners?: number;
   offers?: Price360Offer[];
 }
 

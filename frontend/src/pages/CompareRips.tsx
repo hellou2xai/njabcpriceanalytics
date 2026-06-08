@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight, Zap, Layers, Sparkles, AlertTriangle } from 
 import { compare } from '../lib/api';
 import type { CompareRipRow } from '../lib/api';
 import { distributorName } from '../lib/distributors';
+import ProductSearchBox from '../components/ProductSearchBox';
 import './ComparePrices.css';
 import './CompareRips.css';
 
@@ -238,7 +239,9 @@ export default function CompareRips() {
           )}
 
           <div className="cmp-filters">
-            <input placeholder="Search product or brand…" value={q} onChange={e => { setQ(e.target.value); setShown(100); }} />
+            <ProductSearchBox value={q} placeholder="Search product or brand…"
+              onChange={v => { setQ(v); setShown(100); }}
+              onSelect={p => { setQ(p.product_name); setShown(100); }} />
             <select value={ptype} onChange={e => setPtype(e.target.value)}>
               <option value="">All categories</option>
               {types.map(t => <option key={t} value={t}>{t}</option>)}

@@ -1,9 +1,11 @@
 .psb { position: relative; flex: 1; min-width: 260px; max-width: 480px; }
 .psb-icon { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none; }
 .psb-input {
-  width: 100%; padding: 9px 12px 9px 34px; border: 1px solid var(--border);
-  border-radius: 8px; background: var(--surface); color: var(--text); font-size: 14px;
+  width: 100%; padding: 11px 12px 11px 36px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--surface); color: var(--text);
+  font-size: 16px; font-weight: 500;
 }
+.psb-input::placeholder { color: var(--text-muted); font-weight: 400; }
 .psb-list {
   position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 50;
   margin: 0; padding: 4px; list-style: none; max-height: 340px; overflow-y: auto;

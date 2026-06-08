@@ -1506,6 +1506,26 @@ def _t_closeouts(con, args):
     )
 
 
+def _t_edition_compare(con, args):
+    """Compare a distributor across two CPL editions (default latest two)."""
+    from backend.routers.compare import edition_comparison
+    w = (args.get("distributor") or args.get("wholesaler") or "").strip()
+    if not w:
+        return {"error": "Name a distributor (allied, fedway, opici, ...) to compare editions."}
+    older = (args.get("older") or args.get("month") or "").strip()
+    newer = (args.get("newer") or "").strip()
+    match = (args.get("match") or args.get("q") or "").strip()
+    scope = "product" if match else (args.get("scope") or "catalog")
+    change = (args.get("change") or args.get("direction") or "").strip()
+    if change in ("up", "increase"):
+        change = "increase"
+    elif change in ("down", "drop", "decrease"):
+        change = "decrease"
+    lim = int(args.get("limit") or (50 if scope == "catalog" else 20))
+    return edition_comparison(con, w, older, newer, scope, match, change,
+                              sort="net_delta", order="desc", limit=lim)
+
+
 def _t_price_360(con, args):
     """Holistic Price 360 label for ONE product across every distributor."""
     from backend.routers.compare import price360_offers
@@ -2182,6 +2202,7 @@ _DATA_TOOLS = {
     "size_value": (_t_size_value, "SIZE / VALUE efficiency for a brand/product: effective price per BOTTLE and per LITER (after discounts + RIP) across every size, ranked by best value-per-litre, plus near-free UPSIZE opportunities (e.g. when 750ML and 1L cost almost the same per bottle). Use for 'best value size', 'price per liter', '750 vs 1L', 'is the bigger bottle worth it'."),
     "rip_tier_gap": (_t_rip_tier_gap, "'Almost there' RIP tier gap for a brand/product (or rip_code), given optional cases the buyer plans (`have`): the rebate tier ladder, how many MORE cases reach each tier, the incremental rebate for stretching, and the next tier to aim for. Use for 'how close am I to the next rebate', 'worth buying more to hit the tier'."),
     "distributor_arbitrage": (_t_distributor_arbitrage, "Catalog-wide cross-distributor arbitrage: same product (UPC) sold by 2+ distributors, ranked by how much cheaper the cheapest is vs the dearest (effective case price). Optional category, min_savings_pct. Use for 'where can I save by switching distributor', 'biggest price gaps between distributors'."),
+    "edition_compare": (_t_edition_compare, "Compare ONE distributor across two CPL editions (price-file periods), defaulting to the latest two, and surface what changed in effective NET cost terms (not raw frontline). Returns a summary (counts that rose/fell/added/removed/RIP-changed) and per-product the net-cost change (case + bottle, $ + %) PLUS which underlying layer moved (frontline / discount / RIP gained/lost/modified), with added vs removed labelled. Args: distributor (required), older + newer (editions like '2026-05'; omit for latest two), match (a product, switches to single-product scope), change (increase|decrease|added|removed|rip), limit. Use for 'what changed at Fedway from May to June', 'biggest price increases this edition at Allied', 'which products did Opici drop', 'how did X's price change month over month at Fedway'."),
     "price_360": (_t_price_360, "PRICE 360 holistic label for ONE product across EVERY distributor that carries it: each offer reduced to one effective NET cost (case AND bottle) after all layers — frontline, single-case discount, quantity-discount tiers and RIP — ranked cheapest net cost first. Keeps invoice cost (legal, discounts only) separate from economic net cost (incl. rebates), flags when they diverge, gives a fixed-weight 0-100 value score, NJ-ABC pre-approval flags (>50 cases / missing small-qty tier / >$1,000 rebate), and flags any runner-up whose bigger rebate still costs more. Args: match (product name or UPC), reach_mode (soft|hard|off, default soft). Use for 'what's the real/true cost of X', 'best overall deal on Y across distributors', 'who's actually cheapest on Z after everything', 'price 360 for X'."),
     "compare_rip_outcomes": (_t_compare_rip_outcomes, "Compare how ONE product's RIP rebate plays out ACROSS 2-3 distributors — a RIP is a volume-tiered rebate, so the SAME product can RIP very differently (different tiers, different minimum cases to unlock, combination-mix vs single-product). Returns each distributor's landed $/case at the chosen volume, best rebate at 1 case, min cases to unlock (least money down), case-mix breadth, the full BREAK-EVEN map (which distributor wins at which volume), and a plain-language verdict. Args: match (product name or UPC), distributors (array of slugs; default allied/fedway/opici), cases (default 5). Use for 'compare the RIP on X between Allied and Fedway', 'whose rebate on Y is better', 'who wins the RIP if I buy N cases', 'is Allied or Opici's RIP better on Z'."),
     "best_gp_deals": (_t_best_gp_deals, "Best gross-profit deals: products ranked by discount depth / GP% (savings vs list). Optional category, distributor, min_pct. Use for 'best margin deals', 'highest GP%', 'deepest discounts by percent'."),
@@ -3302,6 +3323,9 @@ def _tool_specs() -> list:
                          "description": "For compare_rip_outcomes: the 2-3 distributor slugs to compare (allied, fedway, opici, peerless, high_grade, kramer, shore_point, jersey_beverage). Default allied/fedway/opici."},
         "cases": {"type": "number", "description": "For compare_rip_outcomes: how many cases the buyer plans to buy (drives the winner@volume; default 5)."},
         "reach_mode": {"type": "string", "enum": ["soft", "hard", "off"], "description": "For price_360: how to value rebates the retailer may not reach — soft (discount by likelihood), hard (zero if unreachable), off (full value). Default soft."},
+        "older": {"type": "string", "description": "For edition_compare: the OLDER CPL edition (e.g. '2026-05'). Omit to default to the second-latest."},
+        "newer": {"type": "string", "description": "For edition_compare: the NEWER CPL edition (e.g. '2026-06'). Omit to default to the latest."},
+        "change": {"type": "string", "description": "For edition_compare: filter to a change type — increase, decrease, added, removed, rip."},
     }
     for name, (_fn, desc) in _DATA_TOOLS.items():
         specs.append({"name": name, "description": desc,

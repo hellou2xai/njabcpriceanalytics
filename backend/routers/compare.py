@@ -1308,3 +1308,216 @@ def price360(
     typical = _typical_cases_map(user.get("id") if user else 0, upc_norms) if recs else {}
     with get_duckdb() as con:
         return price360_offers(con, match, typical, reach_mode)
+
+
+# ===========================================================================
+# Edition comparison — one distributor across two CPL periods, every diff
+# expressed in Price 360 net-cost terms (not raw frontline).
+# ===========================================================================
+
+def _wholesaler_editions(con, src: str, w: str) -> list:
+    rows = con.execute(
+        f"SELECT DISTINCT edition FROM {src} WHERE wholesaler = ? ORDER BY edition DESC",
+        [w]).fetchall()
+    return [r[0] for r in rows]
+
+
+def _edition_rows(con, src: str, w: str, ed: str) -> dict:
+    """One best row per SKU identity for a (wholesaler, edition). Same-distributor
+    spelling is stable, so the identity is built in SQL."""
+    vn = _pricing.vintage_norm_sql("vintage")
+    ident_sql = ("LTRIM(upc,'0') || '|' || COALESCE(unit_volume,'') || '|' "
+                 "|| COALESCE(CAST(TRY_CAST(unit_qty AS DOUBLE) AS VARCHAR),'') || '|' "
+                 f"|| COALESCE({vn},'')")
+    df = con.execute(f"""
+        SELECT upc, product_name, product_type, brand, unit_qty, unit_volume,
+               vintage, abv_proof,
+               frontline_case_price, frontline_unit_price,
+               best_case_price, best_unit_price, effective_case_price,
+               rip_savings, has_rip, has_discount, rip_code,
+               LTRIM(upc,'0') AS upc_norm, TRY_CAST(unit_qty AS DOUBLE) AS uqd,
+               {vn} AS vintage_norm, {ident_sql} AS ident
+        FROM {src}
+        WHERE wholesaler = ? AND edition = ? AND {_VALID_UPC}
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY {ident_sql}
+            ORDER BY effective_case_price NULLS LAST) = 1
+    """, [w, ed]).df()
+    return {r["ident"]: _nan_clean(r) for r in df.to_dict(orient="records")}
+
+
+def _layer_changes(a: dict, b: dict) -> list:
+    """Which underlying layers moved between editions (B11)."""
+    out = []
+
+    def chg(k):
+        return abs((a.get(k) or 0) - (b.get(k) or 0)) > 0.005
+
+    if chg("frontline_case_price"):
+        out.append("frontline")
+    if chg("best_case_price"):
+        out.append("discount")   # invoice (single-case / QD) moved
+    if bool(a.get("has_rip")) != bool(b.get("has_rip")):
+        out.append("rip_gained" if b.get("has_rip") else "rip_lost")
+    elif chg("rip_savings"):
+        out.append("rip_modified")
+    return out
+
+
+@router.get("/editions/options")
+def edition_options(wholesaler: str = Query(...),
+                    user: Optional[dict] = Depends(get_optional_user)):
+    """Available CPL periods for a distributor + the default (latest two)."""
+    with get_duckdb() as con:
+        src = read_parquet(con, "cpl_enriched")
+        eds = _wholesaler_editions(con, src, wholesaler)
+    if not eds:
+        raise HTTPException(404, f"No editions for {wholesaler}")
+    return {
+        "wholesaler": wholesaler, "editions": eds,
+        "default_newer": eds[0],
+        "default_older": eds[1] if len(eds) > 1 else None,
+        "single_edition": len(eds) < 2,
+    }
+
+
+def edition_comparison(con, wholesaler: str, older: str = "", newer: str = "",
+                       scope: str = "catalog", match: str = "", change: str = "",
+                       sort: str = "net_delta", order: str = "desc",
+                       limit: int = 3000) -> dict:
+    """Core edition comparison (shared by the HTTP endpoint and the assistant
+    tool). Compares one distributor across two editions; every diff is the
+    change in effective NET cost, with the layer that moved + add/remove
+    classification + a delta summary."""
+    src = read_parquet(con, "cpl_enriched")
+    eds = _wholesaler_editions(con, src, wholesaler)
+    if not eds:
+        return {"wholesaler": wholesaler, "error": f"No editions for {wholesaler}"}
+    if len(eds) < 2:
+        return {"wholesaler": wholesaler, "single_edition": True, "editions": eds,
+                "note": f"{wholesaler} has only one edition ({eds[0]}) — nothing to compare."}
+    nw = newer if newer in eds else eds[0]
+    ol = older if older in eds else eds[1]
+    if nw == ol:
+        ol = next((e for e in eds if e != nw), ol)
+    a = _edition_rows(con, src, wholesaler, ol)   # older
+    b = _edition_rows(con, src, wholesaler, nw)   # newer
+
+    m = (match or "").strip().lower()
+    digits = re.sub(r"\D", "", m)
+    is_upc = len(digits) >= 8
+
+    def matches(rec):
+        if not m:
+            return True
+        return (rec.get("upc_norm") == digits.lstrip("0")) if is_upc \
+            else (m in (rec.get("product_name") or "").lower())
+
+    rows = []
+    summary = {"rose": 0, "fell": 0, "unchanged": 0, "added": 0, "removed": 0,
+               "rip_changed": 0, "not_comparable": 0}
+    for k in (set(a) | set(b)):
+        ra, rb = a.get(k), b.get(k)
+        ref = rb or ra
+        if m and not matches(ref):
+            continue
+        pack = (ref.get("uqd") or 1.0)
+        if ra and rb:
+            comparable = (_norm_proof(ra.get("abv_proof")) == _norm_proof(rb.get("abv_proof"))
+                          or _norm_proof(ra.get("abv_proof")) is None
+                          or _norm_proof(rb.get("abv_proof")) is None)
+            net_a, net_b = ra.get("effective_case_price"), rb.get("effective_case_price")
+            delta = round((net_b or 0) - (net_a or 0), 2) if net_a is not None and net_b is not None else None
+            pct = round(delta / net_a * 100, 1) if (delta is not None and net_a) else None
+            layers = _layer_changes(ra, rb)
+            if not comparable:
+                summary["not_comparable"] += 1
+            elif delta is None or abs(delta) < 0.005:
+                summary["unchanged"] += 1
+            elif delta > 0:
+                summary["rose"] += 1
+            else:
+                summary["fell"] += 1
+            if any(str(l).startswith("rip") for l in layers):
+                summary["rip_changed"] += 1
+            rows.append({
+                "ident": k, "status": "both", "comparable": comparable,
+                "product_name": ref.get("product_name"), "unit_volume": ref.get("unit_volume"),
+                "unit_qty": ref.get("unit_qty"), "product_type": ref.get("product_type"),
+                "upc": ref.get("upc"),
+                "net_a_case": net_a, "net_b_case": net_b,
+                "net_a_btl": round(net_a / pack, 2) if net_a and pack else None,
+                "net_b_btl": round(net_b / pack, 2) if net_b and pack else None,
+                "net_delta_case": delta, "net_delta_pct": pct,
+                "net_delta_btl": round(delta / pack, 2) if delta is not None and pack else None,
+                "frontline_a": ra.get("frontline_case_price"), "frontline_b": rb.get("frontline_case_price"),
+                "invoice_a": ra.get("best_case_price"), "invoice_b": rb.get("best_case_price"),
+                "rip_a": ra.get("rip_savings"), "rip_b": rb.get("rip_savings"),
+                "layers": layers,
+            })
+        elif rb:
+            summary["added"] += 1
+            rows.append({"ident": k, "status": "added", "comparable": True,
+                         "product_name": rb.get("product_name"), "unit_volume": rb.get("unit_volume"),
+                         "unit_qty": rb.get("unit_qty"), "product_type": rb.get("product_type"),
+                         "upc": rb.get("upc"), "net_b_case": rb.get("effective_case_price"),
+                         "net_b_btl": round((rb.get("effective_case_price") or 0) / pack, 2) if pack else None,
+                         "net_delta_case": None, "layers": []})
+        else:
+            summary["removed"] += 1
+            rows.append({"ident": k, "status": "removed", "comparable": True,
+                         "product_name": ra.get("product_name"), "unit_volume": ra.get("unit_volume"),
+                         "unit_qty": ra.get("unit_qty"), "product_type": ra.get("product_type"),
+                         "upc": ra.get("upc"), "net_a_case": ra.get("effective_case_price"),
+                         "net_a_btl": round((ra.get("effective_case_price") or 0) / pack, 2) if pack else None,
+                         "net_delta_case": None, "layers": []})
+
+    total = len(rows)
+    if change == "increase":
+        rows = [r for r in rows if (r.get("net_delta_case") or 0) > 0]
+    elif change == "decrease":
+        rows = [r for r in rows if (r.get("net_delta_case") or 0) < 0]
+    elif change == "added":
+        rows = [r for r in rows if r["status"] == "added"]
+    elif change == "removed":
+        rows = [r for r in rows if r["status"] == "removed"]
+    elif change == "rip":
+        rows = [r for r in rows if any(str(l).startswith("rip") for l in r.get("layers", []))]
+    elif change == "changed":
+        rows = [r for r in rows if r["status"] != "both"
+                or (r.get("net_delta_case") and abs(r["net_delta_case"]) >= 0.005)]
+
+    keyf = {
+        "net_delta": lambda r: r.get("net_delta_case") if r.get("net_delta_case") is not None else 0,
+        "net_delta_pct": lambda r: r.get("net_delta_pct") or 0,
+        "product": lambda r: (r.get("product_name") or "").lower(),
+    }
+    rows.sort(key=keyf.get(sort, keyf["net_delta"]),
+              reverse=(order != "asc") if sort != "product" else (order == "desc"))
+    rows = rows[:limit]
+
+    return {
+        "wholesaler": wholesaler, "single_edition": False,
+        "older": ol, "newer": nw, "editions": eds, "scope": scope,
+        "total": total, "summary": summary, "rows": rows,
+    }
+
+
+@router.get("/editions")
+def compare_editions(
+    wholesaler: str = Query(...),
+    older: str = Query(""),
+    newer: str = Query(""),
+    scope: str = Query("catalog", description="catalog | product"),
+    match: str = Query(""),
+    change: str = Query("", description="all|increase|decrease|added|removed|rip|changed"),
+    sort: str = Query("net_delta", description="net_delta | net_delta_pct | product"),
+    order: str = Query("desc"),
+    limit: int = Query(3000, ge=1, le=50000),
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    """Compare one distributor across two editions; every diff is the change in
+    effective NET cost (case + bottle, $ + %), which layer moved, with
+    added/removed classification and a delta summary."""
+    with get_duckdb() as con:
+        return edition_comparison(con, wholesaler, older, newer, scope, match,
+                                  change, sort, order, limit)

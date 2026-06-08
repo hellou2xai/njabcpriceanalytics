@@ -48,6 +48,49 @@ function BreakevenBand({ ranges, accent }: { ranges: { from: number; to: number 
   );
 }
 
+/** Side-by-side net $/case at each volume breakpoint, both distributors,
+ *  cheapest highlighted per row — the RIP/QD outcome aligned by quantity. */
+function TierCompare({ offers, curve, accent, cases }: {
+  offers: RateShopOffer[]; curve: { cases: number; net: Record<string, number | null>; winner: string | null }[];
+  accent: Record<string, string>; cases: number;
+}) {
+  const slugs = offers.map(o => o.wholesaler);
+  if (slugs.length < 2 || curve.length < 2) return null;
+  return (
+    <div className="rs-tc">
+      <div className="rs-tc-title">Landed $/case at each volume — side by side (incl. QD + RIP)</div>
+      <div className="table-container">
+        <table className="dense-table rs-tc-table">
+          <thead>
+            <tr>
+              <th>Buy</th>
+              {slugs.map(w => <th key={w} style={{ color: accent[w] }}>{distributorName(w)}</th>)}
+              <th>Cheapest</th>
+            </tr>
+          </thead>
+          <tbody>
+            {curve.map(pt => {
+              const vals = slugs.map(w => pt.net[w]).filter((v): v is number => typeof v === 'number');
+              const lo = vals.length ? Math.min(...vals) : null;
+              return (
+                <tr key={pt.cases} className={pt.cases === Math.ceil(cases) ? 'rs-tc-here' : ''}>
+                  <td>{pt.cases} cs{pt.cases === Math.ceil(cases) ? ' ◄ you' : ''}</td>
+                  {slugs.map(w => {
+                    const v = pt.net[w];
+                    const win = lo != null && typeof v === 'number' && Math.abs(v - lo) < 0.005;
+                    return <td key={w} className={`rs-tc-num${win ? ' rs-tc-win' : ''}`}>{v == null ? '–' : money(v)}</td>;
+                  })}
+                  <td>{pt.winner && pt.winner !== 'tie' ? <span style={{ color: accent[pt.winner], fontWeight: 700 }}>{distributorName(pt.winner)}</span> : <span className="text-muted">tie</span>}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function OfferCard({ o, accent, cases, unitVolume, unitQty, onProduct }: {
   o: RateShopOffer; accent: Record<string, string>; cases: number;
   unitVolume?: string; unitQty?: string; onProduct: (n: string, w: string) => void;
@@ -168,6 +211,7 @@ function ProductResult({ match, label, cases, onRemove, goToProduct }: {
           )}
           {data.verdict && <div className="rs-verdict">💡 {data.verdict}</div>}
           <BreakevenBand ranges={data.breakeven ?? []} accent={accent} />
+          <TierCompare offers={data.offers!} curve={data.curve ?? []} accent={accent} cases={cases} />
           <div className="rs-offers">
             {data.offers!.map(o => (
               <OfferCard key={o.wholesaler} o={o} accent={accent} cases={cases}

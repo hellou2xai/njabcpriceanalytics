@@ -58,6 +58,17 @@
 .rs-band-lbl { font-size: 13px; font-weight: 700; }
 .rs-band-range { font-size: 11px; color: var(--text-muted); }
 
+/* side-by-side tier comparison */
+.rs-tc { margin-bottom: 16px; max-width: 720px; }
+.rs-tc-title { font-size: 11.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .3px; margin-bottom: 5px; }
+.rs-tc-table th { text-align: right; }
+.rs-tc-table th:first-child, .rs-tc-table td:first-child { text-align: left; white-space: nowrap; }
+.rs-tc-table th:last-child, .rs-tc-table td:last-child { text-align: left; }
+.rs-tc-num { text-align: right; font-variant-numeric: tabular-nums; }
+.rs-tc-win { font-weight: 700; color: var(--green); background: color-mix(in srgb, var(--green) 9%, transparent); }
+.rs-tc-here { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.rs-tc-here td:first-child { font-weight: 700; color: var(--accent); }
+
 /* offers */
 .rs-offers { display: flex; flex-direction: column; gap: 10px; }
 .rs-card { display: flex; gap: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }

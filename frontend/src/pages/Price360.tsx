@@ -12,6 +12,11 @@ import './Price360.css';
 
 const money = (v?: number | null) => (v == null ? '–' : `$${Number(v).toFixed(2)}`);
 const pct = (v?: number | null) => (v == null ? '–' : `${v > 0 ? '+' : ''}${v.toFixed(1)}%`);
+// Total off the list price for a tier — always equals frontline − price_after, so it
+// can never contradict the displayed price (a deeper price always shows a bigger off).
+const offList = (frontline?: number | null, after?: number | null) =>
+  (frontline != null && after != null && frontline - after > 0.005)
+    ? <span className="p360-tsave"> −{money(frontline - after)}</span> : null;
 
 const REACH_LABEL: Record<string, string> = {
   likely: 'Reachable', partial: 'Partly reachable', unreachable: 'Unreachable',
@@ -127,16 +132,16 @@ function OfferCard({ offer, onProduct, tie, unitVolume, unitQty }: {
               {o.qd_tiers.map((t, i) => (
                 <tr key={`q${i}`}>
                   <td><span className="p360-tb p360-tb-qd">QD</span></td>
-                  <td>{t.cases_to_unlock} cs</td>
-                  <td><strong>{money(t.price_after)}</strong>{t.save_per_case ? <span className="p360-tsave"> −{money(t.save_per_case)}</span> : null}</td>
+                  <td>{t.buy_label ?? `${t.cases_to_unlock} cs`}</td>
+                  <td><strong>{money(t.price_after)}</strong>{offList(o.frontline_case, t.price_after)}</td>
                   <td>{money(t.price_after_btl)}</td>
                 </tr>
               ))}
               {o.rip_tiers.map((t, i) => (
                 <tr key={`r${i}`}>
-                  <td><span className="p360-tb p360-tb-rip">RIP</span></td>
-                  <td>{t.cases_to_unlock} cs</td>
-                  <td><strong>{money(t.price_after)}</strong>{t.save_per_case ? <span className="p360-tsave"> −{money(t.save_per_case)}</span> : null}</td>
+                  <td><span className="p360-tb p360-tb-rip">RIP</span>{t.code ? <span className="p360-tcode" title="RIP program code — rows sharing a code are tiers of the same deal">{t.code}</span> : null}</td>
+                  <td>{t.buy_label ?? `${t.cases_to_unlock} cs`}</td>
+                  <td><strong>{money(t.price_after)}</strong>{offList(o.frontline_case, t.price_after)}</td>
                   <td>{money(t.price_after_btl)}</td>
                 </tr>
               ))}

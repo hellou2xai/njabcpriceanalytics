@@ -597,6 +597,9 @@ export interface RateShopResponse {
 
 export interface Price360Tier {
   cases_to_unlock: number | null;
+  buy_label: string | null;
+  code: string | null;
+  raw_qty: number | null;
   unit: string | null;
   save_per_case: number | null;
   price_after: number | null;
@@ -660,6 +663,8 @@ export interface Price360Response {
 // ---- Compare RIPs (RIP outcome across 2-3 distributors) ----
 export interface RipTierRow {
   cases_to_unlock: number | null;
+  buy_label: string | null;
+  code: string | null;
   raw_qty: number | null;
   unit: string | null;
   rebate_per_case: number | null;

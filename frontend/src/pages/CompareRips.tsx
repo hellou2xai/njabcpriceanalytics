@@ -90,13 +90,13 @@ function RipDetail({ row, slugs, accent }: { row: CompareRipRow; slugs: string[]
               </div>
               {d.rip_code && <div className="rip-code">code {d.rip_code}</div>}
               <table className="rip-tier-table">
-                <thead><tr><th>Buy</th><th>−$/cs</th><th>$/cs</th><th>$/btl</th></tr></thead>
+                <thead><tr><th>Buy</th><th title="Total off the list price per case">off list/cs</th><th>$/cs</th><th>$/btl</th></tr></thead>
                 <tbody>
                   {d.rip_tiers.length === 0 && <tr><td colSpan={4} className="rip-none">no RIP tiers</td></tr>}
                   {d.rip_tiers.map((t, i) => (
                     <tr key={i}>
-                      <td>{t.cases_to_unlock ?? t.raw_qty} cs</td>
-                      <td className="text-green">−{money(t.rebate_per_case)}</td>
+                      <td>{t.buy_label ?? `${t.cases_to_unlock ?? t.raw_qty} cs`}{t.code && t.code !== d.rip_code ? <span className="rip-tcode" title="RIP program code — rows sharing a code are tiers of the same deal"> {t.code}</span> : null}</td>
+                      <td className="text-green">{d.frontline != null && t.price_after != null && d.frontline - t.price_after > 0.005 ? `−${money(d.frontline - t.price_after)}` : '–'}</td>
                       <td><strong>{money(t.price_after)}</strong></td>
                       <td>{t.price_after != null && row.unit_qty ? money(t.price_after / parseFloat(row.unit_qty)) : '–'}</td>
                       {t.is_time_sensitive && t.window_status !== 'expired' && (

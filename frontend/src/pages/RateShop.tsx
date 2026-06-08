@@ -161,8 +161,8 @@ function OfferCard({ o, accent, cases, unitVolume, unitQty, onProduct }: {
             <thead><tr><th></th><th>buy</th><th title="Total off the list price">off list/cs</th><th>/case</th><th>/bottle</th></tr></thead>
             <tbody>
               <tr><td><span className="rs-tb rs-tb-base">BASE</span></td><td>—</td><td className="rs-tsave">—</td><td><strong>{money(o.frontline_case)}</strong></td><td>{money(o.frontline_btl)}</td></tr>
-              {o.qd_tiers.map((t, i) => <tr key={`q${i}`}><td><span className="rs-tb rs-tb-qd">QD</span></td><td>{t.cases_to_unlock} cs</td><td className="rs-tsave">{offList(o.frontline_case, t.price_after)}</td><td><strong>{money(t.price_after)}</strong></td><td>{money(t.price_after_btl)}</td></tr>)}
-              {o.rip_tiers.map((t, i) => <tr key={`r${i}`}><td><span className="rs-tb rs-tb-rip">RIP</span></td><td>{t.cases_to_unlock} cs</td><td className="rs-tsave">{offList(o.frontline_case, t.price_after)}</td><td><strong>{money(t.price_after)}</strong></td><td>{money(t.price_after_btl)}</td></tr>)}
+              {o.qd_tiers.map((t, i) => <tr key={`q${i}`}><td><span className="rs-tb rs-tb-qd">QD</span></td><td>{t.buy_label ?? `${t.cases_to_unlock} cs`}</td><td className="rs-tsave">{offList(o.frontline_case, t.price_after)}</td><td><strong>{money(t.price_after)}</strong></td><td>{money(t.price_after_btl)}</td></tr>)}
+              {o.rip_tiers.map((t, i) => <tr key={`r${i}`}><td><span className="rs-tb rs-tb-rip">RIP</span>{t.code && <span className="rs-tcode" title="RIP program code — rows sharing a code are tiers of the same deal">{t.code}</span>}</td><td>{t.buy_label ?? `${t.cases_to_unlock} cs`}</td><td className="rs-tsave">{offList(o.frontline_case, t.price_after)}</td><td><strong>{money(t.price_after)}</strong></td><td>{money(t.price_after_btl)}</td></tr>)}
             </tbody>
           </table>
         )}

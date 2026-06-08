@@ -52,6 +52,7 @@
   padding: 1px 6px; border-radius: 8px;
 }
 .rip-code { font-size: 10.5px; color: var(--text-muted); font-family: var(--font-mono); margin-bottom: 6px; }
+.rip-tcode { font-size: 9px; color: var(--text-muted); font-family: var(--font-mono); }
 
 .rip-tier-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .rip-tier-table th {

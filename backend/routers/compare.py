@@ -522,8 +522,25 @@ def compare_tiers(
 # bought; the same product can RIP completely differently across distributors.
 # ===========================================================================
 
-def _is_btl_unit(unit) -> bool:
-    return "bottle" in (str(unit or "").lower()) or "btl" in str(unit or "").lower()
+from backend.rip_utils import is_bottle_unit as _is_btl_unit  # canonical: any 'b…' -> bottle
+# NOTE: do NOT re-implement bottle detection here. A local copy that only matched
+# the substrings 'bottle'/'btl' missed single-letter 'B' (Fedway) while pricing.py's
+# canonical detector matched it, so the SAME bottle tier rendered as '1 cs' at one
+# distributor and '3 cs' at another. Identity is defined once, in rip_utils.
+
+
+def _buy_label(tier: dict, pack: float) -> Optional[str]:
+    """Human buy requirement for a tier row: '3 btl' for a bottle-bundle tier,
+    '2 cs' for a case tier. Bottle tiers are NOT collapsed to cases — otherwise a
+    3-bottle and a 6-bottle tier of the same RIP both read '1 cs' and look like a
+    duplicate row (they are different tiers of the same program)."""
+    q = tier.get("qty")
+    if q is None:
+        return None
+    if _is_btl_unit(tier.get("unit")):
+        return f"{int(round(float(q)))} btl"
+    thr = _cases_threshold(tier, pack)
+    return f"{math.ceil((thr if thr is not None else float(q)) - 1e-9)} cs"
 
 
 def _norm_proof(v) -> Optional[float]:
@@ -608,6 +625,8 @@ def _rip_tier_rows(tiers: list, pack: float) -> list[dict]:
         thr = _cases_threshold(t, pack)
         rows.append({
             "cases_to_unlock": _m.ceil(thr - 1e-9) if thr is not None else None,
+            "buy_label": _buy_label(t, pack),
+            "code": t.get("code"),
             "raw_qty": t.get("qty"),
             "unit": t.get("unit"),
             "rebate_per_case": t.get("rip_only_save_per_case")
@@ -637,6 +656,9 @@ def _p360_tier_rows(tiers: list, pack: float, source: str) -> list[dict]:
                 else t.get("save_per_case"))
         rows.append({
             "cases_to_unlock": _m.ceil(thr - 1e-9) if thr is not None else None,
+            "buy_label": _buy_label(t, pack),
+            "code": t.get("code"),
+            "raw_qty": t.get("qty"),
             "unit": t.get("unit"),
             "save_per_case": save,
             "price_after": pa,

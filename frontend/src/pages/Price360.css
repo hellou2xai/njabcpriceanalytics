@@ -94,6 +94,7 @@
 .p360-tb-base { background: var(--surface-hover); color: var(--text-muted); border: 1px solid var(--border); }
 .p360-tb-qd { background: color-mix(in srgb, #2563eb 14%, transparent); color: #2563eb; }
 .p360-tb-rip { background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); }
+.p360-tcode { margin-left: 5px; font-size: 9px; font-family: var(--font-mono); color: var(--text-muted); letter-spacing: .2px; }
 
 .p360-foot { margin-top: 16px; font-size: 11.5px; color: var(--text-muted); line-height: 1.5; max-width: 760px; }
 

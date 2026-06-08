@@ -1,5 +1,30 @@
 /* Rate Shop — reuses Price360.css for .p360-sizes/.p360-sizechip */
-.rs-search { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+.rs-control {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  padding: 14px 16px; margin-bottom: 18px; max-width: 720px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.rs-search { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 0; }
+
+.rs-qty-inline { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.rs-qty-inline label { font-size: 14px; white-space: nowrap; }
+.rs-qty-inline input[type=range] { flex: 1; min-width: 160px; accent-color: var(--accent); }
+
+.rs-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding-top: 4px; border-top: 1px solid var(--border); }
+.rs-pchip {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600;
+  padding: 4px 6px 4px 11px; border-radius: 16px; background: var(--surface-hover); border: 1px solid var(--border);
+}
+.rs-pchip button { border: none; background: none; color: var(--text-muted); cursor: pointer; font-size: 13px; line-height: 1; padding: 0 2px; }
+.rs-pchip button:hover { color: var(--red); }
+.rs-clearall { border: none; background: none; color: var(--accent); cursor: pointer; font-size: 12px; text-decoration: underline; }
+
+.rs-result { margin-bottom: 26px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.rs-result:last-child { border-bottom: none; }
+.rs-remove { margin-left: auto; border: none; background: none; color: var(--text-muted); cursor: pointer; font-size: 14px; }
+.rs-remove:hover { color: var(--red); }
+.rs-remove-link { border: none; background: none; color: var(--accent); cursor: pointer; text-decoration: underline; font-size: 13px; }
+.rs-tsave { color: var(--green); }
 
 .rs-qty {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 16px;

@@ -52,7 +52,7 @@ function OfferCard({ o, accent, cases, unitVolume, unitQty, onProduct }: {
   o: RateShopOffer; accent: Record<string, string>; cases: number;
   unitVolume?: string; unitQty?: string; onProduct: (n: string, w: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);   // price breakdown expanded by default
   return (
     <div className={`rs-card${o.is_winner ? ' rs-win' : ''}`} style={o.is_winner ? { borderColor: accent[o.wholesaler] } : undefined}>
       <div className="rs-rank" style={{ color: o.is_winner ? accent[o.wholesaler] : undefined }}>
@@ -107,11 +107,11 @@ function OfferCard({ o, accent, cases, unitVolume, unitQty, onProduct }: {
 
         {open && (
           <table className="rs-tiers">
-            <thead><tr><th></th><th>buy</th><th>/case</th><th>/bottle</th></tr></thead>
+            <thead><tr><th></th><th>buy</th><th>off/cs</th><th>/case</th><th>/bottle</th></tr></thead>
             <tbody>
-              <tr><td><span className="rs-tb rs-tb-base">BASE</span></td><td>—</td><td><strong>{money(o.frontline_case)}</strong></td><td>{money(o.frontline_btl)}</td></tr>
-              {o.qd_tiers.map((t, i) => <tr key={`q${i}`}><td><span className="rs-tb rs-tb-qd">QD</span></td><td>{t.cases_to_unlock} cs</td><td><strong>{money(t.price_after)}</strong></td><td>{money(t.price_after_btl)}</td></tr>)}
-              {o.rip_tiers.map((t, i) => <tr key={`r${i}`}><td><span className="rs-tb rs-tb-rip">RIP</span></td><td>{t.cases_to_unlock} cs</td><td><strong>{money(t.price_after)}</strong></td><td>{money(t.price_after_btl)}</td></tr>)}
+              <tr><td><span className="rs-tb rs-tb-base">BASE</span></td><td>—</td><td className="rs-tsave">—</td><td><strong>{money(o.frontline_case)}</strong></td><td>{money(o.frontline_btl)}</td></tr>
+              {o.qd_tiers.map((t, i) => <tr key={`q${i}`}><td><span className="rs-tb rs-tb-qd">QD</span></td><td>{t.cases_to_unlock} cs</td><td className="rs-tsave">{t.save_per_case ? `−${money(t.save_per_case)}` : '—'}</td><td><strong>{money(t.price_after)}</strong></td><td>{money(t.price_after_btl)}</td></tr>)}
+              {o.rip_tiers.map((t, i) => <tr key={`r${i}`}><td><span className="rs-tb rs-tb-rip">RIP</span></td><td>{t.cases_to_unlock} cs</td><td className="rs-tsave">{t.save_per_case ? `−${money(t.save_per_case)}` : '—'}</td><td><strong>{money(t.price_after)}</strong></td><td>{money(t.price_after_btl)}</td></tr>)}
             </tbody>
           </table>
         )}
@@ -120,95 +120,39 @@ function OfferCard({ o, accent, cases, unitVolume, unitQty, onProduct }: {
   );
 }
 
-export default function RateShop() {
-  const [params, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
-  const [match, setMatch] = useState(params.get('match') ?? '');
-  const [input, setInput] = useState(params.get('match') ?? '');
-  const [cases, setCases] = useState(parseInt(params.get('cases') ?? '5', 10) || 5);
-  const [size, setSize] = useState(params.get('size') ?? '');
-  const [mode, setMode] = useState<'product' | 'basket'>(params.get('mode') === 'basket' ? 'basket' : 'product');
+const sizeLabel = (s: { unit_qty: string | null; unit_volume: string | null; vintage: string | null }) =>
+  `${s.unit_qty ?? '?'} × ${s.unit_volume ?? '?'}${s.vintage ? ` · ${s.vintage}` : ''}`;
 
-  useEffect(() => {
-    const next = new URLSearchParams();
-    if (mode === 'basket') next.set('mode', 'basket');
-    if (match) next.set('match', match);
-    if (cases !== 5) next.set('cases', String(cases));
-    if (size) next.set('size', size);
-    if (next.toString() !== params.toString()) setSearchParams(next, { replace: true });
-  }, [match, cases, size, mode]);
-
+/** One product's rate-shop result block (its own size state + query). */
+function ProductResult({ match, label, cases, onRemove, goToProduct }: {
+  match: string; label: string; cases: number; onRemove: () => void; goToProduct: (n: string, w?: string) => void;
+}) {
+  const [size, setSize] = useState('');
+  useEffect(() => { setSize(''); }, [match]);
   const { data, isLoading, error } = useQuery({
     queryKey: ['rateshop', match, cases, size],
     queryFn: () => compare.rateshop({ match, cases, size: size || undefined }),
     enabled: !!match,
   });
-
-  const goToProduct = (name: string, w?: string) =>
-    navigate(`/products?q=${encodeURIComponent(name)}${w ? `&wholesaler=${w}` : ''}`);
-  const submit = (e: React.FormEvent) => { e.preventDefault(); setSize(''); setMatch(input.trim()); };
-
   const accent = useMemo(() => {
     const m: Record<string, string> = {};
     (data?.offers ?? []).forEach((o, i) => { m[o.wholesaler] = ACCENTS[i % ACCENTS.length]; });
     return m;
   }, [data]);
-  const sizeLabel = (s: { unit_qty: string | null; unit_volume: string | null; vintage: string | null }) =>
-    `${s.unit_qty ?? '?'} × ${s.unit_volume ?? '?'}${s.vintage ? ` · ${s.vintage}` : ''}`;
 
   return (
-    <div className="page">
-      <div className="cmp-head"><h2><ShoppingBag size={20} style={{ verticalAlign: '-3px', marginRight: 8 }} />Rate Shop</h2></div>
-
-      <div className="rs-modes">
-        <button className={`rs-modebtn${mode === 'product' ? ' on' : ''}`} onClick={() => setMode('product')}>One product</button>
-        <button className={`rs-modebtn${mode === 'basket' ? ' on' : ''}`} onClick={() => setMode('basket')}>My order (basket)</button>
-      </div>
-
-      {mode === 'basket' && <BasketView />}
-
-      {mode === 'product' && <>
-      <form className="rs-search" onSubmit={submit}>
-        <ProductSearchBox value={input} onChange={setInput}
-          onSelect={p => { setSize(''); setMatch(p.upc || p.product_name); }}
-          onSubmit={() => { setSize(''); setMatch(input.trim()); }}
-          placeholder="What are you buying? — e.g. Glenlivet 12, Tito's, a barcode…" autoFocus />
-        <button className="btn" type="submit">Rate shop</button>
-      </form>
-
-      {!match && (
-        <div className="cmp-empty">
-          Find the genuinely cheapest distributor for a product <strong>at the quantity you actually buy</strong>.
-          Every QD and RIP is reduced to one true landed cost per case, ranked cheapest first — with the exact
-          conditions to capture each price, where the winner flips as you buy more, and a nudge when stretching
-          a case or two unlocks a deeper rebate.
-        </div>
-      )}
-
-      {!!match && (
-        <div className="rs-qty">
-          <label>I'm buying&nbsp;<strong>{cases}</strong>&nbsp;case{cases !== 1 ? 's' : ''}</label>
-          <input type="range" min={1} max={50} value={cases} onChange={e => setCases(parseInt(e.target.value, 10))} />
-          <div className="rs-qty-quick">
-            {[1, 2, 5, 10, 25].map(n => (
-              <button key={n} className={`rs-qchip${cases === n ? ' on' : ''}`} onClick={() => setCases(n)}>{n}</button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {!!match && isLoading && <p>Rate shopping…</p>}
+    <div className="rs-result">
+      {isLoading && <p>Rate shopping {label}…</p>}
       {!!error && <p className="text-red">Failed: {String((error as Error).message)}</p>}
-      {data && !data.found && <div className="cmp-empty">{data.note ?? 'No product matched.'}</div>}
-
+      {data && !data.found && <div className="cmp-empty">{data.note ?? `No match for "${label}".`} <button className="rs-remove-link" onClick={onRemove}>remove</button></div>}
       {data?.found && data.product && (
         <>
           <div className="rs-product">
             <span className="rs-pname" onClick={() => goToProduct(data.product!.product_name)}>{data.product.product_name}</span>
             <span className="rs-meta">{data.product.unit_qty} × {data.product.unit_volume}{data.product.abv_proof ? ` · ${data.product.abv_proof}` : ''}{data.product.product_type ? ` · ${data.product.product_type}` : ''}</span>
             <span className="rs-conf" title="All offers are the same barcode + size — directly comparable">🟢 verified match</span>
+            <button className="rs-remove" onClick={onRemove} title="Remove this product">✕</button>
           </div>
-
           {(data.available_sizes?.length ?? 0) > 1 && (
             <div className="p360-sizes">
               <span className="p360-sizes-lbl">Size:</span>
@@ -218,11 +162,8 @@ export default function RateShop() {
               ))}
             </div>
           )}
-
           {data.verdict && <div className="rs-verdict">💡 {data.verdict}</div>}
-
           <BreakevenBand ranges={data.breakeven ?? []} accent={accent} />
-
           <div className="rs-offers">
             {data.offers!.map(o => (
               <OfferCard key={o.wholesaler} o={o} accent={accent} cases={cases}
@@ -231,6 +172,92 @@ export default function RateShop() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+export default function RateShop() {
+  const [params, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const [products, setProducts] = useState<{ match: string; label: string }[]>(() => {
+    const ps = params.getAll('p');
+    if (ps.length) return ps.map(m => ({ match: m, label: m }));
+    const m = params.get('match');
+    return m ? [{ match: m, label: m }] : [];
+  });
+  const [input, setInput] = useState('');
+  const [cases, setCases] = useState(parseInt(params.get('cases') ?? '5', 10) || 5);
+  const [mode, setMode] = useState<'product' | 'basket'>(params.get('mode') === 'basket' ? 'basket' : 'product');
+
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (mode === 'basket') next.set('mode', 'basket');
+    products.forEach(p => next.append('p', p.match));
+    if (cases !== 5) next.set('cases', String(cases));
+    if (next.toString() !== params.toString()) setSearchParams(next, { replace: true });
+  }, [products, cases, mode]);
+
+  const goToProduct = (name: string, w?: string) =>
+    navigate(`/products?q=${encodeURIComponent(name)}${w ? `&wholesaler=${w}` : ''}`);
+  const addProduct = (match: string, label?: string) => {
+    const v = match.trim();
+    if (v && !products.some(p => p.match === v)) setProducts(ps => [...ps, { match: v, label: (label || v).trim() }]);
+    setInput('');
+  };
+  const submit = (e: React.FormEvent) => { e.preventDefault(); addProduct(input); };
+
+  return (
+    <div className="page">
+      <div className="cmp-head"><h2><ShoppingBag size={20} style={{ verticalAlign: '-3px', marginRight: 8 }} />Rate Shop</h2></div>
+
+      <div className="rs-modes">
+        <button className={`rs-modebtn${mode === 'product' ? ' on' : ''}`} onClick={() => setMode('product')}>By product</button>
+        <button className={`rs-modebtn${mode === 'basket' ? ' on' : ''}`} onClick={() => setMode('basket')}>My order (basket)</button>
+      </div>
+
+      {mode === 'basket' && <BasketView />}
+
+      {mode === 'product' && <>
+        {/* one control box: add products + the quantity that applies to all */}
+        <div className="rs-control">
+          <form className="rs-search" onSubmit={submit}>
+            <ProductSearchBox value={input} onChange={setInput}
+              onSelect={p => addProduct(p.upc || p.product_name, p.product_name)}
+              onSubmit={() => addProduct(input)}
+              placeholder="Add a product to rate-shop — e.g. Glenlivet 12, Tito's, a barcode…" autoFocus />
+            <button className="btn" type="submit">Add</button>
+          </form>
+          <div className="rs-qty-inline">
+            <label>Buying&nbsp;<strong>{cases}</strong>&nbsp;case{cases !== 1 ? 's' : ''} of each</label>
+            <input type="range" min={1} max={50} value={cases} onChange={e => setCases(parseInt(e.target.value, 10))} />
+            <div className="rs-qty-quick">
+              {[1, 2, 5, 10, 25].map(n => <button key={n} className={`rs-qchip${cases === n ? ' on' : ''}`} onClick={() => setCases(n)}>{n}</button>)}
+            </div>
+          </div>
+          {products.length > 0 && (
+            <div className="rs-chips">
+              {products.map(p => (
+                <span key={p.match} className="rs-pchip">{p.label}
+                  <button onClick={() => setProducts(ps => ps.filter(x => x.match !== p.match))} title="Remove">✕</button>
+                </span>
+              ))}
+              {products.length > 1 && <button className="rs-clearall" onClick={() => setProducts([])}>clear all</button>}
+            </div>
+          )}
+        </div>
+
+        {products.length === 0 && (
+          <div className="cmp-empty">
+            Add one or more products to find the genuinely cheapest distributor for each <strong>at the quantity you actually buy</strong>.
+            Every QD and RIP is reduced to one true landed cost per case — with the exact conditions to capture each price, where the
+            winner flips as you buy more, and a nudge when stretching a case or two unlocks a deeper rebate.
+          </div>
+        )}
+
+        {products.map(p => (
+          <ProductResult key={p.match} match={p.match} label={p.label} cases={cases}
+            onRemove={() => setProducts(ps => ps.filter(x => x.match !== p.match))} goToProduct={goToProduct} />
+        ))}
       </>}
     </div>
   );

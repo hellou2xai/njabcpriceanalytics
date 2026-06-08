@@ -472,7 +472,53 @@ export const compare = {
     request<CompareRipResponse>(`/api/compare/rips${qs(params)}`),
   price360: (params: Record<string, unknown>) =>
     request<Price360Response>(`/api/compare/price360${qs(params)}`),
+  editionOptions: (wholesaler: string) =>
+    request<EditionOptions>(`/api/compare/editions/options?wholesaler=${wholesaler}`),
+  editions: (params: Record<string, unknown>) =>
+    request<EditionCompareResponse>(`/api/compare/editions${qs(params)}`),
 };
+
+// ---- Edition comparison ----
+export interface EditionOptions {
+  wholesaler: string; editions: string[];
+  default_newer: string | null; default_older: string | null; single_edition: boolean;
+}
+export interface EditionRow {
+  ident: string;
+  status: 'both' | 'added' | 'removed';
+  comparable: boolean;
+  product_name: string;
+  unit_volume: string | null;
+  unit_qty: string | null;
+  product_type: string | null;
+  upc: string | null;
+  net_a_case?: number | null;
+  net_b_case?: number | null;
+  net_a_btl?: number | null;
+  net_b_btl?: number | null;
+  net_delta_case: number | null;
+  net_delta_pct?: number | null;
+  net_delta_btl?: number | null;
+  frontline_a?: number | null;
+  frontline_b?: number | null;
+  invoice_a?: number | null;
+  invoice_b?: number | null;
+  rip_a?: number | null;
+  rip_b?: number | null;
+  layers: string[];
+}
+export interface EditionCompareResponse {
+  wholesaler: string;
+  single_edition: boolean;
+  note?: string;
+  older?: string;
+  newer?: string;
+  editions?: string[];
+  scope?: string;
+  total?: number;
+  summary?: { rose: number; fell: number; unchanged: number; added: number; removed: number; rip_changed: number; not_comparable: number };
+  rows?: EditionRow[];
+}
 
 // ---- Price 360 (holistic per-product net-cost label) ----
 export interface Price360Offer {

@@ -4,7 +4,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ShoppingBag, Crown, TrendingUp, Clock, Layers as MixIcon, FileText, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
 import { compare } from '../lib/api';
 import type { RateShopOffer, RateShopCondition } from '../lib/api';
-import { distributorName } from '../lib/distributors';
+import { distributorName, skuLabel } from '../lib/distributors';
 import BasketView from '../components/BasketView';
 import ProductSearchBox from '../components/ProductSearchBox';
 import RowActions from '../components/RowActions';
@@ -69,6 +69,10 @@ function OfferCard({ o, accent, cases, unitVolume, unitQty, onProduct }: {
           {o.frontline_case != null && o.frontline_case !== o.net_case && <span className="rs-front">{money(o.frontline_case)}</span>}
         </div>
         <div className="rs-netbtl">{money(o.net_btl)}/bottle net{o.savings_case > 0 ? ` · saves ${money(o.savings_case)}/cs (${pct(o.savings_pct)})` : ''}</div>
+        <div className="rs-ids">
+          {o.upc && <span title="UPC barcode">UPC {o.upc}</span>}
+          {o.sku && <span title={`${distributorName(o.wholesaler)} item number`}>· {skuLabel(o.wholesaler)} {o.sku}</span>}
+        </div>
         {o.timing && (
           <div className={`rs-timing rs-timing-${o.timing.dir}`} title="Based on next month's effective price for this product">
             {o.timing.dir === 'drop'

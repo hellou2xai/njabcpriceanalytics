@@ -560,6 +560,7 @@ export interface RateShopOffer {
   edition: string | null;
   product_name: string | null;
   upc: string | null;
+  sku: string | null;
   frontline_case: number | null;
   frontline_btl: number | null;
   net_case: number | null;

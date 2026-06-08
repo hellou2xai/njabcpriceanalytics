@@ -76,6 +76,7 @@
 .rs-unit { font-size: 15px; font-weight: 500; color: var(--text-muted); margin-left: 2px; }
 .rs-front { font-size: 16px; color: var(--text-muted); text-decoration: line-through; }
 .rs-netbtl { font-size: 13.5px; color: var(--text-muted); margin-top: 2px; }
+.rs-ids { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); margin-top: 3px; display: flex; gap: 6px; flex-wrap: wrap; }
 
 .rs-timing { display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; font-size: 12.5px; font-weight: 600; padding: 2px 9px; border-radius: 9px; }
 .rs-timing-drop { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }

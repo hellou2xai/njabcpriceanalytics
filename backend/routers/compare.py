@@ -1655,6 +1655,11 @@ def rateshop_data(con, match: str, cases: float = 5, size_key: Optional[str] = N
     if not recs:
         return {"found": False, "match": match, "note": "No product matched a valid barcode."}
     _pricing.attach_tiers(con, recs)
+    try:
+        from backend.enrichment_join import attach_sku_mapping
+        attach_sku_mapping(con, recs)
+    except Exception:
+        pass
     all_slugs = list({r["wholesaler"] for r in recs})
     eds = _editions_for(con, src, all_slugs)
     mix = _case_mix_sizes(con, src, all_slugs, eds)
@@ -1691,6 +1696,7 @@ def rateshop_data(con, match: str, cases: float = 5, size_key: Optional[str] = N
         offers.append({
             "wholesaler": w, "edition": rec.get("edition"),
             "product_name": rec.get("product_name"), "upc": rec.get("upc"),
+            "sku": rec.get("abg_sku"),
             "frontline_case": frontline, "frontline_btl": rec.get("frontline_unit_price"),
             "net_case": net_n, "net_btl": round(net_n / pack, 2) if (net_n is not None and pack) else None,
             "savings_case": sav, "savings_pct": round(sav / frontline * 100, 1) if frontline else 0.0,

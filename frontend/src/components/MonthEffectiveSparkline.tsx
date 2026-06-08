@@ -25,6 +25,9 @@ export interface RipTier extends TierWindow {
   ripOnlySave?: number | null;
   // Partial-month (time-sensitive) window marker.
   ts?: boolean;
+  // RIP code this tier belongs to — lets the ladder group tiers by program so
+  // two RIPs on one UPC don't read as one jumbled pile.
+  code?: string | null;
 }
 
 export interface MonthBreakdown {

@@ -498,6 +498,7 @@ def attach_tiers(con, records, ref_date=None) -> None:
                     "qty": int(qf),
                     "unit": str(unit) if unit else "Cases",
                     "amount": af,
+                    "code": str(r.get("rip_code") or "") or None,
                     "description": str(r.get("rip_description") or "") or None,
                     "is_time_sensitive": rip_ts,
                     "from_date": rip_from,
@@ -615,7 +616,7 @@ def attach_tiers(con, records, ref_date=None) -> None:
             for i, v in enumerate(g_un): gp[f"gu{i}"] = v
             gwins = con.execute(f"""
                 SELECT wholesaler, edition, LTRIM(CAST(upc AS VARCHAR), '0') AS un,
-                       rip_description, from_date, to_date,
+                       rip_code, rip_description, from_date, to_date,
                        rip_unit_1, rip_qty_1, rip_amt_1,
                        rip_unit_2, rip_qty_2, rip_amt_2,
                        rip_unit_3, rip_qty_3, rip_amt_3,
@@ -651,6 +652,7 @@ def attach_tiers(con, records, ref_date=None) -> None:
                         "qty": int(qf),
                         "unit": str(unit) if unit else "Cases",
                         "amount": af,
+                        "code": str(r.get("rip_code") or "") or None,
                         "description": str(r.get("rip_description") or "") or None,
                         "is_time_sensitive": u_ts,
                         "from_date": u_from,
@@ -878,6 +880,7 @@ def attach_tiers(con, records, ref_date=None) -> None:
                 "save_per_bottle": round(combined_save / uq, 2) if uq > 0 else None,
                 "roi_pct": round(combined_save / cp * 100, 2) if cp > 0 else 0.0,
                 "rip_only_roi_pct": round(t["amount"] / bundle_cost * 100, 2) if bundle_cost > 0 else 0.0,
+                "code": t.get("code"),
                 "description": t.get("description"),
                 # RIP-source-row's window classification (carried through from
                 # the source-row scan above). True = this RIP code's validity

@@ -1497,6 +1497,7 @@ export interface CatalogTier extends TierWindow {
   save_per_bottle?: number | null;
   roi_pct: number;
   description?: string | null;
+  code?: string | null;   // RIP code this tier belongs to (for grouping by program)
   // True when this tier's source row (CPL row for discount tiers, RIP sheet
   // row for RIP tiers) has a PARTIAL-month validity window — i.e. the deal
   // is time-sensitive. derive.py excludes those from effective_case_price

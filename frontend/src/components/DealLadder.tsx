@@ -105,10 +105,32 @@ export default function DealLadder({ months, pack, emptyText }: {
     );
   };
 
+  // Group RIP tiers by their RIP code (program). One UPC can sit under more
+  // than one RIP — showing them as separate labeled blocks makes clear they're
+  // alternative programs (you pick one by how much you buy), not one big pile
+  // where "every RIP is available".
+  const ripGroups: { code: string | null; tiers: RipTier[] }[] = [];
+  for (const t of rip) {
+    const code = t.code ?? null;
+    const g = ripGroups.find(x => x.code === code);
+    if (g) g.tiers.push(t);
+    else ripGroups.push({ code, tiers: [t] });
+  }
+  const multiProgram = ripGroups.length > 1;
+
   return (
     <>
       {disc.map((t, i) => line('qd', t, i))}
-      {rip.map((t, i) => line('rip', t, i))}
+      {ripGroups.map((g, gi) => (
+        <div key={`rg${gi}`} className={multiProgram ? 'prod-rip-group' : undefined}>
+          {multiProgram && (
+            <div className="prod-rip-group-hdr" title="A separate RIP program for this product — pick the one that matches how much you buy. These do not stack.">
+              RIP{g.code ? ` ${g.code}` : ''}
+            </div>
+          )}
+          {g.tiers.map((t, i) => line('rip', t, i))}
+        </div>
+      ))}
     </>
   );
 }

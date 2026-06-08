@@ -22,6 +22,7 @@ function tierToRip(t: CatalogTier): RipTier {
     eff: t.price_after ?? 0,
     ripOnlySave: t.rip_only_save_per_case ?? null,
     ts: !!t.is_time_sensitive,
+    code: t.code ?? null,
     from_date: t.from_date,
     to_date: t.to_date,
     window_status: t.window_status,

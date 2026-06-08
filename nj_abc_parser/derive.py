@@ -321,6 +321,16 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
         "ELSE NULL END"
     )
 
+    # Normalised case/pack size (bottles-or-packs per case). The SAME UPC is
+    # reused across case sizes (HIGH WEST DBL RYE 3P vs 6P share one UPC), and
+    # only some distributors put the size in the product name — Fedway/Opici
+    # carry the identical name and differ ONLY in unit_qty. So unit_qty is part
+    # of a SKU's identity everywhere below (listing count, RIP window grouping,
+    # per-row RIP assignment, the cross-edition price-trend window), so a RIP or
+    # a price-trend never bleeds from one case size onto another. Strips the
+    # "12" vs "12.0" parquet round-trip artifact, same as build_price_changes.
+    uqnorm = "regexp_replace(TRIM(CAST(unit_qty AS VARCHAR)), '\\.0+$', '')"
+
     # Full-window predicate: a discount/RIP row is "full-window" when it has
     # no dates (evergreen) OR when its from_date is the 1st of a month AND
     # to_date is the last day of a month. Anything else (e.g. 5 Apr - 22 Apr)
@@ -409,7 +419,8 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
                    COUNT(DISTINCT (
                        product_name,
                        COALESCE(unit_volume, ''),
-                       COALESCE(CAST(vintage AS VARCHAR), '')
+                       COALESCE(CAST(vintage AS VARCHAR), ''),
+                       COALESCE({uqnorm}, '')
                    )) AS n_listings
             FROM read_parquet('{pdir}/cpl/**/data.parquet', hive_partitioning=true, union_by_name=true)
             GROUP BY wholesaler, edition, CAST(upc AS VARCHAR)
@@ -456,7 +467,7 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
             -- Dates as ISO strings (lexical compare == date compare). Collapsed
             -- on the same identity the `joined` CTE uses so the LEFT JOIN is 1:1.
             SELECT
-                cc.wholesaler, cc.edition, cc.upc, cc.product_name, cc.unit_volume, cc.vintage,
+                cc.wholesaler, cc.edition, cc.upc, cc.product_name, cc.unit_volume, cc.vintage, cc.unit_qty,
                 CAST(to_json(list(DISTINCT struct_pack(
                     from_date := CAST(rw.from_date AS VARCHAR),
                     to_date := CAST(rw.to_date AS VARCHAR),
@@ -487,7 +498,7 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
                     COALESCE(rw.best_case_per_case, 0),
                     COALESCE(rw.best_bottle_per_bottle, 0) * COALESCE(TRY_CAST(cc.unit_qty AS DOUBLE), 1)
                   ) > 0
-            GROUP BY cc.wholesaler, cc.edition, cc.upc, cc.product_name, cc.unit_volume, cc.vintage
+            GROUP BY cc.wholesaler, cc.edition, cc.upc, cc.product_name, cc.unit_volume, cc.vintage, cc.unit_qty
         ),
         cpl_with_rip AS (
             SELECT
@@ -547,10 +558,10 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
             SELECT
                 * EXCLUDE (code_best_rip),
                 MAX(code_best_rip) OVER (
-                    PARTITION BY wholesaler, edition, upc, product_name, unit_volume, vintage
+                    PARTITION BY wholesaler, edition, upc, product_name, unit_volume, vintage, unit_qty
                 ) AS best_rip_amt,
                 ROW_NUMBER() OVER (
-                    PARTITION BY wholesaler, edition, upc, product_name, unit_volume, vintage
+                    PARTITION BY wholesaler, edition, upc, product_name, unit_volume, vintage, unit_qty
                     ORDER BY COALESCE(code_best_rip, 0) DESC
                 ) AS rn
             FROM cpl_with_rip
@@ -626,6 +637,7 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
                 AND j.product_name IS NOT DISTINCT FROM rwa.product_name
                 AND j.unit_volume IS NOT DISTINCT FROM rwa.unit_volume
                 AND j.vintage IS NOT DISTINCT FROM rwa.vintage
+                AND j.unit_qty IS NOT DISTINCT FROM rwa.unit_qty
             WHERE j.rn = 1
         )
         -- Precompute the this-month -> next-month effective comparison so the
@@ -666,6 +678,7 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
                          COALESCE(CAST(upc AS VARCHAR), ''),
                          COALESCE(product_name, ''),
                          COALESCE(unit_volume, ''),
+                         COALESCE({uqnorm}, ''),
                          {vnorm}
             ORDER BY edition
         )

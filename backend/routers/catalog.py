@@ -1053,7 +1053,8 @@ def search_products(
                            COUNT(DISTINCT (
                                product_name,
                                COALESCE(unit_volume, ''),
-                               COALESCE(CAST(vintage AS VARCHAR), '')
+                               COALESCE(CAST(vintage AS VARCHAR), ''),
+                               COALESCE(regexp_replace(TRIM(CAST(unit_qty AS VARCHAR)), '\\.0+$', ''), '')
                            )) AS n_listings
                     FROM {src}
                     GROUP BY wholesaler, edition, CAST(upc AS VARCHAR)

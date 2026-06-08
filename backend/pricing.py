@@ -676,7 +676,8 @@ def attach_tiers(con, records, ref_date=None) -> None:
                 SELECT wholesaler, edition, LTRIM(CAST(upc AS VARCHAR), '0') AS un,
                        COUNT(DISTINCT (product_name,
                                        COALESCE(unit_volume, ''),
-                                       COALESCE(CAST(vintage AS VARCHAR), ''))) AS n
+                                       COALESCE(CAST(vintage AS VARCHAR), ''),
+                                       COALESCE(regexp_replace(TRIM(CAST(unit_qty AS VARCHAR)), '\\.0+$', ''), ''))) AS n
                 FROM {craw_lc}
                 WHERE wholesaler IN ({gw}) AND edition IN ({ge})
                   AND LTRIM(CAST(upc AS VARCHAR), '0') IN ({gu})

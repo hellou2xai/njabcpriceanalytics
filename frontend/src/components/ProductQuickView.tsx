@@ -287,7 +287,9 @@ function QuickViewModal({
                   <h3 style={{ margin: 0 }}>{p.product_name}</h3>
                 </div>
                 <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '6px 0 0' }}>
-                  {p.wholesaler} · {p.product_type} · {p.unit_volume} · {p.upc}
+                  {p.wholesaler} · {p.product_type} · {p.unit_volume}
+                  {(() => { const n = Number(p.unit_qty); return n > 1 ? ` · case of ${Math.round(n)}` : ''; })()}
+                  {' · '}{p.upc}
                   {abgSku(p.wholesaler, p.abg_sku) && <> · {skuLabel(p.wholesaler)} {p.abg_sku}</>}
                   {vintage && <span className="tag tag-blue" style={{ marginLeft: 8, fontSize: 11 }}>Vintage {vintage}</span>}
                 </p>

@@ -1506,6 +1506,25 @@ def _t_closeouts(con, args):
     )
 
 
+def _t_compare_rip_outcomes(con, args):
+    """Compare how ONE product's RIP plays out across 2-3 distributors."""
+    from backend.routers.compare import assistant_rip_comparison
+    match = (args.get("match") or args.get("q") or "").strip()
+    if not match:
+        return {"found": False, "note": "Name a product (or UPC) to compare RIPs for."}
+    dists = args.get("distributors")
+    if isinstance(dists, str):
+        dists = [d.strip() for d in dists.split(",") if d.strip()]
+    if not dists and args.get("distributor"):
+        dists = [args["distributor"]]
+    cases = args.get("cases")
+    try:
+        cases = float(cases) if cases else 5
+    except (TypeError, ValueError):
+        cases = 5
+    return assistant_rip_comparison(con, match, dists or None, cases)
+
+
 def _t_semantic_search(con, args):
     """Free-text semantic catalog search over the enrichment corpus.
 
@@ -2148,6 +2167,7 @@ _DATA_TOOLS = {
     "size_value": (_t_size_value, "SIZE / VALUE efficiency for a brand/product: effective price per BOTTLE and per LITER (after discounts + RIP) across every size, ranked by best value-per-litre, plus near-free UPSIZE opportunities (e.g. when 750ML and 1L cost almost the same per bottle). Use for 'best value size', 'price per liter', '750 vs 1L', 'is the bigger bottle worth it'."),
     "rip_tier_gap": (_t_rip_tier_gap, "'Almost there' RIP tier gap for a brand/product (or rip_code), given optional cases the buyer plans (`have`): the rebate tier ladder, how many MORE cases reach each tier, the incremental rebate for stretching, and the next tier to aim for. Use for 'how close am I to the next rebate', 'worth buying more to hit the tier'."),
     "distributor_arbitrage": (_t_distributor_arbitrage, "Catalog-wide cross-distributor arbitrage: same product (UPC) sold by 2+ distributors, ranked by how much cheaper the cheapest is vs the dearest (effective case price). Optional category, min_savings_pct. Use for 'where can I save by switching distributor', 'biggest price gaps between distributors'."),
+    "compare_rip_outcomes": (_t_compare_rip_outcomes, "Compare how ONE product's RIP rebate plays out ACROSS 2-3 distributors — a RIP is a volume-tiered rebate, so the SAME product can RIP very differently (different tiers, different minimum cases to unlock, combination-mix vs single-product). Returns each distributor's landed $/case at the chosen volume, best rebate at 1 case, min cases to unlock (least money down), case-mix breadth, the full BREAK-EVEN map (which distributor wins at which volume), and a plain-language verdict. Args: match (product name or UPC), distributors (array of slugs; default allied/fedway/opici), cases (default 5). Use for 'compare the RIP on X between Allied and Fedway', 'whose rebate on Y is better', 'who wins the RIP if I buy N cases', 'is Allied or Opici's RIP better on Z'."),
     "best_gp_deals": (_t_best_gp_deals, "Best gross-profit deals: products ranked by discount depth / GP% (savings vs list). Optional category, distributor, min_pct. Use for 'best margin deals', 'highest GP%', 'deepest discounts by percent'."),
     "closeouts": (_t_closeouts, "Closeout / last-chance buys being cleared this edition (won't return next month), ranked by savings. Optional category, distributor. Use for 'closeouts', 'last chance', 'what's being discontinued/cleared'."),
     "build_assortment": (_t_build_assortment, "ASSORTMENT BUILDER: a curated priced shortlist for a natural-language brief (q), honoring max_bottle_price / max_case_price (+ optional category/varietal/region). Use for 'build a by-the-glass list of cool-climate pinots under $18/btl', 'a value bourbon well', 'a sparkling list under $X'. Returns product cards."),
@@ -3262,6 +3282,9 @@ def _tool_specs() -> list:
         "when": {"type": "string", "enum": ["now", "next", "soon"], "description": "For best_to_buy: now (best to buy now), next (cheaper next edition → wait), soon (dated/time-sensitive deals ending within days)."},
         "rolling_keg": {"type": "boolean", "description": "For beer_mix_match: true to return ONLY rolling-keg rebate deals."},
         "threshold": {"type": "number", "description": "For rip_near_cap: minimum single-tier rebate dollars to include (default 700; the cap is $1,000)."},
+        "distributors": {"type": "array", "items": {"type": "string"},
+                         "description": "For compare_rip_outcomes: the 2-3 distributor slugs to compare (allied, fedway, opici, peerless, high_grade, kramer, shore_point, jersey_beverage). Default allied/fedway/opici."},
+        "cases": {"type": "number", "description": "For compare_rip_outcomes: how many cases the buyer plans to buy (drives the winner@volume; default 5)."},
     }
     for name, (_fn, desc) in _DATA_TOOLS.items():
         specs.append({"name": name, "description": desc,

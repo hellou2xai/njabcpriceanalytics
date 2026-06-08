@@ -913,3 +913,126 @@ def compare_rips(
             "insights": insights,
         },
     }
+
+
+def assistant_rip_comparison(con, match: str, wholesalers: Optional[list[str]] = None,
+                             cases: float = 5) -> dict:
+    """Single-product RIP-outcome comparison for the AI assistant. Resolves
+    `match` (product name or UPC) to the SKU that the most of the selected
+    distributors put a RIP on, then returns each distributor's landed $/case
+    at `cases`, best 1-case rebate, min cases to unlock, case-mix breadth,
+    combination flag, full break-even map and a verdict — the same logic as
+    the Compare RIPs page, scoped to one product."""
+    import math as _m
+    src = read_parquet(con, "cpl_enriched")
+    known = {r[0] for r in con.execute(f"SELECT DISTINCT wholesaler FROM {src}").fetchall()}
+    slugs = [s for s in (wholesalers or ["allied", "fedway", "opici"]) if s in known]
+    if len(slugs) < 2:
+        return {"found": False, "note": "Need at least two valid distributors to compare."}
+    eds = _editions_for(con, src, slugs)
+    raw = _common_rows(con, src, slugs, eds)
+
+    # Group ALL distributors per identity first; the same UPC is often named
+    # differently across distributors, so match the text to find candidate
+    # KEYS, then compare every distributor that carries that key.
+    by_key: dict[str, dict] = {}
+    for r in raw:
+        by_key.setdefault(r["match_key"], {})[r["wholesaler"]] = r
+
+    m = (match or "").strip().lower()
+    digits = re.sub(r"\D", "", m)
+    is_upc = len(digits) >= 8
+    cand_keys = []
+    for k, per in by_key.items():
+        hit = (k.split("|")[0] == digits.lstrip("0")) if is_upc else any(
+            m in (rec.get("product_name") or "").lower() for rec in per.values())
+        if hit:
+            cand_keys.append(k)
+    best_key, best_n = None, 0
+    for k in cand_keys:
+        per = by_key[k]
+        n_rip = sum(1 for w in slugs if per.get(w) and per[w].get("has_rip"))
+        if n_rip >= 2 and n_rip > best_n:
+            best_n, best_key = n_rip, k
+    if not best_key:
+        return {"found": False, "match": match,
+                "note": "No product matched with a RIP at 2+ of the selected distributors."}
+
+    per = by_key[best_key]
+    present = [w for w in slugs if per.get(w) and per[w].get("has_rip")]
+    flat = [per[w] for w in present]
+    _pricing.attach_tiers(con, flat)
+    mix = _case_mix_sizes(con, src, present, eds)
+    n = float(cases)
+
+    dists, packs, tiers_by_w = {}, {}, {}
+    for w in present:
+        rec = per[w]
+        pack = rec.get("uqd") or 1.0
+        tiers = rec.get("tiers", []) or []
+        packs[w], tiers_by_w[w] = pack, tiers
+        case_mix = _product_case_mix(rec, mix, w)
+        dists[w] = {
+            "landed_at_n": _landed_at(tiers, rec.get("frontline_case_price"), n, pack),
+            "frontline": rec.get("frontline_case_price"),
+            "rip_at_1": _rip_rebate_at(tiers, 1, pack),
+            "rip_at_n": _rip_rebate_at(tiers, n, pack),
+            "min_cases": _min_cases_to_rip(tiers, pack),
+            "case_mix": case_mix,
+            "is_combination": bool(case_mix and case_mix > 1),
+            "rip_code": rec.get("rip_code"),
+            "rip_tiers": _rip_tier_rows(tiers, pack),
+        }
+
+    landed_n = {w: d["landed_at_n"] for w, d in dists.items() if d["landed_at_n"] is not None}
+    winner, spread = None, None
+    if landed_n:
+        lo, hi = min(landed_n.values()), max(landed_n.values())
+        ws = [w for w, v in landed_n.items() if abs(v - lo) < _TIE_EPS]
+        winner = "tie" if len(ws) > 1 else ws[0]
+        spread = round(hi - lo, 2)
+
+    bpset = {1, int(_m.ceil(n))}
+    for w in present:
+        for t in tiers_by_w[w]:
+            thr = _cases_threshold(t, packs[w])
+            if thr is not None:
+                bpset.add(max(1, int(_m.ceil(thr - 1e-9))))
+    curve = []
+    for b in sorted(bpset)[:24]:
+        landed = {w: _landed_at(tiers_by_w[w], per[w].get("frontline_case_price"), b, packs[w])
+                  for w in present}
+        vals = {w: v for w, v in landed.items() if v is not None}
+        win = None
+        if vals:
+            lo = min(vals.values())
+            ws2 = [w for w, v in vals.items() if abs(v - lo) < _TIE_EPS]
+            win = "tie" if len(ws2) > 1 else ws2[0]
+        curve.append({"cases": b, "winner": win})
+    ranges = []
+    for pt in curve:
+        if ranges and ranges[-1]["winner"] == pt["winner"]:
+            ranges[-1]["to"] = pt["cases"]
+        else:
+            ranges.append({"from": pt["cases"], "to": pt["cases"], "winner": pt["winner"]})
+    if ranges:
+        ranges[-1]["to"] = None
+
+    row = {
+        "winner_at_n": winner, "spread_at_n": spread,
+        "breakeven": ranges, "flips": len({r["winner"] for r in ranges if r["winner"]}) > 1,
+        "dists": dists,
+    }
+    return {
+        "found": True,
+        "product_name": min((per[w].get("product_name") for w in present), key=len),
+        "unit_volume": per[present[0]].get("unit_volume"),
+        "unit_qty": per[present[0]].get("unit_qty"),
+        "distributors": present,
+        "cases": n,
+        "winner_at_n": winner,
+        "spread_at_n": spread,
+        "breakeven": ranges,
+        "dists": dists,
+        "verdict": _rip_verdict(row, present, n)["text"],
+    }

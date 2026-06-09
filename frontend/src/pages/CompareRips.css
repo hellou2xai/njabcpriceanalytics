@@ -124,7 +124,8 @@
 .rip2-dist-upc { opacity: 0.8; }
 .rip2-dist-price { font-size: 1.55rem; font-weight: 700; line-height: 1.1; display: flex; align-items: baseline; gap: 0; flex-wrap: wrap; }
 .rip2-per { font-size: 0.78rem; font-weight: 500; color: var(--text-muted); margin-left: 3px; }
-.rip2-dist-btl { font-size: 0.75rem; font-weight: 500; color: var(--text-muted); margin-left: 8px; }
+/* bottle price sits next to the case price and must read at the SAME size */
+.rip2-dist-btl { font-size: 1.55rem; font-weight: 700; color: var(--text-muted); margin-left: 10px; }
 .rip2-dist-pricenote { font-size: 0.74rem; color: var(--text-muted); margin: 1px 0 6px; }
 .rip2-dist-total { font-weight: 600; color: var(--text); }
 .rip2-dist-breakdown {
@@ -138,7 +139,8 @@
 .rip2-bd-seg { cursor: help; white-space: nowrap; }
 .rip2-bd-step { cursor: help; white-space: nowrap; display: inline-flex; align-items: center; gap: 3px; }
 .rip2-bd-d { color: #15803d; font-size: 0.72rem; }
-.rip2-bd-btl { color: var(--text-muted); font-size: 0.7rem; margin-left: 3px; }
+/* bottle price in the breakdown matches the case price size beside it */
+.rip2-bd-btl { color: var(--text-muted); font-size: inherit; font-weight: 600; margin-left: 4px; }
 .rip2-dist-breakdown { flex-wrap: wrap; gap: 4px 6px; }
 
 /* unlock sticker: cash down + money back for the first RIP */

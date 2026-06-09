@@ -1260,19 +1260,18 @@ def compare_rips(
             deepest_rebate, deepest_at = _rip_deepest(tiers, pack)
             comp = _compliance_flags(tiers, pack)
             rtr = _rip_tier_rows(tiers, pack)
-            # The FIRST rebate you can unlock: the lowest-quantity RIP tier with a
-            # rebate. Investment = cases you must buy * the deal price per case;
-            # total back = cases * rebate per case. This is the plain "put down $X,
-            # get $Y back" the buyer actually cares about.
-            first_tier = next((t for t in rtr
-                               if (t.get("rebate_per_case") or 0) > 0
-                               and (t.get("cases_to_unlock") or 0) > 0), None)
-            if first_tier:
-                uc = first_tier["cases_to_unlock"]
-                ppc = first_tier.get("price_after") or front
-                rpc = first_tier.get("rebate_per_case") or 0.0
+            # First rebate you can unlock: the fewest cases that turns on any RIP.
+            # Investment = cases * the ACTUAL best price per case at that volume (so
+            # it matches the headline, which already bakes in the quantity
+            # discount); money back = cases * the RIP rebate at that volume. Using
+            # the real landed price keeps the sticker, the headline and the
+            # List/Discount/RIP breakdown all in agreement.
+            uc = _min_cases_to_rip(tiers, pack)
+            if uc:
+                ppc = _landed_at(tiers, front, uc, pack)
+                rpc = _rip_rebate_at(tiers, uc, pack)
                 unlock_cases = uc
-                unlock_investment = round(uc * ppc, 2) if ppc else None
+                unlock_investment = round(uc * ppc, 2) if ppc is not None else None
                 unlock_rebate_total = round(uc * rpc, 2)
             else:
                 unlock_cases = unlock_investment = unlock_rebate_total = None

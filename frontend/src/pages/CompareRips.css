@@ -130,6 +130,8 @@
 .rip2-dist-breakdown > svg { color: var(--text-muted); }
 .rip2-bd-minus { color: var(--text-muted); }
 .rip2-bd-arrow { color: var(--text-muted); margin: 0 1px; }
+.rip2-bd-seg { cursor: help; white-space: nowrap; }
+.rip2-dist-breakdown { flex-wrap: wrap; gap: 4px 6px; }
 
 /* unlock sticker: cash down + money back for the first RIP */
 .rip2-unlock {

@@ -156,25 +156,26 @@ function DistPanel({ w, d, row, cases, accent, isWinner, onRipClick }: {
         price per case when buying {cases} case{cases !== 1 ? 's' : ''}
         {myTotal != null && <span className="rip2-dist-total"> · {money(myTotal)} total outlay</span>}
       </div>
-      {/* the whole story: list price, the deals applied, and the net above.
-          off = list - net reconciles to the headline; the RIP is one slice of
-          it, any quantity/other discount is the rest. */}
+      {/* the whole story, decomposed: List price, then the quantity discount, then
+          the RIP, landing on the net headline. off = QD + RIP reconciles exactly. */}
       {d.frontline != null && (() => {
         const net = d.landed_at_n;
         const off = net != null ? d.frontline! - net : null;
-        const qd = off != null && d.rip_at_n != null ? Math.max(0, off - d.rip_at_n) : null;
+        // split the total savings: RIP portion (capped) + the rest is the QD
+        const ripPart = off != null && d.rip_at_n != null ? Math.min(d.rip_at_n, off) : 0;
+        const qdPart = off != null ? Math.max(0, off - ripPart) : 0;
         const bdHint =
-          `List (sticker) price: ${money(d.frontline)}/case. ` +
-          (net != null ? `After all live deals at ${cases} case${cases !== 1 ? 's' : ''} you pay ${money(net)}/case` : '') +
-          (d.rip_at_n ? `, which includes a ${money(d.rip_at_n)} RIP` : '') +
-          (qd && qd > 0.005 ? ` plus ${money(qd)} in quantity/other discounts` : '') + '.';
+          `List (sticker) price ${money(d.frontline)}/case` +
+          (qdPart > 0.005 ? `, minus a ${money(qdPart)}/case quantity discount` : '') +
+          (ripPart > 0.005 ? `, minus a ${money(ripPart)}/case RIP rebate` : '') +
+          (net != null ? `, lands at ${money(net)}/case (what you pay buying ${cases} case${cases !== 1 ? 's' : ''}).` : '.');
         return (
           <div className="rip2-dist-breakdown" title={bdHint}>
-            <Tag size={11} /> List {money(d.frontline)}
-            {off != null && off > 0.005 && (
-              <> <span className="rip2-bd-arrow">→</span> pay <strong>{money(net)}</strong>
-                <span className="text-green"> save {money(off)}</span></>
-            )}
+            <Tag size={11} />
+            <span>List {money(d.frontline)}</span>
+            {qdPart > 0.005 && <span className="rip2-bd-seg" title="Quantity discount: the distributor's volume price break, before any RIP."> QD <span className="text-green">-{money(qdPart)}</span></span>}
+            {ripPart > 0.005 && <span className="rip2-bd-seg" title="RIP rebate: the NJ ABC state incentive on top of the price."> RIP <span className="text-green">-{money(ripPart)}</span></span>}
+            {net != null && <span> <span className="rip2-bd-arrow">→</span> pay <strong>{money(net)}</strong></span>}
             <Info text={bdHint} />
           </div>
         );

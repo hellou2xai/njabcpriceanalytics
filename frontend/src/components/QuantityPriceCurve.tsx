@@ -43,7 +43,9 @@ interface CurvePoint {
 }
 
 function toCases(t: CatalogTier, pack: number | null): number {
-  const isBtl = /btl|bottle/i.test(t.unit);
+  // ANY unit starting with 'b' is a bottle (Fedway uses a single "B");
+  // /btl|bottle/ missed it and plotted bottle tiers at the wrong case position.
+  const isBtl = /^\s*b/i.test(String(t.unit ?? ''));
   if (isBtl && pack && pack > 1) return t.qty / pack;
   return t.qty;
 }

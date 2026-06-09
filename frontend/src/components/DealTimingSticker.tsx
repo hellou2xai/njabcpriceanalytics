@@ -52,7 +52,7 @@ export function datedFromTiers(tiers: CatalogTier[] | undefined, frontline?: num
 // A single-CASE QD (buy 1 case) is the baseline case price — an incentive to buy
 // a case vs loose bottles — NOT a month-long deal. Excluded so it never poses as
 // the "every day" deal (and the backend excludes it from gap suppression too).
-const isCaseUnit = (u?: string | null) => !/btl|bottle/i.test(u ?? '');
+const isCaseUnit = (u?: string | null) => !/^\s*b/i.test(u ?? '');
 const isMonthlongQD = (qty: number, unit?: string | null) => !(qty === 1 && isCaseUnit(unit));
 
 export function everyDayFromTiers(tiers: CatalogTier[] | undefined, frontline?: number | null): DatedDeal | null {
@@ -80,7 +80,7 @@ export function everyDayFromMonths(months: MonthBreakdown[]): DatedDeal | null {
 }
 
 const unit1 = (qty: number, unit: string) => {
-  const u = /btl|bottle/i.test(unit) ? 'bottle' : 'case';
+  const u = /^\s*b/i.test(unit) ? 'bottle' : 'case';
   return qty === 1 ? u : `${u}s`;
 };
 

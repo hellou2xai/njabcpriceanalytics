@@ -47,8 +47,12 @@ function ozPerBottle(uv?: string | null): number | null {
 function oz(v: number | null | undefined): string {
   return v == null ? '' : ` ($${v.toFixed(2)}/oz)`;
 }
+// Bottle vs case unit. Canonical rule (rip_utils.is_bottle_unit): ANY unit
+// starting with 'b' is a bottle — Fedway abbreviates bottles as a single "B",
+// which /btl|bottle/ missed, so a "3 bottles" RIP tier mislabeled as "3 cases".
+const isBottleUnit = (unit?: string | null) => /^\s*b/i.test(String(unit ?? ''));
 const unitWord = (qty: number, unit: string) =>
-  /btl|bottle/i.test(unit) ? (qty === 1 ? 'bottle' : 'bottles') : (qty === 1 ? 'case' : 'cases');
+  isBottleUnit(unit) ? (qty === 1 ? 'bottle' : 'bottles') : (qty === 1 ? 'case' : 'cases');
 
 // Build the /product deep link for a related product card.
 function detailUrl(p: { wholesaler: string; product_name: string; upc?: string | null }): string {

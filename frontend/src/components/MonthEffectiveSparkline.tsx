@@ -107,7 +107,7 @@ function MonthBlock({ b }: { b: MonthBreakdown }) {
   const bestDiscEff = sortedDisc.length ? Math.min(...sortedDisc.map(t => t.eff)) : null;
   const bestRipEff = sortedRip.length ? Math.min(...sortedRip.map(t => t.eff)) : null;
 
-  const tierLabel = (t: RipTier) => `Buy ${t.qty} ${/btl|bottle/i.test(t.unit) ? 'btl' : 'cs'}`;
+  const tierLabel = (t: RipTier) => `Buy ${t.qty} ${/^\s*b/i.test(t.unit) ? 'btl' : 'cs'}`;
   const dollars = (n: number) => `$${n.toFixed(2)}`;
   // Always show BOTH case and bottle, the bottle with its size in brackets.
   const priceCB = (caseVal: number | null | undefined) => {

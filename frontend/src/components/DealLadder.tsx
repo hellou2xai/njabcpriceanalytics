@@ -18,7 +18,7 @@
 import type { MonthBreakdown, RipTier } from './MonthEffectiveSparkline';
 import { windowBadge, fmtDateRange } from '../lib/dealDates';
 
-const unitWord = (u: string) => (/btl|bottle/i.test(u) ? 'btl' : 'cs');
+const unitWord = (u: string) => (/^\s*b/i.test(u) ? 'btl' : 'cs');
 
 // Partial-month (time-sensitive) RIP/discount flag with its date window — so a
 // deal that's only valid part of the month is never mistaken for the dependable
@@ -54,7 +54,7 @@ export default function DealLadder({ months, pack, emptyText }: {
   // ONE clean ascending "buy more → pay less" ladder instead of interleaving
   // (2cs, 3btl, 5cs, 6btl read as a jumbled pile that looks like many RIPs).
   const caseQty = (t: RipTier) =>
-    (/btl|bottle/i.test(t.unit) && pack && pack > 0 ? t.qty / pack : t.qty);
+    (/^\s*b/i.test(t.unit) && pack && pack > 0 ? t.qty / pack : t.qty);
   const byWindow = (a: RipTier, b: RipTier) =>
     (a.from_date ?? '0000').localeCompare(b.from_date ?? '0000')
     || (a.to_date ?? '9999').localeCompare(b.to_date ?? '9999')
@@ -77,7 +77,7 @@ export default function DealLadder({ months, pack, emptyText }: {
     return Number.isInteger(r) ? String(r) : String(r);
   };
   const buyLabel = (t: RipTier) => {
-    const isBtl = /btl|bottle/i.test(t.unit);
+    const isBtl = /^\s*b/i.test(t.unit);
     if (isBtl && pack && pack > 0) return `${fmtCs(t.qty / pack)} cs`;
     return `${t.qty} ${uw(t.unit)}`;
   };

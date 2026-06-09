@@ -48,7 +48,7 @@ function fmtMonth(ed?: string | null): string {
   const m = /^(\d{4})-(\d{1,2})/.exec(ed);
   return m ? `${MONTHS[parseInt(m[2], 10) - 1] ?? ''} ${m[1]}`.trim() : ed;
 }
-const unitWord = (unit: string) => (/btl|bottle/i.test(unit) ? 'btl' : 'cs');
+const unitWord = (unit: string) => (/^\s*b/i.test(unit) ? 'btl' : 'cs');
 
 // One tiny line: green if cheaper now than at the start, red if pricier, grey
 // if flat. Transparent background, current value printed at the right.

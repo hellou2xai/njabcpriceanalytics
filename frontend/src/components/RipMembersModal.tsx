@@ -9,7 +9,7 @@ import { catalog } from '../lib/api';
  * full member list, not just the "other" siblings.
  *
  * Lives in `components/` so both the RIP Products page and the Catalog table
- * mount the same modal — kept in sync.
+ * mount the same modal, kept in sync.
  */
 export default function RipMembersModal({
   wholesaler, ripCode, onClose,
@@ -19,6 +19,9 @@ export default function RipMembersModal({
     queryFn: () => catalog.ripSiblings(wholesaler, ripCode),
   });
   const items = data?.items ?? [];
+  const tiers = data?.tiers ?? [];
+  const fmtWindow = (f: string | null, t: string | null) =>
+    f && t ? `${f.slice(5)} to ${t.slice(5)}` : 'all month';
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal rip-members-modal" onClick={e => e.stopPropagation()}>
@@ -31,10 +34,31 @@ export default function RipMembersModal({
             ({wholesaler})
           </span>
         </h3>
+
+        {/* the RIP's tier ladder, shown first so the buyer sees the deal terms */}
+        {tiers.length > 0 && (
+          <div className="rip-tier-box">
+            <div className="rip-tier-title">RIP tiers</div>
+            <table className="rip-tier-table">
+              <thead><tr><th>Buy</th><th>You get back</th><th>When</th></tr></thead>
+              <tbody>
+                {tiers.map((t, i) => (
+                  <tr key={i}>
+                    <td>{t.qty != null ? `${t.qty} ${t.unit || 'unit(s)'}` : (t.unit || '-')}</td>
+                    <td className="text-green font-bold">${t.amount.toFixed(2)}{t.unit?.toLowerCase().startsWith('case') ? '/case' : ''}</td>
+                    <td className="text-muted">{fmtWindow(t.from_date, t.to_date)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {tiers[0]?.description && <div className="rip-tier-desc">{tiers[0].description}</div>}
+          </div>
+        )}
+
         <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 0 }}>
           {isLoading
             ? 'Loading…'
-            : `${items.length} product${items.length === 1 ? '' : 's'} must be purchased together (any mix of these UPCs) to qualify for this rebate.`}
+            : `${items.length} product${items.length === 1 ? '' : 's'} (any mix of these UPCs, including different vintages or names on the same UPC) count toward this RIP.`}
         </p>
         {!isLoading && items.length === 0 && (
           <p className="text-muted" style={{ marginTop: 12 }}>No products listed under this RIP.</p>

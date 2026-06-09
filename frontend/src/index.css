@@ -3099,6 +3099,22 @@ tr:hover .row-menu-btn { opacity: 1; }
 
 /* "Products in this RIP" popup, opened from a clickable chip. */
 .rip-members-modal { max-width: 720px; }
+.rip-tier-box {
+  background: #f8fafc; border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 12px; margin: 8px 0 12px;
+}
+.rip-tier-title {
+  font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-muted); margin-bottom: 6px;
+}
+.rip-tier-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.rip-tier-table th {
+  text-align: left; font-weight: 600; color: var(--text-muted); font-size: 11px;
+  padding: 2px 8px 4px; border-bottom: 1px solid var(--border);
+}
+.rip-tier-table td { padding: 4px 8px; border-bottom: 1px solid var(--border); }
+.rip-tier-table tr:last-child td { border-bottom: none; }
+.rip-tier-desc { font-size: 12px; color: var(--text-muted); margin-top: 6px; font-style: italic; }
 .rip-members-list {
   display: flex; flex-direction: column; gap: 6px;
   margin-top: 12px;

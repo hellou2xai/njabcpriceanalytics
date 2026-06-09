@@ -1055,23 +1055,48 @@ def _p360_tier_rows(tiers: list, pack: float, source: str) -> list[dict]:
 
 
 def _case_mix_sizes(con, src: str, slugs: list[str], eds: dict[str, str]) -> dict[tuple, int]:
-    """(wholesaler, rip_code) -> number of distinct products sharing that RIP
-    code at that distributor — how wide you can MIX cases to reach a tier."""
+    """(wholesaler, rip_code) -> number of distinct UPCs you can MIX under that
+    rebate code to reach a tier.
+
+    Counted from the RIP SHEET, the same authoritative source the RipMembersModal
+    (/catalog/rip-siblings) uses, so the 'Mix to qualify' number always matches
+    the product list that opens when you click the RIP code. Counting from the
+    CPL's own rip_code column instead under-counts: a wholesaler can stack a SKU
+    under several rebates yet reference only one on its CPL row."""
     ed_pred, ed_params = _edition_pred(slugs, eds)
+    try:
+        rip_src = read_parquet(con, "rip")
+    except Exception:
+        return {}
+    # LEFT JOIN the rebate's distinct UPCs to the CPL: one output row per CPL
+    # listing (a UPC carried in two sizes/vintages counts twice, exactly as the
+    # modal lists it) plus one row per rebate UPC missing from the CPL (the modal
+    # shows those as 'not in current CPL' stubs). COUNT(*) therefore equals the
+    # modal's item count.
     sql = f"""
-        WITH base AS (
-            SELECT wholesaler,
-                   LTRIM(upc,'0') || '|' || COALESCE(unit_volume,'')
-                     || '|' || COALESCE(CAST(TRY_CAST(unit_qty AS DOUBLE) AS VARCHAR),'') AS ident,
-                   UNNEST(string_split(REGEXP_REPLACE(rip_code, '\\s+', ' '), ' ')) AS code
-            FROM {src} e
-            WHERE {ed_pred} AND has_rip AND rip_code IS NOT NULL AND rip_code <> ''
+        WITH codes AS (
+            SELECT DISTINCT wholesaler, edition,
+                   CAST(rip_code AS VARCHAR) AS code,
+                   LTRIM(CAST(upc AS VARCHAR), '0') AS un
+            FROM {rip_src}
+            WHERE {ed_pred}
+              AND rip_code IS NOT NULL
+              AND CAST(rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
+              AND upc IS NOT NULL
+              AND CAST(upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
+              AND LTRIM(CAST(upc AS VARCHAR), '0') NOT IN ('', 'None', 'nan')
         )
-        SELECT wholesaler, code, COUNT(DISTINCT ident) AS n
-        FROM base WHERE code <> '' AND code <> '0'
-        GROUP BY wholesaler, code
+        SELECT c.wholesaler, c.code, COUNT(*) AS n
+        FROM codes c
+        LEFT JOIN {src} e
+          ON e.wholesaler = c.wholesaler AND e.edition = c.edition
+         AND LTRIM(CAST(e.upc AS VARCHAR), '0') = c.un
+        GROUP BY c.wholesaler, c.code
     """
-    rows = con.execute(sql, ed_params).fetchall()
+    try:
+        rows = con.execute(sql, ed_params).fetchall()
+    except Exception:
+        return {}
     return {(w, c): int(n) for w, c, n in rows}
 
 
@@ -1163,6 +1188,28 @@ def compare_rips(
         # Keep only products that ALL selected distributors RIP.
         keys = [k for k, per in by_key.items()
                 if len(per) == len(slugs) and all(per[w].get("has_rip") for w in slugs)]
+
+        # Apply the text/brand/type narrowing HERE, before the expensive tier
+        # build, so a product-name search only runs attach_tiers on the handful of
+        # matching products instead of the whole shared-RIP universe (~2000 rows).
+        # The summary + counts below then reflect the searched context.
+        if q or brand or product_type:
+            qq, bb, pt = q.lower(), brand.lower(), product_type.lower()
+            def _match(per):
+                recs = per.values()
+                if pt and not any((r.get("product_type") or "").lower() == pt for r in recs):
+                    return False
+                if bb and not any(bb in (r.get("brand") or "").lower() for r in recs):
+                    return False
+                if qq and not any(
+                    qq in (r.get("product_name") or "").lower()
+                    or qq in (r.get("brand") or "").lower()
+                    or qq in str(r.get("upc") or "").lstrip("0")
+                    for r in recs):
+                    return False
+                return True
+            keys = [k for k in keys if _match(by_key[k])]
+
         flat = [by_key[k][w] for k in keys for w in slugs]
         _pricing.attach_tiers(con, flat)
         try:
@@ -1196,6 +1243,23 @@ def compare_rips(
             front = rec.get("frontline_case_price")
             deepest_rebate, deepest_at = _rip_deepest(tiers, pack)
             comp = _compliance_flags(tiers, pack)
+            rtr = _rip_tier_rows(tiers, pack)
+            # The FIRST rebate you can unlock: the lowest-quantity RIP tier with a
+            # rebate. Investment = cases you must buy * the deal price per case;
+            # total back = cases * rebate per case. This is the plain "put down $X,
+            # get $Y back" the buyer actually cares about.
+            first_tier = next((t for t in rtr
+                               if (t.get("rebate_per_case") or 0) > 0
+                               and (t.get("cases_to_unlock") or 0) > 0), None)
+            if first_tier:
+                uc = first_tier["cases_to_unlock"]
+                ppc = first_tier.get("price_after") or front
+                rpc = first_tier.get("rebate_per_case") or 0.0
+                unlock_cases = uc
+                unlock_investment = round(uc * ppc, 2) if ppc else None
+                unlock_rebate_total = round(uc * rpc, 2)
+            else:
+                unlock_cases = unlock_investment = unlock_rebate_total = None
             dists[w] = {
                 "frontline": front,
                 "abv_proof": rec.get("abv_proof"),
@@ -1222,10 +1286,19 @@ def compare_rips(
                 "pre_approval": comp["pre_approval"],        # NJ ABC statute flags
                 "compliance_flags": comp["flags"],
                 "rip_gaps": rec.get("rip_gaps") or [],       # no-RIP day gaps
-                "rip_tiers": _rip_tier_rows(tiers, pack),
+                # first unlockable rebate: cash down + money back
+                "unlock_cases": unlock_cases,
+                "unlock_investment": unlock_investment,
+                "unlock_rebate_total": unlock_rebate_total,
+                "rip_tiers": rtr,
                 "rip_code": rec.get("rip_code"),
                 "product_name": rec.get("product_name"),
                 "upc": rec.get("upc"),
+                # each distributor's OWN listed size, so the buyer can confirm the
+                # comparison is like-for-like (they always match: identity = UPC +
+                # size bucket + bottles-per-case).
+                "unit_qty": rec.get("unit_qty"),
+                "unit_volume": rec.get("unit_volume"),
             }
 
         # winner at N
@@ -1340,15 +1413,8 @@ def compare_rips(
         })
 
     # filters
-    if q:
-        qq = q.lower()
-        rows = [r for r in rows if qq in (r["product_name"] or "").lower()
-                or qq in (r["brand"] or "").lower()]
-    if product_type:
-        rows = [r for r in rows if (r["product_type"] or "").lower() == product_type.lower()]
-    if brand:
-        bb = brand.lower()
-        rows = [r for r in rows if bb in (r["brand"] or "").lower()]
+    # q / brand / product_type are already applied above (before attach_tiers) so
+    # search only pays for the matching products. Nothing to re-filter here.
     if time_sensitive_only:
         rows = [r for r in rows if any(
             d["has_time_sensitive"] for d in r["dists"].values())]
@@ -1437,7 +1503,7 @@ def compare_rips(
         lead = max(wins, key=lambda w: wins[w])
         if wins[lead]:
             insights.append(
-                f"At {int(n)} case(s), {lead} gives the best RIP outcome on "
+                f"At {int(n)} case(s), {lead} has the lowest price per case on "
                 f"{wins[lead]} of {total} shared-RIP products.")
         lm = max(least_money, key=lambda w: least_money[w])
         if least_money[lm]:
@@ -1448,7 +1514,7 @@ def compare_rips(
         if most_days[md]:
             insights.append(
                 f"{md} keeps a RIP live the most days on {most_days[md]} products "
-                f"(its rebate is available more of the month).")
+                f"(its RIP is live more of the month).")
         mm = max(most_mix, key=lambda w: most_mix[w])
         if most_mix[mm]:
             insights.append(

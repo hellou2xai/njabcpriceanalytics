@@ -115,6 +115,8 @@
 .rip2-dist-name { font-weight: 650; font-size: 0.88rem; }
 .rip2-best-tag { display: inline-flex; align-items: center; gap: 3px; font-size: 0.68rem; font-weight: 600; color: #15803d; background: #dcfce7; padding: 2px 7px; border-radius: 999px; }
 
+.rip2-dist-size { font-size: 0.72rem; color: var(--text-muted); margin: -2px 0 8px; cursor: help; }
+.rip2-dist-upc { opacity: 0.8; }
 .rip2-dist-price { font-size: 1.55rem; font-weight: 700; line-height: 1.1; display: flex; align-items: baseline; gap: 0; flex-wrap: wrap; }
 .rip2-per { font-size: 0.78rem; font-weight: 500; color: var(--text-muted); margin-left: 3px; }
 .rip2-dist-btl { font-size: 0.75rem; font-weight: 500; color: var(--text-muted); margin-left: 8px; }
@@ -128,6 +130,18 @@
 .rip2-dist-breakdown > svg { color: var(--text-muted); }
 .rip2-bd-minus { color: var(--text-muted); }
 .rip2-bd-arrow { color: var(--text-muted); margin: 0 1px; }
+
+/* unlock sticker: cash down + money back for the first RIP */
+.rip2-unlock {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px; cursor: help;
+  margin: 0 0 10px; padding: 7px 10px; border-radius: 8px;
+  background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; font-size: 0.82rem;
+}
+.rip2-unlock > svg { color: #2563eb; flex: none; }
+.rip2-unlock-back {
+  margin-left: auto; font-weight: 600; color: #15803d;
+  background: #dcfce7; border-radius: 999px; padding: 1px 9px; white-space: nowrap;
+}
 
 /* clickable RIP code chips */
 .rip2-codes { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }

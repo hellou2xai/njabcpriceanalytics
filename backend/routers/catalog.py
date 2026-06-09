@@ -3568,7 +3568,55 @@ def get_rip_siblings(
             _attach_price_3mo(con, records)
         except Exception:
             pass
-    return {"edition": edition, "rip_code": rc, "items": records}
+
+        # The rebate's tier ladder (buy N units -> $X back), shown at the top of
+        # the modal. All member rows of a code share the same statewide tiers, so
+        # we dedupe across them and sort by quantity.
+        tiers = []
+        try:
+            tdf = con.execute(f"""
+                SELECT rip_unit_1, rip_qty_1, rip_amt_1,
+                       rip_unit_2, rip_qty_2, rip_amt_2,
+                       rip_unit_3, rip_qty_3, rip_amt_3,
+                       rip_unit_4, rip_qty_4, rip_amt_4,
+                       from_date, to_date, rip_description
+                FROM {rip_src}
+                WHERE wholesaler = $w AND edition = $e
+                  AND CAST(rip_code AS VARCHAR) = $rc
+            """, {"w": wholesaler, "e": edition, "rc": rc}).fetchdf()
+            seen = set()
+            for r in tdf.to_dict("records"):
+                fd = str(r.get("from_date"))[:10] if r.get("from_date") is not None else None
+                td = str(r.get("to_date"))[:10] if r.get("to_date") is not None else None
+                for i in (1, 2, 3, 4):
+                    amt = r.get(f"rip_amt_{i}")
+                    qty = r.get(f"rip_qty_{i}")
+                    unit = r.get(f"rip_unit_{i}")
+                    try:
+                        amtf = float(amt)
+                    except (TypeError, ValueError):
+                        continue
+                    if amtf != amtf or amtf <= 0:
+                        continue
+                    try:
+                        qf = float(qty)
+                    except (TypeError, ValueError):
+                        qf = None
+                    key = (unit, qf, round(amtf, 2), fd, td)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    tiers.append({
+                        "unit": (str(unit) if unit is not None else None),
+                        "qty": (int(qf) if qf is not None and qf == int(qf) else qf),
+                        "amount": round(amtf, 2),
+                        "from_date": fd, "to_date": td,
+                        "description": (str(r.get("rip_description")) if r.get("rip_description") is not None else None),
+                    })
+            tiers.sort(key=lambda t: (t["qty"] if t["qty"] is not None else 1e9, t["amount"]))
+        except Exception:
+            tiers = []
+    return {"edition": edition, "rip_code": rc, "items": records, "tiers": tiers}
 
 
 # Strip size / volume / pack tokens from a product name so different-sized SKUs

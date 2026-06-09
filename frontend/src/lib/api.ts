@@ -45,6 +45,15 @@ function qs(params: Record<string, unknown>): string {
 }
 
 // ---- Catalog ----
+export interface RipSheetTier {
+  unit: string | null;       // "Case(s)", "Bottle(s)", ...
+  qty: number | null;        // buy quantity to unlock
+  amount: number;            // rebate $ per unit
+  from_date: string | null;
+  to_date: string | null;
+  description: string | null;
+}
+
 export const catalog = {
   search: (params: Record<string, unknown>) =>
     request<{ total: number; items: Product[]; corrected_query?: string | null }>(`/api/catalog/search${qs(params)}`),
@@ -78,7 +87,7 @@ export const catalog = {
       `/api/catalog/product-breakdown/${encodeURIComponent(wholesaler)}/${encodeURIComponent(name)}${qs(opts ?? {})}`
     ),
   ripSiblings: (wholesaler: string, ripCode: string, opts?: { edition?: string; exclude_upc?: string }) =>
-    request<{ edition: string | null; rip_code: string; items: Product[] }>(
+    request<{ edition: string | null; rip_code: string; items: Product[]; tiers?: RipSheetTier[] }>(
       `/api/catalog/rip-siblings/${encodeURIComponent(wholesaler)}/${encodeURIComponent(ripCode)}${qs(opts ?? {})}`
     ),
   // Every UPC that is the SAME product across sizes (spirits: enrichment /
@@ -716,11 +725,16 @@ export interface CompareRipDist {
   effective_pct: number | null;         // rebate as % of list
   pre_approval: boolean;                // NJ ABC statute flag
   compliance_flags: string[];
+  unlock_cases: number | null;          // cases to unlock the first RIP tier
+  unlock_investment: number | null;     // cash you put down to buy those cases
+  unlock_rebate_total: number | null;   // money back at that first tier
   rip_gaps: { from: string; to: string; days: number }[];
   rip_tiers: RipTierRow[];
   rip_code: string | null;
   product_name: string | null;
   upc: string | null;
+  unit_qty: string | null;
+  unit_volume: string | null;
 }
 export interface RipBreakeven { from: number; to: number | null; winner: string | null }
 export interface RipCurvePoint { cases: number; landed: Record<string, number | null>; winner: string | null }

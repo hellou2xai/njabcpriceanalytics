@@ -103,6 +103,8 @@ body {
   padding: 16px 12px; border-bottom: 1px solid var(--border);
 }
 .sidebar-title { font-size: 16px; font-weight: 700; color: var(--accent); }
+.sidebar-title-link { text-decoration: none; color: inherit; display: block; }
+.sidebar-title-link:hover .sidebar-title { text-decoration: underline; }
 .sidebar-toggle {
   background: none; border: none; color: var(--text-muted);
   cursor: pointer; padding: 4px;

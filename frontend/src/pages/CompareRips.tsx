@@ -613,6 +613,19 @@ export default function CompareRips() {
                   const isOpen = expanded === r.match_key;
                   const win = r.winner_at_n;
                   const winName = win && win !== 'tie' ? distributorName(win) : null;
+                  // "less to spend" = winner vs the NEXT-best distributor (the
+                  // realistic alternative you'd otherwise pick), so per-case gap x
+                  // cases reconciles exactly. For two distributors this is just the
+                  // other one; for three it's the runner-up, not the most expensive.
+                  const landeds = selected
+                    .map(w => r.dists[w]?.landed_at_n)
+                    .filter((v): v is number => v != null)
+                    .sort((a, b) => a - b);
+                  const gapPerCase = landeds.length >= 2 ? +(landeds[1] - landeds[0]).toFixed(2) : 0;
+                  const lessTotal = +(gapPerCase * cases).toFixed(2);
+                  const runnerName = winName
+                    ? distributorName(selected.find(w => r.dists[w]?.landed_at_n === landeds[1]) ?? '')
+                    : '';
                   return (
                     <div key={r.match_key} className={`rip2-product${isOpen ? ' is-open' : ''}`}>
                       <div className="rip2-product-head" onClick={() => setExpanded(isOpen ? null : r.match_key)}>
@@ -660,15 +673,15 @@ export default function CompareRips() {
                           </div>
                         </div>
                         <div className="rip2-verdict-banner"
-                          title={winName && r.spread_at_n
-                            ? `${winName} has the lower price per case at ${cases} cases (${money(r.spread_at_n)}/case cheaper), so buying your ${cases} cases there costs ${money(r.left_on_table)} less in total than the next distributor.`
+                          title={winName && gapPerCase > 0
+                            ? `${winName} has the lowest price per case at ${cases} cases, ${money(gapPerCase)}/case below the next-cheapest (${runnerName}). Over ${cases} case${cases !== 1 ? 's' : ''} that is ${money(lessTotal)} less to spend (${money((landeds[1]) * cases)} at ${runnerName} vs ${money(landeds[0] * cases)} here).`
                             : undefined}>
                           {winName ? (
                             <>
                               <Trophy size={14} style={{ color: accent[win!] }} />
                               <span><strong style={{ color: accent[win!] }}>{winName}</strong> has the lowest price at {cases} cases
-                                {r.spread_at_n ? <>: {money(r.spread_at_n)}/case lower price</> : null}
-                                {r.left_on_table ? <span className="rip2-stake"> · {money(r.left_on_table)} less to spend in total</span> : null}
+                                {gapPerCase > 0 ? <>: {money(gapPerCase)}/case lower price</> : null}
+                                {lessTotal > 0 ? <span className="rip2-stake"> · {money(lessTotal)} less to spend in total</span> : null}
                               </span>
                             </>
                           ) : <span className="text-muted">Same cost at {cases} cases</span>}

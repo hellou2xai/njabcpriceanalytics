@@ -25,13 +25,17 @@ import { windowBadge, fmtDateRange } from '../lib/dealDates';
 const QD_COLOR = 'var(--accent)';
 const CASE_COLOR = '#2563eb';
 const BTL_COLOR = '#0d9488';
+const LANDED_COLOR = '#d97706';   // the tier you actually land on at a given qty
 
 interface CurvePoint {
   q: number;
-  casePrice: number;
+  casePrice: number;            // BEST achievable price at <= q cases (the envelope)
+  landedPrice: number;          // price of the tier you'd land on at EXACTLY q cases
+  landedTier: CatalogTier | null;
+  overpay: number;              // landedPrice - casePrice (>0 = over-committing costs more)
   btlPrice: number | null;
   isBreak: boolean;             // a tier threshold is crossed exactly at this qty
-  active: CatalogTier | null;   // the tier earning the current price
+  active: CatalogTier | null;   // the tier earning the BEST price
   next: { tier: CatalogTier; atCases: number } | null;
   totalCost: number;
   totalSave: number;
@@ -68,11 +72,20 @@ export function buildCurve(frontline: number | null, tiers: CatalogTier[],
         active = x.t;
       }
     }
-    // The first tier past q that would IMPROVE on the current price.
+    // The tier you'd LAND on committing exactly q cases = the one with the
+    // deepest threshold you've reached (usable is sorted ascending by `at`, so
+    // the last reached row). Its price can be HIGHER than the best (mix-RIP
+    // tiers aren't monotonic) — that gap is the over-commitment overpay.
+    const landedX = reached.length ? reached[reached.length - 1] : null;
+    const landedPrice = landedX ? (landedX.t.price_after as number) : frontline;
+    // The first tier past q that would IMPROVE on the current best price.
     const nxt = usable.find(x => x.at > q && (x.t.price_after as number) < casePrice);
     points.push({
       q,
       casePrice,
+      landedPrice,
+      landedTier: landedX ? landedX.t : null,
+      overpay: Math.max(0, landedPrice - casePrice),
       btlPrice: pack && pack > 0 ? casePrice / pack : null,
       isBreak: prevPrice != null && casePrice < prevPrice - 0.005,
       active,
@@ -117,8 +130,14 @@ function CurveTooltip({ active, payload, sizeLabel }: {
         {sizeLabel ? <span className="text-muted"> · {sizeLabel}</span> : null}
       </div>
       <div className="qpc-tip-row">
-        <span>Per case</span><strong>{usd(p.casePrice)}</strong>
+        <span>Best at {p.q} cs</span><strong>{usd(p.casePrice)}</strong>
       </div>
+      {p.overpay > 0.005 && (
+        <div className="qpc-tip-row qpc-tip-warn">
+          <span>This commitment's tier</span>
+          <strong>{usd(p.landedPrice)} (+{usd(p.overpay)}/cs)</strong>
+        </div>
+      )}
       {p.btlPrice != null && (
         <div className="qpc-tip-row">
           <span>Per bottle</span><strong>{usd(p.btlPrice)}</strong>
@@ -180,9 +199,15 @@ export default function QuantityPriceCurve({ frontline, tiers, pack, sizeLabel }
                    tickFormatter={(v: number) => `$${v.toFixed(v < 20 ? 2 : 0)}`} />
           )}
           <Tooltip content={<CurveTooltip sizeLabel={sizeLabel} />} cursor={{ strokeOpacity: 0.25 }} />
-          <Line yAxisId="case" type="stepAfter" dataKey="casePrice" name="Per case"
+          <Line yAxisId="case" type="stepAfter" dataKey="casePrice" name="Best per case"
                 stroke={CASE_COLOR} strokeWidth={2.25} dot={false} activeDot={{ r: 4 }}
                 isAnimationActive={false} />
+          {/* the tier you actually land on at each commitment — steps up AND down
+              for non-monotonic mix-RIP tiers; the gap above the best line is the
+              over-commitment overpay */}
+          <Line yAxisId="case" type="stepAfter" dataKey="landedPrice" name="Tier at this qty"
+                stroke={LANDED_COLOR} strokeWidth={1.75} strokeDasharray="5 3" dot={false}
+                activeDot={{ r: 3.5 }} isAnimationActive={false} />
           {showBtl && (
             <Line yAxisId="btl" type="stepAfter" dataKey="btlPrice" name="Per bottle"
                   stroke={BTL_COLOR} strokeWidth={1.75} strokeDasharray="5 3" dot={false}
@@ -197,7 +222,8 @@ export default function QuantityPriceCurve({ frontline, tiers, pack, sizeLabel }
         </ComposedChart>
       </ResponsiveContainer>
       <div className="qpc-legend">
-        <span><i className="qpc-swatch" style={{ background: CASE_COLOR }} /> per case</span>
+        <span><i className="qpc-swatch" style={{ background: CASE_COLOR }} /> best per case</span>
+        <span><i className="qpc-swatch qpc-swatch--dash" style={{ borderColor: LANDED_COLOR }} /> tier at this qty</span>
         {showBtl && <span><i className="qpc-swatch qpc-swatch--dash" style={{ borderColor: BTL_COLOR }} /> per bottle</span>}
         <span><i className="qpc-swatch qpc-dot" style={{ background: QD_COLOR }} /> QD tier</span>
         <span><i className="qpc-swatch qpc-dot" style={{ background: 'var(--green)' }} /> RIP tier</span>

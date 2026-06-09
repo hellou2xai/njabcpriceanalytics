@@ -11,9 +11,10 @@ import type { CompareRipRow, CompareRipDist } from '../lib/api';
 import { distributorName } from '../lib/distributors';
 import ProductSearchBox from '../components/ProductSearchBox';
 import RowActions from '../components/RowActions';
+import RipMembersModal from '../components/RipMembersModal';
 import './CompareRips.css';
 
-const money = (v?: number | null) => (v == null ? '–' : `$${Number(v).toFixed(2)}`);
+const money = (v?: number | null) => (v == null ? '-' : `$${Number(v).toFixed(2)}`);
 const ACCENTS = ['#2563eb', '#d97706', '#7c3aed'];
 const DEFAULT = ['allied', 'fedway', 'opici'];
 
@@ -83,8 +84,9 @@ function Metric({ icon, label, value, hint, tone }: {
 }
 
 /** Per-distributor panel for one product, in plain language. */
-function DistPanel({ w, d, row, cases, accent, isWinner }: {
+function DistPanel({ w, d, row, cases, accent, isWinner, onRipClick }: {
   w: string; d: CompareRipDist; row: CompareRipRow; cases: number; accent: string; isWinner: boolean;
+  onRipClick: (wholesaler: string, code: string) => void;
 }) {
   const pack = row.unit_qty ? parseFloat(row.unit_qty) : null;
   const btl = (v?: number | null) => (v != null && pack ? `${money(v / pack)}/btl` : null);
@@ -132,13 +134,29 @@ function DistPanel({ w, d, row, cases, accent, isWinner }: {
         your cost buying {cases} case{cases !== 1 ? 's' : ''}
         {myTotal != null && <span className="rip2-dist-total"> · {money(myTotal)} total</span>}
       </div>
-      {/* the whole story: list price, the rebate applied, the net above */}
-      {d.frontline != null && (
-        <div className="rip2-dist-breakdown" title={`List (frontline) case price before any rebate: ${money(d.frontline)}. ${d.rip_at_n ? `Best rebate you qualify for at ${cases} cases: ${money(d.rip_at_n)}/case.` : 'No rebate applies at this volume.'}`}>
-          <Tag size={11} /> List {money(d.frontline)}
-          {d.rip_at_n ? <> <span className="rip2-bd-minus">−</span> <span className="text-green">{money(d.rip_at_n)} rebate</span></> : null}
-        </div>
-      )}
+      {/* the whole story: list price, the deals applied, and the net above.
+          off = list - net reconciles to the headline; the rebate is one slice of
+          it, any quantity/other discount is the rest. */}
+      {d.frontline != null && (() => {
+        const net = d.landed_at_n;
+        const off = net != null ? d.frontline! - net : null;
+        const qd = off != null && d.rip_at_n != null ? Math.max(0, off - d.rip_at_n) : null;
+        const bdHint =
+          `List (sticker) price: ${money(d.frontline)}/case. ` +
+          (net != null ? `After all live deals at ${cases} case${cases !== 1 ? 's' : ''} you pay ${money(net)}/case` : '') +
+          (d.rip_at_n ? `, which includes a ${money(d.rip_at_n)} RIP rebate` : '') +
+          (qd && qd > 0.005 ? ` plus ${money(qd)} in quantity/other discounts` : '') + '.';
+        return (
+          <div className="rip2-dist-breakdown" title={bdHint}>
+            <Tag size={11} /> List {money(d.frontline)}
+            {off != null && off > 0.005 && (
+              <> <span className="rip2-bd-arrow">→</span> pay <strong>{money(net)}</strong>
+                <span className="text-green"> save {money(off)}</span></>
+            )}
+            <Info text={bdHint} />
+          </div>
+        );
+      })()}
 
       <div className="rip2-metrics">
         <Metric icon={<TrendingDown size={13} />} label="Just 1 case"
@@ -148,7 +166,7 @@ function DistPanel({ w, d, row, cases, accent, isWinner }: {
           value={d.min_cases ? `${d.min_cases} cs` : 'no rebate'}
           hint="The fewest cases you must buy before any rebate kicks in. Lower means less money down to start saving." />
         <Metric icon={<Trophy size={13} />} label="Biggest rebate"
-          value={d.deepest_rebate ? `${money(d.deepest_rebate)}/cs` : '–'}
+          value={d.deepest_rebate ? `${money(d.deepest_rebate)}/cs` : '-'}
           hint={d.deepest_at_cases ? `The largest rebate on offer: ${money(d.deepest_rebate)} off each case, once you reach ${d.deepest_at_cases} cases.` : 'The largest rebate on offer per case.'} />
         <Metric icon={<CalendarClock size={13} />} label="Rebate runs"
           value={`${d.active_days ?? 0} days`}
@@ -169,8 +187,8 @@ function DistPanel({ w, d, row, cases, accent, isWinner }: {
             value={d.case_mix && d.case_mix > 1 ? `${d.case_mix} products` : 'combo'}
             tone="good"
             hint={d.case_mix && d.case_mix > 1
-              ? `You can mix across ${d.case_mix} different products under this rebate code to reach the case count — far easier than buying that many of one item.`
-              : 'This rebate lets you mix several products to qualify.'} />
+              ? `You can mix across ${d.case_mix} different products under this rebate code to reach the case count, far easier than buying that many of one item. Click the RIP code below to see exactly which products count.`
+              : 'This rebate lets you mix several products to qualify. Click the RIP code below to see them.'} />
         )}
         {d.pre_approval && (
           <Metric icon={<ShieldAlert size={13} />} label="Pre-approval"
@@ -179,9 +197,23 @@ function DistPanel({ w, d, row, cases, accent, isWinner }: {
         )}
       </div>
 
+      {/* the actual RIP code(s): click to see every product in the rebate */}
+      {d.rip_code && d.rip_code.trim() && (
+        <div className="rip2-codes">
+          <span className="rip2-codes-label">RIP code{d.rip_code.trim().split(/\s+/).length > 1 ? 's' : ''}</span>
+          {d.rip_code.trim().split(/\s+/).filter(Boolean).map(rc => (
+            <button key={rc} type="button" className="rip-code-badge rip-code-chip"
+              title={`Show every product included in RIP ${rc} (the products you can mix to hit the tier)`}
+              onClick={() => onRipClick(w, rc)}>
+              {rc}
+            </button>
+          ))}
+        </div>
+      )}
+
       {d.rip_gaps.length > 0 && (
-        <div className="rip2-gap" title="Days this month with NO rebate at all — avoid buying then.">
-          <AlertTriangle size={11} /> No rebate {d.rip_gaps.map(g => `${g.from.slice(5)}–${g.to.slice(5)}`).join(', ')}
+        <div className="rip2-gap" title="Days this month with NO rebate at all. Avoid buying then.">
+          <AlertTriangle size={11} /> No rebate {d.rip_gaps.map(g => `${g.from.slice(5)} to ${g.to.slice(5)}`).join(', ')}
         </div>
       )}
     </div>
@@ -198,7 +230,7 @@ function RipDetail({ row, slugs, accent, cases }: { row: CompareRipRow; slugs: s
           <div className="rip2-be-rows">
             {row.breakeven.filter(b => b.winner).map((b, i) => (
               <span key={i} className="rip2-be">
-                {b.from}{b.to ? `–${b.to}` : '+'} cs:{' '}
+                {b.from}{b.to ? `-${b.to}` : '+'} cs:{' '}
                 <strong style={{ color: b.winner !== 'tie' ? accent[b.winner!] : 'var(--text-muted)' }}>
                   {b.winner === 'tie' ? 'tie' : distributorName(b.winner!)}
                 </strong>
@@ -212,7 +244,7 @@ function RipDetail({ row, slugs, accent, cases }: { row: CompareRipRow; slugs: s
           const d = row.dists[w];
           return (
             <div key={w} className="rip2-ladder">
-              <div className="rip2-ladder-head" style={{ color: accent[w] }}>{distributorName(w)} — every rebate tier</div>
+              <div className="rip2-ladder-head" style={{ color: accent[w] }}>{distributorName(w)}: every rebate tier</div>
               {d.rip_code && <div className="rip2-code">rebate code {d.rip_code}</div>}
               <table className="rip2-tier-table">
                 <thead><tr><th>Buy</th><th>$ off / case</th><th>Price / case</th><th>When</th></tr></thead>
@@ -221,7 +253,7 @@ function RipDetail({ row, slugs, accent, cases }: { row: CompareRipRow; slugs: s
                   {d.rip_tiers.map((t, i) => (
                     <tr key={i}>
                       <td>{t.buy_label ?? `${t.cases_to_unlock ?? t.raw_qty} cs`}</td>
-                      <td className="text-green">{t.rebate_per_case != null ? `−${money(t.rebate_per_case)}` : '–'}</td>
+                      <td className="text-green">{t.rebate_per_case != null ? `-${money(t.rebate_per_case)}` : '-'}</td>
                       <td><strong>{money(t.price_after)}</strong></td>
                       <td>{t.is_time_sensitive && t.window_status !== 'expired'
                         ? <span className="rip2-tier-when">{t.from_date?.slice(5)}→{t.to_date?.slice(5)}</span>
@@ -250,10 +282,15 @@ export default function CompareRips() {
   const [tsOnly, setTsOnly] = useState(params.get('ts') === '1');
   const [comboOnly, setComboOnly] = useState(params.get('combo') === '1');
   const [expiringOnly, setExpiringOnly] = useState(params.get('exp') === '1');
+  const [timingDiff, setTimingDiff] = useState(params.get('timing') === '1');
+  const [qtyDiff, setQtyDiff] = useState(params.get('qty') === '1');
+  const [showAnomalies, setShowAnomalies] = useState(params.get('anom') === '1');
   const [sort, setSort] = useState(params.get('sort') ?? 'spread');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [shown, setShown] = useState(40);
   const [railOpen, setRailOpen] = useState(true);
+  const [ripModal, setRipModal] = useState<{ wholesaler: string; ripCode: string } | null>(null);
+  const openRip = (wholesaler: string, ripCode: string) => setRipModal({ wholesaler, ripCode });
   const navigate = useNavigate();
   const goToProduct = (name: string, wholesaler?: string) =>
     navigate(`/products?q=${encodeURIComponent(name)}${wholesaler ? `&wholesaler=${wholesaler}` : ''}`);
@@ -270,20 +307,25 @@ export default function CompareRips() {
     if (tsOnly) next.set('ts', '1');
     if (comboOnly) next.set('combo', '1');
     if (expiringOnly) next.set('exp', '1');
+    if (timingDiff) next.set('timing', '1');
+    if (qtyDiff) next.set('qty', '1');
+    if (showAnomalies) next.set('anom', '1');
     if (sort !== 'spread') next.set('sort', sort);
     if (next.toString() !== params.toString()) setSearchParams(next, { replace: true });
-  }, [selected, cases, q, ptype, brand, onlyDiff, minDiff, tsOnly, comboOnly, expiringOnly, sort]);
+  }, [selected, cases, q, ptype, brand, onlyDiff, minDiff, tsOnly, comboOnly, expiringOnly, timingDiff, qtyDiff, showAnomalies, sort]);
 
   const { data: options } = useQuery({ queryKey: ['compare-options'], queryFn: compare.options });
   const ready = selected.length >= 2 && selected.length <= 3;
   const { data, isLoading, error } = useQuery({
-    queryKey: ['compare-rips', selected, cases, q, ptype, brand, onlyDiff, minDiff, tsOnly, comboOnly, expiringOnly, sort],
+    queryKey: ['compare-rips', selected, cases, q, ptype, brand, onlyDiff, minDiff, tsOnly, comboOnly, expiringOnly, timingDiff, qtyDiff, showAnomalies, sort],
     queryFn: () => compare.rips({
       wholesalers: selected.join(','), cases, q: q || undefined,
       product_type: ptype || undefined, brand: brand || undefined,
       only_differences: onlyDiff || undefined, min_diff: minDiff,
       time_sensitive_only: tsOnly || undefined,
-      combo_only: comboOnly || undefined, expiring_only: expiringOnly || undefined, sort,
+      combo_only: comboOnly || undefined, expiring_only: expiringOnly || undefined,
+      timing_diff_only: timingDiff || undefined, qty_diff_only: qtyDiff || undefined,
+      include_anomalies: showAnomalies || undefined, sort,
     }),
     enabled: ready,
   });
@@ -328,7 +370,7 @@ export default function CompareRips() {
             </div>
 
             <div className="rip2-rail-sect">
-              <div className="rip2-rail-label">Distributors to compare (2–3)</div>
+              <div className="rip2-rail-label">Distributors to compare (2-3)</div>
               <div className="rip2-chips">
                 {(options ?? []).map(o => (
                   <button key={o.wholesaler}
@@ -404,6 +446,19 @@ export default function CompareRips() {
             </div>
 
             <div className="rip2-rail-sect">
+              <div className="rip2-rail-label">Compare beyond price</div>
+              <label className="rip2-toggle" title="Only products where the distributors differ on rebate timing: one runs all month, the other is a dated/limited deal.">
+                <input type="checkbox" checked={timingDiff} onChange={e => setTimingDiff(e.target.checked)} /> Rebate timing differs
+              </label>
+              <label className="rip2-toggle" title="Only products where the distributors differ on how many cases you must buy to unlock the rebate.">
+                <input type="checkbox" checked={qtyDiff} onChange={e => setQtyDiff(e.target.checked)} /> Unlock quantity differs
+              </label>
+              <label className="rip2-toggle" title="Show rows flagged as likely data issues: the same barcode priced very differently at each distributor, usually a pack-size mismatch.">
+                <input type="checkbox" checked={showAnomalies} onChange={e => setShowAnomalies(e.target.checked)} /> Show possible data issues
+              </label>
+            </div>
+
+            <div className="rip2-rail-sect">
               <div className="rip2-rail-label">Sort by</div>
               <select value={sort} onChange={e => setSort(e.target.value)} className="rip2-select">
                 <option value="spread">Biggest price gap</option>
@@ -459,7 +514,15 @@ export default function CompareRips() {
                 </div>
               )}
 
-              <div className="rip2-count">{rows.length.toLocaleString()} products</div>
+              <div className="rip2-count">
+                {rows.length.toLocaleString()} products
+                {!showAnomalies && (sum?.anomalies_hidden ?? 0) > 0 && (
+                  <button className="rip2-count-note" onClick={() => setShowAnomalies(true)}
+                    title="These are rows where the same barcode is priced very differently at each distributor (usually a pack-size mismatch). Click to show them.">
+                    · {sum!.anomalies_hidden} hidden as likely data issues (show)
+                  </button>
+                )}
+              </div>
 
               <div className="rip2-list">
                 {rows.slice(0, shown).map(r => {
@@ -480,13 +543,23 @@ export default function CompareRips() {
                             <div className="rip2-product-sub">
                               {r.unit_qty} × {r.unit_volume}
                               {!r.proof_match && (
-                                <span className="rip2-warn" title="The distributors list different proof/ABV for this barcode — double-check it's the same item before comparing.">
+                                <span className="rip2-warn" title="The distributors list different proof/ABV for this barcode. Double-check it's the same item before comparing.">
                                   <AlertTriangle size={11} /> proof differs
                                 </span>
                               )}
                               {r.flips && (
                                 <span className="rip2-flip" title="Which distributor is cheapest changes depending on how many cases you buy.">
                                   <Zap size={11} /> winner changes with volume
+                                </span>
+                              )}
+                              {r.timing_differs && (
+                                <span className="rip2-flag-time" title="The distributors differ on timing: one runs the rebate all month, the other only on certain dates. Check the dates before you buy.">
+                                  <CalendarClock size={11} /> timing differs
+                                </span>
+                              )}
+                              {r.quantity_differs && (
+                                <span className="rip2-flag-qty" title="The distributors differ on how many cases you must buy to unlock the rebate.">
+                                  <Layers size={11} /> unlock qty differs
                                 </span>
                               )}
                             </div>
@@ -497,7 +570,7 @@ export default function CompareRips() {
                             <>
                               <Trophy size={14} style={{ color: accent[win!] }} />
                               <span><strong style={{ color: accent[win!] }}>{winName}</strong> is cheapest at {cases} cases
-                                {r.spread_at_n ? <> — {money(r.spread_at_n)}/case less</> : null}
+                                {r.spread_at_n ? <>, {money(r.spread_at_n)}/case less</> : null}
                                 {r.left_on_table ? <span className="rip2-stake"> · {money(r.left_on_table)} at stake</span> : null}
                               </span>
                             </>
@@ -512,10 +585,16 @@ export default function CompareRips() {
                         </div>
                       </div>
 
+                      {r.data_anomaly && (
+                        <div className="rip2-anomaly" title={r.anomaly_reason}>
+                          <AlertTriangle size={14} /> Likely data issue: {r.anomaly_reason}
+                        </div>
+                      )}
+
                       <div className="rip2-dists" style={{ gridTemplateColumns: `repeat(${selected.length}, 1fr)` }}>
                         {selected.map(w => (
                           <DistPanel key={w} w={w} d={r.dists[w]} row={r} cases={cases}
-                            accent={accent[w]} isWinner={win === w} />
+                            accent={accent[w]} isWinner={win === w} onRipClick={openRip} />
                         ))}
                       </div>
 
@@ -544,6 +623,14 @@ export default function CompareRips() {
           )}
         </div>
       </div>
+
+      {ripModal && (
+        <RipMembersModal
+          wholesaler={ripModal.wholesaler}
+          ripCode={ripModal.ripCode}
+          onClose={() => setRipModal(null)}
+        />
+      )}
     </div>
   );
 }

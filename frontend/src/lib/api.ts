@@ -710,6 +710,7 @@ export interface CompareRipDist {
   deepest_at_cases: number | null;      // cases to reach it
   active_days: number | null;           // days this month a RIP is live
   expires_in_days: number | null;       // urgency; null = durable / nothing live
+  has_time_sensitive: boolean;          // a dated/time-limited window exists
   has_upcoming: boolean;                // a deeper RIP starts later this month
   total_rebate_at_n: number | null;     // total $ back at the chosen volume
   effective_pct: number | null;         // rebate as % of list
@@ -741,6 +742,10 @@ export interface CompareRipRow {
   curve: RipCurvePoint[];
   flips: boolean;
   has_difference: boolean;
+  data_anomaly: boolean;          // same UPC, very different list prices = likely pack mismatch
+  anomaly_reason: string;
+  timing_differs: boolean;        // distributors differ on rebate timing (dated vs all-month)
+  quantity_differs: boolean;      // distributors differ on cases needed to unlock
   verdict: { pick: string | null; text: string };
 }
 export interface CompareRipResponse {
@@ -757,6 +762,7 @@ export interface CompareRipResponse {
     least_money: Record<string, number>;
     most_active_days: Record<string, number>;
     most_case_mix: Record<string, number>;
+    anomalies_hidden: number;
     insights: string[];
   };
 }

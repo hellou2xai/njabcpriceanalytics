@@ -1,4 +1,4 @@
-/* ===== Compare Rebates (RIPs) — clarity-first, card-based layout ===== */
+/* ===== Compare Rebates (RIPs): clarity-first, card-based layout ===== */
 
 .rip2-page { max-width: 1340px; }
 .rip2-top h2 { margin: 0 0 6px; font-weight: 650; }
@@ -127,6 +127,29 @@
 }
 .rip2-dist-breakdown > svg { color: var(--text-muted); }
 .rip2-bd-minus { color: var(--text-muted); }
+.rip2-bd-arrow { color: var(--text-muted); margin: 0 1px; }
+
+/* clickable RIP code chips */
+.rip2-codes { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+.rip2-codes-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.rip2-codes .rip-code-chip { cursor: pointer; }
+
+/* product-header mismatch flags */
+.rip2-flag-time { display: inline-flex; align-items: center; gap: 3px; color: #b45309; }
+.rip2-flag-qty { display: inline-flex; align-items: center; gap: 3px; color: #7c3aed; }
+
+/* anomaly banner */
+.rip2-anomaly {
+  display: flex; align-items: flex-start; gap: 7px; margin: 0 16px 12px;
+  background: #fffbeb; border: 1px solid #fde68a; color: #92400e;
+  border-radius: 8px; padding: 8px 12px; font-size: 0.82rem; line-height: 1.4;
+}
+.rip2-anomaly > svg { flex: none; margin-top: 1px; }
+
+.rip2-count-note {
+  background: none; border: none; cursor: pointer; color: #b45309;
+  font-size: 0.82rem; padding: 0; margin-left: 4px; text-decoration: underline;
+}
 
 /* info cue: visible "?" that reveals the native title on hover */
 .rip2-tip { display: inline-flex; align-items: center; margin-left: 4px; cursor: help; color: var(--text-muted); opacity: 0.6; vertical-align: middle; }

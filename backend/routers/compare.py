@@ -588,7 +588,7 @@ def compare_products(
                 ex_txt = (f"e.g. {ex['product_name']}: {ex['winner_frontline']} is cheaper "
                           f"at list but {ex['winner_effective']} wins after deals.")
             insights.append(
-                f"{len(flips)} product(s) change winner once QD/RIP deals apply — {ex_txt}"
+                f"{len(flips)} product(s) change winner once QD/RIP deals apply: {ex_txt}"
             )
         if total_spread > 0:
             insights.append(
@@ -976,21 +976,28 @@ def _rip_active_days(tiers: list, ref_date=None) -> int:
 
 
 def _rip_expires_in(tiers: list, ref_date=None) -> Optional[int]:
-    """Days until the nearest LIVE dated RIP ends (urgency to buy). None when a
-    whole-month/evergreen RIP is live (not expiring) or nothing is active."""
+    """Days until the nearest LIVE dated RIP ends (urgency to buy). Looks only at
+    dated windows that are live TODAY; a concurrent whole-month rebate no longer
+    masks them, so a deal that is whole-month on one tier but ends Jun 17 on a
+    deeper tier still reads as ending soon. None when no dated window is live."""
     ref = _pricing._to_date(ref_date) or _pricing.eastern_today()
     cands = []
     for t in tiers:
-        if t.get("source") != "rip":
+        if t.get("source") != "rip" or t.get("window_status") != "active":
             continue
-        st = t.get("window_status")
-        if st in ("evergreen", "whole_month"):
-            return None
-        if st == "active":
-            to = _pricing._to_date(t.get("to_date"))
-            if to:
-                cands.append((to - ref).days)
+        to = _pricing._to_date(t.get("to_date"))
+        if to:
+            cands.append((to - ref).days)
     return min(cands) if cands else None
+
+
+def _rip_has_time_sensitive(tiers: list) -> bool:
+    """True when this SKU has a dated/time-limited RIP window (live now or
+    starting later this month), regardless of any concurrent whole-month rebate.
+    This is what makes a rebate 'time-limited' rather than always-on."""
+    return any(t.get("source") == "rip"
+               and t.get("window_status") in ("active", "upcoming")
+               for t in tiers)
 
 
 def _rip_has_upcoming(tiers: list) -> bool:
@@ -1086,7 +1093,7 @@ def _rip_verdict(row: dict, slugs: list[str], n: float) -> dict:
     parts, pick = [], w
 
     if w and w != "tie" and sp:
-        parts.append(f"{w.title()} is the better RIP at {ni} case(s) — "
+        parts.append(f"{w.title()} is the better RIP at {ni} case(s): "
                      f"${sp:.2f}/case lower landed cost.")
     elif w == "tie":
         parts.append(f"Landed cost ties at {ni} case(s).")
@@ -1103,16 +1110,16 @@ def _rip_verdict(row: dict, slugs: list[str], n: float) -> dict:
 
     if row["flips"]:
         be = "; ".join(
-            f"{r['from']}{('–' + str(r['to'])) if r['to'] else '+'} cs → {r['winner']}"
+            f"{r['from']}{('-' + str(r['to'])) if r['to'] else '+'} cs to {r['winner']}"
             for r in row["breakeven"] if r["winner"])
-        parts.append(f"Best choice shifts with volume — {be}.")
+        parts.append(f"Best choice shifts with volume: {be}.")
 
     combos = [x for x in slugs if d[x]["is_combination"]]
     if combos and len(combos) < len(slugs):
         cm = d[combos[0]]["case_mix"]
         parts.append(f"{combos[0].title()}'s RIP is a combination"
                      + (f" (mix across {cm} items)" if cm else "")
-                     + " — easier to hit the tier.")
+                     + ", easier to hit the tier.")
 
     return {"pick": pick, "text": " ".join(parts)}
 
@@ -1126,9 +1133,12 @@ def compare_rips(
     brand: str = Query("", description="Brand name contains"),
     only_differences: bool = Query(False),
     min_diff: float = Query(1.0, ge=0, description="Only show products whose best-vs-rest price gap at the chosen volume is at least this many $/case (0 = show all)"),
+    include_anomalies: bool = Query(False, description="Include rows flagged as likely data issues (same UPC, very different list prices = probable pack mismatch). Hidden by default."),
     time_sensitive_only: bool = Query(False, description="Only products where some distributor's RIP is a dated/time-limited deal"),
     combo_only: bool = Query(False, description="Only products with a combination/case-mix RIP at some distributor"),
     expiring_only: bool = Query(False, description="Only products with a live RIP that ends this month at some distributor"),
+    timing_diff_only: bool = Query(False, description="Only products where distributors differ on rebate TIMING (one dated/time-limited, the other all-month)"),
+    qty_diff_only: bool = Query(False, description="Only products where distributors differ on the QUANTITY of cases needed to unlock the rebate"),
     sort: str = Query("spread", description="spread | left_on_table | product | min_cases | best1 | deepest | active_days"),
     order: str = Query("desc"),
     limit: int = Query(2000, ge=1, le=50000),
@@ -1204,6 +1214,7 @@ def compare_rips(
                 "deepest_at_cases": deepest_at,             # cases to reach it
                 "active_days": _rip_active_days(tiers),      # days this month a RIP is live
                 "expires_in_days": _rip_expires_in(tiers),   # urgency (None = durable)
+                "has_time_sensitive": _rip_has_time_sensitive(tiers),  # dated window exists
                 "has_upcoming": _rip_has_upcoming(tiers),    # a deeper RIP starts later
                 "total_rebate_at_n": round(rip_n * n, 2) if rip_n else 0.0,
                 "effective_pct": (round(rip_n / front * 100, 1)
@@ -1261,6 +1272,43 @@ def compare_rips(
         # UI can warn (rare — same UPC usually means same proof).
         proofs = {_norm_proof(d["abv_proof"]) for d in dists.values()
                   if _norm_proof(d["abv_proof"]) is not None}
+
+        # Price is only one axis. A rebate can also differ between distributors on
+        # TIMING (one runs all month, the other is a dated deal that ends soon)
+        # and on QUANTITY (one unlocks at 1 case, the other needs 5). Flag those
+        # mismatches so the page can compare on dates and case counts, not just $.
+        ts_set = {dists[x]["has_time_sensitive"] for x in slugs}
+        timing_differs = len(ts_set) > 1            # some dated, some always-on
+        qty_set = {dists[x]["min_cases"] for x in slugs}
+        quantity_differs = len(qty_set) > 1         # different cases to unlock
+
+        # Data-sanity check. The same barcode should be the same physical pack at
+        # every distributor, so the list (frontline) prices should be in the same
+        # ballpark. When they diverge wildly, the distributors are almost
+        # certainly selling DIFFERENT packs under one shared UPC (e.g. a 120-count
+        # master case vs a 12-count sleeve), and any rebate filed for the big pack
+        # lands as an unbelievable net on the small one. Flag those so they don't
+        # masquerade as a real "best deal".
+        fronts = [d["frontline"] for d in dists.values() if d.get("frontline")]
+        anomaly, reason = False, ""
+        if len(fronts) >= 2:
+            lo_f, hi_f = min(fronts), max(fronts)
+            if lo_f > 0 and hi_f / lo_f > 2.5:
+                anomaly = True
+                reason = (f"List prices differ a lot for the same barcode "
+                          f"(${lo_f:,.2f} vs ${hi_f:,.2f}). The distributors are "
+                          f"likely selling different pack sizes under one UPC, so "
+                          f"this comparison may not be like-for-like.")
+        if not anomaly:
+            for x in slugs:
+                dd = dists[x]
+                f, rb = dd.get("frontline"), dd.get("rip_at_n")
+                if f and rb and rb / f > 0.6:
+                    anomaly = True
+                    reason = (f"The rebate wipes out over 60% of {x.title()}'s list "
+                              f"price (${f:,.2f}). Double-check the pack size before "
+                              f"trusting the net.")
+                    break
         rows.append({
             "match_key": key,
             "upc_norm": key.split("|")[0],
@@ -1285,6 +1333,10 @@ def compare_rips(
             "has_difference": bool(
                 (spread_n and spread_n > 0)
                 or len({r["winner"] for r in ranges if r["winner"]}) > 1),
+            "data_anomaly": anomaly,
+            "anomaly_reason": reason,
+            "timing_differs": timing_differs,
+            "quantity_differs": quantity_differs,
         })
 
     # filters
@@ -1299,13 +1351,16 @@ def compare_rips(
         rows = [r for r in rows if bb in (r["brand"] or "").lower()]
     if time_sensitive_only:
         rows = [r for r in rows if any(
-            (d["expires_in_days"] is not None) or d["has_upcoming"]
-            for d in r["dists"].values())]
+            d["has_time_sensitive"] for d in r["dists"].values())]
     if combo_only:
         rows = [r for r in rows if any(d["is_combination"] for d in r["dists"].values())]
     if expiring_only:
         rows = [r for r in rows if any(
             d["expires_in_days"] is not None for d in r["dists"].values())]
+    if timing_diff_only:
+        rows = [r for r in rows if r["timing_differs"]]
+    if qty_diff_only:
+        rows = [r for r in rows if r["quantity_differs"]]
 
     # AI verdict per row (deterministic, over the break-even data)
     for r in rows:
@@ -1346,10 +1401,20 @@ def compare_rips(
 
     total = len(rows)  # full common-RIP universe for this search context
 
-    # display filter (grid only — summary above already computed over all)
-    if only_differences:
+    # display filter (grid only; summary above already computed over all)
+    anomalies_hidden = sum(1 for r in rows if r["data_anomaly"])
+    if not include_anomalies:
+        rows = [r for r in rows if not r["data_anomaly"]]
+    # The price-gap filters (only_differences, min_diff) make sense for the
+    # default "who's cheaper" view, but they must NOT silently swallow rows when
+    # the user is deliberately filtering on a NON-price axis (timing, quantity,
+    # combination). Asking for "time-limited rebates" should surface them even if
+    # the two distributors land within $1 of each other.
+    attribute_filter = (time_sensitive_only or expiring_only or timing_diff_only
+                        or qty_diff_only or combo_only)
+    if only_differences and not attribute_filter:
         rows = [r for r in rows if r["has_difference"]]
-    if min_diff and min_diff > 0:
+    if min_diff and min_diff > 0 and not attribute_filter:
         rows = [r for r in rows if (r["spread_at_n"] or 0) >= min_diff]
 
     keymap = {
@@ -1392,7 +1457,7 @@ def compare_rips(
         if flips:
             insights.append(
                 f"{flips} product(s) change the best-RIP distributor as your "
-                f"volume grows — check the break-even before you commit.")
+                f"volume grows. Check the break-even before you commit.")
 
     return {
         "wholesalers": slugs,
@@ -1408,6 +1473,7 @@ def compare_rips(
             "least_money": least_money,
             "most_active_days": most_days,
             "most_case_mix": most_mix,
+            "anomalies_hidden": anomalies_hidden,
             "insights": insights,
         },
     }
@@ -1924,7 +1990,7 @@ def edition_comparison(con, wholesaler: str, older: str = "", newer: str = "",
         return {"wholesaler": wholesaler, "error": f"No editions for {wholesaler}"}
     if len(eds) < 2:
         return {"wholesaler": wholesaler, "single_edition": True, "editions": eds,
-                "note": f"{wholesaler} has only one edition ({eds[0]}) — nothing to compare."}
+                "note": f"{wholesaler} has only one edition ({eds[0]}), nothing to compare."}
     nw = newer if newer in eds else eds[0]
     ol = older if older in eds else eds[1]
     if nw == ol:
@@ -2103,7 +2169,7 @@ def _rateshop_conditions(applied_t, pack: float, case_mix, is_combination, compl
             if applied_t.get("is_time_sensitive") and applied_t.get("window_status") != "expired":
                 fd, td = applied_t.get("from_date"), applied_t.get("to_date")
                 conds.append({"type": "window",
-                              "text": f"valid {str(fd)[5:] if fd else '?'}–{str(td)[5:] if td else '?'}"})
+                              "text": f"valid {str(fd)[5:] if fd else '?'} to {str(td)[5:] if td else '?'}"})
             conds.append({"type": "invoice", "text": "single invoice"})
             if is_combination and case_mix:
                 conds.append({"type": "combo", "text": f"mix across {case_mix} items"})
@@ -2223,14 +2289,14 @@ def rateshop_data(con, match: str, cases: float = 5, size_key: Optional[str] = N
     if win and win["net_case"] is not None:
         if n_winners > 1:
             verdict = (f"At {int(n)} case(s), {n_winners} distributors tie at "
-                       f"${win['net_case']:.2f}/case — pick on service or delivery.")
+                       f"${win['net_case']:.2f}/case. Pick on service or delivery.")
         else:
             runner = next((o for o in offers if not o["is_winner"] and o["net_case"] is not None), None)
-            gap = f" — ${runner['net_case'] - win['net_case']:.2f}/cs cheaper than {distributorName_safe(runner['wholesaler'])}" if runner else ""
+            gap = f", ${runner['net_case'] - win['net_case']:.2f}/cs cheaper than {distributorName_safe(runner['wholesaler'])}" if runner else ""
             verdict = f"At {int(n)} case(s), buy from {distributorName_safe(win['wholesaler'])}: ${win['net_case']:.2f}/case{gap}."
         flips = len({r['winner'] for r in ranges if r['winner'] and r['winner'] != 'tie'}) > 1
         if flips:
-            be = "; ".join(f"{r['from']}{('–'+str(r['to'])) if r['to'] else '+'} cs → "
+            be = "; ".join(f"{r['from']}{('-'+str(r['to'])) if r['to'] else '+'} cs to "
                            f"{('tie' if r['winner']=='tie' else distributorName_safe(r['winner']))}"
                            for r in ranges if r["winner"])
             verdict += f" Best choice shifts with volume: {be}."

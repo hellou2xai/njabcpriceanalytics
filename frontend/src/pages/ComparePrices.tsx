@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Zap, Scale, Clock } from 'lucide-react';
+import { ChevronDown, ChevronRight, Zap, Scale, Clock, Download } from 'lucide-react';
 import { compare, catalog } from '../lib/api';
 import type { CatalogTier, CompareLadder } from '../lib/api';
 import { distributorName } from '../lib/distributors';
@@ -316,6 +316,35 @@ export default function ComparePrices() {
     return m;
   }, [selected]);
 
+  // download the current summary grid as .xlsx (same filters as the table)
+  const [exporting, setExporting] = useState(false);
+  const exportExcel = async () => {
+    if (!ready) return;
+    setExporting(true);
+    try {
+      const blob = await compare.exportXlsx({
+        wholesalers: selected.join(','),
+        q: searchTerm || undefined,
+        product_type: ptype || undefined,
+        only_differences: onlyDiff || undefined,
+        min_spread: minSpread ? parseFloat(minSpread) : undefined,
+        cases: cases && cases !== '0' ? parseFloat(cases) : undefined,
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `compare_${selected.join('_')}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(`Export failed: ${(e as Error).message}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const types = useMemo(() => {
     const set = new Set<string>();
     (data?.rows ?? []).forEach(r => { if (r.product_type) set.add(r.product_type); });
@@ -501,6 +530,14 @@ export default function ComparePrices() {
               </select>
             </label>
             <span className="cmp-count">{rows.length.toLocaleString()} rows</span>
+            <button
+              className="cmp-export"
+              onClick={exportExcel}
+              disabled={exporting || rows.length === 0}
+              title="Download the summary grid (current filters) as an Excel file"
+            >
+              <Download size={14} /> {exporting ? 'Preparing…' : 'Excel'}
+            </button>
           </div>
 
           <div className={`cmp-basis${atVol ? ' cmp-basis-vol' : ''}`}>

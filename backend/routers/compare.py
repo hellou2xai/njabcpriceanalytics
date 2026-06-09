@@ -19,11 +19,13 @@ Endpoints:
   GET /api/compare/rips      — RIP-outcome comparison (landed curve + break-even)
   GET /api/compare/price360  — one holistic per-product label ranking every offer
 """
+import io
 import math
 import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 
 from backend import pricing as _pricing
 from backend.auth import get_optional_user, get_current_user
@@ -533,6 +535,107 @@ def compare_products(
             "insights": insights,
         },
     }
+
+
+def _pretty_w(slug: str) -> str:
+    """'shore_point' -> 'Shore Point' for export headers."""
+    return str(slug or "").replace("_", " ").title()
+
+
+@router.get("/export")
+def compare_export(
+    wholesalers: str = Query(..., description="2-3 comma-separated slugs"),
+    q: str = Query(""),
+    product_type: str = Query(""),
+    only_differences: bool = Query(False),
+    min_spread: float = Query(0.0, ge=0),
+    cases: float = Query(0, ge=0),
+    sort: str = Query("spread"),
+    order: str = Query("desc"),
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    """The current comparison grid as an .xlsx download. Reuses the exact
+    /products logic (same filters, volume basis, winners) so the spreadsheet
+    matches what's on screen — no separate math."""
+    import openpyxl
+    from openpyxl.styles import Font, Alignment
+
+    data = compare_products(
+        wholesalers=wholesalers, q=q, product_type=product_type,
+        only_differences=only_differences, min_spread=min_spread, cases=cases,
+        sort=sort, order=order, limit=50000, user=user,
+    )
+    slugs = data["wholesalers"]
+    eds = data["editions"]
+    at_vol = bool(data.get("cases"))
+    qd_label = f"QD @{int(data['cases'])}cs" if at_vol else "Best QD"
+    net_label = f"Net @{int(data['cases'])}cs" if at_vol else "Best Net"
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Compare Prices"
+
+    # Summary grid only (the on-screen table): one line per matched product,
+    # carrying its UPC, then each distributor's three price layers.
+    headers = ["Product", "Size", "Vintage", "UPC"]
+    for w in slugs:
+        nm = _pretty_w(w)
+        headers += [f"{nm} List", f"{nm} {qd_label}", f"{nm} {net_label}"]
+    headers += ["Spread $", "Spread %", "Winner", "Notes"]
+    ws.append(headers)
+    for c in ws[1]:
+        c.font = Font(bold=True)
+
+    def _money(v):
+        return round(float(v), 2) if isinstance(v, (int, float)) else None
+
+    def _upc_txt(v):
+        return str(v) if v not in (None, "") else None
+
+    for r in data["rows"]:
+        prices = r["prices"]
+        size = f"{r.get('unit_qty') or ''} x {r.get('unit_volume') or ''}".strip(" x")
+        win = r.get("winner_effective")
+        win_txt = "Tie" if win == "tie" else (_pretty_w(win) if win else "")
+        notes = []
+        for w in slugs:
+            p = prices.get(w, {})
+            dw = p.get("deal_window") or {}
+            rng = f" ({dw.get('from')}-{dw.get('to')})" if dw.get("from") else ""
+            if p.get("net_excludes_qd"):
+                notes.append(f"{_pretty_w(w)}: Best QD is a limited-time deal"
+                             f"{rng}, excluded from Best Net")
+            elif p.get("qd_time_sensitive"):
+                notes.append(f"{_pretty_w(w)}: QD is limited-time{rng}")
+        row = [r.get("product_name"), size, r.get("vintage"), _upc_txt(r.get("upc"))]
+        for w in slugs:
+            p = prices.get(w, {})
+            row += [_money(p.get("frontline")), _money(p.get("after_qd")),
+                    _money(p.get("effective"))]
+        row += [_money(r.get("spread")), r.get("spread_pct"), win_txt, "; ".join(notes)]
+        ws.append(row)
+
+    # force the UPC column (D) to text so barcodes keep leading zeros
+    for cell in ws.iter_rows(min_col=4, max_col=4):
+        cell[0].number_format = "@"
+
+    # column widths + a frozen header
+    ws.freeze_panes = "A2"
+    ws.column_dimensions["A"].width = 34
+    ws.column_dimensions["B"].width = 14
+    ws.column_dimensions["D"].width = 16
+    for c in ws[1]:
+        c.alignment = Alignment(vertical="center")
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fname = f"compare_{'_'.join(slugs)}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
 
 
 @router.get("/tiers")

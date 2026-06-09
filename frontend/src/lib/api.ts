@@ -483,6 +483,12 @@ export const compare = {
   tiers: (params: Record<string, unknown>) =>
     request<{ wholesalers: string[]; ladders: Record<string, CompareLadder> }>(
       `/api/compare/tiers${qs(params)}`),
+  // Summary grid as an .xlsx download (same filters as products()).
+  exportXlsx: async (params: Record<string, unknown>): Promise<Blob> => {
+    const res = await fetch(`${BASE}/api/compare/export${qs(params)}`, { headers: authHeaders() });
+    if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+    return res.blob();
+  },
   rips: (params: Record<string, unknown>) =>
     request<CompareRipResponse>(`/api/compare/rips${qs(params)}`),
   price360: (params: Record<string, unknown>) =>

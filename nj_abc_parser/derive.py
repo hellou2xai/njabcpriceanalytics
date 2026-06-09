@@ -560,9 +560,21 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
                 MAX(code_best_rip) OVER (
                     PARTITION BY wholesaler, edition, upc, product_name, unit_volume, vintage, unit_qty
                 ) AS best_rip_amt,
+                -- When a SKU has several CPL lines (a full-month line plus dated
+                -- promo lines, as Kramer/others file them), the partition above
+                -- does NOT include the window, so they compete here. PREFER the
+                -- full-month line so effective_case_price is the durable price,
+                -- not whichever dated promo happened to sort first. The old
+                -- ORDER BY (RIP only) was non-deterministic on ties, so the
+                -- surviving window — and the effective price — could flip between
+                -- cache builds. Deterministic tiebreak added.
                 ROW_NUMBER() OVER (
                     PARTITION BY wholesaler, edition, upc, product_name, unit_volume, vintage, unit_qty
-                    ORDER BY COALESCE(code_best_rip, 0) DESC
+                    ORDER BY (CASE WHEN {full_window('from_date', 'to_date')} THEN 1 ELSE 0 END) DESC,
+                             COALESCE(code_best_rip, 0) DESC,
+                             best_case_price ASC NULLS LAST,
+                             from_date ASC NULLS FIRST,
+                             to_date ASC NULLS FIRST
                 ) AS rn
             FROM cpl_with_rip
         ),

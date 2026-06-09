@@ -143,6 +143,29 @@ PARTIAL-window.
   carry a time-sensitive RIP. (Their `effective_case_price` doesn't reflect
   it, however.)
 
+**One row per SKU — full-month line wins.** A SKU can have several CPL lines:
+a full-month line plus dated promo lines (and some distributors split even
+their full-month quantity-discount tiers across multiple lines). The dedup that
+collapses these to one enriched row (`derive.py` `joined` CTE `ROW_NUMBER`)
+partitions by `(wholesaler, edition, upc, product_name, unit_volume, vintage,
+unit_qty)` — NOT by window — so the lines compete. The `ORDER BY` PREFERS the
+full-month line, then deepest RIP, then a deterministic tiebreak
+(`best_case_price ASC`, `from_date`, `to_date`). This guarantees
+`effective_case_price` is the durable full-month price and never flips between
+cache builds. The dated promo lines remain in raw `cpl` and are re-surfaced as
+time-sensitive tiers by `attach_tiers`.
+
+**Kramer one-tier-per-line CPL.** Kramer is the only distributor that lists each
+quantity-discount tier on its OWN CPL line (same UPC/size/window repeated,
+`discount_1` only, `discount_2..5` always blank) instead of packing them into
+the `discount_1..5` columns of one line. `wholesalers/kramer.py::_consolidate_cpl_tiers`
+(a `post_process` hook) folds those per-line tiers — across rows AND columns —
+into the canonical one-row-per-SKU-per-window shape every other distributor
+files, and recomputes `best_case_price` as `frontline − deepest discount IN THAT
+window` (Kramer repeats the global best on every line, which is wrong once the
+windows are separated). The 5-column cap keeps the low-quantity tiers plus the
+single deepest; `best_case_price` always reflects the true deepest.
+
 **Rebuild required**: any change to this rule requires regenerating
 `cpl_enriched.parquet`:
 ```

@@ -1,11 +1,13 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Zap, Scale } from 'lucide-react';
+import { ChevronDown, ChevronRight, Zap, Scale, Clock } from 'lucide-react';
 import { compare, catalog } from '../lib/api';
 import type { CatalogTier, CompareLadder } from '../lib/api';
 import { distributorName } from '../lib/distributors';
 import RowActions from '../components/RowActions';
+import ProductSearchBox from '../components/ProductSearchBox';
 import './ComparePrices.css';
 
 const money = (v?: number | null) => (v == null ? '–' : `$${Number(v).toFixed(2)}`);
@@ -13,22 +15,31 @@ const money = (v?: number | null) => (v == null ? '–' : `$${Number(v).toFixed(
 /** Distributor accent colors (cycled by pick order). */
 const ACCENTS = ['#2563eb', '#d97706', '#7c3aed'];
 
-function WinnerCell({
-  value, isWinner, isTie, sub,
-}: { value?: number | null; isWinner: boolean; isTie: boolean; sub?: string | null }) {
-  return (
-    <td className={`cmp-price${isWinner ? ' cmp-win' : ''}${isTie ? ' cmp-tie' : ''}`}>
-      {money(value)}
-      {sub && <span className="cmp-sub">{sub}</span>}
-    </td>
-  );
-}
-
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const fmtMonth = (ed: string) => {
   const m = /^(\d{4})-(\d{1,2})/.exec(ed);
   return m ? `${MONTHS[parseInt(m[2], 10) - 1]} ${m[1].slice(2)}` : ed;
 };
+
+/** 'Jun 9' from an ISO 'YYYY-MM-DD'. */
+const fmtDay = (iso?: string | null) => {
+  if (!iso) return '?';
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  return m ? `${MONTHS[parseInt(m[2], 10) - 1]} ${parseInt(m[3], 10)}` : iso;
+};
+const winText = (from?: string | null, to?: string | null) => `${fmtDay(from)}–${fmtDay(to)}`;
+
+function WinnerCell({
+  value, isWinner, isTie, sub, mark,
+}: { value?: number | null; isWinner: boolean; isTie: boolean; sub?: string | null; mark?: ReactNode }) {
+  return (
+    <td className={`cmp-price${isWinner ? ' cmp-win' : ''}${isTie ? ' cmp-tie' : ''}`}>
+      {money(value)}
+      {mark}
+      {sub && <span className="cmp-sub">{sub}</span>}
+    </td>
+  );
+}
 
 interface HistPoint {
   edition: string;
@@ -118,7 +129,41 @@ function TriSparkline({ wholesaler, ladder }: { wholesaler: string; ladder: Comp
   );
 }
 
-function LadderPanel({ slugs, params }: { slugs: string[]; params: Record<string, unknown> }) {
+/** Plain-language walk-through of one distributor's List → Best QD → Best Net
+ *  ladder, naming the limited-time deals that make Best Net exceed Best QD. */
+function ladderLines(lad: CompareLadder): { text: string; warn?: boolean }[] {
+  const f = lad.frontline, qd = lad.after_qd, net = lad.effective;
+  const lines: { text: string; warn?: boolean }[] = [];
+  if (f != null) lines.push({ text: `List ${money(f)}/cs.` });
+  const disc = (lad.tiers ?? []).filter(t => t.source === 'discount' && t.price_after != null);
+  const qdTier = disc.length
+    ? disc.reduce((a, b) => ((a.price_after ?? Infinity) <= (b.price_after ?? Infinity) ? a : b))
+    : null;
+  if (qd != null && f != null && qd < f - 0.005) {
+    const buy = qdTier ? ` — buy ${qdTier.qty} ${qdTier.unit}` : '';
+    const ts = qdTier?.is_time_sensitive
+      ? ` (limited-time deal, ${winText(qdTier.from_date, qdTier.to_date)}; excluded from Best Net)` : '';
+    lines.push({ text: `Best QD ${money(qd)}/cs${buy}${ts}.`, warn: !!qdTier?.is_time_sensitive });
+  }
+  if (net != null && qd != null) {
+    if (net < qd - 0.005) {
+      lines.push({ text: `Best Net ${money(net)}/cs — a full-month RIP rebate takes off ${money(qd - net)}/cs more.` });
+    } else if (net > qd + 0.005) {
+      lines.push({
+        text: `Best Net ${money(net)}/cs is HIGHER than Best QD ${money(qd)}/cs. That quantity discount is a limited-time promo, and "Best Net" is the price you can count on all month, so the promo is left out.`,
+        warn: true,
+      });
+    } else {
+      lines.push({ text: `Best Net ${money(net)}/cs — no RIP rebate, so it matches Best QD.` });
+    }
+  }
+  return lines;
+}
+
+function LadderPanel({ slugs, params, onOpen }: {
+  slugs: string[]; params: Record<string, unknown>;
+  onOpen: (name: string, wholesaler: string) => void;
+}) {
   const { data, isLoading } = useQuery({
     queryKey: ['compare-tiers', params],
     queryFn: () => compare.tiers(params),
@@ -135,6 +180,19 @@ function LadderPanel({ slugs, params }: { slugs: string[]; params: Record<string
               <span>{distributorName(w)}</span>
               {lad && <TriSparkline wholesaler={w} ladder={lad} />}
             </div>
+            {/* this distributor's OWN product, openable — a shared UPC can name
+                two different products, so each side links to its own listing */}
+            {lad?.product_name && (
+              <button
+                type="button"
+                className="cmp-ladder-prodlink"
+                title={`Open ${distributorName(w)}'s listing: ${lad.product_name}`}
+                onClick={() => onOpen(lad.product_name!, w)}
+              >
+                {lad.product_name}
+                {lad.unit_volume ? <span className="cmp-ladder-size"> · {lad.unit_qty} × {lad.unit_volume}</span> : null}
+              </button>
+            )}
             {!lad ? <div className="cmp-ladder-none">Not found</div> : (
               <>
                 <div className="cmp-ladder-line cmp-ladder-front">
@@ -153,12 +211,22 @@ function LadderPanel({ slugs, params }: { slugs: string[]; params: Record<string
                       <span className="cmp-ladder-off"> (−{money(t.save_per_case)})</span>
                     )}
                     {t.is_time_sensitive && t.window_status !== 'expired' && (
-                      <span className="cmp-ladder-window">
-                        {t.from_date?.slice(5)}→{t.to_date?.slice(5)}
+                      <span className="cmp-ladder-window"
+                            title={`Limited-time deal, valid ${winText(t.from_date, t.to_date)}. Not counted in Best Net (the full-month price).`}>
+                        <Clock size={9} /> {winText(t.from_date, t.to_date)}
                       </span>
                     )}
                   </div>
                 ))}
+                {/* plain-language readout so the List → QD → Net numbers, and any
+                    limited-time deal behind them, are self-explanatory */}
+                <div className="cmp-ladder-explain">
+                  {ladderLines(lad).map((ln, i) => (
+                    <div key={i} className={`cmp-ladder-exp${ln.warn ? ' cmp-ladder-exp-warn' : ''}`}>
+                      {ln.warn && <Clock size={11} />} {ln.text}
+                    </div>
+                  ))}
+                </div>
               </>
             )}
           </div>
@@ -173,6 +241,9 @@ export default function ComparePrices() {
   const [selected, setSelected] = useState<string[]>(
     params.get('d')?.split(',').filter(Boolean) ?? []);
   const [q, setQ] = useState(params.get('q') ?? '');
+  // when a typeahead suggestion is picked we narrow by its resolved UPC (the
+  // reliable key — a shared/abbreviated name may not substring-match the grid).
+  const [pickUpc, setPickUpc] = useState<string>('');
   const [ptype, setPtype] = useState(params.get('type') ?? '');
   // default ON: open straight to the rows where distributors actually differ
   const [onlyDiff, setOnlyDiff] = useState(params.get('diff') !== '0');
@@ -216,11 +287,14 @@ export default function ComparePrices() {
   });
 
   const ready = selected.length >= 2 && selected.length <= 3;
+  // a picked suggestion filters by its UPC (exact); free text filters by the
+  // typed string (the backend matches name/brand AND barcode).
+  const searchTerm = pickUpc || q;
   const { data, isLoading, error } = useQuery({
-    queryKey: ['compare-products', selected, q, ptype, onlyDiff, minSpread, cases],
+    queryKey: ['compare-products', selected, searchTerm, ptype, onlyDiff, minSpread, cases],
     queryFn: () => compare.products({
       wholesalers: selected.join(','),
-      q: q || undefined,
+      q: searchTerm || undefined,
       product_type: ptype || undefined,
       only_differences: onlyDiff || undefined,
       min_spread: minSpread ? parseFloat(minSpread) : undefined,
@@ -378,11 +452,18 @@ export default function ComparePrices() {
 
           {/* ---- filters ---- */}
           <div className="cmp-filters">
-            <input
-              placeholder="Search product or brand…"
-              value={q}
-              onChange={e => { setQ(e.target.value); setShown(pageSize); }}
-            />
+            <div className="cmp-search">
+              <ProductSearchBox
+                value={q}
+                placeholder="Search product, brand or UPC…"
+                onChange={v => { setQ(v); setPickUpc(''); setShown(pageSize); }}
+                onSelect={p => {
+                  setQ(p.product_name);
+                  setPickUpc(p.upc ? p.upc.replace(/^0+/, '') : '');
+                  setShown(pageSize);
+                }}
+              />
+            </div>
             <select value={ptype} onChange={e => setPtype(e.target.value)}>
               <option value="">All categories</option>
               {types.map(t => <option key={t} value={t}>{t}</option>)}
@@ -499,6 +580,14 @@ export default function ComparePrices() {
                               <Zap size={11} /> flips
                             </span>
                           )}
+                          {r.net_gt_qd && (
+                            <span
+                              className="cmp-ltd"
+                              title="Best Net is higher than Best QD on this row. The quantity discount is a limited-time promo, and Best Net (the price you can rely on all month) excludes it. Open the row for the dates."
+                            >
+                              <Clock size={11} /> limited QD
+                            </span>
+                          )}
                         </td>
                         {selected.map(w => {
                           const p = r.prices[w];
@@ -507,7 +596,12 @@ export default function ComparePrices() {
                               <WinnerCell value={p?.frontline}
                                 isWinner={r.winner_frontline === w} isTie={r.winner_frontline === 'tie'} />
                               <WinnerCell value={p?.after_qd}
-                                isWinner={r.winner_after_qd === w} isTie={r.winner_after_qd === 'tie'} />
+                                isWinner={r.winner_after_qd === w} isTie={r.winner_after_qd === 'tie'}
+                                mark={p?.qd_time_sensitive ? (
+                                  <span className="cmp-ts" title={`This QD is a limited-time deal${p.deal_window ? `, valid ${winText(p.deal_window.from, p.deal_window.to)}` : ''}. It's excluded from Best Net (the durable full-month price).`}>
+                                    <Clock size={10} />
+                                  </span>
+                                ) : null} />
                               <WinnerCell value={p?.effective}
                                 isWinner={winner === w} isTie={winner === 'tie'}
                                 sub={p?.btl_effective != null ? `${money(p.btl_effective)}/btl` : null} />
@@ -540,6 +634,7 @@ export default function ComparePrices() {
                           <td colSpan={nCols}>
                             <LadderPanel
                               slugs={selected}
+                              onOpen={goToProduct}
                               params={{
                                 wholesalers: selected.join(','),
                                 upc_norm: r.upc_norm,

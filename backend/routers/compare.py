@@ -162,6 +162,7 @@ def _common_rows(con, src: str, slugs: list[str], eds: dict[str, str]) -> list[d
     sql = f"""
         SELECT wholesaler, edition, upc, product_name, product_type, brand,
                unit_qty, unit_volume, vintage, abv_proof,
+               from_date, to_date,
                frontline_case_price, frontline_unit_price,
                best_case_price, best_unit_price,
                effective_case_price, rip_savings, total_savings_per_case,
@@ -224,6 +225,49 @@ def _common_rows(con, src: str, slugs: list[str], eds: dict[str, str]) -> list[d
         per_key[mk] = per_key.get(mk, 0) + 1
     n = len(slugs)
     return [r for (mk, _w), r in best.items() if per_key[mk] == n]
+
+
+def _price_obj(d: dict) -> dict:
+    """One distributor's price layers for a comparison row, plus the
+    explanation metadata the UI needs to make the numbers self-evident:
+
+      - qd_save            : $/case the best QD takes off the list price
+      - qd_time_sensitive  : the best QD comes from a PARTIAL-month (limited-time)
+                             deal — per derive.py's full-month rule this discount
+                             is excluded from effective_case_price (Best Net)
+      - deal_window        : {from, to, status} of that limited-time QD
+      - net_excludes_qd    : Best Net > Best QD because the QD is limited-time and
+                             dropped from the durable full-month net price
+
+    Window classification uses the canonical pricing helpers (same rule as
+    derive.py / the catalog modal) — no re-implementation here."""
+    front = d.get("frontline_case_price")
+    bq = d.get("best_case_price")
+    net = d.get("effective_case_price")
+    fd, td = d.get("from_date"), d.get("to_date")
+    qd_save = (round(front - bq, 2)
+               if front is not None and bq is not None and bq < front - _TIE_EPS else 0.0)
+    ts = bool(qd_save > 0 and _pricing.is_time_sensitive_window(fd, td))
+    win = _pricing.window_status(fd, td) if ts else None
+    net_excludes_qd = bool(net is not None and bq is not None and net > bq + _TIE_EPS)
+    return {
+        "upc": d.get("upc"),
+        "edition": d.get("edition"),
+        "product_name": d.get("product_name"),
+        "frontline": front,
+        "after_qd": bq,
+        "effective": net,
+        "btl_effective": (round(net / d["uqd"], 2)
+                          if net and d.get("uqd") else None),
+        "rip_savings": d.get("rip_savings"),
+        "qd_save": qd_save or None,
+        "qd_time_sensitive": ts,
+        "deal_window": ({"from": _pricing._iso(fd), "to": _pricing._iso(td),
+                         "status": win["status"]} if ts else None),
+        "net_excludes_qd": net_excludes_qd,
+        "has_discount": bool(d.get("has_discount")),
+        "has_rip": bool(d.get("has_rip")),
+    }
 
 
 def _winner(per: dict[str, dict], field: str) -> dict:
@@ -333,6 +377,7 @@ def compare_products(
         effs = [d.get("effective_case_price") for d in per.values()
                 if d.get("effective_case_price")]
         best_eff = min(effs) if effs else None
+        per_prices = {w: _price_obj(d) for w, d in per.items()}
         parts = key.split("|")
         row = {
             "match_key": key,
@@ -345,23 +390,7 @@ def compare_products(
             "unit_volume": any_row.get("unit_volume"),
             "vintage": any_row.get("vintage"),
             "upc": any_row.get("upc"),
-            "prices": {
-                w: {
-                    "upc": d.get("upc"),
-                    "edition": d.get("edition"),
-                    "product_name": d.get("product_name"),
-                    "frontline": d.get("frontline_case_price"),
-                    "after_qd": d.get("best_case_price"),
-                    "effective": d.get("effective_case_price"),
-                    "btl_effective": (
-                        round(d["effective_case_price"] / d["uqd"], 2)
-                        if d.get("effective_case_price") and d.get("uqd") else None
-                    ),
-                    "rip_savings": d.get("rip_savings"),
-                    "has_discount": bool(d.get("has_discount")),
-                    "has_rip": bool(d.get("has_rip")),
-                } for w, d in per.items()
-            },
+            "prices": per_prices,
             "winner_frontline": w_front["winner"],
             "winner_after_qd": w_qd["winner"],
             "winner_effective": w_eff["winner"],
@@ -375,14 +404,25 @@ def compare_products(
                 w_front["winner"] is not None and w_eff["winner"] is not None
                 and w_front["winner"] != w_eff["winner"]
             ),
+            # at least one distributor's Best Net is HIGHER than its Best QD —
+            # a limited-time (partial-month) QD that the durable net price drops.
+            # Flagged so the row doesn't read as a calculation error.
+            "net_gt_qd": any(
+                p.get("net_excludes_qd") for p in per_prices.values()
+            ),
         }
         rows.append(row)
 
     # ---- search/category filters narrow BOTH the grid and the summary ------
     if q:
         qq = q.lower()
+        # UPC-aware: a barcode never appears in the product NAME, so a digit
+        # query must match the (normalised) UPC or it returns nothing.
+        qd = re.sub(r"\D", "", q).lstrip("0")
         rows = [r for r in rows if qq in (r["product_name"] or "").lower()
-                or qq in (r["brand"] or "").lower()]
+                or qq in (r["brand"] or "").lower()
+                or (len(qd) >= 6 and (r.get("upc_norm") == qd
+                                      or qd in ((r.get("upc") or "").lstrip("0"))))]
     if product_type:
         rows = [r for r in rows if (r["product_type"] or "").lower() == product_type.lower()]
 

@@ -161,8 +161,10 @@ def startup():
         # Warm the RIP Products tier cache in the background so the first open of
         # that (heavy) page is instant. Never blocks startup or the health check.
         import threading
-        from backend.routers.deals import warm_rip_cache
+        from backend.routers.deals import warm_rip_cache, warm_time_sensitive_cache
         threading.Thread(target=warm_rip_cache, daemon=True).start()
+        # Prime the Time-Sensitive Deals payload so the first open is instant.
+        threading.Thread(target=warm_time_sensitive_cache, daemon=True).start()
         # Generate any missing AI deal blurbs for the Time-Sensitive Deals page.
         # No-op if ANTHROPIC_API_KEY is unset, capped per run.
         try:
@@ -217,8 +219,11 @@ def reload_pricing(user: dict = Depends(get_current_user)):
     build_pricing_cache()
     # Rebuild the RIP tier cache against the new data, in the background.
     import threading
-    from backend.routers.deals import warm_rip_cache
+    from backend.routers.deals import (
+        warm_rip_cache, clear_time_sensitive_cache, warm_time_sensitive_cache)
+    clear_time_sensitive_cache()   # drop the cached Time-Sensitive payloads
     threading.Thread(target=warm_rip_cache, daemon=True).start()
+    threading.Thread(target=warm_time_sensitive_cache, daemon=True).start()
     # Re-run AI deal blurb generation for new products surfaced by this reload.
     try:
         from backend.ai_blurbs import warm_blurbs_async

@@ -14,6 +14,32 @@ import time as _time
 _deal_blurb_cache: dict = {"map": None, "expires_at": 0.0}
 _deal_blurb_lock = threading.Lock()
 
+# Full-response cache for the Time-Sensitive Deals endpoint. Building the deal
+# list runs heavy per-row work (the Discount/RIP tier ladder for this + next
+# month on up to 2000 rows via attach_promotion_tiers), which made the page slow.
+# The underlying data only changes on a monthly reload, so cache the finished
+# payload per (wholesaler, include_past, limit, today) for 10 minutes; the date in
+# the key auto-expires it daily, and reload_pricing clears it explicitly.
+_ts_cache: dict = {}
+_ts_lock = threading.Lock()
+_TS_TTL = 600.0
+
+
+def clear_time_sensitive_cache() -> None:
+    """Drop the cached Time-Sensitive payloads (called on a pricing reload)."""
+    with _ts_lock:
+        _ts_cache.clear()
+
+
+def warm_time_sensitive_cache() -> None:
+    """Prime the Time-Sensitive cache for the default page load so the first
+    visitor after a reload/startup doesn't eat the cold build. Safe to run in a
+    background thread."""
+    try:
+        time_sensitive(wholesaler=None, include_past=False, limit=2000)
+    except Exception as e:  # pragma: no cover - best-effort warm
+        print(f"[warm] time-sensitive cache warm skipped: {e}")
+
 def _cached_deal_blurbs() -> dict:
     now = _time.time()
     if _deal_blurb_cache["map"] is not None and _deal_blurb_cache["expires_at"] > now:
@@ -872,6 +898,14 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
     """Deals whose validity window is a SPECIFIC range inside the month (start
     is not the 1st or end is not the last day), still active (ends today or
     later), with days-to-expire. These are the urgent, easy-to-miss deals."""
+    # Serve a cached payload when one is fresh (keyed on params + today's date so
+    # it auto-refreshes daily; reload_pricing clears it on a data reload).
+    import datetime as _dt
+    _ck = (wholesaler or "", bool(include_past), int(limit), _dt.date.today().isoformat())
+    _hit = _ts_cache.get(_ck)
+    if _hit is not None and _hit[0] > _time.time():
+        return _hit[1]
+
     def _n(v):
         try:
             f = float(v)
@@ -1149,6 +1183,8 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
         from backend.routers.catalog import attach_promotion_tiers, attach_vintages_available
         attach_promotion_tiers(con, out)
         attach_vintages_available(con, out)
+        with _ts_lock:
+            _ts_cache[_ck] = (_time.time() + _TS_TTL, out)
         return out
 
 

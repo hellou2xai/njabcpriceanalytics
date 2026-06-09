@@ -1,0 +1,134 @@
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import { Search, Sparkles, Store, ChevronRight } from 'lucide-react';
+import { catalog, compare } from '../lib/api';
+import type { Product } from '../lib/api';
+import ProductThumb from '../components/ProductThumb';
+import { distributorName } from '../lib/distributors';
+import './Home.css';
+
+/**
+ * Home — the post-login landing. A search-first storefront (not the dashboard):
+ * a hero search that routes to the Products page, quick category browsing, and
+ * rails of REAL products per category pulled from the actual distributor
+ * catalogues, plus the distributors the account can see. All data comes from
+ * the same catalog/compare APIs the rest of the app uses — no mock data.
+ */
+
+const RAILS = ['Wine', 'Spirits', 'Beer'];
+const BROWSE: { key: string; label: string }[] = [
+  { key: 'Beer', label: 'Beer' },
+  { key: 'Wine', label: 'Wine' },
+  { key: 'Spirits', label: 'Spirits' },
+  { key: 'RTD', label: 'Ready-to-Drink' },
+  { key: 'FAB', label: 'Seltzer / FMB' },
+  { key: 'Cider', label: 'Cider' },
+  { key: 'Non-Alcoholic', label: 'Non-Alcoholic' },
+];
+
+const money = (v?: number | null) => (v == null ? null : `$${Number(v).toFixed(2)}`);
+const detailUrl = (p: Product) => {
+  const q = new URLSearchParams({ w: p.wholesaler, n: p.product_name });
+  if (p.upc) q.set('u', String(p.upc));
+  return `/product?${q.toString()}`;
+};
+
+function ProductCard({ p }: { p: Product }) {
+  const navigate = useNavigate();
+  const price = money(p.effective_case_price ?? p.frontline_case_price);
+  return (
+    <button className="home-card" onClick={() => navigate(detailUrl(p))}>
+      <ProductThumb src={p.image_url} alt={p.product_name} size={96} />
+      <div className="home-card-name">{p.product_name}</div>
+      <div className="home-card-sub">
+        {p.unit_volume || '—'}{p.unit_qty ? ` · ${p.unit_qty} btl/cs` : ''}
+      </div>
+      <div className="home-card-dist"><Store size={11} /> {distributorName(p.wholesaler)}</div>
+      <div className="home-card-price">{price ? `${price}/cs` : <span className="home-card-noprice">Price not available</span>}</div>
+    </button>
+  );
+}
+
+function Rail({ category }: { category: string }) {
+  const navigate = useNavigate();
+  const { data, isLoading } = useQuery({
+    queryKey: ['home-rail', category],
+    // premium-first so the rail surfaces recognisable products from the real
+    // catalogue (mirrors the curated feel of a storefront landing).
+    queryFn: () => catalog.search({ categories: category, limit: 12, sort: 'frontline_case_price', order: 'desc' }),
+    staleTime: 5 * 60_000,
+  });
+  const items = (data?.items ?? []) as Product[];
+  if (!isLoading && !items.length) return null;
+  return (
+    <section className="home-rail">
+      <div className="home-rail-head">
+        <h2>Top {category} from your distributors</h2>
+        <button className="home-link" onClick={() => navigate(`/products?categories=${encodeURIComponent(category)}`)}>
+          View all <ChevronRight size={14} />
+        </button>
+      </div>
+      <div className="home-rail-track">
+        {items.map((p, i) => <ProductCard key={`${p.upc}|${i}`} p={p} />)}
+      </div>
+    </section>
+  );
+}
+
+export default function Home() {
+  const navigate = useNavigate();
+  const [q, setQ] = useState('');
+  const { data: dists } = useQuery({
+    queryKey: ['home-distributors'],
+    queryFn: compare.options,
+    staleTime: 10 * 60_000,
+  });
+  const go = () => { if (q.trim()) navigate(`/products?q=${encodeURIComponent(q.trim())}`); };
+
+  return (
+    <div className="page home-page">
+      <div className="home-hero">
+        <div className="home-brand"><Sparkles size={26} /> Celr AI</div>
+        <h1 className="home-hero-title">Find any product, at any distributor</h1>
+        <div className="home-search">
+          <Search size={20} className="home-search-icon" />
+          <input
+            autoFocus
+            placeholder="Search products, brands or distributors…"
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') go(); }}
+          />
+          <button type="button" className="home-search-go" onClick={go}>Search</button>
+        </div>
+        <div className="home-browse">
+          {BROWSE.map(b => (
+            <button key={b.key} type="button" className="home-chip"
+              onClick={() => navigate(`/products?categories=${encodeURIComponent(b.key)}`)}>
+              {b.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {RAILS.map(c => <Rail key={c} category={c} />)}
+
+      {!!dists?.length && (
+        <section className="home-rail">
+          <div className="home-rail-head"><h2>Your distributors</h2></div>
+          <div className="home-dists">
+            {dists.map(d => (
+              <button key={d.wholesaler} type="button" className="home-dist"
+                onClick={() => navigate(`/products?wholesaler=${encodeURIComponent(d.wholesaler)}`)}>
+                <Store size={15} />
+                <span className="home-dist-name">{distributorName(d.wholesaler)}</span>
+                <span className="home-dist-n">{d.products.toLocaleString()} products</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  LayoutDashboard, Package, ShoppingCart, Bell, Star, Menu, X, Combine,
+  Home, LayoutDashboard, Package, ShoppingCart, Bell, Star, Menu, X, Combine,
   Sun, Moon, LogOut, BadgeDollarSign, ClipboardList, LayoutGrid,
   ChevronLeft, ChevronRight, ChevronDown, StickyNote, UserCog, Settings, Shield, Sparkles, BookOpen, ListTodo,
   Activity, Clock, Percent, Compass, ArrowDownRight, ArrowUpRight, ThumbsUp,
@@ -29,7 +29,8 @@ const NAV_GROUPS: {
       { path: '/tours', label: 'Guided Tour', icon: Compass },
       { path: '/how-to-guide', label: 'How To Guide', icon: BookOpen },
       { path: '/assistant', label: 'Celar AI Assistant', icon: Sparkles },
-      { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+      { path: '/', label: 'Home', icon: Home },
+      { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { path: '/alerts', label: 'Alerts', icon: Bell },
     ],
   },

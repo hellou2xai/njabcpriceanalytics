@@ -13,6 +13,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import FeedbackWidget, { BetaBadge } from './components/FeedbackWidget';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
+import Home from './pages/Home';
 import Catalog from './pages/Catalog';
 import Products from './pages/Products';
 import WhatsNew from './pages/WhatsNew';
@@ -126,7 +127,8 @@ function AuthenticatedApp() {
           <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route element={<Layout />}>
-            <Route path="/" element={<Dashboard />} />
+            <Route path="/" element={<Home />} />
+            <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/catalog" element={<Catalog />} />
             <Route path="/products" element={<Products />} />
             <Route path="/whats-new" element={<WhatsNew />} />

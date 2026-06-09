@@ -58,6 +58,14 @@
 .rip2-toggle { display: flex; align-items: center; gap: 8px; font-size: 0.83rem; padding: 5px 0; cursor: pointer; }
 .rip2-toggle input { accent-color: var(--accent, #2563eb); }
 
+.rip2-mindiff { display: flex; align-items: center; gap: 6px; }
+.rip2-mindiff-cur { font-weight: 600; color: var(--text-muted); }
+.rip2-mindiff-in {
+  width: 78px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px;
+  font-size: 0.84rem; background: var(--card-bg, #fff); color: var(--text);
+}
+.rip2-mindiff-unit { font-size: 0.8rem; color: var(--text-muted); }
+
 /* ---- main column ---- */
 .rip2-main { min-width: 0; }
 
@@ -107,10 +115,24 @@
 .rip2-dist-name { font-weight: 650; font-size: 0.88rem; }
 .rip2-best-tag { display: inline-flex; align-items: center; gap: 3px; font-size: 0.68rem; font-weight: 600; color: #15803d; background: #dcfce7; padding: 2px 7px; border-radius: 999px; }
 
-.rip2-dist-price { font-size: 1.55rem; font-weight: 700; line-height: 1.1; }
+.rip2-dist-price { font-size: 1.55rem; font-weight: 700; line-height: 1.1; display: flex; align-items: baseline; gap: 0; flex-wrap: wrap; }
 .rip2-per { font-size: 0.78rem; font-weight: 500; color: var(--text-muted); margin-left: 3px; }
 .rip2-dist-btl { font-size: 0.75rem; font-weight: 500; color: var(--text-muted); margin-left: 8px; }
-.rip2-dist-pricenote { font-size: 0.74rem; color: var(--text-muted); margin: 1px 0 9px; }
+.rip2-dist-pricenote { font-size: 0.74rem; color: var(--text-muted); margin: 1px 0 6px; }
+.rip2-dist-total { font-weight: 600; color: var(--text); }
+.rip2-dist-breakdown {
+  display: inline-flex; align-items: center; gap: 5px; cursor: help;
+  font-size: 0.76rem; color: var(--text-muted); margin: 0 0 9px;
+  padding: 3px 8px; background: var(--card-bg, #fff); border: 1px solid var(--border); border-radius: 6px;
+}
+.rip2-dist-breakdown > svg { color: var(--text-muted); }
+.rip2-bd-minus { color: var(--text-muted); }
+
+/* info cue: visible "?" that reveals the native title on hover */
+.rip2-tip { display: inline-flex; align-items: center; margin-left: 4px; cursor: help; color: var(--text-muted); opacity: 0.6; vertical-align: middle; }
+.rip2-tip:hover, .rip2-tip:focus { opacity: 1; color: var(--accent, #2563eb); outline: none; }
+.rip2-tip-ico { flex: none; }
+.rip2-best-tag .rip2-tip-ico { opacity: 0.8; }
 
 .rip2-metrics { display: flex; flex-direction: column; gap: 4px; }
 .rip2-metric { display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 7px; font-size: 0.8rem; padding: 2px 0; cursor: help; }

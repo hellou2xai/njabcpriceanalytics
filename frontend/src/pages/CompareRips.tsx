@@ -4,6 +4,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   Layers, Zap, Sparkles, AlertTriangle, Clock, CalendarClock, Combine,
   ShieldAlert, TrendingDown, ChevronDown, ChevronRight, SlidersHorizontal, X, Trophy,
+  HelpCircle, Tag,
 } from 'lucide-react';
 import { compare } from '../lib/api';
 import type { CompareRipRow, CompareRipDist } from '../lib/api';
@@ -59,13 +60,23 @@ function RipCurve({ row, slugs, accent }: { row: CompareRipRow; slugs: string[];
 }
 
 /** One plain-language metric line with an icon and a hover explanation. */
+/** A small, discoverable info cue. Keeps the native title (which escapes the
+   card's clipping) and adds a visible "?" so users know detail is on hover. */
+function Info({ text }: { text: string }) {
+  return (
+    <span className="rip2-tip" title={text} tabIndex={0}>
+      <HelpCircle size={11} className="rip2-tip-ico" />
+    </span>
+  );
+}
+
 function Metric({ icon, label, value, hint, tone }: {
   icon: React.ReactNode; label: string; value: React.ReactNode; hint: string; tone?: 'good' | 'warn';
 }) {
   return (
     <div className={`rip2-metric${tone ? ` rip2-metric--${tone}` : ''}`} title={hint}>
       <span className="rip2-metric-ico">{icon}</span>
-      <span className="rip2-metric-label">{label}</span>
+      <span className="rip2-metric-label">{label}<Info text={hint} /></span>
       <span className="rip2-metric-val">{value}</span>
     </div>
   );
@@ -78,19 +89,56 @@ function DistPanel({ w, d, row, cases, accent, isWinner }: {
   const pack = row.unit_qty ? parseFloat(row.unit_qty) : null;
   const btl = (v?: number | null) => (v != null && pack ? `${money(v / pack)}/btl` : null);
   const expiring = d.expires_in_days != null;
+
+  // total cash you actually outlay at this volume, here vs the competition
+  const myTotal = d.landed_at_n != null ? d.landed_at_n * cases : null;
+  const rivals = Object.entries(row.dists)
+    .filter(([k, dd]) => k !== w && dd.landed_at_n != null)
+    .map(([k, dd]) => ({ name: distributorName(k), total: (dd.landed_at_n as number) * cases }));
+  const cheapestRival = rivals.length ? rivals.reduce((a, b) => (a.total <= b.total ? a : b)) : null;
+  const vsText = myTotal != null
+    ? (cheapestRival
+        ? `Total to buy ${cases} case${cases !== 1 ? 's' : ''} here: ${money(myTotal)}. ` +
+          `Cheapest rival (${cheapestRival.name}): ${money(cheapestRival.total)}. ` +
+          (myTotal <= cheapestRival.total
+            ? `You save ${money(cheapestRival.total - myTotal)} overall by going here.`
+            : `You'd pay ${money(myTotal - cheapestRival.total)} more here.`)
+        : `Total to buy ${cases} case${cases !== 1 ? 's' : ''} here: ${money(myTotal)}.`)
+    : '';
+  const priceHint =
+    `Your landed cost per case after the best rebate you qualify for at ${cases} case${cases !== 1 ? 's' : ''}. ` +
+    (d.frontline != null ? `List is ${money(d.frontline)}/case` : '') +
+    (d.rip_at_n ? `; the rebate takes off ${money(d.rip_at_n)}/case.` : '.') +
+    (myTotal != null ? ` That is ${money(myTotal)} total for ${cases} case${cases !== 1 ? 's' : ''}.` : '');
+
   return (
     <div className={`rip2-dist${isWinner ? ' is-winner' : ''}`} style={{ borderTopColor: accent }}>
       <div className="rip2-dist-head">
         <span className="rip2-dist-name">{distributorName(w)}</span>
-        {isWinner && <span className="rip2-best-tag"><Trophy size={11} /> best at {cases} cs</span>}
+        {isWinner && (
+          <span className="rip2-best-tag" title={vsText}>
+            <Trophy size={11} /> best at {cases} cs <HelpCircle size={10} className="rip2-tip-ico" />
+          </span>
+        )}
       </div>
 
       {/* the headline: what a case actually costs you at the volume you chose */}
-      <div className="rip2-dist-price">
+      <div className="rip2-dist-price" title={priceHint}>
         {money(d.landed_at_n)}<span className="rip2-per">/case</span>
         {btl(d.landed_at_n) && <span className="rip2-dist-btl">{btl(d.landed_at_n)}</span>}
+        <Info text={priceHint} />
       </div>
-      <div className="rip2-dist-pricenote">your cost buying {cases} case{cases !== 1 ? 's' : ''}</div>
+      <div className="rip2-dist-pricenote">
+        your cost buying {cases} case{cases !== 1 ? 's' : ''}
+        {myTotal != null && <span className="rip2-dist-total"> · {money(myTotal)} total</span>}
+      </div>
+      {/* the whole story: list price, the rebate applied, the net above */}
+      {d.frontline != null && (
+        <div className="rip2-dist-breakdown" title={`List (frontline) case price before any rebate: ${money(d.frontline)}. ${d.rip_at_n ? `Best rebate you qualify for at ${cases} cases: ${money(d.rip_at_n)}/case.` : 'No rebate applies at this volume.'}`}>
+          <Tag size={11} /> List {money(d.frontline)}
+          {d.rip_at_n ? <> <span className="rip2-bd-minus">−</span> <span className="text-green">{money(d.rip_at_n)} rebate</span></> : null}
+        </div>
+      )}
 
       <div className="rip2-metrics">
         <Metric icon={<TrendingDown size={13} />} label="Just 1 case"
@@ -198,6 +246,7 @@ export default function CompareRips() {
   const [ptype, setPtype] = useState(params.get('type') ?? '');
   const [brand, setBrand] = useState(params.get('brand') ?? '');
   const [onlyDiff, setOnlyDiff] = useState(params.get('diff') !== '0');
+  const [minDiff, setMinDiff] = useState(params.get('min_diff') != null ? Math.max(0, parseFloat(params.get('min_diff')!) || 0) : 1);
   const [tsOnly, setTsOnly] = useState(params.get('ts') === '1');
   const [comboOnly, setComboOnly] = useState(params.get('combo') === '1');
   const [expiringOnly, setExpiringOnly] = useState(params.get('exp') === '1');
@@ -217,21 +266,23 @@ export default function CompareRips() {
     if (ptype) next.set('type', ptype);
     if (brand) next.set('brand', brand);
     if (!onlyDiff) next.set('diff', '0');
+    if (minDiff !== 1) next.set('min_diff', String(minDiff));
     if (tsOnly) next.set('ts', '1');
     if (comboOnly) next.set('combo', '1');
     if (expiringOnly) next.set('exp', '1');
     if (sort !== 'spread') next.set('sort', sort);
     if (next.toString() !== params.toString()) setSearchParams(next, { replace: true });
-  }, [selected, cases, q, ptype, brand, onlyDiff, tsOnly, comboOnly, expiringOnly, sort]);
+  }, [selected, cases, q, ptype, brand, onlyDiff, minDiff, tsOnly, comboOnly, expiringOnly, sort]);
 
   const { data: options } = useQuery({ queryKey: ['compare-options'], queryFn: compare.options });
   const ready = selected.length >= 2 && selected.length <= 3;
   const { data, isLoading, error } = useQuery({
-    queryKey: ['compare-rips', selected, cases, q, ptype, brand, onlyDiff, tsOnly, comboOnly, expiringOnly, sort],
+    queryKey: ['compare-rips', selected, cases, q, ptype, brand, onlyDiff, minDiff, tsOnly, comboOnly, expiringOnly, sort],
     queryFn: () => compare.rips({
       wholesalers: selected.join(','), cases, q: q || undefined,
       product_type: ptype || undefined, brand: brand || undefined,
-      only_differences: onlyDiff || undefined, time_sensitive_only: tsOnly || undefined,
+      only_differences: onlyDiff || undefined, min_diff: minDiff,
+      time_sensitive_only: tsOnly || undefined,
       combo_only: comboOnly || undefined, expiring_only: expiringOnly || undefined, sort,
     }),
     enabled: ready,
@@ -320,6 +371,20 @@ export default function CompareRips() {
               <div className="rip2-rail-label">Brand</div>
               <input className="rip2-input" placeholder="e.g. Tito's" value={brand}
                 onChange={e => { setBrand(e.target.value); setShown(40); }} />
+            </div>
+
+            <div className="rip2-rail-sect">
+              <div className="rip2-rail-label">Minimum price gap</div>
+              <div className="rip2-mindiff">
+                <span className="rip2-mindiff-cur">$</span>
+                <input className="rip2-mindiff-in" type="number" min={0} step={0.5} value={minDiff}
+                  onChange={e => { setMinDiff(Math.max(0, parseFloat(e.target.value) || 0)); setShown(40); }} />
+                <span className="rip2-mindiff-unit">/ case</span>
+              </div>
+              <div className="rip2-rail-help">
+                Only show products where the cheapest distributor beats the rest by at
+                least this much per case at {cases} case{cases !== 1 ? 's' : ''}. Set to $0 to show every match.
+              </div>
             </div>
 
             <div className="rip2-rail-sect">

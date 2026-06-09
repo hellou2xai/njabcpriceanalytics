@@ -47,7 +47,7 @@ _VALID_UPC = (
     "upc IS NOT NULL AND upc <> '' AND upc <> '0'"
     " AND NOT regexp_matches(upc, '^(0+|9+|1+)$')"
     " AND NOT upc LIKE '999999%'"
-    " AND LENGTH(upc) >= 8"
+    " AND LENGTH(LTRIM(upc, '0')) >= 8"
 )
 
 
@@ -1125,6 +1125,7 @@ def compare_rips(
     product_type: str = Query(""),
     brand: str = Query("", description="Brand name contains"),
     only_differences: bool = Query(False),
+    min_diff: float = Query(1.0, ge=0, description="Only show products whose best-vs-rest price gap at the chosen volume is at least this many $/case (0 = show all)"),
     time_sensitive_only: bool = Query(False, description="Only products where some distributor's RIP is a dated/time-limited deal"),
     combo_only: bool = Query(False, description="Only products with a combination/case-mix RIP at some distributor"),
     expiring_only: bool = Query(False, description="Only products with a live RIP that ends this month at some distributor"),
@@ -1348,6 +1349,8 @@ def compare_rips(
     # display filter (grid only — summary above already computed over all)
     if only_differences:
         rows = [r for r in rows if r["has_difference"]]
+    if min_diff and min_diff > 0:
+        rows = [r for r in rows if (r["spread_at_n"] or 0) >= min_diff]
 
     keymap = {
         "spread": lambda r: r["spread_at_n"] or 0,

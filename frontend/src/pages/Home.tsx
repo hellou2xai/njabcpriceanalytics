@@ -26,7 +26,18 @@ function perBottle(p: Product): number | null {
  * the same catalog/compare APIs the rest of the app uses — no mock data.
  */
 
-const RAILS = ['Wine', 'Spirits', 'Beer'];
+// All major categories, ordered Spirits -> Wine -> Beer -> the rest. A rail with
+// no mid-priced, image-having products simply hides itself.
+const RAILS: { key: string; label: string }[] = [
+  { key: 'Spirits', label: 'Spirits' },
+  { key: 'Wine', label: 'Wine' },
+  { key: 'Beer', label: 'Beer' },
+  { key: 'RTD', label: 'Ready-to-Drink' },
+  { key: 'FAB', label: 'Seltzer & FMB' },
+  { key: 'Cider', label: 'Cider' },
+  { key: 'Sparkling', label: 'Sparkling' },
+  { key: 'Hemp', label: 'Hemp / THC' },
+];
 const BROWSE: { key: string; label: string }[] = [
   { key: 'Beer', label: 'Beer' },
   { key: 'Wine', label: 'Wine' },
@@ -60,27 +71,31 @@ function ProductCard({ p }: { p: Product }) {
   );
 }
 
-function Rail({ category }: { category: string }) {
+function Rail({ category, label }: { category: string; label: string }) {
   const navigate = useNavigate();
   const { data, isLoading } = useQuery({
     queryKey: ['home-rail', category],
-    // premium-first so the rail surfaces recognisable products; fetch a wider
-    // set because we then keep only ones WITH an image and under $500/bottle.
-    queryFn: () => catalog.search({ categories: category, limit: 48, sort: 'frontline_case_price', order: 'desc' }),
+    // price-agnostic sample (by name) so we span the whole price range, then
+    // keep MID-priced products with an image — avoids both the ultra-premium /
+    // anomalous high-priced items and the cheapest filler.
+    queryFn: () => catalog.search({ categories: category, limit: 120, sort: 'product_name', order: 'asc' }),
     staleTime: 5 * 60_000,
   });
-  const items = ((data?.items ?? []) as Product[])
-    .filter(p => {
-      if (!p.image_url) return false;            // images only
-      const btl = perBottle(p);
-      return btl != null && btl < MAX_BOTTLE_PRICE; // under $500 / bottle
-    })
-    .slice(0, 12);
+  const items = (() => {
+    const ok = ((data?.items ?? []) as Product[])
+      .map(p => ({ p, btl: perBottle(p) }))
+      .filter(x => !!x.p.image_url && x.btl != null && x.btl > 0 && x.btl < MAX_BOTTLE_PRICE)
+      .sort((a, b) => (a.btl as number) - (b.btl as number));
+    if (ok.length <= 12) return ok.map(x => x.p);
+    // take a window centred on the median so the rail reads as "mid-priced"
+    const start = Math.min(Math.floor(ok.length * 0.35), Math.max(0, ok.length - 12));
+    return ok.slice(start, start + 12).map(x => x.p);
+  })();
   if (!isLoading && !items.length) return null;
   return (
     <section className="home-rail">
       <div className="home-rail-head">
-        <h2>Top {category} from your distributors</h2>
+        <h2>Top {label} from your distributors</h2>
         <button className="home-link" onClick={() => navigate(`/products?categories=${encodeURIComponent(category)}`)}>
           View all <ChevronRight size={14} />
         </button>
@@ -128,7 +143,7 @@ export default function Home() {
         </div>
       </div>
 
-      {RAILS.map(c => <Rail key={c} category={c} />)}
+      {RAILS.map(r => <Rail key={r.key} category={r.key} label={r.label} />)}
 
       {!!dists?.length && (
         <section className="home-rail">

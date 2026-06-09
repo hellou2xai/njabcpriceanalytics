@@ -709,7 +709,7 @@ function QuickViewModal({
                               ? <span className="text-muted">&mdash;</span>
                               : (
                                 <div className="catalog-tier-badges">
-                                  {e.rip_tiers.map((t, i) => (
+                                  {[...e.rip_tiers].sort((a, b) => (a.amount ?? 0) - (b.amount ?? 0)).map((t, i) => (
                                     <span key={i} className="source-badge source-rip">
                                       {compactTier(t.qty, t.unit, t.amount)}
                                     </span>
@@ -780,12 +780,15 @@ function QuickViewModal({
             })()}
 
             {(() => {
+              // RIP tiers ascending by rebate amount (consistent everywhere)
+              const ripAsc = (ts: typeof detail.rip_tiers) =>
+                [...(ts ?? [])].sort((a, b) => (a.amount ?? 0) - (b.amount ?? 0));
               const sides = compareWith && detailB
                 ? [
-                    { tiers: detail.rip_tiers ?? [], label: distributorName(wholesaler), key: wholesaler },
-                    { tiers: detailB.rip_tiers ?? [], label: distributorName(compareWith.wholesaler), key: compareWith.wholesaler },
+                    { tiers: ripAsc(detail.rip_tiers), label: distributorName(wholesaler), key: wholesaler },
+                    { tiers: ripAsc(detailB.rip_tiers), label: distributorName(compareWith.wholesaler), key: compareWith.wholesaler },
                   ]
-                : [{ tiers: detail.rip_tiers ?? [], label: distributorName(wholesaler), key: wholesaler }];
+                : [{ tiers: ripAsc(detail.rip_tiers), label: distributorName(wholesaler), key: wholesaler }];
               const any = sides.some(s => s.tiers.length > 0);
               if (!any) return null;
               const maxTiers = Math.max(...sides.map(s => s.tiers.length), 0);

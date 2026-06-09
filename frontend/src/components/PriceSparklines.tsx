@@ -107,7 +107,9 @@ function RichMonth({ b, pack, current }: { b: MonthBreakdown; pack: number | nul
     || (a.to_date ?? '9999').localeCompare(c.to_date ?? '9999')
     || a.qty - c.qty;
   const disc = [...(b.discountTiers ?? [])].sort(byWindow);
-  const rip = [...(b.ripTiers ?? [])].sort(byWindow);
+  // RIP tiers ascending by rebate amount (consistent everywhere RIP shows)
+  const rip = [...(b.ripTiers ?? [])].sort(
+    (a, c) => (a.ripOnlySave ?? 0) - (c.ripOnlySave ?? 0) || a.qty - c.qty);
   const tierLine = (t: RipTier, kind: 'disc' | 'rip', i: number) => {
     // RIP rows show the rebate ALONE (the RIP-sheet number) — DealLadder rule.
     const off = kind === 'rip'

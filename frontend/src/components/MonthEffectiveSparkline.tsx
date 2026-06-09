@@ -103,7 +103,7 @@ function MonthBlock({ b }: { b: MonthBreakdown }) {
     && b.afterDiscount < b.frontline - 0.005;
   const ripVsDisc = b.afterDiscount ?? b.frontline ?? null;
   const sortedDisc = [...(b.discountTiers ?? [])].sort((a, c) => a.qty - c.qty);
-  const sortedRip = [...b.ripTiers].sort((a, c) => a.qty - c.qty);
+  const sortedRip = [...b.ripTiers].sort((a, c) => (a.ripOnlySave ?? 0) - (c.ripOnlySave ?? 0) || a.qty - c.qty);
   const bestDiscEff = sortedDisc.length ? Math.min(...sortedDisc.map(t => t.eff)) : null;
   const bestRipEff = sortedRip.length ? Math.min(...sortedRip.map(t => t.eff)) : null;
 

@@ -59,8 +59,11 @@ export default function DealLadder({ months, pack, emptyText }: {
     (a.from_date ?? '0000').localeCompare(b.from_date ?? '0000')
     || (a.to_date ?? '9999').localeCompare(b.to_date ?? '9999')
     || caseQty(a) - caseQty(b);
+  // RIP tiers: ascending by rebate amount (consistent everywhere RIP shows)
+  const byRebate = (a: RipTier, b: RipTier) =>
+    (a.ripOnlySave ?? 0) - (b.ripOnlySave ?? 0) || caseQty(a) - caseQty(b);
   const disc = [...(cur?.discountTiers ?? [])].sort(byWindow);
-  const rip = [...(cur?.ripTiers ?? [])].sort(byWindow);
+  const rip = [...(cur?.ripTiers ?? [])].sort(byRebate);
   const btlOf = (c?: number | null) => (pack && c != null ? c / pack : null);
 
   if (disc.length === 0 && rip.length === 0) {

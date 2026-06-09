@@ -37,6 +37,11 @@ router = APIRouter(prefix="/api/compare", tags=["compare"])
 _MAX_WHOLESALERS = 3
 _TIE_EPS = 0.005
 
+# A deal counts toward today's price only when its window is live NOW. Past
+# (expired) and future (upcoming) deals are excluded so the grid reflects what a
+# buyer can actually get today and old promos don't confuse the comparison.
+_ACTIVE_NOW = {"active", "whole_month", "evergreen"}
+
 # Same validity rule as catalog: a real barcode, not stub/placeholder filler.
 _VALID_UPC = (
     "upc IS NOT NULL AND upc <> '' AND upc <> '0'"
@@ -208,13 +213,21 @@ def _common_rows(con, src: str, slugs: list[str], eds: dict[str, str]) -> list[d
     ambiguous = {k for k, v in names.items() if len(v) > 1}
     recs = [r for r in recs if (r["wholesaler"], r["match_key"]) not in ambiguous]
 
-    # Best offer per (key, wholesaler): cheapest effective, then frontline.
+    # Best offer per (key, wholesaler). PREFER a row whose window is live TODAY
+    # (so the tier ladder we build from it reflects today's deals, not a future
+    # promo window), then cheapest effective, then frontline. Distributors that
+    # split a SKU into consecutive dated windows (Shore Point) would otherwise
+    # leave the active window's deal mis-stamped as "upcoming".
+    for r in recs:
+        st = _pricing.window_status(r.get("from_date"), r.get("to_date"))["status"]
+        r["_active_today"] = st in _ACTIVE_NOW
     best: dict[tuple, dict] = {}
     for r in recs:
         k = (r["match_key"], r["wholesaler"])
         cur = best.get(k)
         def _rank(x):
             return (
+                0 if x.get("_active_today") else 1,
                 x.get("effective_case_price") if x.get("effective_case_price") is not None else float("inf"),
                 x.get("frontline_case_price") if x.get("frontline_case_price") is not None else float("inf"),
             )
@@ -230,28 +243,27 @@ def _common_rows(con, src: str, slugs: list[str], eds: dict[str, str]) -> list[d
 
 
 def _price_obj(d: dict) -> dict:
-    """One distributor's price layers for a comparison row, plus the
-    explanation metadata the UI needs to make the numbers self-evident:
+    """One distributor's price layers (computed LIVE for today) plus the
+    explanation metadata the UI needs:
 
       - qd_save            : $/case the best QD takes off the list price
-      - qd_time_sensitive  : the best QD comes from a PARTIAL-month (limited-time)
-                             deal — per derive.py's full-month rule this discount
-                             is excluded from effective_case_price (Best Net)
-      - deal_window        : {from, to, status} of that limited-time QD
-      - net_excludes_qd    : Best Net > Best QD because the QD is limited-time and
-                             dropped from the durable full-month net price
+      - qd_time_sensitive  : the deal driving Best QD is a dated promo that ENDS
+                             this month (window_status == 'active'), so the buyer
+                             should know the price won't last
+      - deal_window        : {from, to, status} of that dated deal
 
-    Window classification uses the canonical pricing helpers (same rule as
-    derive.py / the catalog modal) — no re-implementation here."""
+    Prices are already set on `d` by _live_best (active-today tiers only), so
+    Best Net is never higher than Best QD here."""
     front = d.get("frontline_case_price")
     bq = d.get("best_case_price")
     net = d.get("effective_case_price")
-    fd, td = d.get("from_date"), d.get("to_date")
+    at = d.get("_applied_qd_tier") or {}
     qd_save = (round(front - bq, 2)
                if front is not None and bq is not None and bq < front - _TIE_EPS else 0.0)
-    ts = bool(qd_save > 0 and _pricing.is_time_sensitive_window(fd, td))
-    win = _pricing.window_status(fd, td) if ts else None
-    net_excludes_qd = bool(net is not None and bq is not None and net > bq + _TIE_EPS)
+    # time-sensitive = the applied QD rides on a dated window that ends this month
+    ts = bool(qd_save > 0 and at.get("window_status") == "active")
+    win = ({"from": at.get("from_date"), "to": at.get("to_date"),
+            "status": at.get("window_status")} if ts else None)
     return {
         "upc": d.get("upc"),
         "edition": d.get("edition"),
@@ -264,9 +276,7 @@ def _price_obj(d: dict) -> dict:
         "rip_savings": d.get("rip_savings"),
         "qd_save": qd_save or None,
         "qd_time_sensitive": ts,
-        "deal_window": ({"from": _pricing._iso(fd), "to": _pricing._iso(td),
-                         "status": win["status"]} if ts else None),
-        "net_excludes_qd": net_excludes_qd,
+        "deal_window": win,
         "has_discount": bool(d.get("has_discount")),
         "has_rip": bool(d.get("has_rip")),
     }
@@ -308,6 +318,78 @@ def options(user: Optional[dict] = Depends(get_optional_user)):
         ]
 
 
+def _active_qd_from_raw(con, slugs: list[str], eds: dict[str, str],
+                        n_cases: Optional[float]) -> dict[tuple, tuple]:
+    """Deepest quantity discount LIVE TODAY for each SKU, read straight from the
+    RAW cpl (all window rows), keyed by (wholesaler, upc_norm, size_key, pack).
+
+    cpl_enriched keeps only ONE row per SKU, so when a distributor splits a SKU
+    into consecutive dated windows (e.g. Shore Point: Jun 1-21 then Jun 22-30) the
+    enriched row — and any ladder built from it — can miss the window that's
+    actually live now. Reading raw cpl avoids that: we look at every row whose
+    window contains today (or is full-month/evergreen) and take the deepest
+    discount, volume-capped when `n_cases` is set."""
+    ed_pred, ed_params = _edition_pred(slugs, eds)
+    df = con.execute(f"""
+        SELECT wholesaler, upc, unit_volume, unit_qty, from_date, to_date,
+               discount_1_qty, discount_1_amt, discount_2_qty, discount_2_amt,
+               discount_3_qty, discount_3_amt, discount_4_qty, discount_4_amt,
+               discount_5_qty, discount_5_amt
+        FROM cpl
+        WHERE {ed_pred} AND {_VALID_UPC}
+    """, ed_params).df()
+    out: dict[tuple, tuple] = {}
+    for r in df.to_dict("records"):
+        st = _pricing.window_status(r.get("from_date"), r.get("to_date"))["status"]
+        if st not in _ACTIVE_NOW:
+            continue
+        best_amt = 0.0
+        for i in range(1, 6):
+            a = r.get(f"discount_{i}_amt")
+            try:
+                af = float(a)
+            except (TypeError, ValueError):
+                continue
+            if af != af or af <= 0:
+                continue
+            if n_cases is not None:
+                m = re.match(r"^\s*(\d+(?:\.\d+)?)", str(r.get(f"discount_{i}_qty") or ""))
+                thr = float(m.group(1)) if m else None
+                if thr is None or n_cases + 1e-9 < thr:
+                    continue
+            if af > best_amt:
+                best_amt = af
+        if best_amt <= 0:
+            continue
+        key = (r["wholesaler"], str(r.get("upc") or "").lstrip("0"),
+               _size_key(r.get("unit_volume")), _pack_norm(r.get("unit_qty")))
+        cur = out.get(key)
+        if cur is None or best_amt > cur[0]:
+            out[key] = (best_amt, _pricing._iso(r.get("from_date")),
+                        _pricing._iso(r.get("to_date")), st)
+    return out
+
+
+def _active_rip_rebate(tiers: list, n_cases: Optional[float], pack: float) -> float:
+    """Best RIP-only rebate $/case from RIP tiers live today (volume-capped when
+    n_cases is set). RIP windows come from the rip sheet rows, which attach_tiers
+    classifies reliably, so the ladder is trustworthy for the RIP layer."""
+    best = 0.0
+    for t in tiers:
+        if t.get("source") != "rip" or t.get("window_status") not in _ACTIVE_NOW:
+            continue
+        if n_cases is not None:
+            thr = _cases_threshold(t, pack)
+            if thr is None or n_cases + 1e-9 < thr:
+                continue
+        save = t.get("rip_only_save_per_case")
+        if save is None:
+            save = t.get("save_per_case") or 0.0
+        if save and save > best:
+            best = save
+    return best
+
+
 @router.get("/products")
 def compare_products(
     wholesalers: str = Query(..., description="2-3 comma-separated slugs"),
@@ -336,31 +418,37 @@ def compare_products(
         slugs = _parse_wholesalers(wholesalers, con)
         eds = _editions_for(con, src, slugs)
         raw = _common_rows(con, src, slugs, eds)
-        # At-volume mode: attach the canonical QD+RIP ladder (one batched RIP
-        # query for the whole page) and rewrite each distributor's best/effective
-        # to the price reachable at `cases`, so winners/spread/flip reflect the
-        # actual buy quantity rather than the deepest tier.
-        if n_cases:
-            _pricing.attach_tiers(con, raw)
-            for d in raw:
-                pack = float(d.get("uqd") or 0)
-                tiers = d.get("tiers") or []
-                front = d.get("frontline_case_price")
-                net = _applied_tier_at(tiers, front, n_cases, pack)[0]
-                qd = None
-                for t in tiers:
-                    if t.get("source") != "discount":
-                        continue
-                    thr = _cases_threshold(t, pack)
-                    pa = t.get("price_after")
-                    if thr is not None and pa is not None and n_cases + 1e-9 >= thr:
-                        qd = pa if qd is None else min(qd, pa)
-                if qd is None:
-                    qd = front
-                d["best_case_price"] = qd
-                d["effective_case_price"] = net if net is not None else qd
-                d["rip_savings"] = (round((qd or 0) - net, 2)
-                                    if net is not None and qd is not None and qd - net > 0.005 else None)
+        # Set each distributor's Best QD / Best Net from the deals that are LIVE
+        # TODAY (expired + upcoming excluded), so the grid shows today's real
+        # price and old/future promos don't confuse the winner. The QD comes from
+        # RAW cpl (every window row), which is robust to a SKU split into
+        # consecutive dated windows; the RIP layer comes from the canonical tier
+        # ladder. In at-volume mode a deal must also be reachable at `cases`.
+        qd_live = _active_qd_from_raw(con, slugs, eds, n_cases)
+        _pricing.attach_tiers(con, raw)
+        for d in raw:
+            pack = float(d.get("uqd") or 0)
+            tiers = d.get("tiers") or []
+            front = d.get("frontline_case_price")
+            parts = d["match_key"].split("|")
+            key = (d["wholesaler"], d["upc_norm"],
+                   parts[1] if len(parts) > 1 else "", parts[2] if len(parts) > 2 else "")
+            qd_hit = qd_live.get(key)
+            qd_amt = qd_hit[0] if qd_hit else 0.0
+            best_qd = round(front - qd_amt, 2) if front is not None and qd_amt > 0 else front
+            rip_amt = _active_rip_rebate(tiers, n_cases, pack)
+            best_net = best_qd
+            if best_qd is not None and rip_amt > 0:
+                best_net = max(round(best_qd - rip_amt, 2), 0.0)
+            d["best_case_price"] = best_qd
+            d["effective_case_price"] = best_net
+            d["rip_savings"] = (round(best_qd - best_net, 2)
+                                if best_qd is not None and best_net is not None
+                                and best_qd - best_net > _TIE_EPS else None)
+            # window of the live QD deal, for the "ends this month" marker
+            d["_applied_qd_tier"] = (
+                {"window_status": qd_hit[3], "from_date": qd_hit[1], "to_date": qd_hit[2]}
+                if qd_hit and qd_amt > 0 else None)
 
     # Pivot: match_key -> {wholesaler: row}
     by_key: dict[str, dict[str, dict]] = {}
@@ -406,11 +494,10 @@ def compare_products(
                 w_front["winner"] is not None and w_eff["winner"] is not None
                 and w_front["winner"] != w_eff["winner"]
             ),
-            # at least one distributor's Best Net is HIGHER than its Best QD —
-            # a limited-time (partial-month) QD that the durable net price drops.
-            # Flagged so the row doesn't read as a calculation error.
-            "net_gt_qd": any(
-                p.get("net_excludes_qd") for p in per_prices.values()
+            # at least one distributor's shown price rides on a dated deal that
+            # ENDS this month — surfaced so the buyer knows it won't last.
+            "has_expiring": any(
+                p.get("qd_time_sensitive") for p in per_prices.values()
             ),
         }
         rows.append(row)
@@ -677,6 +764,25 @@ def compare_tiers(
                 chosen[r["wholesaler"]] = r
         records = list(chosen.values())
         _pricing.attach_tiers(con, records)
+        # LIVE today: Best QD from raw cpl (every window row), Best Net layering
+        # the active RIP — same rule as the grid so the panel never contradicts it.
+        qd_live = _active_qd_from_raw(con, slugs, eds, None)
+        for rec in records:
+            try:
+                pack = float(rec.get("unit_qty"))
+            except (TypeError, ValueError):
+                pack = 0.0
+            front = rec.get("frontline_case_price")
+            key = (rec["wholesaler"], str(rec.get("upc") or "").lstrip("0"),
+                   _size_key(rec.get("unit_volume")), _pack_norm(rec.get("unit_qty")))
+            hit = qd_live.get(key)
+            qd_amt = hit[0] if hit else 0.0
+            best_qd = round(front - qd_amt, 2) if front is not None and qd_amt > 0 else front
+            rip_amt = _active_rip_rebate(rec.get("tiers", []) or [], None, pack)
+            best_net = best_qd
+            if best_qd is not None and rip_amt > 0:
+                best_net = max(round(best_qd - rip_amt, 2), 0.0)
+            rec["_live_qd"], rec["_live_net"] = best_qd, best_net
 
     out = {}
     for rec in records:
@@ -688,8 +794,8 @@ def compare_tiers(
             "unit_volume": rec.get("unit_volume"),
             "vintage": rec.get("vintage"),
             "frontline": rec.get("frontline_case_price"),
-            "after_qd": rec.get("best_case_price"),
-            "effective": rec.get("effective_case_price"),
+            "after_qd": rec.get("_live_qd"),
+            "effective": rec.get("_live_net"),
             "tiers": rec.get("tiers", []),
         }
     return {"wholesalers": slugs, "ladders": out}

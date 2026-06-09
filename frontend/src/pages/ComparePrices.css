@@ -53,8 +53,18 @@
 }
 .cmp-filters input::placeholder { color: var(--text-muted); }
 .cmp-filters .cmp-min { width: 110px; }
-/* semantic typeahead wrapper (lets the shared .psb flex inside the filter row) */
-.cmp-search { display: flex; flex: 1 1 260px; min-width: 220px; }
+/* product search (Products-page style: icon inside, left of the text) */
+.cmp-search { position: relative; flex: 1 1 260px; min-width: 220px; }
+.cmp-search-icon {
+  position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+  color: var(--text-muted); pointer-events: none;
+}
+.cmp-search-input {
+  width: 100%; padding: 7px 10px 7px 34px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); color: var(--text); font-size: 13px;
+}
+.cmp-search-input::placeholder { color: var(--text-muted); }
 .cmp-export {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 7px 12px; border: 1px solid var(--border); border-radius: 8px;
@@ -142,6 +152,11 @@
   margin-left: 6px; font-size: 10.5px; color: var(--orange);
   background: color-mix(in srgb, var(--orange) 10%, transparent);
   padding: 0 5px; border-radius: 6px; cursor: help;
+}
+.cmp-ladder-soon { opacity: 0.6; }   /* deal not live yet (starts later this month) */
+.cmp-ladder-upcoming {
+  margin-left: 6px; font-size: 10.5px; color: var(--text-muted);
+  background: var(--surface-hover); padding: 0 5px; border-radius: 6px;
 }
 .cmp-ladder-none { font-size: 12px; color: var(--text-muted); font-style: italic; }
 .cmp-ladder-loading { font-size: 13px; color: var(--text-muted); padding: 8px; }

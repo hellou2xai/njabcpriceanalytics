@@ -2,12 +2,11 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Zap, Scale, Clock, Download } from 'lucide-react';
+import { ChevronDown, ChevronRight, Zap, Scale, Clock, Download, Search } from 'lucide-react';
 import { compare, catalog } from '../lib/api';
 import type { CatalogTier, CompareLadder } from '../lib/api';
 import { distributorName } from '../lib/distributors';
 import RowActions from '../components/RowActions';
-import ProductSearchBox from '../components/ProductSearchBox';
 import './ComparePrices.css';
 
 const money = (v?: number | null) => (v == null ? '–' : `$${Number(v).toFixed(2)}`);
@@ -133,29 +132,33 @@ function TriSparkline({ wholesaler, ladder }: { wholesaler: string; ladder: Comp
  *  ladder, naming the limited-time deals that make Best Net exceed Best QD. */
 function ladderLines(lad: CompareLadder): { text: string; warn?: boolean }[] {
   const f = lad.frontline, qd = lad.after_qd, net = lad.effective;
+  const isLive = (s?: string | null) => s === 'active' || s === 'whole_month' || s === 'evergreen';
   const lines: { text: string; warn?: boolean }[] = [];
   if (f != null) lines.push({ text: `List ${money(f)}/cs.` });
-  const disc = (lad.tiers ?? []).filter(t => t.source === 'discount' && t.price_after != null);
-  const qdTier = disc.length
-    ? disc.reduce((a, b) => ((a.price_after ?? Infinity) <= (b.price_after ?? Infinity) ? a : b))
+  // the live discount tier that produced today's Best QD
+  const liveDisc = (lad.tiers ?? []).filter(t => t.source === 'discount' && t.price_after != null && isLive(t.window_status));
+  const qdTier = qd != null
+    ? (liveDisc.find(t => Math.abs((t.price_after as number) - qd) < 0.005)
+       ?? (liveDisc.length ? liveDisc.reduce((a, b) => ((a.price_after ?? Infinity) <= (b.price_after ?? Infinity) ? a : b)) : null))
     : null;
   if (qd != null && f != null && qd < f - 0.005) {
     const buy = qdTier ? ` — buy ${qdTier.qty} ${qdTier.unit}` : '';
-    const ts = qdTier?.is_time_sensitive
-      ? ` (limited-time deal, ${winText(qdTier.from_date, qdTier.to_date)}; excluded from Best Net)` : '';
-    lines.push({ text: `Best QD ${money(qd)}/cs${buy}${ts}.`, warn: !!qdTier?.is_time_sensitive });
+    const ends = qdTier?.window_status === 'active'
+      ? ` (this deal ends ${fmtDay(qdTier.to_date)})` : '';
+    lines.push({ text: `Best QD today ${money(qd)}/cs${buy}${ends}.`, warn: qdTier?.window_status === 'active' });
+  } else if (qd != null && f != null) {
+    lines.push({ text: `No quantity discount active today (${money(qd)}/cs).` });
   }
-  if (net != null && qd != null) {
-    if (net < qd - 0.005) {
-      lines.push({ text: `Best Net ${money(net)}/cs — a full-month RIP rebate takes off ${money(qd - net)}/cs more.` });
-    } else if (net > qd + 0.005) {
-      lines.push({
-        text: `Best Net ${money(net)}/cs is HIGHER than Best QD ${money(qd)}/cs. That quantity discount is a limited-time promo, and "Best Net" is the price you can count on all month, so the promo is left out.`,
-        warn: true,
-      });
-    } else {
-      lines.push({ text: `Best Net ${money(net)}/cs — no RIP rebate, so it matches Best QD.` });
-    }
+  if (net != null && qd != null && net < qd - 0.005) {
+    lines.push({ text: `Best Net today ${money(net)}/cs — a RIP rebate takes off ${money(qd - net)}/cs more.` });
+  }
+  // a deeper discount that only starts later this month (not counted today)
+  const upcoming = (lad.tiers ?? [])
+    .filter(t => t.source === 'discount' && t.window_status === 'upcoming' && t.price_after != null
+                 && net != null && (t.price_after as number) < net - 0.005)
+    .sort((a, b) => (a.price_after as number) - (b.price_after as number))[0];
+  if (upcoming) {
+    lines.push({ text: `A deeper ${money(upcoming.price_after)}/cs deal starts ${fmtDay(upcoming.from_date)} (buy ${upcoming.qty} ${upcoming.unit}).` });
   }
   return lines;
 }
@@ -201,8 +204,10 @@ function LadderPanel({ slugs, params, onOpen }: {
                 {(lad.tiers ?? []).length === 0 && (
                   <div className="cmp-ladder-none">No QD or RIP tiers</div>
                 )}
-                {(lad.tiers ?? []).map((t: CatalogTier, i: number) => (
-                  <div key={i} className="cmp-ladder-line">
+                {/* today's view: hide expired deals (they only confuse), mark a
+                    deal that ENDS this month, and label one that hasn't started */}
+                {(lad.tiers ?? []).filter(t => t.window_status !== 'expired').map((t: CatalogTier, i: number) => (
+                  <div key={i} className={`cmp-ladder-line${t.window_status === 'upcoming' ? ' cmp-ladder-soon' : ''}`}>
                     <span className={`prod-deal-badge ${t.source === 'rip' ? 'prod-deal-rip' : 'prod-deal-qd'}`}>
                       {t.source === 'rip' ? 'RIP' : 'QD'}
                     </span>
@@ -210,16 +215,21 @@ function LadderPanel({ slugs, params, onOpen }: {
                     {t.save_per_case != null && (
                       <span className="cmp-ladder-off"> (−{money(t.save_per_case)})</span>
                     )}
-                    {t.is_time_sensitive && t.window_status !== 'expired' && (
+                    {t.window_status === 'active' && (
                       <span className="cmp-ladder-window"
-                            title={`Limited-time deal, valid ${winText(t.from_date, t.to_date)}. Not counted in Best Net (the full-month price).`}>
-                        <Clock size={9} /> {winText(t.from_date, t.to_date)}
+                            title={`Live now, ends ${fmtDay(t.to_date)}.`}>
+                        <Clock size={9} /> ends {fmtDay(t.to_date)}
+                      </span>
+                    )}
+                    {t.window_status === 'upcoming' && (
+                      <span className="cmp-ladder-window cmp-ladder-upcoming"
+                            title={`Not live yet; starts ${fmtDay(t.from_date)}.`}>
+                        starts {fmtDay(t.from_date)}
                       </span>
                     )}
                   </div>
                 ))}
-                {/* plain-language readout so the List → QD → Net numbers, and any
-                    limited-time deal behind them, are self-explanatory */}
+                {/* plain-language readout of today's price and any deal timing */}
                 <div className="cmp-ladder-explain">
                   {ladderLines(lad).map((ln, i) => (
                     <div key={i} className={`cmp-ladder-exp${ln.warn ? ' cmp-ladder-exp-warn' : ''}`}>
@@ -241,9 +251,9 @@ export default function ComparePrices() {
   const [selected, setSelected] = useState<string[]>(
     params.get('d')?.split(',').filter(Boolean) ?? []);
   const [q, setQ] = useState(params.get('q') ?? '');
-  // when a typeahead suggestion is picked we narrow by its resolved UPC (the
-  // reliable key — a shared/abbreviated name may not substring-match the grid).
-  const [pickUpc, setPickUpc] = useState<string>('');
+  // debounced copy of q that drives the (heavy) grid query, so the comparison
+  // doesn't refetch on every keystroke. Matches the Products page feel.
+  const [qDebounced, setQDebounced] = useState(q);
   const [ptype, setPtype] = useState(params.get('type') ?? '');
   // default ON: open straight to the rows where distributors actually differ
   const [onlyDiff, setOnlyDiff] = useState(params.get('diff') !== '0');
@@ -287,14 +297,16 @@ export default function ComparePrices() {
   });
 
   const ready = selected.length >= 2 && selected.length <= 3;
-  // a picked suggestion filters by its UPC (exact); free text filters by the
-  // typed string (the backend matches name/brand AND barcode).
-  const searchTerm = pickUpc || q;
+  // debounce the typed query into qDebounced (backend matches name/brand AND barcode)
+  useEffect(() => {
+    const t = setTimeout(() => setQDebounced(q), 250);
+    return () => clearTimeout(t);
+  }, [q]);
   const { data, isLoading, error } = useQuery({
-    queryKey: ['compare-products', selected, searchTerm, ptype, onlyDiff, minSpread, cases],
+    queryKey: ['compare-products', selected, qDebounced, ptype, onlyDiff, minSpread, cases],
     queryFn: () => compare.products({
       wholesalers: selected.join(','),
-      q: searchTerm || undefined,
+      q: qDebounced || undefined,
       product_type: ptype || undefined,
       only_differences: onlyDiff || undefined,
       min_spread: minSpread ? parseFloat(minSpread) : undefined,
@@ -324,7 +336,7 @@ export default function ComparePrices() {
     try {
       const blob = await compare.exportXlsx({
         wholesalers: selected.join(','),
-        q: searchTerm || undefined,
+        q: qDebounced || undefined,
         product_type: ptype || undefined,
         only_differences: onlyDiff || undefined,
         min_spread: minSpread ? parseFloat(minSpread) : undefined,
@@ -482,15 +494,13 @@ export default function ComparePrices() {
           {/* ---- filters ---- */}
           <div className="cmp-filters">
             <div className="cmp-search">
-              <ProductSearchBox
-                value={q}
+              <Search size={15} className="cmp-search-icon" />
+              <input
+                className="cmp-search-input"
+                type="text"
                 placeholder="Search product, brand or UPC…"
-                onChange={v => { setQ(v); setPickUpc(''); setShown(pageSize); }}
-                onSelect={p => {
-                  setQ(p.product_name);
-                  setPickUpc(p.upc ? p.upc.replace(/^0+/, '') : '');
-                  setShown(pageSize);
-                }}
+                value={q}
+                onChange={e => { setQ(e.target.value); setShown(pageSize); }}
               />
             </div>
             <select value={ptype} onChange={e => setPtype(e.target.value)}>
@@ -617,12 +627,12 @@ export default function ComparePrices() {
                               <Zap size={11} /> flips
                             </span>
                           )}
-                          {r.net_gt_qd && (
+                          {r.has_expiring && (
                             <span
                               className="cmp-ltd"
-                              title="Best Net is higher than Best QD on this row. The quantity discount is a limited-time promo, and Best Net (the price you can rely on all month) excludes it. Open the row for the dates."
+                              title="Today's price for at least one distributor uses a dated deal that ends this month. Open the row to see the date and any deal that starts later."
                             >
-                              <Clock size={11} /> limited QD
+                              <Clock size={11} /> ends soon
                             </span>
                           )}
                         </td>
@@ -635,7 +645,7 @@ export default function ComparePrices() {
                               <WinnerCell value={p?.after_qd}
                                 isWinner={r.winner_after_qd === w} isTie={r.winner_after_qd === 'tie'}
                                 mark={p?.qd_time_sensitive ? (
-                                  <span className="cmp-ts" title={`This QD is a limited-time deal${p.deal_window ? `, valid ${winText(p.deal_window.from, p.deal_window.to)}` : ''}. It's excluded from Best Net (the durable full-month price).`}>
+                                  <span className="cmp-ts" title={`Today's price uses a dated deal that ends ${p.deal_window ? fmtDay(p.deal_window.to) : 'this month'}.`}>
                                     <Clock size={10} />
                                   </span>
                                 ) : null} />

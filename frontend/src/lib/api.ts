@@ -406,13 +406,11 @@ export interface ComparePrice {
   rip_savings: number | null;
   // $/case the best QD takes off list (null when there's no QD).
   qd_save?: number | null;
-  // The best QD comes from a PARTIAL-month (limited-time) deal — per the
-  // full-month rule it's excluded from effective (Best Net), so Net can be
-  // higher than Best QD. deal_window carries that promo's dates + status.
+  // Prices are computed LIVE for today. qd_time_sensitive = the deal driving
+  // Best QD is a dated promo that ENDS this month (window active now), so the
+  // buyer should know it won't last. deal_window carries its dates + status.
   qd_time_sensitive?: boolean;
   deal_window?: { from: string | null; to: string | null; status: WindowStatus } | null;
-  // Best Net > Best QD because the QD is limited-time and dropped from net.
-  net_excludes_qd?: boolean;
   has_discount: boolean;
   has_rip: boolean;
 }
@@ -435,10 +433,9 @@ export interface CompareRow {
   spread: number | null;
   spread_pct: number | null;
   deal_flip: boolean;
-  // At least one distributor's Best Net is higher than its Best QD (a
-  // limited-time QD excluded from the durable net price). Flagged so the row
-  // doesn't read as a calculation error.
-  net_gt_qd?: boolean;
+  // At least one distributor's live price rides on a dated deal that ENDS this
+  // month — surfaced so the buyer knows today's price won't last.
+  has_expiring?: boolean;
 }
 
 export interface CompareSummary {

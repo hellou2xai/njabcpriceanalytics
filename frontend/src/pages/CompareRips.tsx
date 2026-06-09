@@ -198,9 +198,13 @@ function DistPanel({ w, d, row, cases, accent, isWinner, onRipClick }: {
         <Metric icon={<Zap size={13} />} label="RIP starts at"
           value={d.min_cases ? `${d.min_cases} cs` : 'no RIP'}
           hint="The fewest cases you must buy before any RIP kicks in. Lower means less money down to start saving." />
-        <Metric icon={<Trophy size={13} />} label="Biggest RIP"
-          value={d.deepest_rebate ? `${money(d.deepest_rebate)}/cs` : '-'}
-          hint={d.deepest_at_cases ? `The largest RIP on offer: ${money(d.deepest_rebate)} off each case, once you reach ${d.deepest_at_cases} cases.` : 'The largest RIP on offer per case.'} />
+        <Metric icon={<Trophy size={13} />} label="Best RIP / case"
+          value={d.deepest_rebate
+            ? `${money(d.deepest_rebate)}/cs${d.deepest_at_cases && d.deepest_at_cases > 1 ? ` at ${d.deepest_at_cases}cs` : ''}`
+            : '-'}
+          hint={d.deepest_at_cases && d.deepest_at_cases > 1
+            ? `The largest RIP rebate on this product is ${money(d.deepest_rebate)} off each case, but only once you buy ${d.deepest_at_cases} cases. At a smaller order you get less per case.`
+            : `The largest RIP rebate on this product: ${money(d.deepest_rebate)} off each case.`} />
         <Metric icon={<CalendarClock size={13} />} label="RIP runs"
           value={`${d.active_days ?? 0} days`}
           hint={`How many days this month this distributor has a RIP live on this product. More days = easier to time your buy.`} />

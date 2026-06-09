@@ -82,10 +82,22 @@ function Rail({ category, label }: { category: string; label: string }) {
     staleTime: 5 * 60_000,
   });
   const items = (() => {
+    // De-duplicate to one card per distinct product: same UPC (or, when the UPC
+    // is missing, same name + size) can come back as several rows (multiple
+    // distributors, split listings). Sort cheapest-first, then keep the first of
+    // each identity so the survivor is the best-priced offer.
+    const seen = new Set<string>();
     const ok = ((data?.items ?? []) as Product[])
       .map(p => ({ p, btl: perBottle(p) }))
       .filter(x => !!x.p.image_url && x.btl != null && x.btl > 0 && x.btl < MAX_BOTTLE_PRICE)
-      .sort((a, b) => (a.btl as number) - (b.btl as number));
+      .sort((a, b) => (a.btl as number) - (b.btl as number))
+      .filter(x => {
+        const upc = x.p.upc ? String(x.p.upc).replace(/^0+/, '') : '';
+        const key = upc || `${(x.p.product_name || '').toLowerCase().trim()}|${x.p.unit_volume || ''}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
     if (ok.length <= 12) return ok.map(x => x.p);
     // take a window centred on the median so the rail reads as "mid-priced"
     const start = Math.min(Math.floor(ok.length * 0.35), Math.max(0, ok.length - 12));

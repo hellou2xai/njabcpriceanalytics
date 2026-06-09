@@ -176,29 +176,34 @@ function DistPanel({ w, d, row, cases, accent, isWinner, onRipClick }: {
         const ripPart = off != null && d.rip_at_n != null ? Math.min(d.rip_at_n, off) : 0;
         const qdPart = off != null ? Math.max(0, off - ripPart) : 0;
         const afterQD = qdPart > 0.005 ? d.frontline! - qdPart : null;   // price after QD
+        // per-bottle price at each layer (pack = bottles per case)
+        const pb = (v?: number | null) => (v != null && pack ? `${money(v / pack)}/btl` : null);
         const bdHint =
-          `List (sticker) price ${money(d.frontline)}/case` +
-          (qdPart > 0.005 ? `. After the ${money(qdPart)}/case quantity discount: ${money(afterQD)}/case` : '') +
-          (ripPart > 0.005 ? `. After the ${money(ripPart)}/case RIP on top: ${money(net)}/case` : '') +
+          `List (sticker) price ${money(d.frontline)}/case (${pb(d.frontline)})` +
+          (qdPart > 0.005 ? `. After the ${money(qdPart)}/case quantity discount: ${money(afterQD)}/case (${pb(afterQD)})` : '') +
+          (ripPart > 0.005 ? `. After the ${money(ripPart)}/case RIP on top: ${money(net)}/case (${pb(net)})` : '') +
           (net != null ? ` (what you pay buying ${cases} case${cases !== 1 ? 's' : ''}).` : '.');
         return (
           <div className="rip2-dist-breakdown" title={bdHint}>
             <Tag size={11} />
-            <span>List {money(d.frontline)}</span>
+            <span>List {money(d.frontline)}{pb(d.frontline) && <span className="rip2-bd-btl">{pb(d.frontline)}</span>}</span>
             {afterQD != null && (
               <span className="rip2-bd-step" title="Price after the distributor's quantity (case) discount, before any RIP.">
                 <span className="rip2-bd-arrow">→</span> after QD <strong>{money(afterQD)}</strong>
+                {pb(afterQD) && <span className="rip2-bd-btl">{pb(afterQD)}</span>}
                 <span className="rip2-bd-d">(-{money(qdPart)})</span>
               </span>
             )}
             {ripPart > 0.005 && net != null && (
               <span className="rip2-bd-step" title="Price after the NJ ABC RIP rebate, applied on top of the quantity discount. This is what you pay.">
                 <span className="rip2-bd-arrow">→</span> after RIP <strong>{money(net)}</strong>
+                {pb(net) && <span className="rip2-bd-btl">{pb(net)}</span>}
                 <span className="rip2-bd-d">(-{money(ripPart)})</span>
               </span>
             )}
             {qdPart <= 0.005 && ripPart <= 0.005 && net != null && (
-              <span className="rip2-bd-step"><span className="rip2-bd-arrow">→</span> pay <strong>{money(net)}</strong></span>
+              <span className="rip2-bd-step"><span className="rip2-bd-arrow">→</span> pay <strong>{money(net)}</strong>
+                {pb(net) && <span className="rip2-bd-btl">{pb(net)}</span>}</span>
             )}
             <Info text={bdHint} />
           </div>

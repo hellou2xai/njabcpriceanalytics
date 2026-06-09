@@ -138,6 +138,7 @@
 .rip2-bd-seg { cursor: help; white-space: nowrap; }
 .rip2-bd-step { cursor: help; white-space: nowrap; display: inline-flex; align-items: center; gap: 3px; }
 .rip2-bd-d { color: #15803d; font-size: 0.72rem; }
+.rip2-bd-btl { color: var(--text-muted); font-size: 0.7rem; margin-left: 3px; }
 .rip2-dist-breakdown { flex-wrap: wrap; gap: 4px 6px; }
 
 /* unlock sticker: cash down + money back for the first RIP */

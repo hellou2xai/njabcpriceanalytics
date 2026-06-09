@@ -210,15 +210,19 @@ function DistPanel({ w, d, row, cases, accent, isWinner, onRipClick }: {
         );
       })()}
 
-      {/* the clarity sticker: cash down to unlock the first RIP, and money back */}
-      {d.unlock_cases != null && d.unlock_investment != null && (
-        <div className="rip2-unlock"
-          title={`To claim ${distributorName(w)}'s first RIP on this product you must buy ${d.unlock_cases} case${d.unlock_cases !== 1 ? 's' : ''}, an outlay of ${money(d.unlock_investment)}. You get ${money(d.unlock_rebate_total)} back as the RIP. Net after the RIP: ${money((d.unlock_investment ?? 0) - (d.unlock_rebate_total ?? 0))}.`}>
-          <Zap size={12} />
-          <span>Unlock the RIP: buy <strong>{d.unlock_cases} cs</strong> = <strong>{money(d.unlock_investment)}</strong></span>
-          <span className="rip2-unlock-back">get {money(d.unlock_rebate_total)} back</span>
-        </div>
-      )}
+      {/* the clarity sticker: pay this up front (before RIP), get the RIP back,
+          land at the net. invest - back = net reconciles to the headline. */}
+      {d.unlock_cases != null && d.unlock_investment != null && (() => {
+        const net = (d.unlock_investment ?? 0) - (d.unlock_rebate_total ?? 0);
+        return (
+          <div className="rip2-unlock"
+            title={`To claim ${distributorName(w)}'s first RIP you buy ${d.unlock_cases} case${d.unlock_cases !== 1 ? 's' : ''} at the case price (before the RIP), paying ${money(d.unlock_investment)} up front. The RIP then returns ${money(d.unlock_rebate_total)}, so your net cost is ${money(net)}.`}>
+            <Zap size={12} />
+            <span>Unlock the RIP: buy <strong>{d.unlock_cases} cs</strong>, pay <strong>{money(d.unlock_investment)}</strong></span>
+            <span className="rip2-unlock-back">get {money(d.unlock_rebate_total)} back · net {money(net)}</span>
+          </div>
+        );
+      })()}
 
       <div className="rip2-metrics">
         <Metric icon={<TrendingDown size={13} />} label="Just 1 case"

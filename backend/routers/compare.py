@@ -1268,10 +1268,14 @@ def compare_rips(
             # List/Discount/RIP breakdown all in agreement.
             uc = _min_cases_to_rip(tiers, pack)
             if uc:
-                ppc = _landed_at(tiers, front, uc, pack)
-                rpc = _rip_rebate_at(tiers, uc, pack)
+                landed = _landed_at(tiers, front, uc, pack)   # after QD + RIP
+                rpc = _rip_rebate_at(tiers, uc, pack)         # RIP rebate per case
+                # You PAY the after-QD price up front (RIP not yet applied), then
+                # the RIP comes back to you. So the cash you put down to unlock is
+                # the price BEFORE the RIP = landed + the RIP that gets refunded.
+                before_rip = (landed + rpc) if landed is not None else None
                 unlock_cases = uc
-                unlock_investment = round(uc * ppc, 2) if ppc is not None else None
+                unlock_investment = round(uc * before_rip, 2) if before_rip is not None else None
                 unlock_rebate_total = round(uc * rpc, 2)
             else:
                 unlock_cases = unlock_investment = unlock_rebate_total = None

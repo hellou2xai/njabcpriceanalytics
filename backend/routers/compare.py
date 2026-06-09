@@ -1417,6 +1417,9 @@ def compare_rips(
             "size_key": key.split("|")[1] if "|" in key else "",
             "product_name": min((d["product_name"] for d in dists.values()), key=len),
             "product_type": any_row.get("product_type"),
+            # vintage is part of the identity for wine, so both sides share it; the
+            # UI shows it on the card for wine/sparkling/vermouth.
+            "vintage": any_row.get("vintage"),
             "proof_match": len(proofs) <= 1,
             "brand": any_row.get("brand"),
             "unit_qty": any_row.get("unit_qty"),

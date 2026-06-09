@@ -18,6 +18,16 @@ const money = (v?: number | null) => (v == null ? '-' : `$${Number(v).toFixed(2)
 const ACCENTS = ['#2563eb', '#d97706', '#7c3aed'];
 const DEFAULT = ['allied', 'fedway'];
 
+// show the vintage on the card only for wine-family products with a real vintage
+const wineVintage = (type?: string | null, vintage?: string | null): string | null => {
+  if (!vintage) return null;
+  const v = String(vintage).trim();
+  if (!v || ['0', 'nan', 'none', 'null'].includes(v.toLowerCase())) return null;
+  const isWine = /wine|sparkling|vermouth|champagne|port|sherry/i.test(type || '');
+  if (!isWine && !/^(19|20)\d{2}$|^nv$/i.test(v)) return null;  // year or NV
+  return v.toUpperCase() === 'NV' ? 'NV' : v;
+};
+
 // full-page product detail deep link (same scheme as Products / ProductsGrid)
 const detailUrl = (w: string, name?: string | null, upc?: string | null) => {
   const q = new URLSearchParams({ w, n: name || '' });
@@ -607,6 +617,11 @@ export default function CompareRips() {
                             }}>{r.product_name}</button>
                             <div className="rip2-product-sub">
                               {r.unit_qty} × {r.unit_volume}
+                              {wineVintage(r.product_type, r.vintage) && (
+                                <span className="rip2-vintage" title="Vintage. Wine is matched by vintage as well, so both distributors are the same year.">
+                                  {wineVintage(r.product_type, r.vintage)}
+                                </span>
+                              )}
                               {!r.proof_match && (
                                 <span className="rip2-warn" title="The distributors list different proof/ABV for this barcode. Double-check it's the same item before comparing.">
                                   <AlertTriangle size={11} /> proof differs

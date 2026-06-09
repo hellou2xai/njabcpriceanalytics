@@ -744,6 +744,7 @@ export interface CompareRipRow {
   size_key: string;
   product_name: string;
   product_type: string | null;
+  vintage: string | null;
   brand: string | null;
   unit_qty: string | null;
   unit_volume: string | null;

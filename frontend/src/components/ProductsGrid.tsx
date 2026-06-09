@@ -66,13 +66,16 @@ interface ProductGroup {
 
 // Group by the server-provided product family key so a product's
 // differently-named sizes (GLENFID MALT 12Y 12P / 12YR / 6P …) collapse into
-// ONE card. Falls back to product_name when the key is absent.
+// ONE card. The key is DISTRIBUTOR-AGNOSTIC (product_group = brand|enrichment
+// core, shared across distributors by UPC), so the same product carried by
+// several distributors merges into one card and each distributor's listing
+// shows as its own size row — instead of a separate card per distributor.
 function groupByProduct(items: Product[]): ProductGroup[] {
   const map = new Map<string, ProductGroup>();
   const order: string[] = [];
   for (const it of items) {
     const fam = (it.product_group && it.product_group.trim()) ? it.product_group : it.product_name;
-    const key = `${it.wholesaler}|${fam}`;
+    const key = fam;
     let g = map.get(key);
     if (!g) {
       g = {
@@ -92,7 +95,9 @@ function groupByProduct(items: Product[]): ProductGroup[] {
     g.sizes.push(it);
   }
   for (const g of map.values()) {
-    g.sizes.sort((a, b) => toMl(a.unit_volume) - toMl(b.unit_volume));
+    // size ascending, then by distributor so a product's listings group cleanly
+    g.sizes.sort((a, b) =>
+      toMl(a.unit_volume) - toMl(b.unit_volume) || a.wholesaler.localeCompare(b.wholesaler));
   }
   return order.map(k => map.get(k)!);
 }
@@ -148,6 +153,7 @@ function SizeRow({ size, cart, updateQty, primaryName }: {
         {primaryName && size.product_name && size.product_name !== primaryName && (
           <div className="prod-size-variant">{size.product_name}</div>
         )}
+        <div className="prod-size-dist"><Store size={11} /> {distributorName(size.wholesaler)}</div>
         <div className="prod-size-pack">{pack ? `${pack} bottles/case` : 'single unit'}</div>
         {sku && <div className="prod-size-sku">SKU: {sku}</div>}
         {size.vintage != null && String(size.vintage) !== '0' && String(size.vintage).trim() !== '' && (
@@ -243,7 +249,12 @@ function ProductCard({ group, cart, updateQty }: {
   // always shows regardless of where the page boundary fell.
   const { sizes: fullSizes, isFetching } = useProductSizes(
     group.wholesaler, group.productName, first?.upc, expanded);
-  const sizes = fullSizes.length ? fullSizes : group.sizes;
+  // Distinct distributors carrying this product (one row per distributor's
+  // listing). When >1, keep the search rows (they already span distributors) —
+  // the single-distributor "all sizes" fetch would otherwise drop the others.
+  const distSlugs = useMemo(() => [...new Set(group.sizes.map(s => s.wholesaler))], [group.sizes]);
+  const multiDist = distSlugs.length > 1;
+  const sizes = multiDist ? group.sizes : (fullSizes.length ? fullSizes : group.sizes);
   const optionCount = sizes.length;
 
   return (
@@ -264,9 +275,10 @@ function ProductCard({ group, cart, updateQty }: {
             {group.displayName}
           </Link>
           <div className="prod-card-type">{[group.productType, group.brand].filter(Boolean).join(' · ')}</div>
-          <div className="prod-card-dist">
+          <div className="prod-card-dist"
+            title={multiDist ? distSlugs.map(distributorName).join(', ') : undefined}>
             <Store size={12} className="prod-card-dist-icon" />
-            {distributorName(group.wholesaler)}
+            {multiDist ? `Sold by ${distSlugs.length} distributors` : distributorName(group.wholesaler)}
           </div>
           <div className="prod-card-stickers" onClick={e => e.stopPropagation()}>
             <DealTimingSticker deals={repRow?.deal_windows ?? []} gaps={repRow?.rip_gaps}
@@ -350,7 +362,7 @@ export function countProductGroups(items: Product[]): number {
   const seen = new Set<string>();
   for (const it of items) {
     const fam = (it.product_group && it.product_group.trim()) ? it.product_group : it.product_name;
-    seen.add(`${it.wholesaler}|${fam}`);
+    seen.add(fam);
   }
   return seen.size;
 }

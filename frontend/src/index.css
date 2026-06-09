@@ -5555,6 +5555,8 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 @media (max-width: 720px) { .prod-size-row { grid-template-columns: 1fr; padding-left: 16px; gap: 10px; } }
 .prod-size-name { font-size: 15px; font-weight: 700; color: var(--text); }
 .prod-size-pack { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+.prod-size-dist { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; font-weight: 600; color: var(--text); margin-top: 3px; }
+.prod-size-dist svg { color: var(--text-muted); }
 .prod-size-sku { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
 .prod-size-vintage { margin-top: 4px; display: inline-block; }
 .prod-size-price { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }

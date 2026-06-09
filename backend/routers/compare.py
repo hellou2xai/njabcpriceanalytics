@@ -173,7 +173,7 @@ def _common_rows(con, src: str, slugs: list[str], eds: dict[str, str]) -> list[d
                frontline_case_price, frontline_unit_price,
                best_case_price, best_unit_price,
                effective_case_price, rip_savings, total_savings_per_case,
-               has_discount, has_rip, rip_code,
+               has_discount, has_rip, rip_code, rip_windows,
                discount_1_qty, discount_1_amt, discount_2_qty, discount_2_amt,
                discount_3_qty, discount_3_amt, discount_4_qty, discount_4_amt,
                discount_5_qty, discount_5_amt,
@@ -319,7 +319,7 @@ def options(user: Optional[dict] = Depends(get_optional_user)):
 
 
 def _active_qd_from_raw(con, slugs: list[str], eds: dict[str, str],
-                        n_cases: Optional[float]) -> dict[tuple, tuple]:
+                        n_cases: Optional[float], upcs: list[str]) -> dict[tuple, tuple]:
     """Deepest quantity discount LIVE TODAY for each SKU, read straight from the
     RAW cpl (all window rows), keyed by (wholesaler, upc_norm, size_key, pack).
 
@@ -328,8 +328,20 @@ def _active_qd_from_raw(con, slugs: list[str], eds: dict[str, str],
     enriched row — and any ladder built from it — can miss the window that's
     actually live now. Reading raw cpl avoids that: we look at every row whose
     window contains today (or is full-month/evergreen) and take the deepest
-    discount, volume-capped when `n_cases` is set."""
+    discount, volume-capped when `n_cases` is set.
+
+    Scoped to the page's matched UPCs and filtered to live windows IN SQL, so a
+    big head-to-head (allied vs fedway) doesn't scan the whole catalogue in
+    Python."""
+    if not upcs:
+        return {}
     ed_pred, ed_params = _edition_pred(slugs, eds)
+    today = _pricing.eastern_today().isoformat()
+    upc_ph = ",".join("?" * len(upcs))
+    # a window is live today when it contains today, or has no dates (evergreen)
+    active_sql = ("(from_date IS NULL OR to_date IS NULL OR "
+                  "(CAST(from_date AS DATE) <= CAST(? AS DATE) "
+                  "AND CAST(? AS DATE) <= CAST(to_date AS DATE)))")
     df = con.execute(f"""
         SELECT wholesaler, upc, unit_volume, unit_qty, from_date, to_date,
                discount_1_qty, discount_1_amt, discount_2_qty, discount_2_amt,
@@ -337,12 +349,14 @@ def _active_qd_from_raw(con, slugs: list[str], eds: dict[str, str],
                discount_5_qty, discount_5_amt
         FROM cpl
         WHERE {ed_pred} AND {_VALID_UPC}
-    """, ed_params).df()
+          AND LTRIM(upc, '0') IN ({upc_ph})
+          AND {active_sql}
+    """, ed_params + list(upcs) + [today, today]).df()
     out: dict[tuple, tuple] = {}
     for r in df.to_dict("records"):
-        st = _pricing.window_status(r.get("from_date"), r.get("to_date"))["status"]
-        if st not in _ACTIVE_NOW:
-            continue
+        # SQL already restricted to live windows; classify only for the marker
+        st = "active" if _pricing.is_time_sensitive_window(
+            r.get("from_date"), r.get("to_date")) else "whole_month"
         best_amt = 0.0
         for i in range(1, 6):
             a = r.get(f"discount_{i}_amt")
@@ -424,8 +438,15 @@ def compare_products(
         # RAW cpl (every window row), which is robust to a SKU split into
         # consecutive dated windows; the RIP layer comes from the canonical tier
         # ladder. In at-volume mode a deal must also be reachable at `cases`.
-        qd_live = _active_qd_from_raw(con, slugs, eds, n_cases)
-        _pricing.attach_tiers(con, raw)
+        page_upcs = sorted({r["upc_norm"] for r in raw if r.get("upc_norm")})
+        qd_live = _active_qd_from_raw(con, slugs, eds, n_cases, page_upcs)
+        # RIP layer: at-volume needs the volume-aware tier ladder; best-deal uses
+        # the cheap precomputed rip_windows overlay (no per-product RIP queries,
+        # so a big allied-vs-fedway grid stays fast).
+        if n_cases:
+            _pricing.attach_tiers(con, raw)
+        else:
+            _pricing.attach_live_rip(con, raw)
         for d in raw:
             pack = float(d.get("uqd") or 0)
             tiers = d.get("tiers") or []
@@ -436,7 +457,8 @@ def compare_products(
             qd_hit = qd_live.get(key)
             qd_amt = qd_hit[0] if qd_hit else 0.0
             best_qd = round(front - qd_amt, 2) if front is not None and qd_amt > 0 else front
-            rip_amt = _active_rip_rebate(tiers, n_cases, pack)
+            rip_amt = (_active_rip_rebate(tiers, n_cases, pack) if n_cases
+                       else (d.get("live_rip_amt") or 0.0))
             best_net = best_qd
             if best_qd is not None and rip_amt > 0:
                 best_net = max(round(best_qd - rip_amt, 2), 0.0)
@@ -766,7 +788,7 @@ def compare_tiers(
         _pricing.attach_tiers(con, records)
         # LIVE today: Best QD from raw cpl (every window row), Best Net layering
         # the active RIP — same rule as the grid so the panel never contradicts it.
-        qd_live = _active_qd_from_raw(con, slugs, eds, None)
+        qd_live = _active_qd_from_raw(con, slugs, eds, None, [upc_norm])
         for rec in records:
             try:
                 pack = float(rec.get("unit_qty"))

@@ -102,6 +102,22 @@ function groupByProduct(items: Product[]): ProductGroup[] {
   return order.map(k => map.get(k)!);
 }
 
+// Price after the 1-CASE quantity discount (what you pay buying a single case),
+// from the row's discount tiers — NOT the deepest RIP. Falls back to frontline
+// when there's no 1-case QD. Bottle-unit tiers (qty <= pack) count as reachable.
+function oneCaseQdCase(s: Product): number | null {
+  const front = s.frontline_case_price ?? null;
+  const pack = bottlesPerCase(s.product_name, s.unit_qty);
+  const disc = (s.discount_tiers ?? s.tiers ?? []).filter(
+    t => t.source !== 'rip' && t.price_after != null);
+  const reachable = disc.filter(t => {
+    const isBtl = /^\s*b/i.test(String(t.unit ?? ''));
+    return isBtl ? (pack ? t.qty <= pack : false) : t.qty <= 1;
+  });
+  if (reachable.length) return Math.min(...reachable.map(t => t.price_after as number));
+  return front;
+}
+
 // True per-bottle list price, correcting slash-multipacks (unit_qty = trays)
 // the same way every other per-bottle surface does.
 function bottleUnitPrice(s: Product): number | null {
@@ -138,7 +154,10 @@ function SizeRow({ size, cart, updateQty, primaryName }: {
   const comboLink = useComboLink();
   const comboUrl = comboLink(size.wholesaler, size.upc);
   const sku = abgSku(size.wholesaler, size.abg_sku) ? `${skuLabel(size.wholesaler)} ${size.abg_sku}` : size.upc;
-  const btlPrice = pack ? size.effective_case_price / pack : size.frontline_unit_price;
+  // Headline = price after the 1-case QD (the realistic single-case price), not
+  // the deepest RIP. The deeper RIP/QD tiers still show in the deal ladder below.
+  const caseP = oneCaseQdCase(size) ?? size.effective_case_price;
+  const btlPrice = pack ? caseP / pack : (size.frontline_unit_price ?? caseP);
   // Current-month quantity-discount + RIP tier ladders, shown inline so the
   // buyer gets every number without hovering the sparkline. Driven from the
   // SAME price_3mo data the sparkline uses (via buildMonths), so the inline
@@ -173,7 +192,7 @@ function SizeRow({ size, cart, updateQty, primaryName }: {
         </span>
         {/* Case price first (the buying unit), then bottle — both on one line. */}
         <div className="prod-size-amounts">
-          <span className="prod-size-case">${size.effective_case_price.toFixed(2)}/case</span>
+          <span className="prod-size-case">${caseP.toFixed(2)}/case</span>
           <span className="prod-size-btl">${btlPrice.toFixed(2)}/bottle</span>
         </div>
         <PriceSparklines wholesaler={size.wholesaler} productName={size.product_name}
@@ -254,7 +273,24 @@ function ProductCard({ group, cart, updateQty }: {
   // the single-distributor "all sizes" fetch would otherwise drop the others.
   const distSlugs = useMemo(() => [...new Set(group.sizes.map(s => s.wholesaler))], [group.sizes]);
   const multiDist = distSlugs.length > 1;
-  const sizes = multiDist ? group.sizes : (fullSizes.length ? fullSizes : group.sizes);
+  // For a multi-distributor product, refetch the listings BY UPC across all
+  // distributors WITH tiers (the list rows lack tiers/price_3mo, which left the
+  // deal ladder empty — "No deals this month" — and the headline at frontline).
+  const groupUpcs = useMemo(
+    () => [...new Set(group.sizes.map(s => s.upc).filter(Boolean) as string[])], [group.sizes]);
+  const { data: multiData } = useQuery({
+    enabled: expanded && multiDist && groupUpcs.length > 0,
+    staleTime: 5 * 60_000,
+    queryKey: ['multidist-sizes', groupUpcs.join(',')],
+    queryFn: () => catalog.search({ upcs: groupUpcs.join(','), include_tiers: true, limit: 200, sort: 'product_name', order: 'asc' }),
+  });
+  const sizes = useMemo(() => {
+    const base = multiDist
+      ? ((multiData?.items as Product[] | undefined) ?? group.sizes)
+      : (fullSizes.length ? fullSizes : group.sizes);
+    return [...base].sort((a, b) =>
+      toMl(a.unit_volume) - toMl(b.unit_volume) || a.wholesaler.localeCompare(b.wholesaler));
+  }, [multiDist, multiData, fullSizes, group.sizes]);
   const optionCount = sizes.length;
 
   return (

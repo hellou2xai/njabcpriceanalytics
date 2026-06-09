@@ -6,7 +6,17 @@ import { catalog, compare } from '../lib/api';
 import type { Product } from '../lib/api';
 import ProductThumb from '../components/ProductThumb';
 import { distributorName } from '../lib/distributors';
+import { bottlesPerCase } from '../lib/productSizes';
 import './Home.css';
+
+const MAX_BOTTLE_PRICE = 500;
+// per-bottle price (case price / bottles-per-case), used for the < $500 filter
+function perBottle(p: Product): number | null {
+  const caseP = p.effective_case_price ?? p.frontline_case_price ?? null;
+  if (caseP == null) return p.frontline_unit_price ?? null;
+  const pack = bottlesPerCase(p.product_name, p.unit_qty);
+  return pack && pack > 0 ? caseP / pack : (p.frontline_unit_price ?? caseP);
+}
 
 /**
  * Home — the post-login landing. A search-first storefront (not the dashboard):
@@ -54,12 +64,18 @@ function Rail({ category }: { category: string }) {
   const navigate = useNavigate();
   const { data, isLoading } = useQuery({
     queryKey: ['home-rail', category],
-    // premium-first so the rail surfaces recognisable products from the real
-    // catalogue (mirrors the curated feel of a storefront landing).
-    queryFn: () => catalog.search({ categories: category, limit: 12, sort: 'frontline_case_price', order: 'desc' }),
+    // premium-first so the rail surfaces recognisable products; fetch a wider
+    // set because we then keep only ones WITH an image and under $500/bottle.
+    queryFn: () => catalog.search({ categories: category, limit: 48, sort: 'frontline_case_price', order: 'desc' }),
     staleTime: 5 * 60_000,
   });
-  const items = (data?.items ?? []) as Product[];
+  const items = ((data?.items ?? []) as Product[])
+    .filter(p => {
+      if (!p.image_url) return false;            // images only
+      const btl = perBottle(p);
+      return btl != null && btl < MAX_BOTTLE_PRICE; // under $500 / bottle
+    })
+    .slice(0, 12);
   if (!isLoading && !items.length) return null;
   return (
     <section className="home-rail">

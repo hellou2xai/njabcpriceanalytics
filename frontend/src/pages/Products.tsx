@@ -9,7 +9,7 @@ import { useResultCount } from '../lib/resultCount';
 import { loadCart, saveCart, type CartState } from '../components/CatalogTable';
 import ProductsFilterRail from '../components/ProductsFilterRail';
 import ProductsGrid, { countProductGroups } from '../components/ProductsGrid';
-import { emptyCatalogFilters } from '../components/CatalogFilterPanel';
+import { emptyCatalogFilters, countActiveFilters } from '../components/CatalogFilterPanel';
 import type { CatalogFilters } from '../components/CatalogFilterPanel';
 import type { Product } from '../lib/api';
 
@@ -121,7 +121,12 @@ export default function Products() {
   };
   const filterKey = JSON.stringify(filters);
 
+  // Google-style landing: until the user searches (or applies a filter/distributor),
+  // show only the hero search and load NOTHING. The grid + facets are gated on this.
+  const showGrid = q.trim().length > 0 || !!wholesaler || countActiveFilters(filters) > 0;
+
   const { data, isLoading } = useQuery({
+    enabled: showGrid,
     queryKey: ['products', q, wholesaler, sort, order, page, limit, trackedOnly, filterKey, region, varietal],
     queryFn: () => catalog.search({
       q,
@@ -139,6 +144,7 @@ export default function Products() {
   });
 
   const { data: facets } = useQuery({
+    enabled: showGrid,
     queryKey: ['products-facets', q, wholesaler, filterKey],
     queryFn: () => catalog.facets({ q, wholesaler: wholesaler || undefined, ...filterParams }),
   });
@@ -156,6 +162,32 @@ export default function Products() {
 
   return (
     <div className="page products-page">
+      {!showGrid ? (
+        <div className="products-splash">
+          <div className="products-splash-brand"><Sparkles size={22} /> Celr AI</div>
+          <h1 className="products-splash-title">Find any product, at any distributor</h1>
+          <div className="search-bar products-search products-search--hero">
+            <Search size={18} className="products-search-icon" />
+            <input
+              type="text"
+              autoFocus
+              placeholder="Search products, brands, regions, varietals…"
+              value={q}
+              onChange={e => { setQ(e.target.value); setPage(0); }}
+            />
+            <button type="button" className="products-ai-btn"
+              title="Ask the AI to find products by region, varietal, price or deal"
+              onClick={() => window.dispatchEvent(new CustomEvent('celr-open-assistant',
+                { detail: q.trim() ? { question: q.trim() } : undefined }))}>
+              <Sparkles size={15} /> Ask AI
+            </button>
+          </div>
+          <p className="products-splash-hint">
+            Start typing to begin. Smart search handles brands, misspellings, sizes and barcodes.
+          </p>
+        </div>
+      ) : (
+      <>
       <div className="orders-header">
         <h2>Products</h2>
         <WholesalerFilter value={wholesaler} onChange={v => { setWholesaler(v); setPage(0); }} />
@@ -245,6 +277,8 @@ export default function Products() {
           </div>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 }

@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import {
   Layers, Zap, Sparkles, AlertTriangle, Clock, CalendarClock, Combine,
   ShieldAlert, TrendingDown, ChevronDown, ChevronRight, SlidersHorizontal, X, Trophy,
-  HelpCircle, Tag,
+  HelpCircle, Tag, ExternalLink, Scale,
 } from 'lucide-react';
 import { compare } from '../lib/api';
 import type { CompareRipRow, CompareRipDist } from '../lib/api';
@@ -16,7 +16,14 @@ import './CompareRips.css';
 
 const money = (v?: number | null) => (v == null ? '-' : `$${Number(v).toFixed(2)}`);
 const ACCENTS = ['#2563eb', '#d97706', '#7c3aed'];
-const DEFAULT = ['allied', 'fedway', 'opici'];
+const DEFAULT = ['allied', 'fedway'];
+
+// full-page product detail deep link (same scheme as Products / ProductsGrid)
+const detailUrl = (w: string, name?: string | null, upc?: string | null) => {
+  const q = new URLSearchParams({ w, n: name || '' });
+  if (upc) q.set('u', String(upc));
+  return `/product?${q.toString()}`;
+};
 
 /* ---- a RIP is a buy-more-save-more discount. Everything here explains the RIP in plain
    terms: what you pay, when the RIP starts, how big it gets, how long it
@@ -129,6 +136,15 @@ function DistPanel({ w, d, row, cases, accent, isWinner, onRipClick }: {
         {(d.unit_qty ?? row.unit_qty)} × {(d.unit_volume ?? row.unit_volume)}
         {d.upc && <span className="rip2-dist-upc"> · UPC {d.upc}</span>}
       </div>
+      {/* open this distributor's exact product to verify the price and the facts */}
+      {d.product_name && (
+        <Link className="rip2-dist-link" to={detailUrl(w, d.product_name, d.upc)}
+          target="_blank" rel="noopener noreferrer"
+          onClick={e => e.stopPropagation()}
+          title={`Open ${distributorName(w)}'s "${d.product_name}" to verify the price and details`}>
+          {d.product_name} <ExternalLink size={11} />
+        </Link>
+      )}
 
       {/* the headline: what a case actually costs you at the volume you chose */}
       <div className="rip2-dist-price" title={priceHint}>
@@ -293,13 +309,15 @@ export default function CompareRips() {
   const [q, setQ] = useState(params.get('q') ?? '');
   const [ptype, setPtype] = useState(params.get('type') ?? '');
   const [brand, setBrand] = useState(params.get('brand') ?? '');
-  const [onlyDiff, setOnlyDiff] = useState(params.get('diff') !== '0');
-  const [minDiff, setMinDiff] = useState(params.get('min_diff') != null ? Math.max(0, parseFloat(params.get('min_diff')!) || 0) : 1);
+  // default = show everything; the price-difference filters are opt-in
+  const [onlyDiff, setOnlyDiff] = useState(params.get('diff') === '1');
+  const [minDiff, setMinDiff] = useState(params.get('min_diff') != null ? Math.max(0, parseFloat(params.get('min_diff')!) || 0) : 0);
   const [tsOnly, setTsOnly] = useState(params.get('ts') === '1');
   const [comboOnly, setComboOnly] = useState(params.get('combo') === '1');
   const [expiringOnly, setExpiringOnly] = useState(params.get('exp') === '1');
   const [timingDiff, setTimingDiff] = useState(params.get('timing') === '1');
   const [qtyDiff, setQtyDiff] = useState(params.get('qty') === '1');
+  const [betterTerms, setBetterTerms] = useState(params.get('bt') === '1');
   const [showAnomalies, setShowAnomalies] = useState(params.get('anom') === '1');
   const [sort, setSort] = useState(params.get('sort') ?? 'spread');
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -318,22 +336,23 @@ export default function CompareRips() {
     if (q) next.set('q', q);
     if (ptype) next.set('type', ptype);
     if (brand) next.set('brand', brand);
-    if (!onlyDiff) next.set('diff', '0');
-    if (minDiff !== 1) next.set('min_diff', String(minDiff));
+    if (onlyDiff) next.set('diff', '1');
+    if (minDiff > 0) next.set('min_diff', String(minDiff));
     if (tsOnly) next.set('ts', '1');
     if (comboOnly) next.set('combo', '1');
     if (expiringOnly) next.set('exp', '1');
     if (timingDiff) next.set('timing', '1');
     if (qtyDiff) next.set('qty', '1');
+    if (betterTerms) next.set('bt', '1');
     if (showAnomalies) next.set('anom', '1');
     if (sort !== 'spread') next.set('sort', sort);
     if (next.toString() !== params.toString()) setSearchParams(next, { replace: true });
-  }, [selected, cases, q, ptype, brand, onlyDiff, minDiff, tsOnly, comboOnly, expiringOnly, timingDiff, qtyDiff, showAnomalies, sort]);
+  }, [selected, cases, q, ptype, brand, onlyDiff, minDiff, tsOnly, comboOnly, expiringOnly, timingDiff, qtyDiff, betterTerms, showAnomalies, sort]);
 
   const { data: options } = useQuery({ queryKey: ['compare-options'], queryFn: compare.options });
   const ready = selected.length >= 2 && selected.length <= 3;
   const { data, isLoading, error } = useQuery({
-    queryKey: ['compare-rips', selected, cases, q, ptype, brand, onlyDiff, minDiff, tsOnly, comboOnly, expiringOnly, timingDiff, qtyDiff, showAnomalies, sort],
+    queryKey: ['compare-rips', selected, cases, q, ptype, brand, onlyDiff, minDiff, tsOnly, comboOnly, expiringOnly, timingDiff, qtyDiff, betterTerms, showAnomalies, sort],
     queryFn: () => compare.rips({
       wholesalers: selected.join(','), cases, q: q || undefined,
       product_type: ptype || undefined, brand: brand || undefined,
@@ -341,6 +360,7 @@ export default function CompareRips() {
       time_sensitive_only: tsOnly || undefined,
       combo_only: comboOnly || undefined, expiring_only: expiringOnly || undefined,
       timing_diff_only: timingDiff || undefined, qty_diff_only: qtyDiff || undefined,
+      better_terms_only: betterTerms || undefined,
       include_anomalies: showAnomalies || undefined, sort,
     }),
     enabled: ready,
@@ -446,10 +466,15 @@ export default function CompareRips() {
             </div>
 
             <div className="rip2-rail-sect">
-              <div className="rip2-rail-label">Show only</div>
-              <label className="rip2-toggle" title="Hide products where every distributor lands at the same price at your volume.">
-                <input type="checkbox" checked={onlyDiff} onChange={e => setOnlyDiff(e.target.checked)} /> Real differences
+              <div className="rip2-rail-label">Price difference</div>
+              <label className="rip2-toggle" title="Off by default (every shared-RIP product is shown). Turn on to hide products where both distributors land at the same price.">
+                <input type="checkbox" checked={onlyDiff} onChange={e => setOnlyDiff(e.target.checked)} /> Only show price differences
               </label>
+              <div className="rip2-rail-help">Off shows all products. On hides ties.</div>
+            </div>
+
+            <div className="rip2-rail-sect">
+              <div className="rip2-rail-label">Show only</div>
               <label className="rip2-toggle" title="Only products where a distributor's RIP is a limited-time deal.">
                 <input type="checkbox" checked={tsOnly} onChange={e => setTsOnly(e.target.checked)} /> Time-limited RIPs
               </label>
@@ -469,6 +494,9 @@ export default function CompareRips() {
               <label className="rip2-toggle" title="Only products where the distributors differ on how many cases you must buy to unlock the RIP.">
                 <input type="checkbox" checked={qtyDiff} onChange={e => setQtyDiff(e.target.checked)} /> Unlock quantity differs
               </label>
+              <label className="rip2-toggle" title="Same price either way, but the RIP terms differ: one needs less cash down to unlock, lets you mix more products, or unlocks at fewer cases.">
+                <input type="checkbox" checked={betterTerms} onChange={e => setBetterTerms(e.target.checked)} /> Same price, better RIP terms
+              </label>
               <label className="rip2-toggle" title="Show rows flagged as likely data issues: the same barcode priced very differently at each distributor, usually a pack-size mismatch.">
                 <input type="checkbox" checked={showAnomalies} onChange={e => setShowAnomalies(e.target.checked)} /> Show possible data issues
               </label>
@@ -479,7 +507,9 @@ export default function CompareRips() {
               <select value={sort} onChange={e => setSort(e.target.value)} className="rip2-select">
                 <option value="spread">Biggest price gap</option>
                 <option value="left_on_table">Biggest total saving</option>
-                <option value="min_cases">Easiest to unlock</option>
+                <option value="min_cases">Easiest to unlock (fewest cases)</option>
+                <option value="least_investment">Least cash to unlock</option>
+                <option value="best_mix">Widest product mix</option>
                 <option value="best1">Best 1-case deal</option>
                 <option value="deepest">Biggest RIP</option>
                 <option value="active_days">Most days available</option>
@@ -576,6 +606,11 @@ export default function CompareRips() {
                               {r.quantity_differs && (
                                 <span className="rip2-flag-qty" title="The distributors differ on how many cases you must buy to unlock the RIP.">
                                   <Layers size={11} /> unlock qty differs
+                                </span>
+                              )}
+                              {r.better_terms_tie && (
+                                <span className="rip2-flag-terms" title="The price is about the same at both, but the RIP terms differ: one needs less cash to unlock, a wider product mix, or fewer cases. The verdict below names the better terms.">
+                                  <Scale size={11} /> same price, better RIP terms
                                 </span>
                               )}
                             </div>

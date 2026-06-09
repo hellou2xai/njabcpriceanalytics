@@ -151,6 +151,15 @@
 /* product-header mismatch flags */
 .rip2-flag-time { display: inline-flex; align-items: center; gap: 3px; color: #b45309; }
 .rip2-flag-qty { display: inline-flex; align-items: center; gap: 3px; color: #7c3aed; }
+.rip2-flag-terms { display: inline-flex; align-items: center; gap: 3px; color: #0e7490; font-weight: 600; }
+
+/* per-distributor product verification link */
+.rip2-dist-link {
+  display: inline-flex; align-items: center; gap: 4px; margin: -4px 0 8px;
+  font-size: 0.78rem; color: var(--accent, #2563eb); text-decoration: none; font-weight: 500;
+}
+.rip2-dist-link:hover { text-decoration: underline; }
+.rip2-dist-link > svg { flex: none; opacity: 0.8; }
 
 /* anomaly banner */
 .rip2-anomaly {

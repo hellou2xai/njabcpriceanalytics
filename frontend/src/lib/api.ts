@@ -760,6 +760,8 @@ export interface CompareRipRow {
   anomaly_reason: string;
   timing_differs: boolean;        // distributors differ on rebate timing (dated vs all-month)
   quantity_differs: boolean;      // distributors differ on cases needed to unlock
+  rip_terms_differ: boolean;      // RIP terms differ (investment to unlock / mix / qty)
+  better_terms_tie: boolean;      // price ~tie but RIP terms differ (same price, better terms)
   verdict: { pick: string | null; text: string };
 }
 export interface CompareRipResponse {

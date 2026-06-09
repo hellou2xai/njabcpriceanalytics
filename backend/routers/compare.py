@@ -1126,9 +1126,24 @@ def _rip_verdict(row: dict, slugs: list[str], n: float) -> dict:
     else:
         parts.append(f"No clear RIP edge at {ni} case(s).")
 
+    # When the price is a tie/near-tie, the RIP TERMS are the tiebreaker: who needs
+    # the least cash down to unlock the rebate.
+    if (sp is None or sp < 1.0):
+        invs = {x: d[x].get("unlock_investment") for x in slugs
+                if d[x].get("unlock_investment") is not None}
+        if len(invs) == len(slugs):
+            lo_w = min(invs, key=invs.get)
+            gap = max(invs.values()) - min(invs.values())
+            if gap >= 1.0:
+                parts.append(f"Prices are about the same, but {lo_w.title()} needs "
+                             f"${gap:,.0f} less cash down to unlock its RIP "
+                             f"(${invs[lo_w]:,.0f} vs ${max(invs.values()):,.0f}).")
+                if pick in (None, "tie"):
+                    pick = lo_w
+
     if soonest and len(set(mins.values())) > 1:
         c = mins[soonest]
-        parts.append(f"{soonest.title()} unlocks its rebate soonest "
+        parts.append(f"{soonest.title()} unlocks its RIP soonest "
                      f"({c} case{'s' if c != 1 else ''} down).")
         if pick in (None, "tie"):
             pick = soonest
@@ -1151,7 +1166,7 @@ def _rip_verdict(row: dict, slugs: list[str], n: float) -> dict:
 
 @router.get("/rips")
 def compare_rips(
-    wholesalers: str = Query("allied,fedway,opici", description="2-3 comma-separated slugs"),
+    wholesalers: str = Query("allied,fedway", description="2-3 comma-separated slugs"),
     cases: float = Query(5, ge=1, description="Cases you plan to buy (drives winner@N)"),
     q: str = Query(""),
     product_type: str = Query(""),
@@ -1164,6 +1179,7 @@ def compare_rips(
     expiring_only: bool = Query(False, description="Only products with a live RIP that ends this month at some distributor"),
     timing_diff_only: bool = Query(False, description="Only products where distributors differ on rebate TIMING (one dated/time-limited, the other all-month)"),
     qty_diff_only: bool = Query(False, description="Only products where distributors differ on the QUANTITY of cases needed to unlock the rebate"),
+    better_terms_only: bool = Query(False, description="Only products where the per-case price is about the same (within $1) but the RIP TERMS differ (less cash to unlock, wider product mix, fewer cases)"),
     sort: str = Query("spread", description="spread | left_on_table | product | min_cases | best1 | deepest | active_days"),
     order: str = Query("desc"),
     limit: int = Query(2000, ge=1, le=50000),
@@ -1355,6 +1371,20 @@ def compare_rips(
         qty_set = {dists[x]["min_cases"] for x in slugs}
         quantity_differs = len(qty_set) > 1         # different cases to unlock
 
+        # "Same price, better RIP terms": the per-case landed cost is a tie (within
+        # $1) yet the RIP TERMS differ. The buyer pays the same either way, so the
+        # better choice is whoever needs less cash down to unlock the rebate, lets
+        # you mix more products, or unlocks at fewer cases.
+        price_tie = (spread_n is not None and spread_n < 1.0)
+        invs = {x: dists[x]["unlock_investment"] for x in slugs
+                if dists[x]["unlock_investment"] is not None}
+        mix_set = {(dists[x]["case_mix"] or 0) for x in slugs}
+        invest_differs = (len(invs) == len(slugs)
+                          and (max(invs.values()) - min(invs.values())) >= 1.0)
+        rip_terms_differ = invest_differs or len(mix_set) > 1 or quantity_differs
+        # the standout "same price, better terms" case worth surfacing on its own
+        better_terms_tie = price_tie and rip_terms_differ
+
         # Data-sanity check. The same barcode should be the same physical pack at
         # every distributor, so the list (frontline) prices should be in the same
         # ballpark. When they diverge wildly, the distributors are almost
@@ -1410,6 +1440,8 @@ def compare_rips(
             "anomaly_reason": reason,
             "timing_differs": timing_differs,
             "quantity_differs": quantity_differs,
+            "rip_terms_differ": rip_terms_differ,
+            "better_terms_tie": better_terms_tie,
         })
 
     # filters
@@ -1427,6 +1459,8 @@ def compare_rips(
         rows = [r for r in rows if r["timing_differs"]]
     if qty_diff_only:
         rows = [r for r in rows if r["quantity_differs"]]
+    if better_terms_only:
+        rows = [r for r in rows if r["better_terms_tie"]]
 
     # AI verdict per row (deterministic, over the break-even data)
     for r in rows:
@@ -1477,7 +1511,7 @@ def compare_rips(
     # combination). Asking for "time-limited rebates" should surface them even if
     # the two distributors land within $1 of each other.
     attribute_filter = (time_sensitive_only or expiring_only or timing_diff_only
-                        or qty_diff_only or combo_only)
+                        or qty_diff_only or combo_only or better_terms_only)
     if only_differences and not attribute_filter:
         rows = [r for r in rows if r["has_difference"]]
     if min_diff and min_diff > 0 and not attribute_filter:
@@ -1491,11 +1525,16 @@ def compare_rips(
         "best1": lambda r: max((d["rip_at_1"] or 0 for d in r["dists"].values()), default=0),
         "deepest": lambda r: max((d["deepest_rebate"] or 0 for d in r["dists"].values()), default=0),
         "active_days": lambda r: max((d["active_days"] or 0 for d in r["dists"].values()), default=0),
+        # least cash to unlock the first RIP (ascending), widest product mix (desc)
+        "least_investment": lambda r: min((d["unlock_investment"] for d in r["dists"].values()
+                                           if d["unlock_investment"] is not None), default=1e12),
+        "best_mix": lambda r: max((d["case_mix"] or 0 for d in r["dists"].values()), default=0),
     }
-    # min_cases sorts ascending by default (fewest first); others descending
+    # ascending sorts (smallest first): A-Z, fewest cases, least money down. The
+    # UI never sends `order`, so these force ascending; the rest default desc.
+    _ascending = ("product", "min_cases", "least_investment")
     rows.sort(key=keymap.get(sort, keymap["spread"]),
-              reverse=(order != "asc") if sort not in ("product", "min_cases")
-              else (order == "desc"))
+              reverse=False if sort in _ascending else (order != "asc"))
     rows = rows[:limit]
 
     insights = []

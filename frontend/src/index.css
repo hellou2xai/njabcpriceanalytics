@@ -5708,7 +5708,9 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .sav-amt.is-warn { color: var(--amber, #d97706); }
 .sav-expiry { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 700; color: var(--amber, #d97706); }
 .pd-mini-ids { display: flex; flex-wrap: wrap; gap: 2px 8px; font-size: 10px; color: var(--text-muted); margin-top: 4px; font-variant-numeric: tabular-nums; }
-.pd-mini-price { font-size: 13px; font-weight: 700; color: var(--green); margin-top: 4px; font-variant-numeric: tabular-nums; }
+.pd-mini-price { font-size: 13px; font-weight: 700; color: var(--green); margin-top: 4px; font-variant-numeric: tabular-nums; display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+/* per-bottle shown at the SAME size as the case price (just a lighter weight) */
+.pd-mini-btl { font-size: 13px; font-weight: 600; color: var(--green); }
 .pd-mini-noprice { color: var(--text-muted); font-weight: 500; }
 
 /* ---- Right column: size sections ---- */

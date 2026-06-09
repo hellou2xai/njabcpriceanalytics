@@ -57,11 +57,27 @@ function detailUrl(p: { wholesaler: string; product_name: string; upc?: string |
   return `/product?${q.toString()}`;
 }
 
+// Price after the 1-CASE quantity discount (the realistic price for buying a
+// single case to join a Mix-RIP) — NOT the deepest RIP. Reachable-at-1-case
+// discount tiers only; falls back to frontline when there's no 1-case QD.
+function oneCaseQdPrice(p: Product, pack: number | null): number | null {
+  const front = p.frontline_case_price ?? null;
+  const disc = (p.discount_tiers ?? p.tiers ?? []).filter(
+    t => t.source !== 'rip' && t.price_after != null);
+  const reachable = disc.filter(t => {
+    const isBtl = /^b/i.test(t.unit || '');
+    return isBtl ? (pack ? t.qty <= pack : false) : t.qty <= 1;
+  });
+  if (reachable.length) return Math.min(...reachable.map(t => t.price_after as number));
+  return front;
+}
+
 // ---- a related-product mini card (case-mix RIP siblings / more from brand) ----
 function MiniCard({ p }: { p: Product }) {
-  const eff = p.effective_case_price ?? p.frontline_case_price ?? null;
   const sku = abgSku(p.wholesaler, p.abg_sku) ? `${skuLabel(p.wholesaler)} ${p.abg_sku}` : null;
   const pack = bottlesPerCase(p.product_name, p.unit_qty);
+  const eff = oneCaseQdPrice(p, pack);
+  const perBtl = eff != null && pack ? eff / pack : null;
   const hasVintage = p.vintage != null && !['', '0', 'nv'].includes(String(p.vintage).trim().toLowerCase());
   return (
     <Link to={detailUrl(p)} className="pd-mini">
@@ -80,8 +96,13 @@ function MiniCard({ p }: { p: Product }) {
           {p.upc && <span>UPC: {p.upc}</span>}
         </div>
       )}
-      <div className="pd-mini-price">
-        {eff != null ? `$${eff.toFixed(2)}/cs` : <span className="pd-mini-noprice">Price not available</span>}
+      <div className="pd-mini-price" title="Price after the 1-case quantity discount">
+        {eff != null ? (
+          <>
+            <span>${eff.toFixed(2)}/cs</span>
+            {perBtl != null && <span className="pd-mini-btl">${perBtl.toFixed(2)}/btl</span>}
+          </>
+        ) : <span className="pd-mini-noprice">Price not available</span>}
       </div>
       <PriceSparklines wholesaler={p.wholesaler} productName={p.product_name}
         upc={p.upc} unitVolume={p.unit_volume} unitQty={p.unit_qty} vintage={p.vintage} />
@@ -356,7 +377,9 @@ export default function ProductDetail() {
   const { data: brandData } = useQuery({
     enabled: !!brand,
     queryKey: ['pd-brand', wholesaler, brand],
-    queryFn: () => catalog.search({ q: brand ?? '', brands: brand ?? undefined, limit: 24, sort: 'product_name', order: 'asc' }),
+    // include_tiers so each tile can show the price after the 1-case QD (same as
+    // the Mix-RIP tiles); 24 rows so the slower tier build is fine here.
+    queryFn: () => catalog.search({ q: brand ?? '', brands: brand ?? undefined, limit: 24, sort: 'product_name', order: 'asc', include_tiers: true }),
   });
   const brandProducts = useMemo(() => {
     const rows = (brandData?.items ?? []) as Product[];

@@ -132,7 +132,9 @@ function SizeSection({ size, view, cart, updateQty, primaryName, alt }: {
   const ozB = ozPerBottle(size.unit_volume);
   const tiers: CatalogTier[] = size.tiers ?? [];
   const discTiers = tiers.filter(t => t.source === 'discount').sort((a, b) => a.qty - b.qty);
-  const ripTiers = tiers.filter(t => t.source === 'rip').sort((a, b) => a.qty - b.qty);
+  // ascending by RIP rebate amount (qty mixes cases + bottles, so it sorted oddly)
+  const ripTiers = tiers.filter(t => t.source === 'rip')
+    .sort((a, b) => (a.amount ?? 0) - (b.amount ?? 0));
   const sku = abgSku(size.wholesaler, size.abg_sku) ? `${skuLabel(size.wholesaler)} ${size.abg_sku}` : size.upc;
   const hasVintage = size.vintage != null && !['', '0', 'nv'].includes(String(size.vintage).trim().toLowerCase());
   const comboLink = useComboLink();

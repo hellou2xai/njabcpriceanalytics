@@ -121,17 +121,36 @@ export default function Products() {
   };
   const filterKey = JSON.stringify(filters);
 
-  // Google-style landing: until the user COMMITS a query (pauses typing or hits
-  // Enter), show only the hero and load NOTHING. Gating on `committed` instead of
-  // the raw `q` keeps the hero input mounted while typing, so the screen doesn't
-  // jump and focus isn't lost on the first keystroke.
+  // Google-style landing: the grid appears only when the user COMMITS a query —
+  // i.e. presses Enter (handled on the hero input). Typing alone never swaps the
+  // screen, so the hero stays put and keeps focus. Clearing the box returns to
+  // the hero. (No debounce/auto-transition — the user wants Enter to be the trigger.)
   const [committed, setCommitted] = useState(q);
-  useEffect(() => {
-    if (!q.trim()) { setCommitted(''); return; }
-    const t = setTimeout(() => setCommitted(q), 450);
-    return () => clearTimeout(t);
-  }, [q]);
+  useEffect(() => { if (!q.trim()) setCommitted(''); }, [q]);
   const showGrid = committed.trim().length > 0 || !!wholesaler || countActiveFilters(filters) > 0;
+
+  // Hero typeahead: while on the landing, typing shows SUGGESTIONS (semantic
+  // /catalog/search) but never the grid — the grid waits for Enter (or picking a
+  // suggestion). Debounced so it doesn't fire per keystroke.
+  const [qSugg, setQSugg] = useState('');
+  useEffect(() => { const t = setTimeout(() => setQSugg(q), 200); return () => clearTimeout(t); }, [q]);
+  const { data: suggData } = useQuery({
+    enabled: !showGrid && qSugg.trim().length >= 2,
+    queryKey: ['products-suggest', qSugg],
+    queryFn: () => catalog.search({ q: qSugg, limit: 8, sort: 'product_name', order: 'asc' }),
+    staleTime: 60_000,
+  });
+  const suggestions = (() => {
+    const m = new Map<string, { name: string; size?: string; n: number; type?: string }>();
+    for (const r of (suggData?.items ?? []) as Product[]) {
+      const key = `${(r.product_name || '').toLowerCase()}|${r.unit_volume ?? ''}`;
+      const cur = m.get(key);
+      if (cur) cur.n += 1;
+      else m.set(key, { name: r.product_name, size: r.unit_volume ?? undefined, n: 1, type: r.product_type ?? undefined });
+    }
+    return [...m.values()].slice(0, 8);
+  })();
+  const pickSuggestion = (name: string) => { setQ(name); setQSugg(name); setCommitted(name); setPage(0); };
 
   const { data, isLoading } = useQuery({
     enabled: showGrid,
@@ -174,26 +193,44 @@ export default function Products() {
         <div className="products-splash">
           <div className="products-splash-brand"><Sparkles size={26} /> Celr AI</div>
           <h1 className="products-splash-title">Find any product, at any distributor</h1>
-          <div className="products-hero-search">
-            <Search size={20} className="products-hero-icon" />
-            <input
-              type="text"
-              autoFocus
-              className="products-hero-input"
-              placeholder="Search products, brands, regions, varietals…"
-              value={q}
-              onChange={e => { setQ(e.target.value); setPage(0); }}
-              onKeyDown={e => { if (e.key === 'Enter') setCommitted(e.currentTarget.value); }}
-            />
-            <button type="button" className="products-hero-ai"
-              title="Ask the AI to find products by region, varietal, price or deal"
-              onClick={() => window.dispatchEvent(new CustomEvent('celr-open-assistant',
-                { detail: q.trim() ? { question: q.trim() } : undefined }))}>
-              <Sparkles size={16} /> Ask AI
-            </button>
+          <div className="products-hero-box">
+            <div className="products-hero-search">
+              <Search size={20} className="products-hero-icon" />
+              <input
+                type="text"
+                autoFocus
+                className="products-hero-input"
+                placeholder="Search products, brands, regions, varietals…"
+                value={q}
+                onChange={e => { setQ(e.target.value); setPage(0); }}
+                onKeyDown={e => { if (e.key === 'Enter') setCommitted(e.currentTarget.value); }}
+              />
+              <button type="button" className="products-hero-ai"
+                title="Ask the AI to find products by region, varietal, price or deal"
+                onClick={() => window.dispatchEvent(new CustomEvent('celr-open-assistant',
+                  { detail: q.trim() ? { question: q.trim() } : undefined }))}>
+                <Sparkles size={16} /> Ask AI
+              </button>
+            </div>
+            {suggestions.length > 0 && (
+              <ul className="products-hero-suggest">
+                {suggestions.map((s, i) => (
+                  // mouseDown (not click) so it fires before the input blur
+                  <li key={i} onMouseDown={e => { e.preventDefault(); pickSuggestion(s.name); }}>
+                    <span className="phs-name">{s.name}</span>
+                    <span className="phs-meta">
+                      {[s.size, s.type, s.n > 1 ? `${s.n} distributors` : null].filter(Boolean).join(' · ')}
+                    </span>
+                  </li>
+                ))}
+                <li className="phs-foot" onMouseDown={e => { e.preventDefault(); setCommitted(q); }}>
+                  Press <kbd className="products-hero-kbd">Enter</kbd> to see all results for “{q}”
+                </li>
+              </ul>
+            )}
           </div>
           <p className="products-splash-hint">
-            Start typing to begin. Smart search handles brands, misspellings, sizes and barcodes.
+            Type a product and press <kbd className="products-hero-kbd">Enter</kbd>. Smart search handles brands, misspellings, sizes and barcodes.
           </p>
         </div>
       ) : (

@@ -947,6 +947,76 @@ def _rip_tier_rows(tiers: list, pack: float) -> list[dict]:
     return rows
 
 
+def _rip_active_days(tiers: list, ref_date=None) -> int:
+    """Distinct days in the edition month a RIP rebate is live for this SKU.
+    A whole-month / evergreen RIP = the full month; dated windows contribute
+    their day-span (clamped to the month). Higher = the rebate covers more days."""
+    import calendar as _cal
+    from datetime import date as _date, timedelta as _td
+    ref = _pricing._to_date(ref_date) or _pricing.eastern_today()
+    m_start = _date(ref.year, ref.month, 1)
+    m_end = _date(ref.year, ref.month, _cal.monthrange(ref.year, ref.month)[1])
+    full = (m_end - m_start).days + 1
+    days = set()
+    for t in tiers:
+        if t.get("source") != "rip":
+            continue
+        st = t.get("window_status")
+        if st in ("evergreen", "whole_month"):
+            return full
+        if st not in ("active", "upcoming"):
+            continue
+        f, to = _pricing._to_date(t.get("from_date")), _pricing._to_date(t.get("to_date"))
+        if not f or not to:
+            continue
+        d, b = max(f, m_start), min(to, m_end)
+        while d <= b:
+            days.add(d); d += _td(days=1)
+    return len(days)
+
+
+def _rip_expires_in(tiers: list, ref_date=None) -> Optional[int]:
+    """Days until the nearest LIVE dated RIP ends (urgency to buy). None when a
+    whole-month/evergreen RIP is live (not expiring) or nothing is active."""
+    ref = _pricing._to_date(ref_date) or _pricing.eastern_today()
+    cands = []
+    for t in tiers:
+        if t.get("source") != "rip":
+            continue
+        st = t.get("window_status")
+        if st in ("evergreen", "whole_month"):
+            return None
+        if st == "active":
+            to = _pricing._to_date(t.get("to_date"))
+            if to:
+                cands.append((to - ref).days)
+    return min(cands) if cands else None
+
+
+def _rip_has_upcoming(tiers: list) -> bool:
+    """A deeper RIP that hasn't started yet this month (plan ahead)."""
+    return any(t.get("source") == "rip" and t.get("window_status") == "upcoming"
+               for t in tiers)
+
+
+def _rip_deepest(tiers: list, pack: float):
+    """Deepest RIP rebate $/case reachable at ANY volume, and the cases to reach
+    it. Returns (rebate, cases) or (0.0, None)."""
+    import math as _m
+    best, at = 0.0, None
+    for t in tiers:
+        if t.get("source") != "rip":
+            continue
+        save = t.get("rip_only_save_per_case")
+        if save is None:
+            save = t.get("save_per_case") or 0.0
+        if save > best:
+            best = save
+            thr = _cases_threshold(t, pack)
+            at = _m.ceil(thr - 1e-9) if thr is not None else None
+    return (round(best, 2), at) if best > 0 else (0.0, None)
+
+
 def _p360_tier_rows(tiers: list, pack: float, source: str) -> list[dict]:
     """Labeled tier ladder for the Price 360 breakdown — QD or RIP, each with
     the resulting case AND bottle price, sorted by cases-to-unlock."""
@@ -1053,8 +1123,12 @@ def compare_rips(
     cases: float = Query(5, ge=1, description="Cases you plan to buy (drives winner@N)"),
     q: str = Query(""),
     product_type: str = Query(""),
+    brand: str = Query("", description="Brand name contains"),
     only_differences: bool = Query(False),
-    sort: str = Query("spread", description="spread | product | min_cases | best1"),
+    time_sensitive_only: bool = Query(False, description="Only products where some distributor's RIP is a dated/time-limited deal"),
+    combo_only: bool = Query(False, description="Only products with a combination/case-mix RIP at some distributor"),
+    expiring_only: bool = Query(False, description="Only products with a live RIP that ends this month at some distributor"),
+    sort: str = Query("spread", description="spread | left_on_table | product | min_cases | best1 | deepest | active_days"),
     order: str = Query("desc"),
     limit: int = Query(2000, ge=1, le=50000),
     user: Optional[dict] = Depends(get_optional_user),
@@ -1080,6 +1154,10 @@ def compare_rips(
                 if len(per) == len(slugs) and all(per[w].get("has_rip") for w in slugs)]
         flat = [by_key[k][w] for k in keys for w in slugs]
         _pricing.attach_tiers(con, flat)
+        try:
+            _pricing.attach_rip_gaps(con, flat)   # no-RIP day gaps between windows
+        except Exception:
+            pass
         mix = _case_mix_sizes(con, src, slugs, eds)
 
     n = float(cases)
@@ -1104,11 +1182,14 @@ def compare_rips(
                 "combo" in str(t.get("description") or "").lower()
                 or "combination" in str(t.get("description") or "").lower()
                 for t in tiers if t.get("source") == "rip")
+            front = rec.get("frontline_case_price")
+            deepest_rebate, deepest_at = _rip_deepest(tiers, pack)
+            comp = _compliance_flags(tiers, pack)
             dists[w] = {
-                "frontline": rec.get("frontline_case_price"),
+                "frontline": front,
                 "abv_proof": rec.get("abv_proof"),
-                "landed_at_n": _landed_at(tiers, rec.get("frontline_case_price"), n, pack),
-                "landed_at_1": _landed_at(tiers, rec.get("frontline_case_price"), 1, pack),
+                "landed_at_n": _landed_at(tiers, front, n, pack),
+                "landed_at_1": _landed_at(tiers, front, 1, pack),
                 "rip_at_1": rip_1,
                 "rip_at_n": rip_n,
                 # per-bottle normalisation (rebate $ spread over the pack)
@@ -1117,6 +1198,18 @@ def compare_rips(
                 "min_cases": _min_cases_to_rip(tiers, pack),
                 "case_mix": case_mix,
                 "is_combination": is_combo,
+                # --- richer comparison metrics ---
+                "deepest_rebate": deepest_rebate,           # best $/cs rebate at any volume
+                "deepest_at_cases": deepest_at,             # cases to reach it
+                "active_days": _rip_active_days(tiers),      # days this month a RIP is live
+                "expires_in_days": _rip_expires_in(tiers),   # urgency (None = durable)
+                "has_upcoming": _rip_has_upcoming(tiers),    # a deeper RIP starts later
+                "total_rebate_at_n": round(rip_n * n, 2) if rip_n else 0.0,
+                "effective_pct": (round(rip_n / front * 100, 1)
+                                  if front and rip_n else 0.0),
+                "pre_approval": comp["pre_approval"],        # NJ ABC statute flags
+                "compliance_flags": comp["flags"],
+                "rip_gaps": rec.get("rip_gaps") or [],       # no-RIP day gaps
                 "rip_tiers": _rip_tier_rows(tiers, pack),
                 "rip_code": rec.get("rip_code"),
                 "product_name": rec.get("product_name"),
@@ -1180,6 +1273,8 @@ def compare_rips(
             "dists": dists,
             "winner_at_n": winner_n,
             "spread_at_n": spread_n,
+            # total $ overpaid at N cases buying from anyone but the cheapest
+            "left_on_table": round((spread_n or 0) * n, 2),
             "breakeven": ranges,
             "curve": curve,
             "flips": len({r["winner"] for r in ranges if r["winner"]}) > 1,
@@ -1198,6 +1293,18 @@ def compare_rips(
                 or qq in (r["brand"] or "").lower()]
     if product_type:
         rows = [r for r in rows if (r["product_type"] or "").lower() == product_type.lower()]
+    if brand:
+        bb = brand.lower()
+        rows = [r for r in rows if bb in (r["brand"] or "").lower()]
+    if time_sensitive_only:
+        rows = [r for r in rows if any(
+            (d["expires_in_days"] is not None) or d["has_upcoming"]
+            for d in r["dists"].values())]
+    if combo_only:
+        rows = [r for r in rows if any(d["is_combination"] for d in r["dists"].values())]
+    if expiring_only:
+        rows = [r for r in rows if any(
+            d["expires_in_days"] is not None for d in r["dists"].values())]
 
     # AI verdict per row (deterministic, over the break-even data)
     for r in rows:
@@ -1207,7 +1314,9 @@ def compare_rips(
     wins = {w: 0 for w in slugs}
     ties = 0
     flips = 0
-    least_money = {w: 0 for w in slugs}   # who needs fewest cases to unlock
+    least_money = {w: 0 for w in slugs}     # who needs fewest cases to unlock
+    most_days = {w: 0 for w in slugs}       # who keeps a RIP live the most days
+    most_mix = {w: 0 for w in slugs}        # who lets you mix across the most SKUs
     for r in rows:
         if r["winner_at_n"] == "tie":
             ties += 1
@@ -1221,6 +1330,18 @@ def compare_rips(
             for w, v in mins.items():
                 if v == lo:
                     least_money[w] += 1
+        days = {w: (r["dists"][w]["active_days"] or 0) for w in slugs}
+        if any(days.values()):
+            hi = max(days.values())
+            for w, v in days.items():
+                if v == hi and v > 0:
+                    most_days[w] += 1
+        mixes = {w: (r["dists"][w]["case_mix"] or 0) for w in slugs}
+        if any(v > 1 for v in mixes.values()):
+            hi = max(mixes.values())
+            for w, v in mixes.items():
+                if v == hi and v > 1:
+                    most_mix[w] += 1
 
     total = len(rows)  # full common-RIP universe for this search context
 
@@ -1230,12 +1351,17 @@ def compare_rips(
 
     keymap = {
         "spread": lambda r: r["spread_at_n"] or 0,
+        "left_on_table": lambda r: r["left_on_table"] or 0,
         "product": lambda r: (r["product_name"] or "").lower(),
         "min_cases": lambda r: min((d["min_cases"] or 1e9 for d in r["dists"].values()), default=1e9),
         "best1": lambda r: max((d["rip_at_1"] or 0 for d in r["dists"].values()), default=0),
+        "deepest": lambda r: max((d["deepest_rebate"] or 0 for d in r["dists"].values()), default=0),
+        "active_days": lambda r: max((d["active_days"] or 0 for d in r["dists"].values()), default=0),
     }
+    # min_cases sorts ascending by default (fewest first); others descending
     rows.sort(key=keymap.get(sort, keymap["spread"]),
-              reverse=(order != "asc") if sort != "product" else (order == "desc"))
+              reverse=(order != "asc") if sort not in ("product", "min_cases")
+              else (order == "desc"))
     rows = rows[:limit]
 
     insights = []
@@ -1250,6 +1376,16 @@ def compare_rips(
             insights.append(
                 f"{lm} requires the fewest cases to unlock a RIP on "
                 f"{least_money[lm]} products (least money down).")
+        md = max(most_days, key=lambda w: most_days[w])
+        if most_days[md]:
+            insights.append(
+                f"{md} keeps a RIP live the most days on {most_days[md]} products "
+                f"(its rebate is available more of the month).")
+        mm = max(most_mix, key=lambda w: most_mix[w])
+        if most_mix[mm]:
+            insights.append(
+                f"{mm} lets you mix across the most products to hit the tier on "
+                f"{most_mix[mm]} RIPs (easier to qualify).")
         if flips:
             insights.append(
                 f"{flips} product(s) change the best-RIP distributor as your "
@@ -1267,6 +1403,8 @@ def compare_rips(
             "ties": ties,
             "flips": flips,
             "least_money": least_money,
+            "most_active_days": most_days,
+            "most_case_mix": most_mix,
             "insights": insights,
         },
     }

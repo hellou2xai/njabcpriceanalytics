@@ -705,6 +705,17 @@ export interface CompareRipDist {
   min_cases: number | null;
   case_mix: number | null;
   is_combination: boolean;
+  // richer comparison metrics
+  deepest_rebate: number | null;        // best $/cs rebate at any volume
+  deepest_at_cases: number | null;      // cases to reach it
+  active_days: number | null;           // days this month a RIP is live
+  expires_in_days: number | null;       // urgency; null = durable / nothing live
+  has_upcoming: boolean;                // a deeper RIP starts later this month
+  total_rebate_at_n: number | null;     // total $ back at the chosen volume
+  effective_pct: number | null;         // rebate as % of list
+  pre_approval: boolean;                // NJ ABC statute flag
+  compliance_flags: string[];
+  rip_gaps: { from: string; to: string; days: number }[];
   rip_tiers: RipTierRow[];
   rip_code: string | null;
   product_name: string | null;
@@ -725,6 +736,7 @@ export interface CompareRipRow {
   dists: Record<string, CompareRipDist>;
   winner_at_n: string | null;
   spread_at_n: number | null;
+  left_on_table: number | null;   // total $ overpaid at the chosen volume vs cheapest
   breakeven: RipBreakeven[];
   curve: RipCurvePoint[];
   flips: boolean;
@@ -743,6 +755,8 @@ export interface CompareRipResponse {
     ties: number;
     flips: number;
     least_money: Record<string, number>;
+    most_active_days: Record<string, number>;
+    most_case_mix: Record<string, number>;
     insights: string[];
   };
 }

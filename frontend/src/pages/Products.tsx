@@ -164,22 +164,23 @@ export default function Products() {
     <div className="page products-page">
       {!showGrid ? (
         <div className="products-splash">
-          <div className="products-splash-brand"><Sparkles size={22} /> Celr AI</div>
+          <div className="products-splash-brand"><Sparkles size={26} /> Celr AI</div>
           <h1 className="products-splash-title">Find any product, at any distributor</h1>
-          <div className="search-bar products-search products-search--hero">
-            <Search size={18} className="products-search-icon" />
+          <div className="products-hero-search">
+            <Search size={20} className="products-hero-icon" />
             <input
               type="text"
               autoFocus
+              className="products-hero-input"
               placeholder="Search products, brands, regions, varietals…"
               value={q}
               onChange={e => { setQ(e.target.value); setPage(0); }}
             />
-            <button type="button" className="products-ai-btn"
+            <button type="button" className="products-hero-ai"
               title="Ask the AI to find products by region, varietal, price or deal"
               onClick={() => window.dispatchEvent(new CustomEvent('celr-open-assistant',
                 { detail: q.trim() ? { question: q.trim() } : undefined }))}>
-              <Sparkles size={15} /> Ask AI
+              <Sparkles size={16} /> Ask AI
             </button>
           </div>
           <p className="products-splash-hint">

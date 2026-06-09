@@ -121,9 +121,17 @@ export default function Products() {
   };
   const filterKey = JSON.stringify(filters);
 
-  // Google-style landing: until the user searches (or applies a filter/distributor),
-  // show only the hero search and load NOTHING. The grid + facets are gated on this.
-  const showGrid = q.trim().length > 0 || !!wholesaler || countActiveFilters(filters) > 0;
+  // Google-style landing: until the user COMMITS a query (pauses typing or hits
+  // Enter), show only the hero and load NOTHING. Gating on `committed` instead of
+  // the raw `q` keeps the hero input mounted while typing, so the screen doesn't
+  // jump and focus isn't lost on the first keystroke.
+  const [committed, setCommitted] = useState(q);
+  useEffect(() => {
+    if (!q.trim()) { setCommitted(''); return; }
+    const t = setTimeout(() => setCommitted(q), 450);
+    return () => clearTimeout(t);
+  }, [q]);
+  const showGrid = committed.trim().length > 0 || !!wholesaler || countActiveFilters(filters) > 0;
 
   const { data, isLoading } = useQuery({
     enabled: showGrid,
@@ -175,6 +183,7 @@ export default function Products() {
               placeholder="Search products, brands, regions, varietals…"
               value={q}
               onChange={e => { setQ(e.target.value); setPage(0); }}
+              onKeyDown={e => { if (e.key === 'Enter') setCommitted(e.currentTarget.value); }}
             />
             <button type="button" className="products-hero-ai"
               title="Ask the AI to find products by region, varietal, price or deal"
@@ -196,7 +205,7 @@ export default function Products() {
 
       <div className="search-bar products-search">
         <Search size={16} className="products-search-icon" />
-        <input type="text" placeholder="Search products, brands, regions, varietals…"
+        <input type="text" autoFocus placeholder="Search products, brands, regions, varietals…"
           value={q} onChange={e => { setQ(e.target.value); setPage(0); }} />
         {/* Semantic / natural-language search via the AI assistant: it parses
             "California cabernet under $200 on a RIP" into region/varietal/price/

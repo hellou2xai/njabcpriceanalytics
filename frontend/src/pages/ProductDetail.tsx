@@ -402,7 +402,19 @@ export default function ProductDetail() {
     return product?.product_type ? [product.product_type] : [];
   }, [enrichment, product]);
 
-  const specs = enrichment?.specs ? Object.entries(enrichment.specs).filter(([, v]) => v != null && String(v) !== '') : [];
+  // Enrichment specs, MINUS any size/pack keys — size is shown from the catalog
+  // data below so it appears for every product, enriched or not (and never twice).
+  const _isSizeKey = (k: string) => /^(package\s*)?size$|bottles?\s*per\s*case|unit\s*volume|^pack(\s*size)?$/i.test(k.trim());
+  const specs = enrichment?.specs
+    ? Object.entries(enrichment.specs).filter(([k, v]) => v != null && String(v) !== '' && !_isSizeKey(k))
+    : [];
+  // Package size(s) straight from the CPL — always present. One size shows its
+  // pack; multiple sizes list them so the header reflects the whole product.
+  const _sizeVals = Array.from(new Set((sizes ?? []).map(s => s.unit_volume).filter(Boolean) as string[]));
+  const headerSize = _sizeVals.length === 0 ? null
+    : _sizeVals.length === 1
+      ? `${_sizeVals[0]}${bottlesPerCase(name, sizes[0]?.unit_qty) ? ` · ${bottlesPerCase(name, sizes[0]?.unit_qty)} btl/cs` : ''}`
+      : _sizeVals.join(' · ');
   const hasDesc = !!enrichment?.description && enrichment.description !== 'No description found.';
   // UPC + vendor item code for the header, from the seed SKU the attributes
   // describe (its Size/Pack Size are already shown). Per-size codes still live
@@ -446,6 +458,10 @@ export default function ProductDetail() {
                 <h1 className="pd-title">{name}</h1>
               </div>
               <dl className="pd-attrs">
+                {/* Size ALWAYS shows — sourced from the catalog rows (sizes), not
+                    from Go-UPC enrichment, so it appears even when the detail
+                    endpoint can't resolve enrichment for this name. */}
+                {headerSize && <div><dt>Package size</dt><dd>{headerSize}</dd></div>}
                 {enrichment?.region && <div><dt>Region</dt><dd>{enrichment.region}</dd></div>}
                 {specs.map(([k, v]) => (
                   <div key={k}><dt>{k}</dt><dd>{String(v)}</dd></div>

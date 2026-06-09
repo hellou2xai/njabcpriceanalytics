@@ -1820,13 +1820,34 @@ def get_product_detail(
             edition_filter = "AND edition = $latest_ed"
             params["latest_ed"] = max_ed
 
+        # The UPC uniquely identifies the SKU, so when it's given we resolve by it
+        # and DON'T require an exact product_name match — links into this page can
+        # carry a cleaned/display name ("GLENLIVET 12YR SCOTCH") that differs from
+        # the catalog row ("GLENLIVET 12YR SCOTCH 12PK"); requiring the name made
+        # the lookup miss and dropped ALL enrichment (size, region, specs, image).
+        name_filter = "" if upc else "AND product_name = $product_name"
+        # DuckDB rejects named params a query doesn't reference, so drop
+        # product_name from the main lookup when we're resolving by UPC.
+        main_params = {k: v for k, v in params.items() if not (upc and k == "product_name")}
         row = con.execute(f"""
             SELECT * FROM {src}
-            WHERE wholesaler = $wholesaler AND product_name = $product_name
+            WHERE wholesaler = $wholesaler {name_filter}
             {edition_filter}
             {' '.join(extra_filters)}
             LIMIT 1
-        """, params).fetchdf()
+        """, main_params).fetchdf()
+
+        # Fall back to a name match if the UPC didn't resolve (e.g. a stale link
+        # whose UPC isn't on the current edition).
+        if row.empty and upc:
+            fb_params = {k: v for k, v in params.items()
+                         if k in ("wholesaler", "product_name", "edition", "latest_ed")}
+            row = con.execute(f"""
+                SELECT * FROM {src}
+                WHERE wholesaler = $wholesaler AND product_name = $product_name
+                {edition_filter}
+                LIMIT 1
+            """, fb_params).fetchdf()
 
         if row.empty:
             return {"error": "Product not found"}

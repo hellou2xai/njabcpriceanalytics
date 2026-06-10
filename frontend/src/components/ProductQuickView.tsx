@@ -8,7 +8,7 @@ import PriceWaterfall from './PriceWaterfall';
 import FavoriteButton from './FavoriteButton';
 import ProductThumb from './ProductThumb';
 import AddToCartButton from './AddToCartButton';
-import { distributorName, abgSku, skuLabel, packLabel } from '../lib/distributors';
+import { distributorName, abgSku, skuLabel, packLabel, containerTitle, perUnitAbbr } from '../lib/distributors';
 import { windowBadge } from '../lib/dealDates';
 import { AI_EXPLAINERS_ENABLED } from '../lib/flags';
 import type { TierWindow } from '../lib/api';
@@ -386,8 +386,8 @@ function QuickViewModal({
                         {side.product_name}
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, fontSize: 13 }}>
-                        <div><strong>Case (Btl) Cost:</strong> ${side.frontline_case_price?.toFixed(2)}{Number(side.unit_qty) > 1 ? <span className="text-muted" style={{ fontWeight: 400 }}> (${side.frontline_unit_price?.toFixed(2)}/btl)</span> : ''}</div>
-                        <div><strong>Best Disc:</strong> {side.has_discount ? <span className="text-green">${side.total_savings_per_case}/cs</span> : '—'}</div>
+                        <div><strong>Case ({containerTitle(side.unit_volume, side.unit_type)}) Cost:</strong> ${side.frontline_case_price?.toFixed(2)}{Number(side.unit_qty) > 1 ? <span className="text-muted" style={{ fontWeight: 400 }}> (${side.frontline_unit_price?.toFixed(2)}/{perUnitAbbr(side.unit_volume, side.unit_type)})</span> : ''}</div>
+                        <div><strong>Best Disc:</strong> {side.has_discount ? <span className="text-green">${side.total_savings_per_case}/cs</span> : '-'}</div>
                         <div>
                           <strong>Case Cost after RIP:</strong>{' '}
                           <span className="text-green font-bold">
@@ -402,25 +402,25 @@ function QuickViewModal({
             ) : (
               <div className="detail-grid" style={{ marginTop: 12 }}>
                 {/* Frontline / list, bottle-first with case in parens. */}
-                <div><strong>Bottle (Case) Cost:</strong>{' '}
+                <div><strong>{containerTitle(p.unit_volume, p.unit_type)} (Case) Cost:</strong>{' '}
                   {Number(p.unit_qty) > 1
-                    ? <>${p.frontline_unit_price}/btl <span className="text-muted" style={{ fontWeight: 400 }}>(${p.frontline_case_price}/cs)</span></>
+                    ? <>${p.frontline_unit_price}/{perUnitAbbr(p.unit_volume, p.unit_type)} <span className="text-muted" style={{ fontWeight: 400 }}>(${p.frontline_case_price}/cs)</span></>
                     : <>${p.frontline_case_price} <span className="text-muted" style={{ fontWeight: 400 }}>(single unit)</span></>}
                 </div>
-                {Number(p.unit_qty) > 1 && <div><strong>Bottle Cost:</strong> ${p.frontline_unit_price}</div>}
-                <div><strong>Best Discount:</strong> {p.has_discount ? <span className="text-green">${p.total_savings_per_case}/case</span> : '—'}</div>
+                {Number(p.unit_qty) > 1 && <div><strong>{containerTitle(p.unit_volume, p.unit_type)} Cost:</strong> ${p.frontline_unit_price}</div>}
+                <div><strong>Best Discount:</strong> {p.has_discount ? <span className="text-green">${p.total_savings_per_case}/case</span> : '-'}</div>
                 {/* Case cost after the case (CPL) discount, before RIP — highlighted. */}
                 {(() => {
                   const caseAfterDisc = (p.best_case_price && p.best_case_price > 0) ? p.best_case_price : p.frontline_case_price;
                   return (
                     <div style={{ background: 'color-mix(in srgb, var(--accent) 10%, var(--bg))', padding: '3px 8px', borderRadius: 6 }}>
                       <strong>Case Cost:</strong> ${caseAfterDisc}
-                      {Number(p.unit_qty) > 1 && <span className="text-muted" style={{ fontWeight: 400 }}> (${(caseAfterDisc / Number(p.unit_qty)).toFixed(2)}/btl)</span>}
+                      {Number(p.unit_qty) > 1 && <span className="text-muted" style={{ fontWeight: 400 }}> (${(caseAfterDisc / Number(p.unit_qty)).toFixed(2)}/{perUnitAbbr(p.unit_volume, p.unit_type)})</span>}
                       <span className="text-muted" style={{ fontWeight: 400 }}> (after 1-cs discount)</span>
                     </div>
                   );
                 })()}
-                <div className="detail-after-rip"><strong>Case Cost after RIP:</strong> ${p.effective_case_price}{Number(p.unit_qty) > 1 ? <span className="text-muted" style={{ fontWeight: 400 }}> (${(p.effective_case_price / Number(p.unit_qty)).toFixed(2)}/btl)</span> : ''}</div>
+                <div className="detail-after-rip"><strong>Case Cost after RIP:</strong> ${p.effective_case_price}{Number(p.unit_qty) > 1 ? <span className="text-muted" style={{ fontWeight: 400 }}> (${(p.effective_case_price / Number(p.unit_qty)).toFixed(2)}/{perUnitAbbr(p.unit_volume, p.unit_type)})</span> : ''}</div>
                 {p.live_better_than_month && p.live_effective_case_price != null && (
                   <div className="detail-after-rip" style={{ marginTop: 2 }}>
                     <strong>Live now:</strong>{' '}
@@ -660,7 +660,7 @@ function QuickViewModal({
                                 ? e.frontline_case_price / e.frontline_unit_price : 0;
                               const eff = e.effective_case_price ?? e.frontline_case_price;
                               return pack > 1
-                                ? <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>${(eff / pack).toFixed(2)}/btl</div>
+                                ? <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>${(eff / pack).toFixed(2)}/{perUnitAbbr(e.unit_volume, e.unit_type)}</div>
                                 : null;
                             })()}
                             {(() => {

@@ -34,7 +34,7 @@ function TierWin({ t }: { t: CatalogTier }) {
 }
 import { useProductSizes, bottlesPerCase, sizeToMl } from '../lib/productSizes';
 import { useComboLink } from '../lib/comboLink';
-import { distributorName, abgSku, skuLabel } from '../lib/distributors';
+import { distributorName, abgSku, skuLabel, containerTitle, containerNoun, packLabel, packPhrase, priceUnit, perUnitNoun } from '../lib/distributors';
 import type { Product, CatalogTier } from '../lib/api';
 
 // ---- size / oz helpers ----
@@ -90,7 +90,7 @@ function MiniCard({ p }: { p: Product }) {
       {/* Size / volume + pack — every product card must say what size it is, so
           buyers can tell the 750mL from the 1.75L at a glance. */}
       <div className="pd-mini-size">
-        {p.unit_volume || '—'}{pack ? ` · ${pack} btl/cs` : ''}{hasVintage ? ` · ${p.vintage}` : ''}
+        {p.unit_volume || '-'}{packLabel(p.unit_volume, pack, p.unit_type) ? ` · ${packLabel(p.unit_volume, pack, p.unit_type)}` : ''}{hasVintage ? ` · ${p.vintage}` : ''}
       </div>
       <div className="pd-mini-dist"><Store size={11} /> {distributorName(p.wholesaler)}</div>
       {/* UPC + vendor SKU — shown on every product display, per spec. */}
@@ -103,8 +103,8 @@ function MiniCard({ p }: { p: Product }) {
       <div className="pd-mini-price" title="Price after the 1-case quantity discount">
         {eff != null ? (
           <>
-            <span>${eff.toFixed(2)}/cs</span>
-            {perBtl != null && <span className="pd-mini-btl">${perBtl.toFixed(2)}/btl</span>}
+            <span>${eff.toFixed(2)}/{priceUnit(p.unit_volume, p.unit_type)}</span>
+            {perBtl != null && <span className="pd-mini-btl">${perBtl.toFixed(2)}/{perUnitNoun(p.unit_volume, p.unit_type)}</span>}
           </>
         ) : <span className="pd-mini-noprice">Price not available</span>}
       </div>
@@ -159,14 +159,14 @@ function SizeSection({ size, view, cart, updateQty, primaryName, alt }: {
         <div>
           <div className="pd-size-title">
             {hasVintage && <span className="pd-size-vintage-lead">{size.vintage}</span>}
-            {size.unit_volume || '—'} Bottle
+            {size.unit_volume || '-'} {containerTitle(size.unit_volume, size.unit_type)}
           </div>
           {/* Variant / edition name (e.g. "...250TH", a Festive pack) so the
               buyer can tell same-size SKUs apart and order the right one. */}
           {primaryName && size.product_name && size.product_name !== primaryName && (
             <div className="pd-size-variant">{size.product_name}</div>
           )}
-          <div className="pd-size-pack">{pack ? `${pack} bottles/case` : 'single unit'}</div>
+          <div className="pd-size-pack">{packPhrase(pack, size.unit_volume, size.unit_type)}</div>
           <div className="pd-size-ids">
             {sku && <span>SKU: {sku}</span>}
             {size.upc && <span className="pd-size-upc">UPC: {size.upc}</span>}
@@ -200,7 +200,7 @@ function SizeSection({ size, view, cart, updateQty, primaryName, alt }: {
                   <div key={i} className="pd-deal-line">
                     Buy {t.qty} {buyUnit(t.qty, t.unit)} – <strong>${(t.price_after ?? 0).toFixed(2)}/case</strong>
                     {t.save_per_case > 0 && <span className="pd-deal-off"> (${t.save_per_case.toFixed(2)} off)</span>}
-                    {tb != null && <> – ${tb.toFixed(2)}/bottle{size.unit_volume ? ` (${size.unit_volume})` : ''}</>}
+                    {tb != null && <> - ${tb.toFixed(2)}/{perUnitNoun(size.unit_volume, size.unit_type)}{size.unit_volume ? ` (${size.unit_volume})` : ''}</>}
                     {tBtlOz != null && <span className="pd-oz">{oz(tBtlOz)}</span>}
                     {' '}<TierWin t={t} />
                   </div>
@@ -213,7 +213,7 @@ function SizeSection({ size, view, cart, updateQty, primaryName, alt }: {
 
       <div className="pd-size-price">
         <div className="pd-price-line">
-          <strong>${headlineBtl.toFixed(2)}/bottle</strong><span className="pd-oz">{oz(btlOz)}</span>
+          <strong>${headlineBtl.toFixed(2)}/{perUnitNoun(size.unit_volume, size.unit_type)}</strong><span className="pd-oz">{oz(btlOz)}</span>
         </div>
         <div className="pd-price-line">
           <strong>${headlineCase.toFixed(2)}/case</strong><span className="pd-oz">{oz(caseOz)}</span>
@@ -242,7 +242,7 @@ function SizeSection({ size, view, cart, updateQty, primaryName, alt }: {
                 return (
                   <span className="pd-mixrip-after">
                     {' → '}${t.price_after.toFixed(2)}/case
-                    {mb != null && <> · ${mb.toFixed(2)}/bottle{size.unit_volume ? ` (${size.unit_volume})` : ''}</>}
+                    {mb != null && <> · ${mb.toFixed(2)}/{perUnitNoun(size.unit_volume, size.unit_type)}{size.unit_volume ? ` (${size.unit_volume})` : ''}</>}
                   </span>
                 );
               })()}
@@ -260,7 +260,7 @@ function SizeSection({ size, view, cart, updateQty, primaryName, alt }: {
 
       <div className="pd-size-order">
         <div className="pd-steppers">
-          <QtyStepper label="Bottles" value={qty.units} onChange={v => updateQty(cartKey, 'units', v)} />
+          <QtyStepper label={`${containerNoun(size.unit_volume, size.unit_type).replace(/^./, c => c.toUpperCase())}s`} value={qty.units} onChange={v => updateQty(cartKey, 'units', v)} />
           <QtyStepper label="Cases" value={qty.cases} onChange={v => updateQty(cartKey, 'cases', v)} />
         </div>
         {/* Add-to-list sits directly under add-to-cart: the two "save this"
@@ -419,7 +419,7 @@ export default function ProductDetail() {
   const _sizeVals = Array.from(new Set((sizes ?? []).map(s => s.unit_volume).filter(Boolean) as string[]));
   const headerSize = _sizeVals.length === 0 ? null
     : _sizeVals.length === 1
-      ? `${_sizeVals[0]}${bottlesPerCase(name, sizes[0]?.unit_qty) ? ` · ${bottlesPerCase(name, sizes[0]?.unit_qty)} btl/cs` : ''}`
+      ? `${_sizeVals[0]}${packLabel(sizes[0]?.unit_volume, bottlesPerCase(name, sizes[0]?.unit_qty), sizes[0]?.unit_type) ? ` · ${packLabel(sizes[0]?.unit_volume, bottlesPerCase(name, sizes[0]?.unit_qty), sizes[0]?.unit_type)}` : ''}`
       : _sizeVals.join(' · ');
   const hasDesc = !!enrichment?.description && enrichment.description !== 'No description found.';
   // UPC + vendor item code for the header, from the seed SKU the attributes

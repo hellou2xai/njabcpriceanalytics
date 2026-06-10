@@ -31,6 +31,19 @@ export function skuLabel(wholesaler?: string | null): string {
   return (wholesaler && SKU_LABELS[wholesaler]) || 'SKU';
 }
 
+/** Proper unit-of-measure label for the pack. Kegs are sold by the gallon/barrel
+ *  as a single vessel, so they read "keg", not "N btl/cs" (a keg has no bottles).
+ *  Returns null when there is no usable quantity. */
+export function packLabel(unitVolume?: string | null, unitQty?: string | number | null): string | null {
+  const vol = String(unitVolume ?? '').trim();
+  const qty = unitQty != null && unitQty !== '' ? Number(unitQty) : null;
+  if (qty == null || !isFinite(qty) || qty <= 0) return null;
+  if (/\b(gal|gallon|gallons|bbl|barrel|keg)\b/i.test(vol)) {
+    return qty > 1 ? `${qty} kegs` : 'keg';
+  }
+  return `${qty} btl/cs`;
+}
+
 export const ALL_DISTRIBUTORS: { value: string; label: string }[] = [
   { value: '', label: 'All' },
   ...Object.entries(DISTRIBUTOR_NAMES).map(([value, label]) => ({ value, label })),

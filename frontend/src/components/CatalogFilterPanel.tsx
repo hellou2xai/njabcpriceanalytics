@@ -25,6 +25,7 @@ export interface CatalogFilters {
   categories: string[];
   brands: string[];
   sizes: string[];
+  unitKinds: string[];   // container type: Bottle / Can / Keg
 }
 
 export const emptyCatalogFilters: CatalogFilters = {
@@ -32,6 +33,7 @@ export const emptyCatalogFilters: CatalogFilters = {
   categories: [],
   brands: [],
   sizes: [],
+  unitKinds: [],
 };
 
 export function countActiveFilters(f: CatalogFilters): number {
@@ -47,6 +49,7 @@ export function countActiveFilters(f: CatalogFilters): number {
   n += f.categories.length;
   n += f.brands.length;
   n += f.sizes.length;
+  n += f.unitKinds?.length ?? 0;
   return n;
 }
 
@@ -222,6 +225,12 @@ export default function CatalogFilterPanel({
     const base = facets ? toMap(facets.sizes) : buildFacet(items, 'unit_volume');
     return new Map([...base.entries()].sort((a, b) => toMl(a[0]) - toMl(b[0])));
   }, [facets, items]);
+  // Container type: standardised Bottle / Can / Keg buckets from the backend.
+  const unitKindFacet = useMemo(() => {
+    const order = ['Bottle', 'Can', 'Keg'];
+    const base = facets?.unit_kinds ? toMap(facets.unit_kinds) : new Map<string, number>();
+    return new Map([...base.entries()].sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0])));
+  }, [facets]);
 
   const ripCount = facets?.has_rip ?? items.filter(i => i.has_rip).length;
   const noRipCount = facets?.no_rip ?? items.filter(i => !i.has_rip).length;
@@ -557,6 +566,26 @@ export default function CatalogFilterPanel({
                 ))}
               </div>
             </FilterDropdown>
+
+            {unitKindFacet.size > 0 && (
+              <FilterDropdown
+                title="Unit type"
+                activeCount={filters.unitKinds?.length ?? 0}
+                isOpen={openKey === 'unitKinds'}
+                onOpen={opener('unitKinds')}
+                onClose={closeAll}
+              >
+                <div className="filter-checkbox-list">
+                  {[...unitKindFacet.entries()].map(([kind, count]) => (
+                    <label key={kind} className="filter-checkbox">
+                      <input type="checkbox" checked={(filters.unitKinds ?? []).includes(kind)}
+                        onChange={() => onChange({ ...filters, unitKinds: toggleArrayValue(filters.unitKinds ?? [], kind) })} />
+                      <span>{kind}</span><span className="filter-facet-count">{count}</span>
+                    </label>
+                  ))}
+                </div>
+              </FilterDropdown>
+            )}
           </div>
         )}
 

@@ -1803,6 +1803,7 @@ export interface CatalogFacets {
   categories: FacetBucket[];
   brands: FacetBucket[];
   sizes: FacetBucket[];
+  unit_kinds?: FacetBucket[];   // Bottle / Can / Keg buckets
 }
 export interface PricePoint {
   edition: string;

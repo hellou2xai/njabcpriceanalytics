@@ -660,6 +660,7 @@ def search_products(
     categories: Optional[str] = None,       # comma-separated product types
     brands: Optional[str] = None,           # comma-separated brands
     sizes: Optional[str] = None,            # comma-separated unit volumes
+    unit_kinds: Optional[str] = None,       # comma-separated container types: Bottle, Can, Keg
     upcs: Optional[str] = Query(None, description="Comma-separated UPCs (leading-zero-normalised); restricts the grid to exactly these SKUs. Used by Celar Assistant 'Open in Catalog' links."),
     rip_code: Optional[str] = Query(None, description="Restrict to products in this RIP cluster (current edition). Optional ?wholesaler= or ?divisions= narrows to one distributor; without that, any wholesaler carrying the code is included. Same (edition, distributor, UPC-validity) scoping the catalog's group-by-RIP plumbing uses."),
     region: Optional[str] = Query(None, description="Region / origin hint, e.g. 'california', 'napa', 'bordeaux', 'tuscany'. Filters by product name tokens + enrichment description. Auto-narrows product_type when the region implies a category (e.g. region=california auto-applies product_type=Wine if none is set)."),
@@ -882,6 +883,9 @@ def search_products(
         # Multi-select panel filters (applied server-side so they span all pages).
         _in_filter(where, params, "wholesaler", divisions, "div_")
         _in_filter(where, params, "product_type", categories, "cat_")
+        # Container-type filter (Bottle / Can / Keg), standardised from the messy
+        # per-distributor unit_type via the canonical bucket so the filter is clean.
+        _in_filter(where, params, _UNIT_KIND_SQL, unit_kinds, "ukind_")
         # Brand filter matches the clean enrichment brand (brand_clean), so a
         # picked brand like "Smirnoff" actually selects the right rows.
         _in_filter(where, params, "brand_clean", brands, "brnd_")
@@ -1525,6 +1529,21 @@ _VALID_UPC_SQL = (
     " AND NOT regexp_matches({col}, '^(0+|9+|1+)$')"
     " AND NOT {col} LIKE '999999%'"
     " AND LENGTH(LTRIM({col}, '0')) >= 8"
+)
+
+# Canonical container-type bucket from the messy DB unit_type (keg/KEG/Keg,
+# BOTTLE/Bottle/Glass/PET, CAN/Can/can, '5.17 1/6 BBL', ...). A keg is anything
+# keg/barrel or a gallon volume; a can is anything 'can'; everything else is a
+# bottle. Mirrors the frontend lib/distributors helpers so the Unit Type filter,
+# its facet counts, and the on-card label all agree.
+_UNIT_KIND_SQL = (
+    "CASE "
+    "WHEN lower(COALESCE(unit_type, '')) LIKE '%keg%' "
+    "  OR lower(COALESCE(unit_type, '')) LIKE '%bbl%' "
+    "  OR lower(COALESCE(unit_type, '')) LIKE '%barrel%' "
+    "  OR lower(COALESCE(unit_volume, '')) LIKE '%gal%' THEN 'Keg' "
+    "WHEN lower(COALESCE(unit_type, '')) LIKE '%can%' THEN 'Can' "
+    "ELSE 'Bottle' END"
 )
 
 
@@ -3052,6 +3071,7 @@ def search_facets(
     categories: Optional[str] = None,
     brands: Optional[str] = None,
     sizes: Optional[str] = None,
+    unit_kinds: Optional[str] = None,
     min_price: Optional[float] = None,
     max_price: Optional[float] = None,
     has_rip: Optional[bool] = None,
@@ -3121,6 +3141,7 @@ def search_facets(
         add_in("cat", "product_type", categories, "fcat_")
         add_in("brand", "brand_clean", brands, "fbrnd_")
         add_in("size", "COALESCE(unit_volume_std, unit_volume)", sizes, "fsize_")
+        add_in("ukind", _UNIT_KIND_SQL, unit_kinds, "fukind_")
         if min_price is not None or max_price is not None:
             parts, pp = [], {}
             if min_price is not None: parts.append("frontline_case_price >= $fmin"); pp["fmin"] = min_price
@@ -3184,6 +3205,8 @@ def search_facets(
             "categories": grouped("product_type", "cat", "product_type <> 'Combo'"),
             "brands": grouped("brand_clean", "brand"),
             "sizes": grouped("COALESCE(unit_volume_std, unit_volume)", "size"),
+            # Container type buckets (Bottle / Can / Keg) from the DB unit_type.
+            "unit_kinds": grouped(_UNIT_KIND_SQL, "ukind"),
         }
 
 

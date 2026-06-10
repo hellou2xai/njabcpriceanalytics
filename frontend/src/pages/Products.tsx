@@ -66,6 +66,7 @@ export default function Products() {
       divisions: csv('divisions'),
       brands: csv('brands'),
       sizes: csv('sizes'),
+      unitKinds: csv('unit_kinds'),
       priceMin: params.get('priceMin') ? parseFloat(params.get('priceMin')!) : undefined,
       priceMax: params.get('priceMax') ? parseFloat(params.get('priceMax')!) : undefined,
     });
@@ -87,6 +88,7 @@ export default function Products() {
     if (filters.divisions?.length) next.set('divisions', filters.divisions.join(','));
     if (filters.brands?.length) next.set('brands', filters.brands.join(','));
     if (filters.sizes?.length) next.set('sizes', filters.sizes.join(','));
+    if (filters.unitKinds?.length) next.set('unit_kinds', filters.unitKinds.join(','));
     if (filters.priceMin != null) next.set('priceMin', String(filters.priceMin));
     if (filters.priceMax != null) next.set('priceMax', String(filters.priceMax));
     if (next.toString() !== params.toString()) setSearchParams(next, { replace: true });
@@ -116,6 +118,7 @@ export default function Products() {
     categories: filters.categories.join(',') || undefined,
     brands: filters.brands.join(',') || undefined,
     sizes: filters.sizes.join(',') || undefined,
+    unit_kinds: filters.unitKinds.join(',') || undefined,
     min_price: filters.priceMin,
     max_price: filters.priceMax,
   };

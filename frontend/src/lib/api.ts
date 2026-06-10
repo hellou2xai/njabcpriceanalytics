@@ -1073,7 +1073,7 @@ export interface ListDetail { id: number; name: string; created_at: string; upda
 
 export interface CartItem {
   id: number; product_name: string; wholesaler: string;
-  upc?: string | null; abg_sku?: string | null; unit_volume?: string | null; combo_code?: string | null;
+  upc?: string | null; abg_sku?: string | null; unit_volume?: string | null; unit_type?: string | null; combo_code?: string | null;
   qty_cases: number; qty_units: number;
   sales_rep_id?: number | null; sales_rep_name?: string | null;
   saved_for_later: number; image_url?: string | null; notes?: string | null;
@@ -1126,6 +1126,7 @@ export interface SavingsRec {
   upc?: string | null;
   abg_sku?: string | null;
   unit_volume?: string | null;
+  unit_type?: string | null;
   unit_qty?: string | number | null;
   vintage?: string | number | null;
   rip_code?: string;

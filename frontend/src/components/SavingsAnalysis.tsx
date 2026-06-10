@@ -10,7 +10,7 @@
 import { Link } from 'react-router-dom';
 import { TrendingUp, Layers, Repeat, CalendarClock, PiggyBank, Sparkles, Clock } from 'lucide-react';
 import type { SavingsAnalysis as Analysis, SavingsRec } from '../lib/api';
-import { distributorName, abgSku, skuLabel } from '../lib/distributors';
+import { distributorName, abgSku, skuLabel, priceUnit } from '../lib/distributors';
 import { windowBadge, fmtDateRange } from '../lib/dealDates';
 import PriceSparklines from './PriceSparklines';
 
@@ -107,11 +107,11 @@ function RecCard({ rec, context, onSetQty, onSwap, busy }: {
           <Ids rec={rec} />
           <div className="sav-rec-text">
             Buy <strong>{cs(rec.target_qty)}</strong>{rec.current_cases ? ` (add ${rec.add_cases})` : ''} →{' '}
-            <strong>{money(rec.new_case_price)}/cs</strong>
+            <strong>{money(rec.new_case_price)}/{priceUnit(rec.unit_volume, rec.unit_type)}</strong>
             {rec.new_case_price != null && rec.save_per_case != null && (
-              <span className="sav-from"> from {money(rec.new_case_price + rec.save_per_case)}/cs</span>
+              <span className="sav-from"> from {money(rec.new_case_price + rec.save_per_case)}/{priceUnit(rec.unit_volume, rec.unit_type)}</span>
             )}
-            {' '}· save {money(rec.save_per_case)}/cs
+            {' '}· save {money(rec.save_per_case)}/{priceUnit(rec.unit_volume, rec.unit_type)}
             {/* When the saving stacks a quantity discount AND a RIP, show the split. */}
             {(rec.rip_save_per_case ?? 0) > 0.005 && (rec.qd_save_per_case ?? 0) > 0.005 && (
               <span className="sav-split"> = QD {money(rec.qd_save_per_case)} + RIP {money(rec.rip_save_per_case)}</span>
@@ -163,7 +163,7 @@ function RecCard({ rec, context, onSetQty, onSwap, busy }: {
           <div className="sav-rec-head"><ProductLink rec={rec} />{rec.unit_volume ? ` · ${rec.unit_volume}` : ''}<Mom rec={rec} /></div>
         <Ids rec={rec} />
           <div className="sav-rec-text">
-            Price rises {money(rec.rise_per_case)}/cs next month ({money(rec.current_price)} → {money(rec.next_price)}).
+            Price rises {money(rec.rise_per_case)}/{priceUnit(rec.unit_volume, rec.unit_type)} next month ({money(rec.current_price)} → {money(rec.next_price)}).
             Lock in now{rec.current_cases ? ` (× ${cs(rec.current_cases)})` : ''}.
           </div>
         </div>
@@ -181,7 +181,7 @@ function RecCard({ rec, context, onSetQty, onSwap, busy }: {
         <div className="sav-rec-head"><ProductLink rec={rec} />{rec.unit_volume ? ` · ${rec.unit_volume}` : ''}<Mom rec={rec} /></div>
         <Ids rec={rec} />
         <div className="sav-rec-text">
-          {money(rec.save_per_case)}/cs cheaper at <strong>{distributorName(rec.to_wholesaler || '')}</strong>{' '}
+          {money(rec.save_per_case)}/{priceUnit(rec.unit_volume, rec.unit_type)} cheaper at <strong>{distributorName(rec.to_wholesaler || '')}</strong>{' '}
           ({money(rec.current_price)} → {money(rec.other_price)})
         </div>
       </div>

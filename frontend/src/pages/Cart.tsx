@@ -10,7 +10,7 @@ import { windowBadge, fmtDateRange } from '../lib/dealDates';
 import { useProductQuickView } from '../components/ProductQuickView';
 import { useDialog } from '../components/Dialog';
 import { shortUnit } from '../components/CatalogTable';
-import { distributorName, abgSku, skuLabel } from '../lib/distributors';
+import { distributorName, abgSku, skuLabel, priceUnit, perUnitAbbr, isKegUnit } from '../lib/distributors';
 
 function Stepper({ label, value, onChange }: { label: string; value: number; onChange: (n: number) => void }) {
   return (
@@ -327,9 +327,9 @@ export default function Cart() {
             {it.frontline_case_price != null && (
               <div style={{ fontSize: 12, marginTop: 2 }}>
                 Case {money(it.frontline_case_price)}
-                {it.frontline_unit_price != null && <> · Btl {money(it.frontline_unit_price)}</>}
-                {' · '}{showCombo ? 'Combo' : 'Eff'} <span className="text-green">{money(perCase)}/cs</span>
-                {it.total_savings_per_case ? <> · Save <span className="text-green">{money(it.total_savings_per_case)}/cs</span></> : null}
+                {it.frontline_unit_price != null && !isKegUnit(it.unit_volume, it.unit_type) && <> · {perUnitAbbr(it.unit_volume, it.unit_type)} {money(it.frontline_unit_price)}</>}
+                {' · '}{showCombo ? 'Combo' : 'Eff'} <span className="text-green">{money(perCase)}/{priceUnit(it.unit_volume, it.unit_type)}</span>
+                {it.total_savings_per_case ? <> · Save <span className="text-green">{money(it.total_savings_per_case)}/{priceUnit(it.unit_volume, it.unit_type)}</span></> : null}
               </div>
             )}
             {/* Price-history sparkline (effective vs frontline across editions);

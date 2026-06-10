@@ -152,7 +152,7 @@ def _attach_cart_pricing(dcon, items):
                 WITH latest AS (SELECT wholesaler, MAX(edition) AS ed FROM {src} GROUP BY wholesaler)
                 SELECT e.wholesaler AS w, LTRIM(e.upc,'0') AS un, e.product_name AS pn, e.unit_volume AS uv,
                        e.frontline_case_price AS fcp, e.frontline_unit_price AS fup,
-                       e.effective_case_price AS ecp, e.unit_qty AS uq,
+                       e.effective_case_price AS ecp, e.unit_qty AS uq, e.unit_type AS ut,
                        e.has_discount AS hd, e.has_rip AS hr,
                        e.discount_pct AS dp, e.total_savings_per_case AS ts,
                        CAST(e.rip_code AS VARCHAR) AS rc,
@@ -202,6 +202,7 @@ def _attach_cart_pricing(dcon, items):
             except Exception:
                 uq = None
             it["unit_qty"] = uq
+            it["unit_type"] = r.get("ut")   # container (bottle/can/keg) for the UI
             it["effective_unit_price"] = round(ecp / uq, 2) if (ecp and uq) else cl(r["fup"])
             it["has_discount"] = bool(r["hd"])
             it["has_rip"] = bool(r["hr"])
@@ -530,6 +531,7 @@ def analyze_lines(items: list[dict]) -> dict:
                 "type": "tier_gap", "kind": "qd" if kind == "discount" else "rip",
                 "line_id": it.get("id"), "product_name": name, "upc": it.get("upc"), "abg_sku": it.get("abg_sku"),
                 "wholesaler": it.get("wholesaler"), "unit_volume": it.get("unit_volume"),
+                "unit_type": it.get("unit_type"),
                 "unit_qty": it.get("unit_qty"), "vintage": it.get("vintage"),
                 "current_cases": C, "target_qty": nxt["qty"], "add_cases": nxt["qty"] - C,
                 "new_case_price": nxt["price_after"], "save_per_case": round(nxt["save"], 2),
@@ -608,7 +610,7 @@ def analyze_lines(items: list[dict]) -> dict:
             recs.append({
                 "type": "buy_before", "line_id": it.get("id"), "upc": it.get("upc"), "abg_sku": it.get("abg_sku"),
                 "product_name": it.get("product_name"), "wholesaler": it.get("wholesaler"),
-                "unit_volume": it.get("unit_volume"), "unit_qty": it.get("unit_qty"),
+                "unit_volume": it.get("unit_volume"), "unit_type": it.get("unit_type"), "unit_qty": it.get("unit_qty"),
                 "vintage": it.get("vintage"), "current_price": round(cur, 2),
                 "next_price": round(nxt, 2), "rise_per_case": rise,
                 "current_cases": C, "total_rise": total,

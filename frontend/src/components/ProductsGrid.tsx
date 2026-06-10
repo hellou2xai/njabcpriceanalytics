@@ -206,7 +206,8 @@ function SizeRow({ size, cart, updateQty, primaryName }: {
           DealLadder (tier qty, total $ off, price-after for BOTH case + bottle)
           so the numbers always match the sparkline tooltip. */}
       <div className="prod-size-deals">
-        <DealLadder months={months} pack={pack} emptyText="No deals this month" />
+        <DealLadder months={months} pack={pack} emptyText="No deals this month"
+          unitVolume={size.unit_volume} unitType={size.unit_type} />
       </div>
       <div className="prod-size-order">
         <div className="prod-size-steppers">
@@ -338,7 +339,8 @@ function ProductCard({ group, cart, updateQty }: {
         </div>
         {repMonths.length > 0 && (
           <div className="prod-card-deals">
-            <DealLadder months={repMonths} pack={repPack} />
+            <DealLadder months={repMonths} pack={repPack}
+              unitVolume={rep?.unit_volume} unitType={rep?.unit_type} />
           </div>
         )}
         <div className="prod-card-right">

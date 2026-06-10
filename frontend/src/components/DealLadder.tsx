@@ -17,6 +17,7 @@
  */
 import type { MonthBreakdown, RipTier } from './MonthEffectiveSparkline';
 import { windowBadge, fmtDateRange } from '../lib/dealDates';
+import { priceUnit, perUnitAbbr, isKegUnit } from '../lib/distributors';
 
 const unitWord = (u: string) => (/^\s*b/i.test(u) ? 'btl' : 'cs');
 
@@ -39,13 +40,19 @@ function PartialFlag({ t }: { t: RipTier }) {
   );
 }
 
-export default function DealLadder({ months, pack, emptyText }: {
+export default function DealLadder({ months, pack, emptyText, unitVolume, unitType }: {
   months: MonthBreakdown[];
   pack: number | null;
   // When set, renders this note if there are no deals; when omitted, renders
   // nothing (so callers that only want the ladder stay clean).
   emptyText?: string;
+  // Container so prices read in the real unit (keg/can/bottle), not always btl/cs.
+  unitVolume?: string | null;
+  unitType?: string | null;
 }) {
+  const csWord = priceUnit(unitVolume, unitType);   // 'keg' | 'cs'
+  const unitNoun = perUnitAbbr(unitVolume, unitType); // 'keg' | 'can' | 'btl'
+  const keg = isKegUnit(unitVolume, unitType);       // kegs have no per-bottle
   const cur = months.length ? months[months.length - 1] : null;
   const frontline = cur?.frontline ?? null;
   // Sort by the deal's EFFECTIVE WINDOW first (evergreen/full-month before
@@ -92,12 +99,12 @@ export default function DealLadder({ months, pack, emptyText }: {
     return (
       <div key={`${kind}${i}`} className="prod-deal-line">
         <span className={`prod-deal-badge prod-deal-${kind}`}>{kind === 'qd' ? 'QD' : 'RIP'}</span>{' '}
-        Buy {buyLabel(t)} → <strong>${t.eff.toFixed(2)}/cs</strong>
-        {b != null && <span className="prod-deal-btl"> · ${b.toFixed(2)}/btl</span>}
+        Buy {buyLabel(t)} → <strong>${t.eff.toFixed(2)}/{csWord}</strong>
+        {b != null && !keg && <span className="prod-deal-btl"> · ${b.toFixed(2)}/{unitNoun}</span>}
         {kind === 'rip' && ripSave != null && ripSave > 0.005 && (
           <span className="prod-deal-off"
             title="The RIP rebate alone, per case — the number on the RIP sheet. The price shown already includes any stacked case discount.">
-            {' '}(RIP −${ripSave.toFixed(2)}/cs)
+            {' '}(RIP -${ripSave.toFixed(2)}/{csWord})
           </span>
         )}
         {kind === 'qd' && off != null && off > 0.005 && (

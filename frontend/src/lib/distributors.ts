@@ -56,6 +56,15 @@ export function packLabel(
   return `${qty} ${noun}/cs`;
 }
 
+/** The unit the CASE price is quoted in: a keg is priced per keg (1 vessel),
+ *  everything else per case ("cs"). Drives the "/cs" vs "/keg" price suffix. */
+export function priceUnit(unitVolume?: string | null, unitType?: string | null): string {
+  const t = String(unitType ?? '').toLowerCase();
+  const vol = String(unitVolume ?? '').toLowerCase();
+  if (/\bkeg\b|bbl|barrel/.test(t) || /\b(gal|gallon|gallons)\b/.test(vol)) return 'keg';
+  return 'cs';
+}
+
 export const ALL_DISTRIBUTORS: { value: string; label: string }[] = [
   { value: '', label: 'All' },
   ...Object.entries(DISTRIBUTOR_NAMES).map(([value, label]) => ({ value, label })),

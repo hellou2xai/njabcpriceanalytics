@@ -5,7 +5,7 @@ import { Search, Sparkles, Store, ChevronRight } from 'lucide-react';
 import { catalog, compare } from '../lib/api';
 import type { Product } from '../lib/api';
 import ProductThumb from '../components/ProductThumb';
-import { distributorName, packLabel } from '../lib/distributors';
+import { distributorName, packLabel, priceUnit } from '../lib/distributors';
 import { bottlesPerCase } from '../lib/productSizes';
 import './Home.css';
 
@@ -66,7 +66,7 @@ function ProductCard({ p }: { p: Product }) {
         {p.unit_volume || '-'}{packLabel(p.unit_volume, p.unit_qty, p.unit_type) ? ` · ${packLabel(p.unit_volume, p.unit_qty, p.unit_type)}` : ''}
       </div>
       <div className="home-card-dist"><Store size={11} /> {distributorName(p.wholesaler)}</div>
-      <div className="home-card-price">{price ? `${price}/cs` : <span className="home-card-noprice">Price not available</span>}</div>
+      <div className="home-card-price">{price ? `${price}/${priceUnit(p.unit_volume, p.unit_type)}` : <span className="home-card-noprice">Price not available</span>}</div>
     </button>
   );
 }

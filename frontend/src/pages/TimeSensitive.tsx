@@ -17,7 +17,7 @@ import MonthEffectiveSparkline from '../components/MonthEffectiveSparkline';
 import { buildSparkProps } from '../lib/promotionsSparkline';
 import VintageSticker from '../components/VintageSticker';
 import { useProductQuickView } from '../components/ProductQuickView';
-import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
+import { distributorName, ALL_DISTRIBUTORS, priceUnit } from '../lib/distributors';
 import { AI_EXPLAINERS_ENABLED } from '../lib/flags';
 
 const money = (v?: number | null) => (v == null ? '-' : `$${Number(v).toFixed(2)}`);
@@ -361,9 +361,9 @@ function DealCard({ d, open }: { d: TimeSensitiveDeal; open: (n: string, w: stri
 
       <div className="deal-card-price">
         {fr != null && eff != null && fr !== eff && <span className="deal-was">${fr.toFixed(2)}</span>}
-        <span className="deal-now">{money(eff ?? fr)}<span className="deal-unit">/cs</span></span>
+        <span className="deal-now">{money(eff ?? fr)}<span className="deal-unit">/{priceUnit(d.unit_volume)}</span></span>
         {save != null && save > 0 && (
-          <span className="deal-save">Save <strong>${save.toFixed(2)}/cs</strong>{pct ? ` · ${pct.toFixed(0)}% off` : ''}</span>
+          <span className="deal-save">Save <strong>${save.toFixed(2)}/{priceUnit(d.unit_volume)}</strong>{pct ? ` · ${pct.toFixed(0)}% off` : ''}</span>
         )}
       </div>
 

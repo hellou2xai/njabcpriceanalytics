@@ -18,7 +18,7 @@ import { buildSparkProps } from '../lib/promotionsSparkline';
 import { AI_EXPLAINERS_ENABLED } from '../lib/flags';
 import VintageSticker from '../components/VintageSticker';
 import { useProductQuickView } from '../components/ProductQuickView';
-import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
+import { distributorName, ALL_DISTRIBUTORS, priceUnit } from '../lib/distributors';
 import { useAuth } from '../contexts/AuthContext';
 
 const money = (v?: number | null) => (v == null ? '-' : `$${Number(v).toFixed(2)}`);
@@ -263,9 +263,9 @@ function DiscountCard({ d, open }: { d: Product; open: (n: string, w: string, c?
 
       <div className="deal-card-price">
         {list != null && <span className="deal-was">{money(list)}</span>}
-        <span className="deal-now">{money(eff ?? list)}<span className="deal-unit">/cs</span></span>
+        <span className="deal-now">{money(eff ?? list)}<span className="deal-unit">/{priceUnit(d.unit_volume)}</span></span>
         {save != null && save > 0 && (
-          <span className="deal-save">Save <strong>{money(save)}/cs</strong>{pct ? ` · ${pct.toFixed(0)}% off` : ''}</span>
+          <span className="deal-save">Save <strong>{money(save)}/{priceUnit(d.unit_volume)}</strong>{pct ? ` · ${pct.toFixed(0)}% off` : ''}</span>
         )}
       </div>
       {effBtl != null && (

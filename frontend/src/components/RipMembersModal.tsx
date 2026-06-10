@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { X } from 'lucide-react';
 import { catalog } from '../lib/api';
+import { packLabel } from '../lib/distributors';
 
 /**
  * Popup that lists every product included in a single RIP code, opened by
@@ -73,7 +74,7 @@ export default function RipMembersModal({
                 <span className="rip-member-meta">
                   <strong>{p.product_name}</strong>
                   <span className="rip-member-sub">
-                    {[p.unit_volume, p.unit_qty ? `${p.unit_qty} btl/cs` : null, p.upc]
+                    {[p.unit_volume, packLabel(p.unit_volume, p.unit_qty, p.unit_type), p.upc]
                       .filter(Boolean).join(' · ')}
                   </span>
                 </span>

@@ -8,7 +8,7 @@ import PriceWaterfall from './PriceWaterfall';
 import FavoriteButton from './FavoriteButton';
 import ProductThumb from './ProductThumb';
 import AddToCartButton from './AddToCartButton';
-import { distributorName, abgSku, skuLabel } from '../lib/distributors';
+import { distributorName, abgSku, skuLabel, packLabel } from '../lib/distributors';
 import { windowBadge } from '../lib/dealDates';
 import { AI_EXPLAINERS_ENABLED } from '../lib/flags';
 import type { TierWindow } from '../lib/api';
@@ -541,7 +541,7 @@ function QuickViewModal({
                           <div className="rip-sibling-meta">
                             <div className="rip-sibling-name">{sib.product_name}</div>
                             <div className="rip-sibling-sub">
-                              {[sib.unit_volume, sib.unit_qty ? `${sib.unit_qty} btl/cs` : null, sib.upc]
+                              {[sib.unit_volume, packLabel(sib.unit_volume, sib.unit_qty, sib.unit_type), sib.upc]
                                 .filter(Boolean).join(' · ')}
                             </div>
                           </div>

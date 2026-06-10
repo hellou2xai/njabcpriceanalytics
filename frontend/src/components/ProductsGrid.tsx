@@ -28,7 +28,7 @@ import { buildMonths } from '../lib/promotionsSparkline';
 import { catalog } from '../lib/api';
 import { useProductSizes, bottlesPerCase } from '../lib/productSizes';
 import { useComboLink } from '../lib/comboLink';
-import { distributorName, abgSku, skuLabel } from '../lib/distributors';
+import { distributorName, abgSku, skuLabel, containerTitle, containerNoun, packPhrase, priceUnitWord, perUnitNoun, isKegUnit } from '../lib/distributors';
 import type { Product } from '../lib/api';
 
 // Full-page product-detail deep link for a product family.
@@ -168,12 +168,12 @@ function SizeRow({ size, cart, updateQty, primaryName }: {
     <div className="prod-size-row">
       <Link to={detailUrl(size.wholesaler, size.product_name, size.upc)} className="prod-size-id"
         title="Open full product details">
-        <div className="prod-size-name">{size.unit_volume || '—'} Bottle</div>
+        <div className="prod-size-name">{size.unit_volume || '-'} {containerTitle(size.unit_volume, size.unit_type)}</div>
         {primaryName && size.product_name && size.product_name !== primaryName && (
           <div className="prod-size-variant">{size.product_name}</div>
         )}
         <div className="prod-size-dist"><Store size={11} /> {distributorName(size.wholesaler)}</div>
-        <div className="prod-size-pack">{pack ? `${pack} bottles/case` : 'single unit'}</div>
+        <div className="prod-size-pack">{packPhrase(pack, size.unit_volume, size.unit_type)}</div>
         {sku && <div className="prod-size-sku">SKU: {sku}</div>}
         {size.vintage != null && String(size.vintage) !== '0' && String(size.vintage).trim() !== '' && (
           <span className="tag tag-blue prod-size-vintage">Vintage {size.vintage}</span>
@@ -190,10 +190,13 @@ function SizeRow({ size, cart, updateQty, primaryName }: {
               title="This product is part of a combo bundle — view the combo">🎁 Combo</Link>
           )}
         </span>
-        {/* Case price first (the buying unit), then bottle — both on one line. */}
+        {/* Case price first (the buying unit), then per-unit. A keg has no
+            per-bottle price, so only the keg price is shown. */}
         <div className="prod-size-amounts">
-          <span className="prod-size-case">${caseP.toFixed(2)}/case</span>
-          <span className="prod-size-btl">${btlPrice.toFixed(2)}/bottle</span>
+          <span className="prod-size-case">${caseP.toFixed(2)}/{priceUnitWord(size.unit_volume, size.unit_type)}</span>
+          {!isKegUnit(size.unit_volume, size.unit_type) && (
+            <span className="prod-size-btl">${btlPrice.toFixed(2)}/{perUnitNoun(size.unit_volume, size.unit_type)}</span>
+          )}
         </div>
         <PriceSparklines wholesaler={size.wholesaler} productName={size.product_name}
           upc={size.upc} unitVolume={size.unit_volume} unitQty={size.unit_qty} vintage={size.vintage}
@@ -207,8 +210,11 @@ function SizeRow({ size, cart, updateQty, primaryName }: {
       </div>
       <div className="prod-size-order">
         <div className="prod-size-steppers">
-          <QtyStepper label="Bottles" value={qty.units} onChange={v => updateQty(cartKey, 'units', v)} />
-          <QtyStepper label="Cases" value={qty.cases} onChange={v => updateQty(cartKey, 'cases', v)} />
+          <QtyStepper label={isKegUnit(size.unit_volume, size.unit_type) ? 'Kegs' : containerNoun(size.unit_volume, size.unit_type) === 'can' ? 'Cans' : 'Bottles'}
+            value={qty.units} onChange={v => updateQty(cartKey, 'units', v)} />
+          {!isKegUnit(size.unit_volume, size.unit_type) && (
+            <QtyStepper label="Cases" value={qty.cases} onChange={v => updateQty(cartKey, 'cases', v)} />
+          )}
         </div>
         <div className="prod-size-actions">
           <AddToCartButton productName={size.product_name} wholesaler={size.wholesaler}

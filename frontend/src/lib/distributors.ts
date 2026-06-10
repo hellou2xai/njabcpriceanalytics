@@ -31,38 +31,74 @@ export function skuLabel(wholesaler?: string | null): string {
   return (wholesaler && SKU_LABELS[wholesaler]) || 'SKU';
 }
 
-/** Proper unit-of-measure label for the pack, driven by the DB `unit_type`
- *  (keg / bottle / can / glass ...). A keg is a single vessel sold by the
- *  gallon, so it reads "keg", never "N btl/cs" (a keg has no bottles). Falls
- *  back to the volume string when unit_type is missing. Returns null when there
- *  is no usable quantity. */
+/* ----- Unit of measure, driven by the DB `unit_type` (keg / bottle / can / ...)
+   so the UI never assumes "bottle". A keg is a single vessel sold by the gallon,
+   so it has no bottles and is priced per keg. Volume (GAL) is a fallback only when
+   unit_type is missing. ----- */
+function _isKeg(unitVolume?: string | null, unitType?: string | null): boolean {
+  const t = String(unitType ?? '').toLowerCase();
+  const vol = String(unitVolume ?? '').toLowerCase();
+  return /\bkeg\b|bbl|barrel/.test(t) || /\b(gal|gallon|gallons)\b/.test(vol);
+}
+
+/** Singular container noun from the DB unit_type: 'keg' | 'can' | 'bottle'. */
+export function containerNoun(unitVolume?: string | null, unitType?: string | null): 'keg' | 'can' | 'bottle' {
+  if (_isKeg(unitVolume, unitType)) return 'keg';
+  return /\bcan\b/.test(String(unitType ?? '').toLowerCase()) ? 'can' : 'bottle';
+}
+
+/** Title-cased container noun for a size heading, e.g. "Keg" / "Bottle" / "Can". */
+export function containerTitle(unitVolume?: string | null, unitType?: string | null): string {
+  const n = containerNoun(unitVolume, unitType);
+  return n.charAt(0).toUpperCase() + n.slice(1);
+}
+
+/** Pack phrase given an already-resolved bottles/cans-per-case count. Kegs read
+ *  "keg" (no per-case bottles); cases read "N bottles/case" or "N cans/case". */
+export function packPhrase(packCount: number | null | undefined, unitVolume?: string | null, unitType?: string | null): string {
+  if (_isKeg(unitVolume, unitType)) return packCount && packCount > 1 ? `${packCount} kegs` : 'keg';
+  if (!packCount || packCount <= 0) return 'single unit';
+  const noun = containerNoun(unitVolume, unitType) === 'can' ? 'cans' : 'bottles';
+  return `${packCount} ${noun}/case`;
+}
+
+/** Short pack label ("keg" / "12 btl/cs" / "24 can/cs") from unit_qty directly. */
 export function packLabel(
   unitVolume?: string | null,
   unitQty?: string | number | null,
   unitType?: string | null,
 ): string | null {
   const qty = unitQty != null && unitQty !== '' ? Number(unitQty) : null;
+  if (_isKeg(unitVolume, unitType)) return qty && qty > 1 ? `${qty} kegs` : 'keg';
   if (qty == null || !isFinite(qty) || qty <= 0) return null;
-  const t = String(unitType ?? '').toLowerCase();
-  const vol = String(unitVolume ?? '').toLowerCase();
-  // Keg: a single container, not a case of bottles.
-  if (/\bkeg\b|bbl|barrel/.test(t) || /\b(gal|gallon|gallons)\b/.test(vol)) {
-    return qty > 1 ? `${qty} kegs` : 'keg';
-  }
-  // Use the real container noun from the DB so cans don't read "btl".
-  const noun = /\bcan\b/.test(t) ? 'can'
-    : /bottle|btl|glass|pet|plastic/.test(t) ? 'btl'
-    : 'btl';
+  const noun = containerNoun(unitVolume, unitType) === 'can' ? 'can' : 'btl';
   return `${qty} ${noun}/cs`;
 }
 
-/** The unit the CASE price is quoted in: a keg is priced per keg (1 vessel),
- *  everything else per case ("cs"). Drives the "/cs" vs "/keg" price suffix. */
+/** Word the CASE price is quoted in: 'keg' for kegs, else 'case'. */
+export function priceUnitWord(unitVolume?: string | null, unitType?: string | null): string {
+  return _isKeg(unitVolume, unitType) ? 'keg' : 'case';
+}
+
+/** Short form for the "/cs" vs "/keg" price suffix. */
 export function priceUnit(unitVolume?: string | null, unitType?: string | null): string {
-  const t = String(unitType ?? '').toLowerCase();
-  const vol = String(unitVolume ?? '').toLowerCase();
-  if (/\bkeg\b|bbl|barrel/.test(t) || /\b(gal|gallon|gallons)\b/.test(vol)) return 'keg';
-  return 'cs';
+  return _isKeg(unitVolume, unitType) ? 'keg' : 'cs';
+}
+
+/** Per-unit noun for a $/unit price: 'keg' | 'can' | 'bottle'. */
+export function perUnitNoun(unitVolume?: string | null, unitType?: string | null): string {
+  return containerNoun(unitVolume, unitType);
+}
+
+/** Abbreviated per-unit suffix for "$/btl" style prices: 'btl' | 'can' | 'keg'. */
+export function perUnitAbbr(unitVolume?: string | null, unitType?: string | null): string {
+  const n = containerNoun(unitVolume, unitType);
+  return n === 'bottle' ? 'btl' : n;
+}
+
+/** Whether this SKU is a keg (single vessel) — hide per-bottle figures for it. */
+export function isKegUnit(unitVolume?: string | null, unitType?: string | null): boolean {
+  return _isKeg(unitVolume, unitType);
 }
 
 export const ALL_DISTRIBUTORS: { value: string; label: string }[] = [

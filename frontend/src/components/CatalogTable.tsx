@@ -10,7 +10,7 @@ import { RowMenuButton } from './ContextMenu';
 import MonthEffectiveSparkline from './MonthEffectiveSparkline';
 import { buildMonths } from '../lib/promotionsSparkline';
 import RipMembersModal from './RipMembersModal';
-import { distributorName, abgSku, skuLabel } from '../lib/distributors';
+import { distributorName, abgSku, skuLabel, packLabel, perUnitAbbr } from '../lib/distributors';
 import { cart as cartApi } from '../lib/api';
 import type { Product, CatalogTier } from '../lib/api';
 
@@ -655,9 +655,9 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                             The standalone Size column is dropped because
                             the same info is more useful here. */}
                         <div className="catalog-product-spec">
-                          {item.unit_volume ?? '—'}
-                          {item.unit_qty
-                            ? <> · {item.unit_qty} btl/cs</>
+                          {item.unit_volume ?? '-'}
+                          {packLabel(item.unit_volume, item.unit_qty, item.unit_type)
+                            ? <> · {packLabel(item.unit_volume, item.unit_qty, item.unit_type)}</>
                             : null}
                         </div>
                         <div className="cat-ident">
@@ -870,7 +870,7 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                   )}
                   <td className="right" data-label="Case / Btl" style={{ fontWeight: 600 }}>
                     ${item.frontline_case_price.toFixed(2)}
-                    <div className="cat-subprice">${item.frontline_unit_price.toFixed(2)}/btl</div>
+                    <div className="cat-subprice">${item.frontline_unit_price.toFixed(2)}/{perUnitAbbr(item.unit_volume, item.unit_type)}</div>
                   </td>
                   <td data-label="Tier">
                     {hasTiers
@@ -883,7 +883,7 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                     {(() => {
                       const uq = Number(item.unit_qty);
                       return uq > 0
-                        ? <div className="cat-subprice">${(item.effective_case_price / uq).toFixed(2)}/btl</div>
+                        ? <div className="cat-subprice">${(item.effective_case_price / uq).toFixed(2)}/{perUnitAbbr(item.unit_volume, item.unit_type)}</div>
                         : null;
                     })()}
                     {item.live_better_than_month && item.live_effective_case_price != null && (
@@ -971,13 +971,13 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                       <td className="right" data-label="Save">
                         <span className="text-green font-bold">{fmt(t.save_per_case)}</span>
                         {t.save_per_bottle != null && (
-                          <div className="cat-subprice">{fmt(t.save_per_bottle)}/btl</div>
+                          <div className="cat-subprice">{fmt(t.save_per_bottle)}/{perUnitAbbr(item.unit_volume, item.unit_type)}</div>
                         )}
                       </td>
                       <td className="right font-bold" data-label="Eff">
                         {fmt(t.price_after)}
                         {t.btl_price_after != null && (
-                          <div className="cat-subprice">{fmt(t.btl_price_after)}/btl</div>
+                          <div className="cat-subprice">{fmt(t.btl_price_after)}/{perUnitAbbr(item.unit_volume, item.unit_type)}</div>
                         )}
                       </td>
                       <td className="right" data-label="ROI">

@@ -196,6 +196,7 @@ export interface CatalogAiProduct {
   abg_sku?: string | null;
   unit_volume?: string | null;
   unit_qty?: string | null;
+  unit_type?: string | null;
   vintage?: string | null;
   effective_case_price?: number | null;
   frontline_case_price?: number | null;

@@ -31,17 +31,29 @@ export function skuLabel(wholesaler?: string | null): string {
   return (wholesaler && SKU_LABELS[wholesaler]) || 'SKU';
 }
 
-/** Proper unit-of-measure label for the pack. Kegs are sold by the gallon/barrel
- *  as a single vessel, so they read "keg", not "N btl/cs" (a keg has no bottles).
- *  Returns null when there is no usable quantity. */
-export function packLabel(unitVolume?: string | null, unitQty?: string | number | null): string | null {
-  const vol = String(unitVolume ?? '').trim();
+/** Proper unit-of-measure label for the pack, driven by the DB `unit_type`
+ *  (keg / bottle / can / glass ...). A keg is a single vessel sold by the
+ *  gallon, so it reads "keg", never "N btl/cs" (a keg has no bottles). Falls
+ *  back to the volume string when unit_type is missing. Returns null when there
+ *  is no usable quantity. */
+export function packLabel(
+  unitVolume?: string | null,
+  unitQty?: string | number | null,
+  unitType?: string | null,
+): string | null {
   const qty = unitQty != null && unitQty !== '' ? Number(unitQty) : null;
   if (qty == null || !isFinite(qty) || qty <= 0) return null;
-  if (/\b(gal|gallon|gallons|bbl|barrel|keg)\b/i.test(vol)) {
+  const t = String(unitType ?? '').toLowerCase();
+  const vol = String(unitVolume ?? '').toLowerCase();
+  // Keg: a single container, not a case of bottles.
+  if (/\bkeg\b|bbl|barrel/.test(t) || /\b(gal|gallon|gallons)\b/.test(vol)) {
     return qty > 1 ? `${qty} kegs` : 'keg';
   }
-  return `${qty} btl/cs`;
+  // Use the real container noun from the DB so cans don't read "btl".
+  const noun = /\bcan\b/.test(t) ? 'can'
+    : /bottle|btl|glass|pet|plastic/.test(t) ? 'btl'
+    : 'btl';
+  return `${qty} ${noun}/cs`;
 }
 
 export const ALL_DISTRIBUTORS: { value: string; label: string }[] = [

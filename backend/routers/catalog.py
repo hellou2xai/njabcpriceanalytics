@@ -1395,7 +1395,7 @@ def search_products(
             {data_cte_full}
             SELECT wholesaler, edition, upc, product_name, product_type,
                    brand_clean AS brand, enr_name,
-                   unit_qty, unit_volume, vintage, frontline_case_price, frontline_unit_price,
+                   unit_qty, unit_volume, unit_type, vintage, frontline_case_price, frontline_unit_price,
                    best_case_price, best_unit_price, effective_case_price,
                    has_discount, has_rip, has_closeout, discount_pct,
                    total_savings_per_case, rip_code, combo_code,

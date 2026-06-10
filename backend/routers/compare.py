@@ -1962,7 +1962,8 @@ def price360_offers(con, match: str, typical_map: Optional[dict] = None,
         "product": {
             "product_name": min((o["product_name"] for o in offers), key=len),
             "upc": meta.get("upc"), "unit_volume": meta.get("unit_volume"),
-            "unit_qty": meta.get("unit_qty"), "abv_proof": meta.get("abv_proof"),
+            "unit_qty": meta.get("unit_qty"), "unit_type": meta.get("unit_type"),
+            "abv_proof": meta.get("abv_proof"),
             "product_type": meta.get("product_type"), "brand": meta.get("brand"),
         },
         "comparability": "direct",
@@ -2040,7 +2041,7 @@ def _edition_rows(con, src: str, w: str, ed: str) -> dict:
                  "|| COALESCE(CAST(TRY_CAST(unit_qty AS DOUBLE) AS VARCHAR),'') || '|' "
                  f"|| COALESCE({vn},'')")
     df = con.execute(f"""
-        SELECT upc, product_name, product_type, brand, unit_qty, unit_volume,
+        SELECT upc, product_name, product_type, brand, unit_qty, unit_volume, unit_type,
                vintage, abv_proof,
                frontline_case_price, frontline_unit_price,
                best_case_price, best_unit_price, effective_case_price,
@@ -2427,7 +2428,8 @@ def rateshop_data(con, match: str, cases: float = 5, size_key: Optional[str] = N
         "product": {
             "product_name": min((o["product_name"] for o in offers), key=len),
             "upc": meta.get("upc"), "unit_volume": meta.get("unit_volume"),
-            "unit_qty": meta.get("unit_qty"), "abv_proof": meta.get("abv_proof"),
+            "unit_qty": meta.get("unit_qty"), "unit_type": meta.get("unit_type"),
+            "abv_proof": meta.get("abv_proof"),
             "product_type": meta.get("product_type"), "brand": meta.get("brand"),
         },
         "tie": n_winners > 1, "verdict": verdict,

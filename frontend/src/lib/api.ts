@@ -617,7 +617,7 @@ export interface RateShopResponse {
   size_key?: string;
   proof_warning?: boolean;
   available_sizes?: { match_key: string; size_key: string; unit_volume: string | null; unit_qty: string | null; vintage: string | null; n_distributors: number }[];
-  product?: { product_name: string; upc: string | null; unit_volume: string | null; unit_qty: string | null; abv_proof: string | null; product_type: string | null; brand: string | null };
+  product?: { product_name: string; upc: string | null; unit_volume: string | null; unit_qty: string | null; unit_type: string | null; abv_proof: string | null; product_type: string | null; brand: string | null };
   tie?: boolean;
   verdict?: string;
   breakeven?: { from: number; to: number | null; winner: string | null }[];
@@ -677,7 +677,7 @@ export interface Price360Response {
   match?: string;
   product?: {
     product_name: string; upc: string | null; unit_volume: string | null;
-    unit_qty: string | null; abv_proof: string | null; product_type: string | null; brand: string | null;
+    unit_qty: string | null; unit_type: string | null; abv_proof: string | null; product_type: string | null; brand: string | null;
   };
   comparability?: string;
   proof_warning?: boolean;

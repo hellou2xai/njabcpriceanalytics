@@ -4,7 +4,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Target, Crown, AlertTriangle, Info, ChevronDown, ChevronRight } from 'lucide-react';
 import { compare } from '../lib/api';
 import type { Price360Offer } from '../lib/api';
-import { distributorName } from '../lib/distributors';
+import { distributorName, priceUnitWord, perUnitNoun, isKegUnit } from '../lib/distributors';
 import ProductSearchBox from '../components/ProductSearchBox';
 import RowActions from '../components/RowActions';
 import './ComparePrices.css';
@@ -23,11 +23,14 @@ const REACH_LABEL: Record<string, string> = {
   unknown: 'No order history', no_rip: 'No RIP',
 };
 
-function OfferCard({ offer, onProduct, tie, unitVolume, unitQty }: {
+function OfferCard({ offer, onProduct, tie, unitVolume, unitQty, unitType }: {
   offer: Price360Offer; onProduct: (n: string, w: string) => void; tie: boolean;
-  unitVolume?: string; unitQty?: string;
+  unitVolume?: string; unitQty?: string; unitType?: string;
 }) {
   const o = offer;
+  const caseWord = priceUnitWord(unitVolume, unitType);
+  const unitNoun = perUnitNoun(unitVolume, unitType);
+  const keg = isKegUnit(unitVolume, unitType);
   const reach = o.reachability;
   const [showScore, setShowScore] = useState(false);   // breakdown hidden by default
   return (
@@ -45,12 +48,12 @@ function OfferCard({ offer, onProduct, tie, unitVolume, unitQty }: {
         </div>
         {/* headline: net cost dominant */}
         <div className="p360-headline">
-          <span className="p360-net">{money(o.net_case)}<span className="p360-unit">/case</span></span>
+          <span className="p360-net">{money(o.net_case)}<span className="p360-unit">/{caseWord}</span></span>
           {o.frontline_case != null && o.frontline_case !== o.net_case && (
             <span className="p360-front">{money(o.frontline_case)}</span>
           )}
         </div>
-        <div className="p360-netbtl">{money(o.net_btl)}/bottle net</div>
+        {!keg && <div className="p360-netbtl">{money(o.net_btl)}/{unitNoun} net</div>}
         {/* secondary: savings (never dominant) */}
         {o.savings_case > 0 && (
           <div className="p360-savings">saves {money(o.savings_case)}/cs · {pct(o.savings_pct)} vs frontline</div>
@@ -120,7 +123,7 @@ function OfferCard({ offer, onProduct, tie, unitVolume, unitQty }: {
           <div className="p360-tierhdr">Price breakdown · {unitQty} × {unitVolume}</div>
           <table className="p360-tiers">
             <thead>
-              <tr><th></th><th>buy</th><th>/case</th><th>/bottle</th></tr>
+              <tr><th></th><th>buy</th><th>/{caseWord}</th><th>/{unitNoun}</th></tr>
             </thead>
             <tbody>
               <tr>
@@ -277,7 +280,7 @@ export default function Price360() {
           {!collapsed && (
             <div className="p360-offers">
               {data.offers!.map(o => <OfferCard key={o.wholesaler + o.rank} offer={o} onProduct={goToProduct}
-                tie={!!data.tie} unitVolume={data.product!.unit_volume ?? undefined} unitQty={data.product!.unit_qty ?? undefined} />)}
+                tie={!!data.tie} unitVolume={data.product!.unit_volume ?? undefined} unitQty={data.product!.unit_qty ?? undefined} unitType={data.product!.unit_type ?? undefined} />)}
             </div>
           )}
 

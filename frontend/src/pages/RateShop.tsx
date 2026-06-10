@@ -4,7 +4,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ShoppingBag, Crown, TrendingUp, Clock, Layers as MixIcon, FileText, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
 import { compare } from '../lib/api';
 import type { RateShopOffer, RateShopCondition } from '../lib/api';
-import { distributorName, skuLabel } from '../lib/distributors';
+import { distributorName, skuLabel, priceUnitWord, perUnitNoun, isKegUnit } from '../lib/distributors';
 import BasketView from '../components/BasketView';
 import ProductSearchBox from '../components/ProductSearchBox';
 import RowActions from '../components/RowActions';
@@ -95,11 +95,14 @@ function TierCompare({ offers, curve, accent, cases }: {
   );
 }
 
-function OfferCard({ o, accent, cases, unitVolume, unitQty, onProduct }: {
+function OfferCard({ o, accent, cases, unitVolume, unitQty, unitType, onProduct }: {
   o: RateShopOffer; accent: Record<string, string>; cases: number;
-  unitVolume?: string; unitQty?: string; onProduct: (n: string, w: string) => void;
+  unitVolume?: string; unitQty?: string; unitType?: string; onProduct: (n: string, w: string) => void;
 }) {
   const [open, setOpen] = useState(true);   // price breakdown expanded by default
+  const caseWord = priceUnitWord(unitVolume, unitType);
+  const unitNoun = perUnitNoun(unitVolume, unitType);
+  const keg = isKegUnit(unitVolume, unitType);
   return (
     <div className={`rs-card${o.is_winner ? ' rs-win' : ''}`} style={o.is_winner ? { borderColor: accent[o.wholesaler] } : undefined}>
       <div className="rs-rank" style={{ color: o.is_winner ? accent[o.wholesaler] : undefined }}>
@@ -112,10 +115,11 @@ function OfferCard({ o, accent, cases, unitVolume, unitQty, onProduct }: {
           {o.is_winner && <span className="rs-best">Best at {cases} cs</span>}
         </div>
         <div className="rs-headline">
-          <span className="rs-net" style={{ color: o.is_winner ? accent[o.wholesaler] : undefined }}>{money(o.net_case)}<span className="rs-unit">/case</span></span>
+          <span className="rs-net" style={{ color: o.is_winner ? accent[o.wholesaler] : undefined }}>{money(o.net_case)}<span className="rs-unit">/{caseWord}</span></span>
           {o.frontline_case != null && o.frontline_case !== o.net_case && <span className="rs-front">{money(o.frontline_case)}</span>}
         </div>
-        <div className="rs-netbtl">{money(o.net_btl)}/bottle net{o.savings_case > 0 ? ` · saves ${money(o.savings_case)}/cs (${pct(o.savings_pct)})` : ''}</div>
+        {!keg && <div className="rs-netbtl">{money(o.net_btl)}/{unitNoun} net{o.savings_case > 0 ? ` · saves ${money(o.savings_case)}/${caseWord} (${pct(o.savings_pct)})` : ''}</div>}
+        {keg && o.savings_case > 0 && <div className="rs-netbtl">saves {money(o.savings_case)}/{caseWord} ({pct(o.savings_pct)})</div>}
         <div className="rs-ids">
           {o.upc && <span title="UPC barcode">UPC {o.upc}</span>}
           {o.sku && <span title={`${distributorName(o.wholesaler)} item number`}>· {skuLabel(o.wholesaler)} {o.sku}</span>}
@@ -158,7 +162,7 @@ function OfferCard({ o, accent, cases, unitVolume, unitQty, onProduct }: {
 
         {open && (
           <table className="rs-tiers">
-            <thead><tr><th></th><th>buy</th><th title="Total off the list price">off list/cs</th><th>/case</th><th>/bottle</th></tr></thead>
+            <thead><tr><th></th><th>buy</th><th title="Total off the list price">off list/{caseWord}</th><th>/{caseWord}</th><th>/{unitNoun}</th></tr></thead>
             <tbody>
               <tr><td><span className="rs-tb rs-tb-base">BASE</span></td><td>—</td><td className="rs-tsave">—</td><td><strong>{money(o.frontline_case)}</strong></td><td>{money(o.frontline_btl)}</td></tr>
               {o.qd_tiers.map((t, i) => <tr key={`q${i}`}><td><span className="rs-tb rs-tb-qd">QD</span></td><td>{t.buy_label ?? `${t.cases_to_unlock} cs`}</td><td className="rs-tsave">{offList(o.frontline_case, t.price_after)}</td><td><strong>{money(t.price_after)}</strong></td><td>{money(t.price_after_btl)}</td></tr>)}
@@ -221,7 +225,7 @@ function ProductResult({ match, label, cases, onRemove, goToProduct }: {
           <div className="rs-offers">
             {data.offers!.map(o => (
               <OfferCard key={o.wholesaler} o={o} accent={accent} cases={cases}
-                unitVolume={data.product!.unit_volume ?? undefined} unitQty={data.product!.unit_qty ?? undefined} onProduct={goToProduct} />
+                unitVolume={data.product!.unit_volume ?? undefined} unitQty={data.product!.unit_qty ?? undefined} unitType={data.product!.unit_type ?? undefined} onProduct={goToProduct} />
             ))}
           </div>
         </>

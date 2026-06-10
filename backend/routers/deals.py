@@ -145,7 +145,7 @@ def get_top_discounts(
         # up the 2020 release's June price (different SKU, looks like a
         # huge swing).
         cols = """wholesaler, edition, upc, product_name, brand, product_type,
-                   unit_volume, unit_qty, vintage, frontline_case_price, frontline_unit_price,
+                   unit_volume, unit_qty, unit_type, vintage, frontline_case_price, frontline_unit_price,
                    best_case_price, effective_case_price, discount_pct,
                    total_savings_per_case, rip_savings, has_rip, has_discount,
                    has_closeout, discount_1_qty, discount_1_amt"""
@@ -967,7 +967,7 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
                 FROM {src} GROUP BY 1, 2, 3
             ),
             ranked AS (
-                SELECT wholesaler, edition, product_name, product_type, unit_volume, unit_qty,
+                SELECT wholesaler, edition, product_name, product_type, unit_volume, unit_qty, unit_type,
                        CAST(upc AS VARCHAR) AS upc, vintage,
                        CAST(from_date AS DATE) AS from_date, CAST(to_date AS DATE) AS to_date,
                        frontline_case_price,
@@ -988,7 +988,7 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
                   {active_clause}
                   AND ({' OR '.join(conds)})
             )
-            SELECT r.wholesaler, r.edition, r.product_name, r.product_type, r.unit_volume, r.unit_qty,
+            SELECT r.wholesaler, r.edition, r.product_name, r.product_type, r.unit_volume, r.unit_qty, r.unit_type,
                    r.upc, ce.brand AS brand, r.vintage, r.from_date, r.to_date,
                    CASE WHEN r.to_date IS NULL THEN NULL
                         ELSE date_diff('day', CURRENT_DATE, r.to_date) END AS days_to_expire,
@@ -1047,6 +1047,7 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
                 "product_type": _str(r["product_type"]),
                 "unit_volume": _str(r["unit_volume"]),
                 "unit_qty": _str(r["unit_qty"]),
+                "unit_type": _str(r["unit_type"]),
                 "upc": _str(r["upc"]),
                 "brand": _str(r["brand"]),
                 # Vintage is surfaced on the card so the buyer can tell which
@@ -1095,7 +1096,7 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
             SELECT d.wholesaler, d.edition, d.rip_code, d.un, d.from_date, d.to_date,
                    d.u1, d.q1, d.a1,
                    date_diff('day', CURRENT_DATE, d.to_date) AS days_to_expire,
-                   e.product_name, e.product_type, e.unit_volume, e.unit_qty,
+                   e.product_name, e.product_type, e.unit_volume, e.unit_qty, e.unit_type,
                    CAST(e.upc AS VARCHAR) AS upc, e.vintage, e.brand,
                    e.frontline_case_price, e.effective_case_price,
                    e.has_discount, e.has_closeout
@@ -1146,6 +1147,7 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
                 "product_type": _str(r["product_type"]),
                 "unit_volume": _str(r["unit_volume"]),
                 "unit_qty": _str(r["unit_qty"]),
+                "unit_type": _str(r["unit_type"]),
                 "upc": _str(r["upc"]),
                 "brand": _str(r["brand"]),
                 "vintage": _str(r["vintage"]),

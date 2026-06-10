@@ -17,7 +17,7 @@ import MonthEffectiveSparkline from '../components/MonthEffectiveSparkline';
 import { buildSparkProps } from '../lib/promotionsSparkline';
 import VintageSticker from '../components/VintageSticker';
 import { useProductQuickView } from '../components/ProductQuickView';
-import { distributorName, ALL_DISTRIBUTORS, priceUnit } from '../lib/distributors';
+import { distributorName, ALL_DISTRIBUTORS, priceUnit, perUnitAbbr } from '../lib/distributors';
 import { AI_EXPLAINERS_ENABLED } from '../lib/flags';
 
 const money = (v?: number | null) => (v == null ? '-' : `$${Number(v).toFixed(2)}`);
@@ -368,7 +368,7 @@ function DealCard({ d, open }: { d: TimeSensitiveDeal; open: (n: string, w: stri
       </div>
 
       {effBtl != null && (
-        <div className="deal-btl-now">${effBtl.toFixed(2)}<span className="deal-unit">/btl</span><span className="deal-btl-tag">effective</span></div>
+        <div className="deal-btl-now">${effBtl.toFixed(2)}<span className="deal-unit">/{perUnitAbbr(d.unit_volume, d.unit_type)}</span><span className="deal-btl-tag">effective</span></div>
       )}
 
       <div className="deal-card-meta">

@@ -3520,7 +3520,7 @@ def get_rip_siblings(
             rip_windows_expr = "rip_windows" if has_rip_windows else "CAST(NULL AS VARCHAR) AS rip_windows"
             df = con.execute(f"""
                 SELECT wholesaler, edition, upc, product_name, brand, vintage,
-                       product_type, unit_volume, unit_qty, unit_volume_std,
+                       product_type, unit_volume, unit_qty, unit_type, unit_volume_std,
                        frontline_case_price, frontline_unit_price,
                        best_case_price, best_unit_price,
                        effective_case_price, rip_savings, {rip_windows_expr}, total_savings_per_case,

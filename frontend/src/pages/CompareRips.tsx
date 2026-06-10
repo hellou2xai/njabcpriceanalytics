@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { compare } from '../lib/api';
 import type { CompareRipRow, CompareRipDist } from '../lib/api';
-import { distributorName } from '../lib/distributors';
+import { distributorName, perUnitNoun, priceUnitWord } from '../lib/distributors';
 import ProductSearchBox from '../components/ProductSearchBox';
 import RowActions from '../components/RowActions';
 import RipMembersModal from '../components/RipMembersModal';
@@ -106,7 +106,9 @@ function DistPanel({ w, d, row, cases, accent, isWinner, onRipClick }: {
   onRipClick: (wholesaler: string, code: string) => void;
 }) {
   const pack = row.unit_qty ? parseFloat(row.unit_qty) : null;
-  const btl = (v?: number | null) => (v != null && pack ? `${money(v / pack)}/btl` : null);
+  const unitNoun = perUnitNoun(d.unit_volume, d.unit_type);
+  const caseWord = priceUnitWord(d.unit_volume, d.unit_type);
+  const btl = (v?: number | null) => (v != null && pack ? `${money(v / pack)}/${unitNoun}` : null);
   const expiring = d.expires_in_days != null;
 
   // total cash you actually outlay at this volume, here vs the competition
@@ -158,7 +160,7 @@ function DistPanel({ w, d, row, cases, accent, isWinner, onRipClick }: {
 
       {/* the headline: what a case actually costs you at the volume you chose */}
       <div className="rip2-dist-price" title={priceHint}>
-        {money(d.landed_at_n)}<span className="rip2-per">/case</span>
+        {money(d.landed_at_n)}<span className="rip2-per">/{caseWord}</span>
         {btl(d.landed_at_n) && <span className="rip2-dist-btl">{btl(d.landed_at_n)}</span>}
         <Info text={priceHint} />
       </div>
@@ -177,7 +179,7 @@ function DistPanel({ w, d, row, cases, accent, isWinner, onRipClick }: {
         const qdPart = off != null ? Math.max(0, off - ripPart) : 0;
         const afterQD = qdPart > 0.005 ? d.frontline! - qdPart : null;   // price after QD
         // per-bottle price at each layer (pack = bottles per case)
-        const pb = (v?: number | null) => (v != null && pack ? `${money(v / pack)}/btl` : null);
+        const pb = (v?: number | null) => (v != null && pack ? `${money(v / pack)}/${unitNoun}` : null);
         const bdHint =
           `List (sticker) price ${money(d.frontline)}/case (${pb(d.frontline)})` +
           (qdPart > 0.005 ? `. After the ${money(qdPart)}/case quantity discount: ${money(afterQD)}/case (${pb(afterQD)})` : '') +

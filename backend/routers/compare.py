@@ -168,7 +168,7 @@ def _common_rows(con, src: str, slugs: list[str], eds: dict[str, str]) -> list[d
         )"""
     sql = f"""
         SELECT wholesaler, edition, upc, product_name, product_type, brand,
-               unit_qty, unit_volume, vintage, abv_proof,
+               unit_qty, unit_volume, unit_type, vintage, abv_proof,
                from_date, to_date,
                frontline_case_price, frontline_unit_price,
                best_case_price, best_unit_price,
@@ -500,6 +500,7 @@ def compare_products(
             "brand": any_row.get("brand"),
             "unit_qty": any_row.get("unit_qty"),
             "unit_volume": any_row.get("unit_volume"),
+            "unit_type": any_row.get("unit_type"),
             "vintage": any_row.get("vintage"),
             "upc": any_row.get("upc"),
             "prices": per_prices,
@@ -1318,6 +1319,7 @@ def compare_rips(
                 # size bucket + bottles-per-case).
                 "unit_qty": rec.get("unit_qty"),
                 "unit_volume": rec.get("unit_volume"),
+                "unit_type": rec.get("unit_type"),
             }
 
         # winner at N
@@ -1424,6 +1426,7 @@ def compare_rips(
             # vintage is part of the identity for wine, so both sides share it; the
             # UI shows it on the card for wine/sparkling/vermouth.
             "vintage": any_row.get("vintage"),
+            "unit_type": any_row.get("unit_type"),   # container: bottle/can/keg label
             "proof_match": len(proofs) <= 1,
             "brand": any_row.get("brand"),
             "unit_qty": any_row.get("unit_qty"),

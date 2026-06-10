@@ -434,6 +434,7 @@ export interface CompareRow {
   brand: string | null;
   unit_qty: string | null;
   unit_volume: string | null;
+  unit_type: string | null;
   vintage: string | null;
   upc: string | null;
   prices: Record<string, ComparePrice>;
@@ -736,6 +737,7 @@ export interface CompareRipDist {
   upc: string | null;
   unit_qty: string | null;
   unit_volume: string | null;
+  unit_type: string | null;
 }
 export interface RipBreakeven { from: number; to: number | null; winner: string | null }
 export interface RipCurvePoint { cases: number; landed: Record<string, number | null>; winner: string | null }
@@ -749,6 +751,7 @@ export interface CompareRipRow {
   brand: string | null;
   unit_qty: string | null;
   unit_volume: string | null;
+  unit_type: string | null;
   proof_match: boolean;
   dists: Record<string, CompareRipDist>;
   winner_at_n: string | null;

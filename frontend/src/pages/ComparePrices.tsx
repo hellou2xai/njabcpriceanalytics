@@ -5,7 +5,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Zap, Scale, Clock, Download, Search } from 'lucide-react';
 import { compare, catalog } from '../lib/api';
 import type { CatalogTier, CompareLadder } from '../lib/api';
-import { distributorName } from '../lib/distributors';
+import { distributorName, perUnitAbbr } from '../lib/distributors';
 import RowActions from '../components/RowActions';
 import './ComparePrices.css';
 
@@ -651,7 +651,7 @@ export default function ComparePrices() {
                                 ) : null} />
                               <WinnerCell value={p?.effective}
                                 isWinner={winner === w} isTie={winner === 'tie'}
-                                sub={p?.btl_effective != null ? `${money(p.btl_effective)}/btl` : null} />
+                                sub={p?.btl_effective != null ? `${money(p.btl_effective)}/${perUnitAbbr(r.unit_volume, r.unit_type)}` : null} />
                             </Fragment>
                           );
                         })}

@@ -4,7 +4,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { CalendarClock, ArrowRight, ArrowDownRight, ArrowUpRight, PlusCircle, MinusCircle, AlertTriangle } from 'lucide-react';
 import { compare } from '../lib/api';
 import type { EditionRow } from '../lib/api';
-import { distributorName, DISTRIBUTOR_NAMES } from '../lib/distributors';
+import { distributorName, DISTRIBUTOR_NAMES, perUnitAbbr } from '../lib/distributors';
 import ProductSearchBox from '../components/ProductSearchBox';
 import RowActions from '../components/RowActions';
 import './ComparePrices.css';
@@ -190,8 +190,8 @@ export default function EditionCompare() {
                       <span className="ec-prodname" onClick={() => goToProduct(r.product_name)}>{r.product_name}</span>
                       <span className="cmp-size">{r.unit_qty} × {r.unit_volume}</span>
                     </td>
-                    <td className="ec-num">{r.status === 'added' ? '—' : money(r.net_a_case)}<span className="cmp-sub">{r.status === 'added' ? '' : `${money(r.net_a_btl)}/btl`}</span></td>
-                    <td className="ec-num">{r.status === 'removed' ? '—' : money(r.net_b_case)}<span className="cmp-sub">{r.status === 'removed' ? '' : `${money(r.net_b_btl)}/btl`}</span></td>
+                    <td className="ec-num">{r.status === 'added' ? '—' : money(r.net_a_case)}<span className="cmp-sub">{r.status === 'added' ? '' : `${money(r.net_a_btl)}/${perUnitAbbr(r.unit_volume, r.unit_type)}`}</span></td>
+                    <td className="ec-num">{r.status === 'removed' ? '—' : money(r.net_b_case)}<span className="cmp-sub">{r.status === 'removed' ? '' : `${money(r.net_b_btl)}/${perUnitAbbr(r.unit_volume, r.unit_type)}`}</span></td>
                     <td title={tip}><DeltaPill r={r} /></td>
                     <td className="ec-layers" title={tip}>
                       {r.layers.map(l => (

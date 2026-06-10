@@ -2153,7 +2153,8 @@ def edition_comparison(con, wholesaler: str, older: str = "", newer: str = "",
             rows.append({
                 "ident": k, "status": "both", "comparable": comparable,
                 "product_name": ref.get("product_name"), "unit_volume": ref.get("unit_volume"),
-                "unit_qty": ref.get("unit_qty"), "product_type": ref.get("product_type"),
+                "unit_qty": ref.get("unit_qty"), "unit_type": ref.get("unit_type"),
+                "product_type": ref.get("product_type"),
                 "upc": ref.get("upc"),
                 "net_a_case": net_a, "net_b_case": net_b,
                 "net_a_btl": round(net_a / pack, 2) if net_a and pack else None,
@@ -2169,7 +2170,7 @@ def edition_comparison(con, wholesaler: str, older: str = "", newer: str = "",
             summary["added"] += 1
             rows.append({"ident": k, "status": "added", "comparable": True,
                          "product_name": rb.get("product_name"), "unit_volume": rb.get("unit_volume"),
-                         "unit_qty": rb.get("unit_qty"), "product_type": rb.get("product_type"),
+                         "unit_qty": rb.get("unit_qty"), "unit_type": rb.get("unit_type"), "product_type": rb.get("product_type"),
                          "upc": rb.get("upc"), "net_b_case": rb.get("effective_case_price"),
                          "net_b_btl": round((rb.get("effective_case_price") or 0) / pack, 2) if pack else None,
                          "net_delta_case": None, "layers": []})
@@ -2177,7 +2178,7 @@ def edition_comparison(con, wholesaler: str, older: str = "", newer: str = "",
             summary["removed"] += 1
             rows.append({"ident": k, "status": "removed", "comparable": True,
                          "product_name": ra.get("product_name"), "unit_volume": ra.get("unit_volume"),
-                         "unit_qty": ra.get("unit_qty"), "product_type": ra.get("product_type"),
+                         "unit_qty": ra.get("unit_qty"), "unit_type": ra.get("unit_type"), "product_type": ra.get("product_type"),
                          "upc": ra.get("upc"), "net_a_case": ra.get("effective_case_price"),
                          "net_a_btl": round((ra.get("effective_case_price") or 0) / pack, 2) if pack else None,
                          "net_delta_case": None, "layers": []})

@@ -523,6 +523,7 @@ export interface EditionRow {
   product_name: string;
   unit_volume: string | null;
   unit_qty: string | null;
+  unit_type: string | null;
   product_type: string | null;
   upc: string | null;
   net_a_case?: number | null;

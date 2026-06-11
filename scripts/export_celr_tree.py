@@ -27,7 +27,8 @@ from backend.celr import family_key, is_registry_upc, norm_upc  # noqa: E402
 
 PARQ = ROOT / "parquet_output"
 OUT = ROOT / "to_be_tested_after_code_change" / "celr_grouping_proposal"
-EDITION = "2026-06"
+# Edition as the first CLI arg (e.g. 2026-07); defaults to June 2026.
+EDITION = sys.argv[1] if len(sys.argv) > 1 else "2026-06"
 
 BENCHMARKS = [
     ("jim beam orange", "Jim Beam Orange"),

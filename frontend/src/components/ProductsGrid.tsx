@@ -62,6 +62,7 @@ interface ProductGroup {
   productType: string;
   brand?: string;
   imageUrl?: string | null;
+  celrNumber?: string | null; // CELR Product Number chip (family identity)
   sizes: Product[];          // one Product row per size, sorted small -> large
 }
 
@@ -87,6 +88,7 @@ function groupByProduct(items: Product[]): ProductGroup[] {
         productType: it.product_type,
         brand: it.brand,
         imageUrl: it.image_url,
+        celrNumber: it.celr_product_number ?? null,
         sizes: [],
       };
       map.set(key, g);
@@ -356,7 +358,14 @@ function ProductCard({ group, cart, updateQty, showDeals = true }: {
             title="Open full product details">
             {group.displayName}
           </Link>
-          <div className="prod-card-type">{[group.productType, group.brand].filter(Boolean).join(' · ')}</div>
+          <div className="prod-card-type">
+            {[group.productType, group.brand].filter(Boolean).join(' · ')}
+            {group.celrNumber && (
+              <span className="prod-card-cpn" title="CELR Product Number: one identity for this product across all sizes, vintages and distributors">
+                {group.celrNumber}
+              </span>
+            )}
+          </div>
           <div className="prod-card-dist"
             title={multiDist ? distSlugs.map(distributorName).join(', ') : undefined}>
             <Store size={12} className="prod-card-dist-icon" />

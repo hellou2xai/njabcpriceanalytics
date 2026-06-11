@@ -6057,3 +6057,10 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .cart-rip-elig { margin: 6px 0 0 56px; font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 7px; max-width: 720px; }
 .cart-rip-elig.tone-gap { background: var(--accent-weak); color: var(--accent-strong); }
 .cart-rip-elig.tone-reached { background: var(--win-bg); color: var(--green); }
+
+/* CELR Product Number chip on the product-family card header */
+.prod-card-cpn {
+  margin-left: 8px; font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  color: var(--text-muted); background: var(--surface-hover);
+  border: 1px solid var(--border); border-radius: var(--radius-pill); padding: 1px 7px;
+}

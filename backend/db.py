@@ -427,6 +427,30 @@ def init_user_db():
             fetched_at    text,
             updated_at    text DEFAULT {NOW_UTC}
         )""",
+        # CELR Product Number registry (docs/CELR_PRODUCT_NUMBER_DESIGN.md):
+        # the persistent product-FAMILY identity spanning sizes, vintages and
+        # distributors. families holds one row per family (cpn is monotonic
+        # and never reused); upcs maps every clean barcode to its family.
+        # aliases records manual merges (cpn -> canonical) so re-runs of the
+        # assignment script can never undo a human curation decision.
+        f"""CREATE TABLE IF NOT EXISTS celr_families (
+            cpn           integer PRIMARY KEY,
+            family_key    text NOT NULL UNIQUE,
+            header_name   text,
+            brand         text,
+            product_type  text,
+            created_at    text DEFAULT {NOW_UTC}
+        )""",
+        f"""CREATE TABLE IF NOT EXISTS celr_product_upcs (
+            upc_norm      text PRIMARY KEY,
+            cpn           integer NOT NULL REFERENCES celr_families(cpn),
+            assigned_at   text DEFAULT {NOW_UTC}
+        )""",
+        """CREATE TABLE IF NOT EXISTS celr_family_aliases (
+            cpn           integer PRIMARY KEY,
+            canonical_cpn integer NOT NULL
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_celr_upcs_cpn ON celr_product_upcs(cpn)",
         # AI-generated "why this is a deal" blurb, keyed per product per edition.
         # Pre-generated after each data load (see backend.ai_blurbs). `version`
         # marks the prompt revision so we can bump it and have the generator

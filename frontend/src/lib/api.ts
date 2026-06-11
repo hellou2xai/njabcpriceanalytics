@@ -1552,6 +1552,9 @@ export interface Product {
   // share product_group; product_display is the clean family title.
   product_group?: string | null;
   product_display?: string | null;
+  // CELR Product Number ("CELR-000123"): the persistent FAMILY identity
+  // spanning sizes/vintages/distributors (docs/CELR_PRODUCT_NUMBER_DESIGN.md).
+  celr_product_number?: string | null;
   discount_1_qty?: string | null;
   discount_1_amt?: number | null;
   discount_2_qty?: string | null;

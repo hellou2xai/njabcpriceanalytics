@@ -127,6 +127,14 @@ def build_pricing_cache() -> Path:
                 "distributor VARCHAR, abg_sku VARCHAR, upc VARCHAR, "
                 "upc_norm VARCHAR, brand_reg VARCHAR, item_name VARCHAR)"
             )
+            # CELR Product Number registry, flattened + alias-resolved (see
+            # docs/CELR_PRODUCT_NUMBER_DESIGN.md; built by
+            # scripts/build_celr_products.py). Maps every clean barcode to its
+            # product FAMILY so the grid groups sizes/vintages/distributors.
+            empty_celr = (
+                "CREATE TABLE celr_products ("
+                "upc_norm VARCHAR, cpn INTEGER, header_name VARCHAR, brand VARCHAR)"
+            )
             if PRICING_SOURCE == "parquet":
                 for t in ALL_TABLES:
                     con.execute(f"CREATE TABLE {t} AS SELECT * FROM {_parquet_select(t)}")
@@ -134,6 +142,12 @@ def build_pricing_cache() -> Path:
                 con.execute(empty_enrich)
                 con.execute(empty_sku)
                 con.execute("CREATE TABLE ai_deal_blurbs (wholesaler VARCHAR, upc VARCHAR, edition VARCHAR, blurb VARCHAR)")
+                _celr_pq = PARQUET_DIR / "derived" / "celr_products.parquet"
+                if _celr_pq.exists():
+                    con.execute(
+                        f"CREATE TABLE celr_products AS SELECT * FROM read_parquet('{_celr_pq.as_posix()}')")
+                else:
+                    con.execute(empty_celr)
             else:
                 from backend.pg import DATABASE_URL
                 con.execute("INSTALL postgres; LOAD postgres;")
@@ -154,6 +168,20 @@ def build_pricing_cache() -> Path:
                     con.execute("CREATE TABLE ai_deal_blurbs AS SELECT wholesaler, upc, edition, blurb FROM pg.ai_deal_blurbs")
                 except Exception:
                     con.execute("CREATE TABLE ai_deal_blurbs (wholesaler VARCHAR, upc VARCHAR, edition VARCHAR, blurb VARCHAR)")
+                try:
+                    # Alias-resolved flatten so the cache always serves the
+                    # CANONICAL family even after manual merges.
+                    con.execute("""
+                        CREATE TABLE celr_products AS
+                        SELECT u.upc_norm,
+                               COALESCE(a.canonical_cpn, u.cpn) AS cpn,
+                               f.header_name, f.brand
+                        FROM pg.celr_product_upcs u
+                        LEFT JOIN pg.celr_family_aliases a ON a.cpn = u.cpn
+                        JOIN pg.celr_families f ON f.cpn = COALESCE(a.canonical_cpn, u.cpn)
+                    """)
+                except Exception:   # registry not built yet
+                    con.execute(empty_celr)
                 con.execute("DETACH pg")
 
             # Wire the catalogue brand to the Go-UPC enriched brand by UPC. CPL

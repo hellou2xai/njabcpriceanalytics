@@ -1516,6 +1516,26 @@ def search_products(
                     key=lambda kv: (_header_junk(kv[0]), -kv[1], -len(kv[0])),
                 )[0][0]
 
+        # Phase 3 — CELR Product Number (docs/CELR_PRODUCT_NUMBER_DESIGN.md):
+        # the persistent FAMILY registry spanning sizes/vintages/distributors.
+        # When a clean UPC is in the registry, the family key wins over the
+        # per-UPC key, so a product's sizes share ONE card again. Rows not in
+        # the registry keep the per-UPC / name-core behaviour below.
+        celr_map: dict = {}
+        try:
+            celr_upcs = sorted({str(rec.get("upc")).lstrip("0") for rec in records
+                                if _is_clean_upc(rec.get("upc"))})
+            if celr_upcs:
+                ph = ", ".join(f"$cu{i}" for i in range(len(celr_upcs)))
+                prm = {f"cu{i}": u for i, u in enumerate(celr_upcs)}
+                cdf = con.execute(
+                    f"SELECT upc_norm, cpn, header_name FROM celr_products "
+                    f"WHERE upc_norm IN ({ph})", prm).fetchdf()
+                for _, r in cdf.iterrows():
+                    celr_map[str(r["upc_norm"])] = (int(r["cpn"]), r["header_name"])
+        except Exception:
+            celr_map = {}
+
         for rec in records:
             pname = rec.get("product_name") or ""
             ptype = (rec.get("product_type") or "")
@@ -1523,10 +1543,17 @@ def search_products(
             enr = rec.get("enr_name")
             if _is_clean_upc(rec.get("upc")):
                 un = str(rec.get("upc")).lstrip("0")
-                # Distributor- AND name-agnostic key so every listing of this
-                # barcode merges into one card.
-                rec["product_group"] = "u:" + un
-                rec["product_display"] = upc_display.get(un) or pname
+                hit = celr_map.get(un)
+                if hit:
+                    cpn, header = hit
+                    rec["product_group"] = f"cpn:{cpn}"
+                    rec["product_display"] = header or upc_display.get(un) or pname
+                    rec["celr_product_number"] = f"CELR-{cpn:06d}"
+                else:
+                    # Distributor- AND name-agnostic key so every listing of
+                    # this barcode merges into one card.
+                    rec["product_group"] = "u:" + un
+                    rec["product_display"] = upc_display.get(un) or pname
             else:
                 if "wine" in ptype.lower():
                     core, display = "w:" + pname.lower().strip(), pname

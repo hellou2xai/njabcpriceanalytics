@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Search, Sparkles, Store, ChevronRight } from 'lucide-react';
@@ -48,6 +48,36 @@ const BROWSE: { key: string; label: string }[] = [
   { key: 'Non-Alcoholic', label: 'Non-Alcoholic' },
 ];
 
+// The storefront's data only really changes when a new monthly edition is
+// ingested, so cache it hard: localStorage paints the rails instantly on the
+// next visit (even after a reload) and react-query only refetches in the
+// background once the snapshot is older than STALE_MS.
+const STALE_MS = 6 * 60 * 60 * 1000; // 6h
+function useCachedQuery<T>(key: (string | number)[], fn: () => Promise<T>) {
+  const storageKey = `celr-home-cache:${key.join(':')}`;
+  const [seed] = useState(() => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      return raw ? (JSON.parse(raw) as { t: number; data: T }) : undefined;
+    } catch { return undefined; }
+  });
+  const q = useQuery({
+    queryKey: key,
+    queryFn: fn,
+    staleTime: STALE_MS,
+    gcTime: 24 * 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    initialData: seed?.data,
+    initialDataUpdatedAt: seed?.t,
+  });
+  useEffect(() => {
+    if (q.data === undefined || q.isPlaceholderData) return;
+    try { localStorage.setItem(storageKey, JSON.stringify({ t: Date.now(), data: q.data })); }
+    catch { /* quota exceeded: skip persisting, in-memory cache still works */ }
+  }, [q.data, q.isPlaceholderData, storageKey]);
+  return q;
+}
+
 const money = (v?: number | null) => (v == null ? null : `$${Number(v).toFixed(2)}`);
 const detailUrl = (p: Product) => {
   const q = new URLSearchParams({ w: p.wholesaler, n: p.product_name });
@@ -71,38 +101,41 @@ function ProductCard({ p }: { p: Product }) {
   );
 }
 
+// De-duplicate to one card per distinct product: same UPC (or, when the UPC
+// is missing, same name + size) can come back as several rows (multiple
+// distributors, split listings). Sort cheapest-first, then keep the first of
+// each identity so the survivor is the best-priced offer. Runs inside the
+// queryFn so the cache (and localStorage snapshot) holds only the 12 cards.
+function pickRailItems(rows: Product[]): Product[] {
+  const seen = new Set<string>();
+  const ok = rows
+    .map(p => ({ p, btl: perBottle(p) }))
+    .filter(x => !!x.p.image_url && x.btl != null && x.btl > 0 && x.btl < MAX_BOTTLE_PRICE)
+    .sort((a, b) => (a.btl as number) - (b.btl as number))
+    .filter(x => {
+      const upc = x.p.upc ? String(x.p.upc).replace(/^0+/, '') : '';
+      const key = upc || `${(x.p.product_name || '').toLowerCase().trim()}|${x.p.unit_volume || ''}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  if (ok.length <= 12) return ok.map(x => x.p);
+  // take a window centred on the median so the rail reads as "mid-priced"
+  const start = Math.min(Math.floor(ok.length * 0.35), Math.max(0, ok.length - 12));
+  return ok.slice(start, start + 12).map(x => x.p);
+}
+
 function Rail({ category, label }: { category: string; label: string }) {
   const navigate = useNavigate();
-  const { data, isLoading } = useQuery({
-    queryKey: ['home-rail', category],
+  const { data, isLoading } = useCachedQuery<Product[]>(
+    ['home-rail', category],
     // price-agnostic sample (by name) so we span the whole price range, then
-    // keep MID-priced products with an image — avoids both the ultra-premium /
+    // keep MID-priced products with an image, avoiding both the ultra-premium
     // anomalous high-priced items and the cheapest filler.
-    queryFn: () => catalog.search({ categories: category, limit: 120, sort: 'product_name', order: 'asc' }),
-    staleTime: 5 * 60_000,
-  });
-  const items = (() => {
-    // De-duplicate to one card per distinct product: same UPC (or, when the UPC
-    // is missing, same name + size) can come back as several rows (multiple
-    // distributors, split listings). Sort cheapest-first, then keep the first of
-    // each identity so the survivor is the best-priced offer.
-    const seen = new Set<string>();
-    const ok = ((data?.items ?? []) as Product[])
-      .map(p => ({ p, btl: perBottle(p) }))
-      .filter(x => !!x.p.image_url && x.btl != null && x.btl > 0 && x.btl < MAX_BOTTLE_PRICE)
-      .sort((a, b) => (a.btl as number) - (b.btl as number))
-      .filter(x => {
-        const upc = x.p.upc ? String(x.p.upc).replace(/^0+/, '') : '';
-        const key = upc || `${(x.p.product_name || '').toLowerCase().trim()}|${x.p.unit_volume || ''}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-    if (ok.length <= 12) return ok.map(x => x.p);
-    // take a window centred on the median so the rail reads as "mid-priced"
-    const start = Math.min(Math.floor(ok.length * 0.35), Math.max(0, ok.length - 12));
-    return ok.slice(start, start + 12).map(x => x.p);
-  })();
+    () => catalog.search({ categories: category, limit: 120, sort: 'product_name', order: 'asc' })
+      .then(r => pickRailItems((r.items ?? []) as Product[])),
+  );
+  const items = data ?? [];
   if (!isLoading && !items.length) return null;
   return (
     <section className="home-rail">
@@ -122,11 +155,7 @@ function Rail({ category, label }: { category: string; label: string }) {
 export default function Home() {
   const navigate = useNavigate();
   const [q, setQ] = useState('');
-  const { data: dists } = useQuery({
-    queryKey: ['home-distributors'],
-    queryFn: compare.options,
-    staleTime: 10 * 60_000,
-  });
+  const { data: dists } = useCachedQuery(['home-distributors'], compare.options);
   const go = () => { if (q.trim()) navigate(`/products?q=${encodeURIComponent(q.trim())}`); };
 
   return (

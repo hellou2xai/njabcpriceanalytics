@@ -374,10 +374,14 @@ export default function ProductDetail() {
   const anyComboUrl = sizes.map(s => comboLink(s.wholesaler, s.upc)).find(Boolean) ?? null;
 
   // Other products in the same Case Mix RIP — all visible, no "view all".
+  // exclude_name limits the exclusion to THIS listing, so sibling SKUs and
+  // other vintages sharing this product's barcode still show as members.
   const { data: ripSiblings } = useQuery({
     enabled: !!ripCode && !!wholesaler,
-    queryKey: ['pd-rip-siblings', wholesaler, ripCode, upc],
-    queryFn: () => catalog.ripSiblings(wholesaler, ripCode!, { exclude_upc: upc }),
+    queryKey: ['pd-rip-siblings', wholesaler, ripCode, upc, name],
+    queryFn: () => catalog.ripSiblings(wholesaler, ripCode!, {
+      exclude_upc: upc, exclude_name: name || undefined,
+    }),
   });
 
   // More from the same manufacturer (brand).

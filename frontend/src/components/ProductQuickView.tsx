@@ -204,10 +204,15 @@ function QuickViewModal({
   // the cluster the user came from.
   const ripCodeRaw = ripCodeOverride || detail?.product?.rip_code;
   const ripCode = ripCodeRaw && !['None', 'nan', '0', ''].includes(String(ripCodeRaw)) ? String(ripCodeRaw) : null;
+  // exclude_name limits the exclusion to THIS listing, so sibling SKUs and
+  // other vintages sharing this product's barcode still show as members.
   const { data: ripSiblings } = useQuery({
     enabled: !!ripCode,
-    queryKey: ['rip-siblings', wholesaler, ripCode, upc],
-    queryFn: () => catalog.ripSiblings(wholesaler, ripCode!, { exclude_upc: upc }),
+    queryKey: ['rip-siblings', wholesaler, ripCode, upc, productName, vintage],
+    queryFn: () => catalog.ripSiblings(wholesaler, ripCode!, {
+      exclude_upc: upc, exclude_name: productName || undefined,
+      exclude_vintage: vintage || undefined,
+    }),
   });
 
   // Optional second distributor for side-by-side comparison

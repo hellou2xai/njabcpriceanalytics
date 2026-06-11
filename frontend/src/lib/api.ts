@@ -86,7 +86,7 @@ export const catalog = {
     request<{ editions: ProductBreakdownEdition[] }>(
       `/api/catalog/product-breakdown/${encodeURIComponent(wholesaler)}/${encodeURIComponent(name)}${qs(opts ?? {})}`
     ),
-  ripSiblings: (wholesaler: string, ripCode: string, opts?: { edition?: string; exclude_upc?: string }) =>
+  ripSiblings: (wholesaler: string, ripCode: string, opts?: { edition?: string; exclude_upc?: string; exclude_name?: string; exclude_vintage?: string }) =>
     request<{ edition: string | null; rip_code: string; items: Product[]; tiers?: RipSheetTier[] }>(
       `/api/catalog/rip-siblings/${encodeURIComponent(wholesaler)}/${encodeURIComponent(ripCode)}${qs(opts ?? {})}`
     ),

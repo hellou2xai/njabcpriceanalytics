@@ -5983,3 +5983,7 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .sidebar .theme-toggle:hover { color: var(--nav-text-hover); }
 .sidebar-logout { color: var(--nav-text); }
 .sidebar-logout:hover { color: var(--nav-text-hover); }
+
+/* Grid mode keeps the BIG hero search centred on top (View-all category pages) */
+.products-hero-box--grid { margin: 0 auto 16px; }
+.products-hero-count { text-align: center; font-size: 13px; color: var(--text-muted); margin-top: 8px; }

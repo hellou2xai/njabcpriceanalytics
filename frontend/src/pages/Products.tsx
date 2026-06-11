@@ -190,6 +190,16 @@ export default function Products() {
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
+  // "View all" from Home lands on /products?categories=X: title the page after
+  // the category so it reads as a storefront aisle, not a generic grid.
+  const CATEGORY_LABELS: Record<string, string> = {
+    Beer: 'Beer', Wine: 'Wine', Spirits: 'Spirits', RTD: 'Ready-to-Drink',
+    FAB: 'Seltzer / FMB', Cider: 'Cider', Sparkling: 'Sparkling',
+    Hemp: 'Hemp / THC', 'Non-Alcoholic': 'Non-Alcoholic',
+  };
+  const soleCategory = filters.categories.length === 1 && !q.trim() ? filters.categories[0] : null;
+  const pageTitle = soleCategory ? (CATEGORY_LABELS[soleCategory] ?? soleCategory) : 'Products';
+
   return (
     <div className="page products-page">
       {!showGrid ? (
@@ -239,24 +249,28 @@ export default function Products() {
       ) : (
       <>
       <div className="orders-header">
-        <h2>Products</h2>
+        <h2>{pageTitle}</h2>
         <WholesalerFilter value={wholesaler} onChange={v => { setWholesaler(v); setPage(0); }} />
       </div>
 
-      <div className="search-bar products-search">
-        <Search size={16} className="products-search-icon" />
-        <input type="text" autoFocus placeholder="Search products, brands, regions, varietals…"
-          value={q} onChange={e => { setQ(e.target.value); setPage(0); }} />
-        {/* Semantic / natural-language search via the AI assistant: it parses
-            "California cabernet under $200 on a RIP" into region/varietal/price/
-            deal filters and drives this grid. */}
-        <button type="button" className="products-ai-btn"
-          title="Ask the AI to find products by region, varietal, price or deal"
-          onClick={() => window.dispatchEvent(new CustomEvent('celr-open-assistant',
-            { detail: q.trim() ? { question: q.trim() } : undefined }))}>
-          <Sparkles size={15} /> Ask AI
-        </button>
-        <span className="search-count">{isLoading ? 'Searching…' : `${total.toLocaleString()} items`}</span>
+      {/* The BIG hero search stays on top in grid mode too, so View-all category
+          pages and search results keep the storefront feel. Typing filters the
+          grid live; the AI button parses natural language into filters. */}
+      <div className="products-hero-box products-hero-box--grid">
+        <div className="products-hero-search">
+          <Search size={20} className="products-hero-icon" />
+          <input type="text" autoFocus className="products-hero-input"
+            placeholder="Search products, brands, regions, varietals…"
+            value={q} onChange={e => { setQ(e.target.value); setPage(0); }}
+            onKeyDown={e => { if (e.key === 'Enter') setCommitted(e.currentTarget.value); }} />
+          <button type="button" className="products-hero-ai"
+            title="Ask the AI to find products by region, varietal, price or deal"
+            onClick={() => window.dispatchEvent(new CustomEvent('celr-open-assistant',
+              { detail: q.trim() ? { question: q.trim() } : undefined }))}>
+            <Sparkles size={16} /> Ask AI
+          </button>
+        </div>
+        <div className="products-hero-count">{isLoading ? 'Searching…' : `${total.toLocaleString()} items`}</div>
       </div>
       {data?.corrected_query && data.corrected_query.toLowerCase() !== q.trim().toLowerCase() && (
         <p className="search-correction" style={{ fontSize: 13, color: 'var(--text-muted)', margin: '-4px 0 12px' }}>

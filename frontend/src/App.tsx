@@ -80,6 +80,15 @@ const queryClient = new QueryClient({
   },
 });
 
+// Admin-only routes: a non-admin who deep-links here lands on Home. The nav
+// already hides these items (adminOnly flags in Layout.tsx); this closes the
+// type-the-URL path.
+function AdminRoute({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  if (!user?.is_admin) return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
 // Gate: a signed-in user must have at least one store before reaching the app.
 function StoreGate({ children }: { children: ReactNode }) {
   const { data: stores, isLoading } = useQuery({ queryKey: ['stores'], queryFn: storesApi.list });
@@ -131,7 +140,7 @@ function AuthenticatedApp() {
           <Route element={<Layout />}>
             <Route path="/" element={<Home />} />
             <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/catalog" element={<Catalog />} />
+            <Route path="/catalog" element={<AdminRoute><Catalog /></AdminRoute>} />
             <Route path="/products" element={<Products />} />
             <Route path="/whats-new" element={<WhatsNew />} />
             <Route path="/product" element={<ProductDetail />} />
@@ -146,9 +155,9 @@ function AuthenticatedApp() {
             <Route path="/discounts" element={<Discounts />} />
             <Route path="/compare-prices" element={<ComparePrices />} />
             <Route path="/compare-rips" element={<CompareRips />} />
-            <Route path="/price-360" element={<Price360 />} />
+            <Route path="/price-360" element={<AdminRoute><Price360 /></AdminRoute>} />
             <Route path="/edition-compare" element={<EditionCompare />} />
-            <Route path="/rate-shop" element={<RateShop />} />
+            <Route path="/rate-shop" element={<AdminRoute><RateShop /></AdminRoute>} />
             <Route path="/clearance" element={<Clearance />} />
             <Route path="/combos" element={<Combos />} />
             <Route path="/rips" element={<Rips />} />

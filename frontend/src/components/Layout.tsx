@@ -37,7 +37,7 @@ const NAV_GROUPS: {
   {
     header: 'Catalog',
     items: [
-      { path: '/catalog', label: 'Catalog', icon: Package },
+      { path: '/catalog', label: 'Catalog', icon: Package, adminOnly: true },
       { path: '/products', label: 'Products', icon: LayoutGrid },
       { path: '/whats-new', label: "What's New for You", icon: Newspaper },
       { path: '/new-items', label: 'New Items', icon: Sparkles },
@@ -47,11 +47,11 @@ const NAV_GROUPS: {
   {
     header: 'Promotions',
     items: [
-      { path: '/rate-shop', label: 'Rate Shop', icon: ShoppingBag },
+      { path: '/rate-shop', label: 'Rate Shop', icon: ShoppingBag, adminOnly: true },
       { path: '/time-sensitive', label: 'Time-Sensitive Deals', icon: Clock },
       { path: '/compare-prices', label: 'Compare Prices', icon: Scale },
       { path: '/compare-rips', label: 'Compare RIPs', icon: Layers },
-      { path: '/price-360', label: 'Price 360', icon: Target },
+      { path: '/price-360', label: 'Price 360', icon: Target, adminOnly: true },
       { path: '/edition-compare', label: 'Edition Comparison', icon: CalendarClock },
       { path: '/price-drops', label: 'Price Drops', icon: ArrowDownRight },
       { path: '/price-increases', label: 'Price Increases', icon: ArrowUpRight },
@@ -97,7 +97,6 @@ const NAV_GROUPS: {
       { path: '/rip-products', label: 'RIP Products', icon: BadgeDollarSign, adminOnly: true },
       { path: '/discounts', label: 'Top Discounts', icon: Percent, adminOnly: true },
       { path: '/more', label: 'Addnl Pages', icon: LayoutGrid, adminOnly: true },
-      { path: '/admin/catalog-font-test', label: 'Test For Font Catalog', icon: Package, adminOnly: true },
     ],
   },
 ];

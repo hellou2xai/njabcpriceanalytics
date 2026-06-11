@@ -103,6 +103,25 @@ def family_key(name: str | None, product_type: str | None = None) -> str:
     return f"{bucket}|{family_core(name, product_type)}"
 
 
+_HDR_YEAR_RE = re.compile(r"(^|[,\s]+)(19|20)\d{2}\b")
+_WINEISH = ("wine", "sparkling", "champagne", "cider", "port", "sherry")
+
+
+def display_header(name, product_type=None) -> str:
+    """Family header for DISPLAY: wine-like headers never carry a year.
+    Vintage is a VARIANT attribute (each listing row shows its own vintage
+    chip), so 'Benziger ... Sonoma County, 2008' reads as a 2008 vintage when
+    the actual rows are 2022 — strip the year. Spirits keep year-like tokens
+    (Old Forester 1910, 1792) because there the number names the product."""
+    s = str(name or "").strip()
+    t = str(product_type or "").lower()
+    if not s or not any(k in t for k in _WINEISH):
+        return s
+    cleaned = _HDR_YEAR_RE.sub(lambda m: " " if m.group(1) else "", s)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip(" ,;-")
+    return cleaned or s
+
+
 def trusted_enrichment(catalog_name: str | None, enr_name: str | None) -> bool:
     """Go-UPC names are only trusted when they share at least one significant
     token with the distributor's name for the same barcode. 'Kyocera Test

@@ -202,7 +202,12 @@ function SizeRow({ size, cart, updateQty, primaryName }: {
       <Link to={detailUrl(size.wholesaler, size.product_name, size.upc)} className="prod-size-id"
         title="Open full product details">
         <div className="prod-size-name">{size.unit_volume || '-'} {containerTitle(size.unit_volume, size.unit_type)}</div>
-        {primaryName && size.product_name && size.product_name !== primaryName && (
+        {/* The distributor's EXACT catalogue name always shows on the listing
+            line (it's how the buyer matches the row to the distributor's own
+            book) — suppressed only when it would literally repeat the card
+            title above it. Compared case-insensitively: the title is the
+            standardized CELR header, the listing name is the raw line. */}
+        {size.product_name && size.product_name.trim().toUpperCase() !== (primaryName ?? '').trim().toUpperCase() && (
           <div className="prod-size-variant">{size.product_name}</div>
         )}
         <div className="prod-size-dist"><Store size={11} /> {distributorName(size.wholesaler)}</div>
@@ -433,7 +438,7 @@ function ProductCard({ group, cart, updateQty, showDeals = true }: {
           {isFetching && fullSizes.length === 0 && <div className="prod-size-loading">Loading all sizes…</div>}
           {sizes.map((size, i) => (
             <SizeRow key={`${size.product_name}|${size.upc ?? ''}|${size.unit_volume ?? ''}|${i}`}
-              size={size} cart={cart} updateQty={updateQty} primaryName={group.productName} />
+              size={size} cart={cart} updateQty={updateQty} primaryName={group.displayName} />
           ))}
         </div>
       )}

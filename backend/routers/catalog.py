@@ -1554,6 +1554,7 @@ def search_products(
         # only decides which card a listing sits under); (3) the per-UPC /
         # name-core legacy behaviour below.
         from backend.celr import family_key as _celr_family_key
+        from backend.celr import display_header as _celr_display_header
         celr_map: dict = {}
         celr_key_map: dict = {}
         try:
@@ -1595,7 +1596,7 @@ def search_products(
             if hit:
                 cpn, header = hit
                 rec["product_group"] = f"cpn:{cpn}"
-                rec["product_display"] = header or pname
+                rec["product_display"] = _celr_display_header(header, ptype) or pname
                 rec["celr_product_number"] = f"CELR-{cpn:06d}"
             elif _is_clean_upc(rec.get("upc")):
                 # Distributor- AND name-agnostic key so every listing of
@@ -2230,8 +2231,10 @@ def get_product_detail(
                     "SELECT cpn, header_name FROM celr_products WHERE upc_norm = $u",
                     {"u": _pu}).fetchone()
                 if _cr:
+                    from backend.celr import display_header as _cdh
                     prod_rec["celr_product_number"] = f"CELR-{int(_cr[0]):06d}"
-                    prod_rec["celr_header_name"] = _cr[1]
+                    prod_rec["celr_header_name"] = _cdh(
+                        _cr[1], prod_rec.get("product_type"))
         except Exception:
             pass
 
@@ -3677,15 +3680,14 @@ def get_rip_siblings(
             return {"items": []}
         params = {"w": wholesaler, "rc": rc, "e": edition}
         excl_rip = ""
-        excl_cpl = ""
         if exclude_upc and not exclude_name:
             # Legacy whole-UPC exclusion (callers that don't identify the
             # current listing). Compare on the LTRIMmed form so a leading-zero
             # variant of the same UPC is still excluded. When exclude_name IS
             # given, the UPC stays in the set and only the exact current
             # listing is dropped after the CPL join (same-UPC siblings show).
+            # The member query applies the same exclusion via member_excl.
             excl_rip = "AND LTRIM(CAST(r.upc AS VARCHAR), '0') <> $xu"
-            excl_cpl = "AND LTRIM(CAST(upc AS VARCHAR), '0') <> $xu"
             params["xu"] = str(exclude_upc).lstrip("0")
         # 1) Authoritative UPC list comes from the RIP sheet for this rebate.
         #    Filter out blank / '0' / '000000000000' / 'None' / 'nan' rows
@@ -3705,94 +3707,109 @@ def get_rip_siblings(
               {excl_rip}
         """, params).fetchdf()
         rip_upcs = sorted({str(u).strip() for u in upc_rows["un"].tolist() if u and str(u).strip()})
-        # 2) Join CPL rows for those UPCs to pick up pricing + size info. Fall
-        #    back to whatever the CPL has even when the CPL's own rip_code
-        #    points elsewhere — UPC 80432400708 is the canonical example
-        #    (stacked under another RIP on the CPL row, still qualifies here).
-        #    Match by LTRIM-normalised UPC so leading-zero formatting can't
-        #    cause a real product to be missed.
-        records = []
-        if rip_upcs:
-            ph = ", ".join(f"$u{i}" for i in range(len(rip_upcs)))
-            uprm = {**{"w": wholesaler, "e": edition}, **{f"u{i}": u for i, u in enumerate(rip_upcs)}}
-            # Degrade gracefully when the parquet predates the rip_windows column
-            # (same guard the catalog search uses). Without it this SELECT
-            # references a missing column and 500s the whole siblings panel.
-            has_rip_windows = bool(con.execute(
-                "SELECT 1 FROM information_schema.columns "
-                "WHERE table_name = 'cpl_enriched' AND column_name = 'rip_windows'"
-            ).fetchone())
-            rip_windows_expr = "rip_windows" if has_rip_windows else "CAST(NULL AS VARCHAR) AS rip_windows"
-            df = con.execute(f"""
-                SELECT wholesaler, edition, upc, product_name, brand, vintage,
-                       product_type, unit_volume, unit_qty, unit_type, unit_volume_std,
-                       frontline_case_price, frontline_unit_price,
-                       best_case_price, best_unit_price,
-                       effective_case_price, rip_savings, {rip_windows_expr}, total_savings_per_case,
-                       has_discount, has_rip, has_closeout, discount_pct,
-                       rip_code, combo_code
-                FROM {src}
-                WHERE wholesaler = $w AND edition = $e
-                  AND upc IS NOT NULL
-                  AND CAST(upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
-                  AND LTRIM(CAST(upc AS VARCHAR), '0') NOT IN ('', 'None', 'nan')
-                  AND LTRIM(CAST(upc AS VARCHAR), '0') IN ({ph})
-            """, uprm).fetchdf()
-            records = [
-                {k: (None if isinstance(v, float) and math.isnan(v) else v) for k, v in r.items()}
-                for r in df.to_dict(orient="records")
-            ]
-            # Multi-listing UPC rule (mirrors derive.py / attach_tiers): when a
-            # reused barcode carries MORE THAN ONE SKU and SOME line's own CPL
-            # rip_code matches this code, only the matching line(s) belong
-            # (e.g. Allied's Coppola Chardonnay + Pinot Noir sharing
-            # 739958057209, where the sheet says EXCLUDES PINOT NOIR).
-            # When NO line matches, the RIP SHEET'S word wins and ALL listings
-            # show — hiding every listing of a sheet-qualified barcode means
-            # buyers can't see (or buy) products that DO count toward the
-            # rebate (Coppola Diamond Collection 112206 lost 8 products that
-            # way). Show, don't hide.
-            by_upc: dict = {}
-            for r in records:
-                by_upc.setdefault(str(r.get("upc") or "").lstrip("0"), []).append(r)
-            # UPCs that DO exist on the CPL must never get a "not in current
-            # CPL" stub, even when every one of their listings is filtered out.
-            cpl_upcs = set(by_upc.keys())
-            filtered = []
-            for rows in by_upc.values():
-                names = {str(r.get("product_name") or "").strip().upper() for r in rows}
-                if len(names) <= 1:
-                    filtered.extend(rows)
-                    continue
-                matching = [r for r in rows if str(r.get("rip_code") or "").strip() == rc]
-                filtered.extend(matching if matching else rows)
-            records = filtered
-            # Drop only the exact CURRENT listing (name + vintage) when the
-            # caller identifies it — the old UPC-wide exclusion hid same-UPC
-            # sibling SKUs and vintages from the "buy these together" list.
-            if exclude_upc and exclude_name:
-                xu = str(exclude_upc).lstrip("0")
-                xn = str(exclude_name).strip().upper()
+        # Junk barcodes in the SHEET ('1', 111111111117, 999999999993, …) are
+        # shared by unrelated products, so they never join by barcode — that
+        # welded 21 fine wines into the Skyy vodka RIP. Their membership is
+        # resolved by RIP-CODE instead (below): when the sheet carries a junk
+        # UPC and a CPL row carries the SAME junk UPC plus this rip_code, that
+        # row is the intended member (Benziger 101050: sheet '0' row + CPL
+        # 'BENZIGER PN M CTY 24' upc '0' rip_code 101050).
+        clean_rip_upcs = [u for u in rip_upcs if _is_clean_upc(u)]
+        # 2) Join CPL rows: by real barcode (so leading-zero formatting can't
+        #    miss a product, and a row stacked under ANOTHER rip_code on its
+        #    CPL line still qualifies here — UPC 80432400708 is the canonical
+        #    example), PLUS every row whose own rip_code references this code
+        #    (covers junk-barcode rows the sheet can't address by UPC).
+        ph = ", ".join(f"$u{i}" for i in range(len(clean_rip_upcs)))
+        uprm = {**{"w": wholesaler, "e": edition, "rc2": rc},
+                **{f"u{i}": u for i, u in enumerate(clean_rip_upcs)}}
+        member_clauses = ["CAST(rip_code AS VARCHAR) = $rc2"]
+        if clean_rip_upcs:
+            member_clauses.append(
+                "(CAST(upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan')"
+                " AND LTRIM(CAST(upc AS VARCHAR), '0') NOT IN ('', 'None', 'nan')"
+                f" AND LTRIM(CAST(upc AS VARCHAR), '0') IN ({ph}))")
+        # Legacy whole-UPC exclusion must also hold against the code-claim
+        # join, or the excluded barcode re-enters through its own rip_code.
+        member_excl = ""
+        if exclude_upc and not exclude_name:
+            member_excl = "AND LTRIM(CAST(upc AS VARCHAR), '0') <> $xu2"
+            uprm["xu2"] = str(exclude_upc).lstrip("0")
+        # Degrade gracefully when the parquet predates the rip_windows column
+        # (same guard the catalog search uses). Without it this SELECT
+        # references a missing column and 500s the whole siblings panel.
+        has_rip_windows = bool(con.execute(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'cpl_enriched' AND column_name = 'rip_windows'"
+        ).fetchone())
+        rip_windows_expr = "rip_windows" if has_rip_windows else "CAST(NULL AS VARCHAR) AS rip_windows"
+        df = con.execute(f"""
+            SELECT wholesaler, edition, upc, product_name, brand, vintage,
+                   product_type, unit_volume, unit_qty, unit_type, unit_volume_std,
+                   frontline_case_price, frontline_unit_price,
+                   best_case_price, best_unit_price,
+                   effective_case_price, rip_savings, {rip_windows_expr}, total_savings_per_case,
+                   has_discount, has_rip, has_closeout, discount_pct,
+                   rip_code, combo_code
+            FROM {src}
+            WHERE wholesaler = $w AND edition = $e
+              AND ({' OR '.join(member_clauses)})
+              {member_excl}
+        """, uprm).fetchdf()
+        records = [
+            {k: (None if isinstance(v, float) and math.isnan(v) else v) for k, v in r.items()}
+            for r in df.to_dict(orient="records")
+        ]
+        # Multi-listing UPC rule (mirrors derive.py / attach_tiers): when a
+        # reused barcode carries MORE THAN ONE SKU and SOME line's own CPL
+        # rip_code matches this code, only the matching line(s) belong
+        # (e.g. Allied's Coppola Chardonnay + Pinot Noir sharing
+        # 739958057209, where the sheet says EXCLUDES PINOT NOIR).
+        # When NO line matches, the RIP SHEET'S word wins and ALL listings
+        # show — hiding every listing of a sheet-qualified barcode means
+        # buyers can't see (or buy) products that DO count toward the
+        # rebate (Coppola Diamond Collection 112206 lost 8 products that
+        # way). Show, don't hide.
+        by_upc: dict = {}
+        for r in records:
+            by_upc.setdefault(str(r.get("upc") or "").lstrip("0"), []).append(r)
+        # UPCs that DO exist on the CPL must never get a "not in current
+        # CPL" stub, even when every one of their listings is filtered out.
+        cpl_upcs = set(by_upc.keys())
+        filtered = []
+        for rows in by_upc.values():
+            names = {str(r.get("product_name") or "").strip().upper() for r in rows}
+            if len(names) <= 1:
+                filtered.extend(rows)
+                continue
+            matching = [r for r in rows if str(r.get("rip_code") or "").strip() == rc]
+            filtered.extend(matching if matching else rows)
+        records = filtered
+        # Drop only the exact CURRENT listing (name + vintage) when the
+        # caller identifies it — the old UPC-wide exclusion hid same-UPC
+        # sibling SKUs and vintages from the "buy these together" list.
+        if exclude_upc and exclude_name:
+            xu = str(exclude_upc).lstrip("0")
+            xn = str(exclude_name).strip().upper()
 
-                def _vd(v) -> str:
-                    s = "".join(ch for ch in str(v or "") if ch.isdigit())
-                    return s[:4]
-                xv = _vd(exclude_vintage) if exclude_vintage else ""
-                records = [
-                    r for r in records
-                    if not (str(r.get("upc") or "").lstrip("0") == xu
-                            and str(r.get("product_name") or "").strip().upper() == xn
-                            and (not xv or _vd(r.get("vintage")) == xv))
-                ]
-        else:
-            cpl_upcs = set()
-        # 3) RIP UPCs missing from the CPL still belong on screen — surface a
-        #    minimal stub so the user sees the full rebate group and knows the
-        #    SKU isn't on the current CPL. The UI keeps Add-to-Cart disabled
-        #    when the row has no price. Compare by LTRIMmed UPC since that's
-        #    what records carry now.
+            def _vd(v) -> str:
+                s = "".join(ch for ch in str(v or "") if ch.isdigit())
+                return s[:4]
+            xv = _vd(exclude_vintage) if exclude_vintage else ""
+            records = [
+                r for r in records
+                if not (str(r.get("upc") or "").lstrip("0") == xu
+                        and str(r.get("product_name") or "").strip().upper() == xn
+                        and (not xv or _vd(r.get("vintage")) == xv))
+            ]
+        # 3) Real RIP UPCs missing from the CPL still belong on screen —
+        #    surface a minimal stub so the user sees the full rebate group and
+        #    knows the SKU isn't on the current CPL. The UI keeps Add-to-Cart
+        #    disabled when the row has no price. Junk barcodes get no stub:
+        #    they identify nothing (their membership resolved by rip_code
+        #    above). Compare by LTRIMmed UPC since that's what records carry.
         seen_upcs = {str(r.get("upc") or "").lstrip("0") for r in records} | cpl_upcs
-        for u in rip_upcs:
+        for u in clean_rip_upcs:
             if u not in seen_upcs:
                 records.append({
                     "wholesaler": wholesaler, "edition": edition, "upc": u,

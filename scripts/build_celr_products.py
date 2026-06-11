@@ -46,7 +46,8 @@ sys.path.insert(0, str(ROOT))
 
 from backend.pg import get_pg                                   # noqa: E402
 from backend.celr import (                                      # noqa: E402
-    family_core, family_key, is_registry_upc, norm_upc, trusted_enrichment,
+    display_header, family_core, family_key, is_registry_upc, norm_upc,
+    trusted_enrichment,
 )
 
 PARQUET = ROOT / "parquet_output" / "derived" / "cpl_enriched.parquet"
@@ -195,6 +196,9 @@ def main() -> None:
                           if eh else upc_best_cat[members[0]])
                 brand = Counter(upc_brand[u] for u in members if u in upc_brand)
                 ptype = Counter(upc_type[u] for u in members).most_common(1)[0][0]
+                # Wine headers never store a vintage year (variant attribute;
+                # serving strips defensively too via celr.display_header).
+                header = display_header(header, ptype)
                 fam_rows.append((cpn, f"v2|{root}", header,
                                  brand.most_common(1)[0][0] if brand else None, ptype))
             for u in members:

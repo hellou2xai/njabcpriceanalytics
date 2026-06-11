@@ -853,6 +853,19 @@ export const admin = {
   deactivateUser: (id: number) => request<{ status: string }>(`/api/admin/users/${id}/deactivate`, { method: 'POST' }),
   deleteUser: (id: number) => request<{ status: string }>(`/api/admin/users/${id}`, { method: 'DELETE' }),
   reloadPricing: () => request<{ status: string; counts: Record<string, number> }>('/api/admin/reload-pricing', { method: 'POST' }),
+  // CELR Product Number curation (docs/CELR_PRODUCT_NUMBER_DESIGN.md)
+  celrFamilies: (q = '', limit = 50) =>
+    request<CelrFamily[]>(`/api/admin/celr/families?q=${encodeURIComponent(q)}&limit=${limit}`),
+  celrFamily: (cpn: number) => request<CelrFamilyDetail>(`/api/admin/celr/family/${cpn}`),
+  celrMerge: (from_cpn: number, into_cpn: number) =>
+    request<{ status: string; into_cpn: number; note: string }>('/api/admin/celr/merge',
+      { method: 'POST', body: JSON.stringify({ from_cpn, into_cpn }) }),
+  celrUnmerge: (cpn: number) =>
+    request<{ status: string; note: string }>('/api/admin/celr/unmerge',
+      { method: 'POST', body: JSON.stringify({ cpn }) }),
+  celrSplit: (upc_norm: string, header_name?: string) =>
+    request<{ status: string; new_cpn: number; celr_product_number: string; note: string }>('/api/admin/celr/split',
+      { method: 'POST', body: JSON.stringify({ upc_norm, header_name }) }),
   generateBlurbs: (limit = 50) =>
     request<BlurbGenerateResult>(`/api/admin/blurbs/generate?limit=${limit}`, { method: 'POST' }),
   aiUsage: (params?: { from_date?: string; to_date?: string }) =>
@@ -1894,6 +1907,19 @@ export interface CrossSourceLink {
 export interface CategoryTrend {
   product_type: string; edition: string; avg_change_pct: number;
   items: number; increases: number; decreases: number;
+}
+
+// CELR Product Number registry (admin curation screens).
+export interface CelrFamily {
+  cpn: number; header_name?: string | null; brand?: string | null;
+  product_type?: string | null; alias_of?: number | null; upc_count?: number;
+}
+export interface CelrFamilyDetail extends CelrFamily {
+  family_key?: string; merged_in?: number[];
+  upcs: {
+    upc_norm: string;
+    listings: { wholesaler: string; product_name: string; unit_volume?: string | null; unit_qty?: number | string | null }[];
+  }[];
 }
 
 export interface ComboComponent {

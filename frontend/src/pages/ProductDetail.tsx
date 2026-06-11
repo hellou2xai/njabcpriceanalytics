@@ -467,6 +467,12 @@ export default function ProductDetail() {
               <div className="pd-identity-titlerow">
                 <FavoriteButton productName={name} wholesaler={wholesaler} upc={sizes[0]?.upc} unitVolume={sizes[0]?.unit_volume} />
                 <h1 className="pd-title">{name}</h1>
+                {product?.celr_product_number && (
+                  <span className="prod-card-cpn"
+                    title="CELR Product Number: one identity for this product across all sizes, vintages and distributors. Searchable in any product search box.">
+                    {product.celr_product_number}
+                  </span>
+                )}
               </div>
               <dl className="pd-attrs">
                 {/* Size ALWAYS shows — sourced from the catalog rows (sizes), not

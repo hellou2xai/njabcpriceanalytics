@@ -293,9 +293,15 @@ function QuickViewModal({
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 8 }}>
               <ProductThumb src={detail?.enrichment?.image_url} alt={p.product_name} size={180} />
               <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <FavoriteButton productName={productName} wholesaler={wholesaler} unitVolume={p.unit_volume} upc={p.upc} />
                   <h3 style={{ margin: 0 }}>{p.product_name}</h3>
+                  {p.celr_product_number && (
+                    <span className="prod-card-cpn"
+                      title="CELR Product Number: one identity for this product across all sizes, vintages and distributors. Searchable in any product search box.">
+                      {p.celr_product_number}
+                    </span>
+                  )}
                 </div>
                 <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '6px 0 0' }}>
                   {p.wholesaler} · {p.product_type} · {p.unit_volume}

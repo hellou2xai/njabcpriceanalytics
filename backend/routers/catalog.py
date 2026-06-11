@@ -707,6 +707,28 @@ def search_products(
 
         q_clause_idx = None
         rel_expr = "0"
+        # CELR Product Number lookup: typing "CELR-003873" (or "celr 3873")
+        # resolves the FAMILY -> every barcode in the registry under that
+        # number, across sizes/vintages/distributors. Replaces the text
+        # search for that query; also drives the ProductSearchBox typeahead.
+        _celr_q = re.fullmatch(r"(?i)\s*celr[-\s]*0*(\d{1,9})\s*", q or "")
+        if _celr_q:
+            try:
+                _cdf = con.execute(
+                    "SELECT upc_norm FROM celr_products WHERE cpn = $c",
+                    {"c": int(_celr_q.group(1))}).fetchdf()
+                _cu = [str(u) for u in _cdf["upc_norm"].tolist()]
+            except Exception:
+                _cu = []
+            if _cu:
+                keys = []
+                for i, u in enumerate(_cu):
+                    params[f"celru{i}"] = u
+                    keys.append(f"$celru{i}")
+                where.append(f"LTRIM(CAST(upc AS VARCHAR), '0') IN ({', '.join(keys)})")
+            else:
+                where.append("1 = 0")   # unknown number -> no results, not noise
+            q = ""                       # skip the text clause entirely
         # Free-text search also looks inside the Go-UPC enrichment (description,
         # category, region) so subtype queries like "tequila" — which is a
         # Spirits product, not a category — still find matches.
@@ -2169,6 +2191,19 @@ def get_product_detail(
         prod_rec = row.to_dict(orient="records")[0]
         _attach_live_rip(con, [prod_rec], ref_date=as_of)
         _attach_sku_mapping(con, [prod_rec])
+
+        # CELR Product Number for the detail header / quick view chip.
+        try:
+            _pu = str(prod_rec.get("upc") or "").lstrip("0")
+            if _pu:
+                _cr = con.execute(
+                    "SELECT cpn, header_name FROM celr_products WHERE upc_norm = $u",
+                    {"u": _pu}).fetchone()
+                if _cr:
+                    prod_rec["celr_product_number"] = f"CELR-{int(_cr[0]):06d}"
+                    prod_rec["celr_header_name"] = _cr[1]
+        except Exception:
+            pass
 
         return {
             "product": _clean_record(prod_rec),

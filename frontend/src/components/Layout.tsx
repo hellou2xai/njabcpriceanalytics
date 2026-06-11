@@ -92,6 +92,7 @@ const NAV_GROUPS: {
       { path: '/admin/ai-usage', label: 'AI Usage', icon: Sparkles, adminOnly: true },
       { path: '/admin/ai-feedback', label: 'AI Feedback', icon: ThumbsUp, adminOnly: true },
       { path: '/admin/closeout-flags', label: 'User Closeout Flags', icon: XCircle, adminOnly: true },
+      { path: '/admin/celr-products', label: 'CELR Products', icon: Package, adminOnly: true },
       { path: '/admin/activity', label: 'Activity', icon: Activity, adminOnly: true },
       { path: '/major-discounts', label: 'Major Discounts', icon: Percent, adminOnly: true },
       { path: '/rip-products', label: 'RIP Products', icon: BadgeDollarSign, adminOnly: true },

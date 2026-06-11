@@ -5,6 +5,7 @@ Access is restricted by require_admin (email in ADMIN_EMAILS). For now that is
 the owner; set ADMIN_EMAILS on the server to add more.
 """
 
+import re
 from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
@@ -251,3 +252,156 @@ def ai_usage(
         "totals": dict(totals) if totals else {},
         "recent": [dict(r) for r in recent],
     }
+
+
+# ---- CELR Product Number curation (docs/CELR_PRODUCT_NUMBER_DESIGN.md) ----
+# Manual merge/split of product families. Merges live in celr_family_aliases
+# (cpn -> canonical) so the assignment script can never undo them; a split
+# re-points the barcode at a freshly minted family. Changes reach the app on
+# the next pricing-cache reload (the UI offers the existing reload button).
+
+def _celr_cpn_from_q(q: str):
+    m = re.fullmatch(r"(?i)\s*(?:celr[-\s]*)?0*(\d{1,9})\s*", q or "")
+    return int(m.group(1)) if m else None
+
+
+@router.get("/celr/families")
+def celr_families(q: str = Query(""), limit: int = Query(50, ge=1, le=200),
+                  user: dict = Depends(require_admin)):
+    """Search the family registry: by CELR number (CELR-003873 or 3873) or by
+    header name / brand text. Sorted biggest-family first so the most
+    impactful groupings surface."""
+    with get_pg() as con:
+        cpn_q = _celr_cpn_from_q(q)
+        if q and cpn_q is not None:
+            wherec, params = "f.cpn = %s", [cpn_q]
+        elif q:
+            wherec, params = "(f.header_name ILIKE %s OR f.brand ILIKE %s)", [f"%{q}%", f"%{q}%"]
+        else:
+            wherec, params = "TRUE", []
+        rows = con.execute(
+            f"""SELECT f.cpn, f.header_name, f.brand, f.product_type,
+                       a.canonical_cpn AS alias_of,
+                       (SELECT count(*) FROM celr_product_upcs u WHERE u.cpn = f.cpn) AS upc_count
+                FROM celr_families f
+                LEFT JOIN celr_family_aliases a ON a.cpn = f.cpn
+                WHERE {wherec}
+                ORDER BY upc_count DESC, f.cpn
+                LIMIT %s""",
+            (*params, limit),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.get("/celr/family/{cpn}")
+def celr_family_detail(cpn: int, user: dict = Depends(require_admin)):
+    """One family with every member barcode and its current distributor
+    listings (latest edition per wholesaler), so merge/split decisions are
+    made against what the buyer actually sees."""
+    with get_pg() as con:
+        fam = con.execute("SELECT * FROM celr_families WHERE cpn=%s", (cpn,)).fetchone()
+        if not fam:
+            raise HTTPException(404, "Family not found")
+        alias = con.execute(
+            "SELECT canonical_cpn FROM celr_family_aliases WHERE cpn=%s", (cpn,)).fetchone()
+        merged_in = [r["cpn"] for r in con.execute(
+            "SELECT cpn FROM celr_family_aliases WHERE canonical_cpn=%s ORDER BY cpn", (cpn,)).fetchall()]
+        upcs = [dict(r) for r in con.execute(
+            "SELECT upc_norm FROM celr_product_upcs WHERE cpn=%s ORDER BY upc_norm", (cpn,)).fetchall()]
+        listings: dict = {}
+        if upcs:
+            ph = ", ".join(["%s"] * len(upcs))
+            try:
+                rows = con.execute(
+                    f"""WITH latest AS (
+                            SELECT wholesaler, MAX(edition) AS ed
+                            FROM cpl_enriched GROUP BY wholesaler)
+                        SELECT DISTINCT LTRIM(CAST(e.upc AS VARCHAR), '0') AS un,
+                               e.wholesaler, e.product_name, e.unit_volume, e.unit_qty
+                        FROM cpl_enriched e
+                        JOIN latest l ON e.wholesaler = l.wholesaler AND e.edition = l.ed
+                        WHERE LTRIM(CAST(e.upc AS VARCHAR), '0') IN ({ph})""",
+                    tuple(u["upc_norm"] for u in upcs),
+                ).fetchall()
+                for r in rows:
+                    listings.setdefault(r["un"], []).append(
+                        {"wholesaler": r["wholesaler"], "product_name": r["product_name"],
+                         "unit_volume": r["unit_volume"], "unit_qty": r["unit_qty"]})
+            except Exception:
+                pass
+        for u in upcs:
+            u["listings"] = listings.get(u["upc_norm"], [])
+    return {**dict(fam), "alias_of": alias["canonical_cpn"] if alias else None,
+            "merged_in": merged_in, "upcs": upcs}
+
+
+@router.post("/celr/merge")
+def celr_merge(payload: dict = Body(...), user: dict = Depends(require_admin)):
+    """Merge family FROM into family INTO (alias row; reversible). The target
+    resolves through existing aliases so chains always end at a canonical."""
+    try:
+        src, dst = int(payload.get("from_cpn")), int(payload.get("into_cpn"))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "from_cpn and into_cpn are required integers")
+    with get_pg() as con:
+        for c in (src, dst):
+            if not con.execute("SELECT 1 FROM celr_families WHERE cpn=%s", (c,)).fetchone():
+                raise HTTPException(404, f"Family {c} not found")
+        seen = set()
+        while dst not in seen:
+            seen.add(dst)
+            r = con.execute(
+                "SELECT canonical_cpn FROM celr_family_aliases WHERE cpn=%s", (dst,)).fetchone()
+            if not r:
+                break
+            dst = r["canonical_cpn"]
+        if dst == src:
+            raise HTTPException(400, "Merge would point a family at itself")
+        con.execute(
+            "INSERT INTO celr_family_aliases (cpn, canonical_cpn) VALUES (%s, %s) "
+            "ON CONFLICT (cpn) DO UPDATE SET canonical_cpn = EXCLUDED.canonical_cpn",
+            (src, dst))
+        # anything previously merged INTO src follows it to the new canonical
+        con.execute("UPDATE celr_family_aliases SET canonical_cpn=%s WHERE canonical_cpn=%s",
+                    (dst, src))
+    return {"status": "merged", "from_cpn": src, "into_cpn": dst,
+            "note": "Reload the pricing cache to apply."}
+
+
+@router.post("/celr/unmerge")
+def celr_unmerge(payload: dict = Body(...), user: dict = Depends(require_admin)):
+    try:
+        cpn = int(payload.get("cpn"))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "cpn is required")
+    with get_pg() as con:
+        n = con.execute("DELETE FROM celr_family_aliases WHERE cpn=%s RETURNING cpn", (cpn,)).fetchone()
+        if not n:
+            raise HTTPException(404, f"Family {cpn} is not merged into anything")
+    return {"status": "unmerged", "cpn": cpn, "note": "Reload the pricing cache to apply."}
+
+
+@router.post("/celr/split")
+def celr_split(payload: dict = Body(...), user: dict = Depends(require_admin)):
+    """Move ONE barcode out of its family into a freshly minted one (e.g. a
+    reused barcode whose listings are genuinely different products)."""
+    upc = re.sub(r"\D", "", str(payload.get("upc_norm") or "")).lstrip("0")
+    if not upc:
+        raise HTTPException(400, "upc_norm is required")
+    header = str(payload.get("header_name") or "").strip()
+    with get_pg() as con:
+        cur = con.execute("SELECT cpn FROM celr_product_upcs WHERE upc_norm=%s", (upc,)).fetchone()
+        if not cur:
+            raise HTTPException(404, f"UPC {upc} is not in the registry")
+        old = con.execute("SELECT header_name, brand, product_type FROM celr_families WHERE cpn=%s",
+                          (cur["cpn"],)).fetchone()
+        new_cpn = con.execute("SELECT COALESCE(MAX(cpn), 0) + 1 AS n FROM celr_families").fetchone()["n"]
+        con.execute(
+            "INSERT INTO celr_families (cpn, family_key, header_name, brand, product_type, created_at) "
+            "VALUES (%s, %s, %s, %s, %s, to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS'))",
+            (new_cpn, f"manual|upc:{upc}", header or (old["header_name"] if old else f"UPC {upc}"),
+             old["brand"] if old else None, old["product_type"] if old else None))
+        con.execute("UPDATE celr_product_upcs SET cpn=%s WHERE upc_norm=%s", (new_cpn, upc))
+    return {"status": "split", "upc_norm": upc, "from_cpn": cur["cpn"], "new_cpn": new_cpn,
+            "celr_product_number": f"CELR-{new_cpn:06d}",
+            "note": "Reload the pricing cache to apply."}

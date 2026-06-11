@@ -55,6 +55,7 @@ import AdminActivity from './pages/AdminActivity';
 import AdminAiUsage from './pages/AdminAiUsage';
 import AdminAiFeedback from './pages/AdminAiFeedback';
 import AdminCloseoutFlags from './pages/AdminCloseoutFlags';
+import AdminCelrProducts from './pages/AdminCelrProducts';
 import AgentProposals from './pages/AgentProposals';
 import AgentStoreFeed from './pages/AgentStoreFeed';
 import AgentSettings from './pages/AgentSettings';
@@ -181,6 +182,7 @@ function AuthenticatedApp() {
             <Route path="/admin/ai-usage" element={<AdminAiUsage />} />
             <Route path="/admin/ai-feedback" element={<AdminAiFeedback />} />
             <Route path="/admin/closeout-flags" element={<AdminCloseoutFlags />} />
+            <Route path="/admin/celr-products" element={<AdminRoute><AdminCelrProducts /></AdminRoute>} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/qa" element={<QA />} />
             <Route path="/cart" element={<Cart />} />

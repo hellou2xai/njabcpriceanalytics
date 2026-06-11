@@ -130,11 +130,19 @@ def get_list(list_id: int, user: dict = Depends(get_current_user)):
 
 
 def _attach_rip_code_for_list_items(dcon, items):
-    """Best-effort: attach rip_code from the latest CPL edition per UPC, so the
-    Lists UI can sub-group entries that share a RIP rebate. Failures here must
-    never break the page; missing rip_code just means "not grouped"."""
+    """Best-effort: attach rip_code AND catalogue pricing (frontline/effective,
+    pack size, unit type) from the latest CPL edition per UPC, so the Lists UI
+    can sub-group by RIP and show the same price columns the cart shows (user
+    request: lists were "name only", too little data to act on). Reads
+    precomputed columns only. Failures here must never break the page."""
     from backend.db import read_parquet
     import math as _m
+
+    def _clean(v):
+        if v is None or (isinstance(v, float) and _m.isnan(v)):
+            return None
+        return v
+
     try:
         norms = sorted({str(it.get("upc") or "").lstrip("0") for it in items if it.get("upc")})
         if not norms:
@@ -146,22 +154,49 @@ def _attach_rip_code_for_list_items(dcon, items):
         prm = {f"p{i}": u for i, u in enumerate(norms)}
         df = dcon.execute(f"""
             WITH latest AS (SELECT wholesaler, MAX(edition) AS ed FROM {src} GROUP BY wholesaler)
-            SELECT e.wholesaler AS w, LTRIM(e.upc,'0') AS un, CAST(e.rip_code AS VARCHAR) AS rc
+            SELECT e.wholesaler AS w, LTRIM(e.upc,'0') AS un, CAST(e.rip_code AS VARCHAR) AS rc,
+                   e.unit_volume AS uv, e.unit_qty AS uq, e.unit_type AS ut,
+                   e.frontline_case_price AS fc, e.frontline_unit_price AS fu,
+                   e.effective_case_price AS ec, e.total_savings_per_case AS sv
             FROM {src} e JOIN latest l ON e.wholesaler=l.wholesaler AND e.edition=l.ed
             WHERE LTRIM(e.upc,'0') IN ({ph})
         """, prm).fetchdf()
         lookup = {}
+        price_by_size = {}
+        price_any = {}
         for _, r in df.iterrows():
             rc = r["rc"]
-            if rc is None or (isinstance(rc, float) and _m.isnan(rc)):
-                continue
-            rc_s = str(rc).strip()
-            if not rc_s or rc_s.lower() in ("none", "nan", "0"):
-                continue
-            lookup[(r["w"], str(r["un"]))] = rc_s
+            if rc is not None and not (isinstance(rc, float) and _m.isnan(rc)):
+                rc_s = str(rc).strip()
+                if rc_s and rc_s.lower() not in ("none", "nan", "0"):
+                    lookup[(r["w"], str(r["un"]))] = rc_s
+            rec = {
+                "unit_qty": _clean(r["uq"]), "unit_type": _clean(r["ut"]),
+                "frontline_case_price": _clean(r["fc"]), "frontline_unit_price": _clean(r["fu"]),
+                "effective_case_price": _clean(r["ec"]), "total_savings_per_case": _clean(r["sv"]),
+            }
+            key_any = (r["w"], str(r["un"]))
+            price_any.setdefault(key_any, rec)
+            uv = str(_clean(r["uv"]) or "").strip().lower()
+            if uv:
+                price_by_size[(r["w"], str(r["un"]), uv)] = rec
         for it in items:
             un = str(it.get("upc") or "").lstrip("0")
             it["rip_code"] = lookup.get((it.get("wholesaler"), un))
+            # Exact (wholesaler, UPC, size) match first; UPC-only fallback so a
+            # size-string drift still prices the line rather than blanking it.
+            uv = str(it.get("unit_volume") or "").strip().lower()
+            rec = price_by_size.get((it.get("wholesaler"), un, uv)) or price_any.get((it.get("wholesaler"), un))
+            if rec:
+                it.update(rec)
+                ec, uq = rec.get("effective_case_price"), rec.get("unit_qty")
+                try:
+                    uqn = float(uq) if uq is not None else None
+                except (TypeError, ValueError):
+                    uqn = None
+                it["effective_unit_price"] = (
+                    round(ec / uqn, 2) if (ec is not None and uqn and uqn > 0) else None
+                )
     except Exception:
         for it in items:
             it.setdefault("rip_code", None)

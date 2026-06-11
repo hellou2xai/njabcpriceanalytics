@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, ShoppingCart, Pencil, ClipboardList, Sparkles } from 'lucide-react';
 import { lists as listsApi, cart as cartApi, type ListItem } from '../lib/api';
@@ -8,12 +8,36 @@ import { ContextMenuProvider } from '../components/ContextMenu';
 import { useProductQuickView } from '../components/ProductQuickView';
 import ProductThumb from '../components/ProductThumb';
 import DealSparkline from '../components/DealSparkline';
-import { distributorName, abgSku, skuLabel } from '../lib/distributors';
+import { distributorName, abgSku, skuLabel, isKegUnit, priceUnit, perUnitAbbr } from '../lib/distributors';
 import { useDialog } from '../components/Dialog';
 import { ErrorState, EmptyState } from '../components/DataState';
 import DataLoading from '../components/DataLoading';
 
 const LIST_RIP_GROUP_KEY = 'celr_lists_group_by_rip';
+const money = (v?: number | null) => (v == null ? '–' : `$${v.toFixed(2)}`);
+
+// Shared column header so the flat table and every RIP-bucket table align the
+// same way (Product | Code | Distributor | Size | Pack | $Case | $Btl | Best buy).
+function ListHead({ check }: { check?: ReactNode }) {
+  return (
+    <thead>
+      <tr>
+        <th style={{ width: 28 }}>{check ?? null}</th>
+        <th>Product</th>
+        <th>Code</th>
+        <th>Distributor</th>
+        <th>Size</th>
+        <th>Pack</th>
+        <th style={{ textAlign: 'right' }}>$ Case</th>
+        <th style={{ textAlign: 'right' }}>$ Bottle</th>
+        <th style={{ textAlign: 'right' }}
+          title="Effective net after QD + RIP: per case / per bottle.">$ Best buy</th>
+        <th>Price trend</th>
+        <th style={{ width: 40 }}></th>
+      </tr>
+    </thead>
+  );
+}
 function ripHueLocal(code: string): number {
   let h = 0;
   for (let i = 0; i < code.length; i++) h = (h * 31 + code.charCodeAt(i)) % 360;
@@ -225,6 +249,7 @@ export default function Lists() {
                             </button>
                           </div>
                           <table className="catalog-table">
+                            <ListHead />
                             <tbody>
                               {lines.map(it => <ListRow key={it.id} it={it} selected={selected} toggle={toggle} onRemove={() => removeItems.mutate([it.id])} />)}
                             </tbody>
@@ -241,6 +266,7 @@ export default function Lists() {
                           </span>
                         </div>
                         <table className="catalog-table">
+                          <ListHead />
                           <tbody>
                             {buckets.unrebated.map(it => <ListRow key={it.id} it={it} selected={selected} toggle={toggle} onRemove={() => removeItems.mutate([it.id])} />)}
                           </tbody>
@@ -250,19 +276,10 @@ export default function Lists() {
                   </>
                 ) : (
                   <table className="catalog-table" data-tour="lists-items">
-                    <thead>
-                      <tr>
-                        <th style={{ width: 28 }}><input type="checkbox" checked={allChecked} onChange={toggleAll} /></th>
-                        <th>Product</th>
-                        <th>Distributor</th>
-                        <th>Size</th>
-                        <th>Price trend</th>
-                        <th style={{ width: 40 }}></th>
-                      </tr>
-                    </thead>
+                    <ListHead check={<input type="checkbox" checked={allChecked} onChange={toggleAll} />} />
                     <tbody>
                       {items.map(it => <ListRow key={it.id} it={it} selected={selected} toggle={toggle} onRemove={() => removeItems.mutate([it.id])} />)}
-                      {items.length === 0 && <tr><td colSpan={6} className="empty">No items. Add products from anywhere with right-click → Add to List.</td></tr>}
+                      {items.length === 0 && <tr><td colSpan={11} className="empty">No items. Add products from anywhere with right-click → Add to List.</td></tr>}
                     </tbody>
                   </table>
                 )}
@@ -283,6 +300,10 @@ function ListRow({ it, selected, toggle, onRemove }: {
   onRemove: () => void;
 }) {
   const { open } = useProductQuickView();
+  const keg = isKegUnit(it.unit_volume, it.unit_type);
+  const pack = (() => { const n = Number(it.unit_qty); return Number.isFinite(n) && n > 0 ? Math.round(n) : null; })();
+  const effCase = it.effective_case_price ?? null;
+  const effBtl = it.effective_unit_price ?? null;
   return (
     <tr data-ctx="" data-ctx-product={it.product_name} data-ctx-wholesaler={it.wholesaler}
         data-ctx-upc={it.upc ?? ''} data-ctx-volume={it.unit_volume ?? ''}>
@@ -302,7 +323,7 @@ function ListRow({ it, selected, toggle, onRemove }: {
             >
               {it.product_name}
             </div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{it.upc}{abgSku(it.wholesaler, it.abg_sku) ? ` · ${skuLabel(it.wholesaler)} ${it.abg_sku}` : ''}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{it.upc}</div>
             {(it.rip_gaps?.length ?? 0) > 0 && (
               <div style={{ marginTop: 4 }} onClick={e => e.stopPropagation()}>
                 <DealTimingSticker deals={[]} gaps={it.rip_gaps} />
@@ -311,8 +332,20 @@ function ListRow({ it, selected, toggle, onRemove }: {
           </div>
         </div>
       </td>
+      <td className="cart-cell-code" title={abgSku(it.wholesaler, it.abg_sku) ? `${skuLabel(it.wholesaler)} item number` : undefined}>
+        {abgSku(it.wholesaler, it.abg_sku) ? it.abg_sku : '–'}
+      </td>
       <td>{distributorName(it.wholesaler)}</td>
       <td>{it.unit_volume}</td>
+      <td title="Bottles per case">{pack ? `${pack}/cs` : '–'}</td>
+      <td className="cart-cell-num">{money(it.frontline_case_price)}</td>
+      <td className="cart-cell-num">{!keg ? money(it.frontline_unit_price) : '–'}</td>
+      <td className="cart-cell-num cart-bestbuy"
+        title={effCase != null
+          ? `Effective net after QD + RIP per ${priceUnit(it.unit_volume, it.unit_type)}${keg ? '' : ` / per ${perUnitAbbr(it.unit_volume, it.unit_type)}`}${it.total_savings_per_case ? `. Saves ${money(it.total_savings_per_case)}/${priceUnit(it.unit_volume, it.unit_type)} vs list.` : ''}`
+          : undefined}>
+        {effCase != null ? `${money(effCase)}${!keg && effBtl != null ? ` / ${money(effBtl)}` : ''}` : '–'}
+      </td>
       <td onClick={e => e.stopPropagation()}>
         <DealSparkline
           interactive
@@ -325,7 +358,7 @@ function ListRow({ it, selected, toggle, onRemove }: {
         />
       </td>
       <td style={{ width: 40 }} onClick={e => e.stopPropagation()}>
-        <button className="btn btn-secondary btn-sm" title="Remove from list" onClick={onRemove}><Trash2 size={14} /></button>
+        <button className="btn btn-secondary btn-sm" title="Remove from list" aria-label="Remove from list" onClick={onRemove}><Trash2 size={14} /></button>
       </td>
     </tr>
   );

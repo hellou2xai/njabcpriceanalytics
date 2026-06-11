@@ -41,6 +41,17 @@ function lineTotal(it: CartItem): number {
   const { perCase, perBtl } = unitPrices(it);
   return (it.qty_cases || 0) * perCase + (it.qty_units || 0) * perBtl;
 }
+// LIST-price line total (before discounts/RIP). Drives the "Total list" and
+// "Total discount" figures on the order summary, like a distributor portal.
+function lineListTotal(it: CartItem): number {
+  return (it.qty_cases || 0) * (it.frontline_case_price ?? 0)
+    + (it.qty_units || 0) * (it.frontline_unit_price ?? 0);
+}
+// Bottles-per-case for the Pack column.
+function packOf(it: CartItem): number | null {
+  const n = Number(it.unit_qty);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
+}
 
 // A unique-but-stable colour per combo id, so lines from the same bundle share a
 // sticker and different bundles are easy to tell apart at a glance.
@@ -84,6 +95,51 @@ function normUnit(u?: string | null): 'case' | 'btl' {
 }
 
 interface RipTier { qty: number; unit: 'case' | 'btl'; amt: number; }
+
+/** Per-line RIP eligibility, eBiz-style: "Add N more cases to qualify for the
+ *  X-case $Y RIP", flipping to a green qualified note once the threshold is
+ *  met. Quantities count across every ACTIVE line sharing this line's RIP code
+ *  at the same distributor (mix RIPs qualify cluster-wide, not per product). */
+function lineRipEligibility(it: CartItem, all: CartItem[]): { text: string; tone: 'gap' | 'reached' } | null {
+  if ((it.tiers ?? []).every(t => t.source !== 'rip')) return null;
+  const rc = it.rip_code != null ? String(it.rip_code).trim() : '';
+  const cluster = rc
+    ? all.filter(x => x.wholesaler === it.wholesaler && String(x.rip_code ?? '').trim() === rc)
+    : [it];
+  const map = new Map<string, RipTier>();
+  const votes = { case: 0, btl: 0 };
+  for (const t of (it.tiers ?? [])) {
+    if (t.source !== 'rip') continue;
+    const u = normUnit(t.unit);
+    votes[u]++;
+    const k = `${t.qty}|${u}`;
+    const prev = map.get(k);
+    if (!prev || t.amount > prev.amt) map.set(k, { qty: t.qty, unit: u, amt: t.amount });
+  }
+  const tiers = [...map.values()].sort((a, b) => a.qty - b.qty);
+  if (!tiers.length) return null;
+  const unit: 'case' | 'btl' = votes.btl > votes.case ? 'btl' : 'case';
+  const have = cluster.reduce((s, x) => s + (unit === 'case' ? (x.qty_cases || 0) : (x.qty_units || 0)), 0);
+  const uw = unit === 'case' ? 'case' : 'bottle';
+  const across = rc && cluster.length > 1 ? ` (counts across ${cluster.length} lines on RIP ${rc})` : '';
+  const reached = tiers.filter(t => have >= t.qty);
+  const ahead = tiers.filter(t => have < t.qty);
+  if (!reached.length) {
+    const next = ahead[0];
+    const need = next.qty - have;
+    return {
+      tone: 'gap',
+      text: `Add ${need} ${need === 1 ? '' : 'or more '}${uw}${need === 1 ? '' : 's'} to qualify for the ${next.qty}-${uw} $${next.amt.toFixed(2)} RIP${across}.`,
+    };
+  }
+  const top = reached[reached.length - 1];
+  let text = `✓ Qualifies for the ${top.qty}-${uw} RIP: $${top.amt.toFixed(2)} rebate${across}.`;
+  if (ahead.length) {
+    const next = ahead[0];
+    text += ` Add ${next.qty - have} more for the $${next.amt.toFixed(2)} tier.`;
+  }
+  return { tone: 'reached', text };
+}
 
 /** Reduce a RIP cluster of cart lines to its rebate ladder + a progress
  *  message ("4 cases towards $250 · 1 more for $400 rebate"). Each cart
@@ -296,19 +352,59 @@ export default function Cart() {
   }, [active]);
 
   const cartTotal = useMemo(() => active.reduce((s, it) => s + lineTotal(it), 0), [active]);
+  // Distributor-portal style order summary: list total, discount, est net,
+  // and the case/bottle counts. Net = the best-buy (effective/combo) total.
+  const totals = useMemo(() => {
+    const list = active.reduce((s, it) => s + lineListTotal(it), 0);
+    const cases = active.reduce((s, it) => s + (it.qty_cases || 0), 0);
+    const bottles = active.reduce((s, it) => s + (it.qty_units || 0), 0);
+    return { list, disc: Math.max(0, list - cartTotal), cases, bottles };
+  }, [active, cartTotal]);
 
   const repsFor = (w: string) => (reps ?? []).filter(r => r.distributor === w);
   const anyUnassigned = active.some(i => !i.sales_rep_id);
 
+  // One aligned table per cluster (distributor-portal style): users read the
+  // cart as columns (Product | Code | Size | Pack | Qty | $Case | $Btl |
+  // Best buy | Total) instead of free-form prose lines.
+  const colHeader = (saving: boolean) => (
+    <div className="cart-cols">
+      <span />
+      <span>Product</span>
+      <span>Code</span>
+      <span>Size</span>
+      <span>Pack</span>
+      <span>{saving ? 'Qty (saved)' : 'Qty'}</span>
+      <span className="cart-cell-num">$ Case</span>
+      <span className="cart-cell-num">$ Bottle</span>
+      <span className="cart-cell-num"
+        title="What you actually pay after QD + RIP (combo price when the bundle is intact): per case / per bottle.">
+        $ Best buy
+      </span>
+      <span className="cart-cell-num">Total</span>
+      <span />
+    </div>
+  );
+  const renderLines = (lines: CartItem[], saving = false) => (
+    <div className="cart-table-scroll">
+      <div className="cart-table">
+        {colHeader(saving)}
+        {lines.map(it => renderItem(it, saving))}
+      </div>
+    </div>
+  );
+
   const renderItem = (it: CartItem, saving = false) => {
     const tiers = it.tiers ?? [];
-    const { perCase } = unitPrices(it);
+    const { perCase, perBtl } = unitPrices(it);
+    const keg = isKegUnit(it.unit_volume, it.unit_type);
+    const pack = packOf(it);
     const showCombo = !!it.combo_code && !!it.combo_intact;
     return (
-      <div key={it.id} data-tour="cart-line" style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <ProductThumb src={it.image_url} alt={it.product_name} size={56} />
-          <div style={{ flex: 1, minWidth: 0 }}>
+      <div key={it.id} data-tour="cart-line" style={{ padding: '8px 0', borderTop: '1px solid var(--border)' }}>
+        <div className="cart-row-grid">
+          <ProductThumb src={it.image_url} alt={it.product_name} size={44} />
+          <div style={{ minWidth: 0 }}>
             <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span
                 className="product-name-link"
@@ -324,63 +420,74 @@ export default function Cart() {
               {showCombo && <ComboBadge code={it.combo_code!} />}
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-              {distributorName(it.wholesaler)}{it.unit_volume ? ` · ${it.unit_volume}` : ''}{it.upc ? ` · ${it.upc}` : ''}{abgSku(it.wholesaler, it.abg_sku) ? ` · ${skuLabel(it.wholesaler)} ${it.abg_sku}` : ''}
-            </div>
-            {it.frontline_case_price != null && (
-              <div style={{ fontSize: 12, marginTop: 2 }}>
-                Case {money(it.frontline_case_price)}
-                {it.frontline_unit_price != null && !isKegUnit(it.unit_volume, it.unit_type) && <> · {perUnitAbbr(it.unit_volume, it.unit_type)} {money(it.frontline_unit_price)}</>}
-                {' · '}{showCombo ? 'Combo' : 'Eff'} <span className="text-green">{money(perCase)}/{priceUnit(it.unit_volume, it.unit_type)}</span>
-                {it.total_savings_per_case ? <> · Save <span className="text-green">{money(it.total_savings_per_case)}/{priceUnit(it.unit_volume, it.unit_type)}</span></> : null}
-              </div>
-            )}
-            {/* Price-history sparkline (effective vs frontline across editions);
-                interactive → click opens the 3-month price popover. */}
-            <div style={{ marginTop: 4 }}>
-              <DealSparkline
-                interactive
-                wholesaler={it.wholesaler}
-                productName={it.product_name}
-                upc={it.upc ?? undefined}
-                unitVolume={it.unit_volume ?? undefined}
-                unitQty={it.unit_qty != null ? String(it.unit_qty) : undefined}
-                width={130}
-                height={32}
-              />
+              {distributorName(it.wholesaler)}{it.upc ? ` · ${it.upc}` : ''}
             </div>
           </div>
-          {!saving && (
-            <>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <Stepper label="Case" value={it.qty_cases} onChange={n => upd.mutate({ id: it.id, patch: { qty_cases: n } })} />
-                <Stepper label="Btl" value={it.qty_units} onChange={n => upd.mutate({ id: it.id, patch: { qty_units: n } })} />
-              </div>
-              <div style={{ minWidth: 78, textAlign: 'right', fontWeight: 700 }} title="Line total">
-                {money(lineTotal(it))}
-              </div>
-              <button className="btn btn-secondary btn-sm"
-                onClick={() => upd.mutate({ id: it.id, patch: { saved_for_later: true } })}><Clock size={13} /> Save for later</button>
-            </>
+          <span className="cart-cell-code" title={abgSku(it.wholesaler, it.abg_sku) ? `${skuLabel(it.wholesaler)} item number` : undefined}>
+            {abgSku(it.wholesaler, it.abg_sku) ? it.abg_sku : '–'}
+          </span>
+          <span>{it.unit_volume || '–'}</span>
+          <span title="Bottles per case">{pack ? `${pack}/cs` : '–'}</span>
+          {!saving ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <Stepper label="Case" value={it.qty_cases} onChange={n => upd.mutate({ id: it.id, patch: { qty_cases: n } })} />
+              <Stepper label="Btl" value={it.qty_units} onChange={n => upd.mutate({ id: it.id, patch: { qty_units: n } })} />
+            </div>
+          ) : (
+            <span style={{ fontSize: 12 }}>{it.qty_cases || 0} cs · {it.qty_units || 0} btl</span>
           )}
-          {saving && (
-            <button className="btn btn-secondary btn-sm"
-              onClick={() => upd.mutate({ id: it.id, patch: { saved_for_later: false } })}>Move to cart</button>
-          )}
-          <button className="btn btn-secondary btn-sm" title="Remove" onClick={() => del.mutate(it.id)}><Trash2 size={14} /></button>
+          <span className="cart-cell-num">{it.frontline_case_price != null ? money(it.frontline_case_price) : '–'}</span>
+          <span className="cart-cell-num">{!keg && it.frontline_unit_price != null ? money(it.frontline_unit_price) : '–'}</span>
+          <span className="cart-cell-num cart-bestbuy"
+            title={`${showCombo ? 'Combo bundle price' : 'Effective net after QD + RIP'} per ${priceUnit(it.unit_volume, it.unit_type)}${keg ? '' : ` / per ${perUnitAbbr(it.unit_volume, it.unit_type)}`}${it.total_savings_per_case ? `. Saves ${money(it.total_savings_per_case)}/${priceUnit(it.unit_volume, it.unit_type)} vs list.` : ''}`}>
+            {money(perCase)}{!keg ? ` / ${money(perBtl)}` : ''}
+          </span>
+          <span className="cart-cell-num" style={{ fontWeight: 700 }} title="Line total at the best-buy price">
+            {money(lineTotal(it))}
+          </span>
+          <span style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+            {!saving ? (
+              <button className="btn btn-secondary btn-sm" title="Save for later" aria-label="Save for later"
+                onClick={() => upd.mutate({ id: it.id, patch: { saved_for_later: true } })}><Clock size={13} /></button>
+            ) : (
+              <button className="btn btn-secondary btn-sm" title="Move back to the active cart" aria-label="Move back to the active cart"
+                onClick={() => upd.mutate({ id: it.id, patch: { saved_for_later: false } })}><ArrowUpFromLine size={13} /></button>
+            )}
+            <button className="btn btn-secondary btn-sm" title="Remove" aria-label="Remove from cart"
+              onClick={() => del.mutate(it.id)}><Trash2 size={14} /></button>
+          </span>
         </div>
 
-        {/* Buy-timing trap / dated-deal explainer (clickable). */}
-        {((it.deal_windows?.length ?? 0) > 0 || (it.rip_gaps?.length ?? 0) > 0) && (
-          <div style={{ marginLeft: 68, marginTop: 4 }}>
+        {/* Detail strip under the row: price-history sparkline (click for the
+            3-month popover) + buy-timing sticker, so the columns stay clean. */}
+        <div style={{ marginLeft: 56, marginTop: 4, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <DealSparkline
+            interactive
+            wholesaler={it.wholesaler}
+            productName={it.product_name}
+            upc={it.upc ?? undefined}
+            unitVolume={it.unit_volume ?? undefined}
+            unitQty={it.unit_qty != null ? String(it.unit_qty) : undefined}
+            width={130}
+            height={32}
+          />
+          {((it.deal_windows?.length ?? 0) > 0 || (it.rip_gaps?.length ?? 0) > 0) && (
             <DealTimingSticker deals={it.deal_windows ?? []} gaps={it.rip_gaps}
               everyDay={everyDayFromTiers(it.tiers, it.frontline_case_price)} />
-          </div>
-        )}
+          )}
+        </div>
+
+        {/* eBiz-style per-line RIP eligibility: how far this line (and its RIP
+            cluster) is from the next rebate, or which tier it already earns. */}
+        {!saving && (() => {
+          const elig = lineRipEligibility(it, active);
+          return elig ? <div className={`cart-rip-elig tone-${elig.tone}`}>{elig.text}</div> : null;
+        })()}
 
         {/* Deal tiers, same info as the catalogue, to tweak qty last minute. Combo
             lines hide these (the bundle is the deal). */}
         {tiers.length > 0 && (
-          <div style={{ marginLeft: 68, marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: '4px 8px' }}>
+          <div style={{ marginLeft: 56, marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: '4px 8px' }}>
             {tiers.map((t, i) => (
               <span key={i} className={`source-badge source-${t.source}`} style={{ fontSize: 11 }}
                 title={t.description || undefined}>
@@ -407,7 +514,7 @@ export default function Cart() {
           defaultValue={it.notes ?? ''}
           placeholder="Add a note (goes on this order line)"
           onBlur={e => { if (e.target.value !== (it.notes ?? '')) upd.mutate({ id: it.id, patch: { notes: e.target.value } }); }}
-          style={{ marginLeft: 68, marginTop: 6, width: 'calc(100% - 68px)', maxWidth: 420, fontSize: 12, padding: '3px 6px' }}
+          style={{ marginLeft: 56, marginTop: 6, width: 'calc(100% - 56px)', maxWidth: 420, fontSize: 12, padding: '3px 6px' }}
         />
       </div>
     );
@@ -481,7 +588,19 @@ export default function Cart() {
               <input type="checkbox" checked={groupByRip} onChange={e => toggleGroupByRip(e.target.checked)} />
               Merge batches by RIP
             </label>
-            <span style={{ fontSize: 16 }}>Cart total: <strong className="text-green">{money(cartTotal)}</strong></span>
+            <span style={{ fontSize: 13, color: 'var(--text-muted)' }} title="Total quantities in the cart">
+              Cases: <strong style={{ color: 'var(--text)' }}>{totals.cases}</strong>
+              {' '}· Bottles: <strong style={{ color: 'var(--text)' }}>{totals.bottles}</strong>
+            </span>
+            <span style={{ fontSize: 13, color: 'var(--text-muted)' }} title="Sum of every line at LIST (frontline) price">
+              Total list: <strong style={{ color: 'var(--text)' }}>{money(totals.list)}</strong>
+            </span>
+            <span style={{ fontSize: 13, color: 'var(--text-muted)' }} title="What QD + RIP + combo pricing takes off the list total">
+              Total disc: <strong className="text-green">−{money(totals.disc)}</strong>
+            </span>
+            <span style={{ fontSize: 16 }} title="Estimated total at the best-buy prices">
+              Est total net: <strong className="text-green">{money(cartTotal)}</strong>
+            </span>
           </span>
         </div>
       )}
@@ -500,11 +619,16 @@ export default function Cart() {
         const selRep = options.find(r => r.id === Number(repId));
         const contact = selRep ? [selRep.phone, selRep.email].filter(Boolean).join(' · ') : '';
         const groupTotal = groupItems.reduce((s, it) => s + lineTotal(it), 0);
+        const groupCases = groupItems.reduce((s, it) => s + (it.qty_cases || 0), 0);
+        const groupBottles = groupItems.reduce((s, it) => s + (it.qty_units || 0), 0);
         return (
           <div key={wholesaler} className="panel" data-tour="cart-group" style={{ padding: 12, marginTop: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
               <strong>{distributorName(wholesaler)}</strong>
               <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                  {groupCases} case{groupCases === 1 ? '' : 's'} · {groupBottles} bottle{groupBottles === 1 ? '' : 's'}
+                </span>
                 <span style={{ fontSize: 13 }}>Group total: <strong className="text-green">{money(groupTotal)}</strong></span>
                 <label data-tour="cart-rep" style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
                   Sales rep:
@@ -580,7 +704,7 @@ export default function Cart() {
                               Subtotal: <span className="text-green">{money(subtotal)}</span>
                             </span>
                           </div>
-                          {lines.map(it => renderItem(it))}
+                          {renderLines(lines)}
                         </div>
                       );
                     })}
@@ -591,7 +715,7 @@ export default function Cart() {
                             Loose items · {loose.length} line{loose.length === 1 ? '' : 's'}
                           </span>
                         </div>
-                        {loose.map(it => renderItem(it))}
+                        {renderLines(loose)}
                       </div>
                     )}
                   </>
@@ -648,7 +772,7 @@ export default function Cart() {
                             Subtotal: <span className="text-green">{money(subtotal)}</span>
                           </span>
                         </div>
-                        {lines.map(it => renderItem(it))}
+                        {renderLines(lines)}
                       </div>
                     );
                   })}
@@ -701,7 +825,7 @@ export default function Cart() {
                             )}
                           </div>
                         )}
-                        {lines.map(it => renderItem(it))}
+                        {renderLines(lines)}
                       </div>
                     );
                   })}
@@ -713,7 +837,7 @@ export default function Cart() {
                           {unrebated.length} line{unrebated.length === 1 ? '' : 's'}
                         </span>
                       </div>
-                      {unrebated.map(it => renderItem(it))}
+                      {renderLines(unrebated)}
                     </div>
                   )}
                 </>
@@ -770,7 +894,7 @@ export default function Cart() {
                             <ArrowUpFromLine size={13} /> Move all to cart
                           </button>
                         </div>
-                        {lines.map(it => renderItem(it, true))}
+                        {renderLines(lines, true)}
                       </div>
                     );
                   })}
@@ -781,7 +905,7 @@ export default function Cart() {
                           Loose items · {loose.length} line{loose.length === 1 ? '' : 's'}
                         </span>
                       </div>
-                      {loose.map(it => renderItem(it, true))}
+                      {renderLines(loose, true)}
                     </div>
                   )}
                 </>
@@ -832,7 +956,7 @@ export default function Cart() {
                           <ArrowUpFromLine size={13} /> Move all to cart
                         </button>
                       </div>
-                      {lines.map(it => renderItem(it, true))}
+                      {renderLines(lines, true)}
                     </div>
                   );
                 })}
@@ -859,7 +983,7 @@ export default function Cart() {
                           <ArrowUpFromLine size={13} /> Move all to cart
                         </button>
                       </div>
-                      {lines.map(it => renderItem(it, true))}
+                      {renderLines(lines, true)}
                     </div>
                   );
                 })}
@@ -871,7 +995,7 @@ export default function Cart() {
                         {unrebated.length} line{unrebated.length === 1 ? '' : 's'}
                       </span>
                     </div>
-                    {unrebated.map(it => renderItem(it, true))}
+                    {renderLines(unrebated, true)}
                   </div>
                 )}
               </>

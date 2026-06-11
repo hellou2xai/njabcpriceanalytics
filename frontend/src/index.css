@@ -6032,3 +6032,28 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
   color: var(--text-muted); cursor: pointer;
 }
 .products-detail-toggle button.on { background: var(--accent); color: #fff; }
+
+/* ============================================================
+   Cart / List table layout (user request: distributor-portal
+   style aligned columns instead of free-form lines)
+   ============================================================ */
+.cart-table-scroll { overflow-x: auto; }
+.cart-table { min-width: 1080px; }
+.cart-cols, .cart-row-grid {
+  display: grid;
+  grid-template-columns: 48px minmax(190px, 1.7fr) 86px 76px 56px 184px 84px 78px 132px 92px 76px;
+  gap: 8px; align-items: center;
+}
+.cart-cols {
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--text-muted); padding: 8px 0 5px;
+}
+.cart-cell-num { text-align: right; font-variant-numeric: tabular-nums; }
+.cart-cell-code { font-family: var(--font-mono); font-size: 12px; }
+.cart-bestbuy { color: var(--green); font-weight: 700; cursor: help; white-space: nowrap; }
+
+/* Per-line RIP eligibility strip (eBiz-style): blue = add more to qualify,
+   green = a tier is already earned. */
+.cart-rip-elig { margin: 6px 0 0 56px; font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 7px; max-width: 720px; }
+.cart-rip-elig.tone-gap { background: var(--accent-weak); color: var(--accent-strong); }
+.cart-rip-elig.tone-reached { background: var(--win-bg); color: var(--green); }

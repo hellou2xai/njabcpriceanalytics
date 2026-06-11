@@ -1063,6 +1063,12 @@ export interface ListItem {
   id: number; list_id: number; product_name: string; wholesaler: string;
   upc?: string | null; abg_sku?: string | null; unit_volume?: string | null; combo_code?: string | null;
   notes?: string | null; image_url?: string | null;
+  // Catalogue pricing attached server-side from the latest CPL (same data the
+  // cart lines carry), so Lists can show real price columns.
+  unit_qty?: number | string | null; unit_type?: string | null;
+  frontline_case_price?: number | null; frontline_unit_price?: number | null;
+  effective_case_price?: number | null; effective_unit_price?: number | null;
+  total_savings_per_case?: number | null;
   // Latest CPL rip_code for this UPC, attached server-side so the Lists UI
   // can sub-group lines by RIP rebate the same way the cart does.
   rip_code?: string | null;

@@ -198,9 +198,14 @@ export default function Catalog() {
     }),
   });
 
+  // Facets must mirror what the grid SHOWS: when /search spell-corrected (or
+  // AI-corrected) the query, count facets on the corrected term, not the raw
+  // misspelling (which matches nothing and blanked the whole filter panel).
+  const effectiveQ = data?.corrected_query ?? q;
   const { data: facets } = useQuery({
-    queryKey: ['catalog-facets', q, wholesaler, filterKey],
-    queryFn: () => catalog.facets({ q, wholesaler: wholesaler || undefined, ...filterParams }),
+    enabled: !q.trim() || !!data,
+    queryKey: ['catalog-facets', effectiveQ, wholesaler, filterKey],
+    queryFn: () => catalog.facets({ q: effectiveQ, wholesaler: wholesaler || undefined, ...filterParams }),
   });
 
   // Publish the matched-row count so the AI assistant can echo the exact same

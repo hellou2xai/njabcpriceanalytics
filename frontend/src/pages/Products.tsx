@@ -202,10 +202,14 @@ export default function Products() {
     { enabled: showGrid, persist: isAisleView },
   );
 
+  // Facets must mirror what the grid SHOWS: when /search spell-corrected (or
+  // AI-corrected) the query, count facets on the corrected term, not the raw
+  // misspelling (which matches nothing and blanked the whole filter rail).
+  const effectiveQ = data?.corrected_query ?? q;
   const { data: facets } = useCachedQuery(
-    ['products-facets', q, wholesaler, filterKey],
-    () => catalog.facets({ q, wholesaler: wholesaler || undefined, ...filterParams }),
-    { enabled: showGrid, persist: isAisleView },
+    ['products-facets', effectiveQ, wholesaler, filterKey],
+    () => catalog.facets({ q: effectiveQ, wholesaler: wholesaler || undefined, ...filterParams }),
+    { enabled: showGrid && (!q.trim() || !!data), persist: isAisleView },
   );
 
   const items = (data?.items ?? []) as Product[];

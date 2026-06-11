@@ -1890,6 +1890,8 @@ export interface CategoryTrend {
 export interface ComboComponent {
   product_name: string | null;
   upc: string | null;
+  // Bottle size from the CPL (joined by UPC server-side), e.g. '750ML'.
+  unit_volume?: string | null;
   // Set server-side: the parent combo's wholesaler and (for allied) the ABG SKU.
   wholesaler?: string | null;
   abg_sku?: string | null;

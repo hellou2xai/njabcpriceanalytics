@@ -419,13 +419,15 @@ def get_combos(
         df = con.execute(f"""
             WITH cpl_names AS (
                 SELECT wholesaler, edition, upc,
-                       ANY_VALUE(NULLIF(product_name, '')) AS product_name
+                       ANY_VALUE(NULLIF(product_name, '')) AS product_name,
+                       ANY_VALUE(NULLIF(unit_volume, '')) AS unit_volume
                 FROM {cpl_src}
                 WHERE upc IS NOT NULL AND CAST(upc AS VARCHAR) <> ''
                 GROUP BY wholesaler, edition, upc
             )
             SELECT c.wholesaler, c.edition, c.combo_code, c.upc,
                    COALESCE(NULLIF(cpl.product_name, ''), c.product_name) AS product_name,
+                   cpl.unit_volume,
                    c.combo_pack_price, c.qty_per_pack, c.frontline_price_each,
                    c.combo_price_each, c.total_savings,
                    CASE WHEN try_cast(LEFT(c.comments, 10) AS DATE) IS NULL
@@ -484,6 +486,7 @@ def get_combos(
                            "total_savings": _f(r.get("total_savings")), "upc": _s(r.get("upc")),
                            "from_date": _s(r.get("from_date")), "to_date": _s(r.get("to_date"))}
             comp = {"product_name": _s(r.get("product_name")), "upc": _s(r.get("upc")),
+                    "unit_volume": _s(r.get("unit_volume")),
                     "qty_per_pack": _s(r.get("qty_per_pack")),
                     "frontline_price_each": _f(r.get("frontline_price_each")),
                     "combo_price_each": _f(r.get("combo_price_each"))}

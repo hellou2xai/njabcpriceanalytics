@@ -242,6 +242,7 @@ function ComboItemsExpander({ c }: { c: Combo }) {
                 {url
                   ? <a href={url} className="combo-item-name">{m.product_name}</a>
                   : <span className="combo-item-name">{m.product_name ?? 'Unknown item'}</span>}
+                {m.unit_volume && <span className="text-muted"> · {m.unit_volume}</span>}
                 {m.qty_per_pack && <span className="text-muted"> · {m.qty_per_pack}/pack</span>}
                 {m.frontline_price_each != null && (
                   <span className="text-muted"> · reg {$(m.frontline_price_each)}</span>
@@ -412,7 +413,9 @@ function ComboDetailModal({ c, onClose }: { c: Combo; onClose: () => void }) {
                       <tr key={i}>
                         <td>
                           <div style={{ fontWeight: 600 }}>
-                            {comp.product_name}{vintage ? <span className="text-muted"> · '{String(vintage).slice(-2)}</span> : ''}
+                            {comp.product_name}
+                            {comp.unit_volume ? <span className="text-muted"> · {comp.unit_volume}</span> : null}
+                            {vintage ? <span className="text-muted"> · '{String(vintage).slice(-2)}</span> : null}
                           </div>
                           {comp.upc && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{comp.upc}{abgSku(c.wholesaler, comp.abg_sku) ? ` · ${skuLabel(c.wholesaler)} ${comp.abg_sku}` : ''}</div>}
                           {/* The per-line contribution to the bundle totals, so

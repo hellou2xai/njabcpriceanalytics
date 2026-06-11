@@ -121,22 +121,26 @@ function lineRipEligibility(it: CartItem, all: CartItem[]): { text: string; tone
   const unit: 'case' | 'btl' = votes.btl > votes.case ? 'btl' : 'case';
   const have = cluster.reduce((s, x) => s + (unit === 'case' ? (x.qty_cases || 0) : (x.qty_units || 0)), 0);
   const uw = unit === 'case' ? 'case' : 'bottle';
+  const amt = (v: number) => (v % 1 === 0 ? `$${v.toFixed(0)}` : `$${v.toFixed(2)}`);
   const across = rc && cluster.length > 1 ? ` (counts across ${cluster.length} lines on RIP ${rc})` : '';
   const reached = tiers.filter(t => have >= t.qty);
   const ahead = tiers.filter(t => have < t.qty);
+  // Wording mirrors Allied eBiz so it reads familiar:
+  //   "Add 1 or more cases to qualify for the 1 case $12 RIP."
+  //   "Product qualified for the 5 case $500 RIP."
   if (!reached.length) {
     const next = ahead[0];
     const need = next.qty - have;
     return {
       tone: 'gap',
-      text: `Add ${need} ${need === 1 ? '' : 'or more '}${uw}${need === 1 ? '' : 's'} to qualify for the ${next.qty}-${uw} $${next.amt.toFixed(2)} RIP${across}.`,
+      text: `Add ${need} or more ${uw}${need === 1 ? '' : 's'} to qualify for the ${next.qty} ${uw} ${amt(next.amt)} RIP${across}.`,
     };
   }
   const top = reached[reached.length - 1];
-  let text = `✓ Qualifies for the ${top.qty}-${uw} RIP: $${top.amt.toFixed(2)} rebate${across}.`;
+  let text = `Product qualified for the ${top.qty} ${uw} ${amt(top.amt)} RIP${across}.`;
   if (ahead.length) {
     const next = ahead[0];
-    text += ` Add ${next.qty - have} more for the $${next.amt.toFixed(2)} tier.`;
+    text += ` Add ${next.qty - have} more for the ${next.qty} ${uw} ${amt(next.amt)} RIP.`;
   }
   return { tone: 'reached', text };
 }

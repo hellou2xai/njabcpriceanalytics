@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Sparkles, Store, ChevronRight } from 'lucide-react';
 import { catalog, compare } from '../lib/api';
 import type { Product } from '../lib/api';
 import ProductThumb from '../components/ProductThumb';
+import { useCachedQuery } from '../hooks/useCachedQuery';
 import { distributorName, packLabel, priceUnit } from '../lib/distributors';
 import { bottlesPerCase } from '../lib/productSizes';
 import './Home.css';
@@ -47,36 +47,6 @@ const BROWSE: { key: string; label: string }[] = [
   { key: 'Cider', label: 'Cider' },
   { key: 'Non-Alcoholic', label: 'Non-Alcoholic' },
 ];
-
-// The storefront's data only really changes when a new monthly edition is
-// ingested, so cache it hard: localStorage paints the rails instantly on the
-// next visit (even after a reload) and react-query only refetches in the
-// background once the snapshot is older than STALE_MS.
-const STALE_MS = 6 * 60 * 60 * 1000; // 6h
-function useCachedQuery<T>(key: (string | number)[], fn: () => Promise<T>) {
-  const storageKey = `celr-home-cache:${key.join(':')}`;
-  const [seed] = useState(() => {
-    try {
-      const raw = localStorage.getItem(storageKey);
-      return raw ? (JSON.parse(raw) as { t: number; data: T }) : undefined;
-    } catch { return undefined; }
-  });
-  const q = useQuery({
-    queryKey: key,
-    queryFn: fn,
-    staleTime: STALE_MS,
-    gcTime: 24 * 60 * 60 * 1000,
-    refetchOnWindowFocus: false,
-    initialData: seed?.data,
-    initialDataUpdatedAt: seed?.t,
-  });
-  useEffect(() => {
-    if (q.data === undefined || q.isPlaceholderData) return;
-    try { localStorage.setItem(storageKey, JSON.stringify({ t: Date.now(), data: q.data })); }
-    catch { /* quota exceeded: skip persisting, in-memory cache still works */ }
-  }, [q.data, q.isPlaceholderData, storageKey]);
-  return q;
-}
 
 const money = (v?: number | null) => (v == null ? null : `$${Number(v).toFixed(2)}`);
 const detailUrl = (p: Product) => {

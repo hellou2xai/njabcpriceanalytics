@@ -9,6 +9,7 @@ import { useResultCount } from '../lib/resultCount';
 import { loadCart, saveCart, type CartState } from '../components/CatalogTable';
 import ProductsFilterRail from '../components/ProductsFilterRail';
 import ProductsGrid, { countProductGroups } from '../components/ProductsGrid';
+import { useCachedQuery } from '../hooks/useCachedQuery';
 import { emptyCatalogFilters, countActiveFilters } from '../components/CatalogFilterPanel';
 import type { CatalogFilters } from '../components/CatalogFilterPanel';
 import type { Product } from '../lib/api';
@@ -161,29 +162,40 @@ export default function Products() {
   })();
   const pickSuggestion = (name: string) => { setQ(name); setQSugg(name); setCommitted(name); setPage(0); };
 
-  const { data, isLoading } = useQuery({
-    enabled: showGrid,
-    queryKey: ['products', q, wholesaler, sort, order, page, limit, trackedOnly, filterKey, region, varietal],
-    queryFn: () => catalog.search({
+  // A pure category aisle (Home View-all / chip click: one category, first
+  // page, default sort, nothing else active) is the high-traffic entry point,
+  // so those snapshots persist to localStorage for an instant paint. Other
+  // combinations (keystrokes, deep filters, page > 1) stay in-memory only.
+  const isAisleView = filters.categories.length === 1 && countActiveFilters(filters) === 1
+    && !q.trim() && page === 0 && sort === 'product_name' && order === 'asc'
+    && !wholesaler && !region && !varietal && !trackedOnly;
+
+  const { data, isLoading } = useCachedQuery(
+    ['products', q, wholesaler, sort, order, page, limit, trackedOnly, filterKey, region, varietal],
+    () => catalog.search({
       q,
       wholesaler: wholesaler || undefined,
       sort, order,
       limit, offset: page * limit,
       ...filterParams,
       tracked_only: trackedOnly || undefined,
+      // Storefront browsing: rows that have a product image rank first when
+      // sorting by name (relevance still wins for typed searches).
+      images_first: sort === 'product_name' ? true : undefined,
       // The collapsed cards only need price + deal flags, not the full tier
       // ladder — so we skip include_tiers here (it makes the search ~8x slower).
       // Tiers are fetched per product on expand and on the detail page.
       region: region || undefined,
       varietal: varietal || undefined,
     }),
-  });
+    { enabled: showGrid, persist: isAisleView },
+  );
 
-  const { data: facets } = useQuery({
-    enabled: showGrid,
-    queryKey: ['products-facets', q, wholesaler, filterKey],
-    queryFn: () => catalog.facets({ q, wholesaler: wholesaler || undefined, ...filterParams }),
-  });
+  const { data: facets } = useCachedQuery(
+    ['products-facets', q, wholesaler, filterKey],
+    () => catalog.facets({ q, wholesaler: wholesaler || undefined, ...filterParams }),
+    { enabled: showGrid, persist: isAisleView },
+  );
 
   const items = (data?.items ?? []) as Product[];
   const total = data?.total ?? 0;

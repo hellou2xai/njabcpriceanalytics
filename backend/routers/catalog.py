@@ -672,6 +672,7 @@ def search_products(
     offset: int = Query(0, ge=0),
     include_tiers: bool = Query(False, description="If true, include discount_tiers and rip_tiers arrays per item"),
     group_by_rip: bool = Query(False, description="If true, attach rip_group_code (from the RIP sheet) per row and sort by it so products sharing a rebate cluster together"),
+    images_first: bool = Query(False, description="If true, products that have an enrichment image sort before those without (storefront category browsing). Sits under text-relevance ranking and RIP clustering, above the user's sort field."),
     as_of: Optional[str] = Query(None, description="Reference date (YYYY-MM-DD, default today ET) used to classify RIP windows and compute the date-aware 'live now' RIP price overlay per row. Does not change the grid's sort/filter; only annotates each row + tier."),
     user: Optional[dict] = Depends(get_optional_user),
 ):
@@ -1299,6 +1300,22 @@ def search_products(
         # brand-only match (e.g. the Moet Hennessy portfolio) never outranks the
         # real product. Only when the user hasn't picked an explicit sort.
         order_by = f"{sort_col} {sort_dir}"
+        if images_first:
+            # Sort key only: the actual image URL is attached per page later
+            # (attach_enrichment_image), so image presence must be tested in
+            # SQL via the normalised-UPC enrichment table. Skipped quietly
+            # when the table is absent (parquet dev mode before a load).
+            has_enrich_table = bool(con.execute(
+                "SELECT 1 FROM information_schema.tables "
+                "WHERE table_name = 'product_enrichment'"
+            ).fetchone())
+            if has_enrich_table:
+                order_by = (
+                    "EXISTS (SELECT 1 FROM product_enrichment _img "
+                    "WHERE _img.upc = LTRIM(CAST(upc AS VARCHAR), '0') "
+                    "AND _img.image_url IS NOT NULL AND _img.image_url <> '') DESC, "
+                    + order_by
+                )
         if q and sort == "product_name":
             order_by = f"{rel_expr} DESC, {order_by}"
 

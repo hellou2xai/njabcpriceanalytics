@@ -109,7 +109,10 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
           </span>
         )}
         {kind === 'qd' && off != null && off > 0.005 && (
-          <span className="prod-deal-off"> (−${off.toFixed(2)})</span>
+          <span className="prod-deal-off"
+            title="Total discount off the list price at this tier, per case.">
+            {' '}(−${off.toFixed(2)}/{csWord})
+          </span>
         )}
         <PartialFlag t={t} />
       </div>

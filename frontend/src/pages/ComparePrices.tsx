@@ -213,7 +213,10 @@ function LadderPanel({ slugs, params, onOpen }: {
                     <TierBadge kind={t.source === 'rip' ? 'rip' : 'qd'} />
                     {' '}Buy {t.qty} {t.unit} → <strong>{money(t.price_after)}</strong>/cs
                     {t.save_per_case != null && (
-                      <span className="cmp-ladder-off"> (−{money(t.save_per_case)})</span>
+                      <span className="cmp-ladder-off"
+                        title="Total discount off the list price at this tier, per case.">
+                        {' '}(−{money(t.save_per_case)}/cs)
+                      </span>
                     )}
                     {t.window_status === 'active' && (
                       <span className="cmp-ladder-window"

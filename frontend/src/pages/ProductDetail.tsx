@@ -12,6 +12,7 @@ import { QtyStepper, loadCart, saveCart, type CartState } from '../components/Ca
 import PriceSparklines from '../components/PriceSparklines';
 import QuantityPriceCurve from '../components/QuantityPriceCurve';
 import DealTimingSticker, { everyDayFromTiers, type DatedDeal } from '../components/DealTimingSticker';
+import TierBadge from '../components/TierBadge';
 import { buildMonths } from '../lib/promotionsSparkline';
 import { windowBadge, fmtDateRange } from '../lib/dealDates';
 
@@ -191,7 +192,7 @@ function SizeSection({ size, view, cart, updateQty, primaryName, alt }: {
             <div className="pd-deals-body">
               {/* These are quantity-DISCOUNT tiers (QD), not just "quantity". */}
               <div className="pd-deals-label">
-                <span className="prod-deal-badge prod-deal-qd">QD</span> Quantity Discount
+                <TierBadge kind="qd" /> Quantity Discount
               </div>
               {discTiers.map((t, i) => {
                 const tb = btl(t.price_after) ?? t.btl_price_after;

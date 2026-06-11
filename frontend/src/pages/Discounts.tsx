@@ -7,6 +7,8 @@ import TrackedOnlyToggle from '../components/TrackedOnlyToggle';
 import PromotionsToolbar from '../components/PromotionsToolbar';
 import PromotionsTable, { type PromotionRow } from '../components/PromotionsTable';
 import { ContextMenuProvider } from '../components/ContextMenu';
+import { ErrorState, EmptyState } from '../components/DataState';
+import DataLoading from '../components/DataLoading';
 import { useProductQuickView } from '../components/ProductQuickView';
 import { ALL_DISTRIBUTORS } from '../lib/distributors';
 import type { Product } from '../lib/api';
@@ -27,7 +29,7 @@ export default function Discounts() {
   useEffect(() => { localStorage.setItem('topdisc-view', view); }, [view]);
   const { open } = useProductQuickView();
 
-  const { data } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['discounts', wholesaler, productType, minDiscount, sort],
     queryFn: () => deals.discounts({
       wholesaler: wholesaler || undefined,
@@ -120,6 +122,13 @@ export default function Discounts() {
             noun="discounts"
           />
 
+          {isError ? (
+            <ErrorState retry={() => refetch()} />
+          ) : isLoading ? (
+            <DataLoading label="Loading discounts..." />
+          ) : items.length === 0 ? (
+            <EmptyState title="No products match these filters">Try broadening or clearing your filters.</EmptyState>
+          ) : (
           <ContextMenuProvider onView={open}>
             {view === 'cards' ? (
               <div className="empty" style={{ padding: 30, textAlign: 'center' }}>
@@ -134,6 +143,7 @@ export default function Discounts() {
               />
             )}
           </ContextMenuProvider>
+          )}
         </div>
       </div>
     </div>

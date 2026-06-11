@@ -19,6 +19,8 @@ import { AI_EXPLAINERS_ENABLED } from '../lib/flags';
 import VintageSticker from '../components/VintageSticker';
 import { useProductQuickView } from '../components/ProductQuickView';
 import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
+import { ErrorState, EmptyState } from '../components/DataState';
+import DataLoading from '../components/DataLoading';
 
 const money = (v?: number | null) => (v == null ? '-' : `$${Number(v).toFixed(2)}`);
 const pct = (v?: number | null, sign = false) => v == null ? '-' : `${sign && v > 0 ? '+' : ''}${v.toFixed(1)}%`;
@@ -88,7 +90,7 @@ export default function PriceMovers({ direction }: Props) {
   const [view, setView] = useState<'cards' | 'table'>(() => (localStorage.getItem('pm-view') as 'cards' | 'table') || 'cards');
   useEffect(() => { localStorage.setItem('pm-view', view); }, [view]);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['price-movers', direction, wholesaler, validity],
     queryFn: () => analytics.priceMovers({ direction, wholesaler: wholesaler || undefined, validity, limit: 2000 }),
   });
@@ -279,6 +281,11 @@ export default function PriceMovers({ direction }: Props) {
             onPageChange={setPage}
           />
 
+          {isError ? (
+            <ErrorState retry={() => refetch()} />
+          ) : isLoading ? (
+            <DataLoading label={isDrop ? 'Loading price drops…' : 'Loading price increases…'} />
+          ) : (
           <ContextMenuProvider onView={open}>
             {view === 'cards' ? (
               <div className="deal-cards">
@@ -289,6 +296,10 @@ export default function PriceMovers({ direction }: Props) {
                   <div className="empty" style={{ padding: 30, textAlign: 'center' }}>No products match these filters.</div>
                 )}
               </div>
+            ) : items.length === 0 ? (
+              <EmptyState title={isDrop ? 'No price drops match these filters' : 'No price increases match these filters'}>
+                Try broadening or clearing your filters.
+              </EmptyState>
             ) : (
               <PromotionsTable
                 rows={items.map(r => moverToPromotionRow(r, isDrop))}
@@ -298,6 +309,7 @@ export default function PriceMovers({ direction }: Props) {
               />
             )}
           </ContextMenuProvider>
+          )}
           <PromotionsPager page={page} total={items.length} limit={limit} onPageChange={setPage} view={view} />
         </div>
       </div>

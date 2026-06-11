@@ -115,7 +115,9 @@ export default function CartFab({ cartCount }: { cartCount: number }) {
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('/cart'); } }}
       className={`cart-fab ${active ? 'active' : ''}`}
       style={{
-        position: 'fixed', left: pos.x, top: pos.y, zIndex: 1200,
+        // z-index lives in CSS (.cart-fab, var(--zi-fab)); only the dynamic
+        // drag position stays inline.
+        position: 'fixed', left: pos.x, top: pos.y,
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
         width: SIZE, height: SIZE, borderRadius: SIZE / 2,
         background: 'var(--blue, #1f4e8c)', color: '#fff',

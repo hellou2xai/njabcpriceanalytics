@@ -11,6 +11,8 @@ import { ContextMenuProvider } from '../components/ContextMenu';
 import { useProductQuickView } from '../components/ProductQuickView';
 import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
 import type { Product } from '../lib/api';
+import { ErrorState, EmptyState } from '../components/DataState';
+import DataLoading from '../components/DataLoading';
 
 export default function Clearance() {
   const [wholesaler, setWholesaler] = useState('');
@@ -20,7 +22,7 @@ export default function Clearance() {
   const [trackedOnly, setTrackedOnly] = useState(false);
   const { open } = useProductQuickView();
 
-  const { data } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['clearance', wholesaler, limit],
     queryFn: () => deals.clearance({ wholesaler: wholesaler || undefined, limit }),
   });
@@ -87,6 +89,15 @@ export default function Clearance() {
           <span className="search-count">{items.length} items</span>
         </div>
 
+        {isError ? (
+          <ErrorState retry={() => refetch()} />
+        ) : isLoading ? (
+          <DataLoading label="Loading closeouts…" />
+        ) : items.length === 0 ? (
+          <EmptyState title="No closeouts match these filters">
+            Try broadening or clearing your filters.
+          </EmptyState>
+        ) : (
         <ContextMenuProvider onView={open}>
           <SortableTable
             columns={[
@@ -115,6 +126,7 @@ export default function Clearance() {
             onRowClick={r => open(r.product_name, r.wholesaler)}
           />
         </ContextMenuProvider>
+        )}
       </div>
     </FilterSidebar>
   );

@@ -47,6 +47,8 @@ export default function FavoriteButton({ productName, wholesaler, upc, unitVolum
         onClick={handleClick}
         disabled={loading}
         title={match ? 'Remove from watchlist' : 'Add to watchlist'}
+        aria-label={match ? 'Remove from watchlist' : 'Add to watchlist'}
+        aria-pressed={!!match}
       >
         <Star size={16} fill={match ? 'currentColor' : 'none'} />
       </button>

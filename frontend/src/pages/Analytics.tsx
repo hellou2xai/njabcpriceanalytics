@@ -8,6 +8,8 @@ import FavoriteButton from '../components/FavoriteButton';
 import TrackedOnlyToggle from '../components/TrackedOnlyToggle';
 import RowLimitSelect from '../components/RowLimitSelect';
 import { ContextMenuProvider } from '../components/ContextMenu';
+import { ErrorState, EmptyState } from '../components/DataState';
+import DataLoading from '../components/DataLoading';
 import { useProductQuickView } from '../components/ProductQuickView';
 import { distributorName } from '../lib/distributors';
 import { useChartTheme } from '../hooks/useChartTheme';
@@ -59,7 +61,7 @@ function MoversTab({ wholesaler, direction }: { wholesaler: string; direction: s
   const [trackedOnly, setTrackedOnly] = useState(false);
   const { open } = useProductQuickView();
 
-  const { data } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['movers', wholesaler, direction, limit],
     queryFn: () => analytics.priceMovers({ wholesaler: wholesaler || undefined, direction, limit }),
   });
@@ -78,6 +80,9 @@ function MoversTab({ wholesaler, direction }: { wholesaler: string; direction: s
         <TrackedOnlyToggle enabled={trackedOnly} onChange={setTrackedOnly} />
         <RowLimitSelect value={limit} onChange={setLimit} />
       </div>
+      {isError ? <ErrorState retry={() => refetch()} /> : isLoading ? <DataLoading /> : items.length === 0 ? (
+        <EmptyState title="No products match these filters">Try broadening or clearing your filters.</EmptyState>
+      ) : (
       <ContextMenuProvider onView={open}>
         <SortableTable
           columns={[
@@ -98,6 +103,7 @@ function MoversTab({ wholesaler, direction }: { wholesaler: string; direction: s
           onRowClick={r => open(r.product_name, r.wholesaler)}
         />
       </ContextMenuProvider>
+      )}
     </>
   );
 }
@@ -105,7 +111,7 @@ function MoversTab({ wholesaler, direction }: { wholesaler: string; direction: s
 function LifecycleTab({ wholesaler, eventType }: { wholesaler: string; eventType: string }) {
   const [limit, setLimit] = useState(100);
 
-  const { data } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['lifecycle', wholesaler, eventType, limit],
     queryFn: () => analytics.lifecycle({ wholesaler: wholesaler || undefined, event_type: eventType, limit }),
   });
@@ -115,6 +121,9 @@ function LifecycleTab({ wholesaler, eventType }: { wholesaler: string; eventType
       <div className="toolbar">
         <RowLimitSelect value={limit} onChange={setLimit} />
       </div>
+      {isError ? <ErrorState retry={() => refetch()} /> : isLoading ? <DataLoading /> : (data?.length ?? 0) === 0 ? (
+        <EmptyState title="No products match these filters">Try broadening or clearing your filters.</EmptyState>
+      ) : (
       <SortableTable
         columns={[
           { key: 'product_name', label: 'Product' },
@@ -126,6 +135,7 @@ function LifecycleTab({ wholesaler, eventType }: { wholesaler: string; eventType
         data={data ?? []}
         exportName="lifecycle"
       />
+      )}
     </>
   );
 }
@@ -134,7 +144,7 @@ function CrossSourceTab() {
   const [q, setQ] = useState('');
   const [limit, setLimit] = useState(50);
 
-  const { data } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['cross-source', q, limit],
     queryFn: () => analytics.crossSource({ product_name: q || undefined, limit }),
   });
@@ -145,6 +155,9 @@ function CrossSourceTab() {
       <div className="toolbar">
         <RowLimitSelect value={limit} onChange={setLimit} />
       </div>
+      {isError ? <ErrorState retry={() => refetch()} /> : isLoading ? <DataLoading /> : (data?.length ?? 0) === 0 ? (
+        <EmptyState title="No products match these filters">Try broadening or clearing your filters.</EmptyState>
+      ) : (
       <SortableTable
         columns={[
           { key: 'product_name_a', label: 'Product A' },
@@ -161,6 +174,7 @@ function CrossSourceTab() {
         data={data ?? []}
         exportName="cross-source"
       />
+      )}
     </>
   );
 }
@@ -168,7 +182,7 @@ function CrossSourceTab() {
 function CategoryTrendsTab({ wholesaler }: { wholesaler: string }) {
   const ct = useChartTheme();
 
-  const { data } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['category-trends', wholesaler],
     queryFn: () => analytics.categoryTrends({ wholesaler: wholesaler || undefined }),
   });
@@ -177,6 +191,9 @@ function CategoryTrendsTab({ wholesaler }: { wholesaler: string }) {
 
   return (
     <>
+      {isError ? <ErrorState retry={() => refetch()} /> : isLoading ? <DataLoading /> : (data?.length ?? 0) === 0 ? (
+        <EmptyState title="No category trends yet">Try clearing the distributor filter, or check back after the next edition loads.</EmptyState>
+      ) : (<>
       <ResponsiveContainer width="100%" height={300}>
         <BarChart data={latest} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
           <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
@@ -199,6 +216,7 @@ function CategoryTrendsTab({ wholesaler }: { wholesaler: string }) {
         data={data ?? []}
         exportName="category-trends"
       />
+      </>)}
     </>
   );
 }

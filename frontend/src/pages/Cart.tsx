@@ -11,6 +11,8 @@ import { useProductQuickView } from '../components/ProductQuickView';
 import { useDialog } from '../components/Dialog';
 import { shortUnit } from '../components/CatalogTable';
 import { distributorName, abgSku, skuLabel, priceUnit, perUnitAbbr, isKegUnit } from '../lib/distributors';
+import { ErrorState, EmptyState } from '../components/DataState';
+import DataLoading from '../components/DataLoading';
 
 function Stepper({ label, value, onChange }: { label: string; value: number; onChange: (n: number) => void }) {
   return (
@@ -214,7 +216,7 @@ export default function Cart() {
     if (on) localStorage.setItem(RIP_GROUP_KEY, '1');
     else localStorage.removeItem(RIP_GROUP_KEY);
   };
-  const { data } = useQuery({ queryKey: ['cart'], queryFn: cartApi.get });
+  const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['cart'], queryFn: cartApi.get });
   const { data: reps } = useQuery({ queryKey: ['sales-reps'], queryFn: repsApi.list });
   const items = data?.items ?? [];
   const groupNotes = data?.group_notes ?? {};
@@ -486,8 +488,10 @@ export default function Cart() {
 
       <AddToCartSearch onAdd={p => add.mutate(p)} adding={add.isPending} />
 
-      {active.length === 0 && saved.length === 0 && (
-        <p style={{ color: 'var(--text-muted)', marginTop: 16 }}>Your cart is empty. Search above, or use the + button / right-click anywhere.</p>
+      {isLoading && <DataLoading label="Loading your cart…" />}
+      {isError && <ErrorState retry={() => refetch()} />}
+      {!isLoading && !isError && active.length === 0 && saved.length === 0 && (
+        <EmptyState title="Your cart is empty">Add products from the Catalog or any price page. You can also search above, use the + button, or right-click anywhere.</EmptyState>
       )}
 
       {groups.map(([wholesaler, groupItems]) => {

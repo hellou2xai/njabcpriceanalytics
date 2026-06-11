@@ -7,6 +7,8 @@ import type { Price360Offer } from '../lib/api';
 import { distributorName, priceUnitWord, perUnitNoun, isKegUnit } from '../lib/distributors';
 import ProductSearchBox from '../components/ProductSearchBox';
 import RowActions from '../components/RowActions';
+import { ErrorState } from '../components/DataState';
+import DataLoading from '../components/DataLoading';
 import './ComparePrices.css';
 import './Price360.css';
 
@@ -49,11 +51,11 @@ function OfferCard({ offer, onProduct, tie, unitVolume, unitQty, unitType }: {
         {/* headline: net cost dominant */}
         <div className="p360-headline">
           <span className="p360-net">{money(o.net_case)}<span className="p360-unit">/{caseWord}</span></span>
+          {!keg && <span className="p360-netbtl">{money(o.net_btl)}<span className="p360-unit">/{unitNoun} net</span></span>}
           {o.frontline_case != null && o.frontline_case !== o.net_case && (
             <span className="p360-front">{money(o.frontline_case)}</span>
           )}
         </div>
-        {!keg && <div className="p360-netbtl">{money(o.net_btl)}/{unitNoun} net</div>}
         {/* secondary: savings (never dominant) */}
         {o.savings_case > 0 && (
           <div className="p360-savings">saves {money(o.savings_case)}/cs · {pct(o.savings_pct)} vs frontline</div>
@@ -173,7 +175,7 @@ export default function Price360() {
     if (next.toString() !== params.toString()) setSearchParams(next, { replace: true });
   }, [match, reach, size]);
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['price360', match, reach, size],
     queryFn: () => compare.price360({ match, reach_mode: reach, size: size || undefined }),
     enabled: !!match,
@@ -223,8 +225,8 @@ export default function Price360() {
         </div>
       )}
 
-      {!!match && isLoading && <p>Building the 360 label…</p>}
-      {!!error && <p className="text-red">Failed: {String((error as Error).message)}</p>}
+      {!!match && isLoading && <DataLoading label="Building the 360 label…" />}
+      {!!match && !!error && <ErrorState message={String((error as Error).message)} retry={() => refetch()} />}
       {data && !data.found && <div className="cmp-empty">{data.note ?? 'No product matched.'}</div>}
 
       {data?.found && data.product && (

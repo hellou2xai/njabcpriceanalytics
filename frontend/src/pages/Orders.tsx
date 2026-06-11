@@ -5,6 +5,8 @@ import { orders, salesReps } from '../lib/api';
 import type { Order } from '../lib/api';
 import SortableTable from '../components/SortableTable';
 import OrderLinesView from './OrderLinesView';
+import { ErrorState, EmptyState } from '../components/DataState';
+import DataLoading from '../components/DataLoading';
 import { distributorName, DISTRIBUTOR_NAMES } from '../lib/distributors';
 
 const STATUS_FILTERS = [
@@ -27,7 +29,7 @@ export default function OrdersPage() {
   const [view, setView] = useState<'list' | 'lines'>('list');
   const status = params.get('status') ?? '';
 
-  const { data } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['orders', status],
     queryFn: () => orders.list(status || undefined),
   });
@@ -114,6 +116,14 @@ export default function OrdersPage() {
 
       {view === 'lines' ? (
         <OrderLinesView status={status} />
+      ) : isError ? (
+        <ErrorState retry={() => refetch()} />
+      ) : isLoading ? (
+        <DataLoading label="Loading orders..." />
+      ) : (data ?? []).length === 0 ? (
+        status
+          ? <EmptyState title={`No ${active.label.toLowerCase()} orders`}>Try a different status filter, or create a new order above.</EmptyState>
+          : <EmptyState title="No orders yet">Add products to your cart and send them to a sales rep to start an order.</EmptyState>
       ) : (
       <>
       <div

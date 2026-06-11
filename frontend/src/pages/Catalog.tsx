@@ -4,6 +4,7 @@ import { useSearchParams, useLocation } from 'react-router-dom';
 import { catalog, deals } from '../lib/api';
 import WholesalerFilter from '../components/WholesalerFilter';
 import RowLimitSelect from '../components/RowLimitSelect';
+import ProductSearchBox from '../components/ProductSearchBox';
 import { useResultCount } from '../lib/resultCount';
 import { useProductQuickView } from '../components/ProductQuickView';
 import CatalogTable, { loadCart, saveCart, type CartState } from '../components/CatalogTable';
@@ -236,7 +237,12 @@ export default function Catalog() {
       </div>
 
       <div className="search-bar">
-        <input type="text" placeholder="Search products, UPC, item # or RIP code..." value={q} onChange={e => { setQ(e.target.value); setPage(0); }} />
+        <ProductSearchBox
+          value={q}
+          onChange={v => { setQ(v); setPage(0); }}
+          onSelect={p => { setQ(p.product_name); setPage(0); }}
+          placeholder="Search products, UPC, item # or RIP code..."
+        />
         {/* RIP-code pinpoint filter, sitting on the top filter row (the user
             asked for it here, not in a side panel). Sets the same param the
             assistant's 'Open in Catalog' deep-link uses, so a typed code and

@@ -10,6 +10,8 @@ import ProductThumb from '../components/ProductThumb';
 import DealSparkline from '../components/DealSparkline';
 import { distributorName, abgSku, skuLabel } from '../lib/distributors';
 import { useDialog } from '../components/Dialog';
+import { ErrorState, EmptyState } from '../components/DataState';
+import DataLoading from '../components/DataLoading';
 
 const LIST_RIP_GROUP_KEY = 'celr_lists_group_by_rip';
 function ripHueLocal(code: string): number {
@@ -22,7 +24,7 @@ export default function Lists() {
   const qc = useQueryClient();
   const { confirm, promptText } = useDialog();
   const { open } = useProductQuickView();
-  const { data: lists } = useQuery({ queryKey: ['lists'], queryFn: listsApi.list });
+  const { data: lists, isLoading, isError, refetch } = useQuery({ queryKey: ['lists'], queryFn: listsApi.list });
   const [activeId, setActiveId] = useState<number | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
@@ -121,6 +123,7 @@ export default function Lists() {
         Reusable product lists. Select items and move them to your cart, or delete them.
       </p>
 
+      {isError ? <ErrorState retry={() => refetch()} /> : isLoading ? <DataLoading label="Loading your lists…" /> : (
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         {/* List selector */}
         <div className="panel" data-tour="lists-panel" style={{ padding: 10, minWidth: 200 }}>
@@ -144,7 +147,9 @@ export default function Lists() {
         {/* Selected list */}
         <div className="panel" data-tour="lists-detail" style={{ padding: 12, flex: 1, minWidth: 320 }}>
           {activeId == null ? (
-            <p style={{ color: 'var(--text-muted)' }}>Create or pick a list.</p>
+            (lists ?? []).length === 0
+              ? <EmptyState title="No lists yet">Create a list to group products you want to track or order together.</EmptyState>
+              : <p style={{ color: 'var(--text-muted)' }}>Create or pick a list.</p>
           ) : (
             <>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
@@ -266,6 +271,7 @@ export default function Lists() {
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }

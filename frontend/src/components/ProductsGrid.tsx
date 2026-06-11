@@ -24,6 +24,7 @@ import { QtyStepper, type CartState } from './CatalogTable';
 import PriceSparklines from './PriceSparklines';
 import DealLadder from './DealLadder';
 import DealTimingSticker, { everyDayFromTiers } from './DealTimingSticker';
+import TierBadge from './TierBadge';
 import { buildMonths } from '../lib/promotionsSparkline';
 import { catalog } from '../lib/api';
 import { useProductSizes, bottlesPerCase } from '../lib/productSizes';
@@ -181,8 +182,8 @@ function SizeRow({ size, cart, updateQty, primaryName }: {
       </Link>
       <div className="prod-size-price">
         <span className="prod-size-badges">
-          {size.has_discount && <span className="prod-deal-badge prod-deal-qd">QD</span>}
-          {size.has_rip && <span className="prod-deal-badge prod-deal-rip">RIP</span>}
+          {size.has_discount && <TierBadge kind="qd" />}
+          {size.has_rip && <TierBadge kind="rip" />}
           <DealTimingSticker deals={size.deal_windows ?? []} gaps={size.rip_gaps}
             everyDay={everyDayFromTiers(size.tiers, size.frontline_case_price)} />
           {comboUrl && (

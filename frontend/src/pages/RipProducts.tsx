@@ -11,6 +11,7 @@ import MonthEffectiveSparkline, { type MonthBreakdown } from '../components/Mont
 import { buildMonths } from '../lib/promotionsSparkline';
 import { useProductQuickView } from '../components/ProductQuickView';
 import DataLoading from '../components/DataLoading';
+import { ErrorState, EmptyState } from '../components/DataState';
 import AddToCartButton from '../components/AddToCartButton';
 import AddToListButton from '../components/AddToListButton';
 import { QtyStepper, loadCart, saveCart, buildRipPaletteMap, type CartState } from '../components/CatalogTable';
@@ -143,7 +144,7 @@ function RipProductsImpl() {
     });
   };
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['rip-products', q, ripCode, wholesaler, productType, source, minSave, minGp, tierUnit, size, newNext, sort, order, page, limit],
     queryFn: () => deals.ripProducts({
       q: q || undefined,
@@ -625,7 +626,11 @@ function RipProductsImpl() {
         </div>
       )}
 
-      {isLoading ? <DataLoading /> : (
+      {isLoading ? <DataLoading /> : isError ? (
+        <ErrorState retry={() => refetch()} />
+      ) : items.length === 0 ? (
+        <EmptyState title="No products match these filters">Try broadening or clearing your filters.</EmptyState>
+      ) : (
         <div className="rip-table-wrap">
           <table className="rip-products-table">
             <thead>

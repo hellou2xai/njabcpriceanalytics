@@ -9,6 +9,8 @@ import { DistributorProvider } from './contexts/DistributorContext';
 import { OrderAnalysisProvider } from './contexts/OrderAnalysisContext';
 import { ResultCountProvider } from './lib/resultCount';
 import { DialogProvider } from './components/Dialog';
+import { ToastProvider } from './components/Toast';
+import ErrorBoundary from './components/ErrorBoundary';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import FeedbackWidget, { BetaBadge } from './components/FeedbackWidget';
 import Layout from './components/Layout';
@@ -18,7 +20,6 @@ import Catalog from './pages/Catalog';
 import Products from './pages/Products';
 import WhatsNew from './pages/WhatsNew';
 import ProductDetail from './pages/ProductDetail';
-import CatalogFontTest from './pages/CatalogFontTest';
 import CelarAssistant from './pages/CelarAssistant';
 import NewItems from './pages/NewItems';
 import HowToGuide from './pages/HowToGuide';
@@ -123,6 +124,7 @@ function AuthenticatedApp() {
       <BrowserRouter>
         <WebPriceSearchProvider>
         <ContextMenuProvider>
+        <ErrorBoundary>
         <Routes>
           <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<Privacy />} />
@@ -133,7 +135,6 @@ function AuthenticatedApp() {
             <Route path="/products" element={<Products />} />
             <Route path="/whats-new" element={<WhatsNew />} />
             <Route path="/product" element={<ProductDetail />} />
-            <Route path="/admin/catalog-font-test" element={<CatalogFontTest />} />
             <Route path="/assistant" element={<CelarAssistant />} />
             <Route path="/new-items" element={<NewItems />} />
             <Route path="/how-to-guide" element={<HowToGuide />} />
@@ -182,6 +183,7 @@ function AuthenticatedApp() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>
+        </ErrorBoundary>
         </ContextMenuProvider>
         </WebPriceSearchProvider>
       </BrowserRouter>
@@ -198,8 +200,12 @@ function AuthenticatedApp() {
 export default function App() {
   return (
     <AuthProvider>
-      <AuthenticatedApp />
-      <CookieConsent />
+      <ToastProvider>
+        <ErrorBoundary>
+          <AuthenticatedApp />
+        </ErrorBoundary>
+        <CookieConsent />
+      </ToastProvider>
     </AuthProvider>
   );
 }

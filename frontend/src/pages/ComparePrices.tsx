@@ -2,11 +2,13 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Zap, Scale, Clock, Download, Search } from 'lucide-react';
+import { ChevronDown, ChevronRight, Zap, Scale, Clock, Download } from 'lucide-react';
 import { compare, catalog } from '../lib/api';
 import type { CatalogTier, CompareLadder } from '../lib/api';
 import { distributorName, perUnitAbbr } from '../lib/distributors';
 import RowActions from '../components/RowActions';
+import ProductSearchBox from '../components/ProductSearchBox';
+import TierBadge from '../components/TierBadge';
 import './ComparePrices.css';
 
 const money = (v?: number | null) => (v == null ? '–' : `$${Number(v).toFixed(2)}`);
@@ -208,9 +210,7 @@ function LadderPanel({ slugs, params, onOpen }: {
                     deal that ENDS this month, and label one that hasn't started */}
                 {(lad.tiers ?? []).filter(t => t.window_status !== 'expired').map((t: CatalogTier, i: number) => (
                   <div key={i} className={`cmp-ladder-line${t.window_status === 'upcoming' ? ' cmp-ladder-soon' : ''}`}>
-                    <span className={`prod-deal-badge ${t.source === 'rip' ? 'prod-deal-rip' : 'prod-deal-qd'}`}>
-                      {t.source === 'rip' ? 'RIP' : 'QD'}
-                    </span>
+                    <TierBadge kind={t.source === 'rip' ? 'rip' : 'qd'} />
                     {' '}Buy {t.qty} {t.unit} → <strong>{money(t.price_after)}</strong>/cs
                     {t.save_per_case != null && (
                       <span className="cmp-ladder-off"> (−{money(t.save_per_case)})</span>
@@ -493,16 +493,12 @@ export default function ComparePrices() {
 
           {/* ---- filters ---- */}
           <div className="cmp-filters">
-            <div className="cmp-search">
-              <Search size={15} className="cmp-search-icon" />
-              <input
-                className="cmp-search-input"
-                type="text"
-                placeholder="Search product, brand or UPC…"
-                value={q}
-                onChange={e => { setQ(e.target.value); setShown(pageSize); }}
-              />
-            </div>
+            <ProductSearchBox
+              value={q}
+              onChange={v => { setQ(v); setShown(pageSize); }}
+              onSelect={p => { setQ(p.product_name); setShown(pageSize); }}
+              placeholder="Search product, brand or UPC…"
+            />
             <select value={ptype} onChange={e => setPtype(e.target.value)}>
               <option value="">All categories</option>
               {types.map(t => <option key={t} value={t}>{t}</option>)}

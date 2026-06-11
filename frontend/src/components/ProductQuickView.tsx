@@ -9,6 +9,7 @@ import FavoriteButton from './FavoriteButton';
 import ProductThumb from './ProductThumb';
 import AddToCartButton from './AddToCartButton';
 import { distributorName, abgSku, skuLabel, packLabel, containerTitle, perUnitAbbr } from '../lib/distributors';
+import { useModalFocus } from './useModalFocus';
 import { windowBadge } from '../lib/dealDates';
 import { AI_EXPLAINERS_ENABLED } from '../lib/flags';
 import type { TierWindow } from '../lib/api';
@@ -113,6 +114,10 @@ function QuickViewModal({
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const dragRef = useRef<{ sx: number; sy: number; bx: number; by: number } | null>(null);
   useEffect(() => { setDragOffset({ x: 0, y: 0 }); }, [productName, wholesaler]);  // recenter on new product
+  // Focus lands inside on open (so Escape works immediately), Tab stays inside,
+  // and focus returns to the opening row on close.
+  const boxRef = useRef<HTMLDivElement>(null);
+  useModalFocus(boxRef, true);
   const onDragDown = (e: React.PointerEvent) => {
     dragRef.current = { sx: e.clientX, sy: e.clientY, bx: dragOffset.x, by: dragOffset.y };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -269,7 +274,8 @@ function QuickViewModal({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()} onKeyDown={e => e.key === 'Escape' && onClose()}
+      <div className="modal" role="dialog" aria-modal="true" ref={boxRef} tabIndex={-1}
+           onClick={e => e.stopPropagation()} onKeyDown={e => e.key === 'Escape' && onClose()}
            style={{ transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)` }}>
         <div className="modal-drag-handle" title="Drag to move"
              onPointerDown={onDragDown} onPointerMove={onDragMove} onPointerUp={onDragUp}>

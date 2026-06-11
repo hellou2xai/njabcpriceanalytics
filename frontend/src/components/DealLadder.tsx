@@ -16,6 +16,7 @@
  * so there is exactly one place that turns canonical tiers into UI.
  */
 import type { MonthBreakdown, RipTier } from './MonthEffectiveSparkline';
+import TierBadge from './TierBadge';
 import { windowBadge, fmtDateRange } from '../lib/dealDates';
 import { priceUnit, perUnitAbbr, isKegUnit } from '../lib/distributors';
 
@@ -98,7 +99,7 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
     const ripSave = kind === 'rip' ? (t.ripOnlySave ?? null) : null;
     return (
       <div key={`${kind}${i}`} className="prod-deal-line">
-        <span className={`prod-deal-badge prod-deal-${kind}`}>{kind === 'qd' ? 'QD' : 'RIP'}</span>{' '}
+        <TierBadge kind={kind} />{' '}
         Buy {buyLabel(t)} → <strong>${t.eff.toFixed(2)}/{csWord}</strong>
         {b != null && !keg && <span className="prod-deal-btl"> · ${b.toFixed(2)}/{unitNoun}</span>}
         {kind === 'rip' && ripSave != null && ripSave > 0.005 && (

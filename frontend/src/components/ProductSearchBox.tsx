@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Search } from 'lucide-react';
 import { catalog } from '../lib/api';
@@ -34,6 +34,7 @@ export default function ProductSearchBox({ value, onChange, onSelect, onSubmit, 
   const [debounced, setDebounced] = useState(value);
   const [hi, setHi] = useState(-1);
   const ref = useRef<HTMLDivElement>(null);
+  const listId = useId();
 
   useEffect(() => { const t = setTimeout(() => setDebounced(value), 180); return () => clearTimeout(t); }, [value]);
   useEffect(() => {
@@ -72,6 +73,12 @@ export default function ProductSearchBox({ value, onChange, onSelect, onSubmit, 
         value={value}
         placeholder={placeholder}
         autoFocus={autoFocus}
+        role="combobox"
+        aria-expanded={open && items.length > 0}
+        aria-controls={listId}
+        aria-autocomplete="list"
+        aria-activedescendant={hi >= 0 ? `${listId}-${hi}` : undefined}
+        aria-label={placeholder || 'Search products'}
         onChange={e => { onChange(e.target.value); setOpen(true); setHi(-1); }}
         onFocus={() => setOpen(true)}
         onKeyDown={e => {
@@ -84,9 +91,10 @@ export default function ProductSearchBox({ value, onChange, onSelect, onSubmit, 
         }}
       />
       {open && items.length > 0 && (
-        <ul className="psb-list">
+        <ul className="psb-list" role="listbox" id={listId}>
           {items.map((it, i) => (
             <li key={i} className={`psb-item${i === hi ? ' psb-hi' : ''}`}
+                role="option" id={`${listId}-${i}`} aria-selected={i === hi}
                 onMouseEnter={() => setHi(i)} onMouseDown={e => { e.preventDefault(); choose(it); }}>
               <span className="psb-name">{it.p.product_name}</span>
               <span className="psb-meta">

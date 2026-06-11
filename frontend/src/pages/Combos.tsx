@@ -9,6 +9,8 @@ import { distributorName, ALL_DISTRIBUTORS, abgSku, skuLabel } from '../lib/dist
 import { X, ShoppingCart, Check } from 'lucide-react';
 import { QtyStepper } from '../components/CatalogTable';
 import AddToListButton from '../components/AddToListButton';
+import { ErrorState, EmptyState } from '../components/DataState';
+import DataLoading from '../components/DataLoading';
 
 const $ = (v: number | null | undefined, d = 2) =>
   v == null ? '—' : `$${Number(v).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d })}`;
@@ -498,7 +500,7 @@ export default function Combos() {
   const [limit, setLimit] = useState(100);
   const [detailCombo, setDetailCombo] = useState<Combo | null>(null);
 
-  const { data } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['combos', wholesaler, q],
     // Fetch all combos; the row-limit below pages them client-side.
     queryFn: () => deals.combos({ wholesaler: wholesaler || undefined, q: q || undefined, limit: 100000 }),
@@ -584,6 +586,15 @@ export default function Combos() {
           </div>
         )}
 
+        {isError ? (
+          <ErrorState retry={() => refetch()} />
+        ) : isLoading ? (
+          <DataLoading label="Loading combo deals…" />
+        ) : items.length === 0 ? (
+          <EmptyState title="No combos match these filters">
+            Try broadening or clearing your filters.
+          </EmptyState>
+        ) : (
         <SortableTable
           columns={[
             { key: 'product_name', label: 'Combo', sortable: true,
@@ -675,6 +686,7 @@ export default function Combos() {
           onRowClick={r => setDetailCombo(r)}
           cardView
         />
+        )}
         {detailCombo && <ComboDetailModal c={detailCombo} onClose={() => setDetailCombo(null)} />}
       </div>
     </FilterSidebar>

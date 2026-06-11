@@ -4,6 +4,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { orders, catalog, salesReps } from '../lib/api';
 import type { OrderLine, OrderRipTier, Product, SubmitResult } from '../lib/api';
 import { useProductQuickView } from '../components/ProductQuickView';
+import { ErrorState, EmptyState } from '../components/DataState';
+import DataLoading from '../components/DataLoading';
 import { distributorName, DISTRIBUTOR_NAMES, abgSku, skuLabel } from '../lib/distributors';
 import { trackAction } from '../lib/activityTracker';
 import { windowBadge } from '../lib/dealDates';
@@ -218,7 +220,7 @@ export default function OrderDetail() {
   const [sendCancellation, setSendCancellation] = useState(true);
 
   // ---- queries ----
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['order', orderId],
     queryFn: () => orders.detail(orderId),
     enabled: !!orderId,
@@ -451,8 +453,16 @@ export default function OrderDetail() {
   }
 
   // ---- loading / error ----
-  if (isLoading) return <div className="page"><p style={{ color: 'var(--text-muted)' }}>Loading order...</p></div>;
-  if (isError || !order) return <div className="page"><p style={{ color: 'var(--red)' }}>Order not found.</p></div>;
+  if (isLoading) return <div className="page"><DataLoading label="Loading order..." /></div>;
+  if (isError) return <div className="page"><ErrorState retry={() => refetch()} /></div>;
+  if (!order) return (
+    <div className="page">
+      <EmptyState title="Order not found"
+        action={<button className="btn btn-secondary" onClick={() => navigate('/orders')}>&larr; Back to Orders</button>}>
+        This order may have been deleted. Head back to Orders to see your current orders.
+      </EmptyState>
+    </div>
+  );
 
   return (
     <div className="page">

@@ -21,6 +21,7 @@ import {
 } from 'recharts';
 import type { CatalogTier } from '../lib/api';
 import { windowBadge, fmtDateRange } from '../lib/dealDates';
+import TierBadge from './TierBadge';
 
 const QD_COLOR = 'var(--accent)';
 const CASE_COLOR = '#2563eb';
@@ -110,7 +111,7 @@ function TierLabel({ t }: { t: CatalogTier }) {
   const range = fmtDateRange(t.from_date, t.to_date);
   return (
     <span>
-      <span className={`prod-deal-badge ${t.source === 'rip' ? 'prod-deal-rip' : 'prod-deal-qd'}`}>{kind}</span>
+      <TierBadge kind={t.source === 'rip' ? 'rip' : 'qd'} label={kind} />
       {' '}Buy {t.qty} {t.unit}
       {t.source === 'rip' && t.amount > 0 && <> · ${t.amount.toFixed(2)} rebate</>}
       {(t.is_time_sensitive || wb) && (

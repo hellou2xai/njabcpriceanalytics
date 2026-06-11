@@ -18,6 +18,8 @@ import {
 import { digest, type DigestCard, type WhatsNew as WhatsNewData } from '../lib/api';
 import ProductThumb from '../components/ProductThumb';
 import PriceSparklines from '../components/PriceSparklines';
+import { ErrorState } from '../components/DataState';
+import DataLoading from '../components/DataLoading';
 import DealTimingSticker from '../components/DealTimingSticker';
 import SavingsAnalysis from '../components/SavingsAnalysis';
 import { buildMonths } from '../lib/promotionsSparkline';
@@ -91,7 +93,7 @@ function Card({ c }: { c: DigestCard }) {
 }
 
 export default function WhatsNew() {
-  const { data, isLoading } = useQuery<WhatsNewData>({ queryKey: ['whats-new'], queryFn: digest.whatsNew });
+  const { data, isLoading, isError, refetch } = useQuery<WhatsNewData>({ queryKey: ['whats-new'], queryFn: digest.whatsNew });
 
   const sectionsPresent = SECTIONS.filter(s => (data?.sections?.[s.key]?.length ?? 0) > 0);
   const totalChanges = sectionsPresent.reduce((n, s) => n + (data!.sections[s.key]?.length ?? 0), 0);
@@ -141,9 +143,10 @@ export default function WhatsNew() {
         </span>
       </div>
 
-      {isLoading && <p className="wn-muted">Loading your digest…</p>}
+      {isLoading && <DataLoading label="Loading your digest…" />}
+      {isError && <ErrorState retry={() => refetch()} />}
 
-      {!isLoading && (data?.tracked_count ?? 0) === 0 && (
+      {!isLoading && !isError && (data?.tracked_count ?? 0) === 0 && (
         <div className="wn-empty">
           <Star size={28} />
           <h3>Start tracking products</h3>
@@ -153,7 +156,7 @@ export default function WhatsNew() {
         </div>
       )}
 
-      {!isLoading && (data?.tracked_count ?? 0) > 0 && totalChanges === 0 && (
+      {!isLoading && !isError && (data?.tracked_count ?? 0) > 0 && totalChanges === 0 && (
         <div className="wn-allclear">
           <Sparkles size={22} /> You’re all caught up — no changes on your tracked items this edition.
         </div>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { catalog } from '../lib/api';
 
@@ -54,8 +54,28 @@ export default function DealSparkline({
   curEdition, nextEdition,
 }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
+  const popRef = useRef<HTMLDivElement | null>(null);
   const [visible, setVisible] = useState(false);
   const [popOpen, setPopOpen] = useState(false);
+  const [popPos, setPopPos] = useState<{ left: number; top: number } | null>(null);
+
+  // Measure-and-clamp before paint (model: MonthEffectiveSparkline). The
+  // popover is position:fixed so the table's overflow-x can never clip it;
+  // above the chip when it fits, below otherwise, always inside the viewport.
+  useLayoutEffect(() => {
+    if (!popOpen) { setPopPos(null); return; }
+    const chip = ref.current, el = popRef.current;
+    if (!chip || !el) return;
+    const M = 8, GUTTER = 28;
+    const r = chip.getBoundingClientRect();
+    const W = el.offsetWidth, H = el.offsetHeight;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    let left = r.left + r.width / 2 - W / 2;
+    left = Math.max(M, Math.min(left, vw - GUTTER - W));
+    let top = r.top - M - H >= M ? r.top - M - H : r.bottom + M;
+    top = Math.max(M, Math.min(top, vh - M - H));
+    setPopPos({ left, top });
+  }, [popOpen]);
 
   useEffect(() => {
     if (!ref.current || visible) return;
@@ -208,7 +228,9 @@ export default function DealSparkline({
       )}
 
       {interactive && popOpen && (pPrev || pCur || pNext) && (
-        <div className="deal-spark-popover" role="dialog" aria-label="Price comparison">
+        <div className="deal-spark-popover" role="dialog" aria-label="Price comparison"
+             ref={popRef}
+             style={popPos ? { left: popPos.left, top: popPos.top } : { left: 0, top: 0, visibility: 'hidden' }}>
           <div className="dsp-row dsp-row-months">
             <div className="dsp-cell">{fmtMonth(pPrev?.edition ?? prevYM(pCur?.edition ?? null))}</div>
             <div className="dsp-arrow" />

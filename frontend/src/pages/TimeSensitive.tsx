@@ -19,6 +19,8 @@ import VintageSticker from '../components/VintageSticker';
 import { useProductQuickView } from '../components/ProductQuickView';
 import { distributorName, ALL_DISTRIBUTORS, priceUnit, perUnitAbbr } from '../lib/distributors';
 import { AI_EXPLAINERS_ENABLED } from '../lib/flags';
+import { ErrorState } from '../components/DataState';
+import DataLoading from '../components/DataLoading';
 
 const money = (v?: number | null) => (v == null ? '-' : `$${Number(v).toFixed(2)}`);
 
@@ -82,7 +84,7 @@ export default function TimeSensitive() {
   const [limit, setLimit] = useState(60);
   const [page, setPage] = useState(0);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['time-sensitive', wholesaler],
     queryFn: () => deals.timeSensitive({ wholesaler: wholesaler || undefined, limit: 2000 }),
   });
@@ -271,6 +273,11 @@ export default function TimeSensitive() {
             noun="deals"
           />
 
+          {isError ? (
+            <ErrorState retry={() => refetch()} />
+          ) : isLoading ? (
+            <DataLoading label="Loading time-sensitive deals…" />
+          ) : (
           <ContextMenuProvider onView={open}>
             {view === 'cards' ? (
               <div className="deal-cards">
@@ -296,6 +303,7 @@ export default function TimeSensitive() {
               />
             )}
           </ContextMenuProvider>
+          )}
           <PromotionsPager page={page} total={items.length} limit={limit} onPageChange={setPage} view={view} />
         </div>
       </div>

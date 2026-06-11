@@ -7,6 +7,8 @@ import type { EditionRow } from '../lib/api';
 import { distributorName, DISTRIBUTOR_NAMES, perUnitAbbr } from '../lib/distributors';
 import ProductSearchBox from '../components/ProductSearchBox';
 import RowActions from '../components/RowActions';
+import { ErrorState } from '../components/DataState';
+import DataLoading from '../components/DataLoading';
 import './ComparePrices.css';
 import './EditionCompare.css';
 
@@ -79,7 +81,7 @@ export default function EditionCompare() {
     if (next.toString() !== params.toString()) setSearchParams(next, { replace: true });
   }, [wholesaler, older, newer, q, change, sort]);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['edition-compare', wholesaler, older, newer, q, change, sort],
     queryFn: () => compare.editions({
       wholesaler, older: older || undefined, newer: newer || undefined,
@@ -125,7 +127,8 @@ export default function EditionCompare() {
         </div>
       )}
 
-      {!opts?.single_edition && isLoading && <p>Comparing editions…</p>}
+      {!opts?.single_edition && isLoading && <DataLoading label="Comparing editions…" />}
+      {!opts?.single_edition && isError && <ErrorState retry={() => refetch()} />}
 
       {data && !data.single_edition && (
         <>

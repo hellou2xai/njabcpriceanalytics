@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
+import { useModalFocus } from './useModalFocus';
 
 // Professional in-app confirm / prompt dialogs that replace the browser's native
 // window.confirm / window.alert / window.prompt (the "<site> says" boxes). Async
@@ -42,6 +43,9 @@ export function DialogProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<State>(null);
   const [value, setValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  // Trap Tab inside the dialog and give focus back to the opener on close.
+  useModalFocus(boxRef, !!state);
 
   const confirm = useCallback((opts: ConfirmOpts) =>
     new Promise<boolean>(resolve => setState({ kind: 'confirm', opts, resolve })), []);
@@ -82,7 +86,7 @@ export function DialogProvider({ children }: { children: ReactNode }) {
       {children}
       {state && (
         <div className="app-dialog-overlay" onMouseDown={onCancel}>
-          <div className="app-dialog" role="dialog" aria-modal="true" onMouseDown={e => e.stopPropagation()}>
+          <div className="app-dialog" role="dialog" aria-modal="true" ref={boxRef} onMouseDown={e => e.stopPropagation()}>
             <button className="app-dialog-x" aria-label="Close" onClick={onCancel}><X size={16} /></button>
             <div className="app-dialog-head">
               {danger && <span className="app-dialog-icon app-dialog-icon-danger"><AlertTriangle size={18} /></span>}

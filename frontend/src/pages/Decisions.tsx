@@ -8,6 +8,8 @@ import FavoriteButton from '../components/FavoriteButton';
 import ProductThumb from '../components/ProductThumb';
 import RowLimitSelect from '../components/RowLimitSelect';
 import { ContextMenuProvider } from '../components/ContextMenu';
+import { ErrorState, EmptyState } from '../components/DataState';
+import DataLoading from '../components/DataLoading';
 import { useProductQuickView } from '../components/ProductQuickView';
 import { distributorName } from '../lib/distributors';
 import type { BuySignal, Product } from '../lib/api';
@@ -37,12 +39,13 @@ export default function Decisions() {
 
 function BuySheetTab({ wholesaler }: { wholesaler: string }) {
   const { open } = useProductQuickView();
-  const { data } = useQuery({
+  const { data, isError, refetch } = useQuery({
     queryKey: ['buy-sheet', wholesaler],
     queryFn: () => intelligence.buySheet({ wholesaler: wholesaler || undefined }),
   });
 
-  if (!data) return <p>Loading...</p>;
+  if (isError) return <ErrorState retry={() => refetch()} />;
+  if (!data) return <DataLoading />;
 
   const ms = data.market_summary;
 
@@ -57,6 +60,9 @@ function BuySheetTab({ wholesaler }: { wholesaler: string }) {
       </div>
 
       <ContextMenuProvider onView={open}>
+        {Object.values(data.sections).every(items => items.length === 0) && (
+          <EmptyState title="No buy signals this edition">Buy signals are generated from each new price file when items show price drops, expiring deals, or stackable savings worth acting on.</EmptyState>
+        )}
         {Object.entries(data.sections).map(([signal, items]) => (
           <div key={signal} className="panel" style={{ borderLeftColor: SIGNAL_COLORS[signal] ?? '#333', marginBottom: 12 }}>
             <h3>
@@ -95,12 +101,13 @@ function BuySheetTab({ wholesaler }: { wholesaler: string }) {
 function MissedTab({ wholesaler }: { wholesaler: string }) {
   const [limit, setLimit] = useState(50);
   const { open } = useProductQuickView();
-  const { data } = useQuery({
+  const { data, isError, refetch } = useQuery({
     queryKey: ['missed', wholesaler],
     queryFn: () => intelligence.missedOpportunities({ wholesaler: wholesaler || undefined }),
   });
 
-  if (!data) return <p>Loading...</p>;
+  if (isError) return <ErrorState retry={() => refetch()} />;
+  if (!data) return <DataLoading />;
 
   return (
     <>
@@ -112,6 +119,9 @@ function MissedTab({ wholesaler }: { wholesaler: string }) {
       <div className="toolbar">
         <RowLimitSelect value={limit} onChange={setLimit} />
       </div>
+      {data.items.length === 0 ? (
+        <EmptyState title="No missed opportunities">Items with discounts, RIPs, or closeout pricing you have not captured will show up here as each edition loads.</EmptyState>
+      ) : (
       <ContextMenuProvider onView={open}>
         <SortableTable
           columns={[
@@ -142,6 +152,7 @@ function MissedTab({ wholesaler }: { wholesaler: string }) {
           onRowClick={r => open(r.product_name, r.wholesaler)}
         />
       </ContextMenuProvider>
+      )}
     </>
   );
 }

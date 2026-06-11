@@ -20,6 +20,8 @@ import VintageSticker from '../components/VintageSticker';
 import { useProductQuickView } from '../components/ProductQuickView';
 import { distributorName, ALL_DISTRIBUTORS, priceUnit, perUnitAbbr } from '../lib/distributors';
 import { useAuth } from '../contexts/AuthContext';
+import { ErrorState, EmptyState } from '../components/DataState';
+import DataLoading from '../components/DataLoading';
 
 const money = (v?: number | null) => (v == null ? '-' : `$${Number(v).toFixed(2)}`);
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -70,7 +72,7 @@ function MajorDiscountsImpl() {
   const [view, setView] = useState<'cards' | 'table'>(() => (localStorage.getItem('md-view') as 'cards' | 'table') || 'cards');
   useEffect(() => { localStorage.setItem('md-view', view); }, [view]);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['major-discounts', wholesaler, minDiscount, sort],
     queryFn: () => deals.discounts({
       wholesaler: wholesaler || undefined,
@@ -192,6 +194,11 @@ function MajorDiscountsImpl() {
             onPageChange={setPage}
           />
 
+          {isError ? (
+            <ErrorState retry={() => refetch()} />
+          ) : isLoading ? (
+            <DataLoading label="Loading discounts…" />
+          ) : (
           <ContextMenuProvider onView={open}>
             {view === 'cards' ? (
               <div className="deal-cards">
@@ -203,6 +210,10 @@ function MajorDiscountsImpl() {
                   <div className="empty" style={{ padding: 30, textAlign: 'center' }}>No products match these filters.</div>
                 )}
               </div>
+            ) : items.length === 0 ? (
+              <EmptyState title="No discounts match these filters">
+                Try broadening or clearing your filters.
+              </EmptyState>
             ) : (
               <PromotionsTable
                 rows={items.map(productToPromotionRow)}
@@ -212,6 +223,7 @@ function MajorDiscountsImpl() {
               />
             )}
           </ContextMenuProvider>
+          )}
           <PromotionsPager page={page} total={items.length} limit={limit} onPageChange={setPage} view={view} />
         </div>
       </div>

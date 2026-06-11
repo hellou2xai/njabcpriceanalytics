@@ -4,6 +4,8 @@ import { deals } from '../lib/api';
 import SortableTable from '../components/SortableTable';
 import RowLimitSelect from '../components/RowLimitSelect';
 import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
+import { ErrorState, EmptyState } from '../components/DataState';
+import DataLoading from '../components/DataLoading';
 import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
 
 export default function Rips() {
@@ -12,7 +14,7 @@ export default function Rips() {
   const [minAmount, setMinAmount] = useState('');
   const [limit, setLimit] = useState(100);
 
-  const { data } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['rips', wholesaler, q, limit],
     queryFn: () => deals.rips({ wholesaler: wholesaler || undefined, q: q || undefined, limit }),
   });
@@ -63,6 +65,13 @@ export default function Rips() {
           <span className="search-count">{items.length} promotions</span>
         </div>
 
+        {isError ? (
+          <ErrorState retry={() => refetch()} />
+        ) : isLoading ? (
+          <DataLoading label="Loading RIP promotions..." />
+        ) : items.length === 0 ? (
+          <EmptyState title="No promotions match these filters">Try broadening or clearing your filters.</EmptyState>
+        ) : (
         <SortableTable
           columns={[
             { key: 'rip_description', label: 'Description' },
@@ -76,6 +85,7 @@ export default function Rips() {
           data={items}
           exportName="rips"
         />
+        )}
       </div>
     </FilterSidebar>
   );

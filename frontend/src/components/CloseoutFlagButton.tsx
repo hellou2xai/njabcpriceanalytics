@@ -50,7 +50,9 @@ export default function CloseoutFlagButton({ productName, wholesaler, upc, unitV
         className={`closeout-btn${match ? ' active' : ''}`}
         onClick={handleClick}
         disabled={loading}
-        title={match ? 'Flagged as closeout — click to unflag' : 'Flag as closeout candidate'}
+        title={match ? 'Flagged as closeout. Click to unflag.' : 'Flag as closeout candidate'}
+        aria-label={match ? 'Unflag closeout candidate' : 'Flag as closeout candidate'}
+        aria-pressed={!!match}
       >
         <XCircle size={16} fill={match ? 'currentColor' : 'none'} />
       </button>

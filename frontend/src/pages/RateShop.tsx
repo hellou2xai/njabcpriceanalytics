@@ -8,6 +8,8 @@ import { distributorName, skuLabel, priceUnitWord, perUnitNoun, isKegUnit } from
 import BasketView from '../components/BasketView';
 import ProductSearchBox from '../components/ProductSearchBox';
 import RowActions from '../components/RowActions';
+import { ErrorState } from '../components/DataState';
+import DataLoading from '../components/DataLoading';
 import './ComparePrices.css';
 import './Price360.css';
 import './RateShop.css';
@@ -116,10 +118,10 @@ function OfferCard({ o, accent, cases, unitVolume, unitQty, unitType, onProduct 
         </div>
         <div className="rs-headline">
           <span className="rs-net" style={{ color: o.is_winner ? accent[o.wholesaler] : undefined }}>{money(o.net_case)}<span className="rs-unit">/{caseWord}</span></span>
+          {!keg && <span className="rs-netbtl">{money(o.net_btl)}<span className="rs-unit">/{unitNoun} net</span></span>}
           {o.frontline_case != null && o.frontline_case !== o.net_case && <span className="rs-front">{money(o.frontline_case)}</span>}
         </div>
-        {!keg && <div className="rs-netbtl">{money(o.net_btl)}/{unitNoun} net{o.savings_case > 0 ? ` · saves ${money(o.savings_case)}/${caseWord} (${pct(o.savings_pct)})` : ''}</div>}
-        {keg && o.savings_case > 0 && <div className="rs-netbtl">saves {money(o.savings_case)}/{caseWord} ({pct(o.savings_pct)})</div>}
+        {o.savings_case > 0 && <div className="rs-savings">saves {money(o.savings_case)}/{caseWord} ({pct(o.savings_pct)})</div>}
         <div className="rs-ids">
           {o.upc && <span title="UPC barcode">UPC {o.upc}</span>}
           {o.sku && <span title={`${distributorName(o.wholesaler)} item number`}>· {skuLabel(o.wholesaler)} {o.sku}</span>}
@@ -127,8 +129,8 @@ function OfferCard({ o, accent, cases, unitVolume, unitQty, unitType, onProduct 
         {o.timing && (
           <div className={`rs-timing rs-timing-${o.timing.dir}`} title="Based on next month's effective price for this product">
             {o.timing.dir === 'drop'
-              ? <>↓ drops to ~{money(o.timing.next_case)}/cs next month — consider waiting</>
-              : <>↑ rises to ~{money(o.timing.next_case)}/cs next month — buy now</>}
+              ? <>↓ drops to ~{money(o.timing.next_case)}/cs next month, consider waiting</>
+              : <>↑ rises to ~{money(o.timing.next_case)}/cs next month, buy now</>}
           </div>
         )}
 
@@ -184,7 +186,7 @@ function ProductResult({ match, label, cases, onRemove, goToProduct }: {
 }) {
   const [size, setSize] = useState('');
   useEffect(() => { setSize(''); }, [match]);
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['rateshop', match, cases, size],
     queryFn: () => compare.rateshop({ match, cases, size: size || undefined }),
     enabled: !!match,
@@ -197,8 +199,8 @@ function ProductResult({ match, label, cases, onRemove, goToProduct }: {
 
   return (
     <div className="rs-result">
-      {isLoading && <p>Rate shopping {label}…</p>}
-      {!!error && <p className="text-red">Failed: {String((error as Error).message)}</p>}
+      {isLoading && <DataLoading label={`Rate shopping ${label}…`} />}
+      {!!error && <ErrorState message={String((error as Error).message)} retry={() => refetch()} />}
       {data && !data.found && <div className="cmp-empty">{data.note ?? `No match for "${label}".`} <button className="rs-remove-link" onClick={onRemove}>remove</button></div>}
       {data?.found && data.product && (
         <>

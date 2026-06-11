@@ -13,6 +13,7 @@ import type { SavingsAnalysis as Analysis, SavingsRec } from '../lib/api';
 import { distributorName, abgSku, skuLabel, priceUnit } from '../lib/distributors';
 import { windowBadge, fmtDateRange } from '../lib/dealDates';
 import PriceSparklines from './PriceSparklines';
+import TierBadge from './TierBadge';
 
 // Flags a recommendation whose deal is a PARTIAL-month (time-sensitive) RIP —
 // only valid on specific dates. The buyer must act inside the window, so the
@@ -98,7 +99,7 @@ function RecCard({ rec, context, onSetQty, onSwap, busy }: {
         <span className={`sav-ico ${isRip ? 'is-rip' : 'is-qd'}`}><TrendingUp size={15} /></span>
         <div className="sav-rec-body">
           <div className="sav-rec-head">
-            <span className={`prod-deal-badge ${isRip ? 'prod-deal-rip' : 'prod-deal-qd'}`}>{isRip ? 'RIP' : 'QD'}</span>
+            <TierBadge kind={isRip ? 'rip' : 'qd'} />
             <ProductLink rec={rec} />{rec.unit_volume ? ` · ${rec.unit_volume}` : ''}
             <Expiry rec={rec} />
             <Mom rec={rec} />
@@ -138,9 +139,9 @@ function RecCard({ rec, context, onSetQty, onSwap, busy }: {
         <span className="sav-ico is-mix"><Layers size={15} /></span>
         <div className="sav-rec-body">
           <div className="sav-rec-head">
-            <span className="prod-deal-badge prod-deal-rip">Case Mix</span>
+            <TierBadge kind="rip" label="Case Mix" />
             <strong>RIP {rec.rip_code}</strong> · {rec.members?.length} items
-            {rec.description ? <span className="sav-rec-desc"> — {rec.description}</span> : null}
+            {rec.description ? <span className="sav-rec-desc"> · {rec.description}</span> : null}
             <PartialFlag rec={rec} />
           </div>
           <div className="sav-rec-text">

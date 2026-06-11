@@ -177,6 +177,21 @@ export default function Layout() {
     if (isMobile) setMobileOpen(false);
   }, [location.pathname, isMobile]);
 
+  // Escape closes the mobile sidebar overlay (parity with the hamburger).
+  useEffect(() => {
+    if (!isMobile || !mobileOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMobileOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isMobile, mobileOpen]);
+
+  // Reset scroll on navigation: without this, a deeply-scrolled Catalog leaves
+  // the next page opening mid-scroll.
+  useEffect(() => {
+    document.querySelector('.main-content')?.scrollTo(0, 0);
+    window.scrollTo(0, 0);
+  }, [location.pathname]);
+
   const qc = useQueryClient();
   const { data: unread } = useQuery({
     queryKey: ['unread-alerts'],

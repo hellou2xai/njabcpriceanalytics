@@ -1,7 +1,9 @@
+import { useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { X } from 'lucide-react';
 import { catalog } from '../lib/api';
 import { packLabel } from '../lib/distributors';
+import { useModalFocus } from './useModalFocus';
 
 /**
  * Popup that lists every product included in a single RIP code, opened by
@@ -19,13 +21,20 @@ export default function RipMembersModal({
     queryKey: ['rip-siblings-modal', wholesaler, ripCode],
     queryFn: () => catalog.ripSiblings(wholesaler, ripCode),
   });
+  const boxRef = useRef<HTMLDivElement>(null);
+  useModalFocus(boxRef, true);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
   const items = data?.items ?? [];
   const tiers = data?.tiers ?? [];
   const fmtWindow = (f: string | null, t: string | null) =>
     f && t ? `${f.slice(5)} to ${t.slice(5)}` : 'all month';
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal rip-members-modal" onClick={e => e.stopPropagation()}>
+      <div className="modal rip-members-modal" role="dialog" aria-modal="true" ref={boxRef} tabIndex={-1} onClick={e => e.stopPropagation()}>
         <button className="modal-close" onClick={onClose} aria-label="Close">
           <X size={18} />
         </button>

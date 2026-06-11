@@ -2,6 +2,8 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { alerts, type Alert } from '../lib/api';
+import { ErrorState } from '../components/DataState';
+import DataLoading from '../components/DataLoading';
 import {
   CheckCheck, Clock, BadgeDollarSign, Combine, TrendingDown, Tag, Target,
   ClipboardCheck, TrendingUp, CalendarClock, BellOff,
@@ -72,7 +74,7 @@ function AlertCard({ a, onOpen }: { a: Alert; onOpen: (a: Alert) => void }) {
 export default function AlertsPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const { data, isLoading } = useQuery({ queryKey: ['alerts'], queryFn: () => alerts.get() });
+  const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['alerts'], queryFn: () => alerts.get() });
 
   // Auto-refresh the digest whenever the page is opened. No manual button.
   const generateMut = useMutation({
@@ -122,8 +124,10 @@ export default function AlertsPage() {
         Updated automatically. {opps.length} opportunit{opps.length === 1 ? 'y' : 'ies'}, {risks.length} watch-out{risks.length === 1 ? '' : 's'}.
       </p>
 
-      {isLoading && all.length === 0 ? (
-        <p className="text-muted">Checking for alerts…</p>
+      {isError ? (
+        <ErrorState retry={() => refetch()} />
+      ) : isLoading && all.length === 0 ? (
+        <DataLoading label="Checking for alerts..." />
       ) : all.length === 0 ? (
         <div className="alert-empty"><BellOff size={20} /> You are all caught up. New alerts appear here automatically.</div>
       ) : (

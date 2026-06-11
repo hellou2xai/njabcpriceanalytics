@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { catalog, deals, watchlist } from '../lib/api';
 import WholesalerFilter from '../components/WholesalerFilter';
 import TrackedOnlyToggle from '../components/TrackedOnlyToggle';
+import ProductSearchBox from '../components/ProductSearchBox';
 import RowLimitSelect from '../components/RowLimitSelect';
 import { useProductQuickView } from '../components/ProductQuickView';
 import CatalogTable, { loadCart, saveCart, type CartState } from '../components/CatalogTable';
@@ -14,6 +15,8 @@ import CatalogFilterPanel, {
 import type { CatalogFilters } from '../components/CatalogFilterPanel';
 import type { Product } from '../lib/api';
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { ErrorState, EmptyState } from '../components/DataState';
+import DataLoading from '../components/DataLoading';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 function monthLabel(ym: string): string {
@@ -64,7 +67,7 @@ export default function NewItems() {
 
   // One fetch of every new item (the set is small). All other refinement is
   // client-side so the page behaves exactly like the catalog.
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['new-items-all'],
     queryFn: () => catalog.newItems({ limit: 5000, include_tiers: true }),
   });
@@ -173,7 +176,12 @@ export default function NewItems() {
       </p>
 
       <div className="search-bar">
-        <input type="text" placeholder="Search new products..." value={q} onChange={e => { setQ(e.target.value); setPage(0); }} />
+        <ProductSearchBox
+          value={q}
+          onChange={v => { setQ(v); setPage(0); }}
+          onSelect={p => { setQ(p.product_name); setPage(0); }}
+          placeholder="Search new products..."
+        />
         <span className="search-count">{total.toLocaleString()} results</span>
       </div>
 
@@ -219,7 +227,11 @@ export default function NewItems() {
         )}
 
         <div className="catalog-results">
-          {isLoading ? <p>Loading...</p> : (
+          {isLoading ? <DataLoading label="Loading new items..." /> : isError ? (
+            <ErrorState retry={() => refetch()} />
+          ) : total === 0 ? (
+            <EmptyState title="No products match these filters">Try broadening or clearing your filters.</EmptyState>
+          ) : (
             <CatalogTable
               items={pageItems}
               open={open}

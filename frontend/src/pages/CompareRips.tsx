@@ -12,6 +12,8 @@ import { distributorName, perUnitNoun, priceUnitWord } from '../lib/distributors
 import ProductSearchBox from '../components/ProductSearchBox';
 import RowActions from '../components/RowActions';
 import RipMembersModal from '../components/RipMembersModal';
+import { ErrorState } from '../components/DataState';
+import DataLoading from '../components/DataLoading';
 import './CompareRips.css';
 
 const money = (v?: number | null) => (v == null ? '-' : `$${Number(v).toFixed(2)}`);
@@ -391,7 +393,7 @@ export default function CompareRips() {
 
   const { data: options } = useQuery({ queryKey: ['compare-options'], queryFn: compare.options });
   const ready = selected.length >= 2 && selected.length <= 3;
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['compare-rips', selected, cases, q, ptype, brand, onlyDiff, minDiff, tsOnly, comboOnly, expiringOnly, timingDiff, qtyDiff, betterTerms, showAnomalies, sort],
     queryFn: () => compare.rips({
       wholesalers: selected.join(','), cases, q: q || undefined,
@@ -571,8 +573,8 @@ export default function CompareRips() {
               play out on the products they all carry.
             </div>
           )}
-          {ready && isLoading && <p>Comparing RIPs…</p>}
-          {ready && !!error && <p className="text-red">Failed: {String((error as Error).message)}</p>}
+          {ready && isLoading && <DataLoading label="Comparing RIPs…" />}
+          {ready && isError && <ErrorState message={String((error as Error)?.message ?? '') || undefined} retry={() => refetch()} />}
 
           {ready && data && (
             <>

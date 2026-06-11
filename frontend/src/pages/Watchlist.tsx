@@ -10,6 +10,8 @@ import PriceTrendIndicator from '../components/PriceTrendIndicator';
 import AddToCartButton from '../components/AddToCartButton';
 import { Download, Layers } from 'lucide-react';
 import { distributorName, abgSku, skuLabel } from '../lib/distributors';
+import { ErrorState, EmptyState } from '../components/DataState';
+import DataLoading from '../components/DataLoading';
 
 // Transient per-row quantities (cases/units) used to seed the "Add to cart"
 // button and the running totals. Not persisted: the real cart lives server-side.
@@ -248,7 +250,7 @@ export default function WatchlistPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
 
-  const { data } = useQuery({ queryKey: ['watchlist'], queryFn: watchlist.get });
+  const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['watchlist'], queryFn: watchlist.get });
   const { data: signals } = useQuery({
     queryKey: ['buy-signals'],
     queryFn: () => intelligence.buySignals(),
@@ -580,7 +582,13 @@ export default function WatchlistPage() {
       </div>
 
       {/* ---- Table ---- */}
-      {groupByCategory ? renderGrouped() : (
+      {isError ? (
+        <ErrorState retry={() => refetch()} />
+      ) : isLoading ? (
+        <DataLoading label="Loading your favorites…" />
+      ) : allItems.length === 0 ? (
+        <EmptyState title="Your watchlist is empty">Add products to your watchlist from any product page to track their prices here.</EmptyState>
+      ) : groupByCategory ? renderGrouped() : (
         <div className="table-container">
           <table className="tracker-table">
             {renderTableHeader()}

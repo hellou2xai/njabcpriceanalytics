@@ -3604,6 +3604,27 @@ def get_rip_siblings(
                 {k: (None if isinstance(v, float) and math.isnan(v) else v) for k, v in r.items()}
                 for r in df.to_dict(orient="records")
             ]
+            # Multi-listing UPC rule (mirrors derive.py / attach_tiers): when a
+            # reused barcode carries SEVERAL distinct product listings (e.g.
+            # Allied's Coppola Chardonnay + Pinot Noir sharing 739958057209,
+            # where the RIP sheet says EXCLUDES PINOT NOIR), a row belongs to
+            # this RIP only if its OWN CPL rip_code references the code.
+            # Single-listing UPCs keep the sheet-presence rule above (their
+            # CPL row may legitimately reference a different stacked RIP).
+            # If no listing of a shared UPC matches, keep them all rather than
+            # hiding a UPC the sheet says qualifies.
+            by_upc: dict = {}
+            for r in records:
+                by_upc.setdefault(str(r.get("upc") or "").lstrip("0"), []).append(r)
+            filtered = []
+            for rows in by_upc.values():
+                names = {str(r.get("product_name") or "").strip().upper() for r in rows}
+                if len(names) <= 1:
+                    filtered.extend(rows)
+                    continue
+                matching = [r for r in rows if str(r.get("rip_code") or "").strip() == rc]
+                filtered.extend(matching if matching else rows)
+            records = filtered
         # 3) RIP UPCs missing from the CPL still belong on screen — surface a
         #    minimal stub so the user sees the full rebate group and knows the
         #    SKU isn't on the current CPL. The UI keeps Add-to-Cart disabled

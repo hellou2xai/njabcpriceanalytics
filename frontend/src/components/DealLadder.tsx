@@ -30,8 +30,9 @@ function PartialFlag({ t }: { t: RipTier }) {
   if (!t.ts && !wb) return null;
   const range = fmtDateRange(t.from_date, t.to_date);
   // Colour by window STATUS so the three states read apart at a glance:
-  // green = active now, blue = starts later, gray = expired; red overrides
-  // green when the active window ends within a week (urgent).
+  // amber = active now (green blended into the RIP pills around it), blue =
+  // starts later, gray = expired; red overrides amber when the active window
+  // ends within a week (urgent).
   const cls = `${wb?.cls ?? 'win-partial'}${wb?.urgent ? ' urgent' : ''}`;
   const label = t.ts ? `⏱ Partial · ${range || 'limited dates'}` : (wb?.label ?? '');
   return (

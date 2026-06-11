@@ -545,11 +545,11 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
   font-size: 10.5px; font-weight: 700; line-height: 1.5;
   white-space: nowrap; vertical-align: middle;
 }
-.win-active { background: rgba(16,185,129,0.16); color: var(--green); }
 .win-badge.urgent { background: rgba(239,68,68,0.16); color: var(--red); }
-/* Window-status colours: green = active now, blue = starts later, gray =
-   expired; .win-badge.urgent (red) overrides when an active window ends soon. */
-.win-active { background: color-mix(in srgb, var(--green) 14%, transparent); color: var(--green); }
+/* Window-status colours: AMBER = active now (green blended into the RIP
+   pills/prices it sits between), blue = starts later, gray = expired;
+   .win-badge.urgent (red) overrides when an active window ends soon. */
+.win-active { background: color-mix(in srgb, var(--yellow) 18%, transparent); color: var(--yellow); }
 .win-upcoming { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
 .win-expired { background: color-mix(in srgb, var(--text-muted) 16%, transparent); color: var(--text-muted); }
 .win-partial { background: color-mix(in srgb, var(--yellow) 16%, transparent); color: var(--yellow); }

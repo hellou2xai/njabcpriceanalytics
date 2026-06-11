@@ -200,6 +200,34 @@ export default function Products() {
   const soleCategory = filters.categories.length === 1 && !q.trim() ? filters.categories[0] : null;
   const pageTitle = soleCategory ? (CATEGORY_LABELS[soleCategory] ?? soleCategory) : 'Products';
 
+  // Category quick-browse chips (same set as the Home hero), shown under the
+  // big search box on both the landing and the grid so users can hop aisles.
+  const BROWSE: { key: string; label: string }[] = [
+    { key: 'Beer', label: 'Beer' },
+    { key: 'Wine', label: 'Wine' },
+    { key: 'Spirits', label: 'Spirits' },
+    { key: 'RTD', label: 'Ready-to-Drink' },
+    { key: 'FAB', label: 'Seltzer / FMB' },
+    { key: 'Cider', label: 'Cider' },
+    { key: 'Non-Alcoholic', label: 'Non-Alcoholic' },
+  ];
+  const browseTo = (key: string) => {
+    setQ(''); setCommitted('');
+    setFilters(f => ({ ...f, categories: [key] }));
+    setPage(0);
+  };
+  const browseChips = (
+    <div className="products-grid-browse">
+      {BROWSE.map(b => (
+        <button key={b.key} type="button"
+          className={`products-grid-chip${soleCategory === b.key ? ' on' : ''}`}
+          onClick={() => browseTo(b.key)}>
+          {b.label}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <div className="page products-page">
       {!showGrid ? (
@@ -242,6 +270,7 @@ export default function Products() {
               </ul>
             )}
           </div>
+          {browseChips}
           <p className="products-splash-hint">
             Type a product and press <kbd className="products-hero-kbd">Enter</kbd>. Smart search handles brands, misspellings, sizes and barcodes.
           </p>
@@ -270,6 +299,7 @@ export default function Products() {
             <Sparkles size={16} /> Ask AI
           </button>
         </div>
+        {browseChips}
         <div className="products-hero-count">{isLoading ? 'Searching…' : `${total.toLocaleString()} items`}</div>
       </div>
       {data?.corrected_query && data.corrected_query.toLowerCase() !== q.trim().toLowerCase() && (

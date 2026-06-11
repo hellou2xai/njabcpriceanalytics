@@ -149,6 +149,15 @@ export default function ProductsFilterRail({ filters, onChange, items, facets, t
         </label>
       </Section>
 
+      <Section title="Time Sensitive Deals">
+        <label className="prod-filter-check"
+          title="Only products with a dated (sub-month) QD or RIP window this edition: deals that start or stop mid-month.">
+          <input type="checkbox" checked={filters.timeSensitive === true}
+            onChange={() => onChange({ ...filters, timeSensitive: filters.timeSensitive ? undefined : true })} />
+          <span>Dated deal this month</span>
+        </label>
+      </Section>
+
       <Section title="Distributor">
         <div className="prod-filter-list">
           {[...divisionFacet.entries()].map(([div, count]) => (

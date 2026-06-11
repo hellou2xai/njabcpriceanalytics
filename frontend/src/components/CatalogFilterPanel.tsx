@@ -9,6 +9,8 @@ export interface CatalogFilters {
   hasRip?: boolean;
   hasDiscount?: boolean;
   inCombo?: boolean;
+  // Only products with a DATED (sub-month) QD/RIP window this edition.
+  timeSensitive?: boolean;
   // When true, the search backend clusters products sharing a Case Mix RIP
   // rebate (each row gets a coloured band keyed off the rip code, and rows
   // whose CPL rip_code drifted from the RIP sheet wear a "check with sales
@@ -41,6 +43,7 @@ export function countActiveFilters(f: CatalogFilters): number {
   if (f.hasRip !== undefined) n++;
   if (f.hasDiscount !== undefined) n++;
   if (f.inCombo) n++;
+  if (f.timeSensitive) n++;
   if (f.groupByRip) n++;
   if (f.priceTrend) n++;
   n += f.divisions.length;

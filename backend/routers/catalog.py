@@ -652,6 +652,7 @@ def search_products(
     has_closeout: Optional[bool] = None,
     has_rip: Optional[bool] = None,
     in_combo: Optional[bool] = None,        # True = only products that are in a combo/bundle
+    time_sensitive: Optional[bool] = None,  # True = only products with a DATED (sub-month) QD/RIP window this edition
     price_drop: Optional[bool] = None,      # True = keep rows whose next-month effective is cheaper
     price_increase: Optional[bool] = None,  # True = keep rows whose next-month effective is higher
     brand: Optional[str] = None,
@@ -881,6 +882,32 @@ def search_products(
             where.append("has_rip = false")
         if in_combo is True:
             where.append("COALESCE(in_combo, false) = true")
+        if time_sensitive is True:
+            # Products carrying a DATED (sub-month) deal this edition: the row's
+            # own CPL price line has a partial-month window (cpl_full_window =
+            # false), or any precomputed rip_windows entry is partial-month.
+            # Mirrors pricing.is_time_sensitive_window: NULL on either side =
+            # evergreen; from on the 1st AND to = month-end = full month; else
+            # time-sensitive. Reuses precomputed columns only; degrades to a
+            # no-op when an old cache predates them.
+            ts_cols = {r[0] for r in con.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'cpl_enriched' "
+                "AND column_name IN ('cpl_full_window', 'rip_windows')"
+            ).fetchall()}
+            ts_parts = []
+            if "cpl_full_window" in ts_cols:
+                ts_parts.append("COALESCE(cpl_full_window, true) = false")
+            if "rip_windows" in ts_cols:
+                _parsed = f"from_json(rip_windows, '{_pricing._RIP_WINDOWS_JSON_SCHEMA}')"
+                ts_parts.append(
+                    f"len(list_filter({_parsed}, w -> "
+                    "w.from_date IS NOT NULL AND w.to_date IS NOT NULL "
+                    "AND NOT (substr(w.from_date, 9, 2) = '01' "
+                    "AND w.to_date = strftime(last_day(CAST(w.to_date AS DATE)), '%Y-%m-%d')))) > 0"
+                )
+            if ts_parts:
+                where.append(f"({' OR '.join(ts_parts)})")
         # Multi-select panel filters (applied server-side so they span all pages).
         _in_filter(where, params, "wholesaler", divisions, "div_")
         _in_filter(where, params, "product_type", categories, "cat_")

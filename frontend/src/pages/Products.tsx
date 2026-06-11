@@ -37,6 +37,7 @@ function filtersFromParams(params: URLSearchParams): CatalogFilters {
     hasRip: params.get('hasRip') === '1' ? true : undefined,
     hasDiscount: params.get('hasDiscount') === '1' ? true : undefined,
     inCombo: params.get('in_combo') === '1' ? true : undefined,
+    timeSensitive: params.get('time_sensitive') === '1' ? true : undefined,
     categories: csv('categories'),
     divisions: csv('divisions'),
     brands: csv('brands'),
@@ -91,6 +92,7 @@ export default function Products() {
     if (filters.hasRip) next.set('hasRip', '1');
     if (filters.hasDiscount) next.set('hasDiscount', '1');
     if (filters.inCombo) next.set('in_combo', '1');
+    if (filters.timeSensitive) next.set('time_sensitive', '1');
     if (filters.categories?.length) next.set('categories', filters.categories.join(','));
     if (filters.divisions?.length) next.set('divisions', filters.divisions.join(','));
     if (filters.brands?.length) next.set('brands', filters.brands.join(','));
@@ -121,6 +123,7 @@ export default function Products() {
     has_rip: filters.hasRip,
     has_discount: filters.hasDiscount,
     in_combo: filters.inCombo || undefined,
+    time_sensitive: filters.timeSensitive || undefined,
     divisions: filters.divisions.join(',') || undefined,
     categories: filters.categories.join(',') || undefined,
     brands: filters.brands.join(',') || undefined,

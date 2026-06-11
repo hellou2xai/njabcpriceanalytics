@@ -1478,23 +1478,64 @@ def search_products(
                     rec[k] = None
 
         # Family grouping key for the Products list, so a product's
-        # differently-named sizes collapse into ONE card. Spirits group by the
-        # enrichment-name core (catalogue-name core when un-enriched); wine
-        # groups by product_name (its vintages share a card). The display name
-        # prefers the clean enrichment name with the size suffix stripped.
+        # differently-named sizes collapse into ONE card.
+        #
+        # Phase 1 — UPC-first: any SKU with a CLEAN barcode (_is_clean_upc, the
+        # same notion of "real barcode" the rest of the app uses) groups by that
+        # UPC, so the same product carried under different distributor names /
+        # pack sizes (e.g. "CASAL GAR VV WHITENV" + "CASAL GAR VVWH BAG6P" +
+        # "CASAL GARCIA WH VERDE", all UPC 764793208301) collapses into ONE card
+        # with the enriched Go-UPC name as the header. The individual distributor
+        # SKU names then show on the expanded size rows.
+        # Phase 2 (legacy fallback, for SKUs WITHOUT a clean UPC — placeholder /
+        # '0' barcodes, most wines): spirits group by the enrichment-name core
+        # (catalogue-name core when un-enriched); wine groups by product_name
+        # (its vintages share a card).
+        #
+        # First pass: pick ONE header per clean UPC so every row of the group
+        # agrees regardless of which row the frontend renders first — prefer the
+        # enriched name, else the most common SKU name (tie-break the longest /
+        # most descriptive).
+        from collections import Counter as _Counter
+        upc_display: dict = {}
+        upc_names: dict = {}
+        for rec in records:
+            if not _is_clean_upc(rec.get("upc")):
+                continue
+            un = str(rec.get("upc")).lstrip("0")
+            enr = rec.get("enr_name")
+            if enr and un not in upc_display:
+                upc_display[un] = _display_name(enr)
+            upc_names.setdefault(un, _Counter())[str(rec.get("product_name") or "")] += 1
+        for un, names in upc_names.items():
+            if un not in upc_display:
+                # Prefer a non-junk title (no closeout / pack tokens), then the
+                # most common name, then the longest (most descriptive).
+                upc_display[un] = sorted(
+                    names.items(),
+                    key=lambda kv: (_header_junk(kv[0]), -kv[1], -len(kv[0])),
+                )[0][0]
+
         for rec in records:
             pname = rec.get("product_name") or ""
             ptype = (rec.get("product_type") or "")
             brand = rec.get("brand") or ""
             enr = rec.get("enr_name")
-            if "wine" in ptype.lower():
-                core, display = "w:" + pname.lower().strip(), pname
-            elif enr:
-                core, display = "e:" + _product_core(enr), _display_name(enr)
+            if _is_clean_upc(rec.get("upc")):
+                un = str(rec.get("upc")).lstrip("0")
+                # Distributor- AND name-agnostic key so every listing of this
+                # barcode merges into one card.
+                rec["product_group"] = "u:" + un
+                rec["product_display"] = upc_display.get(un) or pname
             else:
-                core, display = "c:" + _catalog_core(pname), pname
-            rec["product_group"] = f"{brand}|{core}"
-            rec["product_display"] = display or pname
+                if "wine" in ptype.lower():
+                    core, display = "w:" + pname.lower().strip(), pname
+                elif enr:
+                    core, display = "e:" + _product_core(enr), _display_name(enr)
+                else:
+                    core, display = "c:" + _catalog_core(pname), pname
+                rec["product_group"] = f"{brand}|{core}"
+                rec["product_display"] = display or pname
             rec.pop("enr_name", None)   # internal only
 
         # When the toggle is on, attach the FULL list of RIP codes per UPC
@@ -3781,6 +3822,35 @@ def _catalog_core(name: Optional[str]) -> str:
     s = _VARIANT_PUNCT_RE.sub(" ", s)
     s = _VARIANT_AGE_RE.sub(lambda m: f"{m.group(1)}yr", s)
     return re.sub(r"\s+", " ", s).strip()
+
+
+# Tokens that make a raw distributor name a poor card HEADER: closeout / old-lot
+# markers and pack-encoded names ("BAG6P", "12P", "6 PK"). Used only to pick the
+# representative title when a clean UPC has no Go-UPC enrichment name yet — so
+# the header avoids "… OLD LOT" / "… BAG6P" and prefers the plain product name.
+_HEADER_JUNK_RE = re.compile(
+    r'\b(?:old\s*lot|oldlot|close\s*out|closeout|clsout|clo)\b|\b(?:bag)?\d+\s*(?:p|pk|pack)\b', re.I)
+
+
+def _header_junk(name: str) -> int:
+    return 1 if _HEADER_JUNK_RE.search(name or "") else 0
+
+
+def _is_clean_upc(upc) -> bool:
+    """Python mirror of ``_VALID_UPC_SQL``: True only for a real barcode, not a
+    stub/placeholder. Rejects NULL/blank/'0', all-same-digit fillers
+    ('000…', '111…', '999…'), '999999…' sentinels, and codes shorter than 8
+    digits after leading zeros. Kept in lock-step with the SQL predicate so the
+    Products-grid UPC grouping uses the SAME notion of "clean barcode" as the
+    rest of the app (compare / cross-distributor / new-item detection)."""
+    s = str(upc).strip() if upc is not None else ""
+    if s in ("", "0"):
+        return False
+    if re.fullmatch(r"(0+|9+|1+)", s):
+        return False
+    if s.startswith("999999"):
+        return False
+    return len(s.lstrip("0")) >= 8
 
 
 def _norm_vintage(v) -> str:

@@ -5580,6 +5580,8 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .prod-card-dist-icon { color: var(--text-muted); }
 .prod-card-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; text-align: right; flex-shrink: 0; }
 .prod-card-range { font-size: 15px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+/* bottle price beside the case price: SAME size/weight, muted colour only */
+.prod-card-range-btl { color: var(--text-muted); }
 .prod-card-range-size { font-size: 12px; font-weight: 500; color: var(--text-muted); }
 .prod-card-options { display: flex; align-items: center; gap: 8px; }
 /* Deal badge as a native uppercase pill (replaces the Provi green tag icon). */

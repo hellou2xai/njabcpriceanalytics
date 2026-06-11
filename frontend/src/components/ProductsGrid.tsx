@@ -127,6 +127,35 @@ function bottleUnitPrice(s: Product): number | null {
   return s.frontline_unit_price ?? null;
 }
 
+// Card headline price (user rule): the CASE price after the 1-case QD when
+// one exists, with the per-bottle right beside it at the SAME size — never
+// the bottle price alone. `repRow` (the rep listing fetched WITH tiers) is
+// preferred over the bare list row so the 1-cs QD is actually visible.
+function CardPriceLine({ s, repRow }: { s: Product; repRow?: Product | null }) {
+  const row = repRow && s.upc && repRow.upc === s.upc && repRow.wholesaler === s.wholesaler ? repRow : s;
+  const caseP = oneCaseQdCase(row) ?? row.effective_case_price ?? null;
+  if (caseP == null) {
+    const btlOnly = bottleUnitPrice(row);
+    if (btlOnly == null) return null;
+    return (
+      <div className="prod-card-range">
+        ${btlOnly.toFixed(2)}/{perUnitNoun(row.unit_volume, row.unit_type)}
+        {' '}<span className="prod-card-range-size">({row.unit_volume})</span>
+      </div>
+    );
+  }
+  const pack = bottlesPerCase(row.product_name, row.unit_qty);
+  const keg = isKegUnit(row.unit_volume, row.unit_type);
+  const btl = keg ? null : (pack ? caseP / pack : (row.frontline_unit_price ?? null));
+  return (
+    <div className="prod-card-range">
+      ${caseP.toFixed(2)}/{priceUnitWord(row.unit_volume, row.unit_type)}
+      {btl != null && <span className="prod-card-range-btl"> · ${btl.toFixed(2)}/{perUnitNoun(row.unit_volume, row.unit_type)}</span>}
+      {' '}<span className="prod-card-range-size">({row.unit_volume})</span>
+    </div>
+  );
+}
+
 // "$0.83 (50mL) – $19.29 (1.75L)" — the per-bottle price range across the
 // product's sizes, each end labelled with its own size. Uses the corrected
 // per-bottle price so a 50mL 120-pack reads $2.99, not $35.90/tray.
@@ -346,12 +375,10 @@ function ProductCard({ group, cart, updateQty }: {
         )}
         <div className="prod-card-right">
           {range && (
-            <div className="prod-card-range">
-              ${range.loPrice.toFixed(2)} <span className="prod-card-range-size">({range.lo.unit_volume})</span>
-              {range.hi !== range.lo && (
-                <> – ${range.hiPrice.toFixed(2)} <span className="prod-card-range-size">({range.hi.unit_volume})</span></>
-              )}
-            </div>
+            <>
+              <CardPriceLine s={range.lo} repRow={repRow} />
+              {range.hi !== range.lo && <CardPriceLine s={range.hi} repRow={repRow} />}
+            </>
           )}
           <div className="prod-card-options">
             {anyDisc && <span className="prod-card-deal prod-deal-qd">QD</span>}

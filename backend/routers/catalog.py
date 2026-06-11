@@ -1540,10 +1540,14 @@ def search_products(
 
         # Phase 3 — CELR Product Number (docs/CELR_PRODUCT_NUMBER_DESIGN.md):
         # the persistent FAMILY registry spanning sizes/vintages/distributors.
-        # When a clean UPC is in the registry, the family key wins over the
-        # per-UPC key, so a product's sizes share ONE card again. Rows not in
-        # the registry keep the per-UPC / name-core behaviour below.
+        # Resolution order per row: (1) registry by BARCODE; (2) registry by
+        # NAME KEY (covers placeholder barcodes like 111111111117, whose rows
+        # must still join their family — nothing is ever hidden, the family
+        # only decides which card a listing sits under); (3) the per-UPC /
+        # name-core legacy behaviour below.
+        from backend.celr import family_key as _celr_family_key
         celr_map: dict = {}
+        celr_key_map: dict = {}
         try:
             celr_upcs = sorted({str(rec.get("upc")).lstrip("0") for rec in records
                                 if _is_clean_upc(rec.get("upc"))})
@@ -1555,27 +1559,41 @@ def search_products(
                     f"WHERE upc_norm IN ({ph})", prm).fetchdf()
                 for _, r in cdf.iterrows():
                     celr_map[str(r["upc_norm"])] = (int(r["cpn"]), r["header_name"])
+            # name keys for every row not resolved by barcode
+            keys = sorted({
+                _celr_family_key(rec.get("product_name"), rec.get("product_type"))
+                for rec in records
+                if str(rec.get("upc") or "").lstrip("0") not in celr_map
+            })
+            if keys:
+                ph = ", ".join(f"$ck{i}" for i in range(len(keys)))
+                prm = {f"ck{i}": k for i, k in enumerate(keys)}
+                kdf = con.execute(
+                    f"SELECT key, cpn, header_name FROM celr_family_keys "
+                    f"WHERE key IN ({ph})", prm).fetchdf()
+                for _, r in kdf.iterrows():
+                    celr_key_map[str(r["key"])] = (int(r["cpn"]), r["header_name"])
         except Exception:
-            celr_map = {}
+            celr_map, celr_key_map = {}, {}
 
         for rec in records:
             pname = rec.get("product_name") or ""
             ptype = (rec.get("product_type") or "")
             brand = rec.get("brand") or ""
             enr = rec.get("enr_name")
-            if _is_clean_upc(rec.get("upc")):
-                un = str(rec.get("upc")).lstrip("0")
-                hit = celr_map.get(un)
-                if hit:
-                    cpn, header = hit
-                    rec["product_group"] = f"cpn:{cpn}"
-                    rec["product_display"] = header or upc_display.get(un) or pname
-                    rec["celr_product_number"] = f"CELR-{cpn:06d}"
-                else:
-                    # Distributor- AND name-agnostic key so every listing of
-                    # this barcode merges into one card.
-                    rec["product_group"] = "u:" + un
-                    rec["product_display"] = upc_display.get(un) or pname
+            un = str(rec.get("upc") or "").lstrip("0")
+            hit = celr_map.get(un) or celr_key_map.get(
+                _celr_family_key(pname, ptype))
+            if hit:
+                cpn, header = hit
+                rec["product_group"] = f"cpn:{cpn}"
+                rec["product_display"] = header or pname
+                rec["celr_product_number"] = f"CELR-{cpn:06d}"
+            elif _is_clean_upc(rec.get("upc")):
+                # Distributor- AND name-agnostic key so every listing of
+                # this barcode merges into one card.
+                rec["product_group"] = "u:" + un
+                rec["product_display"] = upc_display.get(un) or pname
             else:
                 if "wine" in ptype.lower():
                     core, display = "w:" + pname.lower().strip(), pname
@@ -3712,14 +3730,16 @@ def get_rip_siblings(
                 {k: (None if isinstance(v, float) and math.isnan(v) else v) for k, v in r.items()}
                 for r in df.to_dict(orient="records")
             ]
-            # Multi-listing UPC rule (user rule of record, mirrors derive.py /
-            # attach_tiers): when a reused barcode carries MORE THAN ONE SKU
+            # Multi-listing UPC rule (mirrors derive.py / attach_tiers): when a
+            # reused barcode carries MORE THAN ONE SKU and SOME line's own CPL
+            # rip_code matches this code, only the matching line(s) belong
             # (e.g. Allied's Coppola Chardonnay + Pinot Noir sharing
-            # 739958057209, where the RIP sheet says EXCLUDES PINOT NOIR),
-            # ONLY the line(s) whose own CPL rip_code matches this code
-            # belong — strict, no fallback. Single-listing UPCs keep the
-            # sheet-presence rule above (their CPL row may legitimately
-            # reference a different stacked RIP, e.g. UPC 80432400708).
+            # 739958057209, where the sheet says EXCLUDES PINOT NOIR).
+            # When NO line matches, the RIP SHEET'S word wins and ALL listings
+            # show — hiding every listing of a sheet-qualified barcode means
+            # buyers can't see (or buy) products that DO count toward the
+            # rebate (Coppola Diamond Collection 112206 lost 8 products that
+            # way). Show, don't hide.
             by_upc: dict = {}
             for r in records:
                 by_upc.setdefault(str(r.get("upc") or "").lstrip("0"), []).append(r)
@@ -3732,7 +3752,8 @@ def get_rip_siblings(
                 if len(names) <= 1:
                     filtered.extend(rows)
                     continue
-                filtered.extend(r for r in rows if str(r.get("rip_code") or "").strip() == rc)
+                matching = [r for r in rows if str(r.get("rip_code") or "").strip() == rc]
+                filtered.extend(matching if matching else rows)
             records = filtered
             # Drop only the exact CURRENT listing (name + vintage) when the
             # caller identifies it — the old UPC-wide exclusion hid same-UPC

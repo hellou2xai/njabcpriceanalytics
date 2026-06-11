@@ -135,6 +135,10 @@ def build_pricing_cache() -> Path:
                 "CREATE TABLE celr_products ("
                 "upc_norm VARCHAR, cpn INTEGER, header_name VARCHAR, brand VARCHAR)"
             )
+            empty_celr_keys = (
+                "CREATE TABLE celr_family_keys ("
+                "key VARCHAR, cpn INTEGER, header_name VARCHAR)"
+            )
             if PRICING_SOURCE == "parquet":
                 for t in ALL_TABLES:
                     con.execute(f"CREATE TABLE {t} AS SELECT * FROM {_parquet_select(t)}")
@@ -148,6 +152,12 @@ def build_pricing_cache() -> Path:
                         f"CREATE TABLE celr_products AS SELECT * FROM read_parquet('{_celr_pq.as_posix()}')")
                 else:
                     con.execute(empty_celr)
+                _celr_keys_pq = PARQUET_DIR / "derived" / "celr_family_keys.parquet"
+                if _celr_keys_pq.exists():
+                    con.execute(
+                        f"CREATE TABLE celr_family_keys AS SELECT * FROM read_parquet('{_celr_keys_pq.as_posix()}')")
+                else:
+                    con.execute(empty_celr_keys)
             else:
                 from backend.pg import DATABASE_URL
                 con.execute("INSTALL postgres; LOAD postgres;")
@@ -182,6 +192,21 @@ def build_pricing_cache() -> Path:
                     """)
                 except Exception:   # registry not built yet
                     con.execute(empty_celr)
+                try:
+                    # Name-key lookup for rows whose barcode is a placeholder:
+                    # the serving layer computes the row's family key and joins
+                    # here (same alias resolution as celr_products).
+                    con.execute("""
+                        CREATE TABLE celr_family_keys AS
+                        SELECT k.key,
+                               COALESCE(a.canonical_cpn, k.cpn) AS cpn,
+                               f.header_name
+                        FROM pg.celr_family_keys k
+                        LEFT JOIN pg.celr_family_aliases a ON a.cpn = k.cpn
+                        JOIN pg.celr_families f ON f.cpn = COALESCE(a.canonical_cpn, k.cpn)
+                    """)
+                except Exception:
+                    con.execute(empty_celr_keys)
                 con.execute("DETACH pg")
 
             # Wire the catalogue brand to the Go-UPC enriched brand by UPC. CPL

@@ -450,6 +450,13 @@ def init_user_db():
             cpn           integer PRIMARY KEY,
             canonical_cpn integer NOT NULL
         )""",
+        # Name-key lookup (v2): every catalogue/trusted-enrichment token key a
+        # family was built from, so rows with PLACEHOLDER barcodes still join
+        # their family at serving time and new barcodes assign incrementally.
+        """CREATE TABLE IF NOT EXISTS celr_family_keys (
+            key text PRIMARY KEY,
+            cpn integer NOT NULL REFERENCES celr_families(cpn)
+        )""",
         "CREATE INDEX IF NOT EXISTS idx_celr_upcs_cpn ON celr_product_upcs(cpn)",
         # AI-generated "why this is a deal" blurb, keyed per product per edition.
         # Pre-generated after each data load (see backend.ai_blurbs). `version`

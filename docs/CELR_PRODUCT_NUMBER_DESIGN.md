@@ -64,6 +64,28 @@ normalized tokens, never raw strings:
 - **Junk**: `OLD LOT`, closeout markers, glass/VAP suffixes -> ignored for
   identity, preserved on the listing display.
 
+## v2 revision (2026-06-11, after the Jim Beam Orange live test)
+
+v1 keyed identity off Go-UPC enrichment names and split one product five
+ways: enrichment names vary in descriptor verbosity ("Jim Beam Orange" vs
+"... Kentucky Straight Bourbon Whiskey") and are sometimes garbage ("Beam
+Banner Jim Orange Pet"; "Kyocera Test Artist" for placeholder barcode
+111111111117, which also passed the clean-barcode check). User-confirmed v2
+order, implemented in backend/celr.py + the union-find builder:
+
+1. **Name clustering first**: catalogue-name token signatures are the
+   primary identity signal (distributor names are consistent).
+2. **Barcode equality second**: the same real barcode anywhere = the same
+   family, stitching distributors whose name spellings differ.
+3. **Sizes/distributor listings group UNDER the family** as variants.
+4. Trusted enrichment (shares >=1 significant token with the catalogue
+   name) only BRIDGES abbreviation variance and supplies header_name;
+   untrusted enrichment is ignored entirely.
+5. Repeated-digit placeholder barcodes are not identity nodes; their rows
+   join families AT SERVING TIME by name key (celr_family_keys), so
+   **nothing is ever hidden** — grouping only decides which card a listing
+   sits under.
+
 ## Grouping algorithm (deterministic cascade, future-proof)
 
 Run after every monthly ingest; incremental and idempotent:

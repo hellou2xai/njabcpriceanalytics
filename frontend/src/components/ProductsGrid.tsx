@@ -268,6 +268,11 @@ function ProductCard({ group, cart, updateQty, showDeals = true }: {
   showDeals?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+  // Hover/focus intent: start the expand-time fetches (full size set + tiers)
+  // as soon as the pointer reaches the card, so clicking the chevron renders
+  // from cache instead of waiting seconds for the network.
+  const [warm, setWarm] = useState(false);
+  const warmUp = () => setWarm(true);
   const range = priceRange(group.sizes);
   const anyDisc = group.sizes.some(s => s.has_discount);   // quantity discount
   const anyRip = group.sizes.some(s => s.has_rip);          // RIP
@@ -307,7 +312,7 @@ function ProductCard({ group, cart, updateQty, showDeals = true }: {
   // tool (handles spirits' inconsistent names + wine's vintages) so every size
   // always shows regardless of where the page boundary fell.
   const { sizes: fullSizes, isFetching } = useProductSizes(
-    group.wholesaler, group.productName, first?.upc, expanded);
+    group.wholesaler, group.productName, first?.upc, expanded || warm);
   // Distinct distributors carrying this product (one row per distributor's
   // listing). When >1, keep the search rows (they already span distributors) —
   // the single-distributor "all sizes" fetch would otherwise drop the others.
@@ -319,8 +324,8 @@ function ProductCard({ group, cart, updateQty, showDeals = true }: {
   const groupUpcs = useMemo(
     () => [...new Set(group.sizes.map(s => s.upc).filter(Boolean) as string[])], [group.sizes]);
   const { data: multiData } = useQuery({
-    enabled: expanded && multiDist && groupUpcs.length > 0,
-    staleTime: 5 * 60_000,
+    enabled: (expanded || warm) && multiDist && groupUpcs.length > 0,
+    staleTime: 30 * 60_000,
     queryKey: ['multidist-sizes', groupUpcs.join(',')],
     queryFn: () => catalog.search({ upcs: groupUpcs.join(','), include_tiers: true, limit: 200, sort: 'product_name', order: 'asc' }),
   });
@@ -335,7 +340,8 @@ function ProductCard({ group, cart, updateQty, showDeals = true }: {
 
   return (
     <div className={`prod-card${expanded ? ' is-expanded' : ''}`} ref={cardRef}>
-      <div className="prod-card-head" onClick={() => setExpanded(e => !e)}>
+      <div className="prod-card-head" onClick={() => setExpanded(e => !e)}
+        onPointerEnter={warmUp} onFocus={warmUp}>
         <div className="prod-card-fav" onClick={e => e.stopPropagation()}>
           <FavoriteButton productName={group.productName} wholesaler={group.wholesaler}
             upc={first?.upc} unitVolume={first?.unit_volume} />

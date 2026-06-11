@@ -9,6 +9,7 @@ import { useProductQuickView } from '../components/ProductQuickView';
 import ProductThumb from '../components/ProductThumb';
 import DealSparkline from '../components/DealSparkline';
 import { distributorName, abgSku, skuLabel, isKegUnit, priceUnit, perUnitAbbr } from '../lib/distributors';
+import { ripPrograms, effectiveRipCode, programSummary } from '../lib/ripPrograms';
 import { useDialog } from '../components/Dialog';
 import { ErrorState, EmptyState } from '../components/DataState';
 import DataLoading from '../components/DataLoading';
@@ -300,6 +301,13 @@ function ListRow({ it, selected, toggle, onRemove }: {
   onRemove: () => void;
 }) {
   const { open } = useProductQuickView();
+  const qc = useQueryClient();
+  const pickRip = useMutation({
+    mutationFn: (code: string | null) => listsApi.updateItem(it.list_id, it.id, { rip_choice: code }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['list', it.list_id] }),
+  });
+  const programs = ripPrograms(it.tiers);
+  const effRip = effectiveRipCode(it, programs);
   const keg = isKegUnit(it.unit_volume, it.unit_type);
   const pack = (() => { const n = Number(it.unit_qty); return Number.isFinite(n) && n > 0 ? Math.round(n) : null; })();
   const effCase = it.effective_case_price ?? null;
@@ -327,6 +335,25 @@ function ListRow({ it, selected, toggle, onRemove }: {
             {(it.rip_gaps?.length ?? 0) > 0 && (
               <div style={{ marginTop: 4 }} onClick={e => e.stopPropagation()}>
                 <DealTimingSticker deals={[]} gaps={it.rip_gaps} />
+              </div>
+            )}
+            {/* The UPC qualifies under several RIP programs (they don't
+                stack): pick the one this line should earn. Carried into the
+                cart with the item. */}
+            {programs.length > 1 && (
+              <div className="cart-rip-pick" style={{ margin: '4px 0 0' }}
+                onClick={e => e.stopPropagation()}>
+                <label title="This product qualifies under more than one RIP program. Programs don't stack — pick the one this line should earn; the choice carries into the cart.">
+                  RIP program:{' '}
+                  <select value={effRip ?? ''}
+                    onChange={e => pickRip.mutate(e.target.value || null)}>
+                    {programs.map(p => (
+                      <option key={p.code ?? ''} value={p.code ?? ''}>
+                        RIP {p.code ?? '—'} · {programSummary(p)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
             )}
           </div>

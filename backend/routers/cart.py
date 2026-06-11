@@ -54,6 +54,9 @@ class CartItemPatch(BaseModel):
     saved_for_later: Optional[bool] = None
     notes: Optional[str] = None
     retail_price: Optional[float] = None
+    # Chosen RIP program for the line (one UPC can sit under several rebates
+    # that don't stack). Explicit null/'' resets to the default program.
+    rip_choice: Optional[str] = None
 
 
 class AssignRepIn(BaseModel):
@@ -115,18 +118,20 @@ def _insert_cart_item(con, user_id, item: dict, rep_id):
         f"""INSERT INTO cart_items
               (user_id, product_name, wholesaler, upc, unit_volume, combo_code,
                qty_cases, qty_units, sales_rep_id, saved_for_later,
-               batch_id, batch_label, batch_source)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,0,%s,%s,%s)
+               batch_id, batch_label, batch_source, rip_choice)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,0,%s,%s,%s,%s)
             ON CONFLICT (user_id, product_name, wholesaler, unit_volume,
                          COALESCE(batch_id, '')) DO UPDATE SET
               qty_cases = cart_items.qty_cases + EXCLUDED.qty_cases,
               qty_units = cart_items.qty_units + EXCLUDED.qty_units,
+              rip_choice = COALESCE(EXCLUDED.rip_choice, cart_items.rip_choice),
               saved_for_later = 0,
               updated_at = {NOW_UTC}""",
         (user_id, item["product_name"], item["wholesaler"], item.get("upc"),
          item.get("unit_volume"), item.get("combo_code"),
          item.get("qty_cases", 0) or 0, item.get("qty_units", 0) or 0, rep_id,
-         item.get("batch_id"), item.get("batch_label"), item.get("batch_source")),
+         item.get("batch_id"), item.get("batch_label"), item.get("batch_source"),
+         item.get("rip_choice")),
     )
 
 
@@ -380,6 +385,7 @@ def _case_tiers(item: dict, kind: str) -> list[dict]:
             continue
         out.append({
             "qty": q,
+            "code": str(t.get("code") or "") or None,
             "save": _fnum(t.get("save_per_case")) or 0.0,
             # For a RIP tier the canonical `save_per_case` STACKS the quantity
             # discount, so carry the split so the UI can show "QD $A + RIP $B".
@@ -555,6 +561,58 @@ def analyze_lines(items: list[dict]) -> dict:
                 best = (extra, payload)
         if best:
             recs.append(best[1])
+
+    # --- better-RIP: the UPC sits under SEVERAL RIP programs (they don't
+    # stack) and a different program pays more at a comparable quantity than
+    # the line's current one. Surfaces the difference so the buyer can switch
+    # the line's RIP (rip_choice) — e.g. Buehler: mix RIP pays $15 at 2cs,
+    # the standalone Cabernet RIP pays $60 at the same 2cs. ---
+    for it in items:
+        by_code: dict = {}
+        for t in _case_tiers(it, "rip"):
+            c = t.get("code")
+            if c:
+                by_code.setdefault(c, []).append(t)
+        if len(by_code) < 2:
+            continue
+        eff = (str(it.get("rip_choice") or "").strip()
+               or str(it.get("rip_code") or "").strip())
+        if eff not in by_code:
+            eff = next(iter(by_code))
+        C = int(it.get("qty_cases") or 0)
+
+        def _save_at(ts, qty):
+            return max((x["save"] for x in ts if x["qty"] <= qty), default=0.0)
+
+        best = None
+        for code, ts in by_code.items():
+            if code == eff:
+                continue
+            # Compare at the candidate's entry quantity (or the line's current
+            # cases when already past it): equal commitment, different payout.
+            target = max(min(x["qty"] for x in ts), C)
+            mine = _save_at(by_code[eff], target)
+            theirs = _save_at(ts, target)
+            gain = round((theirs - mine) * target, 2)
+            if theirs > mine + 0.005 and gain > 1.0 and (best is None or gain > best["extra_savings"]):
+                ct = next(x for x in sorted(ts, key=lambda x: x["qty"]) if x["qty"] <= target)
+                best = {
+                    "type": "better_rip",
+                    "line_id": it.get("id"), "product_name": it.get("product_name") or "Item",
+                    "upc": it.get("upc"), "abg_sku": it.get("abg_sku"),
+                    "wholesaler": it.get("wholesaler"), "unit_volume": it.get("unit_volume"),
+                    "unit_type": it.get("unit_type"), "unit_qty": it.get("unit_qty"),
+                    "current_rip_code": eff, "better_rip_code": code,
+                    "target_qty": target,
+                    "save_per_case_current": round(mine, 2),
+                    "save_per_case_better": round(theirs, 2),
+                    "extra_savings": gain,
+                    "description": ct.get("description"),
+                    "window_status": ct.get("window_status"),
+                    "days_to_expire": ct.get("days_to_expire"),
+                }
+        if best:
+            recs.append(best)
 
     # --- case-mix qualification (pool cases across items sharing a mix RIP) ---
     groups: dict = {}
@@ -772,6 +830,10 @@ def remove_batch(batch_id: str, user: dict = Depends(get_current_user)):
 def update_cart_item(item_id: int, body: CartItemPatch, user: dict = Depends(get_current_user)):
     fields, params = [], []
     data = body.model_dump(exclude_unset=True)
+    if "rip_choice" in data:
+        rc = (data.pop("rip_choice") or "").strip()
+        fields.append("rip_choice=%s")
+        params.append(rc or None)
     for col in ("qty_cases", "qty_units", "sales_rep_id", "notes", "retail_price"):
         if col in data:
             fields.append(f"{col}=%s")

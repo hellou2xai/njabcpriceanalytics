@@ -133,6 +133,33 @@ function RecCard({ rec, context, onSetQty, onSwap, busy }: {
     );
   }
 
+  if (rec.type === 'better_rip') {
+    // The line's UPC sits under SEVERAL RIP programs (they don't stack) and a
+    // different one pays more at the same commitment — switch the line's RIP.
+    return (
+      <div className="sav-rec">
+        <span className="sav-ico is-rip"><TrendingUp size={15} /></span>
+        <div className="sav-rec-body">
+          <div className="sav-rec-head">
+            <TierBadge kind="rip" label="Better RIP" />
+            <ProductLink rec={rec} />{rec.unit_volume ? ` · ${rec.unit_volume}` : ''}
+            <Expiry rec={rec} />
+          </div>
+          <Ids rec={rec} />
+          <div className="sav-rec-text">
+            At <strong>{cs(rec.target_qty)}</strong>, RIP <strong>{rec.better_rip_code}</strong> pays{' '}
+            <strong>{money(rec.save_per_case_better)}/{priceUnit(rec.unit_volume, rec.unit_type)}</strong> vs{' '}
+            {money(rec.save_per_case_current)} on RIP {rec.current_rip_code}. Programs don't stack —
+            switch this line's RIP program in the {context === 'cart' ? 'cart' : 'list'}.
+            {rec.description ? <span className="sav-rec-desc"> · {rec.description}</span> : null}
+          </div>
+        </div>
+        <RowSpark rec={rec} />
+        <div className="sav-rec-right"><span className="sav-amt">+{money(rec.extra_savings)}</span></div>
+      </div>
+    );
+  }
+
   if (rec.type === 'case_mix') {
     return (
       <div className="sav-rec">

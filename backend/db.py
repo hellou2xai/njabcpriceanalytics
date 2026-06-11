@@ -780,6 +780,12 @@ def init_user_db():
             "ALTER TABLE cart_items ADD COLUMN IF NOT EXISTS batch_id text",
             "ALTER TABLE cart_items ADD COLUMN IF NOT EXISTS batch_label text",
             "ALTER TABLE cart_items ADD COLUMN IF NOT EXISTS batch_source text",
+            # The buyer's chosen RIP program for the line. A UPC can sit under
+            # several rebates (brand-mix + standalone) that don't stack; NULL =
+            # default (the CPL row's own code). Same column on list_items so a
+            # list carries the choice into the cart.
+            "ALTER TABLE cart_items ADD COLUMN IF NOT EXISTS rip_choice text",
+            "ALTER TABLE list_items ADD COLUMN IF NOT EXISTS rip_choice text",
         ):
             con.execute(ddl)
         # Swap the unique index so two SEPARATE batched sends of the same

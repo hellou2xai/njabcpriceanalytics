@@ -1085,6 +1085,13 @@ export interface ListItem {
   // Latest CPL rip_code for this UPC, attached server-side so the Lists UI
   // can sub-group lines by RIP rebate the same way the cart does.
   rip_code?: string | null;
+  // The buyer's chosen RIP program for this line (a UPC can sit under several
+  // rebates that don't stack); null = default. Carried into the cart.
+  rip_choice?: string | null;
+  // Full deal tiers (same attach as the cart) so Lists can show each line's
+  // RIP programs and let the buyer pick one.
+  tiers?: CatalogTier[];
+  has_discount?: boolean; has_rip?: boolean;
   // No-RIP "avoid these days" windows between dated RIP windows.
   rip_gaps?: { from: string; to: string; days: number }[];
   deal_windows?: { kind: 'QD' | 'RIP'; qty?: number | null; unit?: string | null; from: string; to: string; eff: number | null; save: number | null }[];
@@ -1116,6 +1123,9 @@ export interface CartItem {
   // RIP rebate code this line currently rolls up under (enriched from the
   // catalogue at GET time; null when the product has no RIP).
   rip_code?: string | null;
+  // The buyer's chosen RIP program for this line (a UPC can sit under several
+  // rebates that don't stack); null = default (the CPL row's own code).
+  rip_choice?: string | null;
   // Batch tagging: items added together as one send (a RIP cluster from the
   // catalog or AI) share a batch_id and label. NULL = added as a single
   // ungrouped product. See cart.addBatch().
@@ -1136,7 +1146,7 @@ export interface CartBatchItemIn {
 
 // ---- Analyze for Savings (cart + lists) ----
 export interface SavingsRec {
-  type: 'tier_gap' | 'case_mix' | 'buy_before' | 'swap';
+  type: 'tier_gap' | 'case_mix' | 'buy_before' | 'swap' | 'better_rip';
   kind?: 'qd' | 'rip';
   line_id?: number;
   line_ids?: number[];
@@ -1171,6 +1181,12 @@ export interface SavingsRec {
   to_wholesaler?: string;
   other_price?: number;
   total_savings?: number;
+  // better_rip: the line's UPC sits under several RIP programs and a
+  // different one pays more at the same quantity.
+  current_rip_code?: string;
+  better_rip_code?: string;
+  save_per_case_current?: number;
+  save_per_case_better?: number;
   window_status?: string | null;
   days_to_expire?: number | null;
   // Month-over-month context (digest only): how this item's best per-case
@@ -1240,6 +1256,8 @@ export const lists = {
     request(`/api/lists/${id}/items`, { method: 'POST', body: JSON.stringify(item) }),
   removeItem: (id: number, itemId: number) =>
     request(`/api/lists/${id}/items/${itemId}`, { method: 'DELETE' }),
+  updateItem: (id: number, itemId: number, data: { notes?: string; rip_choice?: string | null }) =>
+    request(`/api/lists/${id}/items/${itemId}`, { method: 'PUT', body: JSON.stringify(data) }),
   removeItems: (id: number, itemIds: number[]) =>
     request(`/api/lists/${id}/items/delete`, { method: 'POST', body: JSON.stringify({ item_ids: itemIds }) }),
 };
@@ -1263,7 +1281,7 @@ export const cart = {
   addByRip: (body: { wholesaler: string; rip_code: string; qty_cases_per_item?: number }) =>
     request<{ added: number; batch_id: string | null; batch_label: string; batch_source: string; message?: string }>(
       '/api/cart/add-by-rip', { method: 'POST', body: JSON.stringify(body) }),
-  update: (id: number, data: { qty_cases?: number; qty_units?: number; sales_rep_id?: number | null; saved_for_later?: boolean; notes?: string }) =>
+  update: (id: number, data: { qty_cases?: number; qty_units?: number; sales_rep_id?: number | null; saved_for_later?: boolean; notes?: string; rip_choice?: string | null }) =>
     request(`/api/cart/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   remove: (id: number) => request(`/api/cart/${id}`, { method: 'DELETE' }),
   // One-command distributor swap: replace cart items from one distributor with
@@ -1700,6 +1718,7 @@ export interface RipTier extends TierWindow {
   btl_price_after?: number | null;
   bundle_cost: number;
   roi_pct: number;
+  code?: string | null;   // RIP code this tier belongs to (one UPC, several programs)
   description: string | null;
   is_time_sensitive?: boolean;
 }

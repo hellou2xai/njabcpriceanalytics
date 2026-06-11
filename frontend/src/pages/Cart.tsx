@@ -11,6 +11,7 @@ import { useProductQuickView } from '../components/ProductQuickView';
 import { useDialog } from '../components/Dialog';
 import { shortUnit } from '../components/CatalogTable';
 import { distributorName, abgSku, skuLabel, priceUnit, perUnitAbbr, isKegUnit } from '../lib/distributors';
+import { ripPrograms, effectiveRipCode, betterProgram, programSummary, fmtAmt } from '../lib/ripPrograms';
 import { ErrorState, EmptyState } from '../components/DataState';
 import DataLoading from '../components/DataLoading';
 
@@ -101,23 +102,20 @@ interface RipTier { qty: number; unit: 'case' | 'btl'; amt: number; }
  *  met. Quantities count across every ACTIVE line sharing this line's RIP code
  *  at the same distributor (mix RIPs qualify cluster-wide, not per product). */
 function lineRipEligibility(it: CartItem, all: CartItem[]): { text: string; tone: 'gap' | 'reached' } | null {
-  if ((it.tiers ?? []).every(t => t.source !== 'rip')) return null;
-  const rc = it.rip_code != null ? String(it.rip_code).trim() : '';
+  // Program-aware: only the line's EFFECTIVE RIP program counts (programs
+  // don't stack), and the cluster pools lines running under the SAME program.
+  const programs = ripPrograms(it.tiers);
+  if (!programs.length) return null;
+  const rc = effectiveRipCode(it, programs) ?? '';
+  const prog = programs.find(p => p.code === (rc || null));
+  if (!prog || !prog.tiers.length) return null;
   const cluster = rc
-    ? all.filter(x => x.wholesaler === it.wholesaler && String(x.rip_code ?? '').trim() === rc)
+    ? all.filter(x => x.wholesaler === it.wholesaler
+        && (effectiveRipCode(x, ripPrograms(x.tiers)) ?? '') === rc)
     : [it];
-  const map = new Map<string, RipTier>();
   const votes = { case: 0, btl: 0 };
-  for (const t of (it.tiers ?? [])) {
-    if (t.source !== 'rip') continue;
-    const u = normUnit(t.unit);
-    votes[u]++;
-    const k = `${t.qty}|${u}`;
-    const prev = map.get(k);
-    if (!prev || t.amount > prev.amt) map.set(k, { qty: t.qty, unit: u, amt: t.amount });
-  }
-  const tiers = [...map.values()].sort((a, b) => a.qty - b.qty);
-  if (!tiers.length) return null;
+  for (const t of prog.tiers) votes[t.unit]++;
+  const tiers = prog.tiers;
   const unit: 'case' | 'btl' = votes.btl > votes.case ? 'btl' : 'case';
   const have = cluster.reduce((s, x) => s + (unit === 'case' ? (x.qty_cases || 0) : (x.qty_units || 0)), 0);
   const uw = unit === 'case' ? 'case' : 'bottle';
@@ -482,10 +480,46 @@ export default function Cart() {
         </div>
 
         {/* eBiz-style per-line RIP eligibility: how far this line (and its RIP
-            cluster) is from the next rebate, or which tier it already earns. */}
+            cluster) is from the next rebate, or which tier it already earns.
+            When the UPC sits under SEVERAL RIP programs (they don't stack),
+            a selector lets the buyer pick the program, and a hint points out
+            when a different program pays more at the same commitment. */}
         {!saving && (() => {
           const elig = lineRipEligibility(it, active);
-          return elig ? <div className={`cart-rip-elig tone-${elig.tone}`}>{elig.text}</div> : null;
+          const programs = ripPrograms(it.tiers);
+          const eff = effectiveRipCode(it, programs);
+          const sug = betterProgram(programs, eff, it.qty_cases || 0);
+          const sugUw = sug?.program.tiers[0]?.unit === 'btl' ? 'bottle' : 'case';
+          return (
+            <>
+              {elig && <div className={`cart-rip-elig tone-${elig.tone}`}>{elig.text}</div>}
+              {programs.length > 1 && (
+                <div className="cart-rip-pick">
+                  <label title="This product qualifies under more than one RIP program. Programs don't stack — the line earns the one selected here.">
+                    RIP program:{' '}
+                    <select value={eff ?? ''}
+                      onChange={e => upd.mutate({ id: it.id, patch: { rip_choice: e.target.value || null } })}>
+                      {programs.map(p => (
+                        <option key={p.code ?? ''} value={p.code ?? ''}>
+                          RIP {p.code ?? '—'} · {programSummary(p)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {sug && (
+                    <span className="cart-rip-sug">
+                      RIP {sug.program.code} pays {fmtAmt(sug.pays)} at {sug.atQty} {sugUw}{sug.atQty === 1 ? '' : 's'}
+                      {' '}(vs {fmtAmt(sug.currentPays)} on RIP {eff}).{' '}
+                      <button type="button" className="cart-rip-sug-btn"
+                        onClick={() => upd.mutate({ id: it.id, patch: { rip_choice: sug.program.code } })}>
+                        Switch
+                      </button>
+                    </span>
+                  )}
+                </div>
+              )}
+            </>
+          );
         })()}
 
         {/* Deal tiers, same info as the catalogue, to tweak qty last minute. Combo

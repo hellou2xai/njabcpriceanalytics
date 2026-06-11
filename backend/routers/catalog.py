@@ -2086,35 +2086,63 @@ def get_product_detail(
             item_btl_price = float(item.get("frontline_unit_price") or 0)
         except (TypeError, ValueError):
             item_btl_price = 0.0
-        if rip_code and str(rip_code) not in ("None", "nan", "0", ""):
+        un_detail = str(upc or "").lstrip("0")
+        if un_detail:
             rip_src = read_parquet(con, "rip")
             # Some wholesalers (Fedway) pack several RIP codes into one cell,
             # e.g. "240002 250002". The RIP sheet stores each code as its own
             # row, so match ANY of the split codes (same as pricing.attach_tiers
             # and derive.py) instead of the literal multi-code string.
-            rcodes = _pricing._split_rip_codes(rip_code) or [str(rip_code)]
-            rc_ph = ", ".join(f"$rc{i}" for i in range(len(rcodes)))
-            rc_params = {f"rc{i}": c for i, c in enumerate(rcodes)}
+            rcodes = (_pricing._split_rip_codes(rip_code) or [str(rip_code)]) \
+                if rip_code and str(rip_code) not in ("None", "nan", "0", "") else []
+            # A UPC can sit under SEVERAL rebates (Buehler 724404009031: mix
+            # RIP 100567 at 2cs $15 AND standalone 100714 at 2cs $60). The CPL
+            # row references only one, but the buyer must see every program to
+            # pick the better one — so on the SINGLE-LISTING path fetch every
+            # code listing this UPC, the same rule pricing.attach_tiers uses.
+            # Multi-listing barcodes keep the strict own-code lookup (a reused
+            # barcode must not borrow another product's RIP). An explicit
+            # rip_code override still pins the modal to that cluster alone.
+            single_listing = True
+            try:
+                craw_d = read_parquet(con, "cpl")
+                nrow = con.execute(f"""
+                    SELECT COUNT(DISTINCT (product_name, COALESCE(unit_volume, ''),
+                                           COALESCE(CAST(vintage AS VARCHAR), ''),
+                                           COALESCE(regexp_replace(TRIM(CAST(unit_qty AS VARCHAR)), '\\.0+$', ''), ''))) AS n
+                    FROM {craw_d}
+                    WHERE wholesaler = $w AND edition = $e
+                      AND LTRIM(CAST(upc AS VARCHAR), '0') = $u
+                """, {"w": wholesaler, "e": ed, "u": un_detail}).fetchone()
+                single_listing = bool(nrow) and int(nrow[0]) <= 1
+            except Exception:
+                single_listing = True
+            broad = single_listing and not override_rc
+            rc_ph = ", ".join(f"$rc{i}" for i in range(len(rcodes))) or "''"
+            # DuckDB rejects bind params the SQL doesn't reference, so the
+            # code params only exist on the strict (non-broad) path.
+            rc_params = {} if broad else {f"rc{i}": c for i, c in enumerate(rcodes)}
             rip_rows = con.execute(f"""
-                SELECT rip_description,
+                SELECT CAST(rip_code AS VARCHAR) AS rip_code, rip_description,
                        from_date, to_date,
                        rip_unit_1, rip_qty_1, rip_amt_1,
                        rip_unit_2, rip_qty_2, rip_amt_2,
                        rip_unit_3, rip_qty_3, rip_amt_3,
                        rip_unit_4, rip_qty_4, rip_amt_4
                 FROM {rip_src}
-                WHERE rip_code IN ({rc_ph})
-                  AND wholesaler = $wholesaler
+                WHERE wholesaler = $wholesaler
                   AND edition = $edition
-                  AND upc = $upc
+                  AND LTRIM(CAST(upc AS VARCHAR), '0') = $un
+                  AND ({'1 = 1' if broad else f'CAST(rip_code AS VARCHAR) IN ({rc_ph})'})
             """, {
                 **rc_params, "wholesaler": wholesaler,
-                "edition": ed, "upc": str(upc),
+                "edition": ed, "un": un_detail,
             }).fetchdf()
 
             seen = set()
             for _, r in rip_rows.iterrows():
                 description = r.get("rip_description")
+                tier_code = str(r.get("rip_code") or "").strip() or None
                 rwin = _pricing.window_status(r.get("from_date"), r.get("to_date"), as_of)
                 rfrom, rto = _iso_date(r.get("from_date")), _iso_date(r.get("to_date"))
                 for j in range(1, 5):
@@ -2134,7 +2162,7 @@ def get_product_detail(
                     # ranges at the same qty/amount (e.g. an active 1-8 Jun deal
                     # and an upcoming 11-30 Jun one) both survive — the buyer
                     # sees the full picture, each badged with its own status.
-                    sig = (int(rqty_f), round(ramt_f, 2), str(unit), rfrom, rto)
+                    sig = (tier_code, int(rqty_f), round(ramt_f, 2), str(unit), rfrom, rto)
                     if sig in seen:
                         continue
                     seen.add(sig)
@@ -2152,6 +2180,7 @@ def get_product_detail(
                                             if item_btl_price > 0 and item_pack > 0 else None),
                         "bundle_cost": round(bundle_cost, 2) if bundle_cost > 0 else 0.0,
                         "roi_pct": round((ramt_f / bundle_cost) * 100, 2) if bundle_cost > 0 else 0.0,
+                        "code": tier_code,
                         "description": str(description) if description else None,
                         "from_date": rfrom,
                         "to_date": rto,
@@ -2160,9 +2189,10 @@ def get_product_detail(
                         "is_time_sensitive": _pricing.is_time_sensitive_window(
                             r.get("from_date"), r.get("to_date")),
                     })
-            # Order by qty, then by window start so an "active now" tier sorts
-            # ahead of a later "starts DD MMM" tier at the same qty.
-            rip_tiers.sort(key=lambda x: (x["qty"], x.get("from_date") or ""))
+            # Order by program (code), then qty, then window start so an
+            # "active now" tier sorts ahead of a later "starts DD MMM" tier at
+            # the same qty and each RIP's tiers stay contiguous for display.
+            rip_tiers.sort(key=lambda x: (x.get("code") or "", x["qty"], x.get("from_date") or ""))
 
         # Go-UPC enrichment (image + canonical details), matched by normalised
         # UPC. Empty/absent table -> no enrichment, never an error. category_path

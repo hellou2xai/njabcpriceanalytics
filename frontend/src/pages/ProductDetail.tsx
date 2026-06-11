@@ -115,6 +115,35 @@ function MiniCard({ p }: { p: Product }) {
   );
 }
 
+// ---- "Other products in this Case Mix RIP" — one section PER program ----
+// exclude_name limits the exclusion to THIS listing, so sibling SKUs and
+// other vintages sharing this product's barcode still show as members.
+function RipMembersSection({ wholesaler, code, upc, name }: {
+  wholesaler: string;
+  code: string;
+  upc?: string | null;
+  name?: string | null;
+}) {
+  const { data } = useQuery({
+    enabled: !!code && !!wholesaler,
+    queryKey: ['pd-rip-siblings', wholesaler, code, upc, name],
+    queryFn: () => catalog.ripSiblings(wholesaler, code, {
+      exclude_upc: upc ?? undefined, exclude_name: name || undefined,
+    }),
+  });
+  const items = (data?.items ?? []) as Product[];
+  if (items.length === 0) return null;
+  return (
+    <section className="pd-section">
+      <h2>Other products in this Case Mix RIP <span className="pd-rip-tag">RIP {code}</span></h2>
+      <p className="pd-section-sub">Buy these together to qualify for the RIP.</p>
+      <div className="pd-related-grid">
+        {items.map((p, i) => <MiniCard key={`${p.upc}|${i}`} p={p} />)}
+      </div>
+    </section>
+  );
+}
+
 // ---- one size section in the right rail ----
 function SizeSection({ size, view, cart, updateQty, primaryName, alt }: {
   size: Product;
@@ -229,28 +258,50 @@ function SizeSection({ size, view, cart, updateQty, primaryName, alt }: {
         </span>
       </div>
 
-      {/* Case-mix RIP tiers, by RIP tier — surfaced like the reference "Mix RIP" box. */}
-      {ripTiers.length > 0 && (
-        <div className="pd-mixrip">
-          <div className="pd-mixrip-head">Mix RIP{size.rip_code ? ` · RIP ${size.rip_code}` : ''}</div>
-          {ripTiers[0]?.description && <div className="pd-mixrip-desc">{ripTiers[0].description}</div>}
-          {ripTiers.map((t, i) => (
-            <div key={i} className="pd-mixrip-line">
-              Buy {t.qty} {buyUnit(t.qty, t.unit)} – <strong>${t.amount.toFixed(2)} RIP</strong>
-              {' '}<TierWin t={t} />
-              {t.price_after != null && (() => {
-                const mb = btl(t.price_after) ?? t.btl_price_after;
-                return (
-                  <span className="pd-mixrip-after">
-                    {' → '}${t.price_after.toFixed(2)}/case
-                    {mb != null && <> · ${mb.toFixed(2)}/{perUnitNoun(size.unit_volume, size.unit_type)}{size.unit_volume ? ` (${size.unit_volume})` : ''}</>}
-                  </span>
-                );
-              })()}
-            </div>
-          ))}
-        </div>
-      )}
+      {/* RIP tiers, ONE block PER RIP program. A UPC can sit under several
+          rebates (a brand-mix RIP and a standalone product RIP) and they do
+          not stack — the buyer picks the program that pays best for how much
+          they buy, so each program shows its own code, scope and levels,
+          mirroring the distributor-portal "Available RIPs" layout. */}
+      {ripTiers.length > 0 && (() => {
+        const groups: { code: string | null; desc: string | null; tiers: typeof ripTiers }[] = [];
+        for (const t of ripTiers) {
+          const code = t.code ?? size.rip_code ?? null;
+          const g = groups.find(x => x.code === code);
+          if (g) { g.tiers.push(t); if (!g.desc && t.description) g.desc = t.description; }
+          else groups.push({ code, desc: t.description ?? null, tiers: [t] });
+        }
+        return (
+          <>
+            {groups.length > 1 && (
+              <div className="pd-mixrip-pick">
+                Qualifies under {groups.length} RIP programs. They don't stack — pick the one that fits your buy.
+              </div>
+            )}
+            {groups.map((g, gi) => (
+              <div key={`rip${gi}`} className="pd-mixrip">
+                <div className="pd-mixrip-head">{groups.length > 1 ? 'RIP' : 'Mix RIP · RIP'}{g.code ? ` ${g.code}` : ''}</div>
+                {g.desc && <div className="pd-mixrip-desc">{g.desc}</div>}
+                {g.tiers.map((t, i) => (
+                  <div key={i} className="pd-mixrip-line">
+                    Buy {t.qty} {buyUnit(t.qty, t.unit)} – <strong>${t.amount.toFixed(2)} RIP</strong>
+                    {' '}<TierWin t={t} />
+                    {t.price_after != null && (() => {
+                      const mb = btl(t.price_after) ?? t.btl_price_after;
+                      return (
+                        <span className="pd-mixrip-after">
+                          {' → '}${t.price_after.toFixed(2)}/case
+                          {mb != null && <> · ${mb.toFixed(2)}/{perUnitNoun(size.unit_volume, size.unit_type)}{size.unit_volume ? ` (${size.unit_volume})` : ''}</>}
+                        </span>
+                      );
+                    })()}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </>
+        );
+      })()}
       </div>
 
       {/* Volume-pricing curve: per-case + per-bottle price vs case quantity,
@@ -342,6 +393,22 @@ export default function ProductDetail() {
     for (const [k, v] of counts) if (v > n) { best = k; n = v; }
     return best;
   }, [sizes]);
+  // EVERY RIP program this product sits under (the CPL/group code plus each
+  // per-tier code from the RIP sheet). A UPC can qualify under a brand-mix
+  // RIP and a standalone RIP at once — one members section renders per
+  // program so the buyer can weigh them against each other.
+  const ripCodes = useMemo(() => {
+    const out: string[] = [];
+    const add = (c?: string | null) => {
+      const k = String(c ?? '').trim();
+      if (k && !['None', 'nan', '0'].includes(k) && !out.includes(k)) out.push(k);
+    };
+    add(ripCode);
+    for (const s of sizes) for (const t of (s.tiers ?? [])) {
+      if (t.source === 'rip') add(t.code);
+    }
+    return out;
+  }, [sizes, ripCode]);
   const anyDisc = sizes.some(s => s.has_discount);   // quantity discount
   const anyRip = sizes.some(s => s.has_rip);          // RIP
   // Header deal-timing sticker: the product's dated deal windows + no-deal gaps
@@ -373,16 +440,7 @@ export default function ProductDetail() {
   const comboLink = useComboLink();
   const anyComboUrl = sizes.map(s => comboLink(s.wholesaler, s.upc)).find(Boolean) ?? null;
 
-  // Other products in the same Case Mix RIP — all visible, no "view all".
-  // exclude_name limits the exclusion to THIS listing, so sibling SKUs and
-  // other vintages sharing this product's barcode still show as members.
-  const { data: ripSiblings } = useQuery({
-    enabled: !!ripCode && !!wholesaler,
-    queryKey: ['pd-rip-siblings', wholesaler, ripCode, upc, name],
-    queryFn: () => catalog.ripSiblings(wholesaler, ripCode!, {
-      exclude_upc: upc, exclude_name: name || undefined,
-    }),
-  });
+  // Members sections render per RIP program via RipMembersSection below.
 
   // More from the same manufacturer (brand).
   const { data: brandData } = useQuery({
@@ -508,16 +566,13 @@ export default function ProductDetail() {
             </section>
           )}
 
-          {/* Other products in this Case Mix RIP — all visible, no "view all". */}
-          {ripCode && (ripSiblings?.items?.length ?? 0) > 0 && (
-            <section className="pd-section">
-              <h2>Other products in this Case Mix RIP <span className="pd-rip-tag">RIP {ripCode}</span></h2>
-              <p className="pd-section-sub">Buy these together to qualify for the RIP.</p>
-              <div className="pd-related-grid">
-                {ripSiblings!.items.map((p, i) => <MiniCard key={`${p.upc}|${i}`} p={p} />)}
-              </div>
-            </section>
-          )}
+          {/* Other products per RIP program — all visible, no "view all".
+              One section per program the product qualifies under, so a
+              brand-mix RIP and a standalone RIP each show their own members. */}
+          {ripCodes.map(code => (
+            <RipMembersSection key={code} wholesaler={wholesaler} code={code}
+              upc={upc} name={name} />
+          ))}
 
           {/* More from the same manufacturer. */}
           {brandProducts.length > 0 && (

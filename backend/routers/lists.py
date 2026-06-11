@@ -123,10 +123,48 @@ def get_list(list_id: int, user: dict = Depends(get_current_user)):
             attach_sku_mapping(dcon, items)
             _attach_rip_code_for_list_items(dcon, items)
             try:
+                # Full deal tiers (same canonical attach the cart uses) so the
+                # Lists UI can show each line's RIP PROGRAMS and let the buyer
+                # pick one (rip_choice) before the line ever reaches the cart.
+                from backend.routers.cart import _attach_cart_pricing
+                _attach_cart_pricing(dcon, items)
+            except Exception:
+                pass
+            try:
                 _pricing.attach_rip_gaps(dcon, items)   # no-RIP "avoid these days" windows
             except Exception:
                 pass
     return {**dict(lst), "items": items}
+
+
+class ListItemPatch(BaseModel):
+    notes: Optional[str] = None
+    # Chosen RIP program for the line; null/'' resets to the default.
+    rip_choice: Optional[str] = None
+
+
+@router.put("/{list_id}/items/{item_id}")
+def update_list_item(list_id: int, item_id: int, body: ListItemPatch,
+                     user: dict = Depends(get_current_user)):
+    fields, params = [], []
+    data = body.model_dump(exclude_unset=True)
+    if "rip_choice" in data:
+        rc = (data.pop("rip_choice") or "").strip()
+        fields.append("rip_choice=%s")
+        params.append(rc or None)
+    if "notes" in data:
+        fields.append("notes=%s")
+        params.append(data["notes"])
+    if not fields:
+        return {"status": "noop"}
+    params.extend([item_id, list_id])
+    with get_pg() as con:
+        _owned(con, list_id, user["id"])
+        con.execute(
+            f"UPDATE list_items SET {', '.join(fields)} WHERE id=%s AND list_id=%s",
+            params)
+        con.execute(f"UPDATE lists SET updated_at={NOW_UTC} WHERE id=%s", (list_id,))
+    return {"status": "updated"}
 
 
 def _attach_rip_code_for_list_items(dcon, items):

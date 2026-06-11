@@ -808,7 +808,21 @@ function QuickViewModal({
                 : [{ tiers: ripAsc(detail.rip_tiers), label: distributorName(wholesaler), key: wholesaler }];
               const any = sides.some(s => s.tiers.length > 0);
               if (!any) return null;
-              const maxTiers = Math.max(...sides.map(s => s.tiers.length), 0);
+              // One ROW per RIP PROGRAM (distributor × RIP code): a UPC can
+              // sit under several rebates (mix + standalone) that don't
+              // stack, so each program shows its own description + levels.
+              const rows = sides.flatMap(s => {
+                const by = new Map<string, typeof s.tiers>();
+                for (const t of s.tiers) {
+                  const k = String(t.code ?? '');
+                  by.set(k, [...(by.get(k) ?? []), t]);
+                }
+                return [...by.entries()].map(([code, tiers]) => ({
+                  key: `${s.key}|${code}`, label: s.label,
+                  code: code || null, tiers,
+                }));
+              });
+              const maxTiers = Math.max(...rows.map(r => r.tiers.length), 0);
               return (
                 <>
                   <h4>RIP Tiers <span className="source-badge source-rip" style={{ marginLeft: 6 }}>RIP</span></h4>
@@ -824,10 +838,13 @@ function QuickViewModal({
                         </tr>
                       </thead>
                       <tbody>
-                        {sides.map(s => (
+                        {rows.map(s => (
                           <tr key={s.key}>
                             <td style={{ verticalAlign: 'top' }}>
                               <span className="cell-distributor-badge">{s.label}</span>
+                              {s.code && (
+                                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>RIP {s.code}</div>
+                              )}
                             </td>
                             <td className="rip-desc-cell" title={s.tiers[0]?.description ?? ''}>
                               {s.tiers[0]?.description ?? '—'}

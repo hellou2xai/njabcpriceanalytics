@@ -5870,6 +5870,7 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pd-mixrip-desc { font-size: 11px; color: var(--text-muted); margin: 2px 0 4px; }
 .pd-mixrip-line { font-size: 12.5px; color: var(--text); padding: 1px 0; }
 .pd-mixrip-after { color: var(--text-muted); }
+.pd-mixrip-pick { margin-top: 12px; font-size: 11.5px; font-weight: 700; color: var(--text-muted); }
 
 .pd-instock { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; color: var(--green); margin-top: 12px; }
 .pd-size-order { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
@@ -6057,6 +6058,14 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .cart-rip-elig { margin: 6px 0 0 56px; font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 7px; max-width: 720px; }
 .cart-rip-elig.tone-gap { background: var(--accent-weak); color: var(--accent-strong); }
 .cart-rip-elig.tone-reached { background: var(--win-bg); color: var(--green); }
+
+/* RIP-program selector on a cart/list line: the UPC qualifies under several
+   RIP programs (they don't stack), so the buyer picks the one that pays. */
+.cart-rip-pick { margin: 6px 0 0 56px; font-size: 12px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; max-width: 720px; }
+.cart-rip-pick label { font-weight: 600; color: var(--text-muted); }
+.cart-rip-pick select { font-size: 12px; padding: 2px 6px; max-width: 360px; }
+.cart-rip-sug { font-weight: 600; color: var(--accent-strong); background: var(--accent-weak); padding: 3px 8px; border-radius: 7px; }
+.cart-rip-sug-btn { border: 0; background: var(--cta); color: #fff; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: var(--radius-pill); cursor: pointer; }
 
 /* CELR Product Number chip on the product-family card header */
 .prod-card-cpn {

@@ -840,14 +840,18 @@ def attach_tiers(con, records, ref_date=None) -> None:
         # in SEVERAL dated windows — Remy's Buy-1-cs RIP runs Jun 1-8 AND
         # Jun 11-30 (with a QD-covered gap between). Collapsing them to one tier
         # per (qty, unit) hid the later window — the buyer never saw the "next
-        # RIP date". So dedupe ONLY EXACT-duplicate windows: same qty + unit AND
-        # same from/to dates (genuine RIP-sheet dupes, e.g. a SKU matching two
-        # codes that both list the same window), keeping the highest amount.
-        # Distinct windows — and an evergreen tier vs a dated one — all survive.
+        # RIP date". So dedupe ONLY EXACT duplicates: same RIP CODE + qty +
+        # unit AND same from/to dates (genuine RIP-sheet row dupes), keeping
+        # the highest amount. The code is part of the key because two DISTINCT
+        # programs can share a qty and window with different payouts (Buehler:
+        # mix 100567 pays $15 at 2cs, standalone 100714 pays $60 at the same
+        # 2cs Jun 1-30) — they are alternatives the buyer picks between, so
+        # both must survive into the ladder. Distinct windows — and an
+        # evergreen tier vs a dated one — all survive as before.
         rips_raw = _lookup_rips(rec)
         by_win: dict = {}
         for t in rips_raw:
-            wk = (t["qty"], (t["unit"] or "").lower(),
+            wk = (t.get("code"), t["qty"], (t["unit"] or "").lower(),
                   _iso(t.get("from_date")), _iso(t.get("to_date")))
             cur = by_win.get(wk)
             if cur is None or float(t["amount"]) > float(cur["amount"]):

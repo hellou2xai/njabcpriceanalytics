@@ -29,9 +29,10 @@ function PartialFlag({ t }: { t: RipTier }) {
   const wb = windowBadge(t);
   if (!t.ts && !wb) return null;
   const range = fmtDateRange(t.from_date, t.to_date);
-  // Always the prominent amber 'partial' style (red when expiring) — never the
-  // subtle blue 'upcoming' — so a partial deal can't be overlooked.
-  const cls = t.ts ? (wb?.urgent ? 'win-partial urgent' : 'win-partial') : (wb?.cls ?? 'win-partial');
+  // Colour by window STATUS so the three states read apart at a glance:
+  // green = active now, blue = starts later, gray = expired; red overrides
+  // green when the active window ends within a week (urgent).
+  const cls = `${wb?.cls ?? 'win-partial'}${wb?.urgent ? ' urgent' : ''}`;
   const label = t.ts ? `⏱ Partial · ${range || 'limited dates'}` : (wb?.label ?? '');
   return (
     <span className={`win-badge ${cls}`}
@@ -70,7 +71,12 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
   // RIP tiers: ascending by rebate amount (consistent everywhere RIP shows)
   const byRebate = (a: RipTier, b: RipTier) =>
     (a.ripOnlySave ?? 0) - (b.ripOnlySave ?? 0) || caseQty(a) - caseQty(b);
-  const disc = [...(cur?.discountTiers ?? [])].sort(byWindow);
+  // Status rank: current (active / evergreen / full-month) first, then
+  // future (upcoming), then expired last. Applied to QD tiers AND RIP groups.
+  const statusRank = (t: RipTier) =>
+    t.window_status === 'upcoming' ? 1 : t.window_status === 'expired' ? 2 : 0;
+  const disc = [...(cur?.discountTiers ?? [])]
+    .sort((a, b) => statusRank(a) - statusRank(b) || byWindow(a, b));
   const rip = [...(cur?.ripTiers ?? [])].sort(byRebate);
   const btlOf = (c?: number | null) => (pack && c != null ? c / pack : null);
 
@@ -134,6 +140,11 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
     if (g) g.tiers.push(t);
     else ripGroups.push({ code, tiers: [t] });
   }
+  // Programs ordered current -> future -> expired (a group counts as the BEST
+  // status among its tiers, so a program with any live tier sorts as current).
+  // Array.sort is stable, so same-status groups keep their original order.
+  ripGroups.sort((a, b) =>
+    Math.min(...a.tiers.map(statusRank)) - Math.min(...b.tiers.map(statusRank)));
   const multiProgram = ripGroups.length > 1;
 
   // A RIP program's tiers share one validity window almost always; repeating

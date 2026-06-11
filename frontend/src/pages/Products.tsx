@@ -22,6 +22,30 @@ import type { Product } from '../lib/api';
  * and a left filter rail. Search results are fetched sorted by product_name so
  * a product's sizes arrive contiguously and group cleanly within a page.
  */
+
+// Single source of truth for URL -> filters. Used by BOTH the useState
+// initializer and the params effect: if the initial state is seeded with less
+// than the effect parses (the old code seeded only hasRip/hasDiscount), the
+// state->URL sync runs against the incomplete first-render state and strips
+// the missing params (e.g. ?categories=Spirits from a Home "View all" link)
+// before they ever reach a query.
+function filtersFromParams(params: URLSearchParams): CatalogFilters {
+  const csv = (k: string) => (params.get(k)?.split(',').filter(Boolean) ?? []);
+  return {
+    ...emptyCatalogFilters,
+    hasRip: params.get('hasRip') === '1' ? true : undefined,
+    hasDiscount: params.get('hasDiscount') === '1' ? true : undefined,
+    inCombo: params.get('in_combo') === '1' ? true : undefined,
+    categories: csv('categories'),
+    divisions: csv('divisions'),
+    brands: csv('brands'),
+    sizes: csv('sizes'),
+    unitKinds: csv('unit_kinds'),
+    priceMin: params.get('priceMin') ? parseFloat(params.get('priceMin')!) : undefined,
+    priceMax: params.get('priceMax') ? parseFloat(params.get('priceMax')!) : undefined,
+  };
+}
+
 export default function Products() {
   const [params, setSearchParams] = useSearchParams();
   const [q, setQ] = useState(params.get('q') ?? '');
@@ -35,12 +59,7 @@ export default function Products() {
   // and group cleanly. Price sorts are offered too (server-side).
   const [sort, setSort] = useState<'product_name' | 'frontline_case_price' | 'effective_case_price'>('product_name');
   const [order, setOrder] = useState<'asc' | 'desc'>('asc');
-  const [filters, setFilters] = useState<CatalogFilters>(() => {
-    const next: CatalogFilters = { ...emptyCatalogFilters };
-    if (params.get('hasRip') === '1') next.hasRip = true;
-    if (params.get('hasDiscount') === '1') next.hasDiscount = true;
-    return next;
-  });
+  const [filters, setFilters] = useState<CatalogFilters>(() => filtersFromParams(params));
   const [cart, setCartState] = useState<CartState>(loadCart);
   // Collapsible filter rail (persisted): collapsed = a slim strip, grid full width.
   const [railCollapsed, setRailCollapsed] = useState(() =>
@@ -52,24 +71,11 @@ export default function Products() {
 
   // URL -> state, so deep links (incl. the assistant's) and Back/Forward work.
   useEffect(() => {
-    const csv = (k: string) => (params.get(k)?.split(',').filter(Boolean) ?? []);
     setQ(params.get('q') ?? '');
     setWholesaler(params.get('wholesaler') ?? '');
     setRegion(params.get('region') ?? '');
     setVarietal(params.get('varietal') ?? '');
-    setFilters({
-      ...emptyCatalogFilters,
-      hasRip: params.get('hasRip') === '1' ? true : undefined,
-      hasDiscount: params.get('hasDiscount') === '1' ? true : undefined,
-      inCombo: params.get('in_combo') === '1' ? true : undefined,
-      categories: csv('categories'),
-      divisions: csv('divisions'),
-      brands: csv('brands'),
-      sizes: csv('sizes'),
-      unitKinds: csv('unit_kinds'),
-      priceMin: params.get('priceMin') ? parseFloat(params.get('priceMin')!) : undefined,
-      priceMax: params.get('priceMax') ? parseFloat(params.get('priceMax')!) : undefined,
-    });
+    setFilters(filtersFromParams(params));
     setPage(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);

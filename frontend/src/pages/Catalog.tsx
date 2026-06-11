@@ -14,6 +14,40 @@ import CatalogFilterPanel, {
 import type { CatalogFilters } from '../components/CatalogFilterPanel';
 import type { Product } from '../lib/api';
 
+type CatalogSort = 'product_name' | 'frontline_case_price' | 'effective_case_price' | 'live_effective_case_price';
+
+// Single source of truth for URL -> filters, used by BOTH the useState
+// initializer and the params effect below. If the initial state seeds less
+// than the effect parses, the state->URL mirror runs against the incomplete
+// first-render state and strips the missing params on a fresh mount (deep
+// links like ?categories=Wine or the assistant's group_by_rip/price_drop
+// would silently vanish before the first query fired).
+function filtersFromParams(params: URLSearchParams): CatalogFilters {
+  const csv = (k: string) => (params.get(k)?.split(',').filter(Boolean) ?? []);
+  return {
+    ...emptyCatalogFilters,
+    hasRip: params.get('hasRip') === '1' ? true : undefined,
+    hasDiscount: params.get('hasDiscount') === '1' ? true : undefined,
+    // group_by_rip accepts both '1' (canonical) and 'true' so older deep
+    // links from the assistant keep working.
+    groupByRip: (params.get('group_by_rip') === '1' || params.get('group_by_rip') === 'true') || undefined,
+    // Assistant "only show prices going up / down" deep-links land here.
+    priceTrend: params.get('price_increase') === '1' ? 'increase'
+              : params.get('price_drop') === '1' ? 'drop' : undefined,
+    categories: csv('categories'),
+    divisions: csv('divisions'),
+    sizes: csv('sizes'),
+    unitKinds: csv('unit_kinds'),
+    priceMin: params.get('priceMin') ? parseFloat(params.get('priceMin')!) : undefined,
+    priceMax: params.get('priceMax') ? parseFloat(params.get('priceMax')!) : undefined,
+  };
+}
+function sortFromParams(params: URLSearchParams): CatalogSort {
+  const sp = params.get('sort');
+  return (sp === 'product_name' || sp === 'frontline_case_price' || sp === 'effective_case_price' || sp === 'live_effective_case_price')
+    ? sp : 'product_name';
+}
+
 export default function Catalog() {
   const [params, setSearchParams] = useSearchParams();
   const [q, setQ] = useState(params.get('q') ?? '');
@@ -33,20 +67,12 @@ export default function Catalog() {
   // Stacks with region for "California cabernets" / "Kentucky bourbon" style
   // queries. Backend auto-narrows product_type too.
   const [varietal, setVarietal] = useState(params.get('varietal') ?? '');
-  const [sort, setSort] = useState<'product_name' | 'frontline_case_price' | 'effective_case_price' | 'live_effective_case_price'>('product_name');
-  const [order, setOrder] = useState<'asc' | 'desc'>('asc');
+  const [sort, setSort] = useState<CatalogSort>(() => sortFromParams(params));
+  const [order, setOrder] = useState<'asc' | 'desc'>(() => (params.get('order') === 'desc' ? 'desc' : 'asc'));
   const [page, setPage] = useState(0);
   const [limit, setLimit] = useState(50);
   const [trackedOnly, setTrackedOnly] = useState(false);
-  const [filters, setFilters] = useState<CatalogFilters>(() => {
-    // Honor a `hasRip=1` URL param so dashboards / external links can deep-link
-    // into the "products with a RIP rebate" view of the catalog without
-    // routing through the (now admin-only) RIP Products page.
-    const next: CatalogFilters = { ...emptyCatalogFilters };
-    if (params.get('hasRip') === '1') next.hasRip = true;
-    if (params.get('hasDiscount') === '1') next.hasDiscount = true;
-    return next;
-  });
+  const [filters, setFilters] = useState<CatalogFilters>(() => filtersFromParams(params));
   const [cart, setCartState] = useState<CartState>(loadCart);
   const { open } = useProductQuickView();
   const [showFilters, setShowFilters] = useState(() => {
@@ -73,32 +99,14 @@ export default function Catalog() {
   // assistant "shows results on screen": it navigates to /catalog?…filters and
   // the catalog reflects them (even if we're already on this page).
   useEffect(() => {
-    const csv = (k: string) => (params.get(k)?.split(',').filter(Boolean) ?? []);
     setQ(params.get('q') ?? '');
     setWholesaler(params.get('wholesaler') ?? '');
     setUpcs(params.get('upcs') ?? '');
     setRipCode(params.get('rip_code') ?? '');
     setRegion(params.get('region') ?? '');
     setVarietal(params.get('varietal') ?? '');
-    setFilters({
-      ...emptyCatalogFilters,
-      hasRip: params.get('hasRip') === '1' ? true : undefined,
-      hasDiscount: params.get('hasDiscount') === '1' ? true : undefined,
-      // group_by_rip accepts both '1' (canonical) and 'true' so older deep
-      // links from the assistant keep working.
-      groupByRip: (params.get('group_by_rip') === '1' || params.get('group_by_rip') === 'true') || undefined,
-      // Assistant "only show prices going up / down" deep-links land here.
-      priceTrend: params.get('price_increase') === '1' ? 'increase'
-                : params.get('price_drop') === '1' ? 'drop' : undefined,
-      categories: csv('categories'),
-      divisions: csv('divisions'),
-      sizes: csv('sizes'),
-      unitKinds: csv('unit_kinds'),
-      priceMin: params.get('priceMin') ? parseFloat(params.get('priceMin')!) : undefined,
-      priceMax: params.get('priceMax') ? parseFloat(params.get('priceMax')!) : undefined,
-    });
-    const sp = params.get('sort');
-    if (sp === 'product_name' || sp === 'frontline_case_price' || sp === 'effective_case_price' || sp === 'live_effective_case_price') setSort(sp);
+    setFilters(filtersFromParams(params));
+    setSort(sortFromParams(params));
     setOrder(params.get('order') === 'desc' ? 'desc' : 'asc');
     setPage(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps

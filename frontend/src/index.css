@@ -5566,7 +5566,10 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .prod-card-type { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
 .prod-card-spark { display: inline-block; margin-top: 6px; }
 /* QD/RIP price summary on the collapsed card (rep size). */
-.prod-card-deals { display: flex; flex-direction: column; gap: 3px; flex: 0 0 auto; min-width: 150px; align-items: flex-start; margin: 0 16px; }
+/* Fixed-basis column so EVERY card's deal ladder shares the same left edge
+   (shrink-wrapped blocks floated at a different x per row read as ragged). */
+.prod-card-deals { display: flex; flex-direction: column; gap: 3px; flex: 0 0 470px; min-width: 0; align-items: flex-start; margin: 0 16px 0 auto; }
+@media (max-width: 1280px) { .prod-card-deals { flex-basis: 340px; } }
 @media (max-width: 900px) { .prod-card-deals { display: none; } }
 /* Neutral distributor chip (replaces the Provi accent-lightning "your
    distributor" signal) — a muted pill that matches the app's chip vocabulary. */
@@ -5615,7 +5618,8 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 /* Inline current-month deal ladder (QD + RIP). */
 .prod-size-deals { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .prod-deal-line { font-size: 12px; color: var(--text); font-variant-numeric: tabular-nums; display: flex; align-items: baseline; gap: 4px; flex-wrap: wrap; }
-.prod-deal-line .prod-deal-badge { flex-shrink: 0; }
+/* Equal-width QD/RIP pills so the Buy ... text starts at one x on every line */
+.prod-deal-line .prod-deal-badge { flex-shrink: 0; min-width: 30px; text-align: center; }
 .prod-rip-group { margin-top: 3px; padding-left: 8px; border-left: 2px solid color-mix(in srgb, var(--green) 30%, var(--border)); }
 .prod-rip-group-hdr { font-size: 9.5px; font-weight: 700; letter-spacing: .3px; color: var(--text-muted); text-transform: uppercase; margin: 1px 0; }
 .prod-deal-off { color: var(--green); }

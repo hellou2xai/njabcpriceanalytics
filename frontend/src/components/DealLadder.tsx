@@ -99,7 +99,10 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
     const ripSave = kind === 'rip' ? (t.ripOnlySave ?? null) : null;
     return (
       <div key={`${kind}${i}`} className="prod-deal-line">
-        <TierBadge kind={kind} />{' '}
+        <TierBadge kind={kind} />
+        {/* Dated-window sticker sits LEFT (after the pill) so its variable
+            length never drags a line's tail out and wrecks the column. */}
+        <PartialFlag t={t} />{' '}
         Buy {buyLabel(t)} → <strong>${t.eff.toFixed(2)}/{csWord}</strong>
         {b != null && !keg && <span className="prod-deal-btl"> · ${b.toFixed(2)}/{unitNoun}</span>}
         {kind === 'rip' && ripSave != null && ripSave > 0.005 && (
@@ -114,7 +117,6 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
             {' '}(−${off.toFixed(2)}/{csWord})
           </span>
         )}
-        <PartialFlag t={t} />
       </div>
     );
   };

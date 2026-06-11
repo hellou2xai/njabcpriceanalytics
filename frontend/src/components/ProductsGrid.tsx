@@ -259,10 +259,13 @@ function SizeRow({ size, cart, updateQty, primaryName }: {
   );
 }
 
-function ProductCard({ group, cart, updateQty }: {
+function ProductCard({ group, cart, updateQty, showDeals = true }: {
   group: ProductGroup;
   cart: CartState;
   updateQty: (key: string, field: 'cases' | 'units', value: number) => void;
+  // Page-level "Price details / Summary" toggle: false hides the collapsed
+  // card's deal ladder (the expanded size rows always keep theirs).
+  showDeals?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const range = priceRange(group.sizes);
@@ -367,7 +370,9 @@ function ProductCard({ group, cart, updateQty }: {
             </span>
           )}
         </div>
-        {repMonths.length > 0 && (
+        {/* Hidden while expanded — the size rows below show the same ladder,
+            so keeping it here duplicated every deal on screen. */}
+        {showDeals && !expanded && repMonths.length > 0 && (
           <div className="prod-card-deals">
             <DealLadder months={repMonths} pack={repPack}
               unitVolume={rep?.unit_volume} unitType={rep?.unit_type} />
@@ -409,9 +414,10 @@ interface Props {
   items: Product[];
   cart: CartState;
   updateQty: (key: string, field: 'cases' | 'units', value: number) => void;
+  showDeals?: boolean;
 }
 
-export default function ProductsGrid({ items, cart, updateQty }: Props) {
+export default function ProductsGrid({ items, cart, updateQty, showDeals = true }: Props) {
   const groups = useMemo(() => groupByProduct(items), [items]);
 
   if (groups.length === 0) {
@@ -422,7 +428,7 @@ export default function ProductsGrid({ items, cart, updateQty }: Props) {
     <div className="prod-grid">
       {groups.map(g => (
         <Fragment key={g.key}>
-          <ProductCard group={g} cart={cart} updateQty={updateQty} />
+          <ProductCard group={g} cart={cart} updateQty={updateQty} showDeals={showDeals} />
         </Fragment>
       ))}
     </div>

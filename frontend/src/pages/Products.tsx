@@ -63,6 +63,14 @@ export default function Products() {
   const [order, setOrder] = useState<'asc' | 'desc'>('asc');
   const [filters, setFilters] = useState<CatalogFilters>(() => filtersFromParams(params));
   const [cart, setCartState] = useState<CartState>(loadCart);
+  // "Price details / Summary" toggle: whether collapsed cards show the full
+  // deal ladder. Persisted; expanding a card always shows full detail rows.
+  const [priceDetails, setPriceDetails] = useState(() =>
+    localStorage.getItem('lpb_products_price_details') !== '0');
+  const setDetails = (v: boolean) => {
+    setPriceDetails(v);
+    localStorage.setItem('lpb_products_price_details', v ? '1' : '0');
+  };
   // Collapsible filter rail (persisted): collapsed = a slim strip, grid full width.
   const [railCollapsed, setRailCollapsed] = useState(() =>
     localStorage.getItem('prodFiltersCollapsed') === '1');
@@ -361,6 +369,11 @@ export default function Products() {
               )}
             </span>
             <div className="products-toolbar-right">
+              <div className="products-detail-toggle" role="group" aria-label="Deal detail level"
+                title="Price details shows every QD/RIP tier on the cards; Summary keeps cards compact (expand a card for full details).">
+                <button type="button" className={priceDetails ? 'on' : ''} onClick={() => setDetails(true)}>Price details</button>
+                <button type="button" className={!priceDetails ? 'on' : ''} onClick={() => setDetails(false)}>Summary</button>
+              </div>
               <label className="products-sort">
                 <span>Sort by</span>
                 <select
@@ -382,7 +395,7 @@ export default function Products() {
           </div>
 
           {isLoading ? <p>Loading…</p> : (
-            <ProductsGrid items={items} cart={cart} updateQty={updateQty} />
+            <ProductsGrid items={items} cart={cart} updateQty={updateQty} showDeals={priceDetails} />
           )}
 
           <div className="pagination">

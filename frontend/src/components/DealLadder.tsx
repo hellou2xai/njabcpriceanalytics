@@ -92,7 +92,7 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
     if (isBtl && pack && pack > 0) return `${fmtCs(t.qty / pack)} cs`;
     return `${t.qty} ${uw(t.unit)}`;
   };
-  const line = (kind: 'qd' | 'rip', t: RipTier, i: number) => {
+  const line = (kind: 'qd' | 'rip', t: RipTier, i: number, noFlag = false) => {
     const b = btlOf(t.eff);
     const off = frontline != null && t.eff < frontline ? frontline - t.eff : null;
     // RIP rows: the rebate ALONE (the RIP-sheet number), never rebate+QD mixed.
@@ -101,8 +101,10 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
       <div key={`${kind}${i}`} className="prod-deal-line">
         <TierBadge kind={kind} />
         {/* Dated-window sticker sits LEFT (after the pill) so its variable
-            length never drags a line's tail out and wrecks the column. */}
-        <PartialFlag t={t} />{' '}
+            length never drags a line's tail out and wrecks the column.
+            Suppressed when the whole RIP group shares one window — the
+            sticker then renders ONCE on the group header instead. */}
+        {!noFlag && <PartialFlag t={t} />}{' '}
         Buy {buyLabel(t)} → <strong>${t.eff.toFixed(2)}/{csWord}</strong>
         {b != null && !keg && <span className="prod-deal-btl"> · ${b.toFixed(2)}/{unitNoun}</span>}
         {kind === 'rip' && ripSave != null && ripSave > 0.005 && (
@@ -134,19 +136,35 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
   }
   const multiProgram = ripGroups.length > 1;
 
+  // A RIP program's tiers share one validity window almost always; repeating
+  // the same dated sticker on every tier line is noise. When the whole group
+  // shares one flagged window, hoist the sticker to the group header (next to
+  // the RIP number) and keep the tier lines clean. Mixed windows inside one
+  // group (rare) keep their per-line stickers because that IS the information.
+  const winKey = (t: RipTier) => `${t.ts ? 1 : 0}|${t.from_date ?? ''}|${t.to_date ?? ''}`;
+  const hoistedFlag = (g: { tiers: RipTier[] }): RipTier | null => {
+    const t0 = g.tiers[0];
+    if (!t0 || !(t0.ts || windowBadge(t0))) return null;
+    return g.tiers.every(t => winKey(t) === winKey(t0)) ? t0 : null;
+  };
+
   return (
     <>
       {disc.map((t, i) => line('qd', t, i))}
-      {ripGroups.map((g, gi) => (
-        <div key={`rg${gi}`} className={multiProgram ? 'prod-rip-group' : undefined}>
-          {multiProgram && (
-            <div className="prod-rip-group-hdr" title="A separate RIP program for this product — pick the one that matches how much you buy. These do not stack.">
-              RIP{g.code ? ` ${g.code}` : ''}
-            </div>
-          )}
-          {g.tiers.map((t, i) => line('rip', t, i))}
-        </div>
-      ))}
+      {ripGroups.map((g, gi) => {
+        const hoist = hoistedFlag(g);
+        return (
+          <div key={`rg${gi}`} className={multiProgram ? 'prod-rip-group' : undefined}>
+            {(multiProgram || hoist) && (
+              <div className="prod-rip-group-hdr" title="A separate RIP program for this product — pick the one that matches how much you buy. These do not stack.">
+                RIP{g.code ? ` ${g.code}` : ''}
+                {hoist && <PartialFlag t={hoist} />}
+              </div>
+            )}
+            {g.tiers.map((t, i) => line('rip', t, i, !!hoist))}
+          </div>
+        );
+      })}
     </>
   );
 }

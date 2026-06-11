@@ -5621,7 +5621,9 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 /* Equal-width QD/RIP pills so the Buy ... text starts at one x on every line */
 .prod-deal-line .prod-deal-badge { flex-shrink: 0; min-width: 30px; text-align: center; }
 .prod-rip-group { margin-top: 3px; padding-left: 8px; border-left: 2px solid color-mix(in srgb, var(--green) 30%, var(--border)); }
-.prod-rip-group-hdr { font-size: 9.5px; font-weight: 700; letter-spacing: .3px; color: var(--text-muted); text-transform: uppercase; margin: 1px 0; }
+.prod-rip-group-hdr { font-size: 9.5px; font-weight: 700; letter-spacing: .3px; color: var(--text-muted); text-transform: uppercase; margin: 1px 0; display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+/* the hoisted dated-window sticker rides the header; keep its own casing */
+.prod-rip-group-hdr .win-badge { text-transform: none; letter-spacing: normal; }
 .prod-deal-off { color: var(--green); }
 .prod-deal-after { color: var(--text-muted); }
 /* bottle price beside the case price: same size AND weight, muted colour only */

@@ -948,14 +948,21 @@ def search_products(
         # normalised on BOTH sides so "020585000475" and "20585000475"
         # match the same product.
         if upcs:
+            # Placeholder barcodes (shared fake codes like 111111111117) are
+            # dropped: matching on one would weld dozens of unrelated products
+            # into the response. If nothing real remains the filter matches
+            # nothing rather than silently un-filtering.
             vals = [u.strip().lstrip("0") for u in upcs.split(",") if u.strip()]
-            if vals:
+            clean = [v for v in vals if _is_clean_upc(v)]
+            if clean:
                 keys = []
-                for i, v in enumerate(vals):
+                for i, v in enumerate(clean):
                     k = f"upc_{i}"
                     params[k] = v
                     keys.append(f"${k}")
                 where.append(f"LTRIM(CAST(upc AS VARCHAR), '0') IN ({', '.join(keys)})")
+            elif vals:
+                where.append("1 = 0")
 
         # RIP-cluster restriction: limit the grid to products whose UPC sits
         # under this rip_code in the current edition's rip sheet. EXISTS
@@ -1359,10 +1366,11 @@ def search_products(
                 "WHERE table_name = 'product_enrichment'"
             ).fetchone())
             if has_enrich_table:
+                _img_valid = _VALID_UPC_SQL.format(col="CAST(upc AS VARCHAR)")
                 order_by = (
-                    "EXISTS (SELECT 1 FROM product_enrichment _img "
+                    f"(({_img_valid}) AND EXISTS (SELECT 1 FROM product_enrichment _img "
                     "WHERE _img.upc = LTRIM(CAST(upc AS VARCHAR), '0') "
-                    "AND _img.image_url IS NOT NULL AND _img.image_url <> '') DESC, "
+                    "AND _img.image_url IS NOT NULL AND _img.image_url <> '')) DESC, "
                     + order_by
                 )
         if q and sort == "product_name":
@@ -1679,6 +1687,8 @@ def search_products(
 _VALID_UPC_SQL = (
     "{col} IS NOT NULL AND {col} <> '' AND {col} <> '0'"
     " AND NOT regexp_matches({col}, '^(0+|9+|1+)$')"
+    " AND NOT regexp_matches({col},"
+    " '^(0{{9}}|1{{9}}|2{{9}}|3{{9}}|4{{9}}|5{{9}}|6{{9}}|7{{9}}|8{{9}}|9{{9}})')"
     " AND NOT {col} LIKE '999999%'"
     " AND LENGTH(LTRIM({col}, '0')) >= 8"
 )
@@ -2158,7 +2168,9 @@ def get_product_detail(
         # and specs are stored as JSON text; parse them back to list/dict here.
         enrichment = None
         prod_upc = item.get("upc")
-        if prod_upc is not None and str(prod_upc) not in ("None", "nan", ""):
+        # Placeholder barcodes carry someone else's enrichment (the Kyocera
+        # incident): only a real barcode may pull Go-UPC details.
+        if _is_clean_upc(prod_upc):
             try:
                 er = con.execute(
                     "SELECT name, brand, category, category_path, description, region, "
@@ -3933,6 +3945,12 @@ def _is_clean_upc(upc) -> bool:
         return False
     if s.startswith("999999"):
         return False
+    # Repeated-digit placeholders like 111111111117 (nine or more leading
+    # repeats of one digit): Allied's fake-barcode pattern. Shared by dozens
+    # of unrelated products, so it must never act as a join/group key.
+    # Mirrors backend.celr.is_registry_upc.
+    if re.match(r"^(\d)\1{8,}", s):
+        return False
     return len(s.lstrip("0")) >= 8
 
 
@@ -3985,6 +4003,10 @@ def product_variant_upcs(
         )"""
 
         # 1) Resolve the seed row's enrichment name/brand + type/vintage/upc.
+        # A placeholder barcode (111111111117 etc.) is shared by unrelated
+        # products, so seeding by it would resolve an arbitrary row and pull
+        # that row's enrichment. Seed those by exact product name instead.
+        seed_by_upc = bool(upc) and _is_clean_upc(upc)
         seed_row = con.execute(f"""
             SELECT pe.name AS enr_name, pe.brand AS enr_brand,
                    c.product_type AS ptype, c.vintage AS vintage,
@@ -3992,15 +4014,15 @@ def product_variant_upcs(
             FROM {src} c
             LEFT JOIN {en_sub} pe ON LTRIM(CAST(c.upc AS VARCHAR), '0') = pe.un
             WHERE c.wholesaler = $w AND c.edition = $e
-              AND ({"LTRIM(CAST(c.upc AS VARCHAR),'0') = $u" if upc else "c.product_name = $pn"})
+              AND ({"LTRIM(CAST(c.upc AS VARCHAR),'0') = $u" if seed_by_upc else "c.product_name = $pn"})
             LIMIT 1
         """, {"w": wholesaler, "e": edition,
-              **({"u": str(upc).lstrip("0")} if upc else {"pn": product_name})}).fetchone()
+              **({"u": str(upc).lstrip("0")} if seed_by_upc else {"pn": product_name})}).fetchone()
         seed_enr_name = seed_row[0] if seed_row else None
         seed_brand = seed_row[1] if seed_row else None
         seed_ptype = (seed_row[2] if seed_row else None) or ""
         seed_vintage = _norm_vintage(seed_row[3]) if seed_row else ""
-        seed_un = (seed_row[4] if seed_row else None) or (str(upc).lstrip("0") if upc else None)
+        seed_un = (seed_row[4] if seed_row else None) or (str(upc).lstrip("0") if seed_by_upc else None)
 
         # WINE: a wine's identity is its product_name + vintage. Its barcode is
         # frequently the '0' placeholder (shared across unrelated wines), so the
@@ -4031,10 +4053,11 @@ def product_variant_upcs(
 
         upcs: set[str] = set()
         for r in df.itertuples():
-            # Skip placeholder/blank barcodes: a '0' UPC isn't searchable and
-            # would over-match in /search?upcs=. (Exact-name rows are still
-            # covered by the caller's name fallback.)
-            if not r.upc or not str(r.upc).lstrip("0"):
+            # Skip placeholder/blank barcodes (incl. shared fakes like
+            # 111111111117): they aren't searchable and would over-match in
+            # /search?upcs=. (Exact-name rows are still covered by the
+            # caller's name fallback.)
+            if not _is_clean_upc(r.upc):
                 continue
             # Same vintage as the seed (no-op for NV spirits; keeps a vintage
             # spirit/port from merging across years).

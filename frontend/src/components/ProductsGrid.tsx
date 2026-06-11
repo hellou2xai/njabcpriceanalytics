@@ -30,6 +30,7 @@ import { catalog } from '../lib/api';
 import { useProductSizes, bottlesPerCase } from '../lib/productSizes';
 import { useComboLink } from '../lib/comboLink';
 import { distributorName, abgSku, skuLabel, containerTitle, containerNoun, packPhrase, priceUnitWord, perUnitNoun, isKegUnit } from '../lib/distributors';
+import { isRealUpc } from '../lib/upc';
 import type { Product } from '../lib/api';
 
 // Full-page product-detail deep link for a product family.
@@ -301,7 +302,7 @@ function ProductCard({ group, cart, updateQty, showDeals = true }: {
     return () => io.disconnect();
   }, [inView]);
   const { data: repTierData } = useQuery({
-    enabled: inView && !!rep?.wholesaler && !!rep?.upc,
+    enabled: inView && !!rep?.wholesaler && isRealUpc(rep?.upc),
     staleTime: 5 * 60_000,
     queryKey: ['rep-tiers', rep?.wholesaler, rep?.upc],
     queryFn: () => catalog.search({ wholesaler: rep!.wholesaler, upcs: String(rep!.upc), include_tiers: true, limit: 1 }),
@@ -323,8 +324,11 @@ function ProductCard({ group, cart, updateQty, showDeals = true }: {
   // For a multi-distributor product, refetch the listings BY UPC across all
   // distributors WITH tiers (the list rows lack tiers/price_3mo, which left the
   // deal ladder empty — "No deals this month" — and the headline at frontline).
+  // Placeholder barcodes (111111111117 etc.) are shared by unrelated products,
+  // so they are NEVER used as fetch keys; rows carrying one are merged back in
+  // from the search results below so they stay visible.
   const groupUpcs = useMemo(
-    () => [...new Set(group.sizes.map(s => s.upc).filter(Boolean) as string[])], [group.sizes]);
+    () => [...new Set(group.sizes.map(s => s.upc).filter(u => isRealUpc(u)) as string[])], [group.sizes]);
   const { data: multiData } = useQuery({
     enabled: (expanded || warm) && multiDist && groupUpcs.length > 0,
     staleTime: 30 * 60_000,
@@ -332,9 +336,21 @@ function ProductCard({ group, cart, updateQty, showDeals = true }: {
     queryFn: () => catalog.search({ upcs: groupUpcs.join(','), include_tiers: true, limit: 200, sort: 'product_name', order: 'asc' }),
   });
   const sizes = useMemo(() => {
-    const base = multiDist
-      ? ((multiData?.items as Product[] | undefined) ?? group.sizes)
-      : (fullSizes.length ? fullSizes : group.sizes);
+    // The size refetches only cover real barcodes; re-attach this card's own
+    // search rows the fetch couldn't address (placeholder/blank UPC), deduped
+    // against what came back so nothing shows twice. Show, don't hide.
+    const rowKey = (p: Product) =>
+      `${p.wholesaler}|${String(p.upc ?? '').replace(/^0+/, '')}|${p.product_name}|${p.unit_volume ?? ''}`;
+    const withOwnRows = (fetched: Product[]) => {
+      const seen = new Set(fetched.map(rowKey));
+      return [...fetched, ...group.sizes.filter(s => !seen.has(rowKey(s)))];
+    };
+    let base: Product[];
+    if (multiDist) {
+      base = multiData?.items ? withOwnRows(multiData.items as Product[]) : group.sizes;
+    } else {
+      base = fullSizes.length ? withOwnRows(fullSizes) : group.sizes;
+    }
     return [...base].sort((a, b) =>
       toMl(a.unit_volume) - toMl(b.unit_volume) || a.wholesaler.localeCompare(b.wholesaler));
   }, [multiDist, multiData, fullSizes, group.sizes]);

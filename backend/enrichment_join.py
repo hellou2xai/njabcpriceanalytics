@@ -12,7 +12,18 @@ import math
 import re
 from difflib import SequenceMatcher
 
+from backend.celr import is_registry_upc
+
 ALLIED = "allied"  # the app's wholesaler code for Allied Beverage Group
+
+
+def _joinable_upc(v) -> bool:
+    """A UPC that may be used as a join key. Placeholder barcodes (all-same
+    digit, 999999… sentinels, repeated-digit fakes like 111111111117) are
+    shared across unrelated products, so joining on one attaches someone
+    else's image/SKU — the Kyocera-on-Jim-Beam incident."""
+    s = str(v or "").lstrip("0")
+    return bool(s) and is_registry_upc(s)
 
 
 def attach_enrichment_image(con, records, upc_key="upc"):
@@ -26,7 +37,7 @@ def attach_enrichment_image(con, records, upc_key="upc"):
     if not records:
         return
     norms = sorted({str(r.get(upc_key)).lstrip("0") for r in records
-                    if r.get(upc_key) and str(r.get(upc_key)).lstrip("0")})
+                    if _joinable_upc(r.get(upc_key))})
     img_map = {}
     if norms:
         ph = ", ".join(f"$e{i}" for i in range(len(norms)))
@@ -90,7 +101,7 @@ def attach_sku_mapping(con, records, upc_key="upc", wholesaler_key="wholesaler",
         return
     norms = sorted({str(r.get(upc_key)).lstrip("0") for r in records
                     if str(r.get(wholesaler_key) or "") in SKU_DISTRIBUTORS
-                    and r.get(upc_key) and str(r.get(upc_key)).lstrip("0")})
+                    and _joinable_upc(r.get(upc_key))})
     cand: dict = {}
     if norms:
         ph = ", ".join(f"$s{i}" for i in range(len(norms)))

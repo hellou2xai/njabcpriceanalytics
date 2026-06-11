@@ -21,6 +21,7 @@ import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { catalog } from './api';
 import type { Product } from './api';
+import { isRealUpc } from './upc';
 
 // Parse a size label ("750ML", "1.75L", "16OZ") to millilitres so sizes sort
 // smallest -> largest. Unknowns sort last.
@@ -98,7 +99,7 @@ export function useProductSizes(
   // an empty UPC set, which routes step 2 down the name fallback.
   const variantSettled = !on || variantQ.isSuccess || variantQ.isError;
   const variantUpcs = useMemo(
-    () => (variantQ.data?.upcs ?? []).filter(u => u && u.replace(/^0+/, '')),
+    () => (variantQ.data?.upcs ?? []).filter(u => isRealUpc(u)),
     [variantQ.data],
   );
 

@@ -115,7 +115,15 @@ def ingest(database_url: str, wholesalers=None, editions=None, full: bool = Fals
                 print(f"  {t}: 0 rows (no matching partitions, skipped)")
                 continue
             tuples = ", ".join(f"({_sql_str(w)}, {_sql_str(e)})" for w, e in parts)
-            con.execute(f"DELETE FROM pg.{t} WHERE (wholesaler, edition) IN ({tuples})")
+            # The partition DELETE runs server-side via psycopg: DuckDB's
+            # postgres bridge rewrites DELETE into thousands of per-ctid
+            # deletes, and a remote (Render) server kills the connection
+            # mid-statement on big tables. One plain SQL DELETE on the server
+            # is a single fast statement.
+            import psycopg
+            with psycopg.connect(database_url) as _pg:
+                _pg.execute(
+                    f"DELETE FROM {t} WHERE (wholesaler, edition) IN ({tuples})")
             con.execute(f"INSERT INTO pg.{t} SELECT * FROM {src}")
             n = con.execute(f"SELECT count(*) FROM {src}").fetchone()[0]
             print(f"  {t}: {n} rows ({len(parts)} partition(s))")

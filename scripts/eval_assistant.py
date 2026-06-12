@@ -337,6 +337,17 @@ def run(con):
     expect("arbitrage unscoped still works for catalog-wide asks",
            isinstance(arb_all, list) and len(arb_all) > 100,
            f"{len(arb_all) if isinstance(arb_all, list) else arb_all}")
+    # PER-BOTTLE: barcode 764793208301 is a 6-pack at Allied and 12-packs at
+    # Fedway. Case-price comparison invented an $18 'Allied wins' gap; per
+    # bottle the true winner is Fedway's OLD LOT at $4.33 vs $5.67.
+    arb_cg = next((r for r in arb_rows
+                   if str(r.get("upc")) == "764793208301"), None)
+    expect("arbitrage compares PER BOTTLE on the multi-pack barcode",
+           arb_cg is not None
+           and str(arb_cg.get("cheapest_distributor")) == "fedway"
+           and abs(float(arb_cg.get("cheapest_per_bottle") or 0) - 4.33) < 0.011
+           and abs(float(arb_cg.get("dearest_per_bottle") or 0) - 5.67) < 0.011,
+           str(arb_cg))
 
     tp_g = A._t_top_products(con, {"match": "glenlivet", "limit": 50})
     off_g = _off_topic(tp_g, "glenlivet")
@@ -370,6 +381,37 @@ def run(con):
                    f"tool={row_m.get('effective_case_price')} db={gt[1]}")
     else:
         record("WARN", "ground truth: Miraval 375 not in current edition", "")
+
+    # 8b) Cross-pack comparison: one barcode, different pack sizes — the
+    #     comparison tool must normalize per bottle and name the right winner
+    #     (the model compared a 6-bottle case to a 12-bottle case and called
+    #     the wrong distributor 35% cheaper).
+    section("cross-pack comparison (per-bottle normalization)")
+    cmp_ = A._t_compare_distributors(con, {"match": "764793208301"})
+    rows_c = cmp_.get("comparison") or []
+    expect("compare returns every listing on the barcode", len(rows_c) >= 4,
+           f"{len(rows_c)} rows")
+    expect("compare carries pack + per-bottle fields",
+           all(r.get("bottles_per_case") and r.get("effective_per_bottle") for r in rows_c),
+           str([(r.get('product_name'), r.get('bottles_per_case'),
+                 r.get('effective_per_bottle')) for r in rows_c])[:160])
+    expect("pack warning fires when packs differ", bool(cmp_.get("pack_warning")),
+           str(cmp_.get("pack_warning")))
+    v = str(cmp_.get("cheapest_per_bottle") or "")
+    expect("verdict names the true per-bottle winner (Fedway OLD LOT $4.33)",
+           "OLD LOT" in v.upper() and "4.33" in v, v)
+    for r in rows_c:
+        gtv = con.execute(
+            "SELECT frontline_case_price, effective_case_price FROM cpl_enriched "
+            "WHERE wholesaler=? AND product_name=? AND unit_volume=? "
+            "AND edition=(SELECT MAX(edition) FROM cpl_enriched WHERE wholesaler=?)",
+            [r.get("wholesaler"), r.get("product_name"), r.get("unit_volume"),
+             r.get("wholesaler")]).fetchone()
+        if gtv:
+            ok = (abs(float(r.get("frontline_case_price") or 0) - float(gtv[0] or 0)) < 0.011
+                  and abs(float(r.get("effective_case_price") or 0) - float(gtv[1] or 0)) < 0.011)
+            expect(f"compare row == cpl_enriched ({r.get('product_name')})", ok,
+                   f"tool={r.get('frontline_case_price')}/{r.get('effective_case_price')} db={gtv}")
 
     # 9) Half-case credit model: the data layer must be populated and priced.
     section("half-case credit model")
@@ -409,6 +451,7 @@ SECTION_BLURB = {
     "rip tiers": "RIP tier ladders are sorted and flag exactly one best rung.",
     "semantic resolution + relevance": "Brand/UPC/misspelled queries must resolve to ON-TOPIC products only, and brand-scoped tools must never return an unscoped sweep.",
     "ground truth vs cpl_enriched": "Tool prices must equal the derived source of truth exactly.",
+    "cross-pack comparison (per-bottle normalization)": "A shared barcode with different pack sizes must compare per BOTTLE, with the verdict computed in code (never by the model).",
     "half-case credit model": "Half-case qualifiers (375ML=1/2 CASE) must be priced via case credits — data populated and effective prices scaled.",
 }
 

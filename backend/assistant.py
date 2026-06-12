@@ -439,8 +439,46 @@ def _t_compare_distributors(con, args):
     except Exception as e:
         return {"error": f"{type(e).__name__}"}
     recs = rows.to_dict(orient="records")
+    # Per-BOTTLE normalization + a deterministic verdict. One barcode can
+    # carry DIFFERENT pack sizes (Allied sells this wine as a 6-pack AND a
+    # 12-pack; Fedway as 12-packs): raw case prices across packs are
+    # meaningless ($34 for 6 bottles is NOT cheaper than $52 for 12). The
+    # tool does the per-bottle math and names the winner so the model can
+    # never blend packs into a wrong "X wins by $N/cs" claim.
+    def _n(v):
+        try:
+            f = float(v)
+            return f if f == f else None
+        except (TypeError, ValueError):
+            return None
+
+    best = None
+    for r in recs:
+        uq = _n(re.sub(r"\.0+$", "", str(r.get("unit_qty") or "").strip()) or None)
+        eff, fl = _n(r.get("effective_case_price")), _n(r.get("frontline_case_price"))
+        r["bottles_per_case"] = int(uq) if uq else None
+        r["effective_per_bottle"] = round(eff / uq, 2) if (eff and uq) else None
+        r["frontline_per_bottle"] = round(fl / uq, 2) if (fl and uq) else None
+        if r["effective_per_bottle"] is not None and (
+                best is None or r["effective_per_bottle"] < best["effective_per_bottle"]):
+            best = r
+    verdict = None
+    if best:
+        verdict = (f"Cheapest per bottle: {best['product_name']} at "
+                   f"{str(best['wholesaler']).title()} — ${best['effective_per_bottle']:.2f}/btl "
+                   f"(${_n(best.get('effective_case_price')):.2f} per "
+                   f"{best['bottles_per_case']}-bottle case).")
+    packs = {r.get("bottles_per_case") for r in recs if r.get("bottles_per_case")}
+    pack_warning = None
+    if len(packs) > 1:
+        pack_warning = ("ROWS HAVE DIFFERENT PACK SIZES (bottles/case: "
+                        + ", ".join(str(p) for p in sorted(packs))
+                        + "). Compare ONLY the per-bottle prices and state each "
+                          "row's pack; never compare raw case prices across packs.")
     return {"upc": upc_norm, "product": name_hint or (recs[0]["product_name"] if recs else None),
-            "distributor_count": len(recs), "comparison": recs}
+            "distributor_count": len({r.get("wholesaler") for r in recs}),
+            "listing_count": len(recs), "comparison": recs,
+            "cheapest_per_bottle": verdict, "pack_warning": pack_warning}
 
 
 def _rip_tiers_for(con, code, ws=None, edition=None, as_of=None):
@@ -1446,45 +1484,74 @@ def _t_distributor_arbitrage(con, args):
             where.append(f"LOWER(c.wholesaler) IN ({ph})")
             params.extend(slugs)
     try:
+        # PER-BOTTLE comparison. One barcode can be sold in DIFFERENT pack
+        # sizes per house (Allied 6-pack vs Fedway 12-pack of the same wine);
+        # comparing raw case prices across packs invented an "$18/cs gap"
+        # where per bottle the houses actually tied. Every min/max/winner is
+        # computed on effective price PER BOTTLE.
         df = con.execute(f"""
             WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<=? GROUP BY wholesaler),
-                 base AS (SELECT LTRIM(CAST(c.upc AS VARCHAR),'0') AS un, c.wholesaler AS w,
-                                 ANY_VALUE(c.product_name) AS pn, ANY_VALUE(c.unit_volume) AS uv,
-                                 MIN(c.effective_case_price) AS eff
-                          FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed
-                          WHERE {' AND '.join(where)}
-                          GROUP BY 1, 2)
-            SELECT un, ANY_VALUE(pn) AS product_name, ANY_VALUE(uv) AS unit_volume,
+                 rows0 AS (SELECT LTRIM(CAST(c.upc AS VARCHAR),'0') AS un, c.wholesaler AS w,
+                                  c.product_name AS pn, c.unit_volume AS uv,
+                                  TRY_CAST(c.unit_qty AS DOUBLE) AS uq,
+                                  c.frontline_case_price AS fl, c.effective_case_price AS eff,
+                                  c.effective_case_price
+                                      / NULLIF(TRY_CAST(c.unit_qty AS DOUBLE), 0) AS eff_btl
+                           FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed
+                           WHERE {' AND '.join(where)}),
+                 base AS (SELECT un, w,
+                                 ARG_MIN(pn, eff_btl) AS pn, ARG_MIN(uv, eff_btl) AS uv,
+                                 ARG_MIN(uq, eff_btl) AS uq, ARG_MIN(fl, eff_btl) AS fl,
+                                 ARG_MIN(eff, eff_btl) AS eff, MIN(eff_btl) AS eff_btl
+                          FROM rows0 WHERE eff_btl IS NOT NULL AND eff_btl > 0
+                          GROUP BY un, w)
+            SELECT un,
+                   ARG_MIN(pn, eff_btl) AS product_name, ARG_MIN(uv, eff_btl) AS unit_volume,
                    COUNT(DISTINCT w) AS distributors,
-                   MIN(eff) AS cheapest_price, MAX(eff) AS dearest_price,
-                   ARG_MIN(w, eff) AS cheapest_distributor, ARG_MAX(w, eff) AS dearest_distributor
+                   MIN(eff_btl) AS cheapest_btl, MAX(eff_btl) AS dearest_btl,
+                   ARG_MIN(w, eff_btl) AS cheapest_distributor, ARG_MAX(w, eff_btl) AS dearest_distributor,
+                   ARG_MIN(eff, eff_btl) AS cheapest_case, ARG_MAX(eff, eff_btl) AS dearest_case,
+                   ARG_MIN(uq, eff_btl) AS cheapest_pack, ARG_MAX(uq, eff_btl) AS dearest_pack,
+                   ARG_MIN(fl, eff_btl) AS cheapest_frontline
             FROM base GROUP BY un HAVING COUNT(DISTINCT w) >= 2
         """, params).fetchdf()
     except Exception as e:
         return {"error": f"{type(e).__name__}"}
     out = []
     for _, r in df.iterrows():
-        cheap, dear = r["cheapest_price"], r["dearest_price"]
-        if cheap is None or dear is None or dear <= 0:
+        cb, db_ = r["cheapest_btl"], r["dearest_btl"]
+        if cb is None or db_ is None or db_ <= 0:
             continue
-        savings = dear - cheap
-        pct = savings / dear * 100 if dear else 0
-        if savings <= 0.01 or pct < min_pct:
+        sav_btl = float(db_) - float(cb)
+        pct = sav_btl / float(db_) * 100 if db_ else 0
+        if sav_btl <= 0.005 or pct < min_pct:
             continue
-        # Anomaly guard: a same-UPC gap this extreme is bad data, not arbitrage.
-        if cheap > 0 and dear > cheap * _ARBITRAGE_MAX_RATIO and not args.get("include_anomalies"):
+        # Anomaly guard: a same-UPC per-bottle gap this extreme is bad data.
+        if cb > 0 and db_ > cb * _ARBITRAGE_MAX_RATIO and not args.get("include_anomalies"):
             continue
+        cpack = int(r["cheapest_pack"]) if r["cheapest_pack"] == r["cheapest_pack"] else None
         out.append({
             "product_name": r["product_name"], "upc": r["un"], "unit_volume": r["unit_volume"],
             "wholesaler": r["cheapest_distributor"],         # cheapest source (for the card)
-            "effective_case_price": round(float(cheap), 2),  # buy-here price
-            "frontline_case_price": round(float(dear), 2),   # vs dearest (shown struck through)
-            "cheapest_distributor": r["cheapest_distributor"], "cheapest_price": round(float(cheap), 2),
-            "dearest_distributor": r["dearest_distributor"], "dearest_price": round(float(dear), 2),
-            "savings_per_case": round(float(savings), 2), "savings_pct": round(float(pct), 1),
+            "effective_case_price": round(float(r["cheapest_case"]), 2),   # buy-here case price
+            "frontline_case_price": (round(float(r["cheapest_frontline"]), 2)
+                                     if r["cheapest_frontline"] == r["cheapest_frontline"] else None),
+            "bottles_per_case": cpack,
+            "cheapest_distributor": r["cheapest_distributor"],
+            "cheapest_per_bottle": round(float(cb), 2),
+            "cheapest_case_price": round(float(r["cheapest_case"]), 2),
+            "cheapest_pack": cpack,
+            "dearest_distributor": r["dearest_distributor"],
+            "dearest_per_bottle": round(float(db_), 2),
+            "dearest_case_price": round(float(r["dearest_case"]), 2),
+            "dearest_pack": int(r["dearest_pack"]) if r["dearest_pack"] == r["dearest_pack"] else None,
+            "savings_per_bottle": round(sav_btl, 2),
+            "savings_per_case": round(sav_btl * cpack, 2) if cpack else None,
+            "savings_pct": round(float(pct), 1),
             "distributors": int(r["distributors"]),
+            "note": "Prices compared PER BOTTLE (pack sizes can differ between houses).",
         })
-    out.sort(key=lambda d: d["savings_per_case"], reverse=True)
+    out.sort(key=lambda d: d["savings_per_bottle"], reverse=True)
     return out[:cap]
 
 
@@ -4835,6 +4902,42 @@ def _fmt_date_short(s) -> str:
         return str(s)
 
 
+def _format_compare_md(core: dict) -> str:
+    """Deterministic cross-distributor comparison: one row per LISTING with
+    its pack and per-bottle net, verdict computed in code. Replaces the
+    model's free-form table, which blended different pack sizes ($34 for a
+    6-bottle case called 'cheaper' than $52 for a 12-bottle case)."""
+    recs = core.get("comparison") or []
+    if not recs:
+        return ""
+    parts: list[str] = []
+    parts.append(f"**{core.get('product') or 'Product'} — cross-distributor comparison**"
+                 + (f"  ·  UPC `{core.get('upc')}`" if core.get("upc") else ""))
+    parts.append("")
+    parts.append("| LISTING | DISTRIBUTOR | PACK | LIST/CS | NET/CS | NET/BTL |")
+    parts.append("|---|---|---|---|---|---|")
+    rows = sorted(recs, key=lambda r: (r.get("effective_per_bottle")
+                                       if r.get("effective_per_bottle") is not None else 9e9))
+    best_btl = rows[0].get("effective_per_bottle") if rows else None
+    for r in rows:
+        pb = r.get("effective_per_bottle")
+        star = " ⭐" if (pb is not None and best_btl is not None
+                        and abs(pb - best_btl) < 0.005) else ""
+        pack = f"{r.get('bottles_per_case')}/cs" if r.get("bottles_per_case") else "—"
+        parts.append(
+            f"| {r.get('product_name')} | {str(r.get('wholesaler') or '').title()} | {pack} | "
+            f"{_fmt_money(r.get('frontline_case_price'))} | "
+            f"{_fmt_money(r.get('effective_case_price'))} | "
+            f"{_fmt_money(pb)}{star} |")
+    parts.append("")
+    if core.get("pack_warning"):
+        parts.append(f"_{core['pack_warning']}_")
+        parts.append("")
+    if core.get("cheapest_per_bottle"):
+        parts.append(f"**{core['cheapest_per_bottle']}**")
+    return "\n".join(parts).rstrip()
+
+
 def _format_item_md(core: dict) -> str:
     """ITEM (deal_360 / price_details): product header + List / After-disc /
     After-RIP price table (case AND bottle), the discount + RIP tier ladders, the
@@ -5486,6 +5589,7 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
     item_result: dict | None = None         # deal_360 / price_details
     combo_result: list | None = None         # combo_deals
     combo_analyzer_result: dict | None = None  # combo_analyzer
+    compare_result: dict | None = None         # compare_distributors (per-bottle template)
     time_sensitive_result: list | None = None  # find_deals(time_sensitive|closeout)
     movers_result: tuple | None = None       # (rows, direction) from price_movers
     screen_out: dict | None = None
@@ -5639,6 +5743,8 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                         # find_substitute -> each alternative as a card.
                         if isinstance(out, dict) and isinstance(out.get("comparison"), list):
                             _collect(out["comparison"])
+                            if b.name == "compare_distributors" and out.get("comparison"):
+                                compare_result = out   # deterministic template below
                         if isinstance(out, dict) and isinstance(out.get("alternatives"), list):
                             _collect(out["alternatives"])
                         if isinstance(out, dict) and isinstance(out.get("basket"), list):
@@ -5867,7 +5973,17 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
         import logging as _logging2
         _tlog = _logging2.getLogger("assistant.det_template")
         try:
-            if isinstance(item_result, dict) and not item_result.get("error") and item_result.get("product_name"):
+            # COMPARE outranks ITEM: when the model fetched a cross-distributor
+            # comparison, that's the question's shape — the per-bottle table +
+            # computed verdict must stand (the model blended a 6-pack case
+            # price against a 12-pack's and called the wrong winner).
+            if isinstance(compare_result, dict) and compare_result.get("comparison"):
+                _md = _format_compare_md(compare_result)
+                if _md:
+                    answer = _md
+                    _tmpl_fired = True
+                    _tlog.info("Compare template fired (chars=%d)", len(_md))
+            if not _tmpl_fired and isinstance(item_result, dict) and not item_result.get("error") and item_result.get("product_name"):
                 _md = _format_item_md(item_result)
                 if _md:
                     answer = _md

@@ -226,6 +226,13 @@ CASES = [
     {"name": "Catalog-wide gap question still sweeps (control)",
      "q": "show me the biggest price gaps between distributors across the catalog",
      "checks": [not_offline, min_products(10)]},
+    {"name": "Cross-pack comparison stays per-bottle (Casal Garcia barcode)",
+     "q": "which casal garcia products have price difference between fedway and allied for the same upc",
+     # The barcode carries a 6-pack AND 12-packs: the answer must speak per
+     # bottle (5.67 tie / 4.33 OLD LOT winner), never a blended "$18/cs gap".
+     "checks": [not_offline, products_match_terms("casal", "garcia"),
+                answer_has("/btl", "per bottle", "bottle"),
+                answer_has("4.33", "5.67", "old lot")]},
     # --- half-case credit model surfaces in answers ---
     {"name": "Half-case qualifier (Miraval 375)",
      "q": "how many cases of miraval rose 375ml do I need to buy to qualify for its RIP",

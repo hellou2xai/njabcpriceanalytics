@@ -173,7 +173,11 @@ def _attach_cart_pricing(dcon, items):
             for _, r in df.iterrows():
                 pmap[(r["w"], str(r["un"]), r["pn"] or "", r["uv"] or "")] = r
                 nmap.setdefault((r["w"], str(r["un"]), r["pn"] or ""), r)
-                umap.setdefault((r["w"], str(r["un"])), r)
+                # Barcode-alone fallback ONLY for real barcodes: a placeholder
+                # ('' after lstrip, short stubs) is shared by thousands of
+                # rows, so this map would price a line off a RANDOM product.
+                if len(str(r["un"])) >= 8:
+                    umap.setdefault((r["w"], str(r["un"])), r)
         except Exception:
             pmap = {}; nmap = {}; umap = {}
 

@@ -315,6 +315,14 @@ def get_combo_index():
             FROM {src}
             WHERE ({' OR '.join(pairs)})
               AND upc IS NOT NULL AND upc != '' AND upc != '0'
+              -- Real barcodes only: a placeholder upc is shared by unrelated
+              -- products, so indexing it would sticker every one of them with
+              -- this combo. Placeholder components still display inside the
+              -- combo itself via the (combo_code, upc) CPL match.
+              AND LENGTH(LTRIM(CAST(upc AS VARCHAR), '0')) >= 8
+              AND NOT regexp_matches(CAST(upc AS VARCHAR),
+                    '^(0{{9}}|1{{9}}|2{{9}}|3{{9}}|4{{9}}|5{{9}}|6{{9}}|7{{9}}|8{{9}}|9{{9}})')
+              AND NOT CAST(upc AS VARCHAR) LIKE '999999%'
         """, params).fetchdf()
         items = [
             {"wholesaler": r["wholesaler"], "upc": str(r["upc"]),
@@ -417,23 +425,51 @@ def get_combos(
         # either way, but pandas then has to iterate a 300k-row dataframe in
         # Python, which is the actual perceived slowness on this page.
         df = con.execute(f"""
-            WITH cpl_names AS (
+            WITH cpl_combo_names AS (
+                -- THE RULE: a combo component resolves against the CPL row
+                -- whose combo_code AND upc BOTH match. This works for upc '0'
+                -- too — a placeholder upc is unambiguous WITHIN its own combo
+                -- code (Fedway 748990's '0' row is AVELEDA 6YR on the CPL),
+                -- while by upc alone it matches ~3,100 unrelated rows.
+                SELECT wholesaler, edition, CAST(combo_code AS VARCHAR) AS code, upc,
+                       ANY_VALUE(NULLIF(product_name, '')) AS product_name,
+                       ANY_VALUE(NULLIF(unit_volume, '')) AS unit_volume
+                FROM {cpl_src}
+                WHERE combo_code IS NOT NULL
+                  AND CAST(combo_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
+                GROUP BY 1, 2, 3, 4
+            ),
+            cpl_names AS (
+                -- REAL barcodes only as a fallback. Placeholder upcs ('0',
+                -- repeated-digit fakes, short stubs) are shared by thousands
+                -- of rows, so ANY_VALUE over them named a RANDOM product as
+                -- the combo member. Mirrors catalog._VALID_UPC_SQL.
                 SELECT wholesaler, edition, upc,
                        ANY_VALUE(NULLIF(product_name, '')) AS product_name,
                        ANY_VALUE(NULLIF(unit_volume, '')) AS unit_volume
                 FROM {cpl_src}
                 WHERE upc IS NOT NULL AND CAST(upc AS VARCHAR) <> ''
+                  AND LENGTH(LTRIM(CAST(upc AS VARCHAR), '0')) >= 8
+                  AND NOT regexp_matches(CAST(upc AS VARCHAR),
+                        '^(0{{9}}|1{{9}}|2{{9}}|3{{9}}|4{{9}}|5{{9}}|6{{9}}|7{{9}}|8{{9}}|9{{9}})')
+                  AND NOT CAST(upc AS VARCHAR) LIKE '999999%'
                 GROUP BY wholesaler, edition, upc
             )
             SELECT c.wholesaler, c.edition, c.combo_code, c.upc,
-                   COALESCE(NULLIF(cpl.product_name, ''), c.product_name) AS product_name,
-                   cpl.unit_volume,
+                   COALESCE(NULLIF(cc.product_name, ''),
+                            NULLIF(cpl.product_name, ''), c.product_name) AS product_name,
+                   COALESCE(cc.unit_volume, cpl.unit_volume) AS unit_volume,
                    c.combo_pack_price, c.qty_per_pack, c.frontline_price_each,
                    c.combo_price_each, c.total_savings,
                    CASE WHEN try_cast(LEFT(c.comments, 10) AS DATE) IS NULL
                         THEN c.comments ELSE NULL END AS comments,
                    c.from_date, c.to_date
             FROM {src} c
+            LEFT JOIN cpl_combo_names cc
+              ON cc.wholesaler = c.wholesaler
+             AND cc.edition = c.edition
+             AND cc.code = CAST(c.combo_code AS VARCHAR)
+             AND cc.upc = c.upc
             LEFT JOIN cpl_names cpl
               ON cpl.wholesaler = c.wholesaler
              AND cpl.edition = c.edition
@@ -501,11 +537,14 @@ def get_combos(
                 if qn:
                     g["tier_rows"].append({**comp, "qty_n": qn})
                     g["qtys_by_upc"].setdefault(comp["upc"], set()).add(qn)
-            # Key by UPC (the reliable identifier — every combo row has one); fall
-            # back to a sig only when a row lacks a UPC. On a UPC clash keep the
-            # row with the higher combo_price_each so the $0 duplicate halves drop.
-            key = comp["upc"] or ("_noupc", comp["product_name"], comp["qty_per_pack"],
-                                  comp["combo_price_each"])
+            # Key by UPC only when it's a REAL barcode — a placeholder ('0')
+            # is shared by unrelated components, so keying on it collapses two
+            # different products into one line. Placeholder rows key by their
+            # resolved name (+qty/price) instead. On a real-UPC clash keep the
+            # row with the higher combo_price_each so $0 duplicate halves drop.
+            _real = bool(comp["upc"]) and len(str(comp["upc"]).lstrip("0")) >= 8
+            key = comp["upc"] if _real else ("_noupc", comp["product_name"],
+                                             comp["qty_per_pack"], comp["combo_price_each"])
             bucket = g["comp_curr"] if slot == "curr" else g["comp_next"]
             prev = bucket.get(key)
             if prev is None or (comp["combo_price_each"] or 0) > (prev["combo_price_each"] or 0):

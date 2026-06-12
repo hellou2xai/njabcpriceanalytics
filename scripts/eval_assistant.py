@@ -413,6 +413,23 @@ def run(con):
             expect(f"compare row == cpl_enriched ({r.get('product_name')})", ok,
                    f"tool={r.get('frontline_case_price')}/{r.get('effective_case_price')} db={gtv}")
 
+    # 8c) Combo placeholder-UPC resolution: a '0'-UPC component must resolve
+    #     via (combo_code AND upc) against the CPL — by upc alone it matched
+    #     ANY of Fedway's ~3,100 '0' rows and named a random product.
+    section("combo placeholder-UPC resolution")
+    cmb = A._t_combo_deals(con, {"distributor": "fedway", "q": "aveleda"})
+    target = next((c for c in (cmb if isinstance(cmb, list) else [])
+                   if str(c.get("combo_code")) == "748990"), None)
+    expect("fedway combo 748990 found", target is not None,
+           str([c.get('combo_code') for c in (cmb or [])])[:120])
+    if target:
+        names = sorted(str(m.get("product_name") or "")
+                       for m in (target.get("components") or []))
+        expect("748990 components = the CPL's (code, upc) matches",
+               names == ["AVELEDA ADEGA VELHA 12YR BRANDY",
+                         "AVELEDA ADEGA VELHA 6YR BRANDY"],
+               f"components={names}")
+
     # 9) Half-case credit model: the data layer must be populated and priced.
     section("half-case credit model")
     n_cr = con.execute("SELECT COUNT(*) FROM rip_credits").fetchone()[0]
@@ -452,6 +469,7 @@ SECTION_BLURB = {
     "semantic resolution + relevance": "Brand/UPC/misspelled queries must resolve to ON-TOPIC products only, and brand-scoped tools must never return an unscoped sweep.",
     "ground truth vs cpl_enriched": "Tool prices must equal the derived source of truth exactly.",
     "cross-pack comparison (per-bottle normalization)": "A shared barcode with different pack sizes must compare per BOTTLE, with the verdict computed in code (never by the model).",
+    "combo placeholder-UPC resolution": "A '0'-UPC combo component resolves via (combo_code AND upc) against the CPL — never by the shared placeholder barcode alone.",
     "half-case credit model": "Half-case qualifiers (375ML=1/2 CASE) must be priced via case credits — data populated and effective prices scaled.",
 }
 

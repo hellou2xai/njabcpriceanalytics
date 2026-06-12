@@ -11,6 +11,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useCallback } from 'react';
 import { deals } from './api';
+import { isRealUpc } from './upc';
 
 export function useComboLink() {
   const { data } = useQuery({
@@ -24,6 +25,10 @@ export function useComboLink() {
     return m;
   }, [data]);
   return useCallback((wholesaler: string, upc?: string | null): string | null => {
+    // A placeholder barcode ('0', 111111111117…) is shared by unrelated
+    // products — matching the index on it would put a combo sticker on
+    // every one of them. Only real barcodes resolve a combo membership.
+    if (!isRealUpc(upc)) return null;
     const norm = String(upc ?? '').replace(/^0+/, '');
     const code = norm ? map.get(`${wholesaler}|${norm}`) : undefined;
     return code ? `/combos?code=${encodeURIComponent(code)}` : null;

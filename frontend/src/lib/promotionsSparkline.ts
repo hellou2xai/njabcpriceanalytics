@@ -23,6 +23,8 @@ function tierToRip(t: CatalogTier): RipTier {
     ripOnlySave: t.rip_only_save_per_case ?? null,
     ts: !!t.is_time_sensitive,
     code: t.code ?? null,
+    qualifiedCases: t.qualified_cases ?? null,
+    caseCredit: t.case_credit ?? null,
     from_date: t.from_date,
     to_date: t.to_date,
     window_status: t.window_status,

@@ -704,6 +704,13 @@ export interface RipTierRow {
   is_time_sensitive: boolean;
   from_date: string | null;
   to_date: string | null;
+  // Case-credit model (FOUNDATION 3.4.1): set only when a half-case rule
+  // matched. cases_to_unlock / buy_label above already reflect the REAL
+  // physical buy-in; these fields let the UI explain why it differs from
+  // raw_qty.
+  case_credit?: number | null;
+  split_pack?: number | null;
+  split_credit?: number | null;
 }
 export interface CompareRipDist {
   frontline: number | null;
@@ -1687,6 +1694,15 @@ export interface CatalogTier extends TierWindow {
   // and has_discount; the modal/popover still surfaces the tier so the buyer
   // sees the promo exists, but the UI renders it with a "TS" marker.
   is_time_sensitive?: boolean;
+  // Case-credit model (FOUNDATION 3.4.1) — present only when a half-case
+  // rule matched this SKU: one physical case counts `case_credit` toward
+  // this case-unit tier, so the REAL buy-in is `qualified_cases` physical
+  // cases. split_pack/split_credit describe an allowed sub-case split
+  // (e.g. a 3-bottle split of a 6-pack earning 0.5 case credit).
+  case_credit?: number | null;
+  qualified_cases?: number | null;
+  split_pack?: number | null;
+  split_credit?: number | null;
 }
 
 // One edition's block in the 3-month sparkline history (pricing.attach_price_3mo).

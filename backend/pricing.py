@@ -54,6 +54,7 @@ from backend.rip_utils import (
     is_bottle_unit as _is_bottle_unit,
     rip_per_case as _rip_per_case,
     rip_bundle_cost as _rip_bundle_cost,
+    qualified_cases as _qualified_cases,
     normalize_unit as _norm_unit,
 )
 
@@ -473,6 +474,24 @@ def attach_tiers(con, records, ref_date=None) -> None:
               AND wholesaler IN ({ph_ws})
               AND edition IN ({ph_ed})
         """, rp).fetchdf()
+        # Half-case credit layer: per (code, upc) case-credit rates parsed at
+        # ETL from the RIP free text (nj_abc_parser.rip_rules; FOUNDATION:
+        # case-credit model). Missing row / missing table = credit 1.0.
+        credit_map: dict = {}
+        try:
+            cr_rows = con.execute(f"""
+                SELECT rip_code, wholesaler, edition, upc,
+                       case_credit, split_pack, split_credit, rule_excerpt
+                FROM {read_parquet(con, "rip_credits")}
+                WHERE rip_code IN ({ph_codes})
+                  AND wholesaler IN ({ph_ws})
+                  AND edition IN ({ph_ed})
+            """, rp).fetchdf()
+            for _, c in cr_rows.iterrows():
+                credit_map[(str(c["rip_code"]), c["wholesaler"], c["edition"],
+                            str(c["upc"]))] = c
+        except Exception:
+            pass  # cache built before rip_credits existed
         for _, r in rip_rows.iterrows():
             # Time-sensitive flag for THIS RIP source row, attached to every
             # tier it produces. The buyer sees the tier in the ladder either
@@ -482,6 +501,21 @@ def attach_tiers(con, records, ref_date=None) -> None:
             rip_win = window_status(r.get("from_date"), r.get("to_date"), ref_date)
             rip_from = _iso(r.get("from_date"))
             rip_to = _iso(r.get("to_date"))
+            crow = credit_map.get((
+                str(r.get("rip_code") or ""), r["wholesaler"], r["edition"],
+                str(r.get("upc") or "").lstrip("0")))
+
+            def _cf(field):
+                if crow is None:
+                    return None
+                v = crow.get(field)
+                try:
+                    f = float(v)
+                    return None if f != f else f  # NaN -> None
+                except (TypeError, ValueError):
+                    return None
+
+            tier_credit = _cf("case_credit") or 1.0
             tiers_here = []
             for j in range(1, 5):
                 amt = r.get(f"rip_amt_{j}")
@@ -505,6 +539,12 @@ def attach_tiers(con, records, ref_date=None) -> None:
                     "to_date": rip_to,
                     "window_status": rip_win["status"],
                     "days_to_expire": rip_win["days_to_expire"],
+                    # case-credit model: how one physical case of THIS SKU
+                    # counts toward this tier (1.0 unless a half-case rule
+                    # matched), plus any allowed sub-case split.
+                    "case_credit": tier_credit,
+                    "split_pack": _cf("split_pack"),
+                    "split_credit": _cf("split_credit"),
                 })
             if not tiers_here:
                 continue
@@ -859,18 +899,25 @@ def attach_tiers(con, records, ref_date=None) -> None:
         rips = []
         for t in by_win.values():
             is_bottle = _is_bottle_unit(t["unit"])
-            rip_per_case_v = round(_rip_per_case(t["amount"], t["qty"], t["unit"], uq), 2)
-            # Case-equivalent of the RIP qty so we can look up the best stackable
-            # discount. For a case RIP that's t.qty cases; for a bottle RIP it's
-            # t.qty / pack cases (whole-pack purchase).
+            # Case-credit model (FOUNDATION): a case-unit tier's amount/qty is
+            # per QUALIFYING case; one physical case of this SKU earns only
+            # `credit` toward it, so the per-physical-case rebate scales by
+            # credit and the physical buy-in is qty/credit cases. Bottle-unit
+            # tiers are explicit bottle counts — never scaled.
+            credit = float(t.get("case_credit") or 1.0)
+            rip_per_case_v = round(
+                _rip_per_case(t["amount"], t["qty"], t["unit"], uq, credit), 2)
+            # PHYSICAL case-equivalent of the RIP qty: drives the stackable-
+            # discount lookup (QDs count physical cases) and the bundle cost.
             if is_bottle:
                 eq_cases = (float(t["qty"]) / uq) if uq > 0 else 0.0
             else:
-                eq_cases = float(t["qty"])
+                eq_cases = _qualified_cases(t["qty"], t["unit"], credit)
             disc_at_qty = best_disc_at(disc, eq_cases, uq)
             combined_save = round(rip_per_case_v + disc_at_qty, 2)
             up_price = float(rec.get("frontline_unit_price") or 0)
-            bundle_cost = _rip_bundle_cost(t["qty"], t["unit"], cp, up_price)
+            bundle_cost = _rip_bundle_cost(
+                t["qty"] if is_bottle else eq_cases, t["unit"], cp, up_price)
             rips.append({
                 "source": "rip",
                 "qty": t["qty"],
@@ -898,6 +945,15 @@ def attach_tiers(con, records, ref_date=None) -> None:
                 "to_date": t.get("to_date"),
                 "window_status": t.get("window_status"),
                 "days_to_expire": t.get("days_to_expire"),
+                # case-credit model fields (only when a half-case rule hit, so
+                # the common payload stays unchanged): the credit rate, the
+                # REAL physical buy-in for this tier, and any split allowance.
+                **({"case_credit": credit,
+                    "qualified_cases": round(eq_cases, 2)}
+                   if credit != 1.0 and not is_bottle else {}),
+                **({"split_pack": t.get("split_pack"),
+                    "split_credit": t.get("split_credit")}
+                   if t.get("split_pack") else {}),
             })
         # qty first, then by window start so a qty's earliest window leads and
         # its later ("next RIP date") window follows directly beneath it.

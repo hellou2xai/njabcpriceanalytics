@@ -869,13 +869,23 @@ def _norm_proof(v) -> Optional[float]:
 
 
 def _cases_threshold(tier: dict, pack: float) -> Optional[float]:
-    """A tier's qty expressed in CASES (bottle-unit tiers / pack)."""
+    """A tier's qty expressed in PHYSICAL cases (bottle-unit tiers / pack).
+
+    Case-credit model (FOUNDATION): when a half-case rule gives this SKU's
+    case a credit < 1.0, the printed case tier takes qty/credit physical
+    cases to satisfy ("need 2 CS to qualify for the 1-CS RIP"). attach_tiers
+    sets ``case_credit`` only when a rule matched; absence means 1.0.
+    Bottle-unit tiers are explicit bottle counts and never scale."""
     q = tier.get("qty")
     if q is None:
         return None
     if _is_btl_unit(tier.get("unit")) and pack and pack > 0:
         return q / pack
-    return float(q)
+    try:
+        cc = float(tier.get("case_credit") or 1.0)
+    except (TypeError, ValueError):
+        cc = 1.0
+    return float(q) / cc if cc > 0 else float(q)
 
 
 def _landed_at(tiers: list, frontline: Optional[float], n_cases: float, pack: float) -> Optional[float]:
@@ -943,6 +953,10 @@ def _rip_tier_rows(tiers: list, pack: float) -> list[dict]:
             "is_time_sensitive": bool(t.get("is_time_sensitive")),
             "from_date": t.get("from_date"),
             "to_date": t.get("to_date"),
+            # case-credit model: present only when a half-case rule matched
+            "case_credit": t.get("case_credit"),
+            "split_pack": t.get("split_pack"),
+            "split_credit": t.get("split_credit"),
         })
     rows.sort(key=lambda r: (r["cases_to_unlock"] if r["cases_to_unlock"] is not None else 1e9))
     return rows

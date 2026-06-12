@@ -383,8 +383,19 @@ def _case_tiers(item: dict, kind: str) -> list[dict]:
             q = int(t["qty"])
         except (TypeError, ValueError):
             continue
+        # Case-credit model (FOUNDATION): a half-case SKU's printed tier qty
+        # is QUALIFYING cases; the cart counts PHYSICAL cases, so the nudge
+        # threshold is qty/credit ("buy 2 cs to reach the 1-cs RIP").
+        # save_per_case arrives already credit-scaled from attach_tiers.
+        try:
+            _cc = float(t.get("case_credit") or 1.0)
+        except (TypeError, ValueError):
+            _cc = 1.0
+        if 0 < _cc != 1.0:
+            q = int(-(-q // _cc))  # ceil(q / credit)
         out.append({
             "qty": q,
+            "case_credit": t.get("case_credit"),
             "code": str(t.get("code") or "") or None,
             "save": _fnum(t.get("save_per_case")) or 0.0,
             # For a RIP tier the canonical `save_per_case` STACKS the quantity

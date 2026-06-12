@@ -77,11 +77,18 @@ def is_bottle_unit(unit) -> bool:
     return normalize_unit(unit) == "bottle"
 
 
-def rip_per_case(amount, qty, unit, pack) -> float:
-    """Per-CASE savings for one RIP tier.
+def rip_per_case(amount, qty, unit, pack, case_credit=None) -> float:
+    """Per-PHYSICAL-CASE savings for one RIP tier.
 
     pack = bottles per case (CPL unit_qty). Bottle-unit tiers are converted to
     per-case by multiplying the per-bottle rebate by pack.
+
+    case_credit = the case-credit rate from the half-case rule layer
+    (rip_credits): the fraction of a qualifying case ONE physical case of
+    this SKU earns (0.5 for "375ML 12PK = 1/2 CASE" SKUs, 1.0 default).
+    A case-unit tier's amount/qty is per QUALIFYING case, so the rebate per
+    PHYSICAL case scales by the credit. Bottle-unit tiers are explicit
+    bottle counts and never scale (FOUNDATION: case-credit model).
     """
     a, q = _f(amount), _f(qty)
     if a is None or q is None or q <= 0:
@@ -90,7 +97,25 @@ def rip_per_case(amount, qty, unit, pack) -> float:
     if is_bottle_unit(unit):
         p = _f(pack)
         return per_unit * p if (p and p > 0) else per_unit
-    return per_unit
+    cc = _f(case_credit)
+    return per_unit * cc if (cc and cc > 0) else per_unit
+
+
+def qualified_cases(qty, unit, case_credit=None) -> float:
+    """PHYSICAL cases needed to satisfy a case-unit tier quantity.
+
+    A tier of `qty` qualifying cases takes qty / credit physical cases when
+    each physical case earns only `case_credit` toward it ("need 2 CS to
+    qualify for the 1-CS RIP"). Bottle-unit tiers pass through unchanged —
+    their qty is already a physical bottle count.
+    """
+    q = _f(qty)
+    if q is None or q <= 0:
+        return 0.0
+    if is_bottle_unit(unit):
+        return q
+    cc = _f(case_credit)
+    return q / cc if (cc and cc > 0) else q
 
 
 def rip_per_bottle(amount, qty, unit, pack) -> float:

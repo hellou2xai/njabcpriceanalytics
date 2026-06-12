@@ -326,7 +326,15 @@ function RipDetail({ row, slugs, accent, cases }: { row: CompareRipRow; slugs: s
                   {d.rip_tiers.length === 0 && <tr><td colSpan={4} className="rip2-none">no RIP tiers</td></tr>}
                   {d.rip_tiers.map((t, i) => (
                     <tr key={i}>
-                      <td>{t.buy_label ?? `${t.cases_to_unlock ?? t.raw_qty} cs`}</td>
+                      <td>
+                        {t.buy_label ?? `${t.cases_to_unlock ?? t.raw_qty} cs`}
+                        {t.case_credit != null && t.case_credit !== 1 && (
+                          <span className="rip2-halfcase" title={`Half-case rule: each case of this SKU counts ${t.case_credit} toward the RIP, so the printed ${t.raw_qty}-case tier takes ${t.cases_to_unlock} physical cases.`}> ½cs</span>
+                        )}
+                        {t.split_pack != null && (
+                          <span className="rip2-halfcase" title={`${t.split_pack}-bottle split allowed: counts ${t.split_credit ?? 0.5} case toward this RIP; a full case counts 1.`}> ◐{t.split_pack}</span>
+                        )}
+                      </td>
                       <td className="text-green">{t.rebate_per_case != null ? `-${money(t.rebate_per_case)}` : '-'}</td>
                       <td><strong>{money(t.price_after)}</strong></td>
                       <td>{t.is_time_sensitive && t.window_status !== 'expired'

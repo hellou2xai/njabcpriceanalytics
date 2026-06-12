@@ -30,7 +30,8 @@ CACHE_DIR = PROJECT_ROOT / "user_data"
 
 # Single-file (derived) tables vs Hive-partitioned (raw) tables, matching the
 # Parquet layout. These names are exactly what read_parquet() is called with.
-DERIVED = ["cpl_enriched", "price_changes", "item_lifecycle", "cross_source_links"]
+DERIVED = ["cpl_enriched", "price_changes", "item_lifecycle",
+           "cross_source_links", "rip_credits"]
 RAW = ["cpl", "rip", "combo"]
 ALL_TABLES = DERIVED + RAW
 
@@ -139,9 +140,26 @@ def build_pricing_cache() -> Path:
                 "CREATE TABLE celr_family_keys ("
                 "key VARCHAR, cpn INTEGER, header_name VARCHAR)"
             )
+            # Half-case rule layer (nj_abc_parser.rip_rules): per-UPC case
+            # credits. Missing source (pre-rollout DB / first run) -> empty
+            # table, which every consumer reads as credit 1.0.
+            empty_credits = (
+                "CREATE TABLE rip_credits ("
+                "wholesaler VARCHAR, edition VARCHAR, rip_code VARCHAR, "
+                "upc VARCHAR, case_credit DOUBLE, split_pack DOUBLE, "
+                "split_credit DOUBLE, rule_kind VARCHAR, method VARCHAR, "
+                "rule_excerpt VARCHAR)"
+            )
             if PRICING_SOURCE == "parquet":
                 for t in ALL_TABLES:
+                    if t == "rip_credits":
+                        continue  # guarded create below
                     con.execute(f"CREATE TABLE {t} AS SELECT * FROM {_parquet_select(t)}")
+                try:
+                    con.execute(
+                        f"CREATE TABLE rip_credits AS SELECT * FROM {_parquet_select('rip_credits')}")
+                except Exception:  # derived file not built yet
+                    con.execute(empty_credits)
                 # No enrichment in parquet dev mode; an empty table keeps joins valid.
                 con.execute(empty_enrich)
                 con.execute(empty_sku)
@@ -163,7 +181,13 @@ def build_pricing_cache() -> Path:
                 con.execute("INSTALL postgres; LOAD postgres;")
                 con.execute(f"ATTACH '{pg_libpq(DATABASE_URL)}' AS pg (TYPE postgres, READ_ONLY)")
                 for t in ALL_TABLES:
+                    if t == "rip_credits":
+                        continue  # guarded create below
                     con.execute(f"CREATE TABLE {t} AS SELECT * FROM pg.{t}")
+                try:
+                    con.execute("CREATE TABLE rip_credits AS SELECT * FROM pg.rip_credits")
+                except Exception:  # not ingested yet on this DB
+                    con.execute(empty_credits)
                 try:
                     con.execute(f"CREATE TABLE product_enrichment AS SELECT {enrich_cols} FROM pg.product_enrichment")
                 except Exception:  # table may not exist yet on a brand-new DB

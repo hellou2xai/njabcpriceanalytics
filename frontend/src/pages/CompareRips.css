@@ -248,3 +248,7 @@
   .rip2-product-head { grid-template-columns: 1fr; }
   .rip2-detail-charts { grid-template-columns: 1fr; }
 }
+
+/* Half-case rule marker: the Buy column already shows the real physical
+   buy-in; this badge flags WHY it differs from the printed tier. */
+.rip2-halfcase { color: #c2410c; font-size: 0.68rem; font-weight: 700; cursor: help; }

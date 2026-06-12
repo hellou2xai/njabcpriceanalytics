@@ -97,6 +97,11 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
   const buyLabel = (t: RipTier) => {
     const isBtl = /^\s*b/i.test(t.unit);
     if (isBtl && pack && pack > 0) return `${fmtCs(t.qty / pack)} cs`;
+    // Half-case rule (case-credit model): show the REAL physical buy-in,
+    // not the printed qualifying quantity ("buy 2 cs" for a 1-cs tier).
+    if (t.qualifiedCases != null && t.qualifiedCases !== t.qty) {
+      return `${fmtCs(t.qualifiedCases)} ${uw(t.unit)}`;
+    }
     return `${t.qty} ${uw(t.unit)}`;
   };
   const line = (kind: 'qd' | 'rip', t: RipTier, i: number, noFlag = false) => {

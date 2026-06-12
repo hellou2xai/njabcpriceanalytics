@@ -266,6 +266,15 @@ class NJABCParser:
             return None
 
         col_map = self._build_column_mapping(ws, header_row, self.rip_header_map)
+        # Distributor item number: Fedway appends an UNNAMED column right of
+        # the last template column carrying its internal item number (the key
+        # its half-case comments reference, and the only product key on rows
+        # filed with UPC=0). The header row has no text there, so map the
+        # first unmapped column after the rightmost mapped one.
+        if col_map:
+            extra_idx = max(col_map.keys()) + 1
+            if extra_idx not in col_map:
+                col_map[extra_idx] = "dist_item_no"
         df = self._extract_rows(ws, header_row, col_map, RIP_COLUMNS)
         if df is None:
             return None
@@ -370,6 +379,13 @@ class NJABCParser:
         df["brand_reg_no"] = df["brand_reg_no"].apply(_to_str_stripped)
         df["rip_description"] = df["rip_description"].apply(_to_str_stripped)
         df["comments"] = df["comments"].apply(_to_str_stripped)
+        if "dist_item_no" in df.columns:
+            # Excel floats ("130360.0") -> clean digit strings; junk -> None
+            df["dist_item_no"] = df["dist_item_no"].apply(
+                lambda v: str(v).split(".")[0].strip()
+                if v is not None and str(v).split(".")[0].strip().isdigit()
+                else None
+            )
 
         for col in ["from_date", "to_date"]:
             df[col] = pd.to_datetime(df[col], errors="coerce")

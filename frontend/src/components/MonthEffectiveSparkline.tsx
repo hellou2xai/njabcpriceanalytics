@@ -28,6 +28,10 @@ export interface RipTier extends TierWindow {
   // RIP code this tier belongs to — lets the ladder group tiers by program so
   // two RIPs on one UPC don't read as one jumbled pile.
   code?: string | null;
+  // Case-credit model (FOUNDATION 3.4.1): the REAL physical buy-in when a
+  // half-case rule matched (qty stays the printed/qualifying quantity).
+  qualifiedCases?: number | null;
+  caseCredit?: number | null;
 }
 
 export interface MonthBreakdown {

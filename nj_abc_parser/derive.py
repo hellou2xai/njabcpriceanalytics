@@ -292,6 +292,42 @@ def build_item_lifecycle(parquet_dir: str | Path, output_dir: Path):
     return df
 
 
+def build_rip_credits(parquet_dir: str | Path, output_dir: Path):
+    """Resolve free-text half-case / must-double RIP rules into per-UPC case
+    credits (see nj_abc_parser.rip_rules + backend/FOUNDATION.md).
+
+    Writes derived/rip_credits.parquet with one row per (wholesaler, edition,
+    rip_code, upc) whose physical case earns a credit != 1.0 toward case-unit
+    RIP tiers, or that carries a sub-case split allowance. Absence of a row
+    means credit 1.0 — an unparsed rule can never alter pricing.
+    """
+    from nj_abc_parser.rip_rules import compute_rip_credits
+
+    con = _get_conn(parquet_dir)
+    pdir = Path(parquet_dir).as_posix()
+    rip = con.execute(f"""
+        SELECT * FROM read_parquet('{pdir}/rip/**/data.parquet',
+                                   hive_partitioning=true, union_by_name=true)
+    """).fetchdf()
+    cpl = con.execute(f"""
+        SELECT wholesaler, edition, upc, product_name, unit_volume, unit_qty
+        FROM read_parquet('{pdir}/cpl/**/data.parquet',
+                          hive_partitioning=true, union_by_name=true)
+    """).fetchdf()
+    con.close()
+
+    df = compute_rip_credits(rip, cpl)
+    # stable dtypes so an empty month still writes a joinable schema
+    df = df.astype({
+        "wholesaler": "string", "edition": "string", "rip_code": "string",
+        "upc": "string", "case_credit": "float64", "split_pack": "float64",
+        "split_credit": "float64", "rule_kind": "string",
+        "method": "string", "rule_excerpt": "string",
+    })
+    _write(df, output_dir, "rip_credits")
+    return df
+
+
 def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
     """
     Gaps 3, 4, 5: Enriched CPL with brand extraction, RIP join, effective price.
@@ -304,6 +340,11 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
     """
     con = _get_conn(parquet_dir)
     pdir = Path(parquet_dir).as_posix()
+
+    # Case credits must exist before the rebate math below — build (or
+    # rebuild) them here so every entry point gets credit-correct pricing.
+    credits_path = Path(parquet_dir) / "derived" / "rip_credits.parquet"
+    build_rip_credits(parquet_dir, credits_path.parent)
 
     # Same vintage normaliser used in build_price_changes and the runtime
     # search. Wines reuse one UPC across vintages, so the "next edition"
@@ -346,7 +387,16 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
     )
 
     df = con.execute(f"""
-        WITH rip_per_code_upc AS (
+        WITH rip_credit_rates AS (
+            -- Free-text half-case rules resolved to per-UPC case credits
+            -- (nj_abc_parser.rip_rules). credit < 1.0 means one physical
+            -- case earns only that fraction toward case-unit RIP tiers, so
+            -- the per-PHYSICAL-case rebate scales by it. Bottle-unit tiers
+            -- are explicit bottle counts and never scale. Missing row = 1.0.
+            SELECT wholesaler, edition, rip_code, upc AS upc_n, case_credit
+            FROM read_parquet('{pdir}/derived/rip_credits.parquet')
+        ),
+        rip_per_code_upc_raw AS (
             -- Best savings keyed by (wholesaler, edition, rip_code, upc).
             -- Preferred match when the RIP sheet's UPC matches the CPL row.
             -- RIP tiers can be quoted per case OR per bottle, and the per-case
@@ -377,7 +427,22 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
               AND {full_window('from_date', 'to_date')}
             GROUP BY wholesaler, edition, rip_code, upc
         ),
-        rip_windows_per_code_upc AS (
+        rip_per_code_upc AS (
+            -- Apply the case credit to the CASE-unit rebate: a half-case SKU's
+            -- "1 CS = $24" pays $24 per QUALIFYING case = $12 per physical
+            -- case. Per-bottle rebates pass through untouched.
+            SELECT b.wholesaler, b.edition, b.rip_code, b.upc,
+                   b.best_case_per_case
+                       * COALESCE(rc.case_credit, 1.0) AS best_case_per_case,
+                   b.best_bottle_per_bottle
+            FROM rip_per_code_upc_raw b
+            LEFT JOIN rip_credit_rates rc
+                ON rc.wholesaler = b.wholesaler
+                AND rc.edition = b.edition
+                AND rc.rip_code = CAST(b.rip_code AS VARCHAR)
+                AND rc.upc_n = LTRIM(CAST(b.upc AS VARCHAR), '0')
+        ),
+        rip_windows_per_code_upc_raw AS (
             -- Same per-case / per-bottle best as rip_per_code_upc, but WITHOUT the
             -- full-month gate and grouped per validity window (from_date, to_date)
             -- so each distinct window is preserved. Powers the precomputed
@@ -402,6 +467,20 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
             FROM read_parquet('{pdir}/rip/**/data.parquet', hive_partitioning=true, union_by_name=true)
             WHERE rip_code IS NOT NULL
             GROUP BY wholesaler, edition, rip_code, upc, from_date, to_date
+        ),
+        rip_windows_per_code_upc AS (
+            -- Same case-credit scaling as rip_per_code_upc, per window.
+            SELECT b.wholesaler, b.edition, b.rip_code, b.upc,
+                   b.from_date, b.to_date,
+                   b.best_case_per_case
+                       * COALESCE(rc.case_credit, 1.0) AS best_case_per_case,
+                   b.best_bottle_per_bottle
+            FROM rip_windows_per_code_upc_raw b
+            LEFT JOIN rip_credit_rates rc
+                ON rc.wholesaler = b.wholesaler
+                AND rc.edition = b.edition
+                AND rc.rip_code = CAST(b.rip_code AS VARCHAR)
+                AND rc.upc_n = LTRIM(CAST(b.upc AS VARCHAR), '0')
         ),
         -- How many DISTINCT listings share each (wholesaler, edition, UPC).
         -- "Listing" = the same identity the `joined` CTE partitions on
@@ -850,7 +929,8 @@ def build_all(parquet_dir: str | Path = "parquet_output"):
 
     # cpl_enriched first because build_price_changes now reads effective_case_price
     # from it (see the effective_* columns in price_changes — those depend on the
-    # enrichment join that lives only in cpl_enriched).
+    # enrichment join that lives only in cpl_enriched). cpl_enriched itself
+    # (re)builds rip_credits internally before its rebate math.
     build_cpl_enriched(parquet_dir, output_dir)
     build_price_changes(parquet_dir, output_dir)
     build_item_lifecycle(parquet_dir, output_dir)

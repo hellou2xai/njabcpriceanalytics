@@ -292,9 +292,9 @@ A 6-bottle pack with a $5/bottle RIP saves $30/case, NOT $5/case.
 canonical formulas:
 
 ```python
-rip_per_case(amount, qty, unit, pack):
-    case-unit tier   -> amount / qty
-    bottle-unit tier -> (amount / qty) * pack
+rip_per_case(amount, qty, unit, pack, case_credit=None):
+    case-unit tier   -> (amount / qty) * credit     # credit defaults 1.0
+    bottle-unit tier -> (amount / qty) * pack       # never credit-scaled
 
 rip_per_bottle(amount, qty, unit, pack):
     case-unit tier   -> (amount / qty) / pack
@@ -305,6 +305,54 @@ rip_per_bottle(amount, qty, unit, pack):
 (case-insensitive, after whitespace trim). Anything else (including
 NULL and empty) is treated as cases — that matches how Fedway,
 high_grade and peerless encode their files.
+
+### 3.4.1 Case-credit model (half-case / must-double rules)
+
+Fedway and Allied hide quantity-qualification rules in RIP free text:
+Allied inline in RIP DESCRIPTION (`"DISARONNO VELVET CREAM   375ML 12PK
+= 1/2 CASE"`), Fedway in COMMENTS (`"375ml must be doubled for RIP."`).
+`nj_abc_parser/rip_rules.py` parses these at ETL into
+`derived/rip_credits.parquet` (one row per affected `(wholesaler,
+edition, rip_code, upc)`); the table flows to Postgres via
+`ingest_to_postgres.py` and into the pricing cache. **Absence of a row
+means credit 1.0 — an unparsed rule can never alter pricing.**
+
+The model: **a RIP tier is a pool of CASE CREDITS assembled across the
+RIP group's UPCs (mix & match). Each rule sets the credit one PHYSICAL
+case earns toward that pool:**
+
+- `case_credit = 0.5` — the SKU's physical case IS the named half pack
+  (375ML x12 under `"12PK = 1/2 CASE"`; also `"must be doubled"`).
+  `0.25` for quarter-case; `2.0` for the favorable inverse
+  (`"12-BT CS = 2 CS FOR RIP"`).
+- `split_pack` / `split_credit` — the rule names a SUB-case pack of a
+  full-pack SKU (1.75L x6 under `"3PK 1.75L = 1/2 CASE"`): the full
+  case still counts 1.0 (NEVER double these); the 3-bottle split is
+  allowed in at `split_credit` toward the pool.
+
+Three derived consequences, applied ONLY to case-unit tiers (a
+bottle-unit tier is an explicit bottle count and never scales):
+
+1. **Rebate per PHYSICAL case** = `(amount / qty) * case_credit` —
+   a half-case SKU's "1 CS = $24" pays $24 per qualifying case, i.e.
+   $12 per physical case. Applied in `derive.py` (`best_rip_amt` →
+   `effective_case_price`, `rip_windows`) and `rip_utils.rip_per_case`.
+2. **Physical buy-in** = `qualified_cases(qty, unit, credit)` =
+   `qty / credit` — "need 2 CS to qualify for the 1-CS RIP". Applied in
+   `compare.py::_cases_threshold` (which feeds `_buy_label`,
+   `_landed_at`, `_min_cases_to_rip`, `cases_to_unlock`) and the cart
+   nudges (`cart.py::_case_tiers`).
+3. **Tier payloads** carry `case_credit` / `qualified_cases` /
+   `split_pack` / `split_credit` only when a rule matched, so untouched
+   SKUs serialize exactly as before.
+
+Pairing precision rules (each bought with a real mispricing bug — keep
+them strict): the rule's SIZE filter is exact (a 375ML rule never tags
+a 750ML member); `"12PK 375ML"` adjacency = conjunction while
+`"6PK & 375ML"` = alternatives; VAP/gift/flask scopes require the pack
+marker in the member's product name (VAP|GFBX|FLK|GLS...) or resolve to
+nothing; item-number scopes resolve via `dist_item_no` (Fedway's
+unnamed RIP col N, kept by `base_parser._parse_rip`).
 
 ### 3.5 CPL + RIP tier stacking
 

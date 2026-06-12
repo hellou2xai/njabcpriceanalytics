@@ -111,6 +111,12 @@ RIP_COLUMNS = [
     "rip_qty_4",
     "rip_amt_4",
     "comments",
+    # Distributor-internal item number. Not part of the official NJ ABC
+    # template: Fedway appends it as an UNNAMED column right of COMMENTS
+    # (their RIP comments reference products by this number, e.g.
+    # "Item # 247380 = 1/2 case", and rows with UPC=0 have ONLY this key).
+    # Captured opportunistically by base_parser._parse_rip.
+    "dist_item_no",
 ]
 
 RIP_HEADER_MAP = {

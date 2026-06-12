@@ -172,8 +172,12 @@ function RecCard({ rec, context, onSetQty, onSwap, busy }: {
             <PartialFlag rec={rec} />
           </div>
           <div className="sav-rec-text">
-            You have <strong>{rec.current_cases}</strong> of <strong>{rec.target_qty}</strong> cases across these —
-            add <strong>{cs(rec.add_cases)}</strong> (mix any of them) to unlock the tier.
+            You have <strong>{rec.current_cases}</strong> of <strong>{rec.target_qty}</strong> case
+            {rec.credit_based ? ' credits' : 's'} across these —
+            add <strong>{rec.add_cases} case {rec.credit_based ? 'credit' : ''}{(rec.add_cases ?? 0) === 1 ? '' : 's'}</strong> (mix any of them) to unlock the tier.
+            {rec.credit_based && (
+              <span className="sav-rec-desc"> Half-case qualifiers count 0.5 per physical case.</span>
+            )}
             <div className="sav-rec-members">{rec.members?.join(' · ')}</div>
           </div>
         </div>

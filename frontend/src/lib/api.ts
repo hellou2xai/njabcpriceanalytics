@@ -1194,6 +1194,9 @@ export interface SavingsRec {
   better_rip_code?: string;
   save_per_case_current?: number;
   save_per_case_better?: number;
+  // case_mix: quantities are CASE CREDITS (a half-case qualifier is pooled
+  // at 0.5 per physical case) when true.
+  credit_based?: boolean;
   window_status?: string | null;
   days_to_expire?: number | null;
   // Month-over-month context (digest only): how this item's best per-case

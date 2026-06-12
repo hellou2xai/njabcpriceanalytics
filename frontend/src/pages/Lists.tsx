@@ -9,7 +9,7 @@ import { useProductQuickView } from '../components/ProductQuickView';
 import ProductThumb from '../components/ProductThumb';
 import DealSparkline from '../components/DealSparkline';
 import { distributorName, abgSku, skuLabel, isKegUnit, priceUnit, perUnitAbbr } from '../lib/distributors';
-import { ripPrograms, effectiveRipCode, programSummary } from '../lib/ripPrograms';
+import { ripPrograms, effectiveRipCode, programSummary, normTierUnit } from '../lib/ripPrograms';
 import { useDialog } from '../components/Dialog';
 import { ErrorState, EmptyState } from '../components/DataState';
 import DataLoading from '../components/DataLoading';
@@ -18,7 +18,8 @@ const LIST_RIP_GROUP_KEY = 'celr_lists_group_by_rip';
 const money = (v?: number | null) => (v == null ? '–' : `$${v.toFixed(2)}`);
 
 // Shared column header so the flat table and every RIP-bucket table align the
-// same way (Product | Code | Distributor | Size | Pack | $Case | $Btl | Best buy).
+// same way (Product | Code | Distributor | Size | Pack | $Case | $Btl |
+// trend | Best buy at the END — it's the deepest-tier illustration).
 function ListHead({ check }: { check?: ReactNode }) {
   return (
     <thead>
@@ -29,11 +30,13 @@ function ListHead({ check }: { check?: ReactNode }) {
         <th>Distributor</th>
         <th>Size</th>
         <th>Pack</th>
-        <th style={{ textAlign: 'right' }}>$ Case</th>
-        <th style={{ textAlign: 'right' }}>$ Bottle</th>
         <th style={{ textAlign: 'right' }}
-          title="Effective net after QD + RIP: per case / per bottle.">$ Best buy</th>
+          title="What you'd pay NOW for 1 case: list price minus any quantity discount a single case already earns. The list price shows beneath when a QD applies.">$ Case</th>
+        <th style={{ textAlign: 'right' }}
+          title="What you'd pay NOW per bottle at 1 case.">$ Bottle</th>
         <th>Price trend</th>
+        <th style={{ textAlign: 'right' }}
+          title="Illustration only: the deepest possible net after EVERY QD + RIP tier — per case / per bottle.">$ Best buy</th>
         <th style={{ width: 40 }}></th>
       </tr>
     </thead>
@@ -312,6 +315,16 @@ function ListRow({ it, selected, toggle, onRemove }: {
   const pack = (() => { const n = Number(it.unit_qty); return Number.isFinite(n) && n > 0 ? Math.round(n) : null; })();
   const effCase = it.effective_case_price ?? null;
   const effBtl = it.effective_unit_price ?? null;
+  // PAY-NOW at 1 case: any quantity discount a single case already earns.
+  let qd1 = 0;
+  for (const t of it.tiers ?? []) {
+    if (t.source !== 'discount' || normTierUnit(t.unit) === 'btl') continue;
+    if (t.qty <= 1 && (t.save_per_case ?? 0) > qd1) qd1 = t.save_per_case ?? 0;
+  }
+  const payCase = it.frontline_case_price != null
+    ? Math.max(it.frontline_case_price - qd1, 0) : null;
+  const payBtl = payCase != null && pack ? payCase / pack
+    : (it.frontline_unit_price ?? null);
   return (
     <tr data-ctx="" data-ctx-product={it.product_name} data-ctx-wholesaler={it.wholesaler}
         data-ctx-upc={it.upc ?? ''} data-ctx-volume={it.unit_volume ?? ''}>
@@ -365,13 +378,23 @@ function ListRow({ it, selected, toggle, onRemove }: {
       <td>{distributorName(it.wholesaler)}</td>
       <td>{it.unit_volume}</td>
       <td title="Bottles per case">{pack ? `${pack}/cs` : '–'}</td>
-      <td className="cart-cell-num">{money(it.frontline_case_price)}</td>
-      <td className="cart-cell-num">{!keg ? money(it.frontline_unit_price) : '–'}</td>
-      <td className="cart-cell-num cart-bestbuy"
-        title={effCase != null
-          ? `Effective net after QD + RIP per ${priceUnit(it.unit_volume, it.unit_type)}${keg ? '' : ` / per ${perUnitAbbr(it.unit_volume, it.unit_type)}`}${it.total_savings_per_case ? `. Saves ${money(it.total_savings_per_case)}/${priceUnit(it.unit_volume, it.unit_type)} vs list.` : ''}`
-          : undefined}>
-        {effCase != null ? `${money(effCase)}${!keg && effBtl != null ? ` / ${money(effBtl)}` : ''}` : '–'}
+      {/* PAY-NOW at 1 case: list minus any QD a single case already earns
+          (RIP rebates come later — they live in Best buy at the end). */}
+      <td className="cart-cell-num">
+        <span style={{ fontWeight: 600 }}>{payCase != null ? money(payCase) : '–'}</span>
+        {qd1 > 0.005 && it.frontline_case_price != null && (
+          <span className="cart-list-sub" title="List price per case, before any quantity discount">List {money(it.frontline_case_price)}</span>
+        )}
+      </td>
+      <td className="cart-cell-num">
+        {!keg && payBtl != null ? (
+          <>
+            <span style={{ fontWeight: 600 }}>{money(payBtl)}</span>
+            {qd1 > 0.005 && it.frontline_unit_price != null && (
+              <span className="cart-list-sub" title="List price per bottle, before any quantity discount">List {money(it.frontline_unit_price)}</span>
+            )}
+          </>
+        ) : '–'}
       </td>
       <td onClick={e => e.stopPropagation()}>
         <DealSparkline
@@ -383,6 +406,12 @@ function ListRow({ it, selected, toggle, onRemove }: {
           width={130}
           height={32}
         />
+      </td>
+      <td className="cart-cell-num cart-bestbuy"
+        title={effCase != null
+          ? `Illustration only — the deepest net after EVERY QD + RIP tier per ${priceUnit(it.unit_volume, it.unit_type)}${keg ? '' : ` / per ${perUnitAbbr(it.unit_volume, it.unit_type)}`}${it.total_savings_per_case ? `. Saves ${money(it.total_savings_per_case)}/${priceUnit(it.unit_volume, it.unit_type)} vs list.` : ''}`
+          : undefined}>
+        {effCase != null ? `${money(effCase)}${!keg && effBtl != null ? ` / ${money(effBtl)}` : ''}` : '–'}
       </td>
       <td style={{ width: 40 }} onClick={e => e.stopPropagation()}>
         <button className="btn btn-secondary btn-sm" title="Remove from list" aria-label="Remove from list" onClick={onRemove}><Trash2 size={14} /></button>

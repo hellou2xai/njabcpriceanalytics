@@ -11,7 +11,7 @@ import { useProductQuickView } from '../components/ProductQuickView';
 import { useDialog } from '../components/Dialog';
 import { shortUnit } from '../components/CatalogTable';
 import { distributorName, abgSku, skuLabel, priceUnit, perUnitAbbr, isKegUnit } from '../lib/distributors';
-import { ripPrograms, effectiveRipCode, betterProgram, programSummary, fmtAmt } from '../lib/ripPrograms';
+import { ripPrograms, effectiveRipCode, betterProgram, programSummary, fmtAmt, creditWord } from '../lib/ripPrograms';
 import { ErrorState, EmptyState } from '../components/DataState';
 import DataLoading from '../components/DataLoading';
 
@@ -31,15 +31,42 @@ function Stepper({ label, value, onChange }: { label: string; value: number; onC
 
 const money = (v?: number | null) => (v == null ? '$0.00' : `$${v.toFixed(2)}`);
 
-// The price actually used per case/bottle (combo price when intact, else the
-// individual effective/list price). Drives line totals and the group/cart totals.
+// Best-buy illustration price (deepest net after every QD + RIP tier; combo
+// price when intact). Shown in the trailing "$ Best buy" column ONLY — it is
+// not what the buyer pays at their current quantity.
 function unitPrices(it: CartItem) {
   const perCase = it.effective_case_price ?? it.frontline_case_price ?? 0;
   const perBtl = it.effective_unit_price ?? it.frontline_unit_price ?? 0;
   return { perCase, perBtl };
 }
+// What the buyer PAYS NOW per case/bottle: the LIST price minus only the
+// quantity discounts the line's CURRENT quantity has actually earned (combo
+// price while the bundle is intact). RIP rebates are paid later as credits,
+// so they are NOT in the pay-now price — they show in the eligibility note,
+// the tier chips and the Best buy illustration. Drives line + cart totals.
+function payNowPrices(it: CartItem) {
+  const listCase = it.frontline_case_price ?? null;
+  const listBtl = it.frontline_unit_price ?? null;
+  if (it.combo_code && it.combo_intact) {
+    return {
+      perCase: it.effective_case_price ?? listCase ?? 0,
+      perBtl: it.effective_unit_price ?? listBtl ?? 0,
+      listCase, listBtl, qdApplied: false,
+    };
+  }
+  let save = 0;
+  for (const t of it.tiers ?? []) {
+    if (t.source !== 'discount') continue;
+    const have = normUnit(t.unit) === 'btl' ? (it.qty_units || 0) : (it.qty_cases || 0);
+    if (t.qty <= have && (t.save_per_case ?? 0) > save) save = t.save_per_case ?? 0;
+  }
+  const perCase = listCase != null ? Math.max(listCase - save, 0) : (it.effective_case_price ?? 0);
+  const pack = packOf(it);
+  const perBtl = pack ? perCase / pack : (listBtl ?? 0);
+  return { perCase, perBtl, listCase, listBtl, qdApplied: save > 0.005 };
+}
 function lineTotal(it: CartItem): number {
-  const { perCase, perBtl } = unitPrices(it);
+  const { perCase, perBtl } = payNowPrices(it);
   return (it.qty_cases || 0) * perCase + (it.qty_units || 0) * perBtl;
 }
 // LIST-price line total (before discounts/RIP). Drives the "Total list" and
@@ -104,6 +131,10 @@ interface RipTier { qty: number; unit: 'case' | 'btl'; amt: number; }
 function lineRipEligibility(it: CartItem, all: CartItem[]): { text: string; tone: 'gap' | 'reached' } | null {
   // Program-aware: only the line's EFFECTIVE RIP program counts (programs
   // don't stack), and the cluster pools lines running under the SAME program.
+  // Case-credit model (FOUNDATION 3.4.1): a half-case qualifier's physical
+  // case earns only `credit` toward case tiers, so progress counts CREDITS
+  // (each line weighted by ITS OWN credit) while the wording tells the buyer
+  // PHYSICAL cases to add for this line's SKU.
   const programs = ripPrograms(it.tiers);
   if (!programs.length) return null;
   const rc = effectiveRipCode(it, programs) ?? '';
@@ -117,30 +148,41 @@ function lineRipEligibility(it: CartItem, all: CartItem[]): { text: string; tone
   for (const t of prog.tiers) votes[t.unit]++;
   const tiers = prog.tiers;
   const unit: 'case' | 'btl' = votes.btl > votes.case ? 'btl' : 'case';
-  const have = cluster.reduce((s, x) => s + (unit === 'case' ? (x.qty_cases || 0) : (x.qty_units || 0)), 0);
+  const credOf = (x: CartItem) => (x === it ? prog : ripPrograms(x.tiers)
+    .find(p => p.code === (rc || null)))?.credit ?? 1;
+  const have = cluster.reduce((s, x) => s + (unit === 'case'
+    ? (x.qty_cases || 0) * credOf(x) : (x.qty_units || 0)), 0);
+  const myCred = unit === 'case' ? prog.credit : 1;
+  // Physical cases of THIS line's SKU needed to add `creditGap` credits.
+  const physNeed = (creditGap: number) => Math.ceil(creditGap / myCred - 1e-9);
   const uw = unit === 'case' ? 'case' : 'bottle';
   const amt = (v: number) => (v % 1 === 0 ? `$${v.toFixed(0)}` : `$${v.toFixed(2)}`);
   const across = rc && cluster.length > 1 ? ` (counts across ${cluster.length} lines on RIP ${rc})` : '';
-  const reached = tiers.filter(t => have >= t.qty);
-  const ahead = tiers.filter(t => have < t.qty);
+  const qualNote = myCred !== 1
+    ? ` This pack is a ${creditWord(myCred)}-case qualifier (${prog.tiers[0]?.physQty ?? '?'} physical cases = the ${prog.tiers[0]?.qty}-${uw} tier).`
+    : '';
+  // Tier labels use the sheet's qualifying quantity (matches eBiz wording);
+  // the "Add N" counts are PHYSICAL cases of this SKU.
+  const reached = tiers.filter(t => have >= t.qty - 1e-9);
+  const ahead = tiers.filter(t => have < t.qty - 1e-9);
   // Wording mirrors Allied eBiz so it reads familiar:
   //   "Add 1 or more cases to qualify for the 1 case $12 RIP."
   //   "Product qualified for the 5 case $500 RIP."
   if (!reached.length) {
     const next = ahead[0];
-    const need = next.qty - have;
+    const need = physNeed(next.qty - have);
     return {
       tone: 'gap',
-      text: `Add ${need} or more ${uw}${need === 1 ? '' : 's'} to qualify for the ${next.qty} ${uw} ${amt(next.amt)} RIP${across}.`,
+      text: `Add ${need} or more ${uw}${need === 1 ? '' : 's'} to qualify for the ${next.qty} ${uw} ${amt(next.amt)} RIP${across}.${qualNote}`,
     };
   }
   const top = reached[reached.length - 1];
   let text = `Product qualified for the ${top.qty} ${uw} ${amt(top.amt)} RIP${across}.`;
   if (ahead.length) {
     const next = ahead[0];
-    text += ` Add ${next.qty - have} more for the ${next.qty} ${uw} ${amt(next.amt)} RIP.`;
+    text += ` Add ${physNeed(next.qty - have)} more for the ${next.qty} ${uw} ${amt(next.amt)} RIP.`;
   }
-  return { tone: 'reached', text };
+  return { tone: 'reached', text: text + qualNote };
 }
 
 /** Reduce a RIP cluster of cart lines to its rebate ladder + a progress
@@ -157,24 +199,33 @@ function ripBucketSummary(lines: CartItem[]): {
 } {
   const map = new Map<string, RipTier>();
   let votes = { case: 0, btl: 0 };
+  // Case-credit model: each line's physical cases earn that SKU's credit
+  // toward the bucket's case tiers (half-case qualifiers count 0.5/case).
+  const lineCredit = new Map<CartItem, number>();
   for (const it of lines) {
+    let cred = 1;
     for (const t of (it.tiers ?? [])) {
       if (t.source !== 'rip') continue;
       const u = normUnit(t.unit);
       votes[u]++;
+      if (u === 'case' && t.case_credit != null && t.case_credit !== 1) cred = t.case_credit;
       const k = `${t.qty}|${u}`;
       const prev = map.get(k);
       if (!prev || t.amount > prev.amt) {
         map.set(k, { qty: t.qty, unit: u, amt: t.amount });
       }
     }
+    lineCredit.set(it, cred);
   }
   const tiers = [...map.values()].sort((a, b) => a.qty - b.qty);
   const progressUnit: 'case' | 'btl' = votes.btl > votes.case ? 'btl' : 'case';
   const cartCases = lines.reduce((s, it) => s + (it.qty_cases || 0), 0);
   const cartBottles = lines.reduce((s, it) => s + (it.qty_units || 0), 0);
-  const have = progressUnit === 'case' ? cartCases : cartBottles;
-  const unitWord = progressUnit === 'case' ? 'case' : 'bottle';
+  const haveCredits = lines.reduce(
+    (s, it) => s + (it.qty_cases || 0) * (lineCredit.get(it) ?? 1), 0);
+  const anyHalf = [...lineCredit.values()].some(c => c !== 1);
+  const have = progressUnit === 'case' ? haveCredits : cartBottles;
+  const unitWord = progressUnit === 'case' ? (anyHalf ? 'case credit' : 'case') : 'bottle';
   let progress: { text: string; tone: 'gap' | 'pending' | 'reached' } | null = null;
   if (tiers.length > 0) {
     const reached = tiers.filter(t => have >= t.qty);
@@ -377,13 +428,19 @@ export default function Cart() {
       <span>Size</span>
       <span>Pack</span>
       <span>{saving ? 'Qty (saved)' : 'Qty'}</span>
-      <span className="cart-cell-num">$ Case</span>
-      <span className="cart-cell-num">$ Bottle</span>
       <span className="cart-cell-num"
-        title="What you actually pay after QD + RIP (combo price when the bundle is intact): per case / per bottle.">
-        $ Best buy
+        title="What you pay NOW per case: list price minus the quantity discounts your current quantity has earned. The list price shows beneath when a QD is applied.">
+        $ Case
+      </span>
+      <span className="cart-cell-num"
+        title="What you pay NOW per bottle (the pay-now case price split by the pack).">
+        $ Bottle
       </span>
       <span className="cart-cell-num">Total</span>
+      <span className="cart-cell-num"
+        title="Illustration only: the deepest possible net after EVERY QD + RIP tier (combo price when the bundle is intact). Not what you pay at your current quantity.">
+        $ Best buy
+      </span>
       <span />
     </div>
   );
@@ -399,6 +456,7 @@ export default function Cart() {
   const renderItem = (it: CartItem, saving = false) => {
     const tiers = it.tiers ?? [];
     const { perCase, perBtl } = unitPrices(it);
+    const pay = payNowPrices(it);
     const keg = isKegUnit(it.unit_volume, it.unit_type);
     const pack = packOf(it);
     const showCombo = !!it.combo_code && !!it.combo_intact;
@@ -438,14 +496,29 @@ export default function Cart() {
           ) : (
             <span style={{ fontSize: 12 }}>{it.qty_cases || 0} cs · {it.qty_units || 0} btl</span>
           )}
-          <span className="cart-cell-num">{it.frontline_case_price != null ? money(it.frontline_case_price) : '–'}</span>
-          <span className="cart-cell-num">{!keg && it.frontline_unit_price != null ? money(it.frontline_unit_price) : '–'}</span>
-          <span className="cart-cell-num cart-bestbuy"
-            title={`${showCombo ? 'Combo bundle price' : 'Effective net after QD + RIP'} per ${priceUnit(it.unit_volume, it.unit_type)}${keg ? '' : ` / per ${perUnitAbbr(it.unit_volume, it.unit_type)}`}${it.total_savings_per_case ? `. Saves ${money(it.total_savings_per_case)}/${priceUnit(it.unit_volume, it.unit_type)} vs list.` : ''}`}>
-            {money(perCase)}{!keg ? ` / ${money(perBtl)}` : ''}
+          <span className="cart-cell-num">
+            <span style={{ fontWeight: 600 }}>{pay.listCase != null || pay.perCase ? money(pay.perCase) : '–'}</span>
+            {pay.qdApplied && pay.listCase != null && (
+              <span className="cart-list-sub" title="List price per case, before any quantity discount">List {money(pay.listCase)}</span>
+            )}
           </span>
-          <span className="cart-cell-num" style={{ fontWeight: 700 }} title="Line total at the best-buy price">
+          <span className="cart-cell-num">
+            {!keg ? (
+              <>
+                <span style={{ fontWeight: 600 }}>{money(pay.perBtl)}</span>
+                {pay.qdApplied && pay.listBtl != null && (
+                  <span className="cart-list-sub" title="List price per bottle, before any quantity discount">List {money(pay.listBtl)}</span>
+                )}
+              </>
+            ) : '–'}
+          </span>
+          <span className="cart-cell-num" style={{ fontWeight: 700 }}
+            title="Line total at the PAY-NOW price (list minus earned quantity discounts)">
             {money(lineTotal(it))}
+          </span>
+          <span className="cart-cell-num cart-bestbuy"
+            title={`Illustration only — ${showCombo ? 'combo bundle price' : 'the deepest net after EVERY QD + RIP tier'} per ${priceUnit(it.unit_volume, it.unit_type)}${keg ? '' : ` / per ${perUnitAbbr(it.unit_volume, it.unit_type)}`}${it.total_savings_per_case ? `. Saves ${money(it.total_savings_per_case)}/${priceUnit(it.unit_volume, it.unit_type)} vs list.` : ''}`}>
+            {money(perCase)}{!keg ? ` / ${money(perBtl)}` : ''}
           </span>
           <span style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
             {!saving ? (
@@ -529,7 +602,9 @@ export default function Cart() {
             {tiers.map((t, i) => (
               <span key={i} className={`source-badge source-${t.source}`} style={{ fontSize: 11 }}
                 title={t.description || undefined}>
-                {t.source === 'discount' ? 'DISC' : 'RIP'} · Buy {t.qty} {shortUnit(t.unit)} = <strong>${t.amount.toFixed(2)}</strong>
+                {/* Half-case rule: show the REAL physical buy-in (same
+                    convention as the deal ladder), not the printed qty. */}
+                {t.source === 'discount' ? 'DISC' : 'RIP'} · Buy {t.qualified_cases ?? t.qty} {shortUnit(t.unit)} = <strong>${t.amount.toFixed(2)}</strong>
                 {t.save_per_case != null ? ` (save $${t.save_per_case.toFixed(2)}/cs)` : ''}
                 {(() => {
                   const wb = windowBadge(t);
@@ -633,10 +708,10 @@ export default function Cart() {
             <span style={{ fontSize: 13, color: 'var(--text-muted)' }} title="Sum of every line at LIST (frontline) price">
               Total list: <strong style={{ color: 'var(--text)' }}>{money(totals.list)}</strong>
             </span>
-            <span style={{ fontSize: 13, color: 'var(--text-muted)' }} title="What QD + RIP + combo pricing takes off the list total">
+            <span style={{ fontSize: 13, color: 'var(--text-muted)' }} title="Quantity discounts your current quantities have EARNED (plus combo pricing). RIP rebates are paid later and are not in this number.">
               Total disc: <strong className="text-green">−{money(totals.disc)}</strong>
             </span>
-            <span style={{ fontSize: 16 }} title="Estimated total at the best-buy prices">
+            <span style={{ fontSize: 16 }} title="What you pay NOW: every line at list minus its earned quantity discounts">
               Est total net: <strong className="text-green">{money(cartTotal)}</strong>
             </span>
           </span>

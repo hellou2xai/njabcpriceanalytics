@@ -6042,9 +6042,13 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .cart-table { min-width: 1080px; }
 .cart-cols, .cart-row-grid {
   display: grid;
-  grid-template-columns: 48px minmax(190px, 1.7fr) 86px 76px 56px 184px 84px 78px 132px 92px 76px;
+  /* thumb | product | code | size | pack | qty | $case (pay now) |
+     $bottle (pay now) | total | $best buy (illustration, at the END) | actions */
+  grid-template-columns: 48px minmax(190px, 1.7fr) 86px 76px 56px 184px 92px 86px 92px 132px 76px;
   gap: 8px; align-items: center;
 }
+/* List price shown under the pay-now price when a QD is applied. */
+.cart-list-sub { display: block; font-size: 10.5px; font-weight: 500; color: var(--text-muted); white-space: nowrap; }
 .cart-cols {
   font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
   color: var(--text-muted); padding: 8px 0 5px;

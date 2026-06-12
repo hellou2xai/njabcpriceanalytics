@@ -396,6 +396,11 @@ def _case_tiers(item: dict, kind: str) -> list[dict]:
         out.append({
             "qty": q,
             "case_credit": t.get("case_credit"),
+            "credit": _fnum(t.get("case_credit")) or 1.0,
+            # REAL physical buy-in (half-case rule applied): thresholds in
+            # _next_tier and the better-RIP comparison use this, so a
+            # half-case SKU's "2 case" tier nudges at 4 physical cases.
+            "qty_phys": int(round(_fnum(t.get("qualified_cases")) or q)),
             "code": str(t.get("code") or "") or None,
             "save": _fnum(t.get("save_per_case")) or 0.0,
             # For a RIP tier the canonical `save_per_case` STACKS the quantity
@@ -417,12 +422,15 @@ def _case_tiers(item: dict, kind: str) -> list[dict]:
 
 
 def _next_tier(tiers: list[dict], cases: float):
-    """Best save you already get at `cases`, and the next deeper tier above it."""
+    """Best save you already get at `cases` PHYSICAL cases, and the next
+    deeper tier above it. Thresholds use qty_phys (half-case rule applied)."""
+    def thr(t):
+        return t.get("qty_phys") or t["qty"]
     cur_save = 0.0
     for t in tiers:
-        if t["qty"] <= max(cases, 0):
+        if thr(t) <= max(cases, 0):
             cur_save = max(cur_save, t["save"])
-    nxt = next((t for t in tiers if t["qty"] > cases and t["save"] > cur_save + 0.005), None)
+    nxt = next((t for t in tiers if thr(t) > cases and t["save"] > cur_save + 0.005), None)
     return cur_save, nxt
 
 
@@ -541,7 +549,10 @@ def analyze_lines(items: list[dict]) -> dict:
             cur_save, nxt = _next_tier(tiers, C)
             if not nxt:
                 continue
-            extra = round(nxt["save"] * nxt["qty"] - cur_save * C, 2)
+            # target in PHYSICAL cases (half-case rule applied) — the "Set to
+            # N" button and the savings math must use the real buy-in.
+            tgt = int(nxt.get("qty_phys") or nxt["qty"])
+            extra = round(nxt["save"] * tgt - cur_save * C, 2)
             if extra <= 1.0:
                 continue
             payload = {
@@ -550,7 +561,7 @@ def analyze_lines(items: list[dict]) -> dict:
                 "wholesaler": it.get("wholesaler"), "unit_volume": it.get("unit_volume"),
                 "unit_type": it.get("unit_type"),
                 "unit_qty": it.get("unit_qty"), "vintage": it.get("vintage"),
-                "current_cases": C, "target_qty": nxt["qty"], "add_cases": nxt["qty"] - C,
+                "current_cases": C, "target_qty": tgt, "add_cases": tgt - C,
                 "new_case_price": nxt["price_after"], "save_per_case": round(nxt["save"], 2),
                 # QD/RIP split of the (stacked) saving, so the row can explain it.
                 "qd_save_per_case": round(nxt.get("qd_save", 0.0), 2),
@@ -592,21 +603,25 @@ def analyze_lines(items: list[dict]) -> dict:
             eff = next(iter(by_code))
         C = int(it.get("qty_cases") or 0)
 
+        def _phys(x):
+            return x.get("qty_phys") or x["qty"]
+
         def _save_at(ts, qty):
-            return max((x["save"] for x in ts if x["qty"] <= qty), default=0.0)
+            return max((x["save"] for x in ts if _phys(x) <= qty), default=0.0)
 
         best = None
         for code, ts in by_code.items():
             if code == eff:
                 continue
-            # Compare at the candidate's entry quantity (or the line's current
-            # cases when already past it): equal commitment, different payout.
-            target = max(min(x["qty"] for x in ts), C)
+            # Compare at the candidate's entry PHYSICAL buy-in (or the line's
+            # current cases when already past it): equal commitment, different
+            # payout. Half-case rule: thresholds are physical (qty_phys).
+            target = max(min(_phys(x) for x in ts), C)
             mine = _save_at(by_code[eff], target)
             theirs = _save_at(ts, target)
             gain = round((theirs - mine) * target, 2)
             if theirs > mine + 0.005 and gain > 1.0 and (best is None or gain > best["extra_savings"]):
-                ct = next(x for x in sorted(ts, key=lambda x: x["qty"]) if x["qty"] <= target)
+                ct = next(x for x in sorted(ts, key=_phys) if _phys(x) <= target)
                 best = {
                     "type": "better_rip",
                     "line_id": it.get("id"), "product_name": it.get("product_name") or "Item",
@@ -632,7 +647,18 @@ def analyze_lines(items: list[dict]) -> dict:
         if key in mix:
             groups.setdefault(key, []).append(it)
     for (ws, rc), grp in groups.items():
-        sum_cases = sum(int(it.get("qty_cases") or 0) for it in grp)
+        # Case-credit model: each line's physical cases earn that SKU's
+        # credit toward the mix tiers (a half-case qualifier counts 0.5 per
+        # physical case), so the pool progress is in CASE CREDITS.
+        def _line_credit(li):
+            for t in _case_tiers(li, "rip"):
+                cr = t.get("credit") or 1.0
+                if cr != 1.0:
+                    return cr
+            return 1.0
+        sum_cases = round(sum(
+            int(it.get("qty_cases") or 0) * _line_credit(it) for it in grp), 2)
+        credit_based = any(_line_credit(it) != 1.0 for it in grp)
         tier_map: dict = {}
         desc = None
         partial = None    # carry a partial-month window if the mix RIP has one
@@ -660,7 +686,10 @@ def analyze_lines(items: list[dict]) -> dict:
             "members": [it.get("product_name") for it in grp],
             "line_ids": [it.get("id") for it in grp],
             "current_cases": sum_cases, "target_qty": nxt["qty"],
-            "add_cases": nxt["qty"] - sum_cases, "extra_savings": extra,
+            "add_cases": round(nxt["qty"] - sum_cases, 2), "extra_savings": extra,
+            # True when a half/quarter-case qualifier is in the pool — the
+            # quantities above are CASE CREDITS, not physical cases.
+            "credit_based": credit_based,
         }
         if partial:
             rec["partial"] = partial

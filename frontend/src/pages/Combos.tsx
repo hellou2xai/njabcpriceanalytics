@@ -193,7 +193,9 @@ function SavingsCell({ c }: { c: Combo }) {
  *  row (no modal detour). Each line: product link, qty per pack, regular vs
  *  combo price each, save each. */
 function ComboItemsExpander({ c }: { c: Combo }) {
-  const [open, setOpen] = useState(false);
+  // Open by default (user request): the bundle's contents ARE the product —
+  // hiding them behind a click made every row read as just a price.
+  const [open, setOpen] = useState(true);
   const ladder = c.is_volume_ladder && (c.volume_tiers?.length ?? 0) > 0;
   const comps = c.components ?? [];
   if (ladder) {

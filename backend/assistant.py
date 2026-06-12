@@ -1419,6 +1419,32 @@ def _t_distributor_arbitrage(con, args):
     if cat:
         where.append("UPPER(c.product_type) = UPPER(?)")
         params.append(cat)
+    # Product/brand scope: resolve through the SAME semantic stack the rest of
+    # the app uses (aliases + spell-fix + UPC), then restrict to those barcodes.
+    # Without this, a brand-scoped question ('which casal garcia products have
+    # a price gap between Fedway and Allied') could only run catalog-wide and
+    # buried the answer under 2,000 unrelated rows.
+    q = str(args.get("query") or args.get("match") or args.get("q") or "").strip()
+    if q:
+        try:
+            hits = _resolve_products(con, {}, q, "all", 200)
+        except Exception:
+            hits = []
+        q_upcs = sorted({str(h.get("upc") or "").lstrip("0") for h in (hits or [])
+                         if str(h.get("upc") or "").lstrip("0")})
+        if not q_upcs:
+            return {"error": f"No products match '{q}'."}
+        ph = ", ".join("?" for _ in q_upcs)
+        where.append(f"LTRIM(CAST(c.upc AS VARCHAR),'0') IN ({ph})")
+        params.extend(q_upcs)
+    # Optional distributor scope ('between Fedway and Allied').
+    dists = args.get("distributors")
+    if isinstance(dists, list) and dists:
+        slugs = [str(d).strip().lower() for d in dists if str(d).strip()]
+        if slugs:
+            ph = ", ".join("?" for _ in slugs)
+            where.append(f"LOWER(c.wholesaler) IN ({ph})")
+            params.extend(slugs)
     try:
         df = con.execute(f"""
             WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched WHERE edition<=? GROUP BY wholesaler),
@@ -1589,6 +1615,23 @@ def _t_semantic_search(con, args):
     pt = (args.get("product_type") or "").strip() or None
     if not q:
         return []
+    # A style/category word in the phrase implies the product type the same
+    # way the varietal slot does ('cheapest tequilas' -> Spirits). Without it
+    # the enrichment corpus happily returns tequila SELTZERS (RTD) because
+    # their descriptions mention tequila. The caller's explicit type wins.
+    if not pt:
+        try:
+            from backend.varietal_semantics import build_varietal_filter
+            for tok in re.findall(r"[a-z][a-z\s'-]{2,}", q.lower()):
+                for w in tok.split():
+                    _c, _p, _auto = build_varietal_filter(w.rstrip("s"))
+                    if _auto:
+                        pt = _auto
+                        break
+                if pt:
+                    break
+        except Exception:
+            pt = None
     try:
         with get_pg() as pg:
             rows = _ss(pg, con, q, limit=limit, product_type=pt)
@@ -2215,7 +2258,7 @@ _DATA_TOOLS = {
     "deal_360": (_t_deal_360, "COMPREHENSIVE alcohol pricing for ONE item — use for ANY product price/pricing/cost/deal/'tell me about' question. Returns size (+ml) & bottles/case, case AND bottle price, vintage (wine) + age_years (spirits), CPL discount tiers, RIP code+tiers+best rebate, price_after_rip (case & bottle), time-sensitive windows, combo deals, and a months map (last/current/upcoming case & bottle prices) with buy-now-vs-wait. Auto-attaches waterfall + last->now->next line charts."),
     "size_value": (_t_size_value, "SIZE / VALUE efficiency for a brand/product: effective price per BOTTLE and per LITER (after discounts + RIP) across every size, ranked by best value-per-litre, plus near-free UPSIZE opportunities (e.g. when 750ML and 1L cost almost the same per bottle). Use for 'best value size', 'price per liter', '750 vs 1L', 'is the bigger bottle worth it'."),
     "rip_tier_gap": (_t_rip_tier_gap, "'Almost there' RIP tier gap for a brand/product (or rip_code), given optional cases the buyer plans (`have`): the rebate tier ladder, how many MORE cases reach each tier, the incremental rebate for stretching, and the next tier to aim for. Use for 'how close am I to the next rebate', 'worth buying more to hit the tier'."),
-    "distributor_arbitrage": (_t_distributor_arbitrage, "Catalog-wide cross-distributor arbitrage: same product (UPC) sold by 2+ distributors, ranked by how much cheaper the cheapest is vs the dearest (effective case price). Optional category, min_savings_pct. Use for 'where can I save by switching distributor', 'biggest price gaps between distributors'."),
+    "distributor_arbitrage": (_t_distributor_arbitrage, "Cross-distributor arbitrage: same product (UPC) sold by 2+ distributors, ranked by how much cheaper the cheapest is vs the dearest (effective case price). ALWAYS pass `query` (brand/product name or UPC) when the user names one — 'which casal garcia products differ between fedway and allied' MUST be query='casal garcia' + distributors=['fedway','allied'], never an unscoped sweep. Optional: query, distributors (array of slugs), category, min_savings_pct. Unscoped only for genuinely catalog-wide asks ('biggest price gaps between distributors')."),
     "edition_compare": (_t_edition_compare, "Compare ONE distributor across two CPL editions (price-file periods), defaulting to the latest two, and surface what changed in effective NET cost terms (not raw frontline). Returns a summary (counts that rose/fell/added/removed/RIP-changed) and per-product the net-cost change (case + bottle, $ + %) PLUS which underlying layer moved (frontline / discount / RIP gained/lost/modified), with added vs removed labelled. Args: distributor (required), older + newer (editions like '2026-05'; omit for latest two), match (a product, switches to single-product scope), change (increase|decrease|added|removed|rip), limit. Use for 'what changed at Fedway from May to June', 'biggest price increases this edition at Allied', 'which products did Opici drop', 'how did X's price change month over month at Fedway'."),
     "rate_shop": (_t_rate_shop, "RATE SHOP the best distributor for ONE product AT THE QUANTITY the buyer plans to buy — the clearest 'who's actually cheapest for me'. Returns each distributor's true landed NET cost per case at that volume (best qualifying QD/RIP tier), ranked cheapest-at-volume first, PLUS the exact conditions to capture each price (buy ≥N cs, single invoice, valid dates, mix across M items, pre-approval), a break-even map (which distributor wins at which volume), a stretch nudge (buy a little more to unlock a deeper rebate), and next-month timing (buy now vs wait). Args: match (product name or UPC), cases (how many cases, default 5). Use for 'where should I buy X', 'who's cheapest for X if I buy N cases', 'best price on X for my order', 'should I buy X now or wait'."),
     "price_360": (_t_price_360, "PRICE 360 holistic label for ONE product across EVERY distributor that carries it: each offer reduced to one effective NET cost (case AND bottle) after all layers — frontline, single-case discount, quantity-discount tiers and RIP — ranked cheapest net cost first. Keeps invoice cost (legal, discounts only) separate from economic net cost (incl. rebates), flags when they diverge, gives a fixed-weight 0-100 value score, NJ-ABC pre-approval flags (>50 cases / missing small-qty tier / >$1,000 rebate), and flags any runner-up whose bigger rebate still costs more. Args: match (product name or UPC), reach_mode (soft|hard|off, default soft). Use for 'what's the real/true cost of X', 'best overall deal on Y across distributors', 'who's actually cheapest on Z after everything', 'price 360 for X'."),
@@ -3334,8 +3377,9 @@ def _tool_specs() -> list:
         "when": {"type": "string", "enum": ["now", "next", "soon"], "description": "For best_to_buy: now (best to buy now), next (cheaper next edition → wait), soon (dated/time-sensitive deals ending within days)."},
         "rolling_keg": {"type": "boolean", "description": "For beer_mix_match: true to return ONLY rolling-keg rebate deals."},
         "threshold": {"type": "number", "description": "For rip_near_cap: minimum single-tier rebate dollars to include (default 700; the cap is $1,000)."},
+        "query": {"type": "string", "description": "Product/brand scope for distributor_arbitrage (name or UPC, resolved semantically). ALWAYS set it when the user names a product or brand — never run an unscoped sweep for a brand-specific question."},
         "distributors": {"type": "array", "items": {"type": "string"},
-                         "description": "For compare_rip_outcomes: the 2-3 distributor slugs to compare (allied, fedway, opici, peerless, high_grade, kramer, shore_point, jersey_beverage). Default allied/fedway/opici."},
+                         "description": "Distributor slugs to compare/restrict to (allied, fedway, opici, peerless, high_grade, kramer, shore_point, jersey_beverage). For compare_rip_outcomes defaults to allied/fedway/opici; for distributor_arbitrage restricts the gap scan to these houses."},
         "cases": {"type": "number", "description": "For compare_rip_outcomes: how many cases the buyer plans to buy (drives the winner@volume; default 5)."},
         "reach_mode": {"type": "string", "enum": ["soft", "hard", "off"], "description": "For price_360: how to value rebates the retailer may not reach — soft (discount by likelihood), hard (zero if unreachable), off (full value). Default soft."},
         "older": {"type": "string", "description": "For edition_compare: the OLDER CPL edition (e.g. '2026-05'). Omit to default to the second-latest."},
@@ -4861,13 +4905,26 @@ def _format_item_md(core: dict) -> str:
         parts.append("**RIP tiers**")
         parts.append("| BUY | PER CASE | PER BOTTLE | CASE AFTER | BEST? |")
         parts.append("|---|---|---|---|---|")
+        half_case = False
         for t in rts:
             unit = "btl" if str(t.get("unit") or "").upper().startswith("B") else "cs"
             pcs = t.get("per_case_savings")
             best = "⭐ Best" if (pcs is not None and float(pcs or 0) == best_amt and best_amt > 0) else ""
-            parts.append(f"| {t.get('qty')} {unit} | "
+            # Half-case rule: BUY shows the REAL physical buy-in, the printed
+            # qualifying quantity in parentheses (same convention as the app).
+            qc = t.get("qualified_cases")
+            if qc and float(qc) != float(t.get("qty") or 0):
+                half_case = True
+                buy = f"{qc:g} {unit} (= {t.get('qty')} RIP {unit})"
+            else:
+                buy = f"{t.get('qty')} {unit}"
+            parts.append(f"| {buy} | "
                          f"{_fmt_money(pcs)}/cs | {_fmt_money(t.get('per_bottle_savings'))}/btl | "
                          f"{_fmt_money(t.get('price_after'))} | {best} |")
+        if half_case:
+            parts.append("")
+            parts.append("_Half-case qualifier: one physical case earns only a fraction of a "
+                         "RIP case, so BUY above is the real physical case count._")
         parts.append("")
 
     # 3-month outlook.
@@ -5418,7 +5475,8 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
     final_text = ""
     actions_out: list = []
     products_out: list = []
-    seen_products: set = set()
+    prod_filtered: list = []   # parallel to products_out: came from a product-identified call?
+    seen_products: dict = {}   # dedup key -> index into products_out
     price_detail_result: dict | None = None
     timeline_result: dict | None = None   # last price_timeline result (for the deterministic line chart)
     rip_lookup_result: dict | None = None  # last rip_lookup result the model used (for the deterministic RIP template)
@@ -5439,19 +5497,45 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
     rip_clusters_out: list = []
     rip_clusters_seen: set = set()
 
-    def _collect(items):
+    def _collect(items, filtered: bool = True):
         # Accumulate any product dicts a tool surfaced so the UI can render them
         # as actionable cards (Add to Cart / List / Favorite). Deduped.
+        # `filtered` records whether the producing tool call carried a
+        # product-identifying argument (q / upc / product / brand / rip_code);
+        # an unfiltered sweep is dropped at finalize whenever a filtered call
+        # also produced products — the SPECIFICITY GUARD that stops a broad
+        # first call (2,062 products) from drowning a brand-specific answer.
         for p in (items or []):
             if not isinstance(p, dict) or not p.get("product_name"):
                 continue
             key = (p.get("wholesaler"), str(p.get("upc") or ""), p.get("product_name"), p.get("unit_volume"))
             if key in seen_products:
+                # A product re-surfaced by a FILTERED call counts as filtered,
+                # so the guard can't drop it just because a sweep saw it first.
+                if filtered:
+                    prod_filtered[seen_products[key]] = True
                 continue
-            seen_products.add(key)
+            seen_products[key] = len(products_out)
             products_out.append({k: p.get(k) for k in
                                  ("product_name", "wholesaler", "upc", "abg_sku", "unit_volume", "unit_qty",
                                   "vintage", "effective_case_price", "frontline_case_price")})
+            prod_filtered.append(filtered)
+
+    _FILTERISH = ("q", "query", "search", "product", "upc", "brand",
+                  "rip_code", "combo_code", "category", "type", "varietal", "region")
+
+    def _is_filtered_call(inp) -> bool:
+        """True when the tool call names WHAT to look at (a product, brand,
+        barcode, code, category...). Sort/limit/distributor-only calls are
+        unfiltered sweeps."""
+        if not isinstance(inp, dict):
+            return False
+        for k, v in inp.items():
+            kl = str(k).lower()
+            if any(f in kl for f in _FILTERISH) and "distributor" not in kl \
+                    and str(v or "").strip():
+                return True
+        return False
 
     with get_duckdb() as con:
         for _ in range(_MAX_TURNS):
@@ -5529,7 +5613,7 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                         except Exception as e:
                             out = {"error": f"{type(e).__name__}"}
                         if isinstance(out, list):   # find_deals / price_movers -> cards
-                            _collect(out)
+                            _collect(out, filtered=_is_filtered_call(b.input))
                         # Capture for the deterministic templates (rendered after
                         # the turn): time-sensitive deals and price movers.
                         if (b.name == "find_deals" and isinstance(out, list) and out
@@ -5548,7 +5632,7 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                             out = {"error": f"{type(e).__name__}"}
                         # top_products / price_history surface concrete products.
                         if isinstance(out, list):
-                            _collect(out)
+                            _collect(out, filtered=_is_filtered_call(b.input))
                         elif isinstance(out, dict) and out.get("product") and b.name != "price_timeline":
                             _collect([{**out, "product_name": out.get("product")}])
                         # compare_distributors -> each distributor row as a card;
@@ -5823,6 +5907,17 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
     # cap) so 'list/show all X' is complete. The only ceiling is a browser
     # safety backstop (5000) matching the per-tool cap, so a chat bubble can't be
     # asked to render tens of thousands of rows and freeze the tab.
+    # SPECIFICITY GUARD (code-enforced, never prompt-dependent): when this turn
+    # produced products from BOTH a product-identified call and an unfiltered
+    # sweep (no q/upc/product/brand arg — e.g. the model exploring "everything
+    # with a price gap" before answering a Casal Garcia question), dock ONLY
+    # the filtered products. The sweep's 2,000-row union otherwise drowns the
+    # grid and the analyst banner in rows unrelated to the question.
+    if any(prod_filtered) and not all(prod_filtered):
+        _before = len(products_out)
+        products_out = [p for p, f in zip(products_out, prod_filtered) if f]
+        _tlog.info("specificity guard: docked %d filtered products (dropped %d sweep rows)",
+                   len(products_out), _before - len(products_out))
     products_final = products_out[:5000]
     if products_final:
         # Enrich EVERY surfaced product with its discount/RIP tiers + next-month

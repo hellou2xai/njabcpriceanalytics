@@ -2139,6 +2139,46 @@ def get_product_detail(
                 "edition": ed, "un": un_detail,
             }).fetchdf()
 
+            # Case-credit lookups for this product's tiers: per-UPC row first,
+            # then the size/pack fallback (mirrors pricing.attach_tiers and
+            # derive.rip_credit_by_pack), so the modal/assistant quote the
+            # PHYSICAL buy-in for half-case qualifiers.
+            _credit_rows: dict = {}
+            _credit_pack_d: dict = {}
+            try:
+                _crd = con.execute(f"""
+                    SELECT CAST(rip_code AS VARCHAR) AS rc, upc, case_credit
+                    FROM {read_parquet(con, 'rip_credits')}
+                    WHERE wholesaler = $w AND edition = $e
+                """, {"w": wholesaler, "e": ed}).fetchdf()
+                for _, _c in _crd.iterrows():
+                    _credit_rows[(str(_c["rc"]), str(_c["upc"]))] = float(_c["case_credit"])
+                _crp = con.execute(f"""
+                    SELECT CAST(rc.rip_code AS VARCHAR) AS rc, c.unit_volume AS uv,
+                           REGEXP_REPLACE(TRIM(CAST(c.unit_qty AS VARCHAR)), '\\.0+$', '') AS uqn,
+                           MIN(rc.case_credit) AS case_credit
+                    FROM {read_parquet(con, 'rip_credits')} rc
+                    JOIN {read_parquet(con, 'cpl_enriched')} c
+                      ON c.wholesaler = rc.wholesaler AND c.edition = rc.edition
+                     AND LTRIM(CAST(c.upc AS VARCHAR), '0') = rc.upc
+                    WHERE rc.wholesaler = $w AND rc.edition = $e
+                    GROUP BY 1, 2, 3
+                    HAVING COUNT(DISTINCT rc.case_credit) = 1
+                """, {"w": wholesaler, "e": ed}).fetchdf()
+                for _, _c in _crp.iterrows():
+                    _credit_pack_d[(str(_c["rc"]), str(_c["uv"] or ""),
+                                    str(_c["uqn"] or ""))] = float(_c["case_credit"])
+            except Exception:
+                pass
+            _item_uqn = re.sub(r"\.0+$", "", str(item.get("unit_qty") or "").strip())
+
+            def _detail_credit(code):
+                c = _credit_rows.get((str(code or ""), un_detail))
+                if c is None:
+                    c = _credit_pack_d.get((str(code or ""),
+                                            str(item.get("unit_volume") or ""), _item_uqn))
+                return c
+
             seen = set()
             for _, r in rip_rows.iterrows():
                 description = r.get("rip_description")
@@ -2166,9 +2206,20 @@ def get_product_detail(
                     if sig in seen:
                         continue
                     seen.add(sig)
+                    # Case-credit model (FOUNDATION 3.4.1): per-UPC credit, with
+                    # the size/pack fallback for placeholder-barcode rows. The
+                    # per-physical-case rebate scales by it and the physical
+                    # buy-in is qty/credit.
+                    credit = _detail_credit(tier_code)
+                    is_btl_unit = str(unit or "").lower().startswith("b")
                     # Bottle-unit RIPs are per-bottle → ×pack for per-case.
-                    per_case = round(_rip_per_case(ramt_f, rqty_f, unit, item_pack), 2)
-                    bundle_cost = _rip_bundle_cost(int(rqty_f), unit, case_price, item_btl_price)
+                    per_case = round(_rip_per_case(ramt_f, rqty_f, unit, item_pack,
+                                                   credit), 2)
+                    qual_cases = (None if (is_btl_unit or not credit or credit == 1.0)
+                                  else round(rqty_f / credit, 2))
+                    bundle_cost = _rip_bundle_cost(
+                        int(qual_cases) if qual_cases else int(rqty_f),
+                        unit, case_price, item_btl_price)
                     rip_tiers.append({
                         "qty": int(rqty_f),
                         "unit": str(unit) if unit else "Cases",
@@ -2188,6 +2239,8 @@ def get_product_detail(
                         "days_to_expire": rwin["days_to_expire"],
                         "is_time_sensitive": _pricing.is_time_sensitive_window(
                             r.get("from_date"), r.get("to_date")),
+                        **({"case_credit": credit, "qualified_cases": qual_cases}
+                           if qual_cases else {}),
                     })
             # Order by program (code), then qty, then window start so an
             # "active now" tier sorts ahead of a later "starts DD MMM" tier at

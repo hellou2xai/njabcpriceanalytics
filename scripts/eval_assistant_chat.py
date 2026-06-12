@@ -128,12 +128,14 @@ def products_type_in(allowed):
     def _c(r, con):
         wrong = []
         for p in r.get("products") or []:
-            upc = str(p.get("upc") or "").lstrip("0")
-            if not upc:
-                continue
+            # Judge each row by ITS OWN listing's type (wholesaler + name):
+            # a UPC lookup bleeds another distributor's classification in
+            # (Allied types Sauza seltzers 'Spirits' while Fedway says 'RTD'),
+            # and placeholder barcodes are shared across unrelated products.
             row = con.execute(
                 "SELECT ANY_VALUE(product_type) FROM cpl_enriched "
-                "WHERE LTRIM(CAST(upc AS VARCHAR),'0')=?", [upc]).fetchone()
+                "WHERE wholesaler=? AND product_name=?",
+                [p.get("wholesaler"), p.get("product_name")]).fetchone()
             pt = (row[0] if row else None)
             if pt and pt.lower() not in allowed:
                 wrong.append((p.get("product_name"), pt))
@@ -147,6 +149,39 @@ def products_exclude_name(sub):
                if sub.lower() in str(p.get("product_name") or "").lower()]
         return not hit, f"unexpected: {hit[:3]}"
     return _named(_c, f"products_exclude('{sub}')")
+
+
+def products_match_terms(*terms):
+    """RELEVANCE: every docked product must be on-topic for the named brand —
+    name contains a term or its 6-char prefix (GLENLIV == glenlivet). This is
+    the Casal Garcia junk-response class: an unscoped sweep must never dock."""
+    low = [t.lower() for t in terms]
+
+    def _c(r, con):
+        off = []
+        for p in (r.get("products") or []):
+            name = str(p.get("product_name") or "").lower()
+            if name and not any(t in name or (len(t) > 6 and t[:6] in name) for t in low):
+                off.append(name[:40])
+        return not off, f"{len(off)} off-topic rows e.g. {off[:3]}"
+    return _named(_c, f"products_match({terms})")
+
+
+def max_products(n):
+    def _c(r, con):
+        got = len(r.get("products") or [])
+        return got <= n, f"{got} products docked (sweep? want <= {n})"
+    return _named(_c, f"max_products<={n}")
+
+
+def no_sweep_banner(r, con):
+    """The analyst banner must not summarize a catalog-wide sweep (hundreds of
+    products) on a brand-scoped question."""
+    import re as _re
+    a = r.get("answer") or ""
+    m = _re.search(r"\*\*(\d[\d,]*) products?\*\* across", a)
+    n = int(m.group(1).replace(",", "")) if m else 0
+    return n <= 60, f"banner says {n} products across distributors"
 
 
 # ---- the cases ------------------------------------------------------------
@@ -178,6 +213,24 @@ CASES = [
                 answer_lacks("sunny", "cloudy", "temperature", "forecast")]},
     {"name": "Docked: drive the grid", "q": "show me bourbon", "page": "Catalog", "path": "/catalog",
      "checks": [not_offline, drove_screen, short_answer(400)]},
+    # --- relevance / specificity (the Casal Garcia junk-response class) ---
+    {"name": "Brand cross-distributor gap (Casal Garcia)",
+     "q": "which casal garcia products have price difference between fedway and allied for the same upc",
+     "checks": [not_offline, products_match_terms("casal", "garcia"),
+                max_products(40), no_sweep_banner,
+                answer_has("casal garcia", "sangria")]},
+    {"name": "Brand cross-distributor gap (Glenlivet)",
+     "q": "which glenlivet products are priced differently at allied vs fedway",
+     "checks": [not_offline, products_match_terms("glenlivet"),
+                max_products(60), no_sweep_banner]},
+    {"name": "Catalog-wide gap question still sweeps (control)",
+     "q": "show me the biggest price gaps between distributors across the catalog",
+     "checks": [not_offline, min_products(10)]},
+    # --- half-case credit model surfaces in answers ---
+    {"name": "Half-case qualifier (Miraval 375)",
+     "q": "how many cases of miraval rose 375ml do I need to buy to qualify for its RIP",
+     "checks": [not_offline, answer_has("half", "1/2", "0.5", "credit"),
+                answer_has("4 ", "four", mode="any")]},
 ]
 
 

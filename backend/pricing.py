@@ -448,6 +448,7 @@ def attach_tiers(con, records, ref_date=None) -> None:
     uniq_ed = sorted({k[2] for k in keys})
     rip_full: dict = {}    # (code, ws, ed, upc) -> [tiers]  (the only valid match)
     rip_wins: dict = {}    # (ws, ed, upc_norm) -> [(from_date, to_date)] for gap detection
+    credit_pack: dict = {}  # (code, ws, ed, unit_volume, unit_qty_n) -> case_credit fallback
     if uniq_codes:
         # Pull all RIP rows matching any (code, ws, ed) on this page, then split
         # into per-UPC and code-level buckets so we can fall back when a
@@ -492,6 +493,31 @@ def attach_tiers(con, records, ref_date=None) -> None:
                             str(c["upc"]))] = c
         except Exception:
             pass  # cache built before rip_credits existed
+        # Size/pack-level fallback (mirrors derive.py rip_credit_by_pack): the
+        # rule text is size-scoped, so when a row's per-UPC credit row is
+        # missing (junk-barcode rows matched via the sheet's stub row, or a
+        # sibling barcode of the same pack), the credit of the SAME
+        # code+size+pack applies — only when unambiguous.
+        try:
+            crp = con.execute(f"""
+                SELECT rc.rip_code, rc.wholesaler, rc.edition,
+                       c.unit_volume AS uv,
+                       REGEXP_REPLACE(TRIM(CAST(c.unit_qty AS VARCHAR)), '\\.0+$', '') AS uqn,
+                       MIN(rc.case_credit) AS case_credit
+                FROM {read_parquet(con, "rip_credits")} rc
+                JOIN {read_parquet(con, "cpl_enriched")} c
+                  ON c.wholesaler = rc.wholesaler AND c.edition = rc.edition
+                 AND LTRIM(CAST(c.upc AS VARCHAR), '0') = rc.upc
+                WHERE rc.wholesaler IN ({ph_ws}) AND rc.edition IN ({ph_ed})
+                GROUP BY 1, 2, 3, 4, 5
+                HAVING COUNT(DISTINCT rc.case_credit) = 1
+            """, {k: v for k, v in rp.items()
+                  if k.startswith("ws_") or k.startswith("ed_")}).fetchdf()
+            for _, c in crp.iterrows():
+                credit_pack[(str(c["rip_code"]), c["wholesaler"], c["edition"],
+                             str(c["uv"] or ""), str(c["uqn"] or ""))] = float(c["case_credit"])
+        except Exception:
+            pass
         for _, r in rip_rows.iterrows():
             # Time-sensitive flag for THIS RIP source row, attached to every
             # tier it produces. The buyer sees the tier in the ladder either
@@ -515,7 +541,9 @@ def attach_tiers(con, records, ref_date=None) -> None:
                 except (TypeError, ValueError):
                     return None
 
-            tier_credit = _cf("case_credit") or 1.0
+            # None (not 1.0) when the per-UPC rule row missed, so consumption
+            # can apply the size/pack fallback against the REC's own pack.
+            tier_credit = _cf("case_credit")
             tiers_here = []
             for j in range(1, 5):
                 amt = r.get(f"rip_amt_{j}")
@@ -904,7 +932,14 @@ def attach_tiers(con, records, ref_date=None) -> None:
             # `credit` toward it, so the per-physical-case rebate scales by
             # credit and the physical buy-in is qty/credit cases. Bottle-unit
             # tiers are explicit bottle counts — never scaled.
-            credit = float(t.get("case_credit") or 1.0)
+            credit_v = t.get("case_credit")
+            if credit_v is None:
+                # Per-UPC rule row missed (stub-barcode sheet row / sibling
+                # pack): size+pack fallback keyed to THIS rec's own pack.
+                uqn = re.sub(r"\.0+$", "", str(rec.get("unit_qty") or "").strip())
+                credit_v = credit_pack.get((str(t.get("code") or ""), rec["wholesaler"],
+                                            rec["edition"], str(rec.get("unit_volume") or ""), uqn))
+            credit = float(credit_v or 1.0)
             rip_per_case_v = round(
                 _rip_per_case(t["amount"], t["qty"], t["unit"], uq, credit), 2)
             # PHYSICAL case-equivalent of the RIP qty: drives the stackable-

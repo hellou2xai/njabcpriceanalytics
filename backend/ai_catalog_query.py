@@ -272,6 +272,27 @@ def _resolve_products(con, view: dict, match: str, which: str, cap: int,
         where.append("(" + " OR ".join(_ors) + ")")
     else:
         raw_tokens = [t for t in re.split(r"\s+", (match or "").strip()) if t]
+        # SIZE spoken inline ('miraval rose 375ml'): peel unit-suffixed size
+        # tokens out of the name match and apply them as the sizes filter.
+        # Left in the AND-match, '%375ML%' either zeroes the result or lets a
+        # wrong-size sibling win (Miraval COTE Rose 1.5L answered a 375 ask).
+        _size_toks = [t for t in raw_tokens
+                      if re.fullmatch(r"\d+(?:\.\d+)?(?:ml|l|ltr|liter|litre|oz)", t, re.I)]
+        if _size_toks and not view.get("sizes"):
+            view = {**view, "sizes": _size_toks}
+            raw_tokens = [t for t in raw_tokens if t not in _size_toks]
+        # A style/category word in the match behaves like the varietal slot
+        # ('tequila' -> precise name tokens + product_type Spirits). Left as a
+        # bare LIKE it matches the Go-UPC BRAND too, so 'cheapest tequila'
+        # surfaced tequila SELTZERS (RTDs branded 'Sauza Tequila ...').
+        if not view.get("varietal") and not view.get("categories"):
+            from backend.varietal_semantics import build_varietal_filter as _bvf
+            for t in list(raw_tokens):
+                _vc, _vp, _vauto = _bvf(t.lower().rstrip("s"))
+                if _vauto:
+                    view = {**view, "varietal": t.lower().rstrip("s")}
+                    raw_tokens = [x for x in raw_tokens if x != t]
+                    break
         low = [t.lower() for t in raw_tokens]
         flavored_intent = any(t in _FLAVOR_DESCRIPTORS for t in low)
         unflavored_intent = any(t in _PLAIN_DESCRIPTORS for t in low)
@@ -366,6 +387,11 @@ def _resolve_products(con, view: dict, match: str, which: str, cap: int,
         "most_expensive": "c.effective_case_price DESC NULLS LAST",
         "first": "c.product_name ASC",
     }.get(which, "c.product_name ASC")
+    # Tie-break: rows with a REAL barcode outrank placeholder-barcode siblings
+    # ('0', short stubs) so a single-product lookup lands on the listing every
+    # downstream by-UPC tool (deal_360, price_details) can actually price.
+    order = ("CASE WHEN LENGTH(LTRIM(CAST(c.upc AS VARCHAR), '0')) >= 8 "
+             "THEN 0 ELSE 1 END, " + order)
     sql = f"""
         WITH cur AS (
           SELECT wholesaler, COALESCE(MAX(CASE WHEN edition <= $cym THEN edition END), MAX(edition)) AS ed

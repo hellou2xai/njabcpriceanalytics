@@ -427,14 +427,36 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
               AND {full_window('from_date', 'to_date')}
             GROUP BY wholesaler, edition, rip_code, upc
         ),
+        rip_credit_by_pack AS (
+            -- The rule text is SIZE/PACK-scoped ('375ML 12PK = 1/2 CASE');
+            -- the per-UPC rows materialize it only for barcodes the parser
+            -- resolved. A junk-barcode CPL row ('0'/placeholder) matches the
+            -- sheet's stub rows and misses the per-UPC credit, so learn each
+            -- rule's (size, pack) from its resolved UPC's CPL row and fall
+            -- back on that — only when unambiguous (one distinct credit for
+            -- the code+size+pack key).
+            SELECT rc.wholesaler, rc.edition, rc.rip_code,
+                   c.unit_volume,
+                   REGEXP_REPLACE(TRIM(CAST(c.unit_qty AS VARCHAR)), '\\.0+$', '') AS unit_qty_n,
+                   MIN(rc.case_credit) AS case_credit
+            FROM rip_credit_rates rc
+            JOIN read_parquet('{pdir}/cpl/**/data.parquet', hive_partitioning=true, union_by_name=true) c
+                ON c.wholesaler = rc.wholesaler AND c.edition = rc.edition
+                AND LTRIM(CAST(c.upc AS VARCHAR), '0') = rc.upc_n
+            GROUP BY 1, 2, 3, 4, 5
+            HAVING COUNT(DISTINCT rc.case_credit) = 1
+        ),
         rip_per_code_upc AS (
             -- Apply the case credit to the CASE-unit rebate: a half-case SKU's
             -- "1 CS = $24" pays $24 per QUALIFYING case = $12 per physical
-            -- case. Per-bottle rebates pass through untouched.
+            -- case. Per-bottle rebates pass through untouched. upc_credit
+            -- carries whether the per-UPC rule matched (NULL = it didn't, so
+            -- the consumer may apply the size/pack fallback above).
             SELECT b.wholesaler, b.edition, b.rip_code, b.upc,
                    b.best_case_per_case
                        * COALESCE(rc.case_credit, 1.0) AS best_case_per_case,
-                   b.best_bottle_per_bottle
+                   b.best_bottle_per_bottle,
+                   rc.case_credit AS upc_credit
             FROM rip_per_code_upc_raw b
             LEFT JOIN rip_credit_rates rc
                 ON rc.wholesaler = b.wholesaler
@@ -474,7 +496,8 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
                    b.from_date, b.to_date,
                    b.best_case_per_case
                        * COALESCE(rc.case_credit, 1.0) AS best_case_per_case,
-                   b.best_bottle_per_bottle
+                   b.best_bottle_per_bottle,
+                   rc.case_credit AS upc_credit
             FROM rip_windows_per_code_upc_raw b
             LEFT JOIN rip_credit_rates rc
                 ON rc.wholesaler = b.wholesaler
@@ -551,7 +574,9 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
                     from_date := CAST(rw.from_date AS VARCHAR),
                     to_date := CAST(rw.to_date AS VARCHAR),
                     amt := ROUND(GREATEST(
-                        COALESCE(rw.best_case_per_case, 0),
+                        COALESCE(rw.best_case_per_case, 0)
+                            * CASE WHEN rw.upc_credit IS NULL
+                                   THEN COALESCE(pk.case_credit, 1.0) ELSE 1.0 END,
                         COALESCE(rw.best_bottle_per_bottle, 0) * COALESCE(TRY_CAST(cc.unit_qty AS DOUBLE), 1)
                     ), 2)
                 ))) AS VARCHAR) AS rip_windows
@@ -573,6 +598,14 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
                     OR (cc.single_code = rw.rip_code
                         AND cc.single_code != '' AND cc.single_code != '0')
                 )
+            -- Size/pack credit fallback for rows whose per-UPC credit missed
+            -- (junk-barcode rows matched via the sheet's stub row).
+            LEFT JOIN rip_credit_by_pack pk
+                ON pk.wholesaler = cc.wholesaler
+                AND pk.edition = cc.edition
+                AND pk.rip_code = CAST(rw.rip_code AS VARCHAR)
+                AND pk.unit_volume = cc.unit_volume
+                AND pk.unit_qty_n = REGEXP_REPLACE(TRIM(CAST(cc.unit_qty AS VARCHAR)), '\\.0+$', '')
             WHERE GREATEST(
                     COALESCE(rw.best_case_per_case, 0),
                     COALESCE(rw.best_bottle_per_bottle, 0) * COALESCE(TRY_CAST(cc.unit_qty AS DOUBLE), 1)
@@ -605,7 +638,13 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
                         )
                     ELSE
                         GREATEST(
-                            COALESCE(r1.best_case_per_case, 0),
+                            -- Size/pack credit fallback when the per-UPC rule
+                            -- missed (junk-barcode rows via the sheet's stub
+                            -- row): the rule is size-scoped, so any row of
+                            -- the credited size+pack under this code scales.
+                            COALESCE(r1.best_case_per_case, 0)
+                                * CASE WHEN r1.upc_credit IS NULL
+                                       THEN COALESCE(pk.case_credit, 1.0) ELSE 1.0 END,
                             COALESCE(r1.best_bottle_per_bottle, 0)
                                 * COALESCE(TRY_CAST(cc.unit_qty AS DOUBLE), 1)
                         )
@@ -622,6 +661,12 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
                 AND cc.upc = r1.upc
                 AND cc.single_code != ''
                 AND cc.single_code != '0'
+            LEFT JOIN rip_credit_by_pack pk
+                ON pk.wholesaler = cc.wholesaler
+                AND pk.edition = cc.edition
+                AND pk.rip_code = cc.single_code
+                AND pk.unit_volume = cc.unit_volume
+                AND pk.unit_qty_n = REGEXP_REPLACE(TRIM(CAST(cc.unit_qty AS VARCHAR)), '\\.0+$', '')
             LEFT JOIN rip_per_upc_any ru
                 ON ru.wholesaler = cc.wholesaler
                 AND ru.edition = cc.edition

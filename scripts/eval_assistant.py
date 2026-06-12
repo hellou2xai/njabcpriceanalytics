@@ -293,6 +293,108 @@ def run(con):
     else:
         record("WARN", "rip tiers: no May codes to check", str(rl_may.get("note")))
 
+    # 7) Semantic resolution + relevance: a brand-scoped ask must return
+    #    ON-TOPIC products only (the Casal Garcia junk-response class: an
+    #    unscoped arbitrage sweep buried a brand answer under 2,062 rows).
+    section("semantic resolution + relevance")
+
+    def _off_topic(rows, *tokens):
+        # On-topic = the name contains a token OR its 6-char prefix
+        # (distributors abbreviate: GLENLIV == glenlivet).
+        off = []
+        for r in rows or []:
+            name = str((r.get("product_name") if isinstance(r, dict) else r) or "").lower()
+            if name and not any(t in name or (len(t) > 6 and t[:6] in name)
+                                for t in tokens):
+                off.append(name[:48])
+        return off
+
+    hits = A._resolve_products(con, {}, "casal garcia", "all", 100)
+    expect("resolve('casal garcia') returns rows", bool(hits), "no rows")
+    off = _off_topic(hits, "casal", "garcia")
+    expect("resolve('casal garcia') all on-topic", not off, f"off-topic: {off[:4]}")
+
+    hits_sp = A._resolve_products(con, {}, "cassal garcia", "all", 50)
+    off_sp = _off_topic(hits_sp, "casal", "garcia")
+    expect("resolve misspelling 'cassal garcia' lands on-topic",
+           bool(hits_sp) and not off_sp,
+           f"rows={len(hits_sp or [])} off-topic={off_sp[:3]}", warn_only=True)
+
+    hits_u = A._resolve_products(con, {}, "764793360306", "all", 10)
+    expect("resolve(UPC 764793360306) -> Casal Garcia",
+           bool(hits_u) and not _off_topic(hits_u, "casal", "garcia"),
+           str([h.get("product_name") for h in (hits_u or [])][:3]))
+
+    arb = A._t_distributor_arbitrage(con, {"query": "casal garcia",
+                                           "distributors": ["allied", "fedway"]})
+    arb_rows = arb if isinstance(arb, list) else []
+    expect("arbitrage(query='casal garcia') returns rows", bool(arb_rows), str(arb)[:150])
+    off_a = _off_topic(arb_rows, "casal", "garcia")
+    expect("arbitrage(query) all on-topic", not off_a, f"off-topic: {off_a[:4]}")
+    expect("arbitrage(query) is scoped, not a sweep", len(arb_rows) <= 25,
+           f"{len(arb_rows)} rows came back for one brand")
+    arb_all = A._t_distributor_arbitrage(con, {"limit": 5000})
+    expect("arbitrage unscoped still works for catalog-wide asks",
+           isinstance(arb_all, list) and len(arb_all) > 100,
+           f"{len(arb_all) if isinstance(arb_all, list) else arb_all}")
+
+    tp_g = A._t_top_products(con, {"match": "glenlivet", "limit": 50})
+    off_g = _off_topic(tp_g, "glenlivet")
+    expect("top_products('glenlivet') on-topic", bool(tp_g) and not off_g,
+           f"rows={len(tp_g or [])} off={off_g[:4]}")
+
+    # 8) Ground truth: tool numbers must equal cpl_enriched exactly.
+    section("ground truth vs cpl_enriched")
+    gt = con.execute(
+        "SELECT frontline_case_price, effective_case_price FROM cpl_enriched "
+        "WHERE wholesaler='allied' AND product_name='MIRAVAL ROSE 2024' "
+        "AND unit_volume='375ML' "
+        "AND edition=(SELECT MAX(edition) FROM cpl_enriched WHERE wholesaler='allied') "
+        "LIMIT 1").fetchone()
+    if gt:
+        tp_m = A._t_top_products(con, {"match": "miraval rose", "limit": 25}) or []
+        # Pin the EXACT row (name + barcode): the same size also exists as a
+        # placeholder-barcode 2025 listing with its own price.
+        row_m = next((r for r in tp_m if str(r.get("unit_volume")) == "375ML"
+                      and str(r.get("wholesaler")) == "allied"
+                      and str(r.get("product_name")) == "MIRAVAL ROSE 2024"
+                      and str(r.get("upc") or "").lstrip("0") == "89419240115"), None)
+        expect("top_products carries the Miraval 375 row", row_m is not None,
+               f"names={[r.get('product_name') for r in tp_m][:5]}")
+        if row_m:
+            expect("tool frontline == cpl_enriched",
+                   abs(float(row_m.get("frontline_case_price") or 0) - float(gt[0])) < 0.011,
+                   f"tool={row_m.get('frontline_case_price')} db={gt[0]}")
+            expect("tool effective == cpl_enriched",
+                   abs(float(row_m.get("effective_case_price") or 0) - float(gt[1])) < 0.011,
+                   f"tool={row_m.get('effective_case_price')} db={gt[1]}")
+    else:
+        record("WARN", "ground truth: Miraval 375 not in current edition", "")
+
+    # 9) Half-case credit model: the data layer must be populated and priced.
+    section("half-case credit model")
+    n_cr = con.execute("SELECT COUNT(*) FROM rip_credits").fetchone()[0]
+    expect("rip_credits populated in the pricing cache", n_cr > 0,
+           "0 rows — the cache predates the credit model (run derive + ingest + reload)")
+    if gt and n_cr:
+        # Sheet: 2cs $40 / 6cs $180 / 10cs $500 at credit 0.5 -> deepest full-
+        # month rebate $25/physical case off $132 list = $107 effective.
+        expect("Miraval 375 effective reflects credit-scaled RIP (107.00)",
+               abs(float(gt[1]) - 107.0) < 0.011,
+               f"effective={gt[1]} (132 - 50 = 82 means the credit was IGNORED)")
+        # The placeholder-barcode sibling listing (2025, upc '0') matches the
+        # sheet via its stub row, so its credit must come from the SIZE/PACK
+        # fallback (derive rip_credit_by_pack) — $82 means the fallback broke.
+        gt25 = con.execute(
+            "SELECT effective_case_price FROM cpl_enriched "
+            "WHERE wholesaler='allied' AND product_name='MIRAVAL ROSE 2025' "
+            "AND unit_volume='375ML' "
+            "AND edition=(SELECT MAX(edition) FROM cpl_enriched WHERE wholesaler='allied') "
+            "LIMIT 1").fetchone()
+        if gt25 and gt25[0] is not None:
+            expect("placeholder-barcode sibling (2025) credit-scaled via size/pack fallback",
+                   abs(float(gt25[0]) - 107.0) < 0.011, f"effective={gt25[0]}")
+
 
 SECTION_BLURB = {
     "robustness: empty + garbage input": "Every tool is called with empty and nonsense input; none should raise.",
@@ -305,6 +407,9 @@ SECTION_BLURB = {
     "cross-tool consistency": "The same product's numbers must agree across different tools.",
     "price_movers direction": "Products returned for 'prices going up' must actually be rising.",
     "rip tiers": "RIP tier ladders are sorted and flag exactly one best rung.",
+    "semantic resolution + relevance": "Brand/UPC/misspelled queries must resolve to ON-TOPIC products only, and brand-scoped tools must never return an unscoped sweep.",
+    "ground truth vs cpl_enriched": "Tool prices must equal the derived source of truth exactly.",
+    "half-case credit model": "Half-case qualifiers (375ML=1/2 CASE) must be priced via case credits — data populated and effective prices scaled.",
 }
 
 

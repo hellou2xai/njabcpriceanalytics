@@ -354,6 +354,19 @@ marker in the member's product name (VAP|GFBX|FLK|GLS...) or resolve to
 nothing; item-number scopes resolve via `dist_item_no` (Fedway's
 unnamed RIP col N, kept by `base_parser._parse_rip`).
 
+**Size/pack fallback (2026-06-12).** The per-UPC credit rows cannot
+reach CPL rows whose barcode is a junk placeholder (`'0'`,
+`111111111117`): those rows match the RIP sheet through its stub rows
+and were priced at full credit (Miraval Rose 2025 375ML showed $82
+instead of $107). Because the rule text is SIZE/PACK-scoped, the credit
+generalizes within the code: `derive.py::rip_credit_by_pack` (mirrored
+by the `credit_pack` lookup in `pricing.attach_tiers`) learns each
+rule's `(unit_volume, unit_qty)` from its resolved UPC's CPL row and
+applies that credit to any row of the SAME code + size + pack whose
+per-UPC credit row is missing — only when the key is unambiguous (one
+distinct credit). A per-UPC match always wins; the fallback never
+overrides it.
+
 ### 3.5 CPL + RIP tier stacking
 
 The truth lives in `backend/pricing.py::attach_tiers()` (extracted from

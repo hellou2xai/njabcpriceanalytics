@@ -121,20 +121,31 @@ export default function DealSparkline({
 
   const points = data?.history ?? [];
   const pad = 2;
-  const path = (vals: number[]) => {
-    if (vals.length < 2) return '';
-    const min = Math.min(...vals), max = Math.max(...vals);
-    const span = Math.max(0.0001, max - min);
-    return vals.map((v, i) => {
-      const x = pad + (i / (vals.length - 1)) * (width - pad * 2);
-      const y = pad + (1 - (v - min) / span) * (height - pad * 2);
-      return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
-    }).join(' ');
-  };
-  const list = points.map(p => p.frontline_case_price).filter(v => typeof v === 'number');
-  const effList = points.map(p => p.effective_case_price).filter(v => typeof v === 'number');
-  const first = list[0], last = list[list.length - 1];
-  const direction = first != null && last != null ? (last > first ? 'up' : last < first ? 'down' : 'flat') : null;
+  const list = points.map(p => p.frontline_case_price).filter((v): v is number => typeof v === 'number');
+  const effList = points.map(p => p.effective_case_price).filter((v): v is number => typeof v === 'number');
+
+  // SHARED vertical scale across BOTH series. The old code normalised each line
+  // to its OWN min/max, so equal prices plotted at different heights and a flat
+  // list price collapsed to the bottom — a RIP/discount move then read as a
+  // green spike floating above an unrelated baseline. One domain keeps the gap
+  // between list and effective meaningful (the gap IS the deal).
+  const domain = [...list, ...effList];
+  const dMin = domain.length ? Math.min(...domain) : 0;
+  const dMax = domain.length ? Math.max(...domain) : 1;
+  const dSpan = Math.max(0.0001, dMax - dMin);
+  const xOf = (i: number, n: number) => (n <= 1 ? pad + (width - pad * 2) / 2 : pad + (i / (n - 1)) * (width - pad * 2));
+  const yOf = (v: number) => pad + (1 - (v - dMin) / dSpan) * (height - pad * 2);
+  const path = (vals: number[]) =>
+    vals.length < 2 ? '' : vals.map((v, i) => `${i === 0 ? 'M' : 'L'}${xOf(i, vals.length).toFixed(1)},${yOf(v).toFixed(1)}`).join(' ');
+
+  // Trend = direction of the EFFECTIVE price (what the buyer actually pays).
+  // The list price routinely holds flat while a RIP/discount moves the real
+  // price, so colouring from the list (the old behaviour) showed those moves
+  // as "flat". Fall back to the list only when there is no effective history.
+  const trendSeries = effList.length >= 2 ? effList : list;
+  const tFirst = trendSeries[0], tLast = trendSeries[trendSeries.length - 1];
+  const direction = tFirst != null && tLast != null
+    ? (tLast > tFirst + 0.005 ? 'up' : tLast < tFirst - 0.005 ? 'down' : 'flat') : null;
   const stroke = direction === 'down' ? '#16a34a' : direction === 'up' ? '#dc2626' : 'var(--text-muted)';
 
   // Find the three points the popover needs. Prefer the explicit curEdition
@@ -160,14 +171,11 @@ export default function DealSparkline({
   const nextList = dEff(pCur?.frontline_case_price, pNext?.frontline_case_price);
 
   // Position the "highlight dots" for the prev/cur/next points on the SVG.
+  // (Vertical position uses the shared yOf defined above so dots sit on the
+  // lines.)
   const dotX = (i: number) => {
     if (points.length < 2) return pad + (width - pad * 2) / 2;
     return pad + (i / (points.length - 1)) * (width - pad * 2);
-  };
-  const yOf = (v: number, arr: number[]) => {
-    const min = Math.min(...arr), max = Math.max(...arr);
-    const span = Math.max(0.0001, max - min);
-    return pad + (1 - (v - min) / span) * (height - pad * 2);
   };
 
   const onChipClick = (e: React.MouseEvent) => {
@@ -192,36 +200,36 @@ export default function DealSparkline({
     >
       {visible && list.length >= 2 ? (
         <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
-          {/* Frontline (list) — faint dashed line so the popover can talk
-              about it as the "secondary" story. */}
-          <path d={path(list)} fill="none" stroke={stroke} strokeWidth="1.4" strokeDasharray="2 2" strokeLinecap="round" strokeLinejoin="round" />
-          {/* Effective — solid green, what the buyer actually pays. */}
+          {/* Frontline (list) — faint dashed line in a NEUTRAL colour: it's
+              the secondary "before deals" story. The solid effective line
+              carries the trend colour. */}
+          <path d={path(list)} fill="none" stroke="var(--text-muted)" strokeWidth="1.4" strokeDasharray="2 2" strokeLinecap="round" strokeLinejoin="round" />
+          {/* Effective — solid line in the TREND colour (red if the price you
+              pay rose, green if it fell), what the buyer actually pays. */}
           {effList.length >= 2 && (
-            <path d={path(effList)} fill="none" stroke="#16a34a" strokeWidth="1.6" strokeLinecap="round" />
+            <path d={path(effList)} fill="none" stroke={stroke} strokeWidth="1.6" strokeLinecap="round" />
           )}
           {/* Highlight dots on the three popover-relevant points so the
               user can read the data by hovering even without clicking. */}
           {pCur && (
-            <circle cx={dotX(curIdx)} cy={yOf(pCur.effective_case_price, effList)} r="3" fill="#16a34a">
+            <circle cx={dotX(curIdx)} cy={yOf(pCur.effective_case_price)} r="3" fill={stroke}>
               <title>{fmtMonth(pCur.edition)} · ${pCur.effective_case_price.toFixed(2)} (effective)</title>
             </circle>
           )}
           {pPrev && (
-            <circle cx={dotX(prevIdx)} cy={yOf(pPrev.effective_case_price, effList)} r="2.4" fill="#94a3b8">
+            <circle cx={dotX(prevIdx)} cy={yOf(pPrev.effective_case_price)} r="2.4" fill="#94a3b8">
               <title>{fmtMonth(pPrev.edition)} · ${pPrev.effective_case_price.toFixed(2)} (effective)</title>
             </circle>
           )}
           {pNext && (
-            <circle cx={dotX(nextIdx)} cy={yOf(pNext.effective_case_price, effList)} r="2.4" fill="#94a3b8">
+            <circle cx={dotX(nextIdx)} cy={yOf(pNext.effective_case_price)} r="2.4" fill="#94a3b8">
               <title>{fmtMonth(pNext.edition)} · ${pNext.effective_case_price.toFixed(2)} (effective)</title>
             </circle>
           )}
-          {/* Last-point glyph kept for consistency with the original look. */}
-          {(() => {
-            const xs = pad + (width - pad * 2);
-            const ys = list.length ? pad + (1 - (last - Math.min(...list)) / Math.max(0.0001, Math.max(...list) - Math.min(...list))) * (height - pad * 2) : height / 2;
-            return <circle cx={xs} cy={ys} r="2" fill={stroke} />;
-          })()}
+          {/* End glyph on the effective line's latest point, trend-coloured. */}
+          {effList.length >= 1 && (
+            <circle cx={pad + (width - pad * 2)} cy={yOf(effList[effList.length - 1])} r="2" fill={stroke} />
+          )}
         </svg>
       ) : (
         <div className="deal-spark-placeholder" />

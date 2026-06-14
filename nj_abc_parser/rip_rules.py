@@ -70,6 +70,11 @@ LITER_RE = re.compile(r"\bLITERS?\b", re.I)
 PACK_RE = re.compile(r"\b(\d+)\s*[- ]?(?:PK|P|PACK|PACKS|BT|BTS|BTL|BTLS)\b", re.I)
 ITEMNO_RE = re.compile(r"#?\s*(\d{5,7})\b")
 SLASH_SIZE_RE = re.compile(r"\b(\d{2,4})/(\d{2,4})\s*ML\b", re.I)
+# Bare bottle-ML sizes written WITHOUT a unit, as some distributors do (Fedway:
+# "750 6pk & 375's = 1/2 cs"). Restricted to unambiguous bottle sizes so a pack
+# count or other number is never misread as a size. The optional 's/'s handles
+# the "375's" plural.
+BARE_ML_RE = re.compile(r"\b(187|375|500|700|750|1000)(?:'?[sS])?\b")
 
 RULE_RE = re.compile(
     r"=?\s*\(?\s*(1/2|1/4|FULL|HALF|1)\s*\)?\s*-?\s*(?:CASE|CS|CASES)\b", re.I)
@@ -189,6 +194,13 @@ def parse_size_pack_alts(scope: str):
         items.append((m.start(), m.end(), "size", "1L"))
     for m in PACK_RE.finditer(scope):
         items.append((m.start(), m.end(), "pack", int(m.group(1))))
+    # Unit-less bottle-ML sizes ("375'S", "750"), but only where the number
+    # isn't already claimed as a unit'd size or a pack count.
+    claimed = [(s, e) for s, e, *_ in items]
+    for m in BARE_ML_RE.finditer(scope):
+        if any(s <= m.start() < e for s, e in claimed):
+            continue
+        items.append((m.start(), m.end(), "size", f"{m.group(1)}ML"))
     for m in re.finditer(r"\b(SMALL|LARGE)\s+SIZES\b", scope):
         items.append((m.start(), m.end(), "size",
                       "__small__" if m.group(1) == "SMALL" else "__large__"))

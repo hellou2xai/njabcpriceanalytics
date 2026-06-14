@@ -24,12 +24,15 @@ function dockWidth(): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function clampToViewport(x: number, y: number): Pos {
+function clampToViewport(_x: number, y: number): Pos {
   const dw = dockWidth();
   const maxX = Math.max(MARGIN, window.innerWidth - dw - SIZE - MARGIN);
   const maxY = Math.max(MARGIN, window.innerHeight - SIZE - MARGIN);
   return {
-    x: Math.min(Math.max(MARGIN, x), maxX),
+    // ALWAYS right-aligned: the cart must never drift left over page content
+    // (it was overlapping the Products search). Only the vertical position is
+    // free to move; a stale centered position is snapped back to the edge.
+    x: maxX,
     y: Math.min(Math.max(MARGIN, y), maxY),
   };
 }
@@ -107,7 +110,7 @@ export default function CartFab({ cartCount }: { cartCount: number }) {
     <div
       role="button"
       tabIndex={0}
-      title="Cart — drag to move"
+      title="Cart — drag up/down to move"
       aria-label="Cart"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}

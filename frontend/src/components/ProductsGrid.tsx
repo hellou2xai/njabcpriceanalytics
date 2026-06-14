@@ -360,15 +360,18 @@ function SizeRow({ size, cart, updateQty, primaryName }: {
   );
 }
 
-function ProductCard({ group, cart, updateQty, showDeals = true }: {
+function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded = false }: {
   group: ProductGroup;
   cart: CartState;
   updateQty: (key: string, field: 'cases' | 'units', value: number) => void;
   // Page-level "Price details / Summary" toggle: false hides the collapsed
   // card's deal ladder (the expanded size rows always keep theirs).
   showDeals?: boolean;
+  // Start expanded (used on an active search, so result details + add-to-cart
+  // show without a click). Per-card collapse still works afterwards.
+  defaultExpanded?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded);
   // Hover/focus intent: start the expand-time fetches (full size set + tiers)
   // as soon as the pointer reaches the card, so clicking the chevron renders
   // from cache instead of waiting seconds for the network.
@@ -557,9 +560,11 @@ interface Props {
   // size (UPC variants collapsed to the best price). True restores the
   // cross-distributor family cards.
   grouped?: boolean;
+  // Start every card expanded (used on an active product search).
+  expandAll?: boolean;
 }
 
-export default function ProductsGrid({ items, cart, updateQty, showDeals = true, grouped = false }: Props) {
+export default function ProductsGrid({ items, cart, updateQty, showDeals = true, grouped = false, expandAll = false }: Props) {
   const groups = useMemo(() => groupByProduct(items, grouped), [items, grouped]);
 
   if (groups.length === 0) {
@@ -570,7 +575,7 @@ export default function ProductsGrid({ items, cart, updateQty, showDeals = true,
     <div className="prod-grid">
       {groups.map(g => (
         <Fragment key={g.key}>
-          <ProductCard group={g} cart={cart} updateQty={updateQty} showDeals={showDeals} />
+          <ProductCard group={g} cart={cart} updateQty={updateQty} showDeals={showDeals} defaultExpanded={expandAll} />
         </Fragment>
       ))}
     </div>

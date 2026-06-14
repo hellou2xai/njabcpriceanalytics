@@ -413,7 +413,7 @@ export default function Products() {
           </div>
 
           {isLoading ? <p>Loading…</p> : (
-            <ProductsGrid items={items} cart={cart} updateQty={updateQty} showDeals={priceDetails} grouped={grouped} />
+            <ProductsGrid items={items} cart={cart} updateQty={updateQty} showDeals={priceDetails} grouped={grouped} expandAll={!!q.trim()} />
           )}
 
           <div className="pagination">

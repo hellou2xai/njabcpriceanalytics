@@ -1297,6 +1297,9 @@ def compare_rips(
             dists[w] = {
                 "frontline": front,
                 "abv_proof": rec.get("abv_proof"),
+                # this distributor's OWN vintage (normalised 4-digit), so the card
+                # can show it per side and the buyer sees both years are the same.
+                "vintage": rec.get("vintage_norm") or rec.get("vintage"),
                 "landed_at_n": _landed_at(tiers, front, n, pack),
                 "landed_at_1": _landed_at(tiers, front, 1, pack),
                 "rip_at_1": rip_1,

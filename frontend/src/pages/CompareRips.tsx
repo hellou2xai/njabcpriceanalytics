@@ -148,6 +148,12 @@ function DistPanel({ w, d, row, cases, accent, isWinner, onRipClick }: {
       <div className="rip2-dist-size"
         title="Products are matched by exact barcode, bottle size and bottles-per-case, so this is a like-for-like comparison.">
         {(d.unit_qty ?? row.unit_qty)} × {(d.unit_volume ?? row.unit_volume)}
+        {wineVintage(row.product_type, d.vintage ?? row.vintage) && (
+          <span className="rip2-dist-vintage"
+            title="This distributor's vintage. Wine is matched by vintage, so both distributors are the same year.">
+            {' · '}{wineVintage(row.product_type, d.vintage ?? row.vintage)}
+          </span>
+        )}
         {d.upc && <span className="rip2-dist-upc"> · UPC {d.upc}</span>}
       </div>
       {/* open this distributor's exact product to verify the price and the facts */}

@@ -722,6 +722,7 @@ export interface RipTierRow {
 export interface CompareRipDist {
   frontline: number | null;
   abv_proof: string | null;
+  vintage: string | null;       // this distributor's own vintage (4-digit), for the card
   landed_at_n: number | null;
   landed_at_1: number | null;
   rip_at_1: number | null;

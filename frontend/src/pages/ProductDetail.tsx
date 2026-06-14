@@ -469,8 +469,13 @@ export default function ProductDetail() {
   // Enrichment specs, MINUS any size/pack keys — size is shown from the catalog
   // data below so it appears for every product, enriched or not (and never twice).
   const _isSizeKey = (k: string) => /^(package\s*)?size$|bottles?\s*per\s*case|unit\s*volume|^pack(\s*size)?$/i.test(k.trim());
+  // Vintage/year are authoritative from our own catalog rows (per edition).
+  // Go-UPC's enrichment vintage is often a stale/wrong year for a reused wine
+  // barcode (e.g. it returns 2016 for a 2022 wine), so never show the
+  // enrichment's vintage — the real one is rendered from the CPL rows below.
+  const _isVintageKey = (k: string) => /^(vintage|year)$/i.test(k.trim());
   const specs = enrichment?.specs
-    ? Object.entries(enrichment.specs).filter(([k, v]) => v != null && String(v) !== '' && !_isSizeKey(k))
+    ? Object.entries(enrichment.specs).filter(([k, v]) => v != null && String(v) !== '' && !_isSizeKey(k) && !_isVintageKey(k))
     : [];
   // Package size(s) straight from the CPL — always present. One size shows its
   // pack; multiple sizes list them so the header reflects the whole product.
@@ -479,6 +484,15 @@ export default function ProductDetail() {
     : _sizeVals.length === 1
       ? `${_sizeVals[0]}${packLabel(sizes[0]?.unit_volume, bottlesPerCase(name, sizes[0]?.unit_qty), sizes[0]?.unit_type) ? ` · ${packLabel(sizes[0]?.unit_volume, bottlesPerCase(name, sizes[0]?.unit_qty), sizes[0]?.unit_type)}` : ''}`
       : _sizeVals.join(' · ');
+  // Vintage(s) straight from the CPL rows (authoritative, per edition). Wines
+  // reuse one barcode across years, so show the distinct real vintage(s) here
+  // instead of the enrichment's (which can be a wrong/stale year).
+  const headerVintage = (() => {
+    const vs = Array.from(new Set((sizes ?? [])
+      .map(s => String(s.vintage ?? '').trim().replace(/\.0+$/, ''))
+      .filter(v => v && !['0', 'nan', 'none', 'null', 'nv'].includes(v.toLowerCase()))));
+    return vs.length ? vs.sort().join(' · ') : null;
+  })();
   const hasDesc = !!enrichment?.description && enrichment.description !== 'No description found.';
   // UPC + vendor item code for the header, from the seed SKU the attributes
   // describe (its Size/Pack Size are already shown). Per-size codes still live
@@ -532,6 +546,7 @@ export default function ProductDetail() {
                     from Go-UPC enrichment, so it appears even when the detail
                     endpoint can't resolve enrichment for this name. */}
                 {headerSize && <div><dt>Package size</dt><dd>{headerSize}</dd></div>}
+                {headerVintage && <div><dt>Vintage</dt><dd>{headerVintage}</dd></div>}
                 {enrichment?.region && <div><dt>Region</dt><dd>{enrichment.region}</dd></div>}
                 {specs.map(([k, v]) => (
                   <div key={k}><dt>{k}</dt><dd>{String(v)}</dd></div>

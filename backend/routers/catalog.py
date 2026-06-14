@@ -640,6 +640,54 @@ def attach_promotion_tiers(con, records):
     _attach_price_3mo(con, records)
 
 
+def _introduced_window(con, months: int) -> dict[tuple, str]:
+    """{(wholesaler, upc_norm): introduced_edition} for items first introduced in
+    the last ``months`` editions. "Introduced" = the start of the SKU's current
+    run, detected by normalised UPC first-appearance (absent from the prior
+    edition) — the SAME definition the /new-items endpoint uses (robust to
+    distributors renaming items between editions, e.g. Highgrade). Runs as a
+    read-only SELECT so it works on the read-only pricing connection."""
+    src = read_parquet(con, "cpl_enriched")
+    current_ym = _current_yyyy_mm()
+    valid_upc = _VALID_UPC_SQL.format(col="upc")
+    eds = con.execute(f"""
+        SELECT DISTINCT edition FROM {src}
+        WHERE edition <= $cym ORDER BY edition DESC LIMIT $months
+    """, {"cym": current_ym, "months": int(months)}).fetchdf()
+    window_eds = [r["edition"] for _, r in eds.iterrows()]
+    if not window_eds:
+        return {}
+    window_start = min(window_eds)
+    rows = con.execute(f"""
+        WITH eds AS (
+            SELECT wholesaler, edition,
+                   LAG(edition) OVER (PARTITION BY wholesaler ORDER BY edition) AS prev_edition
+            FROM (SELECT DISTINCT wholesaler, edition FROM {src})
+        ),
+        present AS (
+            SELECT DISTINCT wholesaler, LTRIM(upc, '0') AS upc_norm, edition
+            FROM {src} WHERE {valid_upc}
+        ),
+        firstapp AS (
+            SELECT p.wholesaler, p.upc_norm, p.edition
+            FROM present p
+            JOIN eds e ON e.wholesaler = p.wholesaler AND e.edition = p.edition
+            WHERE e.prev_edition IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM present p2
+                  WHERE p2.wholesaler = p.wholesaler AND p2.upc_norm = p.upc_norm
+                    AND p2.edition = e.prev_edition)
+        ),
+        introduced AS (
+            SELECT wholesaler, upc_norm, MAX(edition) AS introduced_edition
+            FROM firstapp GROUP BY wholesaler, upc_norm
+        )
+        SELECT wholesaler, upc_norm, introduced_edition FROM introduced
+        WHERE introduced_edition >= $ws AND introduced_edition <= $cym
+    """, {"cym": current_ym, "ws": window_start}).fetchall()
+    return {(w, u): ed for (w, u, ed) in rows}
+
+
 @router.get("/search")
 def search_products(
     q: str = Query("", description="Search term"),
@@ -667,6 +715,7 @@ def search_products(
     region: Optional[str] = Query(None, description="Region / origin hint, e.g. 'california', 'napa', 'bordeaux', 'tuscany'. Filters by product name tokens + enrichment description. Auto-narrows product_type when the region implies a category (e.g. region=california auto-applies product_type=Wine if none is set)."),
     varietal: Optional[str] = Query(None, description="Varietal / style hint, e.g. 'cabernet', 'pinot noir', 'ipa', 'bourbon', 'reposado', 'single malt'. Combine with region for queries like 'California cabernets' or 'Kentucky bourbon'."),
     tracked_only: bool = Query(False, description="If true, only return products on the watchlist"),
+    introduced_within_months: Optional[int] = Query(None, ge=1, le=12, description="If set, restrict to items first introduced (by UPC first-appearance) within the last N editions, and attach introduced_edition per row. Powers the New Items page (same universe as /new-items) while keeping the full search/filter/facet stack."),
     sort: str = Query("product_name", description="Sort field"),
     order: str = Query("asc", description="asc or desc"),
     limit: int = Query(50, ge=1, le=50000),
@@ -704,6 +753,22 @@ def search_products(
 
         where = ["1=1"]
         params = {}
+
+        # New Items mode: restrict to SKUs first introduced in the last N editions
+        # and remember each one's introduced edition (attached to the rows below).
+        intro_map: dict[tuple, str] = {}
+        if introduced_within_months:
+            intro_map = _introduced_window(con, introduced_within_months)
+            if not intro_map:
+                where.append("1 = 0")   # nothing new in window -> empty grid
+            else:
+                keys = []
+                for i, (w_, u_) in enumerate(intro_map):
+                    params[f"introk{i}"] = f"{w_}|{u_}"
+                    keys.append(f"$introk{i}")
+                where.append(
+                    "(wholesaler || '|' || LTRIM(CAST(upc AS VARCHAR), '0')) IN ("
+                    + ", ".join(keys) + ")")
 
         q_clause_idx = None
         rel_expr = "0"
@@ -1506,6 +1571,10 @@ def search_products(
             for k, v in list(rec.items()):
                 if isinstance(v, float) and _math.isnan(v):
                     rec[k] = None
+            # New Items mode: stamp the edition each SKU was introduced in.
+            if intro_map:
+                rec["introduced_edition"] = intro_map.get(
+                    (rec.get("wholesaler"), str(rec.get("upc") or "").lstrip("0")))
 
         # Family grouping key for the Products list, so a product's
         # differently-named sizes collapse into ONE card.
@@ -3339,6 +3408,7 @@ def search_facets(
     max_price: Optional[float] = None,
     has_rip: Optional[bool] = None,
     has_discount: Optional[bool] = None,
+    introduced_within_months: Optional[int] = Query(None, ge=1, le=12, description="Restrict facet counts to the New Items universe (items introduced in the last N editions), mirroring /search."),
 ):
     """Drill-down facet counts. Each facet's counts honour all the OTHER active
     filters (but not its own dimension), so the numbers reconcile with the
@@ -3387,6 +3457,20 @@ def search_facets(
                 bp[f"ed_{i}"] = ed
             if ed_conditions:
                 base.append(f"({' OR '.join(ed_conditions)})")
+
+        # New Items universe (same restriction as /search) so facet counts match.
+        if introduced_within_months:
+            intro_map = _introduced_window(con, introduced_within_months)
+            if not intro_map:
+                base.append("1 = 0")
+            else:
+                keys = []
+                for i, (w_, u_) in enumerate(intro_map):
+                    bp[f"fintrok{i}"] = f"{w_}|{u_}"
+                    keys.append(f"$fintrok{i}")
+                base.append(
+                    "(wholesaler || '|' || LTRIM(CAST(upc AS VARCHAR), '0')) IN ("
+                    + ", ".join(keys) + ")")
 
         # ---- active filter predicates, each tagged with its dimension ----
         preds: list[dict] = []

@@ -48,7 +48,7 @@ function filtersFromParams(params: URLSearchParams): CatalogFilters {
   };
 }
 
-export default function Products() {
+export default function Products({ newItems = false }: { newItems?: boolean } = {}) {
   const [params, setSearchParams] = useSearchParams();
   const [q, setQ] = useState(params.get('q') ?? '');
   const [wholesaler, setWholesaler] = useState(params.get('wholesaler') ?? '');
@@ -157,7 +157,8 @@ export default function Products() {
   // the hero. (No debounce/auto-transition — the user wants Enter to be the trigger.)
   const [committed, setCommitted] = useState(q);
   useEffect(() => { if (!q.trim()) setCommitted(''); }, [q]);
-  const showGrid = committed.trim().length > 0 || !!wholesaler || countActiveFilters(filters) > 0;
+  // New Items always shows the grid (the whole new-items set) — no search splash.
+  const showGrid = newItems || committed.trim().length > 0 || !!wholesaler || countActiveFilters(filters) > 0;
 
   // Hero typeahead: while on the landing, typing shows SUGGESTIONS (semantic
   // /catalog/search) but never the grid — the grid waits for Enter (or picking a
@@ -191,13 +192,14 @@ export default function Products() {
     && !wholesaler && !region && !varietal && !trackedOnly;
 
   const { data, isLoading } = useCachedQuery(
-    ['products', q, wholesaler, sort, order, page, limit, trackedOnly, filterKey, region, varietal],
+    ['products', q, wholesaler, sort, order, page, limit, trackedOnly, filterKey, region, varietal, newItems],
     () => catalog.search({
       q,
       wholesaler: wholesaler || undefined,
       sort, order,
       limit, offset: page * limit,
       ...filterParams,
+      introduced_within_months: newItems ? 3 : undefined,
       tracked_only: trackedOnly || undefined,
       // Storefront browsing: rows that have a product image rank first when
       // sorting by name (relevance still wins for typed searches).
@@ -216,8 +218,9 @@ export default function Products() {
   // misspelling (which matches nothing and blanked the whole filter rail).
   const effectiveQ = data?.corrected_query ?? q;
   const { data: facets } = useCachedQuery(
-    ['products-facets', effectiveQ, wholesaler, filterKey],
-    () => catalog.facets({ q: effectiveQ, wholesaler: wholesaler || undefined, ...filterParams }),
+    ['products-facets', effectiveQ, wholesaler, filterKey, newItems],
+    () => catalog.facets({ q: effectiveQ, wholesaler: wholesaler || undefined, ...filterParams,
+      introduced_within_months: newItems ? 3 : undefined }),
     { enabled: showGrid && (!q.trim() || !!data), persist: isAisleView },
   );
 
@@ -240,7 +243,8 @@ export default function Products() {
     Hemp: 'Hemp / THC', 'Non-Alcoholic': 'Non-Alcoholic',
   };
   const soleCategory = filters.categories.length === 1 && !q.trim() ? filters.categories[0] : null;
-  const pageTitle = soleCategory ? (CATEGORY_LABELS[soleCategory] ?? soleCategory) : 'Products';
+  const pageTitle = newItems ? 'New Items'
+    : soleCategory ? (CATEGORY_LABELS[soleCategory] ?? soleCategory) : 'Products';
 
   // Category quick-browse chips (same set as the Home hero), shown under the
   // big search box on both the landing and the grid so users can hop aisles.

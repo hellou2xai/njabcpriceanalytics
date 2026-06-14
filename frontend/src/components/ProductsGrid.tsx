@@ -55,6 +55,25 @@ function toMl(label?: string | null): number {
   return n;
 }
 
+// "2026-06" -> "Jun 2026" for the New Items "introduced" sticker.
+const _INTRO_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function introLabel(ym?: string | null): string | null {
+  if (!ym) return null;
+  const m = /^(\d{4})-(\d{1,2})/.exec(String(ym));
+  if (!m) return null;
+  const mon = _INTRO_MONTHS[parseInt(m[2], 10) - 1];
+  return mon ? `${mon} ${m[1]}` : ym;
+}
+function IntroSticker({ ym }: { ym?: string | null }) {
+  const label = introLabel(ym);
+  if (!label) return null;
+  return (
+    <span className="prod-new-sticker" title={`New item — first introduced ${label}`}>
+      New · {label}
+    </span>
+  );
+}
+
 interface ProductGroup {
   key: string;
   wholesaler: string;
@@ -314,6 +333,7 @@ function SizeRow({ size, cart, updateQty, primaryName, showDeals = true }: {
       </Link>
       <div className="prod-size-price">
         <span className="prod-size-badges">
+          <IntroSticker ym={size.introduced_edition} />
           {size.has_discount && <TierBadge kind="qd" />}
           {size.has_rip && <TierBadge kind="rip" />}
           <DealTimingSticker deals={size.deal_windows ?? []} gaps={size.rip_gaps}
@@ -509,6 +529,9 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
             )}
           </div>
           <div className="prod-card-stickers" onClick={e => e.stopPropagation()}>
+            <IntroSticker ym={group.sizes.reduce<string | null>(
+              (mx, s) => (s.introduced_edition && (!mx || s.introduced_edition > mx)
+                ? s.introduced_edition : mx), null)} />
             <DealTimingSticker deals={repRow?.deal_windows ?? []} gaps={repRow?.rip_gaps}
               everyDay={everyDayFromTiers(repRow?.tiers, repRow?.frontline_case_price)} />
           </div>

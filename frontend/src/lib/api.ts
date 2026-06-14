@@ -1572,6 +1572,9 @@ export interface Product {
   product_type: string;
   unit_qty: string;
   unit_volume: string;
+  // New Items: the edition (YYYY-MM) this SKU was first introduced in. Present
+  // only when the row was fetched with introduced_within_months (New Items page).
+  introduced_edition?: string | null;
   frontline_case_price: number;
   frontline_unit_price: number;
   best_case_price: number;

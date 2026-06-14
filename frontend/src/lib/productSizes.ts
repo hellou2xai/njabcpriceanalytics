@@ -54,6 +54,22 @@ export function sizeToMl(label?: string | null): number {
  * as the true bottle count (case ÷ 120 = $2.99/bottle). When it doesn't match,
  * we never override — so this can only ever fix a known-wrong case.
  */
+/**
+ * Drop an embedded vintage year from a WINE header/title. Go-UPC enrichment
+ * names often carry a stale vintage (e.g. "...Willamette Valley 2018" for a
+ * product whose current vintage is different); the real vintage is shown
+ * separately on the size rows. Only wine-family titles are touched, and only a
+ * plausible vintage range (1950-2039) so brand numbers like "1924" or "1800"
+ * survive. Display-only — never use the result to resolve a product.
+ */
+export function stripHeaderVintage(name?: string | null, productType?: string | null): string {
+  const s = String(name ?? '');
+  if (!s) return s;
+  const isWine = /wine|sparkling|vermouth|champagne|port|sherry/i.test(productType || '');
+  if (!isWine) return s;
+  return s.replace(/\b(?:19[5-9]\d|20[0-3]\d)\b/g, ' ').replace(/\s{2,}/g, ' ').trim();
+}
+
 export function bottlesPerCase(productName?: string | null, unitQty?: string | number | null): number | null {
   const q = Number(unitQty);
   const qq = q > 0 ? q : null;

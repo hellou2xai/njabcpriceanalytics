@@ -417,7 +417,7 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
           </div>
 
           {isLoading ? <p>Loading…</p> : (
-            <ProductsGrid items={items} cart={cart} updateQty={updateQty} showDeals={priceDetails} grouped={grouped} expandAll={!!q.trim()} />
+            <ProductsGrid items={items} cart={cart} updateQty={updateQty} showDeals={priceDetails} grouped={grouped} expandAll={newItems || !!q.trim()} />
           )}
 
           <div className="pagination">

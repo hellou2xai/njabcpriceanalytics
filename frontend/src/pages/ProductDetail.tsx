@@ -33,7 +33,7 @@ function TierWin({ t }: { t: CatalogTier }) {
     </span>
   );
 }
-import { useProductSizes, bottlesPerCase, sizeToMl } from '../lib/productSizes';
+import { useProductSizes, bottlesPerCase, sizeToMl, stripHeaderVintage } from '../lib/productSizes';
 import { useComboLink } from '../lib/comboLink';
 import { distributorName, abgSku, skuLabel, containerTitle, containerNoun, packLabel, packPhrase, priceUnit, perUnitNoun } from '../lib/distributors';
 import type { Product, CatalogTier } from '../lib/api';
@@ -539,11 +539,11 @@ export default function ProductDetail() {
             <DealTimingSticker deals={headerDeals} gaps={headerGaps} everyDay={headerEveryDay} />
           )}
           <div className="pd-identity">
-            <ProductThumb src={enrichment?.image_url ?? sizes[0]?.image_url} alt={name} size={120} />
+            <ProductThumb src={enrichment?.image_url ?? sizes[0]?.image_url} alt={name} size={120} expandable />
             <div className="pd-identity-meta">
               <div className="pd-identity-titlerow">
                 <FavoriteButton productName={name} wholesaler={wholesaler} upc={sizes[0]?.upc} unitVolume={sizes[0]?.unit_volume} />
-                <h1 className="pd-title">{name}</h1>
+                <h1 className="pd-title">{stripHeaderVintage(name, product?.product_type)}</h1>
                 {product?.celr_product_number && (
                   <span className="prod-card-cpn"
                     title="CELR Product Number: one identity for this product across all sizes, vintages and distributors. Searchable in any product search box.">

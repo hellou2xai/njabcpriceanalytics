@@ -27,7 +27,7 @@ import DealTimingSticker, { everyDayFromTiers } from './DealTimingSticker';
 import TierBadge from './TierBadge';
 import { buildMonths } from '../lib/promotionsSparkline';
 import { catalog } from '../lib/api';
-import { useProductSizes, bottlesPerCase } from '../lib/productSizes';
+import { useProductSizes, bottlesPerCase, stripHeaderVintage } from '../lib/productSizes';
 import { useComboLink } from '../lib/comboLink';
 import { distributorName, abgSku, skuLabel, containerTitle, containerNoun, packPhrase, priceUnitWord, perUnitNoun, isKegUnit } from '../lib/distributors';
 import { isRealUpc } from '../lib/upc';
@@ -501,13 +501,13 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
         </div>
         <Link to={detailUrl(group.wholesaler, group.productName, first?.upc)}
           className="prod-card-thumb-link" onClick={e => e.stopPropagation()}>
-          <ProductThumb src={group.imageUrl} alt={group.productName} size={56} />
+          <ProductThumb src={group.imageUrl} alt={group.productName} size={56} expandable />
         </Link>
         <div className="prod-card-meta">
           <Link to={detailUrl(group.wholesaler, group.productName, first?.upc)}
             className="prod-card-name" onClick={e => e.stopPropagation()}
             title="Open full product details">
-            {group.displayName}
+            {stripHeaderVintage(group.displayName, group.productType)}
           </Link>
           <div className="prod-card-type">
             {[group.productType, group.brand].filter(Boolean).join(' · ')}

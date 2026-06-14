@@ -268,11 +268,13 @@ function priceRange(sizes: Product[]): { lo: Product; hi: Product; loPrice: numb
   return { lo: lo.s, hi: hi.s, loPrice: lo.p, hiPrice: hi.p };
 }
 
-function SizeRow({ size, cart, updateQty, primaryName }: {
+function SizeRow({ size, cart, updateQty, primaryName, showDeals = true }: {
   size: Product;
   cart: CartState;
   updateQty: (key: string, field: 'cases' | 'units', value: number) => void;
   primaryName?: string;
+  // Detail view (Price details) shows the deal ladder on screen; Summary hides it.
+  showDeals?: boolean;
 }) {
   const cartKey = `${size.product_name}|${size.wholesaler}|${size.upc ?? ''}|${size.unit_volume ?? ''}`;
   const qty = cart[cartKey] ?? { cases: 0, units: 0 };
@@ -335,11 +337,14 @@ function SizeRow({ size, cart, updateQty, primaryName }: {
       </div>
       {/* Inline RIP + quantity-discount tiers for the current month — one shared
           DealLadder (tier qty, total $ off, price-after for BOTH case + bottle)
-          so the numbers always match the sparkline tooltip. */}
-      <div className="prod-size-deals">
-        <DealLadder months={months} pack={pack} emptyText="No deals this month"
-          unitVolume={size.unit_volume} unitType={size.unit_type} />
-      </div>
+          so the numbers always match the sparkline tooltip. Detail view only;
+          Summary hides the ladder to stay compact. */}
+      {showDeals && (
+        <div className="prod-size-deals">
+          <DealLadder months={months} pack={pack} emptyText="No deals this month"
+            unitVolume={size.unit_volume} unitType={size.unit_type} />
+        </div>
+      )}
       <div className="prod-size-order">
         <div className="prod-size-steppers">
           <QtyStepper label={isKegUnit(size.unit_volume, size.unit_type) ? 'Kegs' : containerNoun(size.unit_volume, size.unit_type) === 'can' ? 'Cans' : 'Bottles'}
@@ -450,14 +455,20 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
       return [...fetched, ...group.sizes.filter(s => !seen.has(rowKey(s)))];
     };
     let base: Product[];
-    if (multiDist) {
+    if (group.flat) {
+      // Flat mode shows ONE listing and skips the full-size fetch, so the bare
+      // group row has no price_3mo (-> the deal ladder read "No deals this
+      // month"). Use the SAME tier-enriched rep (repRow) the card header
+      // already fetches, so the size row's deals match the sparkline.
+      base = [repRow];
+    } else if (multiDist) {
       base = multiData?.items ? withOwnRows(multiData.items as Product[]) : group.sizes;
     } else {
       base = fullSizes.length ? withOwnRows(fullSizes) : group.sizes;
     }
     return [...base].sort((a, b) =>
       toMl(a.unit_volume) - toMl(b.unit_volume) || a.wholesaler.localeCompare(b.wholesaler));
-  }, [multiDist, multiData, fullSizes, group.sizes]);
+  }, [group.flat, repRow, multiDist, multiData, fullSizes, group.sizes]);
   const optionCount = sizes.length;
 
   return (
@@ -543,7 +554,7 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
           {isFetching && fullSizes.length === 0 && <div className="prod-size-loading">Loading all sizes…</div>}
           {sizes.map((size, i) => (
             <SizeRow key={`${size.product_name}|${size.upc ?? ''}|${size.unit_volume ?? ''}|${i}`}
-              size={size} cart={cart} updateQty={updateQty} primaryName={group.displayName} />
+              size={size} cart={cart} updateQty={updateQty} primaryName={group.displayName} showDeals={showDeals} />
           ))}
         </div>
       )}

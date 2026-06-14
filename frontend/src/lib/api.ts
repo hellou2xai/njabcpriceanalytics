@@ -8,9 +8,16 @@ function authHeaders(): Record<string, string> {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  // FormData bodies must NOT carry an explicit Content-Type — the browser sets
+  // the multipart boundary itself. JSON bodies keep the application/json header.
+  const isForm = typeof FormData !== 'undefined' && init?.body instanceof FormData;
   const res = await fetch(`${BASE}${path}`, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...authHeaders(), ...(init?.headers ?? {}) },
+    headers: {
+      ...(isForm ? {} : { 'Content-Type': 'application/json' }),
+      ...authHeaders(),
+      ...(init?.headers ?? {}),
+    },
   });
   if (res.status === 401) {
     // Session expired or missing. Drop the stale token and return to login,
@@ -806,11 +813,20 @@ export interface FeedbackItem {
   page: string | null;
   user_agent: string | null;
   created_at: string;
+  attachments?: { url: string; key: string; name?: string }[];
 }
 
 export const feedback = {
-  submit: (data: { message: string; kind?: string; page?: string; user_agent?: string }) =>
-    request<{ status: string }>('/api/feedback', { method: 'POST', body: JSON.stringify(data) }),
+  // Multipart: text + optional screenshots (stored in R2 server-side).
+  submit: (data: { message: string; kind?: string; page?: string; user_agent?: string; screenshots?: File[] }) => {
+    const fd = new FormData();
+    fd.append('message', data.message);
+    if (data.kind) fd.append('kind', data.kind);
+    if (data.page) fd.append('page', data.page);
+    if (data.user_agent) fd.append('user_agent', data.user_agent);
+    for (const f of data.screenshots ?? []) fd.append('screenshots', f, f.name);
+    return request<{ status: string; screenshots: number }>('/api/feedback', { method: 'POST', body: fd });
+  },
   list: () => request<FeedbackItem[]>('/api/feedback'),                       // admin-only
   remove: (id: number) => request<{ status: string }>(`/api/feedback/${id}`, { method: 'DELETE' }),
 };

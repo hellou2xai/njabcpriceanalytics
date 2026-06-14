@@ -363,7 +363,7 @@ export default function Admin() {
       <div className="table-container">
         <table>
           <thead>
-            <tr><th>When</th><th>Type</th><th>Message</th><th>From</th><th>Page</th><th></th></tr>
+            <tr><th>When</th><th>Type</th><th>Message</th><th>Screenshots</th><th>From</th><th>Page</th><th></th></tr>
           </thead>
           <tbody>
             {fbList.map(f => (
@@ -371,6 +371,18 @@ export default function Admin() {
                 <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(f.created_at)}</td>
                 <td>{f.kind ?? '-'}</td>
                 <td style={{ maxWidth: 460, whiteSpace: 'pre-wrap' }}>{f.message}</td>
+                <td>
+                  {(f.attachments ?? []).length > 0 ? (
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      {(f.attachments ?? []).map((a, i) => (
+                        <a key={i} href={a.url} target="_blank" rel="noreferrer" title={a.name || 'screenshot'}>
+                          <img src={a.url} alt={a.name || 'screenshot'}
+                            style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--border)' }} />
+                        </a>
+                      ))}
+                    </div>
+                  ) : '-'}
+                </td>
                 <td style={{ whiteSpace: 'nowrap' }}>{f.user_email ?? (f.user_id ? `user ${f.user_id}` : 'anonymous')}</td>
                 <td style={{ whiteSpace: 'nowrap' }}>{f.page ?? '-'}</td>
                 <td>
@@ -381,7 +393,7 @@ export default function Admin() {
                 </td>
               </tr>
             ))}
-            {fb && fbList.length === 0 && <tr><td colSpan={6} className="empty">No feedback yet.</td></tr>}
+            {fb && fbList.length === 0 && <tr><td colSpan={7} className="empty">No feedback yet.</td></tr>}
           </tbody>
         </table>
       </div>

@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { MessageSquarePlus, X, Bug, Lightbulb } from 'lucide-react';
+import { MessageSquarePlus, X, Bug, Lightbulb, Paperclip, Mic, MicOff } from 'lucide-react';
 import { feedback } from '../lib/api';
+
+const MAX_SHOTS = 6;
 
 // Small, non-intrusive "BETA" sticker. pointer-events:none so it never blocks
 // anything underneath it. `inApp` shifts it to the top of the main content
@@ -33,6 +35,47 @@ export default function FeedbackWidget() {
   const [sending, setSending] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [shots, setShots] = useState<File[]>([]);
+  const [listening, setListening] = useState(false);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const recRef = useRef<{ stop: () => void } | null>(null);
+  const voiceBaseRef = useRef('');
+  const voiceSupported = typeof window !== 'undefined'
+    && !!((window as unknown as Record<string, unknown>).SpeechRecognition
+       || (window as unknown as Record<string, unknown>).webkitSpeechRecognition);
+
+  const addShots = useCallback((files: FileList | File[] | null) => {
+    if (!files) return;
+    const imgs = Array.from(files).filter(f => f.type.startsWith('image/'));
+    if (imgs.length) setShots(prev => [...prev, ...imgs].slice(0, MAX_SHOTS));
+  }, []);
+
+  // Voice comment -> text, transcribed in the browser (Web Speech API, the same
+  // engine the assistant uses). Dictation APPENDS to whatever is typed.
+  const toggleVoice = useCallback(() => {
+    if (listening) { recRef.current?.stop(); return; }
+    const W = window as unknown as Record<string, new () => {
+      lang: string; interimResults: boolean; continuous: boolean;
+      start: () => void; stop: () => void;
+      onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+      onerror: (() => void) | null; onend: (() => void) | null;
+    }>;
+    const SR = W.SpeechRecognition || W.webkitSpeechRecognition;
+    if (!SR) return;
+    const rec = new SR();
+    rec.lang = 'en-US'; rec.interimResults = true; rec.continuous = false;
+    setMessage(m => { voiceBaseRef.current = m.trim() ? m.trim() + ' ' : ''; return m; });
+    rec.onresult = (e) => {
+      let txt = '';
+      for (let i = 0; i < e.results.length; i++) txt += e.results[i][0].transcript;
+      setMessage(voiceBaseRef.current + txt);
+    };
+    rec.onerror = () => setListening(false);
+    rec.onend = () => setListening(false);
+    recRef.current = rec;
+    setListening(true);
+    rec.start();
+  }, [listening]);
 
   const [pos, setPos] = useState<Pos | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -79,7 +122,8 @@ export default function FeedbackWidget() {
 
   const submit = async () => {
     const msg = message.trim();
-    if (!msg || sending) return;
+    if ((!msg && shots.length === 0) || sending) return;
+    if (listening) { recRef.current?.stop(); }
     setSending(true);
     setError(null);
     try {
@@ -88,9 +132,11 @@ export default function FeedbackWidget() {
         kind,
         page: window.location.pathname + window.location.search,
         user_agent: navigator.userAgent,
+        screenshots: shots,
       });
       setDone(true);
       setMessage('');
+      setShots([]);
       setTimeout(() => { setOpen(false); setDone(false); }, 1800);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not send. Please try again.');
@@ -147,17 +193,52 @@ export default function FeedbackWidget() {
           <textarea
             className="feedback-text"
             placeholder={kind === 'bug'
-              ? 'What went wrong, and what were you doing when it happened?'
-              : 'What would make this better?'}
+              ? 'What went wrong? Type, paste a screenshot, or tap the mic to speak.'
+              : 'What would make this better? Type, paste a screenshot, or speak.'}
             value={message}
             onChange={e => setMessage(e.target.value)}
+            onPaste={e => {
+              const imgs = Array.from(e.clipboardData.files).filter(f => f.type.startsWith('image/'));
+              if (imgs.length) { e.preventDefault(); addShots(imgs); }
+            }}
             rows={4}
             autoFocus
           />
+          {/* Screenshot thumbnails (remove with the ×). */}
+          {shots.length > 0 && (
+            <div className="feedback-shots">
+              {shots.map((f, i) => (
+                <span className="feedback-shot" key={i} title={f.name}>
+                  <img src={URL.createObjectURL(f)} alt={f.name} />
+                  <button type="button" className="feedback-shot-x"
+                    onClick={() => setShots(s => s.filter((_, j) => j !== i))} aria-label="Remove">
+                    <X size={11} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <input ref={fileRef} type="file" accept="image/*" multiple hidden
+            onChange={e => { addShots(e.target.files); if (fileRef.current) fileRef.current.value = ''; }} />
           {error && <div className="feedback-error">{error}</div>}
+          <div className="feedback-tools">
+            <button type="button" className="feedback-tool"
+              disabled={shots.length >= MAX_SHOTS}
+              onClick={() => fileRef.current?.click()}
+              title={shots.length >= MAX_SHOTS ? `Up to ${MAX_SHOTS} screenshots` : 'Attach screenshot(s)'}>
+              <Paperclip size={14} /> Screenshot
+            </button>
+            {voiceSupported && (
+              <button type="button" className={`feedback-tool ${listening ? 'is-rec' : ''}`}
+                onClick={toggleVoice} title={listening ? 'Stop dictation' : 'Speak your comment'}>
+                {listening ? <MicOff size={14} /> : <Mic size={14} />}
+                {listening ? 'Listening…' : 'Speak'}
+              </button>
+            )}
+          </div>
           <div className="feedback-actions">
             <span className="feedback-hint">Sent with your account and current page.</span>
-            <button className="btn btn-sm" disabled={!message.trim() || sending} onClick={submit}>
+            <button className="btn btn-sm" disabled={(!message.trim() && shots.length === 0) || sending} onClick={submit}>
               {sending ? 'Sending...' : 'Send'}
             </button>
           </div>

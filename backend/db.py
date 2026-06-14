@@ -326,6 +326,10 @@ def init_user_db():
             user_agent text,
             created_at text DEFAULT {NOW_UTC}
         )""",
+        # Screenshots attached to a feedback submission: a JSON array of
+        # {url, key, name} for images stored in R2 (same bucket as product
+        # images). Added later, so ALTER an existing table.
+        "ALTER TABLE feedback ADD COLUMN IF NOT EXISTS attachments text",
         # Cookie/consent log: one row per decision (accept all, reject, or saved
         # preferences), tracked for both signed-in and anonymous visitors. anon_id
         # is a random id stored in the visitor's browser so repeat decisions can be

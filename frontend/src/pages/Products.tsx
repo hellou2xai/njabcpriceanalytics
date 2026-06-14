@@ -71,6 +71,15 @@ export default function Products() {
     setPriceDetails(v);
     localStorage.setItem('lpb_products_price_details', v ? '1' : '0');
   };
+  // "Group products" toggle: OFF by default shows one row per distributor +
+  // size (UPC variants collapsed to the best price); ON restores the
+  // cross-distributor family cards. Persisted.
+  const [grouped, setGroupedState] = useState(() =>
+    localStorage.getItem('lpb_products_grouped') === '1');
+  const setGrouped = (v: boolean) => {
+    setGroupedState(v);
+    localStorage.setItem('lpb_products_grouped', v ? '1' : '0');
+  };
   // Collapsible filter rail (persisted): collapsed = a slim strip, grid full width.
   const [railCollapsed, setRailCollapsed] = useState(() =>
     localStorage.getItem('prodFiltersCollapsed') === '1');
@@ -214,7 +223,7 @@ export default function Products() {
 
   const items = (data?.items ?? []) as Product[];
   const total = data?.total ?? 0;
-  const productCount = countProductGroups(items);
+  const productCount = countProductGroups(items, grouped);
 
   // Publish the matched-row count so the AI assistant can echo the same number.
   const { report } = useResultCount();
@@ -367,12 +376,21 @@ export default function Products() {
         <div className="products-main">
           <div className="products-toolbar">
             <span className="products-showing">
-              {isLoading ? 'Loading…' : (
+              {isLoading ? 'Loading…' : grouped ? (
                 <>Showing <strong>{productCount}</strong> product{productCount === 1 ? '' : 's'}
                   {' '}<span className="products-showing-sub">({total.toLocaleString()} sizes)</span></>
+              ) : (
+                <>Showing <strong>{productCount}</strong> listing{productCount === 1 ? '' : 's'}
+                  {' '}<span className="products-showing-sub">by size &amp; distributor</span></>
               )}
             </span>
             <div className="products-toolbar-right">
+              <label className="products-group-toggle"
+                title="OFF (default): one row per size per distributor, with multiple barcodes (vintages / closeouts) collapsed to the best price. ON: combine a product's sizes and distributors into one family card.">
+                <input type="checkbox" checked={grouped}
+                  onChange={e => { setGrouped(e.target.checked); setPage(0); }} />
+                Group products
+              </label>
               <div className="products-detail-toggle" role="group" aria-label="Deal detail level"
                 title="Price details shows every QD/RIP tier on the cards; Summary keeps cards compact (expand a card for full details).">
                 <button type="button" className={priceDetails ? 'on' : ''} onClick={() => setDetails(true)}>Price details</button>
@@ -399,7 +417,7 @@ export default function Products() {
           </div>
 
           {isLoading ? <p>Loading…</p> : (
-            <ProductsGrid items={items} cart={cart} updateQty={updateQty} showDeals={priceDetails} />
+            <ProductsGrid items={items} cart={cart} updateQty={updateQty} showDeals={priceDetails} grouped={grouped} />
           )}
 
           <div className="pagination">

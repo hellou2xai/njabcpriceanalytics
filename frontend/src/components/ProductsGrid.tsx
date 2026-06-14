@@ -65,6 +65,32 @@ interface ProductGroup {
   imageUrl?: string | null;
   celrNumber?: string | null; // CELR Product Number chip (family identity)
   sizes: Product[];          // one Product row per size, sorted small -> large
+  // Ungrouped ("Group products" OFF) mode: this group is ONE distributor +
+  // size + pack, with its UPC variants (vintages / closeout / dup barcodes)
+  // collapsed to a single best-price representative. memberCount = how many
+  // listings collapsed (>1 shows a badge).
+  flat?: boolean;
+  memberCount?: number;
+}
+
+// Normalise a pack count for keying ("12" / "12.0" / 12 -> "12").
+function normPack(uq: unknown): string {
+  return String(uq ?? '').replace(/\.0+$/, '').trim();
+}
+
+// Pick the representative listing when collapsing several UPCs at one
+// (distributor, size, pack): prefer a NON-bundle, then the cheapest effective
+// price (what the buyer actually pays), then the latest vintage. Mirrors the
+// "non-bundle -> latest vintage" SKU-identity rule, with price as the tiebreak
+// the user asked for ("best of N UPCs").
+function pickRep(members: Product[]): Product {
+  const eff = (p: Product) => p.effective_case_price ?? p.frontline_case_price ?? Infinity;
+  const isBundle = (p: Product) => !!(p.combo_code && p.combo_code !== '0' && p.combo_code !== '');
+  const vintageNum = (p: Product) => { const v = parseInt(String(p.vintage ?? ''), 10); return Number.isFinite(v) ? v : -1; };
+  return [...members].sort((a, b) =>
+    (isBundle(a) ? 1 : 0) - (isBundle(b) ? 1 : 0)
+    || eff(a) - eff(b)
+    || vintageNum(b) - vintageNum(a))[0];
 }
 
 // Group by the server-provided product family key so a product's
@@ -73,12 +99,17 @@ interface ProductGroup {
 // core, shared across distributors by UPC), so the same product carried by
 // several distributors merges into one card and each distributor's listing
 // shows as its own size row — instead of a separate card per distributor.
-function groupByProduct(items: Product[]): ProductGroup[] {
+function groupByProduct(items: Product[], grouped = true): ProductGroup[] {
   const map = new Map<string, ProductGroup>();
   const order: string[] = [];
   for (const it of items) {
     const fam = (it.product_group && it.product_group.trim()) ? it.product_group : it.product_name;
-    const key = fam;
+    // Grouped: distributor-agnostic family card. Ungrouped (default): one group
+    // per distributor + family + size + pack, so the cross-distributor merge is
+    // OFF and each distributor's listing of each size stands on its own.
+    const key = grouped
+      ? fam
+      : `${it.wholesaler}|${fam}|${it.unit_volume ?? ''}|${normPack(it.unit_qty)}`;
     let g = map.get(key);
     if (!g) {
       g = {
@@ -91,6 +122,7 @@ function groupByProduct(items: Product[]): ProductGroup[] {
         imageUrl: it.image_url,
         celrNumber: it.celr_product_number ?? null,
         sizes: [],
+        flat: !grouped,
       };
       map.set(key, g);
       order.push(key);
@@ -99,9 +131,21 @@ function groupByProduct(items: Product[]): ProductGroup[] {
     g.sizes.push(it);
   }
   for (const g of map.values()) {
-    // size ascending, then by distributor so a product's listings group cleanly
-    g.sizes.sort((a, b) =>
-      toMl(a.unit_volume) - toMl(b.unit_volume) || a.wholesaler.localeCompare(b.wholesaler));
+    if (g.flat) {
+      // Collapse the UPC variants to ONE best-price representative.
+      g.memberCount = g.sizes.length;
+      const rep = pickRep(g.sizes);
+      g.productName = rep.product_name;
+      g.displayName = rep.product_display || rep.product_name;
+      g.wholesaler = rep.wholesaler;
+      g.imageUrl = g.imageUrl ?? rep.image_url;
+      g.celrNumber = rep.celr_product_number ?? g.celrNumber;
+      g.sizes = [rep];
+    } else {
+      // size ascending, then by distributor so a product's listings group cleanly
+      g.sizes.sort((a, b) =>
+        toMl(a.unit_volume) - toMl(b.unit_volume) || a.wholesaler.localeCompare(b.wholesaler));
+    }
   }
   return order.map(k => map.get(k)!);
 }
@@ -319,8 +363,11 @@ function ProductCard({ group, cart, updateQty, showDeals = true }: {
   // pages. On expand, fetch the FULL size set via the shared "products by size"
   // tool (handles spirits' inconsistent names + wine's vintages) so every size
   // always shows regardless of where the page boundary fell.
+  // Ungrouped (flat) mode shows ONE distributor+size, so never pull the full
+  // size set on expand — that would re-introduce the sizes we deliberately
+  // split into their own rows.
   const { sizes: fullSizes, isFetching } = useProductSizes(
-    group.wholesaler, group.productName, first?.upc, expanded || warm);
+    group.wholesaler, group.productName, first?.upc, (expanded || warm) && !group.flat);
   // Distinct distributors carrying this product (one row per distributor's
   // listing). When >1, keep the search rows (they already span distributors) —
   // the single-distributor "all sizes" fetch would otherwise drop the others.
@@ -391,6 +438,12 @@ function ProductCard({ group, cart, updateQty, showDeals = true }: {
             title={multiDist ? distSlugs.map(distributorName).join(', ') : undefined}>
             <Store size={12} className="prod-card-dist-icon" />
             {multiDist ? `Sold by ${distSlugs.length} distributors` : distributorName(group.wholesaler)}
+            {group.flat && (group.memberCount ?? 1) > 1 && (
+              <span className="prod-card-collapsed"
+                title={`${group.memberCount} barcodes at this size/distributor (e.g. vintages or a closeout) — showing the best price`}>
+                · best of {group.memberCount}
+              </span>
+            )}
           </div>
           <div className="prod-card-stickers" onClick={e => e.stopPropagation()}>
             <DealTimingSticker deals={repRow?.deal_windows ?? []} gaps={repRow?.rip_gaps}
@@ -451,10 +504,14 @@ interface Props {
   cart: CartState;
   updateQty: (key: string, field: 'cases' | 'units', value: number) => void;
   showDeals?: boolean;
+  // "Group products" toggle. Default (false) shows one row per distributor +
+  // size (UPC variants collapsed to the best price). True restores the
+  // cross-distributor family cards.
+  grouped?: boolean;
 }
 
-export default function ProductsGrid({ items, cart, updateQty, showDeals = true }: Props) {
-  const groups = useMemo(() => groupByProduct(items), [items]);
+export default function ProductsGrid({ items, cart, updateQty, showDeals = true, grouped = false }: Props) {
+  const groups = useMemo(() => groupByProduct(items, grouped), [items, grouped]);
 
   if (groups.length === 0) {
     return <div className="prod-empty">No products match the current search and filters.</div>;
@@ -471,12 +528,12 @@ export default function ProductsGrid({ items, cart, updateQty, showDeals = true 
   );
 }
 
-// Exposed so the page header can show "Showing N products" matching the cards.
-export function countProductGroups(items: Product[]): number {
+// Exposed so the page header can show "Showing N …" matching the cards.
+export function countProductGroups(items: Product[], grouped = false): number {
   const seen = new Set<string>();
   for (const it of items) {
     const fam = (it.product_group && it.product_group.trim()) ? it.product_group : it.product_name;
-    seen.add(fam);
+    seen.add(grouped ? fam : `${it.wholesaler}|${fam}|${it.unit_volume ?? ''}|${normPack(it.unit_qty)}`);
   }
   return seen.size;
 }

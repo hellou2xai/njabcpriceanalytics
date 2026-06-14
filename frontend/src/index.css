@@ -6034,6 +6034,16 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 }
 .products-detail-toggle button.on { background: var(--accent); color: #fff; }
 
+/* "Group products" toggle (off by default) + the collapsed-listings badge. */
+.products-group-toggle {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  font-size: 12.5px; font-weight: 600; color: var(--text-muted);
+  border: 1px solid var(--border); border-radius: var(--radius-pill);
+  padding: 5px 12px; background: var(--surface); user-select: none;
+}
+.products-group-toggle input { cursor: pointer; margin: 0; }
+.prod-card-collapsed { margin-left: 6px; font-size: 11px; font-weight: 600; color: var(--accent); cursor: help; }
+
 /* ============================================================
    Cart / List table layout (user request: distributor-portal
    style aligned columns instead of free-form lines)

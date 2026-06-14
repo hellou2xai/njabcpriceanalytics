@@ -196,6 +196,7 @@ function SizeSection({ size, view, cart, updateQty, primaryName, alt }: {
           {primaryName && size.product_name && size.product_name !== primaryName && (
             <div className="pd-size-variant">{size.product_name}</div>
           )}
+          <div className="pd-size-dist"><Store size={11} /> {distributorName(size.wholesaler)}</div>
           <div className="pd-size-pack">{packPhrase(pack, size.unit_volume, size.unit_type)}</div>
           <div className="pd-size-ids">
             {sku && <span>SKU: {sku}</span>}
@@ -361,18 +362,12 @@ export default function ProductDetail() {
 
   // Every size of this product — via the shared "products by size" tool
   // (spirits: name-core variant grouping; wine: grouped by name + vintage).
-  const { sizes, isLoading, isError, refetch } = useProductSizes(wholesaler, name, upc);
-
-  // The size the user actually CLICKED (the ?u= UPC) leads the list; the rest
-  // keep their smallest-to-largest order. Matched on the house-normalized UPC.
-  const orderedSizes = useMemo(() => {
-    const norm = (u?: string | null) => String(u ?? '').replace(/^0+/, '');
-    const target = norm(upc);
-    if (!target) return sizes;
-    const clicked = sizes.filter(s => norm(s.upc) === target);
-    if (clicked.length === 0) return sizes;
-    return [...clicked, ...sizes.filter(s => norm(s.upc) !== target)];
-  }, [sizes, upc]);
+  // Keep the product's sizes together AND, when the same product is carried by
+  // several distributors, show those too (allDistributors). Listed strictly by
+  // physical size (LITER = 1 L = 1000 mL, so it follows 750 mL) and then by
+  // distributor — the hook already returns this order.
+  const { sizes, isLoading, isError, refetch } = useProductSizes(wholesaler, name, upc, true, true);
+  const orderedSizes = sizes;
 
   const enrichment = detail?.enrichment;
   const product = detail?.product;

@@ -5866,6 +5866,7 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pd-size-variant { font-size: 12px; font-weight: 600; color: var(--accent); margin-top: 1px; }
 .prod-size-variant { font-size: 12px; font-weight: 600; color: var(--accent); margin-top: 1px; }
 .pd-size-pack { font-size: 13px; color: var(--text-muted); margin-top: 1px; }
+.pd-size-dist { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); font-weight: 600; margin-top: 2px; }
 .pd-size-ids { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: var(--text-muted); margin-top: 3px; }
 .pd-size-upc { color: var(--text-muted); }
 

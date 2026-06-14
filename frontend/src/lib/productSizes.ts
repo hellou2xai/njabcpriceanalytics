@@ -79,6 +79,10 @@ export function useProductSizes(
   productName: string,
   upc?: string,
   enabled = true,
+  // When true, also pull the SAME product's listings at OTHER distributors
+  // (matched by the shared real UPCs) and merge them in. A pure enhancement —
+  // it never blocks the page; if it errors we just show this distributor.
+  allDistributors = false,
 ): UseProductSizesResult {
   const on = enabled && !!wholesaler && !!productName;
 
@@ -115,26 +119,51 @@ export function useProductSizes(
   });
   const { data, isFetching } = sizesQ;
 
-  const sizes = useMemo(() => {
+  // This distributor's rows for the product. UPC path: every returned row is a
+  // size of this product. Name path: keep only the exact product + wholesaler
+  // (collects a wine's vintages).
+  const ownKept = useMemo(() => {
     const rows = (data?.items ?? []) as Product[];
-    // UPC path: every returned row is a size of this product. Name path: keep
-    // only the exact product + wholesaler (collects a wine's vintages).
-    const kept = variantUpcs.length
+    return variantUpcs.length
       ? rows.filter(r => r.wholesaler === wholesaler)
       : rows.filter(r => r.product_name === productName && r.wholesaler === wholesaler);
-    // Collapse only EXACT duplicates (same name + size + vintage + upc). We do
-    // NOT merge same-barcode variants like "MAKERS MARK 250TH" or a Festive
-    // pack — those are distinct orderable SKUs (own cart line) the buyer must be
-    // able to pick. They're disambiguated by their name on the row.
+  }, [data, variantUpcs, wholesaler, productName]);
+
+  // 3) Cross-distributor (opt-in): the SAME product at other distributors shares
+  //    these real UPCs (taken from this product's OWN kept rows, so it can't
+  //    pull in unrelated SKUs). Searched across ALL distributors and merged.
+  //    Gated + fault-tolerant so it can never hang or block the primary sizes.
+  const crossUpcs = useMemo(() => {
+    const fromOwn = ownKept.map(r => r.upc).filter(u => isRealUpc(u)) as string[];
+    return [...new Set([...variantUpcs, ...fromOwn])];
+  }, [variantUpcs, ownKept]);
+  const crossQ = useQuery({
+    enabled: on && allDistributors && crossUpcs.length > 0,
+    staleTime: 60_000,
+    retry: 1,
+    queryKey: ['product-sizes-cross', crossUpcs.join(',')],
+    queryFn: () => catalog.search({ upcs: crossUpcs.join(','), include_tiers: true, limit: 200, sort: 'product_name', order: 'asc' }),
+  });
+
+  const sizes = useMemo(() => {
+    // Other distributors' listings of the same UPCs (when allDistributors).
+    const crossRows = allDistributors ? ((crossQ.data?.items ?? []) as Product[]) : [];
+    // Collapse only EXACT duplicates (same DISTRIBUTOR + name + size + vintage +
+    // upc) — wholesaler is part of the key so two distributors' listings of the
+    // same SKU both survive. We do NOT merge same-barcode variants like "MAKERS
+    // MARK 250TH" or a Festive pack — distinct orderable SKUs the buyer picks.
     const seen = new Set<string>();
-    const deduped = kept.filter(r => {
-      const k = `${r.product_name ?? ''}|${r.unit_volume ?? ''}|${String(r.vintage ?? '')}|${String(r.upc ?? '').replace(/^0+/, '')}`;
+    const deduped = [...ownKept, ...crossRows].filter(r => {
+      const k = `${r.wholesaler}|${r.product_name ?? ''}|${r.unit_volume ?? ''}|${String(r.vintage ?? '')}|${String(r.upc ?? '').replace(/^0+/, '')}`;
       if (seen.has(k)) return false;
       seen.add(k);
       return true;
     });
-    return deduped.sort((a, b) => sizeToMl(a.unit_volume) - sizeToMl(b.unit_volume));
-  }, [data, productName, wholesaler, variantUpcs]);
+    // Smallest -> largest by physical size (LITER = 1000 mL, so it lands AFTER
+    // 750 mL), then by distributor so same-size listings group together.
+    return deduped.sort((a, b) =>
+      sizeToMl(a.unit_volume) - sizeToMl(b.unit_volume) || a.wholesaler.localeCompare(b.wholesaler));
+  }, [ownKept, crossQ.data, allDistributors]);
 
   return {
     sizes,

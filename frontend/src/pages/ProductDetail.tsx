@@ -34,6 +34,7 @@ function TierWin({ t }: { t: CatalogTier }) {
   );
 }
 import { useProductSizes, bottlesPerCase, sizeToMl, stripHeaderVintage } from '../lib/productSizes';
+import DistCompareChip from '../components/DistCompareChip';
 import { useComboLink } from '../lib/comboLink';
 import { distributorName, abgSku, skuLabel, containerTitle, containerNoun, packLabel, packPhrase, priceUnit, perUnitNoun } from '../lib/distributors';
 import type { Product, CatalogTier } from '../lib/api';
@@ -551,6 +552,10 @@ export default function ProductDetail() {
                   </span>
                 )}
               </div>
+              {/* Cheaper-elsewhere chip: shows only when a distributor beats the
+                  rest on landed price after ALL QD + RIP (current month). Hover
+                  opens the side-by-side per-distributor ladder. */}
+              <DistCompareChip sizes={sizes} />
               <dl className="pd-attrs">
                 {/* Size ALWAYS shows — sourced from the catalog rows (sizes), not
                     from Go-UPC enrichment, so it appears even when the detail

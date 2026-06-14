@@ -5617,6 +5617,30 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pd-deal-halfcase { background: color-mix(in srgb, #c2410c 15%, transparent); color: #c2410c; text-transform: none; letter-spacing: .02em; cursor: help; }
 /* New Items "introduced" sticker — green pill with the introduced month. */
 .prod-new-sticker { display: inline-flex; align-items: center; gap: 3px; padding: 1px 8px; border-radius: 999px; font-size: 10px; font-weight: 800; letter-spacing: .02em; white-space: nowrap; background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); border: 1px solid color-mix(in srgb, var(--green) 30%, transparent); cursor: default; }
+
+/* Distributor-comparison chip + side-by-side ladder tooltip (DistCompareChip). */
+.dcc { display: inline-flex; position: relative; margin: 4px 0 2px; }
+.dcc-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; cursor: help; background: color-mix(in srgb, var(--green) 12%, transparent); color: var(--text); border: 1px solid color-mix(in srgb, var(--green) 30%, transparent); }
+.dcc-chip strong { color: var(--green); }
+.dcc-vs { color: var(--text-muted); font-weight: 500; }
+.dcc-pop { z-index: 4000; max-width: min(94vw, 720px); background: var(--surface, #fff); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 18px 50px rgba(0,0,0,0.22); padding: 12px 14px; }
+.dcc-pop-title { font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+.dcc-cols { display: flex; gap: 10px; align-items: stretch; overflow-x: auto; }
+.dcc-col { flex: 1 1 0; min-width: 150px; border: 1px solid var(--border); border-radius: 9px; padding: 8px 9px; background: var(--surface-hover, #f8fafc); font-size: 12px; }
+.dcc-col.is-best { border-color: color-mix(in srgb, var(--green) 45%, var(--border)); background: color-mix(in srgb, var(--green) 8%, transparent); }
+.dcc-col-head { font-weight: 700; display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.dcc-best-tag { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--green); background: color-mix(in srgb, var(--green) 16%, transparent); border-radius: 999px; padding: 1px 6px; }
+.dcc-line { display: flex; justify-content: space-between; gap: 10px; color: var(--text-muted); padding: 1px 0; }
+.dcc-line b { color: var(--text); }
+.dcc-best-line { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border); color: var(--text); font-weight: 600; }
+.dcc-best-line b { color: var(--green); }
+.dcc-block { margin-top: 6px; }
+.dcc-block-h { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); margin-bottom: 2px; }
+.dcc-tier { color: var(--text); padding: 1px 0; }
+.dcc-off { color: var(--green); }
+.dcc-off-rip { color: var(--accent-strong, var(--accent)); }
+.dcc-ts { margin-left: 4px; cursor: help; }
+.dcc-pop-foot { margin-top: 8px; font-size: 10px; color: var(--text-muted); }
 /* Combo sticker — purple pill that links to the combo page (Back returns). */
 .prod-combo-sticker, .pd-deal-combo { display: inline-flex; align-items: center; gap: 3px; padding: 1px 8px; border-radius: 999px; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; text-decoration: none; background: color-mix(in srgb, var(--purple, #7c3aed) 16%, transparent); color: var(--purple, #7c3aed); border: 1px solid color-mix(in srgb, var(--purple, #7c3aed) 30%, transparent); cursor: pointer; }
 .prod-combo-sticker:hover, .pd-deal-combo:hover { background: color-mix(in srgb, var(--purple, #7c3aed) 26%, transparent); }

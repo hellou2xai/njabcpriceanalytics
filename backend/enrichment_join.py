@@ -26,35 +26,47 @@ def _joinable_upc(v) -> bool:
     return bool(s) and is_registry_upc(s)
 
 
+def _clean_str(v):
+    """Go-UPC value -> trimmed string or None (NaN/empty/'none' -> None)."""
+    if v is None or (isinstance(v, float) and math.isnan(v)):
+        return None
+    s = str(v).strip()
+    return s if s and s.lower() not in ("none", "nan") else None
+
+
 def attach_enrichment_image(con, records, upc_key="upc"):
-    """Set rec["image_url"] on each record (None when there is no image).
+    """Set rec["image_url"] AND rec["enrichment_name"] on each record (None when
+    absent).
 
     `con` is a DuckDB connection that has the product_enrichment table (its upc
     column is already the normalised key, LTRIM(upc,'0')). `upc_key` is the field
-    on each record that holds the product's UPC. No-op on an empty list; degrades
-    to no images if the table is absent (e.g. parquet dev mode).
+    on each record that holds the product's UPC. The Go-UPC `name` is the clean,
+    canonical product name keyed by THIS row's UPC — used as the per-SKU display
+    name in the ungrouped Products view so a SKU is never labelled with a wrong
+    CELR-family title. No-op on an empty list; degrades to no enrichment if the
+    table is absent (e.g. parquet dev mode).
     """
     if not records:
         return
     norms = sorted({str(r.get(upc_key)).lstrip("0") for r in records
                     if _joinable_upc(r.get(upc_key))})
-    img_map = {}
+    img_map, name_map = {}, {}
     if norms:
         ph = ", ".join(f"$e{i}" for i in range(len(norms)))
         prm = {f"e{i}": u for i, u in enumerate(norms)}
         try:
             df = con.execute(
-                f"SELECT upc, image_url FROM product_enrichment WHERE upc IN ({ph})", prm
+                f"SELECT upc, image_url, name FROM product_enrichment WHERE upc IN ({ph})", prm
             ).fetchdf()
             for _, er in df.iterrows():
-                iu = er.get("image_url")
-                if isinstance(iu, float) and math.isnan(iu):
-                    iu = None
-                img_map[str(er["upc"])] = iu or None
+                img_map[str(er["upc"])] = _clean_str(er.get("image_url"))
+                name_map[str(er["upc"])] = _clean_str(er.get("name"))
         except Exception:
-            img_map = {}
+            img_map, name_map = {}, {}
     for rec in records:
-        rec["image_url"] = img_map.get(str(rec.get(upc_key) or "").lstrip("0"))
+        un = str(rec.get(upc_key) or "").lstrip("0")
+        rec["image_url"] = img_map.get(un)
+        rec["enrichment_name"] = name_map.get(un)
 
 
 def _toks(s):

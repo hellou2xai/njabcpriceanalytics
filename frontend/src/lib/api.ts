@@ -1593,6 +1593,9 @@ export interface Product {
   // share product_group; product_display is the clean family title.
   product_group?: string | null;
   product_display?: string | null;
+  // Go-UPC enrichment product name (clean, canonical, keyed by THIS row's UPC).
+  // Used as the per-SKU display name in the ungrouped Products view.
+  enrichment_name?: string | null;
   // CELR Product Number ("CELR-000123"): the persistent FAMILY identity
   // spanning sizes/vintages/distributors (docs/CELR_PRODUCT_NUMBER_DESIGN.md).
   celr_product_number?: string | null;

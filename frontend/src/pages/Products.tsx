@@ -289,10 +289,8 @@ export default function Products() {
                 onKeyDown={e => { if (e.key === 'Enter') setCommitted(e.currentTarget.value); }}
               />
               <button type="button" className="products-hero-ai"
-                title="Ask the AI to find products by region, varietal, price or deal"
-                onClick={() => window.dispatchEvent(new CustomEvent('celr-open-assistant',
-                  { detail: q.trim() ? { question: q.trim() } : undefined }))}>
-                <Sparkles size={16} /> Ask AI
+                title="Search" onClick={() => setCommitted(q)}>
+                <Search size={16} /> Search
               </button>
             </div>
             {suggestions.length > 0 && (
@@ -335,10 +333,8 @@ export default function Products() {
             value={q} onChange={e => { setQ(e.target.value); setPage(0); }}
             onKeyDown={e => { if (e.key === 'Enter') setCommitted(e.currentTarget.value); }} />
           <button type="button" className="products-hero-ai"
-            title="Ask the AI to find products by region, varietal, price or deal"
-            onClick={() => window.dispatchEvent(new CustomEvent('celr-open-assistant',
-              { detail: q.trim() ? { question: q.trim() } : undefined }))}>
-            <Sparkles size={16} /> Ask AI
+            title="Search" onClick={() => setCommitted(q)}>
+            <Search size={16} /> Search
           </button>
         </div>
         {browseChips}

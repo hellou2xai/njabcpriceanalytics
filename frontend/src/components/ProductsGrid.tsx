@@ -93,6 +93,46 @@ function pickRep(members: Product[]): Product {
     || vintageNum(b) - vintageNum(a))[0];
 }
 
+// Title-case an ALL-CAPS distributor name ("ABSOLUT CITRON" -> "Absolut
+// Citron"); leave already-mixed-case Go-UPC names untouched.
+function titleCaseIfShouty(s: string): string {
+  return s && s === s.toUpperCase()
+    ? s.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()) : s;
+}
+
+// Clean a product name for DISPLAY: drop the size/pack and the "- Bottle"
+// style suffix (size + distributor are shown separately), so a Go-UPC name
+// like "Absolut Citron Vodka 1L" reads "Absolut Citron Vodka".
+function cleanDisplayName(s: string | null | undefined): string {
+  if (!s) return '';
+  const out = s
+    .replace(/\s*[-–|]\s*(bottle|can|keg|case)s?\s*$/i, '')
+    .replace(/\b\d+(\.\d+)?\s*(ml|l|liter|litre|oz|cl|gal)\b/gi, ' ')
+    .replace(/\b\d+\s*(pk|pack|pks|bt|btl|btls)\b/gi, ' ')
+    .replace(/\s{2,}/g, ' ').trim();
+  return titleCaseIfShouty(out) || titleCaseIfShouty(s);
+}
+
+// Family title for GROUPED mode, derived from the members' OWN names — the
+// Go-UPC enrichment name (per-UPC source of truth) when present, else the
+// distributor product name — instead of the CELR family header, which can be
+// wrong (an Absolut Citron family stamped "Absolut Mandarin"). Picks the most
+// common cleaned name across the members, preferring one a Go-UPC name backs.
+function deriveFamilyName(members: Product[]): string | null {
+  const counts = new Map<string, { n: number; label: string; hasEnr: boolean }>();
+  for (const m of members) {
+    const label = cleanDisplayName(m.enrichment_name || m.product_name);
+    if (!label) continue;
+    const k = label.toUpperCase();
+    const c = counts.get(k) ?? { n: 0, label, hasEnr: false };
+    c.n++; c.hasEnr = c.hasEnr || !!m.enrichment_name;
+    counts.set(k, c);
+  }
+  if (!counts.size) return null;
+  return [...counts.values()].sort((a, b) =>
+    (b.hasEnr ? 1 : 0) - (a.hasEnr ? 1 : 0) || b.n - a.n)[0].label;
+}
+
 // Group by the server-provided product family key so a product's
 // differently-named sizes (GLENFID MALT 12Y 12P / 12YR / 6P …) collapse into
 // ONE card. The key is DISTRIBUTOR-AGNOSTIC (product_group = brand|enrichment
@@ -136,12 +176,21 @@ function groupByProduct(items: Product[], grouped = true): ProductGroup[] {
       g.memberCount = g.sizes.length;
       const rep = pickRep(g.sizes);
       g.productName = rep.product_name;
-      g.displayName = rep.product_display || rep.product_name;
+      // Flat mode shows ONE SKU, so use ITS OWN name — the Go-UPC enrichment
+      // name (clean, by UPC) when present, else the distributor's product_name.
+      // NEVER product_display: that's the CELR FAMILY title, which mis-labels a
+      // SKU when the family is wrong (e.g. an Absolut Citron tagged the family's
+      // "Absolut Mandarin").
+      g.displayName = cleanDisplayName(rep.enrichment_name || rep.product_name);
       g.wholesaler = rep.wholesaler;
       g.imageUrl = g.imageUrl ?? rep.image_url;
       g.celrNumber = rep.celr_product_number ?? g.celrNumber;
       g.sizes = [rep];
     } else {
+      // Family card title: prefer the Go-UPC-derived name over the (sometimes
+      // wrong) CELR family header. Falls back to the existing title when no
+      // member carries a Go-UPC enrichment name.
+      g.displayName = deriveFamilyName(g.sizes) ?? g.displayName;
       // size ascending, then by distributor so a product's listings group cleanly
       g.sizes.sort((a, b) =>
         toMl(a.unit_volume) - toMl(b.unit_volume) || a.wholesaler.localeCompare(b.wholesaler));

@@ -10,7 +10,7 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { distributorName } from '../lib/distributors';
-import { sizeToMl } from '../lib/productSizes';
+import { sizeToMl, bottlesPerCase } from '../lib/productSizes';
 import type { Product, CatalogTier } from '../lib/api';
 
 const money = (n: number) => `$${n.toFixed(2)}`;
@@ -26,6 +26,7 @@ interface DistOffer {
   frontline: number | null;
   oneCsQD: number | null;       // case price after the 1-case QD
   best: number;                 // best landed $/case after ALL QD + RIP (live now)
+  pack: number | null;          // bottles per case (for the $/btl savings)
   qd: CatalogTier[];
   rip: CatalogTier[];
 }
@@ -37,6 +38,7 @@ function buildOffer(w: string, rows: Product[]): DistOffer {
   let oneCsQD: number | null = null;
   let qd: CatalogTier[] = [];
   let rip: CatalogTier[] = [];
+  const pack = rows.length ? bottlesPerCase(rows[0].product_name, rows[0].unit_qty) : null;
   for (const r of rows) {
     const f = r.frontline_case_price ?? null;
     if (f != null && (frontline == null || f < frontline)) frontline = f;
@@ -54,7 +56,7 @@ function buildOffer(w: string, rows: Product[]): DistOffer {
       oneCsQD = one.length ? Math.min(...one.map(t => t.price_after as number)) : f;
     }
   }
-  return { wholesaler: w, frontline, oneCsQD, best: best === Infinity ? (frontline ?? 0) : best, qd, rip };
+  return { wholesaler: w, frontline, oneCsQD, best: best === Infinity ? (frontline ?? 0) : best, pack, qd, rip };
 }
 
 // Group the product's size rows by physical size; return the offers for the size
@@ -127,7 +129,7 @@ function OfferColumn({ o, best }: { o: DistOffer; best: boolean }) {
   );
 }
 
-export default function DistCompareChip({ sizes }: { sizes: Product[] }) {
+export default function DistCompareChip({ sizes, selfWholesaler }: { sizes: Product[]; selfWholesaler?: string }) {
   const ref = useRef<HTMLSpanElement | null>(null);
   const popRef = useRef<HTMLDivElement | null>(null);
   const [hover, setHover] = useState(false);
@@ -158,16 +160,28 @@ export default function DistCompareChip({ sizes }: { sizes: Product[] }) {
   const { sizeLabel, offers } = cmp;
   const cheapest = offers[0];
 
+  // When a self distributor is given (a single distributor's card), frame the
+  // chip as a BEST-PRICE nudge: name the cheapest distributor and the savings
+  // ($/cs and $/btl) vs THIS card. Otherwise (product page) show the absolute.
+  const self = selfWholesaler ? offers.find(o => o.wholesaler === selfWholesaler) : null;
+  const selfIsBest = self ? Math.abs(self.best - cheapest.best) < 0.01 : false;
+  const saveCs = self && !selfIsBest ? self.best - cheapest.best : 0;
+  const pack = cheapest.pack ?? self?.pack ?? null;
+  const saveBtl = pack && saveCs > 0 ? saveCs / pack : null;
+
   return (
     <span
-      className="dcc"
+      className={`dcc${selfWholesaler ? ' dcc-self' : ''}${selfIsBest ? ' dcc-isbest' : ''}`}
       ref={ref}
       onMouseEnter={() => { if (ref.current) setRect(ref.current.getBoundingClientRect()); setHover(true); }}
       onMouseLeave={() => setHover(false)}
     >
       <span className="dcc-chip">
-        <strong>{distributorName(cheapest.wholesaler)}</strong> cheapest {money(cheapest.best)}/cs
-        <span className="dcc-vs"> · vs {offers.length} distributors</span>
+        {selfWholesaler
+          ? (selfIsBest
+              ? <>✓ Best price · <strong>{distributorName(cheapest.wholesaler)}</strong></>
+              : <>Best price: <strong>{distributorName(cheapest.wholesaler)}</strong> · save {money(saveCs)}/cs{saveBtl != null ? ` (${money(saveBtl)}/btl)` : ''}</>)
+          : <><strong>{distributorName(cheapest.wholesaler)}</strong> cheapest {money(cheapest.best)}/cs<span className="dcc-vs"> · vs {offers.length} distributors</span></>}
       </span>
       {hover && pos && (
         <div

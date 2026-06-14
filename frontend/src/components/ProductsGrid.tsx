@@ -24,6 +24,7 @@ import { QtyStepper, type CartState } from './CatalogTable';
 import PriceSparklines from './PriceSparklines';
 import DealLadder from './DealLadder';
 import DealTimingSticker, { everyDayFromTiers } from './DealTimingSticker';
+import DistCompareChip from './DistCompareChip';
 import TierBadge from './TierBadge';
 import { buildMonths } from '../lib/promotionsSparkline';
 import { catalog } from '../lib/api';
@@ -436,6 +437,19 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
   const repRow = (repTierData?.items?.[0] as Product | undefined) ?? rep;
   const repMonths = repRow ? buildMonths(repRow) : [];
 
+  // Cross-distributor best-price nudge: the SAME UPC at OTHER distributors. One
+  // lazy search (when the card scrolls into view) by the rep's barcode across
+  // ALL distributors, fed to DistCompareChip with selfWholesaler so the chip
+  // reads "Best price: <distributor> · save $/cs" and its hover shows the full
+  // QD + RIP ladder per distributor. Real barcodes only (placeholders shared).
+  const { data: crossDistData } = useQuery({
+    enabled: inView && isRealUpc(rep?.upc),
+    staleTime: 5 * 60_000,
+    queryKey: ['card-cross-dist', String(rep?.upc)],
+    queryFn: () => catalog.search({ upcs: String(rep!.upc), include_tiers: true, limit: 50 }),
+  });
+  const crossDistRows = (crossDistData?.items ?? []) as Product[];
+
   // The list is paginated by SKU, so a product's sizes can be split across
   // pages. On expand, fetch the FULL size set via the shared "products by size"
   // tool (handles spirits' inconsistent names + wine's vintages) so every size
@@ -534,6 +548,9 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
                 ? s.introduced_edition : mx), null)} />
             <DealTimingSticker deals={repRow?.deal_windows ?? []} gaps={repRow?.rip_gaps}
               everyDay={everyDayFromTiers(repRow?.tiers, repRow?.frontline_case_price)} />
+            {/* Best-price-across-distributors nudge for THIS card's SKU; hover
+                shows the full per-distributor QD + RIP ladder. */}
+            <DistCompareChip sizes={crossDistRows} selfWholesaler={group.wholesaler} />
           </div>
           {/* Sparkline sits next to the name so its hover tooltip opens over the
               left/content area, not off the right edge. */}

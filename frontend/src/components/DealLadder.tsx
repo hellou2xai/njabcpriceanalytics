@@ -165,29 +165,53 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
     return g.tiers.every(t => winKey(t) === winKey(t0)) ? t0 : null;
   };
 
-  // All of a RIP program's tiers on ONE line, comma-separated ("5 cs/$195.08,
-  // 10 cs/$190.08, 20 cs/$185.08"), in the RIP colour so it reads apart from the
-  // black QD line. The per-tier rebate/bottle detail still lives in the price
-  // sparkline tooltip and the product detail page.
+  // One extra "price by quantity" glance line ADDED above the detailed RIP
+  // rows: the 1-case landed price (after QD), then each RIP tier's real buy-in /
+  // price, ascending — "1 cs/$205.08, 5 cs/$195.08, 10 cs/$190.08, ...", in the
+  // RIP colour. The per-tier detail (rebate, bottle price, windows) stays below.
+  // 1-case landed = the price after the 1-case QD (the same number the QD line
+  // shows), else the precomputed disc1, else list — so the ladder starts at 1cs.
+  const oneCsDisc = disc.filter(t => caseQty(t) <= 1 && t.eff != null);
+  const oneCs = (oneCsDisc.length ? Math.min(...oneCsDisc.map(t => t.eff))
+    : (cur?.disc1 ?? frontline)) ?? null;
+  const sortQty = (t: RipTier) => (t.qualifiedCases ?? caseQty(t));
+  const summaryMap = new Map<string, { q: number; price: number }>();
+  if (oneCs != null) summaryMap.set('1 cs', { q: 1, price: oneCs });
+  for (const t of rip) {
+    if (t.eff == null) continue;
+    const label = buyLabel(t);
+    const prev = summaryMap.get(label);
+    if (!prev || t.eff < prev.price) summaryMap.set(label, { q: sortQty(t), price: t.eff });
+  }
+  const summary = [...summaryMap.entries()]
+    .map(([label, v]) => ({ label, ...v }))
+    .sort((a, b) => a.q - b.q);
+
   return (
     <>
       {disc.map((t, i) => line('qd', t, i))}
+      {rip.length > 0 && summary.length > 0 && (
+        <div className="prod-deal-line prod-deal-rip-summary"
+          title="Landed price per case at each quantity break: 1 case (after QD), then each RIP tier.">
+          <TierBadge kind="rip" />{' '}
+          <span className="prod-rip-tiers">
+            {summary.map((s, i) => (
+              <span key={i}>{i > 0 && ', '}{s.label}/<strong>${s.price.toFixed(2)}</strong></span>
+            ))}
+          </span>
+        </div>
+      )}
       {ripGroups.map((g, gi) => {
         const hoist = hoistedFlag(g);
         return (
-          <div key={`rg${gi}`}
-            className={`prod-deal-line prod-deal-rip-summary${multiProgram ? ' prod-rip-group' : ''}`}>
-            <TierBadge kind="rip" />
-            {multiProgram && g.code && <span className="prod-rip-code">{g.code}</span>}
-            {hoist && <PartialFlag t={hoist} />}{' '}
-            <span className="prod-rip-tiers">
-              {g.tiers.map((t, i) => (
-                <span key={i}>
-                  {i > 0 && ', '}
-                  {buyLabel(t)}/<strong>${t.eff.toFixed(2)}</strong>
-                </span>
-              ))}
-            </span>
+          <div key={`rg${gi}`} className={multiProgram ? 'prod-rip-group' : undefined}>
+            {(multiProgram || hoist) && (
+              <div className="prod-rip-group-hdr" title="A separate RIP program for this product — pick the one that matches how much you buy. These do not stack.">
+                RIP{g.code ? ` ${g.code}` : ''}
+                {hoist && <PartialFlag t={hoist} />}
+              </div>
+            )}
+            {g.tiers.map((t, i) => line('rip', t, i, !!hoist))}
           </div>
         );
       })}

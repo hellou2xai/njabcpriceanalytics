@@ -165,18 +165,21 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
     return g.tiers.every(t => winKey(t) === winKey(t0)) ? t0 : null;
   };
 
-  // One glance line ADDED above the detailed RIP rows: each RIP tier's real
-  // buy-in and the exact RIP rebate AMOUNT per case (the RIP-sheet figure, NOT
-  // the after-RIP price) — "5 cs/$10.00, 10 cs/$15.00, 20 cs/$20.00", ascending,
-  // in the RIP colour. The per-tier price/bottle/window detail stays below.
+  // "RIP Tier" glance line ADDED above the detailed RIP rows: each tier's real
+  // buy-in and the TOTAL RIP rebate at that tier = cases x RIP-per-case (what
+  // the buyer actually gets back), NOT the per-case figure and NOT the price —
+  // "5 cs/$50.00, 10 cs/$150.00, 20 cs/$400.00", ascending, in the RIP colour.
+  // The per-tier price/bottle/window detail stays below.
   const sortQty = (t: RipTier) => (t.qualifiedCases ?? caseQty(t));
-  const summaryMap = new Map<string, { q: number; amt: number }>();
+  const summaryMap = new Map<string, { q: number; total: number }>();
   for (const t of rip) {
-    const amt = t.ripOnlySave ?? null;
-    if (amt == null || amt <= 0) continue;
+    const per = t.ripOnlySave ?? null;
+    if (per == null || per <= 0) continue;
+    const q = sortQty(t);
+    const total = Math.round(q * per * 100) / 100;   // cases x RIP per case
     const label = buyLabel(t);
     const prev = summaryMap.get(label);
-    if (!prev || amt > prev.amt) summaryMap.set(label, { q: sortQty(t), amt });
+    if (!prev || total > prev.total) summaryMap.set(label, { q, total });
   }
   const summary = [...summaryMap.entries()]
     .map(([label, v]) => ({ label, ...v }))
@@ -187,11 +190,11 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
       {disc.map((t, i) => line('qd', t, i))}
       {summary.length > 0 && (
         <div className="prod-deal-line prod-deal-rip-summary"
-          title="RIP rebate per case at each tier (the RIP-sheet amount), not the after-RIP price.">
-          <TierBadge kind="rip" />{' '}
+          title="RIP Tier — the total RIP rebate at each tier (cases x RIP per case), i.e. the dollars you get back, not the per-case figure or the price.">
+          <span className="prod-rip-tier-label">RIP Tier</span>{' '}
           <span className="prod-rip-tiers">
             {summary.map((s, i) => (
-              <span key={i}>{i > 0 && ', '}{s.label}/<strong>${s.amt.toFixed(2)}</strong></span>
+              <span key={i}>{i > 0 && ', '}{s.label}/<strong>${s.total.toFixed(2)}</strong></span>
             ))}
           </span>
         </div>

@@ -5690,6 +5690,7 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 /* Consolidated RIP tier line: all tiers on one comma-separated row, in the RIP
    green so it reads apart from the black QD line. */
 .prod-deal-rip-summary { color: var(--green); }
+.prod-rip-tier-label { flex-shrink: 0; font-size: 9.5px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; color: #fff; background: var(--green); border-radius: 4px; padding: 1px 6px; }
 .prod-deal-rip-summary .prod-rip-code { font-size: 9.5px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; color: var(--text-muted); }
 .prod-deal-rip-summary .prod-rip-tiers { color: var(--green); font-weight: 600; }
 .prod-deal-rip-summary .prod-rip-tiers strong { color: var(--green); }

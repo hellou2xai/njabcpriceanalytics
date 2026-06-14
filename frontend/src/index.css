@@ -4083,6 +4083,15 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
   box-shadow: 0 12px 36px rgba(15, 23, 42, 0.18);
   padding: 14px;
 }
+.feedback-panel.is-dragover { outline: 2px dashed var(--green); outline-offset: -6px; }
+/* Drop overlay shown while an image is dragged over the open feedback form. */
+.feedback-dropzone {
+  position: absolute; inset: 4px; z-index: 5; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  font-weight: 700; color: var(--green); pointer-events: none;
+  background: color-mix(in srgb, var(--green) 12%, var(--surface, #fff));
+  border: 2px dashed color-mix(in srgb, var(--green) 55%, transparent);
+}
 .feedback-panel-head {
   display: flex;
   align-items: center;

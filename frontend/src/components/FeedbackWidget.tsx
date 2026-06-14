@@ -62,6 +62,7 @@ export default function FeedbackWidget() {
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [shots, setShots] = useState<File[]>([]);
+  const [dragOver, setDragOver] = useState(false);
   const [listening, setListening] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const recRef = useRef<{ stop: () => void } | null>(null);
@@ -228,10 +229,27 @@ export default function FeedbackWidget() {
   }
 
   return (
-    <div className="feedback-panel" role="dialog" aria-label="Submit feedback"
+    <div className={`feedback-panel${dragOver ? ' is-dragover' : ''}`} role="dialog" aria-label="Submit feedback"
          style={panelPos
            ? { left: panelPos.x, top: panelPos.y, right: 'auto', bottom: 'auto' }
-           : { left: -9999, top: -9999 }}>
+           : { left: -9999, top: -9999 }}
+         onDragOver={e => {
+           if (!Array.from(e.dataTransfer.types || []).includes('Files')) return;
+           e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
+           if (!dragOver) setDragOver(true);
+         }}
+         onDragLeave={e => {
+           if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false);
+         }}
+         onDrop={e => {
+           e.preventDefault(); setDragOver(false);
+           addShots(extractImages(e.dataTransfer));
+         }}>
+      {dragOver && (
+        <div className="feedback-dropzone">
+          <Paperclip size={20} /> Drop image{shots.length >= MAX_SHOTS ? ' (limit reached)' : 's'} to attach
+        </div>
+      )}
       <div className="feedback-panel-head feedback-panel-drag"
            onPointerDown={onPanelDown} onPointerMove={onPanelMove} onPointerUp={onPanelUp}
            style={{ cursor: dragging ? 'grabbing' : 'move', touchAction: 'none' }}
@@ -287,7 +305,7 @@ export default function FeedbackWidget() {
             <button type="button" className="feedback-tool"
               disabled={shots.length >= MAX_SHOTS}
               onClick={() => fileRef.current?.click()}
-              title={shots.length >= MAX_SHOTS ? `Up to ${MAX_SHOTS} screenshots` : 'Attach a file, or just paste a screenshot (Ctrl/Cmd+V) anywhere in this form'}>
+              title={shots.length >= MAX_SHOTS ? `Up to ${MAX_SHOTS} screenshots` : 'Attach a file, paste (Ctrl/Cmd+V), or drag & drop a screenshot anywhere in this form'}>
               <Paperclip size={14} /> Screenshot
             </button>
             {voiceSupported && (

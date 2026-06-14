@@ -31,6 +31,26 @@ function clampPanel(x: number, y: number): Pos {
 // Default: bottom-LEFT (per request), replacing the old bottom-right anchor.
 function defaultPos(): Pos { return clampPos(MARGIN, window.innerHeight - FAB_H - MARGIN); }
 
+// Pull image files out of a paste/drop DataTransfer. A clipboard screenshot
+// (Win+Shift+S, macOS Cmd+Shift+4) usually arrives in `items` (getAsFile), not
+// `files`, so we read BOTH and dedupe — relying on `files` alone misses pastes.
+function extractImages(dt: DataTransfer | null): File[] {
+  if (!dt) return [];
+  const out: File[] = [];
+  const seen = new Set<string>();
+  const push = (f: File | null) => {
+    if (f && f.type.startsWith('image/')) {
+      const key = `${f.name}|${f.size}|${f.type}`;
+      if (!seen.has(key)) { seen.add(key); out.push(f); }
+    }
+  };
+  for (const f of Array.from(dt.files || [])) push(f);
+  for (const it of Array.from(dt.items || [])) {
+    if (it.kind === 'file') push(it.getAsFile());
+  }
+  return out;
+}
+
 // Floating "Feedback" button on every page. Draggable (drop anywhere, position
 // is remembered); a plain click opens the form. The user types a note; their
 // account, the current page, and the browser are attached automatically.
@@ -55,6 +75,19 @@ export default function FeedbackWidget() {
     const imgs = Array.from(files).filter(f => f.type.startsWith('image/'));
     if (imgs.length) setShots(prev => [...prev, ...imgs].slice(0, MAX_SHOTS));
   }, []);
+
+  // Paste an image ANYWHERE while the form is open (not just in the textarea) —
+  // so a screenshot copied to the clipboard attaches even if focus moved. Only
+  // image pastes are intercepted; pasting text into the comment box is untouched.
+  useEffect(() => {
+    if (!open) return;
+    const onPaste = (e: ClipboardEvent) => {
+      const imgs = extractImages(e.clipboardData);
+      if (imgs.length) { e.preventDefault(); addShots(imgs); }
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, [open, addShots]);
 
   // Voice comment -> text, transcribed in the browser (Web Speech API, the same
   // engine the assistant uses). Dictation APPENDS to whatever is typed.
@@ -230,10 +263,6 @@ export default function FeedbackWidget() {
               : 'What would make this better? Type, paste a screenshot, or speak.'}
             value={message}
             onChange={e => setMessage(e.target.value)}
-            onPaste={e => {
-              const imgs = Array.from(e.clipboardData.files).filter(f => f.type.startsWith('image/'));
-              if (imgs.length) { e.preventDefault(); addShots(imgs); }
-            }}
             rows={6}
             autoFocus
           />
@@ -258,7 +287,7 @@ export default function FeedbackWidget() {
             <button type="button" className="feedback-tool"
               disabled={shots.length >= MAX_SHOTS}
               onClick={() => fileRef.current?.click()}
-              title={shots.length >= MAX_SHOTS ? `Up to ${MAX_SHOTS} screenshots` : 'Attach screenshot(s)'}>
+              title={shots.length >= MAX_SHOTS ? `Up to ${MAX_SHOTS} screenshots` : 'Attach a file, or just paste a screenshot (Ctrl/Cmd+V) anywhere in this form'}>
               <Paperclip size={14} /> Screenshot
             </button>
             {voiceSupported && (

@@ -165,23 +165,18 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
     return g.tiers.every(t => winKey(t) === winKey(t0)) ? t0 : null;
   };
 
-  // One extra "price by quantity" glance line ADDED above the detailed RIP
-  // rows: the 1-case landed price (after QD), then each RIP tier's real buy-in /
-  // price, ascending — "1 cs/$205.08, 5 cs/$195.08, 10 cs/$190.08, ...", in the
-  // RIP colour. The per-tier detail (rebate, bottle price, windows) stays below.
-  // 1-case landed = the price after the 1-case QD (the same number the QD line
-  // shows), else the precomputed disc1, else list — so the ladder starts at 1cs.
-  const oneCsDisc = disc.filter(t => caseQty(t) <= 1 && t.eff != null);
-  const oneCs = (oneCsDisc.length ? Math.min(...oneCsDisc.map(t => t.eff))
-    : (cur?.disc1 ?? frontline)) ?? null;
+  // One glance line ADDED above the detailed RIP rows: each RIP tier's real
+  // buy-in and the exact RIP rebate AMOUNT per case (the RIP-sheet figure, NOT
+  // the after-RIP price) — "5 cs/$10.00, 10 cs/$15.00, 20 cs/$20.00", ascending,
+  // in the RIP colour. The per-tier price/bottle/window detail stays below.
   const sortQty = (t: RipTier) => (t.qualifiedCases ?? caseQty(t));
-  const summaryMap = new Map<string, { q: number; price: number }>();
-  if (oneCs != null) summaryMap.set('1 cs', { q: 1, price: oneCs });
+  const summaryMap = new Map<string, { q: number; amt: number }>();
   for (const t of rip) {
-    if (t.eff == null) continue;
+    const amt = t.ripOnlySave ?? null;
+    if (amt == null || amt <= 0) continue;
     const label = buyLabel(t);
     const prev = summaryMap.get(label);
-    if (!prev || t.eff < prev.price) summaryMap.set(label, { q: sortQty(t), price: t.eff });
+    if (!prev || amt > prev.amt) summaryMap.set(label, { q: sortQty(t), amt });
   }
   const summary = [...summaryMap.entries()]
     .map(([label, v]) => ({ label, ...v }))
@@ -190,13 +185,13 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
   return (
     <>
       {disc.map((t, i) => line('qd', t, i))}
-      {rip.length > 0 && summary.length > 0 && (
+      {summary.length > 0 && (
         <div className="prod-deal-line prod-deal-rip-summary"
-          title="Landed price per case at each quantity break: 1 case (after QD), then each RIP tier.">
+          title="RIP rebate per case at each tier (the RIP-sheet amount), not the after-RIP price.">
           <TierBadge kind="rip" />{' '}
           <span className="prod-rip-tiers">
             {summary.map((s, i) => (
-              <span key={i}>{i > 0 && ', '}{s.label}/<strong>${s.price.toFixed(2)}</strong></span>
+              <span key={i}>{i > 0 && ', '}{s.label}/<strong>${s.amt.toFixed(2)}</strong></span>
             ))}
           </span>
         </div>

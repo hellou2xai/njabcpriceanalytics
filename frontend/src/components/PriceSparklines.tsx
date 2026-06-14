@@ -84,11 +84,23 @@ function Spark({ values, label }: { values: (number | null | undefined)[]; label
   );
 }
 
-// RIP only counts as a series point when it actually BEATS the 1-case price
-// that month — otherwise the line "returns to list" and reads like a rebate
-// that doesn't exist.
-function ripOrNull(eff: number | null | undefined, base: number | null | undefined): number | null {
-  return eff != null && base != null && eff < base - 0.005 ? eff : null;
+// RIP row = the EFFECTIVE price (what you actually pay) across the window.
+// Show the FULL trajectory — including a rise back to list when a rebate
+// LAPSES (e.g. a brand RIP that ran last month but not this one, so the price
+// you pay goes UP) — whenever the product had a rebate in ANY of these months.
+// Hide the row entirely only when it never had one, so a no-RIP product
+// doesn't grow a redundant line. (The old behaviour nulled every month with no
+// rebate, which made a lapsing RIP's price HIKE vanish — the line just stopped
+// and the label read "—" instead of showing the climb back to list.)
+function ripTrajectory(
+  effs: (number | null | undefined)[],
+  bases: (number | null | undefined)[],
+): (number | null)[] {
+  const hadRebate = effs.some((e, i) => {
+    const b = bases[i];
+    return e != null && b != null && e < b - 0.005;
+  });
+  return hadRebate ? effs.map(e => (e != null ? e : null)) : effs.map(() => null);
 }
 
 // A month line "List / 1-case / Best RIP" with case + bottle (shared by both
@@ -235,21 +247,21 @@ export default function PriceSparklines({ wholesaler, productName, upc, unitVolu
   if (hasOwn) {
     const blocks = months!.filter(m => m.bestEff != null || m.disc1 != null || m.frontline != null);
     discSeries = blocks.map(m => m.disc1 ?? m.frontline);
-    ripSeries = blocks.map(m => ripOrNull(m.bestEff, m.disc1 ?? m.frontline));
+    ripSeries = ripTrajectory(blocks.map(m => m.bestEff), blocks.map(m => m.disc1 ?? m.frontline));
     richBlocks = [...blocks].reverse().slice(0, 3);
   } else if (hoverMonths && hoverMonths.length) {
     // Rich data arrived (hover): the tooltip upgrades to full ladders; the
     // chart keeps using the light history series it already drew.
     const h = hist?.history ?? [];
-    discSeries = h.map(p => (p.best_case_price && p.best_case_price > 0 ? p.best_case_price : p.frontline_case_price));
-    ripSeries = h.map(p => ripOrNull(p.effective_case_price,
-      p.best_case_price && p.best_case_price > 0 ? p.best_case_price : p.frontline_case_price));
+    const base = (p: PricePoint) => (p.best_case_price && p.best_case_price > 0 ? p.best_case_price : p.frontline_case_price);
+    discSeries = h.map(base);
+    ripSeries = ripTrajectory(h.map(p => p.effective_case_price), h.map(base));
     richBlocks = [...hoverMonths].reverse().slice(0, 3);
   } else {
     const h = hist?.history ?? [];
-    discSeries = h.map(p => (p.best_case_price && p.best_case_price > 0 ? p.best_case_price : p.frontline_case_price));
-    ripSeries = h.map(p => ripOrNull(p.effective_case_price,
-      p.best_case_price && p.best_case_price > 0 ? p.best_case_price : p.frontline_case_price));
+    const base = (p: PricePoint) => (p.best_case_price && p.best_case_price > 0 ? p.best_case_price : p.frontline_case_price);
+    discSeries = h.map(base);
+    ripSeries = ripTrajectory(h.map(p => p.effective_case_price), h.map(base));
     lightBlocks = [...h].reverse().slice(0, 3);
   }
   const hasData = discSeries.some(v => v != null) || ripSeries.some(v => v != null);

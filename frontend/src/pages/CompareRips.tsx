@@ -12,6 +12,7 @@ import { distributorName, perUnitNoun, priceUnitWord } from '../lib/distributors
 import ProductSearchBox from '../components/ProductSearchBox';
 import RowActions from '../components/RowActions';
 import RipMembersModal from '../components/RipMembersModal';
+import PriceSparklines from '../components/PriceSparklines';
 import { ErrorState } from '../components/DataState';
 import DataLoading from '../components/DataLoading';
 import './CompareRips.css';
@@ -112,6 +113,11 @@ function DistPanel({ w, d, row, cases, accent, isWinner, onRipClick }: {
   const caseWord = priceUnitWord(d.unit_volume, d.unit_type);
   const btl = (v?: number | null) => (v != null && pack ? `${money(v / pack)}/${unitNoun}` : null);
   const expiring = d.expires_in_days != null;
+  // Half-case RIP: this distributor files the rebate on a fraction-of-a-case
+  // pack (375ML / a 6-pack), so each physical case counts <1 toward the tier.
+  const halfCaseTier = (d.rip_tiers ?? []).find(
+    t => t.case_credit != null && t.case_credit < 1);
+  const halfCaseCredit = halfCaseTier?.case_credit ?? null;
 
   // total cash you actually outlay at this volume, here vs the competition
   const myTotal = d.landed_at_n != null ? d.landed_at_n * cases : null;
@@ -138,6 +144,12 @@ function DistPanel({ w, d, row, cases, accent, isWinner, onRipClick }: {
     <div className={`rip2-dist${isWinner ? ' is-winner' : ''}`} style={{ borderTopColor: accent }}>
       <div className="rip2-dist-head">
         <span className="rip2-dist-name">{distributorName(w)}</span>
+        {halfCaseCredit != null && (
+          <span className="rip2-halfcase-sticker"
+            title={`Half-case RIP: this distributor files the rebate on a fraction-of-a-case pack, so each physical case counts ${halfCaseCredit} toward the tier (a "${halfCaseTier?.raw_qty}-case" tier takes ${halfCaseTier?.cases_to_unlock} physical cases).`}>
+            ½ Case RIP
+          </span>
+        )}
         {isWinner && (
           <span className="rip2-best-tag" title={vsText}>
             <Trophy size={11} /> lowest price at {cases} cs <HelpCircle size={10} className="rip2-tip-ico" />
@@ -165,6 +177,14 @@ function DistPanel({ w, d, row, cases, accent, isWinner, onRipClick }: {
           {d.product_name} <ExternalLink size={11} />
         </Link>
       )}
+
+      {/* The exact pricing sparkline used on the Products page, so the buyer can
+          validate this distributor's RIP/price trajectory against the headline. */}
+      <div className="rip2-dist-spark">
+        <PriceSparklines wholesaler={w} productName={d.product_name ?? row.product_name}
+          upc={d.upc} unitVolume={d.unit_volume ?? row.unit_volume}
+          unitQty={d.unit_qty ?? row.unit_qty} vintage={d.vintage ?? row.vintage} />
+      </div>
 
       {/* the headline: what a case actually costs you at the volume you chose */}
       <div className="rip2-dist-price" title={priceHint}>
@@ -631,6 +651,10 @@ export default function CompareRips() {
                   const isOpen = expanded === r.match_key;
                   const win = r.winner_at_n;
                   const winName = win && win !== 'tie' ? distributorName(win) : null;
+                  // Half-case RIP applies at any distributor on this product.
+                  const anyHalfCase = selected.some(w =>
+                    (r.dists[w]?.rip_tiers ?? []).some(
+                      t => t.case_credit != null && t.case_credit < 1));
                   // "less to spend" = winner vs the NEXT-best distributor (the
                   // realistic alternative you'd otherwise pick), so per-case gap x
                   // cases reconciles exactly. For two distributors this is just the
@@ -660,6 +684,11 @@ export default function CompareRips() {
                               {wineVintage(r.product_type, r.vintage) && (
                                 <span className="rip2-vintage" title="Vintage. Wine is matched by vintage as well, so both distributors are the same year.">
                                   {wineVintage(r.product_type, r.vintage)}
+                                </span>
+                              )}
+                              {anyHalfCase && (
+                                <span className="rip2-halfcase-chip" title="Half-case RIP: the rebate is filed on a fraction-of-a-case pack (375ML or a 6-pack), so each physical case counts less than one toward the qualifying tier. Per-distributor detail is on each card.">
+                                  ½ Case RIP
                                 </span>
                               )}
                               {!r.proof_match && (

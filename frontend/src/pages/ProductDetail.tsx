@@ -406,6 +406,10 @@ export default function ProductDetail() {
   }, [sizes, ripCode]);
   const anyDisc = sizes.some(s => s.has_discount);   // quantity discount
   const anyRip = sizes.some(s => s.has_rip);          // RIP
+  // Half-case RIP: any size whose RIP tier counts a physical case as <1 toward
+  // the qualifying quantity (rebate filed on a 375ML / 6-pack fraction-pack).
+  const anyHalfCase = sizes.some(s => (s.tiers ?? []).some(
+    t => t.source === 'rip' && t.case_credit != null && t.case_credit < 1));
   // Header deal-timing sticker: the product's dated deal windows + no-deal gaps
   // across all sizes (deduped).
   const headerDeals = useMemo(() => {
@@ -521,6 +525,12 @@ export default function ProductDetail() {
         <div className="pd-left">
           {anyDisc && <span className="pd-deal-badge pd-deal-qd">QD</span>}
           {anyRip && <span className="pd-deal-badge pd-deal-rip">RIP</span>}
+          {anyHalfCase && (
+            <span className="pd-deal-badge pd-deal-halfcase"
+              title="Half-case RIP: the rebate is filed on a fraction-of-a-case pack (375ML or a 6-pack), so each physical case counts less than one toward the qualifying tier.">
+              ½ Case RIP
+            </span>
+          )}
           {anyComboUrl && (
             <Link to={anyComboUrl} className="pd-deal-badge pd-deal-combo"
               title="Part of a combo bundle — view the combo">🎁 Combo</Link>

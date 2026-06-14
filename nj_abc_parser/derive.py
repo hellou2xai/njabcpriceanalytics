@@ -317,6 +317,16 @@ def build_rip_credits(parquet_dir: str | Path, output_dir: Path):
     con.close()
 
     df = compute_rip_credits(rip, cpl)
+    # Persist the full-case guard anomalies (fractional credit a clause tried to
+    # apply to a >=9L full-case pack, left at 1.0) as a review artifact.
+    anomalies = df.attrs.get("anomalies", [])
+    adf = pd.DataFrame(anomalies, columns=[
+        "wholesaler", "edition", "rip_code", "upc", "pack_ml",
+        "attempted_credit", "rule_excerpt", "reason"]).astype({
+            "wholesaler": "string", "edition": "string", "rip_code": "string",
+            "upc": "string", "pack_ml": "float64", "attempted_credit": "float64",
+            "rule_excerpt": "string", "reason": "string"})
+    _write(adf, output_dir, "rip_credit_anomalies")
     # stable dtypes so an empty month still writes a joinable schema
     df = df.astype({
         "wholesaler": "string", "edition": "string", "rip_code": "string",

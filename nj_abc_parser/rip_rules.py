@@ -106,6 +106,35 @@ def norm_upc(u) -> str:
     return str(u).lstrip("0") if u is not None else ""
 
 
+# One NJ ABC standard case = 9 litres (12 x 750ML). A half/quarter-case credit
+# means the pack is a FRACTION of a case, so it can only sit below a full case.
+# A pack that already measures a full case or more cannot be "half a case" — a
+# fractional credit on it is self-contradictory (real bug: Allied filed the
+# Glenlivet Founders 750ML 12-pack = 9L under a "CARRIBEAN RES 750ML = 1/2 case"
+# clause meant for the Caribbean 6-pack = 4.5L). 8.9L threshold so a 9.0L case
+# trips it without float noise; legit half-packs (4.5L) stay well clear.
+FULL_CASE_ML = 8900.0
+
+_SIZE_ML_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(ML|L|OZ)\b", re.I)
+
+
+def size_to_ml(size_c) -> float | None:
+    """One bottle's volume in mL from a canon_size string ('750ML','1.75L','50ML').
+    None when unparseable (kegs/odd formats are left alone, never guarded)."""
+    if size_c is None or (isinstance(size_c, float) and size_c != size_c):
+        return None
+    m = _SIZE_ML_RE.search(str(size_c).upper())
+    if not m:
+        return None
+    v = float(m.group(1))
+    u = m.group(2).upper()
+    if u == "L":
+        return v * 1000.0
+    if u == "OZ":
+        return v * 29.5735
+    return v  # ML
+
+
 def split_clauses(text: str):
     """Yield (scope_text, rule_kind) for every qty-affecting rule.
 
@@ -216,6 +245,7 @@ def compute_rip_credits(rip_df: pd.DataFrame, cpl_df: pd.DataFrame) -> pd.DataFr
         rule_kind, method, rule_excerpt
     """
     out = []
+    anomalies = []  # full-case packs a fractional clause tried to tag (recorded)
     cpl = cpl_df.copy()
     cpl["upc_n"] = cpl["upc"].map(norm_upc)
     cpl = cpl[cpl["upc_n"] != ""]
@@ -223,6 +253,19 @@ def compute_rip_credits(rip_df: pd.DataFrame, cpl_df: pd.DataFrame) -> pd.DataFr
     cpl["uq"] = cpl["unit_qty"].astype(str).str.replace(
         r"\.0+$", "", regex=True)
     cpl_idx = dict(tuple(cpl.groupby(["wholesaler", "edition"])))
+
+    # Pack volume in mL per (wholesaler, edition, upc): one bottle's mL * pack.
+    # Used by the full-case guard so a fractional credit can't land on a pack
+    # that already measures a whole case.
+    pack_ml: dict = {}
+    for _, c in cpl.iterrows():
+        ml = size_to_ml(c["size_c"])
+        try:
+            q = float(c["uq"])
+        except (TypeError, ValueError):
+            q = None
+        if ml is not None and q:
+            pack_ml[(c["wholesaler"], c["edition"], c["upc_n"])] = ml * q
 
     has_item = "dist_item_no" in rip_df.columns
 
@@ -344,6 +387,22 @@ def compute_rip_credits(rip_df: pd.DataFrame, cpl_df: pd.DataFrame) -> pd.DataFr
                     row_credit, sp, sc = 1.0, split_pack, credit
                 else:
                     row_credit, sp, sc = credit, None, None
+                # Full-case guard: a fractional credit (<1.0) cannot apply to a
+                # pack that already measures a whole case (>= 9L). The clause was
+                # scoped to a fraction-sized pack (a 6-pack / 375ML); a full case
+                # swept in by a size-only fall-back is recorded as an anomaly and
+                # left at credit 1.0 (never silently mis-priced).
+                if row_credit is not None and row_credit < 1.0:
+                    vml = pack_ml.get((w, ed, u))
+                    if vml is not None and vml >= FULL_CASE_ML:
+                        anomalies.append({
+                            "wholesaler": w, "edition": ed, "rip_code": code,
+                            "upc": u, "pack_ml": round(vml, 1),
+                            "attempted_credit": row_credit,
+                            "rule_excerpt": (scope[:80] or kind),
+                            "reason": "fractional credit on a full-case (>=9L) pack",
+                        })
+                        continue
                 out.append({
                     "wholesaler": w, "edition": ed, "rip_code": code,
                     "upc": u, "case_credit": row_credit,
@@ -352,11 +411,31 @@ def compute_rip_credits(rip_df: pd.DataFrame, cpl_df: pd.DataFrame) -> pd.DataFr
                     "rule_excerpt": (scope[:80] or kind),
                 })
 
+    def _finish(result: pd.DataFrame) -> pd.DataFrame:
+        # Record the guarded packs so a human can reconcile them against the
+        # source sheet instead of the system silently mis-pricing or hiding them.
+        # NB: store a plain LIST in .attrs (never a DataFrame — pandas compares
+        # attrs during astype/concat and a DataFrame there raises "ambiguous").
+        seen, uniq = set(), []
+        for a in anomalies:
+            k = (a["wholesaler"], a["edition"], a["rip_code"], a["upc"])
+            if k not in seen:
+                seen.add(k)
+                uniq.append(a)
+        result.attrs["anomalies"] = uniq
+        if uniq:
+            print(f"  [rip_rules] {len(uniq)} full-case guard anomalies "
+                  f"(fractional credit left at 1.0):")
+            for a in uniq:
+                print(f"    - {a['wholesaler']}/{a['rip_code']} upc {a['upc']} "
+                      f"({a['pack_ml']:.0f}mL) via \"{a['rule_excerpt']}\"")
+        return result
+
     if not out:
-        return pd.DataFrame(columns=[
+        return _finish(pd.DataFrame(columns=[
             "wholesaler", "edition", "rip_code", "upc", "case_credit",
             "split_pack", "split_credit", "rule_kind", "method",
-            "rule_excerpt"])
+            "rule_excerpt"]))
     df = pd.DataFrame(out)
     # one row per (w, ed, code, upc): worst (lowest) credit wins; keep any
     # split allowance row's fields if present
@@ -364,4 +443,4 @@ def compute_rip_credits(rip_df: pd.DataFrame, cpl_df: pd.DataFrame) -> pd.DataFr
         subset=["wholesaler", "edition", "rip_code", "upc"], keep="first")
     # rows that neither change credit nor allow a split carry no signal
     df = df[(df["case_credit"] != 1.0) | df["split_pack"].notna()]
-    return df.reset_index(drop=True)
+    return _finish(df.reset_index(drop=True))

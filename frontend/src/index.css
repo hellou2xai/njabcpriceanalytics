@@ -5613,6 +5613,8 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .prod-size-badges { display: inline-flex; gap: 5px; }
 .prod-deal-qd, .pd-deal-qd { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent-strong); }
 .prod-deal-rip, .pd-deal-rip { background: color-mix(in srgb, var(--green) 18%, transparent); color: var(--green); }
+/* Half-case RIP badge — orange, so a fraction-of-a-case rebate is obvious. */
+.pd-deal-halfcase { background: color-mix(in srgb, #c2410c 15%, transparent); color: #c2410c; text-transform: none; letter-spacing: .02em; cursor: help; }
 /* Combo sticker — purple pill that links to the combo page (Back returns). */
 .prod-combo-sticker, .pd-deal-combo { display: inline-flex; align-items: center; gap: 3px; padding: 1px 8px; border-radius: 999px; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; text-decoration: none; background: color-mix(in srgb, var(--purple, #7c3aed) 16%, transparent); color: var(--purple, #7c3aed); border: 1px solid color-mix(in srgb, var(--purple, #7c3aed) 30%, transparent); cursor: pointer; }
 .prod-combo-sticker:hover, .pd-deal-combo:hover { background: color-mix(in srgb, var(--purple, #7c3aed) 26%, transparent); }

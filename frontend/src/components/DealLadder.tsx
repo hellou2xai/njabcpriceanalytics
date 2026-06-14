@@ -117,7 +117,7 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
             Suppressed when the whole RIP group shares one window — the
             sticker then renders ONCE on the group header instead. */}
         {!noFlag && <PartialFlag t={t} />}{' '}
-        Buy {buyLabel(t)} → <strong>${t.eff.toFixed(2)}/{csWord}</strong>
+        {buyLabel(t)} → <strong>${t.eff.toFixed(2)}/{csWord}</strong>
         {b != null && !keg && <span className="prod-deal-btl"> · ${b.toFixed(2)}/{unitNoun}</span>}
         {kind === 'rip' && ripSave != null && ripSave > 0.005 && (
           <span className="prod-deal-off"
@@ -165,20 +165,29 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
     return g.tiers.every(t => winKey(t) === winKey(t0)) ? t0 : null;
   };
 
+  // All of a RIP program's tiers on ONE line, comma-separated ("5 cs/$195.08,
+  // 10 cs/$190.08, 20 cs/$185.08"), in the RIP colour so it reads apart from the
+  // black QD line. The per-tier rebate/bottle detail still lives in the price
+  // sparkline tooltip and the product detail page.
   return (
     <>
       {disc.map((t, i) => line('qd', t, i))}
       {ripGroups.map((g, gi) => {
         const hoist = hoistedFlag(g);
         return (
-          <div key={`rg${gi}`} className={multiProgram ? 'prod-rip-group' : undefined}>
-            {(multiProgram || hoist) && (
-              <div className="prod-rip-group-hdr" title="A separate RIP program for this product — pick the one that matches how much you buy. These do not stack.">
-                RIP{g.code ? ` ${g.code}` : ''}
-                {hoist && <PartialFlag t={hoist} />}
-              </div>
-            )}
-            {g.tiers.map((t, i) => line('rip', t, i, !!hoist))}
+          <div key={`rg${gi}`}
+            className={`prod-deal-line prod-deal-rip-summary${multiProgram ? ' prod-rip-group' : ''}`}>
+            <TierBadge kind="rip" />
+            {multiProgram && g.code && <span className="prod-rip-code">{g.code}</span>}
+            {hoist && <PartialFlag t={hoist} />}{' '}
+            <span className="prod-rip-tiers">
+              {g.tiers.map((t, i) => (
+                <span key={i}>
+                  {i > 0 && ', '}
+                  {buyLabel(t)}/<strong>${t.eff.toFixed(2)}</strong>
+                </span>
+              ))}
+            </span>
           </div>
         );
       })}

@@ -5687,6 +5687,12 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 /* the hoisted dated-window sticker rides the header; keep its own casing */
 .prod-rip-group-hdr .win-badge { text-transform: none; letter-spacing: normal; }
 .prod-deal-off { color: var(--green); }
+/* Consolidated RIP tier line: all tiers on one comma-separated row, in the RIP
+   green so it reads apart from the black QD line. */
+.prod-deal-rip-summary { color: var(--green); }
+.prod-deal-rip-summary .prod-rip-code { font-size: 9.5px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; color: var(--text-muted); }
+.prod-deal-rip-summary .prod-rip-tiers { color: var(--green); font-weight: 600; }
+.prod-deal-rip-summary .prod-rip-tiers strong { color: var(--green); }
 .prod-deal-after { color: var(--text-muted); }
 /* bottle price beside the case price: same size AND weight, muted colour only */
 .prod-deal-btl { color: var(--text-muted); font-weight: 700; }

@@ -80,6 +80,7 @@ function oneCaseQdPrice(p: Product, pack: number | null): number | null {
 
 // ---- a related-product mini card (case-mix RIP siblings / more from brand) ----
 function MiniCard({ p, actions = false }: { p: Product; actions?: boolean }) {
+  const [cases, setCases] = useState(1);   // quick-add case qty (hover actions)
   const sku = abgSku(p.wholesaler, p.abg_sku) ? `${skuLabel(p.wholesaler)} ${p.abg_sku}` : null;
   const pack = bottlesPerCase(p.product_name, p.unit_qty);
   const eff = oneCaseQdPrice(p, pack);
@@ -117,10 +118,13 @@ function MiniCard({ p, actions = false }: { p: Product; actions?: boolean }) {
           navigation while the buttons (which stopPropagation) still fire. */}
       {actions && (
         <div className="pd-mini-actions" onClickCapture={e => e.preventDefault()}>
-          <AddToCartButton productName={p.product_name} wholesaler={p.wholesaler}
-            upc={p.upc ?? undefined} unitVolume={p.unit_volume ?? undefined} qtyCases={1} />
-          <AddToListButton productName={p.product_name} wholesaler={p.wholesaler}
-            upc={p.upc ?? undefined} unitVolume={p.unit_volume ?? undefined} />
+          <QtyStepper label="Cases" value={cases} onChange={setCases} />
+          <div className="pd-mini-btns">
+            <AddToCartButton productName={p.product_name} wholesaler={p.wholesaler}
+              upc={p.upc ?? undefined} unitVolume={p.unit_volume ?? undefined} qtyCases={cases} />
+            <AddToListButton productName={p.product_name} wholesaler={p.wholesaler}
+              upc={p.upc ?? undefined} unitVolume={p.unit_volume ?? undefined} />
+          </div>
         </div>
       )}
     </Link>

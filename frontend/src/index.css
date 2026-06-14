@@ -5775,6 +5775,11 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pd-related-row .pd-mini { flex: 0 0 160px; }
 .pd-mini { display: block; text-decoration: none; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; background: var(--surface); transition: border-color .15s, box-shadow .15s; }
 .pd-mini:hover { border-color: var(--accent); box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+/* Quick-add buttons on a case-mix card: hidden until hover, below the sparkline
+   so they never overlap it or its tooltip. Compact + equal width. */
+.pd-mini-actions { display: none; gap: 6px; margin-top: 8px; }
+.pd-mini:hover .pd-mini-actions, .pd-mini:focus-within .pd-mini-actions { display: flex; }
+.pd-mini-actions button { flex: 1; min-width: 0; padding: 4px 6px; font-size: 11px; white-space: nowrap; }
 .pd-mini .product-thumb, .pd-mini img { margin: 0 auto 8px; display: block; }
 .pd-mini-name { font-size: 13px; font-weight: 700; color: var(--text); line-height: 1.3; }
 .pd-mini-dist { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--text-muted); margin-top: 4px; font-weight: 600; }

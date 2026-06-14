@@ -79,7 +79,7 @@ function oneCaseQdPrice(p: Product, pack: number | null): number | null {
 }
 
 // ---- a related-product mini card (case-mix RIP siblings / more from brand) ----
-function MiniCard({ p }: { p: Product }) {
+function MiniCard({ p, actions = false }: { p: Product; actions?: boolean }) {
   const sku = abgSku(p.wholesaler, p.abg_sku) ? `${skuLabel(p.wholesaler)} ${p.abg_sku}` : null;
   const pack = bottlesPerCase(p.product_name, p.unit_qty);
   const eff = oneCaseQdPrice(p, pack);
@@ -112,6 +112,17 @@ function MiniCard({ p }: { p: Product }) {
       </div>
       <PriceSparklines wholesaler={p.wholesaler} productName={p.product_name}
         upc={p.upc} unitVolume={p.unit_volume} unitQty={p.unit_qty} vintage={p.vintage} />
+      {/* Quick add — revealed on hover so it never crowds the card or the
+          sparkline. onClickCapture preventDefault cancels the card's <Link>
+          navigation while the buttons (which stopPropagation) still fire. */}
+      {actions && (
+        <div className="pd-mini-actions" onClickCapture={e => e.preventDefault()}>
+          <AddToCartButton productName={p.product_name} wholesaler={p.wholesaler}
+            upc={p.upc ?? undefined} unitVolume={p.unit_volume ?? undefined} qtyCases={1} />
+          <AddToListButton productName={p.product_name} wholesaler={p.wholesaler}
+            upc={p.upc ?? undefined} unitVolume={p.unit_volume ?? undefined} />
+        </div>
+      )}
     </Link>
   );
 }
@@ -139,7 +150,7 @@ function RipMembersSection({ wholesaler, code, upc, name }: {
       <h2>Other products in this Case Mix RIP <span className="pd-rip-tag">RIP {code}</span></h2>
       <p className="pd-section-sub">Buy these together to qualify for the RIP.</p>
       <div className="pd-related-grid">
-        {items.map((p, i) => <MiniCard key={`${p.upc}|${i}`} p={p} />)}
+        {items.map((p, i) => <MiniCard key={`${p.upc}|${i}`} p={p} actions />)}
       </div>
     </section>
   );

@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
-import { Sparkles, Send, AlertCircle, PanelRightClose, PanelRightOpen, Trash2, Mic, MicOff } from 'lucide-react';
+import { Sparkles, Send, AlertCircle, X, PanelRightOpen, Trash2, Mic, MicOff } from 'lucide-react';
 import type { AiUsage } from '../lib/api';
 import AiRatingWidget from './AiRatingWidget';
 
@@ -203,9 +203,9 @@ export default function AiAssistantPanel<R extends AiAnswerBase>({
               </button>
             )}
             {collapsible && (
-              <button type="button" className="ai-assistant-iconbtn" title="Hide assistant"
-                      aria-label="Hide assistant" onClick={() => setOpenPersist(false)}>
-                <PanelRightClose size={16} />
+              <button type="button" className="ai-assistant-iconbtn" title="Close assistant"
+                      aria-label="Close assistant" onClick={() => setOpenPersist(false)}>
+                <X size={16} />
               </button>
             )}
           </div>

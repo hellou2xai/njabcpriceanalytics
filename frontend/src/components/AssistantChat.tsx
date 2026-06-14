@@ -3,7 +3,7 @@ import type React from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Sparkles, Send, Mic, MicOff, AlertCircle, Trash2, PanelRightClose, ShoppingCart, Check, ExternalLink } from 'lucide-react';
+import { Sparkles, Send, Mic, MicOff, AlertCircle, Trash2, X, ShoppingCart, Check, ExternalLink } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { assistant, cart as cartApi } from '../lib/api';
 import type { AssistantChart as ChartSpec, AiUsage, CatalogAiAction, CatalogAiProduct, AssistantRipCluster } from '../lib/api';
@@ -316,8 +316,8 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
             </button>
           )}
           {onClose && (
-            <button className="celar-head-btn" title="Hide assistant" aria-label="Hide assistant" onClick={onClose}>
-              <PanelRightClose size={16} />
+            <button className="celar-head-btn" title="Close assistant" aria-label="Close assistant" onClick={onClose}>
+              <X size={16} />
             </button>
           )}
         </div>

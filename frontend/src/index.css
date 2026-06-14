@@ -4075,7 +4075,7 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
   bottom: 20px;
   right: 20px;
   z-index: 1200;
-  width: 330px;
+  width: 420px;
   max-width: calc(100vw - 32px);
   background: var(--surface, #fff);
   border: 1px solid var(--border, #e2e8f0);
@@ -4090,6 +4090,7 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
   margin-bottom: 10px;
   font-size: 14px;
 }
+.feedback-panel-drag { user-select: none; }
 .feedback-close {
   background: none; border: none; cursor: pointer; color: var(--text-muted, #64748b);
   display: inline-flex; padding: 2px;

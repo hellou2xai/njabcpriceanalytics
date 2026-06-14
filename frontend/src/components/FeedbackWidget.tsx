@@ -14,12 +14,18 @@ export function BetaBadge({ inApp = false }: { inApp?: boolean }) {
 
 // ---- Draggable position for the Feedback FAB ----
 const FAB_W = 124, FAB_H = 40, MARGIN = 16, DRAG_THRESHOLD = 4;
+const PANEL_W = 420;   // wider feedback panel; also dragged by its header
 const POS_KEY = 'feedback_fab_pos';
 interface Pos { x: number; y: number }
 
 function clampPos(x: number, y: number): Pos {
   const maxX = Math.max(MARGIN, window.innerWidth - FAB_W - MARGIN);
   const maxY = Math.max(MARGIN, window.innerHeight - FAB_H - MARGIN);
+  return { x: Math.min(Math.max(MARGIN, x), maxX), y: Math.min(Math.max(MARGIN, y), maxY) };
+}
+function clampPanel(x: number, y: number): Pos {
+  const maxX = Math.max(MARGIN, window.innerWidth - PANEL_W - MARGIN);
+  const maxY = Math.max(MARGIN, window.innerHeight - 80 - MARGIN);  // keep header reachable
   return { x: Math.min(Math.max(MARGIN, x), maxX), y: Math.min(Math.max(MARGIN, y), maxY) };
 }
 // Default: bottom-LEFT (per request), replacing the old bottom-right anchor.
@@ -80,6 +86,16 @@ export default function FeedbackWidget() {
   const [pos, setPos] = useState<Pos | null>(null);
   const [dragging, setDragging] = useState(false);
   const drag = useRef<{ startX: number; startY: number; baseX: number; baseY: number; moved: boolean } | null>(null);
+  const [panelPos, setPanelPos] = useState<Pos | null>(null);
+  const panelDrag = useRef<{ sx: number; sy: number; bx: number; by: number } | null>(null);
+  // Anchor the panel near the FAB the first time it opens; clear on close so it
+  // re-anchors next time. While open the header can drag it anywhere.
+  useEffect(() => {
+    if (!open || !pos) { setPanelPos(null); return; }
+    setPanelPos(prev => prev ?? clampPanel(
+      Math.min(pos.x, window.innerWidth - PANEL_W - MARGIN),
+      Math.max(MARGIN, pos.y - 360)));
+  }, [open, pos]);
 
   useEffect(() => {
     let initial: Pos | null = null;
@@ -145,6 +161,22 @@ export default function FeedbackWidget() {
     }
   };
 
+  // The open panel can be dragged by its header, independent of the FAB.
+  const onPanelDown = (e: React.PointerEvent) => {
+    if (!panelPos) return;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    panelDrag.current = { sx: e.clientX, sy: e.clientY, bx: panelPos.x, by: panelPos.y };
+  };
+  const onPanelMove = (e: React.PointerEvent) => {
+    const d = panelDrag.current;
+    if (!d) return;
+    setPanelPos(clampPanel(d.bx + (e.clientX - d.sx), d.by + (e.clientY - d.sy)));
+  };
+  const onPanelUp = (e: React.PointerEvent) => {
+    panelDrag.current = null;
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* */ }
+  };
+
   if (!pos) return null;
 
   if (!open) {
@@ -162,17 +194,18 @@ export default function FeedbackWidget() {
     );
   }
 
-  // Anchor the panel to wherever the FAB was dropped: left-aligned with it,
-  // growing upward from its bottom edge, clamped to the viewport.
-  const panelLeft = Math.max(MARGIN, Math.min(pos.x, window.innerWidth - 330 - MARGIN));
-  const panelBottom = Math.max(MARGIN, window.innerHeight - (pos.y + FAB_H));
-
   return (
     <div className="feedback-panel" role="dialog" aria-label="Submit feedback"
-         style={{ left: panelLeft, bottom: panelBottom, right: 'auto', top: 'auto' }}>
-      <div className="feedback-panel-head">
+         style={panelPos
+           ? { left: panelPos.x, top: panelPos.y, right: 'auto', bottom: 'auto' }
+           : { left: -9999, top: -9999 }}>
+      <div className="feedback-panel-head feedback-panel-drag"
+           onPointerDown={onPanelDown} onPointerMove={onPanelMove} onPointerUp={onPanelUp}
+           style={{ cursor: dragging ? 'grabbing' : 'move', touchAction: 'none' }}
+           title="Drag to move">
         <strong>Submit a bug or suggestion</strong>
-        <button className="feedback-close" onClick={() => setOpen(false)} aria-label="Close">
+        <button className="feedback-close" onClick={() => setOpen(false)}
+                onPointerDown={e => e.stopPropagation()} aria-label="Close">
           <X size={16} />
         </button>
       </div>
@@ -201,7 +234,7 @@ export default function FeedbackWidget() {
               const imgs = Array.from(e.clipboardData.files).filter(f => f.type.startsWith('image/'));
               if (imgs.length) { e.preventDefault(); addShots(imgs); }
             }}
-            rows={4}
+            rows={6}
             autoFocus
           />
           {/* Screenshot thumbnails (remove with the ×). */}

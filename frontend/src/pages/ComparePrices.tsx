@@ -1,11 +1,11 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Zap, Scale, Clock, Download, AlertTriangle } from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronRight, Zap, Scale, Clock, Download, AlertTriangle } from 'lucide-react';
 import { compare, catalog } from '../lib/api';
 import type { CatalogTier, CompareLadder } from '../lib/api';
-import { distributorName, perUnitAbbr } from '../lib/distributors';
+import { distributorName, perUnitAbbr, abgSku, skuLabel } from '../lib/distributors';
 import RowActions from '../components/RowActions';
 import ProductSearchBox from '../components/ProductSearchBox';
 import TierBadge from '../components/TierBadge';
@@ -202,11 +202,25 @@ function LadderPanel({ slugs, params, onOpen }: {
   slugs: string[]; params: Record<string, unknown>;
   onOpen: (name: string, wholesaler: string) => void;
 }) {
+  // Lazy: with details expanded by default, dozens of rows mount at once — only
+  // fetch a row's ladders once it scrolls into view, so we don't fire one
+  // /compare/tiers request per row up front.
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    if (visible || !ref.current) return;
+    const io = new IntersectionObserver(es => {
+      for (const e of es) if (e.isIntersecting) { setVisible(true); io.disconnect(); break; }
+    }, { rootMargin: '200px' });
+    io.observe(ref.current);
+    return () => io.disconnect();
+  }, [visible]);
   const { data, isLoading } = useQuery({
     queryKey: ['compare-tiers', params],
     queryFn: () => compare.tiers(params),
+    enabled: visible,
   });
-  if (isLoading) return <div className="cmp-ladder-loading">Loading deal ladders…</div>;
+  if (!visible || isLoading) return <div ref={ref} className="cmp-ladder-loading">Loading deal ladders…</div>;
   if (!data) return null;
   return (
     <div className="cmp-ladders" style={{ gridTemplateColumns: `repeat(${slugs.length}, 1fr)` }}>
@@ -230,6 +244,12 @@ function LadderPanel({ slugs, params, onOpen }: {
                 {lad.product_name}
                 {lad.unit_volume ? <span className="cmp-ladder-size"> · {lad.unit_qty} × {lad.unit_volume}</span> : null}
               </button>
+            )}
+            {lad && (abgSku(w, lad.abg_sku) || lad.upc) && (
+              <div className="cmp-ladder-ids">
+                {abgSku(w, lad.abg_sku) && <span>{skuLabel(w)} {lad.abg_sku}</span>}
+                {lad.upc && <span>UPC {lad.upc}</span>}
+              </div>
             )}
             {!lad ? <div className="cmp-ladder-none">Not found</div> : (
               <>
@@ -293,7 +313,9 @@ export default function ComparePrices() {
   const [ptype, setPtype] = useState(params.get('type') ?? '');
   // default ON: open straight to the rows where distributors actually differ
   const [onlyDiff, setOnlyDiff] = useState(params.get('diff') !== '0');
-  const [minSpread, setMinSpread] = useState(params.get('min') ?? '');
+  // Default to a $1/case minimum spread so the grid leads with real price gaps
+  // (tiny rounding-level differences are filtered out unless the user clears it).
+  const [minSpread, setMinSpread] = useState(params.get('min') ?? '1');
   // 0 = each distributor's best deal (deepest tier); >0 = landed price at that volume
   const [cases, setCases] = useState(params.get('cs') ?? '0');
   const [sortKey, setSortKey] = useState(params.get('s') ?? 'product');
@@ -302,7 +324,19 @@ export default function ComparePrices() {
   // 'both' = both months stacked (most recent on top). 'prev'/'both' fetch the
   // prior-edition layers (months=2).
   const [priceMonths, setPriceMonths] = useState<'cur' | 'prev' | 'both'>('cur');
-  const [expanded, setExpanded] = useState<string | null>(null);
+  // Row detail expansion. Details are EXPANDED BY DEFAULT (allExpanded=true);
+  // `toggled` holds the rows the user flipped against the default, so a row is
+  // open when allExpanded XOR toggled.has(key). "Expand/Collapse all" sets
+  // allExpanded and clears the exceptions.
+  const [allExpanded, setAllExpanded] = useState(true);
+  const [toggled, setToggled] = useState<Set<string>>(new Set());
+  const isExpanded = (key: string) => allExpanded !== toggled.has(key);
+  const toggleRow = (key: string) => setToggled(prev => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+  const setAll = (open: boolean) => { setAllExpanded(open); setToggled(new Set()); };
   const PAGE_SIZES = [50, 100, 250, 500, 1000];
   const [pageSize, setPageSize] = useState(() => {
     const v = parseInt(params.get('pp') ?? '100', 10);
@@ -360,7 +394,7 @@ export default function ComparePrices() {
   });
 
   const toggle = (w: string) => {
-    setExpanded(null);
+    setAll(true);
     setShown(pageSize);
     setSelected(s => s.includes(w) ? s.filter(x => x !== w)
       : s.length >= 3 ? s : [...s, w]);
@@ -482,7 +516,7 @@ export default function ComparePrices() {
           </button>
         ))}
         {selected.length > 0 && (
-          <button className="cmp-clear" onClick={() => { setSelected([]); setExpanded(null); }}>
+          <button className="cmp-clear" onClick={() => { setSelected([]); setAll(true); }}>
             Clear
           </button>
         )}
@@ -522,9 +556,10 @@ export default function ComparePrices() {
               <div className="cmp-card-n"><Zap size={16} style={{ verticalAlign: '-2px' }} /> {sum?.deal_flips ?? 0}</div>
               <div className="cmp-card-l">winner flips after deals</div>
             </div>
-            <div className="cmp-card cmp-card-save">
+            <div className="cmp-card cmp-card-save"
+              title="Total you'd save by buying each shared product from its cheapest distributor (one case of each) instead of always from the most expensive.">
               <div className="cmp-card-n">{money(sum?.total_spread)}</div>
-              <div className="cmp-card-l">on the table / case-each</div>
+              <div className="cmp-card-l">savings buying each at its cheapest</div>
             </div>
           </div>
 
@@ -583,6 +618,12 @@ export default function ComparePrices() {
                 </label>
               ))}
             </div>
+            <button type="button" className="cmp-expandall"
+              onClick={() => setAll(!allExpanded)}
+              title={allExpanded ? 'Collapse every row’s deal detail' : 'Expand every row’s deal detail'}>
+              {allExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+              {allExpanded ? 'Collapse all' : 'Expand all'}
+            </button>
             <span className="cmp-hint">Click any column header to sort</span>
             <label className="cmp-pp">
               Rows/page
@@ -656,11 +697,11 @@ export default function ComparePrices() {
               </thead>
               <tbody>
                 {rows.slice(0, shown).map(r => {
-                  const isOpen = expanded === r.match_key;
+                  const isOpen = isExpanded(r.match_key);
                   const winner = r.winner_effective;
                   return (
                     <Fragment key={r.match_key}>
-                      <tr className="clickable" onClick={() => setExpanded(isOpen ? null : r.match_key)}>
+                      <tr className="clickable" onClick={() => toggleRow(r.match_key)}>
                         <td className="cmp-prod">
                           {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                           <span

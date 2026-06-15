@@ -30,6 +30,7 @@ from fastapi.responses import StreamingResponse
 from backend import pricing as _pricing
 from backend.auth import get_optional_user, get_current_user
 from backend.db import get_duckdb, read_parquet
+from backend.enrichment_join import attach_sku_mapping as _attach_sku_mapping
 from backend.size_std import _to_ml
 
 router = APIRouter(prefix="/api/compare", tags=["compare"])
@@ -905,6 +906,11 @@ def compare_tiers(
                 chosen[r["wholesaler"]] = r
         records = list(chosen.values())
         _pricing.attach_tiers(con, records)
+        # Distributor's own item number (Allied ABG / Fedway SKU) for the panel.
+        try:
+            _attach_sku_mapping(con, records)
+        except Exception:
+            pass
         # LIVE today: Best QD from raw cpl (every window row), Best Net layering
         # the active RIP — same rule as the grid so the panel never contradicts it.
         qd_live = _active_qd_from_raw(con, slugs, eds, None, [upc_norm])
@@ -934,6 +940,7 @@ def compare_tiers(
             "unit_qty": rec.get("unit_qty"),
             "unit_volume": rec.get("unit_volume"),
             "vintage": rec.get("vintage"),
+            "abg_sku": rec.get("abg_sku"),
             "frontline": rec.get("frontline_case_price"),
             "after_qd": rec.get("_live_qd"),
             "effective": rec.get("_live_net"),

@@ -495,6 +495,7 @@ export interface CompareLadder {
   unit_qty: string | null;
   unit_volume: string | null;
   vintage: string | null;
+  abg_sku?: string | null;   // distributor's own item number (Allied ABG / Fedway)
   frontline: number | null;
   after_qd: number | null;
   effective: number | null;

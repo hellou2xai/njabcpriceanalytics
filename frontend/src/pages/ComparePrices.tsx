@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Zap, Scale, Clock, Download, AlertTriangle } from 'lucide-react';
 import { compare, catalog } from '../lib/api';
@@ -354,6 +354,9 @@ export default function ComparePrices() {
       months: priceMonths === 'cur' ? undefined : 2,
     }),
     enabled: ready,
+    // Keep the current grid + toolbar on screen while a new view loads (or if it
+    // errors), so toggling the Price Comparison radio never blanks the controls.
+    placeholderData: keepPreviousData,
   });
 
   const toggle = (w: string) => {

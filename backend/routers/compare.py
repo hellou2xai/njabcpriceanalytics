@@ -128,6 +128,23 @@ def _pack_norm(uq) -> str:
     return s.upper()
 
 
+def _vintage_key(vintage_norm, vintage_sensitive) -> str:
+    """The vintage component of a match_key, always a STRING. Shared by
+    _common_rows and _prev_prices so the two key the same way. In postgres-cache
+    mode vintage_norm can arrive as a float (e.g. 2022.0); coerce it to '2022'
+    so the key matches the parquet/str form (and "|".join never sees a float)."""
+    if not vintage_sensitive:
+        return ""
+    v = vintage_norm
+    if v is None:
+        return ""
+    if isinstance(v, float):
+        if v != v:  # NaN
+            return ""
+        return str(int(v)) if v.is_integer() else str(v)
+    return str(v)
+
+
 def _size_key(raw) -> str:
     """Physical-size bucket so '12OZ', '12oz' and '355ML' all match (same can),
     and '15.5GAL' matches '1984OZ' (same 1/2-BBL keg). Unparseable sizes fall
@@ -198,7 +215,7 @@ def _common_rows(con, src: str, slugs: list[str], eds: dict[str, str]) -> list[d
             r["upc_norm"],
             _size_key(r.get("unit_volume")),
             pack,
-            (r.get("vintage_norm") or "") if r.get("vintage_sensitive") else "",
+            _vintage_key(r.get("vintage_norm"), r.get("vintage_sensitive")),
         ])
 
     # Drop ambiguous identities: a key mapping to >1 distinct product name
@@ -452,14 +469,21 @@ def _prev_prices(con, src: str, slugs: list[str], eds: dict[str, str],
     """, params + list(page_upcs)).df()
 
     def _nz(v):
-        return None if (isinstance(v, float) and v != v) else v
+        # NaN -> None, and coerce numpy/Decimal scalars to native float so the
+        # JSON response never trips on a non-serialisable type.
+        if v is None or (isinstance(v, float) and v != v):
+            return None
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return v
 
     lookup: dict[tuple, dict] = {}
     for r in df.to_dict("records"):
         pack = _pack_norm(r.get("unit_qty"))
         mk = "|".join([
             r["upc_norm"], _size_key(r.get("unit_volume")), pack,
-            (r.get("vintage_norm") or "") if r.get("vintage_sensitive") else "",
+            _vintage_key(r.get("vintage_norm"), r.get("vintage_sensitive")),
         ])
         k = (r["wholesaler"], mk)
         eff = _nz(r.get("effective_case_price"))
@@ -548,9 +572,15 @@ def compare_products(
         # price layers (prev) from the precomputed cpl_enriched columns.
         prev_eds: dict[str, str] = {}
         if months >= 2:
-            prev_eds, prev_lookup = _prev_prices(con, src, slugs, eds, page_upcs)
-            for d in raw:
-                d["_prev"] = prev_lookup.get((d["wholesaler"], d["match_key"]))
+            try:
+                prev_eds, prev_lookup = _prev_prices(con, src, slugs, eds, page_upcs)
+                for d in raw:
+                    d["_prev"] = prev_lookup.get((d["wholesaler"], d["match_key"]))
+            except Exception as e:
+                # Never 500 the whole grid over the optional prior-month layer;
+                # degrade to the current month and log for follow-up.
+                print(f"[compare] prev-month fetch failed, showing current only: {e}")
+                prev_eds = {}
 
     # Pivot: match_key -> {wholesaler: row}
     by_key: dict[str, dict[str, dict]] = {}

@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Zap, Scale, Clock, Download } from 'lucide-react';
+import { ChevronDown, ChevronRight, Zap, Scale, Clock, Download, AlertTriangle } from 'lucide-react';
 import { compare, catalog } from '../lib/api';
 import type { CatalogTier, CompareLadder } from '../lib/api';
 import { distributorName, perUnitAbbr } from '../lib/distributors';
@@ -31,10 +31,10 @@ const fmtDay = (iso?: string | null) => {
 const winText = (from?: string | null, to?: string | null) => `${fmtDay(from)}–${fmtDay(to)}`;
 
 function WinnerCell({
-  value, isWinner, isTie, sub, mark,
-}: { value?: number | null; isWinner: boolean; isTie: boolean; sub?: string | null; mark?: ReactNode }) {
+  value, isWinner, isTie, sub, mark, sep,
+}: { value?: number | null; isWinner: boolean; isTie: boolean; sub?: string | null; mark?: ReactNode; sep?: boolean }) {
   return (
-    <td className={`cmp-price${isWinner ? ' cmp-win' : ''}${isTie ? ' cmp-tie' : ''}`}>
+    <td className={`cmp-price${isWinner ? ' cmp-win' : ''}${isTie ? ' cmp-tie' : ''}${sep ? ' cmp-sep' : ''}`}>
       {money(value)}
       {mark}
       {sub && <span className="cmp-sub">{sub}</span>}
@@ -564,13 +564,13 @@ export default function ComparePrices() {
                     Product{arrow('product')}
                   </th>
                   {selected.map(w => (
-                    <th key={w} colSpan={3} className="cmp-group-head"
+                    <th key={w} colSpan={3} className="cmp-group-head cmp-sep"
                         style={{ borderBottom: `2px solid ${accent[w]}` }}>
                       {distributorName(w)}
                       <span className="cmp-ed">{data.editions[w]}</span>
                     </th>
                   ))}
-                  <th rowSpan={2} className="cmp-sortable" onClick={() => clickSort('spread', 'desc')}>
+                  <th rowSpan={2} className="cmp-sortable cmp-sep" onClick={() => clickSort('spread', 'desc')}>
                     Spread{arrow('spread')}
                   </th>
                   <th rowSpan={2} className="cmp-sortable" onClick={() => clickSort('winner')}>
@@ -581,7 +581,7 @@ export default function ComparePrices() {
                 <tr>
                   {selected.map(w => (
                     <Fragment key={w}>
-                      <th className="cmp-layer cmp-sortable" onClick={() => clickSort(`${w}::frontline`)}>
+                      <th className="cmp-layer cmp-sortable cmp-sep" onClick={() => clickSort(`${w}::frontline`)}>
                         List{arrow(`${w}::frontline`)}
                       </th>
                       <th className="cmp-layer cmp-sortable" onClick={() => clickSort(`${w}::after_qd`)}
@@ -639,7 +639,7 @@ export default function ComparePrices() {
                           const p = r.prices[w];
                           return (
                             <Fragment key={w}>
-                              <WinnerCell value={p?.frontline}
+                              <WinnerCell value={p?.frontline} sep
                                 isWinner={r.winner_frontline === w} isTie={r.winner_frontline === 'tie'} />
                               <WinnerCell value={p?.after_qd}
                                 isWinner={r.winner_after_qd === w} isTie={r.winner_after_qd === 'tie'}
@@ -654,9 +654,15 @@ export default function ComparePrices() {
                             </Fragment>
                           );
                         })}
-                        <td className="cmp-spread">
+                        <td className="cmp-spread cmp-sep">
                           {money(r.spread)}
                           {r.spread_pct != null && <span className="cmp-sub">{r.spread_pct}%</span>}
+                          {r.spread_pct != null && r.spread_pct > 100 && (
+                            <span className="cmp-suspicious"
+                              title="This price gap is over 100% — almost always a distributor filing/data error (e.g. a pack-size mismatch under one shared barcode), not a real deal. Verify with your sales rep before trusting it.">
+                              <AlertTriangle size={11} /> check
+                            </span>
+                          )}
                         </td>
                         <td>
                           {winner && winner !== 'tie' ? (

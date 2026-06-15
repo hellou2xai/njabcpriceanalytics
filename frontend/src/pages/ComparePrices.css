@@ -104,6 +104,19 @@
 .cmp-table td.cmp-price.cmp-tie { color: var(--text-muted); font-style: italic; }
 .cmp-sub { display: block; font-size: 10.5px; color: var(--text-muted); font-weight: 400; }
 
+/* Vertical separator at the start of each distributor's column block (and before
+   the Spread column), so the two distributors read as distinct groups. */
+.cmp-table .cmp-sep { border-left: 2px solid color-mix(in srgb, var(--border) 80%, var(--text-muted)); }
+
+/* Suspicious-spread sticker: a >100% gap is almost always a filing/data error. */
+.cmp-suspicious {
+  display: inline-flex; align-items: center; gap: 2px; margin-top: 2px;
+  font-size: 10px; font-weight: 700; color: #c2410c; cursor: help;
+  background: color-mix(in srgb, #c2410c 12%, transparent);
+  border: 1px solid color-mix(in srgb, #c2410c 35%, transparent);
+  border-radius: 4px; padding: 0 5px;
+}
+
 .cmp-prod { min-width: 230px; }
 .cmp-prod-name { font-weight: 600; cursor: pointer; margin-left: 2px; }
 .cmp-prod-name:hover { text-decoration: underline; color: var(--accent); }

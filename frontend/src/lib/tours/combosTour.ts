@@ -1,82 +1,41 @@
-/**
- * Combos screen walkthrough (end to end). Opens a bundle's detail modal, adds
- * the whole bundle to the cart, shows Add-to-list, and lands in the cart where
- * the bundle keeps its 🎁 Combo sticker. Savings callouts throughout.
- */
-import { runScreenTour, waitForEl, scrollIntoView, sleep, type ScreenStep } from '../screenTour';
-
-let nav: (path: string) => void = () => {};
-
-function openFirstCombo() {
-  const el = document.querySelector('.table-container tbody tr, .table-container [class*="card-row"]') as HTMLElement | null;
-  el?.click();
-}
-function closeModal() { (document.querySelector('.modal-close') as HTMLButtonElement | null)?.click(); }
-function addOpenBundle() { (document.querySelector('.combo-detail-actions button, .combo-detail-actions .btn') as HTMLButtonElement | null)?.click(); }
-async function openListMenu() {
-  (document.querySelector('.add-to-list-btn') as HTMLButtonElement | null)?.click();
-  await waitForEl('.add-to-list-menu', 1500);
-}
-function closeListMenu() { (document.querySelector('.add-to-list-backdrop') as HTMLElement | null)?.click(); }
+/** Combos / bundle deals screen walkthrough. The page always renders its header
+ * and filter panel; the summary cards and rows appear once data loads. Steps that
+ * point below the fold scroll their anchor into view first. */
+import { launchScreenTour, scrollIntoView, type ScreenStep } from '../screenTour';
 
 const STEPS: ScreenStep[] = [
-  { element: '.orders-header', title: 'Combos: bundle deals',
-    savings: '💰 Bundles cost less than buying the items apart',
-    body: 'A combo is a pack of products sold for less than buying each on its own. This screen lists every bundle, with the saving worked out.' },
-  { element: '.filter-sidebar', title: 'Filter the bundles',
-    body: 'Narrow by <b>search</b>, <b>distributor</b>, a <b>minimum saving</b>, and <b>validity</b> (this month, next, or both).' },
-  { element: '.search-count', title: 'How many match',
-    body: 'The count updates as you filter, so you always know the size of the list.' },
-  { element: '.rip-summary-cards', title: 'The savings at a glance',
+  { element: '.orders-header', title: 'Bundle / Combo Deals',
+    body: 'Multi-product bundles a distributor sells as one pack, with the savings worked out for you. <b>Why it helps:</b> the deals that span several products, all in one place.' },
+  { element: '.rip-summary-cards', title: 'The combos at a glance',
     before: () => scrollIntoView('.rip-summary-cards'),
-    savings: '💰 Average and biggest saving, up front',
-    body: 'These cards summarise the list: how many bundles, the average and biggest saving, and the average discount. <b>Why it helps:</b> gauge the opportunity in a glance.' },
-  { element: '.table-container', title: 'The bundle list',
-    before: () => scrollIntoView('.table-container'),
-    body: 'Each row is a bundle, with its products, the combo price, and the saving versus buying separately. Click a row to open its full breakdown.' },
-  { element: '.add-to-cart-btn', title: 'Add a bundle straight from the row',
-    before: () => scrollIntoView('.add-to-cart-btn'),
-    savings: '⚡ The whole bundle in one click',
-    body: 'Set a quantity and <b>Add to cart</b>, or <b>Add to list</b>, right here. <b>Why it helps:</b> order the whole pack in one move.' },
-  { element: '.combo-detail-table', title: 'Inside a bundle',
-    before: async () => { openFirstCombo(); await waitForEl('.combo-detail-table', 3000); },
-    body: 'We opened a bundle. This lists every product inside it and each one’s share of the saving. <b>Why it helps:</b> see exactly what you get.' },
-  { element: '.combo-detail-bar', title: 'Bundle vs buying separately',
-    savings: '💰 The bundle price vs the normal total',
-    body: 'The bar puts the combo price next to the normal total, so the saving is obvious.' },
-  { element: '.combo-detail-pricing', title: 'The bundle’s bottom line',
-    savings: '💰 Exactly what you save per bundle',
-    body: 'The combo price, the regular price, and what you save per bundle. <b>Why it helps:</b> confirm the deal before you commit.' },
-  { element: '.combo-detail-outlook', title: 'This month vs next',
-    savings: '⚡ Buy now or wait? The outlook tells you',
-    body: 'Whether the bundle still runs next month, and at what price. <b>Why it helps:</b> time the buy.' },
-  { element: '.combo-detail-actions', title: 'Add the whole bundle',
-    body: 'One button adds every product in the bundle to your cart. Let’s do it.' },
-  { element: '.cart-fab', title: 'Added the whole bundle',
-    before: async () => { addOpenBundle(); await sleep(500); closeModal(); await sleep(300); },
-    savings: '⚡ A whole bundle added in one click',
-    body: 'We added the entire bundle to your cart, see the count climb top-right. <b>Why it helps:</b> no adding items one by one.' },
-  { element: '.add-to-list-menu', title: 'Or save it to a list',
-    before: () => openListMenu(),
-    savings: '💰 Park a bundle to reorder it later',
-    body: 'We opened <b>Add to list</b>: drop a bundle’s product into a saved list, or make a new one, to reorder fast next time.' },
-  { element: '[data-tour="cart-combo"]', title: 'In the cart, priced as a bundle',
-    before: async () => { closeListMenu(); nav('/cart'); await waitForEl('[data-tour="cart-combo"], [data-tour="cart-group"]', 5000); await sleep(500); },
-    savings: '💰 Stays at the bundle price while it’s intact',
-    body: 'Here’s the bundle in your cart with its <b>🎁 Combo</b> sticker. It holds the bundle price while all its items are in the cart; remove one and the rest reprice automatically. <b>Why it helps:</b> the savings are protected for you.' },
-  { element: '[data-tour="cart-send"]', title: 'Send it to your rep',
-    before: () => window.scrollTo({ top: 0, behavior: 'auto' }),
-    savings: '⚡ Bundle ordered, sent, done',
-    body: '<b>Send All Orders to Reps</b> emails the order. That’s Combos end to end: find a bundle, check the breakdown, add it, send it.' },
+    savings: '💰 Average and biggest bundle savings, up front',
+    body: 'These cards summarise what is on the table: how many combos, the <b>average</b> and <b>biggest</b> savings, and the average discount. <b>Why it helps:</b> the size of the opportunity before you read a single row.' },
+  { element: '.filter-toolbar', title: 'Narrow the list',
+    before: () => scrollIntoView('.filter-toolbar'),
+    body: 'Filter by <b>distributor</b>, a <b>minimum savings</b> floor, or <b>validity</b> (this month, next month, or both). The search box matches the combo description. <b>Why it helps:</b> jump straight to bundles worth your time.' },
+  { element: '.rip-filter-bar', title: 'How many rows',
+    before: () => scrollIntoView('.rip-filter-bar'),
+    body: 'Set how many combos to show at once, with a live count of matches beside it. <b>Why it helps:</b> scan a short list or load them all.' },
+  { element: '.combo-product-cell', title: 'Each combo, with its contents',
+    before: () => scrollIntoView('.combo-product-cell'),
+    body: 'Every row names the bundle and its combo code, then lists the products inside it. <b>Why it helps:</b> you see exactly what you are buying, not just a price.' },
+  { element: '.combo-items-toggle', title: 'Contents are open by default',
+    before: () => scrollIntoView('.combo-items-toggle'),
+    body: 'The bundle’s items show right in the row: each product, its regular price, and its combo price. This toggle folds them away if you want. <b>Why it helps:</b> the contents are the product, so they are shown, not hidden behind a click.' },
+  { element: '.combo-pct-badge', title: 'Discount and worth-it verdict',
+    before: () => scrollIntoView('.combo-pct-badge'),
+    savings: '💰 Effective save vs the real one-case price',
+    body: 'Columns show the <b>% off</b>, the <b>advertised</b> save, and the <b>effective</b> save against the realistic one-case price, plus a verdict (worth it, marginal, or buy separately). A ⚠ flags figures that look off. <b>Why it helps:</b> the honest saving, not just the distributor’s claim.' },
+  { element: '.catalog-order-inline', title: 'Add the whole bundle to your cart',
+    before: () => scrollIntoView('.catalog-order-inline'),
+    body: 'Set how many bundles you want, then add the whole pack to your cart in one click, or save it to a list. <b>Why it helps:</b> order the combo as a unit, with no re-keying the items.' },
+  { element: '.combo-product-cell', title: 'Click a row for the full breakdown',
+    before: () => scrollIntoView('.combo-product-cell'),
+    body: 'Clicking any row opens the bundle breakdown: a per-item table, the regular-vs-combo math, deal dates, and what happens next month. <b>Why it helps:</b> verify the savings before you commit.' },
+  { element: '.rip-summary-cards', title: 'That’s the Combos page',
+    before: () => scrollIntoView('.rip-summary-cards'),
+    body: 'Filter to the bundles you care about, read the real saving, then add the pack to your cart. <b>Why it helps:</b> bundle deals, checked and ready to order.' },
 ];
 
-export const launchCombosTour = (navigate: (path: string) => void) => {
-  nav = navigate;
-  return run(navigate);
-};
-async function run(navigate: (path: string) => void) {
-  if (window.location.pathname !== '/combos') navigate('/combos');
-  await waitForEl('.orders-header', 8000);
-  await sleep(350);
-  runScreenTour(STEPS, closeModal);
-}
+export const launchCombosTour = (navigate: (p: string) => void) =>
+  launchScreenTour(navigate, '/combos', '.orders-header', STEPS);

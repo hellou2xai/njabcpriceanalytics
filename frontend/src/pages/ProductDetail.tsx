@@ -383,7 +383,19 @@ export default function ProductDetail() {
   // physical size (LITER = 1 L = 1000 mL, so it follows 750 mL) and then by
   // distributor — the hook already returns this order.
   const { sizes, isLoading, isError, refetch } = useProductSizes(wholesaler, name, upc, true, true);
-  const orderedSizes = sizes;
+  // This is THIS distributor's product page, so within each physical size show
+  // the page's own wholesaler FIRST (its prices/deals are what the buyer came
+  // for), then other distributors, then newest vintage. The hook returns
+  // size-then-alphabetical, which surfaced a sibling distributor (e.g. Allied)
+  // above the page's own (Fedway) for a shared barcode.
+  const orderedSizes = useMemo(() => {
+    const vnum = (v: unknown) => { const n = parseInt(String(v ?? ''), 10); return Number.isFinite(n) ? n : -1; };
+    return [...sizes].sort((a, b) =>
+      sizeToMl(a.unit_volume) - sizeToMl(b.unit_volume)
+      || (a.wholesaler === wholesaler ? 0 : 1) - (b.wholesaler === wholesaler ? 0 : 1)
+      || a.wholesaler.localeCompare(b.wholesaler)
+      || vnum(b.vintage) - vnum(a.vintage));
+  }, [sizes, wholesaler]);
 
   const enrichment = detail?.enrichment;
   const product = detail?.product;

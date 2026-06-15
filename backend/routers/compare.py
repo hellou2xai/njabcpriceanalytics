@@ -708,6 +708,13 @@ def compare_export(
         win = r.get("winner_effective")
         win_txt = "Tie" if win == "tie" else (_pretty_w(win) if win else "")
         notes = []
+        # A >100% spread is almost always a distributor filing/data error (e.g. a
+        # pack-size mismatch under one shared barcode), not a real deal — flag it
+        # in the export the same way the UI shows the "check" sticker.
+        sp_pct = r.get("spread_pct")
+        if sp_pct is not None and sp_pct > 100:
+            notes.append(f"CHECK: {sp_pct}% spread looks suspicious (likely a "
+                         f"filing/data error, e.g. pack-size mismatch). Verify with sales rep")
         for w in slugs:
             p = prices.get(w, {})
             dw = p.get("deal_window") or {}

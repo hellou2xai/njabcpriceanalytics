@@ -31,10 +31,43 @@ const fmtDay = (iso?: string | null) => {
 const winText = (from?: string | null, to?: string | null) => `${fmtDay(from)}–${fmtDay(to)}`;
 
 function WinnerCell({
-  value, isWinner, isTie, sub, mark, sep,
-}: { value?: number | null; isWinner: boolean; isTie: boolean; sub?: string | null; mark?: ReactNode; sep?: boolean }) {
+  value, prev, isWinner, isTie, sub, prevSub, mark, sep, mode = 'cur', curMonth, prevMonth,
+}: {
+  value?: number | null; prev?: number | null;
+  isWinner: boolean; isTie: boolean;
+  sub?: string | null; prevSub?: string | null; mark?: ReactNode; sep?: boolean;
+  mode?: 'cur' | 'prev' | 'both'; curMonth?: string; prevMonth?: string;
+}) {
+  const cls = `cmp-price${isWinner ? ' cmp-win' : ''}${isTie ? ' cmp-tie' : ''}${sep ? ' cmp-sep' : ''}`;
+  // Last-month only: show the prior value (no winner highlight — that's a
+  // current-month verdict).
+  if (mode === 'prev') {
+    return (
+      <td className={`${cls} cmp-prevonly`}>
+        {money(prev)}
+        {prevSub && <span className="cmp-sub">{prevSub}</span>}
+      </td>
+    );
+  }
+  // Both: most-recent month on top (with the winner highlight), prior beneath,
+  // each labelled with its month.
+  if (mode === 'both') {
+    return (
+      <td className={`${cls} cmp-two`}>
+        <span className="cmp-mrow">
+          {curMonth && <span className="cmp-mlabel">{curMonth}</span>}
+          <span className="cmp-mval">{money(value)}{mark}</span>
+        </span>
+        {sub && <span className="cmp-sub">{sub}</span>}
+        <span className="cmp-mrow cmp-mrow-prev">
+          {prevMonth && <span className="cmp-mlabel">{prevMonth}</span>}
+          <span className="cmp-mval">{money(prev)}</span>
+        </span>
+      </td>
+    );
+  }
   return (
-    <td className={`cmp-price${isWinner ? ' cmp-win' : ''}${isTie ? ' cmp-tie' : ''}${sep ? ' cmp-sep' : ''}`}>
+    <td className={cls}>
       {money(value)}
       {mark}
       {sub && <span className="cmp-sub">{sub}</span>}
@@ -265,6 +298,10 @@ export default function ComparePrices() {
   const [cases, setCases] = useState(params.get('cs') ?? '0');
   const [sortKey, setSortKey] = useState(params.get('s') ?? 'product');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(params.get('dir') === 'desc' ? 'desc' : 'asc');
+  // Price Comparison view: 'cur' = this month only, 'prev' = last month only,
+  // 'both' = both months stacked (most recent on top). 'prev'/'both' fetch the
+  // prior-edition layers (months=2).
+  const [priceMonths, setPriceMonths] = useState<'cur' | 'prev' | 'both'>('cur');
   const [expanded, setExpanded] = useState<string | null>(null);
   const PAGE_SIZES = [50, 100, 250, 500, 1000];
   const [pageSize, setPageSize] = useState(() => {
@@ -306,7 +343,7 @@ export default function ComparePrices() {
     return () => clearTimeout(t);
   }, [q]);
   const { data, isLoading, error } = useQuery({
-    queryKey: ['compare-products', selected, qDebounced, ptype, onlyDiff, minSpread, cases],
+    queryKey: ['compare-products', selected, qDebounced, ptype, onlyDiff, minSpread, cases, priceMonths],
     queryFn: () => compare.products({
       wholesalers: selected.join(','),
       q: qDebounced || undefined,
@@ -314,6 +351,7 @@ export default function ComparePrices() {
       only_differences: onlyDiff || undefined,
       min_spread: minSpread ? parseFloat(minSpread) : undefined,
       cases: cases && cases !== '0' ? parseFloat(cases) : undefined,
+      months: priceMonths === 'cur' ? undefined : 2,
     }),
     enabled: ready,
   });
@@ -531,6 +569,17 @@ export default function ComparePrices() {
                 <option value="50">50 cs</option>
               </select>
             </label>
+            <div className="cmp-pp cmp-months" role="radiogroup" aria-label="Price comparison months"
+              title="Show this month, last month, or both months stacked (most recent on top).">
+              <span>Price Comparison</span>
+              {([['cur', 'This month'], ['prev', 'Last month'], ['both', 'Both']] as const).map(([v, lbl]) => (
+                <label key={v} className={priceMonths === v ? 'on' : ''}>
+                  <input type="radio" name="priceMonths" checked={priceMonths === v}
+                    onChange={() => { setPriceMonths(v); setShown(pageSize); }} />
+                  {lbl}
+                </label>
+              ))}
+            </div>
             <span className="cmp-hint">Click any column header to sort</span>
             <label className="cmp-pp">
               Rows/page
@@ -567,7 +616,13 @@ export default function ComparePrices() {
                     <th key={w} colSpan={3} className="cmp-group-head cmp-sep"
                         style={{ borderBottom: `2px solid ${accent[w]}` }}>
                       {distributorName(w)}
-                      <span className="cmp-ed">{data.editions[w]}</span>
+                      <span className="cmp-ed">
+                        {priceMonths === 'prev' && data.prev_editions?.[w]
+                          ? data.prev_editions[w]
+                          : priceMonths === 'both' && data.prev_editions?.[w]
+                            ? `${data.editions[w]} vs ${data.prev_editions[w]}`
+                            : data.editions[w]}
+                      </span>
                     </th>
                   ))}
                   <th rowSpan={2} className="cmp-sortable cmp-sep" onClick={() => clickSort('spread', 'desc')}>
@@ -637,20 +692,27 @@ export default function ComparePrices() {
                         </td>
                         {selected.map(w => {
                           const p = r.prices[w];
+                          const curMo = fmtMonth(data.editions[w] || '');
+                          const prevMo = data.prev_editions?.[w] ? fmtMonth(data.prev_editions[w]) : undefined;
+                          const mUnit = perUnitAbbr(r.unit_volume, r.unit_type);
                           return (
                             <Fragment key={w}>
-                              <WinnerCell value={p?.frontline} sep
+                              <WinnerCell value={p?.frontline} prev={p?.prev?.frontline} sep
+                                mode={priceMonths} curMonth={curMo} prevMonth={prevMo}
                                 isWinner={r.winner_frontline === w} isTie={r.winner_frontline === 'tie'} />
-                              <WinnerCell value={p?.after_qd}
+                              <WinnerCell value={p?.after_qd} prev={p?.prev?.after_qd}
+                                mode={priceMonths} curMonth={curMo} prevMonth={prevMo}
                                 isWinner={r.winner_after_qd === w} isTie={r.winner_after_qd === 'tie'}
                                 mark={p?.qd_time_sensitive ? (
                                   <span className="cmp-ts" title={`Today's price uses a dated deal that ends ${p.deal_window ? fmtDay(p.deal_window.to) : 'this month'}.`}>
                                     <Clock size={10} />
                                   </span>
                                 ) : null} />
-                              <WinnerCell value={p?.effective}
+                              <WinnerCell value={p?.effective} prev={p?.prev?.effective}
+                                mode={priceMonths} curMonth={curMo} prevMonth={prevMo}
                                 isWinner={winner === w} isTie={winner === 'tie'}
-                                sub={p?.btl_effective != null ? `${money(p.btl_effective)}/${perUnitAbbr(r.unit_volume, r.unit_type)}` : null} />
+                                sub={p?.btl_effective != null ? `${money(p.btl_effective)}/${mUnit}` : null}
+                                prevSub={p?.prev?.btl_effective != null ? `${money(p.prev.btl_effective)}/${mUnit}` : null} />
                             </Fragment>
                           );
                         })}

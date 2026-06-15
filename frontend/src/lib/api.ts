@@ -430,6 +430,15 @@ export interface ComparePrice {
   deal_window?: { from: string | null; to: string | null; status: WindowStatus } | null;
   has_discount: boolean;
   has_rip: boolean;
+  // Prior-edition price layers (present only when fetched with months=2), for
+  // the two-month Price Comparison view.
+  prev?: {
+    edition: string | null;
+    frontline: number | null;
+    after_qd: number | null;
+    effective: number | null;
+    btl_effective: number | null;
+  } | null;
 }
 
 export interface CompareRow {
@@ -471,6 +480,7 @@ export interface CompareSummary {
 export interface CompareResponse {
   wholesalers: string[];
   editions: Record<string, string>;
+  prev_editions?: Record<string, string>;
   total_common: number;
   cases?: number;
   volume_basis?: 'at_volume' | 'best_deal';

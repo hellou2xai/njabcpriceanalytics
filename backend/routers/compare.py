@@ -279,6 +279,15 @@ def _price_obj(d: dict) -> dict:
         "deal_window": win,
         "has_discount": bool(d.get("has_discount")),
         "has_rip": bool(d.get("has_rip")),
+        # Prior-edition layers for the two-month view (None unless months=2).
+        "prev": ({
+            "edition": pv.get("edition"),
+            "frontline": pv.get("frontline"),
+            "after_qd": pv.get("after_qd"),
+            "effective": pv.get("effective"),
+            "btl_effective": (round(pv["effective"] / d["uqd"], 2)
+                              if pv.get("effective") and d.get("uqd") else None),
+        } if (pv := d.get("_prev")) else None),
     }
 
 
@@ -404,6 +413,68 @@ def _active_rip_rebate(tiers: list, n_cases: Optional[float], pack: float) -> fl
     return best
 
 
+def _prev_prices(con, src: str, slugs: list[str], eds: dict[str, str],
+                 page_upcs: list[str]) -> tuple[dict[str, str], dict[tuple, dict]]:
+    """Prior-edition price layers for the Price-Comparison 2-month view.
+
+    Returns (prev_editions, lookup) where prev_editions maps wholesaler -> the
+    edition immediately BEFORE its current one, and lookup maps
+    (wholesaler, match_key) -> {edition, frontline, after_qd, effective} read
+    straight from that edition's PRECOMPUTED cpl_enriched columns (List =
+    frontline_case_price, Best QD = best_case_price, Best Net =
+    effective_case_price — the canonical whole-month price for a past month you
+    can no longer buy live). match_key is built exactly like _common_rows so it
+    joins the current-month rows 1:1."""
+    prev_eds: dict[str, str] = {}
+    for w in slugs:
+        r = con.execute(
+            f"SELECT MAX(edition) FROM {src} WHERE wholesaler = ? AND edition < ?",
+            [w, eds[w]]).fetchone()
+        if r and r[0]:
+            prev_eds[w] = r[0]
+    if not prev_eds or not page_upcs:
+        return prev_eds, {}
+    parts, params = [], []
+    for w, e in prev_eds.items():
+        parts.append("(wholesaler = ? AND edition = ?)")
+        params += [w, e]
+    upc_ph = ",".join("?" * len(page_upcs))
+    vn = _pricing.vintage_norm_sql("vintage")
+    df = con.execute(f"""
+        SELECT wholesaler, edition, LTRIM(upc, '0') AS upc_norm,
+               unit_volume, unit_qty,
+               frontline_case_price, best_case_price, effective_case_price,
+               {vn} AS vintage_norm,
+               UPPER(product_type) IN ('WINE','SPARKLING','VERMOUTH') AS vintage_sensitive
+        FROM {src}
+        WHERE ({" OR ".join(parts)}) AND {_VALID_UPC}
+          AND LTRIM(upc, '0') IN ({upc_ph})
+    """, params + list(page_upcs)).df()
+
+    def _nz(v):
+        return None if (isinstance(v, float) and v != v) else v
+
+    lookup: dict[tuple, dict] = {}
+    for r in df.to_dict("records"):
+        pack = _pack_norm(r.get("unit_qty"))
+        mk = "|".join([
+            r["upc_norm"], _size_key(r.get("unit_volume")), pack,
+            (r.get("vintage_norm") or "") if r.get("vintage_sensitive") else "",
+        ])
+        k = (r["wholesaler"], mk)
+        eff = _nz(r.get("effective_case_price"))
+        cur = lookup.get(k)
+        # cheapest effective wins (same rule as the current-month best offer)
+        if cur is None or (eff is not None and (cur["effective"] is None or eff < cur["effective"])):
+            lookup[k] = {
+                "edition": r["edition"],
+                "frontline": _nz(r.get("frontline_case_price")),
+                "after_qd": _nz(r.get("best_case_price")),
+                "effective": eff,
+            }
+    return prev_eds, lookup
+
+
 @router.get("/products")
 def compare_products(
     wholesalers: str = Query(..., description="2-3 comma-separated slugs"),
@@ -415,6 +486,7 @@ def compare_products(
     sort: str = Query("spread", description="spread | spread_pct | product | effective"),
     order: str = Query("desc"),
     limit: int = Query(2000, ge=1, le=50000),
+    months: int = Query(1, ge=1, le=2, description="1 = current month only; 2 = also attach each distributor's PRIOR-edition price layers (prev) for the two-month Price Comparison view."),
     user: Optional[dict] = Depends(get_optional_user),
 ):
     """The comparison grid: products common to ALL selected distributors with
@@ -471,6 +543,14 @@ def compare_products(
             d["_applied_qd_tier"] = (
                 {"window_status": qd_hit[3], "from_date": qd_hit[1], "to_date": qd_hit[2]}
                 if qd_hit and qd_amt > 0 else None)
+
+        # Two-month Price Comparison: attach each distributor's PRIOR-edition
+        # price layers (prev) from the precomputed cpl_enriched columns.
+        prev_eds: dict[str, str] = {}
+        if months >= 2:
+            prev_eds, prev_lookup = _prev_prices(con, src, slugs, eds, page_upcs)
+            for d in raw:
+                d["_prev"] = prev_lookup.get((d["wholesaler"], d["match_key"]))
 
     # Pivot: match_key -> {wholesaler: row}
     by_key: dict[str, dict[str, dict]] = {}
@@ -622,6 +702,7 @@ def compare_products(
     return {
         "wholesalers": slugs,
         "editions": eds,
+        "prev_editions": prev_eds,
         "total_common": total,
         "cases": (n_cases or 0),
         "volume_basis": ("at_volume" if n_cases else "best_deal"),

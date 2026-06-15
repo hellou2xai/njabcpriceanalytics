@@ -108,6 +108,21 @@
    the Spread column), so the two distributors read as distinct groups. */
 .cmp-table .cmp-sep { border-left: 2px solid color-mix(in srgb, var(--border) 80%, var(--text-muted)); }
 
+/* Price Comparison month radio group. */
+.cmp-months { gap: 6px; }
+.cmp-months > span { font-weight: 600; }
+.cmp-months label { display: inline-flex; align-items: center; gap: 3px; font-weight: 500; cursor: pointer; }
+.cmp-months label.on { color: var(--accent); font-weight: 700; }
+.cmp-months input { accent-color: var(--accent); }
+
+/* Two-month stacked price cell (Both): recent month on top, prior beneath. */
+.cmp-table td.cmp-two { line-height: 1.25; }
+.cmp-two .cmp-mrow { display: flex; align-items: baseline; justify-content: flex-end; gap: 5px; }
+.cmp-two .cmp-mrow-prev { color: var(--text-muted); font-weight: 400; }
+.cmp-two .cmp-mlabel { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .2px; color: var(--text-muted); }
+.cmp-two .cmp-mrow-prev .cmp-mlabel { opacity: .85; }
+.cmp-table td.cmp-prevonly { color: var(--text-muted); }
+
 /* Suspicious-spread sticker: a >100% gap is almost always a filing/data error. */
 .cmp-suspicious {
   display: inline-flex; align-items: center; gap: 2px; margin-top: 2px;

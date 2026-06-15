@@ -50,6 +50,7 @@ except Exception:  # pragma: no cover - zoneinfo always present on 3.9+
     _EASTERN = None
 
 from backend.db import read_parquet
+from backend.size_std import _to_ml
 from backend.rip_utils import (
     is_bottle_unit as _is_bottle_unit,
     rip_per_case as _rip_per_case,
@@ -57,6 +58,12 @@ from backend.rip_utils import (
     qualified_cases as _qualified_cases,
     normalize_unit as _norm_unit,
 )
+
+# One NJ ABC standard case = 9 litres (12 x 750ML). A fractional case credit
+# (half / quarter) can never apply to a SKU whose own pack is already a full
+# case or more: it's a fraction OF a case. 8900mL threshold so a 9.0L case
+# trips it without float noise. Mirrors nj_abc_parser.rip_rules.FULL_CASE_ML.
+_FULL_CASE_ML = 8900.0
 
 
 # ---------------------------------------------------------------------------
@@ -940,6 +947,15 @@ def attach_tiers(con, records, ref_date=None) -> None:
                 credit_v = credit_pack.get((str(t.get("code") or ""), rec["wholesaler"],
                                             rec["edition"], str(rec.get("unit_volume") or ""), uqn))
             credit = float(credit_v or 1.0)
+            # Full-case guard at the POINT OF USE: never apply a fractional credit
+            # to a SKU whose own pack is already a full case (>=9L). A reused
+            # barcode can carry both a 6-pack (legit half) and a 12-pack (full),
+            # and the size/pack credit fallback can leak the 0.5 onto the full
+            # case — refuse it here regardless of where the credit came from.
+            if credit < 1.0 and not is_bottle:
+                _bml, _ = _to_ml(str(rec.get("unit_volume") or ""))
+                if _bml is not None and _bml * uq >= _FULL_CASE_ML:
+                    credit = 1.0
             rip_per_case_v = round(
                 _rip_per_case(t["amount"], t["qty"], t["unit"], uq, credit), 2)
             # PHYSICAL case-equivalent of the RIP qty: drives the stackable-

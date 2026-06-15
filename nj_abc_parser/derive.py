@@ -455,6 +455,20 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
                 AND LTRIM(CAST(c.upc AS VARCHAR), '0') = rc.upc_n
             GROUP BY 1, 2, 3, 4, 5
             HAVING COUNT(DISTINCT rc.case_credit) = 1
+               -- Full-case guard: a (size, pack) that is ITSELF a whole case
+               -- (>=9L, e.g. 12x750ML) can never carry a fractional credit. A
+               -- reused barcode filed for BOTH a 6-pack (legit half) and a
+               -- 12-pack (full) would otherwise leak the 6-pack's 0.5 onto the
+               -- 12-pack key, infecting other full-case SKUs under this code.
+               AND NOT (
+                   MIN(rc.case_credit) < 1.0
+                   AND MAX(COALESCE(TRY_CAST(c.unit_qty AS DOUBLE), 0) * (CASE
+                         WHEN UPPER(CAST(c.unit_volume AS VARCHAR)) LIKE '%ML%'
+                           THEN TRY_CAST(REGEXP_EXTRACT(CAST(c.unit_volume AS VARCHAR), '([0-9.]+)', 1) AS DOUBLE)
+                         WHEN UPPER(CAST(c.unit_volume AS VARCHAR)) LIKE '%L%'
+                           THEN TRY_CAST(REGEXP_EXTRACT(CAST(c.unit_volume AS VARCHAR), '([0-9.]+)', 1) AS DOUBLE) * 1000
+                         ELSE NULL END)) >= 8900
+               )
         ),
         rip_per_code_upc AS (
             -- Apply the case credit to the CASE-unit rebate: a half-case SKU's

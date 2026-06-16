@@ -41,7 +41,7 @@ const CAPABILITIES = [
     desc: 'NJ regulation guarantees you the same RIPs the chains qualify for through small-quantity tiers. They have analyst teams. You now have the same firepower in your back office, without the headcount.' },
 ];
 
-// Who it's for — the SAME public-filings engine, tuned to each side of NJ's
+// Who it's for: the SAME public-filings engine, tuned to each side of NJ's
 // three-tier market. Each role gets its own dedicated section on the page with
 // its own heading, value props and a role-specific product mock. Buyers is the
 // live product (sign up); distributors and producers get a talk-to-us CTA.
@@ -65,18 +65,19 @@ const ROLES: Role[] = [
     key: 'buyers', anchor: 'for-buyers', Icon: Store, tab: 'Buyers',
     kicker: 'For Retailers & Licensees', primary: true,
     title: 'Buy smarter every edition',
-    blurb: 'The live product today. Stop reading 400-page price books with a highlighter and start ordering from a daily action list built around what your store actually buys.',
+    blurb: 'The live product today. CELR reads all 400-plus pages of every price book for you and instantly surfaces the hidden deals, stacked rebates and RIP brackets you would never find with a highlighter. Most stores uncover at least $5,000 a month in savings they were missing.',
     points: [
-      'True landed cost on every SKU — list minus every discount minus your best RIP rebate, not the sticker.',
+      'Most buyers uncover at least $5,000 a month in deals and savings they were missing, from day one.',
+      'Hidden deals surfaced automatically: stacked post-offs, RIP brackets and combos you would never catch reading by hand.',
+      'True landed cost on every SKU: list minus every discount minus your best RIP rebate, not the sticker.',
       'The whole RIP program decoded: tiered brackets, monthly-recycled codes, break-even and profit % per case.',
       'Compare Allied, Fedway, Opici and every filer on the same UPC, side by side.',
-      'Smart search that knows brand aliases, misspellings and barcodes.',
-      'Alerts the day a new edition lands; never miss an expiring rebate.',
-      'Ask in plain English or by voice — the built-in assistant answers from your live data.',
+      'Smart search that knows brand aliases, misspellings and barcodes, plus an alert the day each new edition lands.',
+      'Ask in plain English or by voice: the built-in assistant answers from your live data.',
     ],
     ctaLabel: 'Create your free account', cta: 'signup',
     visual: 'buyers',
-    outcome: { stat: '15-25%', label: 'in rebates most stores leave on the table' },
+    outcome: { stat: '$5,000+', label: 'saved a month by most buyers, from instant deal and savings spotting' },
     features: [
       { title: 'Smart catalog & landed cost', desc: 'Every SKU shows its true landed cost and full RIP ladder. Search by brand alias, misspelling or barcode and land on the right product.' },
       { title: 'Compare Prices & RIPs', desc: 'Allied, Fedway, Opici and every filer on the same UPC, side by side. See whose rebate actually wins at the volume you buy.' },
@@ -86,39 +87,39 @@ const ROLES: Role[] = [
   {
     key: 'distributors', anchor: 'for-distributors', Icon: Truck, tab: 'Distributors',
     kicker: 'For Wholesalers & Distributors',
-    title: 'Prove your deal is the best deal',
-    blurb: 'Competitive pricing and RIP intelligence on the same normalized data your buyers see. Know exactly where you win, where you lose, and fix it before the next filing.',
+    title: 'Win more of the order',
+    blurb: 'Buyers compare every filer before they order. CELR shows where your after-rebate price already wins and where you are leaving sales on the table, so your reps walk in and close more cases.',
     points: [
-      'See exactly how your posted prices and RIPs stack up against competing filers on every shared UPC.',
-      'Show retailers the real, after-rebate value of your programs — not just a price book.',
-      'Find where you’re losing on effective price and fix it before the next filing.',
-      'Reach buyers at the moment they’re comparing and deciding.',
+      'Win at the moment of decision: buyers see your real after-rebate value the instant they compare, so the order tips your way.',
+      'Grow volume on the SKUs where your effective price already beats the field. Push them instead of discounting.',
+      'Win back accounts you are quietly losing: every shared UPC where a competitor undercuts you, ready to fix.',
+      'Arm your reps with the same numbers the buyer sees, so every visit is a closing conversation, not a price-book read.',
     ],
     ctaLabel: 'Talk to us', cta: 'mail',
     visual: 'distributors',
-    outcome: { stat: 'Every UPC', label: 'compared on real effective price, after every discount' },
+    outcome: { stat: 'Win the order', label: 'the moment buyers compare your after-rebate value' },
     features: [
-      { title: 'Competitive positioning', desc: 'See exactly where your posted price and RIP win or lose on every shared UPC, after every discount and rebate.' },
-      { title: 'Prove after-rebate value', desc: 'Show retailers the real landed value of your programs, not a 400-page price book they will never read.' },
-      { title: 'Filing intelligence', desc: 'Spot where you have fallen behind a competing filer and fix it before your next CPL goes in.' },
+      { title: 'Win at the point of comparison', desc: 'Buyers see your real after-rebate value next to every other filer. When you lead, the order comes to you instead of the competitor.' },
+      { title: 'Grow your strong SKUs', desc: 'Find the SKUs where your effective price already beats the field and push volume there, instead of cutting price across the book.' },
+      { title: 'Win back lost accounts', desc: 'See every shared UPC where a competitor is undercutting you and close the gap before the next filing locks the order in.' },
     ],
     deepDive: {
-      label: 'Where you stand',
-      heading: 'See your book the way the buyer already does',
-      intro: 'Every buyer on CELR compares your posted price and RIP against every other filer on the same UPC. Walk into the account knowing the same numbers they do.',
+      label: 'Find the sales you are leaving on the table',
+      heading: 'See where you win the order, and where you lose it',
+      intro: 'Every buyer on CELR compares your posted price and RIP against every other filer on the same UPC. The SKUs you win are orders to lock in. The ones you trail are accounts to win back.',
       points: [
-        'Win / loss on every shared SKU, ranked by how far you lead or trail on real effective price.',
-        'The exact per-bottle gap to the leading filer, after every discount, post-off and rebate.',
-        'Whether your RIP brackets are actually reachable for the small stores the program is meant to serve.',
-        'A month-over-month diff of your own book: what you raised, cut, added or dropped against the field.',
+        'The SKUs where your effective price already wins: push these for more volume, no extra discount needed.',
+        'The exact per-bottle gap to the leading filer on every SKU you trail, so you know what it takes to win the order.',
+        'Whether your RIP brackets are actually reachable for the small stores, where most of the unclaimed volume sits.',
+        'A month-over-month diff of your own book against the field, so a price move never quietly costs you sales.',
       ],
       panel: {
         title: 'This month · shared SKUs',
         rows: [
           { k: 'SKUs compared', v: '240' },
-          { k: 'You win on price', v: '168', hi: true },
-          { k: 'Within 1%', v: '41' },
-          { k: 'You trail', v: '31' },
+          { k: 'Orders you win on price', v: '168', hi: true },
+          { k: 'Within 1% (winnable)', v: '41' },
+          { k: 'Win-back targets', v: '31' },
         ],
       },
     },
@@ -126,31 +127,31 @@ const ROLES: Role[] = [
   {
     key: 'producers', anchor: 'for-producers', Icon: Factory, tab: 'Producers & Brands',
     kicker: 'For Producers & Brands',
-    title: 'See your brand at the shelf, statewide',
-    blurb: 'Shelf-level visibility into how your brand is priced and promoted across New Jersey. Track participation, benchmark the category, and catch data errors before they distort the market.',
+    title: 'Sell more, edition after edition',
+    blurb: 'Your sales depend on how every distributor prices and promotes you. CELR shows where your brand is winning the shelf and where weak pricing or low RIP participation is quietly costing you volume, statewide.',
     points: [
-      'Track how your SKUs are priced and promoted across every NJ distributor and edition.',
-      'Measure RIP participation and its real pull-through to retailer cost.',
-      'Benchmark against the category by size, pack and vintage.',
-      'Catch pack/price data errors under your UPCs before they distort the market.',
+      'Grow sell-through by making sure each distributor’s RIP actually reaches retailer cost, not just the price book.',
+      'Find the distributors and sizes under-pricing or under-promoting you, the gaps costing you real volume.',
+      'Protect sales from data errors: catch pack, price and vintage mistakes under your UPCs before they suppress orders.',
+      'Win category share with benchmarks by size, pack and vintage that show exactly where to push.',
     ],
     ctaLabel: 'Request a brand briefing', cta: 'mail',
     visual: 'producers',
-    outcome: { stat: 'Statewide', label: 'shelf-level pricing across every NJ distributor' },
+    outcome: { stat: 'Grow depletions', label: 'by closing the pricing and promo gaps that cost you volume' },
     features: [
-      { title: 'Statewide shelf view', desc: 'How your SKUs are priced and promoted across every NJ distributor and every monthly edition.' },
-      { title: 'RIP participation & pull-through', desc: 'Measure how much of each rebate actually reaches retailer cost, by distributor and by size.' },
-      { title: 'Benchmark & data QA', desc: 'Compare against the category by size, pack and vintage, and catch pack or price errors filed under your UPCs.' },
+      { title: 'Drive pull-through', desc: 'Make sure each distributor’s RIP reaches retailer cost, so the rebate becomes real sell-through instead of margin that stops at the warehouse.' },
+      { title: 'Find the volume gaps', desc: 'Spot the distributors and sizes that under-price or under-promote your brand and recover the sales they are costing you.' },
+      { title: 'Protect & grow share', desc: 'Catch UPC data errors before they suppress orders, and benchmark by size, pack and vintage to win category share.' },
     ],
     deepDive: {
-      label: 'Brand visibility',
-      heading: 'Follow your brand from filing to shelf',
-      intro: 'You set the brand registration and the suggested price. CELR shows what each distributor actually does with it, edition after edition, down to the bottle.',
+      label: 'Turn shelf visibility into sales',
+      heading: 'Follow your brand from filing to shelf to sell-through',
+      intro: 'You set the registration and the suggested price. CELR shows what each distributor actually does with it, and where that is winning you volume or quietly costing it, edition after edition.',
       points: [
-        'Every distributor carrying each SKU, at what posted and effective price.',
-        'RIP participation and rebate depth, broken out by size and by pack.',
-        'Edition-over-edition movement in your brand’s real cost to the retailer.',
-        'Pack, price and vintage errors filed under your UPCs, flagged before they spread across the market.',
+        'Every distributor carrying each SKU, and whether their pricing helps it sell or leaves it on the shelf.',
+        'RIP participation and rebate depth by size and pack, so you can push the programs that actually move cases.',
+        'Edition-over-edition movement in your real cost to the retailer, the number that drives reorders.',
+        'Pack, price and vintage errors filed under your UPCs, flagged before they suppress orders across the market.',
       ],
       panel: {
         title: 'June 2026 · your portfolio',
@@ -158,7 +159,7 @@ const ROLES: Role[] = [
           { k: 'Distributors carrying', v: '4 of 5' },
           { k: 'SKUs tracked', v: '37' },
           { k: 'Avg RIP participation', v: '61%', hi: true },
-          { k: 'Data flags to review', v: '3' },
+          { k: 'Volume gaps to fix', v: '3' },
         ],
       },
     },
@@ -401,7 +402,7 @@ export default function Landing() {
             <a className="lp-navlink lp-login lp-hide-sm" onClick={() => navigate('/login')} style={{ cursor: 'pointer' }}>Log in</a>
             <button className="btn lp-signup lp-hide-sm" onClick={() => goSignup()}>Sign up</button>
 
-            {/* Hamburger — phones/tablets only */}
+            {/* Hamburger, phones/tablets only */}
             <button className="sidebar-toggle lp-burger" onClick={() => setMenuOpen(o => !o)}
               aria-label="Menu" aria-expanded={menuOpen} style={{ display: 'none' }}>
               {menuOpen ? <X size={20} /> : <Menu size={20} />}
@@ -451,7 +452,11 @@ export default function Landing() {
             <div className="lp-cta-row">
               <button className="btn lp-btn-lg" onClick={() => goSignup()}>Create your free account</button>
               <a href="#roles" className="btn btn-secondary lp-btn-lg" onClick={(e) => { e.preventDefault(); jumpTo('roles'); }}>Find your role</a>
-              <span className="lp-cta-note">Free during early access · No credit card</span>
+            </div>
+            <div className="lp-trust">
+              <span className="lp-trust-item hot"><Check size={15} /> Free during early access</span>
+              <span className="lp-trust-item"><Check size={15} /> No credit card</span>
+              <span className="lp-trust-item"><Check size={15} /> 90-second setup</span>
             </div>
           </div>
 

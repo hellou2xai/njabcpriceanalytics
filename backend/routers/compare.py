@@ -2015,12 +2015,20 @@ def best_rips(
                     has_rip = bool(lines)
                     deepest_rebate, deepest_at = _rip_deepest(tiers, pack)
                     best_profit = max((ln["rip_profit_pct"] or 0 for ln in lines), default=0.0)
+                    # The badge code and mix-count must be the code that ACTUALLY
+                    # produced the shown ladder THIS edition (deepest tier's code),
+                    # not the CPL's nominal rip_code — codes recycle monthly, so
+                    # the badge -> members modal must agree within this edition.
+                    disp_code = None
+                    if lines:
+                        disp_code = max(lines, key=lambda ln: ln.get("rebate_per_case") or 0).get("code")
+                    disp_code = disp_code or rec.get("rip_code")
                     dists[w] = {
                         "carried": True,
                         "has_rip": has_rip,
-                        "rip_code": rec.get("rip_code"),
+                        "rip_code": disp_code,
                         "frontline": rec.get("frontline_case_price"),
-                        "case_mix": _product_case_mix(rec, mmix, w),
+                        "case_mix": (mmix.get((w, str(disp_code))) if disp_code else None),
                         "deepest_rebate": deepest_rebate,
                         "deepest_at_cases": deepest_at,
                         "min_cases": _min_cases_to_rip(tiers, pack),

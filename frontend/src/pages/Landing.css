@@ -181,6 +181,31 @@
 @media (max-width: 1024px) { .lp-caps-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 560px) { .lp-caps-grid { grid-template-columns: 1fr; } }
 
+/* ---- Who it's for (audiences) ---- */
+.lp-aud-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; align-items: stretch; }
+.lp-aud {
+  display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 26px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.lp-aud:hover { transform: translateY(-3px); box-shadow: var(--shadow-pop); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.lp-aud.feature { border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: linear-gradient(180deg, var(--accent-weak), var(--surface)); }
+.lp-aud-top { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.lp-aud-icon {
+  width: 40px; height: 40px; flex-shrink: 0; border-radius: var(--radius-sm);
+  background: var(--accent-weak); color: var(--accent);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.lp-aud-top .section-label { color: var(--text-muted); margin: 0; }
+.lp-aud-title { font-size: 19px; font-weight: 700; line-height: 1.2; margin-bottom: 8px; }
+.lp-aud-blurb { color: var(--text-muted); font-size: 14px; line-height: 1.55; margin-bottom: 14px; }
+.lp-aud-list { list-style: none; display: flex; flex-direction: column; gap: 11px; margin: 0 0 22px; }
+.lp-aud-list li { display: flex; gap: 9px; font-size: 14px; line-height: 1.5; color: var(--text); }
+.lp-aud-list .mk { color: var(--accent); flex-shrink: 0; }
+.lp-aud-cta { margin-top: auto; justify-content: center; width: 100%; padding: 11px 16px; }
+@media (max-width: 980px) { .lp-aud-grid { grid-template-columns: 1fr; } }
+
 /* ---- How it works ---- */
 .lp-how-grid { display: grid; grid-template-columns: 1fr 1.7fr; gap: 40px; }
 .lp-how-grid .lead { color: var(--text-muted); margin-top: 18px; line-height: 1.6; }

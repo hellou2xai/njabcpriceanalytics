@@ -1,6 +1,6 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Sun, Moon, ArrowRight } from 'lucide-react';
+import { Sun, Moon, ArrowRight, Store, Truck, Factory } from 'lucide-react';
 import WhatsAppShareButton from '../components/WhatsAppShare';
 import { shareOnWhatsAppCached } from '../lib/share';
 import './Landing.css';
@@ -38,6 +38,50 @@ const CAPABILITIES = [
     desc: 'NJ regulation guarantees you the same RIPs the chains qualify for through small-quantity tiers. They have analyst teams. You now have the same firepower in your back office, without the headcount.' },
 ];
 
+// Who it's for — the SAME public-filings engine, tuned to each side of NJ's
+// three-tier market. Buyers is the live product (sign up); distributors and
+// producers are grounded value props with a talk-to-us CTA.
+const AUDIENCES = [
+  {
+    key: 'buyers', Icon: Store, kicker: 'Retailers & Licensees', primary: true,
+    title: 'Buy smarter every edition',
+    blurb: 'The live product today. Stop reading 400-page price books with a highlighter.',
+    points: [
+      'True landed cost on every SKU — list minus every discount minus your best RIP rebate, not the sticker.',
+      'The whole RIP program decoded: tiered brackets, monthly-recycled codes, break-even and profit % per case.',
+      'Compare Allied, Fedway, Opici and every filer on the same UPC, side by side.',
+      'Smart search that knows brand aliases, misspellings and barcodes.',
+      'Alerts the day a new edition lands; never miss an expiring rebate.',
+      'Ask in plain English or by voice — the built-in assistant answers from your live data.',
+    ],
+    ctaLabel: 'Create your free account', cta: 'signup',
+  },
+  {
+    key: 'distributors', Icon: Truck, kicker: 'Wholesalers & Distributors',
+    title: 'Prove your deal is the best deal',
+    blurb: 'Competitive pricing & RIP intelligence on the same normalized data your buyers see.',
+    points: [
+      'See exactly how your posted prices and RIPs stack up against competing filers on every shared UPC.',
+      'Show retailers the real, after-rebate value of your programs — not just a price book.',
+      'Find where you’re losing on effective price and fix it before the next filing.',
+      'Reach buyers at the moment they’re comparing and deciding.',
+    ],
+    ctaLabel: 'Talk to us', cta: 'mail',
+  },
+  {
+    key: 'producers', Icon: Factory, kicker: 'Producers & Brands',
+    title: 'See your brand at the shelf, statewide',
+    blurb: 'Shelf-level visibility into how your brand is priced and promoted across NJ.',
+    points: [
+      'Track how your SKUs are priced and promoted across every NJ distributor and edition.',
+      'Measure RIP participation and its real pull-through to retailer cost.',
+      'Benchmark against the category by size, pack and vintage.',
+      'Catch pack/price data errors under your UPCs before they distort the market.',
+    ],
+    ctaLabel: 'Request a brand briefing', cta: 'mail',
+  },
+];
+
 const STEPS = [
   { n: '1', tag: '~90 sec', title: 'Create your free account',
     desc: 'Tell us your store and the categories you focus on. Spirits, wine, craft beer, whatever drives your floor. About 90 seconds.' },
@@ -55,6 +99,9 @@ export default function Landing() {
   const goSignup = (e?: string) =>
     navigate(`/login?signup=1${e ? `&email=${encodeURIComponent(e)}` : ''}`);
 
+  const mailTo = (who: string) =>
+    `mailto:hello@celr.ai?subject=${encodeURIComponent(`CELR for ${who}`)}`;
+
   const onSubscribe = (ev: FormEvent) => {
     ev.preventDefault();
     goSignup(email.trim() || undefined);
@@ -71,6 +118,7 @@ export default function Landing() {
             <span className="lp-brand-tag lp-hide-sm">NJ · Liquor Intelligence</span>
           </div>
           <div className="lp-nav-links">
+            <a href="#audiences" className="lp-navlink lp-hide-sm">Who it's for</a>
             <a href="#capabilities" className="lp-navlink lp-hide-sm">Capabilities</a>
             <a href="#how" className="lp-navlink lp-hide-sm">How it works</a>
             <span className="lp-nav-sep lp-hide-sm" />
@@ -91,7 +139,7 @@ export default function Landing() {
         <div className="lp-container lp-hero-grid">
           <div>
             <div className="lp-hero-head">
-              <span className="lp-chip accent"><span className="lp-chip-dot" />Made for NJ Liquor Retailers</span>
+              <span className="lp-chip accent"><span className="lp-chip-dot" />Built for New Jersey's liquor trade</span>
             </div>
             <h1 className="lp-h1">
               Every deal, spotted.<br />
@@ -140,6 +188,52 @@ export default function Landing() {
               <span>Opici Family</span><span className="lp-strip-sep">❖</span>
               <span className="muted">Every major NJ Filer</span>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ---- Who it's for ---- */}
+      <section id="audiences" className="lp-section alt">
+        <div className="lp-container">
+          <div className="lp-caps-head">
+            <div>
+              <div className="section-label" style={{ color: 'var(--accent)' }}>Who it's for</div>
+              <h2 className="lp-section-h2">
+                One source of truth for <span className="muted">every side of the NJ market.</span>
+              </h2>
+            </div>
+            <p className="intro">
+              CELR is the only platform that decodes New Jersey's monthly ABC price filings — and
+              the RIP rebate program — down to the case. One engine, tuned to what each tier needs.
+            </p>
+          </div>
+
+          <div className="lp-aud-grid">
+            {AUDIENCES.map(a => (
+              <div key={a.key} className={`lp-aud${a.primary ? ' feature' : ''}`}>
+                <div className="lp-aud-top">
+                  <span className="lp-aud-icon"><a.Icon size={20} /></span>
+                  <span className="section-label">{a.kicker}</span>
+                </div>
+                <h3 className="lp-aud-title">{a.title}</h3>
+                <p className="lp-aud-blurb">{a.blurb}</p>
+                <div className="lp-cap-rule" />
+                <ul className="lp-aud-list">
+                  {a.points.map((p, i) => (
+                    <li key={i}><span className="mk">❖</span><span>{p}</span></li>
+                  ))}
+                </ul>
+                {a.cta === 'signup' ? (
+                  <button className="btn lp-aud-cta" onClick={() => goSignup()}>
+                    {a.ctaLabel} <ArrowRight size={15} />
+                  </button>
+                ) : (
+                  <a className="btn btn-secondary lp-aud-cta" href={mailTo(a.kicker)}>
+                    {a.ctaLabel} <ArrowRight size={15} />
+                  </a>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       </section>

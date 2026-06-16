@@ -19,6 +19,7 @@ const money = (v?: number | null) =>
   v == null ? '–' : `$${Number(v).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 const pct = (v?: number | null) => (v == null ? '–' : `${Number(v).toFixed(1)}%`);
 const ACCENTS: Record<string, string> = { allied: '#2563eb', fedway: '#d97706', opici: '#7c3aed' };
+const DIST_OPTS = ['allied', 'fedway', 'opici'];
 
 type Sort = 'best_profit' | 'deepest' | 'gap' | 'expiring' | 'product';
 const SORTS: { key: Sort; label: string; hint: string }[] = [
@@ -149,8 +150,7 @@ function TierLine({ t, isBest }: { t: BestRipTier; isBest: boolean }) {
   );
 }
 
-function Card({ row, onRipClick }: { row: BestRipRow; onRipClick: (w: string, c: string) => void }) {
-  const slugs = ['allied', 'fedway', 'opici'];
+function Card({ row, slugs, onRipClick }: { row: BestRipRow; slugs: string[]; onRipClick: (w: string, c: string) => void }) {
   const present = slugs.filter(w => row.dists[w]);
   const vint = wineVintage(row.product_type, row.vintage);
   const size = [row.unit_qty, row.unit_volume].filter(Boolean).join(' × ');
@@ -207,17 +207,24 @@ export default function BestRips() {
   const [tsOnly, setTsOnly] = useState(false);
   const [hideExpired, setHideExpired] = useState(true);
   const [minProfit, setMinProfit] = useState(0);
+  const [dists, setDists] = useState<string[]>(['allied', 'fedway', 'opici']);
   const [modal, setModal] = useState<{ w: string; code: string } | null>(null);
+
+  const toggleDist = (w: string) => setDists(prev =>
+    prev.includes(w)
+      ? (prev.length > 1 ? prev.filter(x => x !== w) : prev)  // keep at least one
+      : [...DIST_OPTS.filter(d => prev.includes(d) || d === w)]); // preserve canonical order
 
   const params = useMemo(() => ({
     q: query || undefined,
     sort,
+    wholesalers: dists.join(','),
     only_differences: onlyDiff,
     time_sensitive_only: tsOnly,
     hide_expired: hideExpired,
     min_profit: minProfit || undefined,
     limit: 400,
-  }), [query, sort, onlyDiff, tsOnly, hideExpired, minProfit]);
+  }), [query, sort, dists, onlyDiff, tsOnly, hideExpired, minProfit]);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['best-rips', params],
@@ -258,6 +265,17 @@ export default function BestRips() {
       </div>
 
       <div className="br-filters">
+        <span className="br-distpick">
+          <span className="br-distpick-lbl">Distributors:</span>
+          {DIST_OPTS.map(w => (
+            <button key={w} type="button"
+              className={`br-distbtn${dists.includes(w) ? ' br-distbtn--on' : ''}`}
+              style={dists.includes(w) ? { borderColor: ACCENTS[w], color: ACCENTS[w] } : undefined}
+              onClick={() => toggleDist(w)}>
+              {distributorName(w)}
+            </button>
+          ))}
+        </span>
         <label className="br-chk"><input type="checkbox" checked={onlyDiff} onChange={e => setOnlyDiff(e.target.checked)} /> Only where distributors differ</label>
         <label className="br-chk"><input type="checkbox" checked={tsOnly} onChange={e => setTsOnly(e.target.checked)} /> Time-sensitive only</label>
         <label className="br-chk"><input type="checkbox" checked={hideExpired} onChange={e => setHideExpired(e.target.checked)} /> Hide expired tiers</label>
@@ -273,7 +291,7 @@ export default function BestRips() {
         <>
           <div className="br-count">
             Showing {data.rows.length} of {data.total.toLocaleString()} RIPs
-            {onlyDiff ? ' where the distributors differ' : ' across Allied, Fedway & Opici'}
+            {onlyDiff ? ' where the distributors differ' : ` across ${data.wholesalers.map(distributorName).join(', ')}`}
             {data.total > data.rows.length && ' — refine with search or sort to narrow'}
           </div>
           {data.rows.length === 0 ? (
@@ -281,7 +299,8 @@ export default function BestRips() {
           ) : (
             <div className="br-grid">
               {data.rows.map((row: BestRipRow) => (
-                <Card key={row.match_key} row={row} onRipClick={(w, code) => setModal({ w, code })} />
+                <Card key={row.match_key} row={row} slugs={data.wholesalers}
+                  onRipClick={(w, code) => setModal({ w, code })} />
               ))}
             </div>
           )}

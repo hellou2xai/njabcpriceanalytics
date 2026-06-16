@@ -22,6 +22,13 @@
 /* filters */
 .br-filters { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; margin-bottom: 14px;
   padding: 10px 14px; background: #f8fafc; border: 1px solid #eef2f6; border-radius: 10px; }
+.br-distpick { display: inline-flex; align-items: center; gap: 6px; }
+.br-distpick-lbl { font-size: 12.5px; color: #64748b; font-weight: 500; }
+.br-distbtn { background: #fff; border: 1.5px solid #e2e8f0; color: #94a3b8; padding: 4px 11px;
+  border-radius: 999px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all .12s; }
+.br-distbtn:hover { border-color: #cbd5e1; }
+.br-distbtn--on { background: #fff; }
+.br-distbtn:not(.br-distbtn--on) { text-decoration: line-through; opacity: .65; }
 .br-chk { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: #475569; cursor: pointer; }
 .br-chk input { accent-color: #2563eb; }
 .br-range { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: #475569; }

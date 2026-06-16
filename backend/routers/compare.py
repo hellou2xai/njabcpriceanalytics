@@ -1843,7 +1843,8 @@ def best_rips(
     q: str = Query(""),
     product_type: str = Query(""),
     brand: str = Query("", description="Brand name contains"),
-    only_differences: bool = Query(False, description="Only cards where the distributors that carry the product differ on RIP terms (missing the RIP, different timing/quantity, or a profit-%% gap)."),
+    wholesalers: str = Query("", description="Comma-separated subset of Allied/Fedway/Opici to compare (empty = all three)."),
+    only_differences: bool = Query(False, description="Only cards where the RIP is available at 2+ selected distributors AND they differ (one carries it without a RIP, different timing/quantity, or a profit-%% gap)."),
     min_profit: float = Query(0.0, ge=0, description="Hide cards whose best RIP profit %% is below this"),
     time_sensitive_only: bool = Query(False, description="Only products where some distributor's RIP is a dated/time-limited deal"),
     hide_expired: bool = Query(True, description="Drop tier lines whose window has already ended"),
@@ -1866,9 +1867,18 @@ def best_rips(
         src = read_parquet(con, "cpl_enriched")
         known = {r[0] for r in con.execute(
             f"SELECT DISTINCT wholesaler FROM {src}").fetchall()}
-        slugs = [s for s in _BEST_RIP_SLUGS if s in known]
-        if len(slugs) < 2:
+        avail = [s for s in _BEST_RIP_SLUGS if s in known]
+        if not avail:
             raise HTTPException(400, "Need Allied/Fedway/Opici data loaded for this board")
+        # Distributor filter: a subset of the board's three may be selected.
+        # Keep the canonical order and constrain to the three (board scope).
+        if wholesalers.strip():
+            req = {w.strip() for w in wholesalers.split(",") if w.strip()}
+            slugs = [s for s in avail if s in req]
+            if not slugs:
+                raise HTTPException(400, "Pick at least one of Allied, Fedway, Opici")
+        else:
+            slugs = avail
         eds = _editions_for(con, src, slugs)
         # require_all=False: keep every distributor that CARRIES each SKU, so a
         # RIP shows even when only one of the three stocks the product.
@@ -1974,11 +1984,16 @@ def best_rips(
         profit_gap = (round(max(profits.values()) - min(profits.values()), 1)
                       if len(profits) > 1 else 0.0)
 
-        # Where the distributors differ: not stocked / carries-but-no-RIP / timing
-        # (dated vs all-month) / quantity to unlock / a profit-%% gap.
+        # "Differs" needs the RIP to be available at 2+ selected distributors —
+        # a RIP at a single distributor is just one offer, not a difference. With
+        # 2+ RIPs to compare, it differs when they diverge on profit-%%, timing
+        # (dated vs all-month) or quantity to unlock, OR another selected
+        # distributor carries the product but files no RIP. Not-carried-at-all is
+        # not counted (it's absence, not a RIP difference).
         timing_differs = len({dists[w]["has_time_sensitive"] for w in ripping}) > 1
         quantity_differs = len({dists[w]["min_cases"] for w in ripping}) > 1
-        differs = bool(missing or not_carried) or timing_differs or quantity_differs or profit_gap >= 1.0
+        differs = len(ripping) >= 2 and (
+            profit_gap >= 1.0 or timing_differs or quantity_differs or bool(missing))
 
         # Go-UPC image: first present rec that has one (same UPC across all three).
         image_url = next((per[w].get("image_url") for w in present

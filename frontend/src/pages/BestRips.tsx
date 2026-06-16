@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   BadgeDollarSign, Trophy, AlertTriangle, Clock, Layers, Search,
-  TrendingUp, Tag, ChevronRight,
+  TrendingUp, Tag,
 } from 'lucide-react';
 import { compare } from '../lib/api';
 import type { BestRipRow, BestRipDist, BestRipTier } from '../lib/api';
@@ -83,7 +83,9 @@ function DistBlock({ w, d, row, isWinner, onRipClick }: {
     return (
       <div className="br-dist br-dist--norip">
         <div className="br-dist-head">
-          <span className="br-dist-name" style={{ color: accent }}>{name}</span>
+          <Link className="br-dist-name br-dist-name--link" style={{ color: accent }}
+            to={detailUrl(w, row.product_name, row.upc)}
+            title={`View ${row.product_name} at ${name}`}>{name}</Link>
           <span className="br-norip"><AlertTriangle size={12} /> No RIP this edition</span>
         </div>
       </div>
@@ -95,7 +97,9 @@ function DistBlock({ w, d, row, isWinner, onRipClick }: {
   return (
     <div className={`br-dist${isWinner ? ' br-dist--winner' : ''}`}>
       <div className="br-dist-head">
-        <span className="br-dist-name" style={{ color: accent }}>{name}</span>
+        <Link className="br-dist-name br-dist-name--link" style={{ color: accent }}
+          to={detailUrl(w, row.product_name, row.upc)}
+          title={`View ${row.product_name} at ${name}`}>{name}</Link>
         {isWinner && (
           <span className="br-crown" title={`Best RIP profit${row.profit_delta ? ` (+${row.profit_delta}pp vs next)` : ''}`}>
             <Trophy size={12} /> best{row.profit_delta ? ` +${row.profit_delta}pp` : ''}
@@ -124,10 +128,6 @@ function DistBlock({ w, d, row, isWinner, onRipClick }: {
           ))}
         </tbody>
       </table>
-
-      <Link className="br-drill" to={detailUrl(w, row.product_name, row.upc)}>
-        View product <ChevronRight size={13} />
-      </Link>
     </div>
   );
 }
@@ -154,6 +154,9 @@ function Card({ row, slugs, onRipClick }: { row: BestRipRow; slugs: string[]; on
   const present = slugs.filter(w => row.dists[w]);
   const vint = wineVintage(row.product_type, row.vintage);
   const size = [row.unit_qty, row.unit_volume].filter(Boolean).join(' × ');
+  // Card-level product link uses the best (or first present) distributor.
+  const primaryW = row.best_distributor || present[0];
+  const productHref = primaryW ? detailUrl(primaryW, row.product_name, row.upc) : null;
 
   return (
     <div className="br-card">
@@ -161,7 +164,9 @@ function Card({ row, slugs, onRipClick }: { row: BestRipRow; slugs: string[]; on
         <div className="br-card-lead">
           <ProductThumb src={row.image_url} alt={row.product_name} size={48} expandable />
           <div className="br-card-title">
-            <span className="br-name">{row.product_name}</span>
+            {productHref
+              ? <Link className="br-name br-name--link" to={productHref}>{row.product_name}</Link>
+              : <span className="br-name">{row.product_name}</span>}
             <span className="br-meta">
               {size && <span>{size}</span>}
               {vint && <span className="br-vint">{vint}</span>}

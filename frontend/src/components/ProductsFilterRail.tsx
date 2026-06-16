@@ -132,10 +132,10 @@ export default function ProductsFilterRail({ filters, onChange, items, facets, t
         )}
         {/* "In QD" (not the vague "Deals"): this drives hasDiscount, i.e. a
             quantity discount — named like its siblings Has RIP / In combo. */}
-        <label className="prod-filter-check" title="Has a quantity discount (QD) this edition">
+        <label className="prod-filter-check" title="Has a volume quantity discount of more than 1 case this edition (1-case QDs excluded — that's just the single-case price)">
           <input type="checkbox" checked={filters.hasDiscount === true}
             onChange={() => onChange({ ...filters, hasDiscount: filters.hasDiscount === true ? undefined : true })} />
-          <span>In QD</span><span className="prod-filter-count">{discCount}</span>
+          <span>In QD (&gt; 1 CS)</span><span className="prod-filter-count">{discCount}</span>
         </label>
         <label className="prod-filter-check">
           <input type="checkbox" checked={filters.hasRip === true}

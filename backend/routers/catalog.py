@@ -955,10 +955,12 @@ def search_products(
         if max_price is not None:
             where.append("frontline_case_price <= $max_price")
             params["max_price"] = max_price
+        # "In QD" means a real volume QD (> 1 case), matching the best-QD sticker
+        # (1-case QDs are the baseline single-case price, not a deal).
         if has_discount is True:
-            where.append("has_discount = true")
+            where.append(_qd_multi_case_sql())
         elif has_discount is False:
-            where.append("has_discount = false")
+            where.append("NOT " + _qd_multi_case_sql())
         if has_closeout is True:
             where.append("has_closeout = true")
         elif has_closeout is False:
@@ -1808,6 +1810,23 @@ def _attach_best_qd(records):
         }
 
 
+def _qd_multi_case_sql(prefix: str = "") -> str:
+    """SQL predicate: the row has a QUANTITY-DISCOUNT bracket of MORE than one
+    case — a real volume QD, not just the baseline single-case discount. Backs
+    the 'In QD (> 1 CS)' filter so it matches the Products best-QD sticker, which
+    skips 1-case QDs."""
+    # COALESCE(..., false): NULL qty/amt columns make the OR evaluate to NULL,
+    # which would drop a 1-case-only product from BOTH the filter and its negation
+    # (three-valued logic). Force a real boolean so `NOT (...)` works.
+    inner = " OR ".join(
+        f"(TRY_CAST(regexp_extract(CAST({prefix}discount_{i}_qty AS VARCHAR), "
+        f"'([0-9]+(?:\\.[0-9]+)?)', 1) AS DOUBLE) > 1 "
+        f"AND TRY_CAST({prefix}discount_{i}_amt AS DOUBLE) > 0)"
+        for i in range(1, 6)
+    )
+    return f"COALESCE(({inner}), false)"
+
+
 # Valid-UPC predicate reused for new-item detection: drop NULL/blank/stub UPCs
 # ('0', all-zeros/nines/ones, '999999…' placeholders, too-short) so cross-edition
 # matching only relies on real barcodes. Mirrors the stub filtering in
@@ -1956,9 +1975,9 @@ def new_items(
             filters.append("e.wholesaler = $wholesaler")
             params["wholesaler"] = wholesaler
         if has_discount is True:
-            filters.append("e.has_discount = true")
+            filters.append(_qd_multi_case_sql("e."))
         elif has_discount is False:
-            filters.append("e.has_discount = false")
+            filters.append("NOT " + _qd_multi_case_sql("e."))
         if has_rip is True:
             filters.append("e.has_rip = true")
         elif has_rip is False:
@@ -3555,7 +3574,8 @@ def search_facets(
         if has_rip is not None:
             preds.append({"dim": "rip", "sql": f"has_rip = {'true' if has_rip else 'false'}", "params": {}})
         if has_discount is not None:
-            preds.append({"dim": "disc", "sql": f"has_discount = {'true' if has_discount else 'false'}", "params": {}})
+            _qd = _qd_multi_case_sql()
+            preds.append({"dim": "disc", "sql": _qd if has_discount else f"NOT {_qd}", "params": {}})
 
         def build(exclude=None):
             clauses = list(base)
@@ -3584,7 +3604,8 @@ def search_facets(
         wc, p = build("rip")
         rf = con.execute(f"SELECT count(*) FILTER (WHERE has_rip) a, count(*) FILTER (WHERE NOT has_rip) b FROM {src} WHERE {wc}", p).fetchdf().iloc[0]
         wc, p = build("disc")
-        dfl = con.execute(f"SELECT count(*) FILTER (WHERE has_discount) a, count(*) FILTER (WHERE NOT has_discount) b FROM {src} WHERE {wc}", p).fetchdf().iloc[0]
+        _qd = _qd_multi_case_sql()
+        dfl = con.execute(f"SELECT count(*) FILTER (WHERE {_qd}) a, count(*) FILTER (WHERE NOT {_qd}) b FROM {src} WHERE {wc}", p).fetchdf().iloc[0]
         wc, p = build(None)
         cf = con.execute(f"SELECT count(*) FILTER (WHERE has_closeout) a, count(*) FILTER (WHERE NOT has_closeout) b FROM {src} WHERE {wc}", p).fetchdf().iloc[0]
         # In-combo count (products that belong to a bundle), so the "In combo"

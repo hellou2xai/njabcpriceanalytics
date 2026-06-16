@@ -1087,6 +1087,62 @@ def _rip_tier_rows(tiers: list, pack: float) -> list[dict]:
     return rows
 
 
+def _best_rip_tier_lines(tiers: list, pack: float) -> list[dict]:
+    """One line per RIP tier for the Best RIPs board, carrying the
+    Needed-for-Purchase / RIP-Profit economics the card shows:
+
+      buy_label            '2 cs' / '3 btl' — the qualifying buy
+      cases                physical cases to unlock (None for a pure bottle tier)
+      rebate_per_case      RIP-only rebate $/case (the rebate that comes back)
+      total_rebate         cases * rebate_per_case  — the '/$100' in '2C / $100'
+      after_qd_per_case    list - QD at this tier's volume (NET OF QD, before the
+                           RIP refund). Identity: a RIP tier's price_after already
+                           = case_price - (RIP + QD), so price_after + RIP rebate
+                           = the after-QD price (per FOUNDATION; same identity the
+                           Compare RIPs unlock sticker uses).
+      needed_for_purchase  cases * after_qd_per_case — the cash you put down
+      rip_profit_pct       rebate / after-QD outlay * 100 (= total_rebate /
+                           needed_for_purchase) — return on the cash down
+
+    Bottle-unit and half-case (case_credit) tiers convert via the canonical
+    _cases_threshold / _buy_label — no unit math re-implemented here."""
+    import math as _m
+    lines = []
+    for t in tiers:
+        if t.get("source") != "rip":
+            continue
+        thr = _cases_threshold(t, pack)
+        cases = _m.ceil(thr - 1e-9) if thr is not None else None
+        rpc = t.get("rip_only_save_per_case")
+        if rpc is None:
+            rpc = t.get("save_per_case") or 0.0
+        pa = t.get("price_after")
+        after_qd = (pa + rpc) if pa is not None else None
+        needed = (round(cases * after_qd, 2)
+                  if cases is not None and after_qd is not None else None)
+        total_rebate = round(cases * rpc, 2) if cases is not None and rpc else None
+        profit_pct = (round(rpc / after_qd * 100, 1)
+                      if after_qd and after_qd > 0 and rpc else None)
+        lines.append({
+            "buy_label": _buy_label(t, pack),
+            "cases": cases,
+            "code": t.get("code"),
+            "unit": t.get("unit"),
+            "rebate_per_case": round(rpc, 2) if rpc else None,
+            "total_rebate": total_rebate,
+            "after_qd_per_case": round(after_qd, 2) if after_qd is not None else None,
+            "price_after": pa,
+            "needed_for_purchase": needed,
+            "rip_profit_pct": profit_pct,
+            "window_status": t.get("window_status"),
+            "is_time_sensitive": bool(t.get("is_time_sensitive")),
+            "from_date": t.get("from_date"),
+            "to_date": t.get("to_date"),
+        })
+    lines.sort(key=lambda r: (r["cases"] if r["cases"] is not None else 1e9))
+    return lines
+
+
 def _rip_active_days(tiers: list, ref_date=None) -> int:
     """Distinct days in the edition month a RIP rebate is live for this SKU.
     A whole-month / evergreen RIP = the full month; dated windows contribute
@@ -1732,6 +1788,193 @@ def compare_rips(
             "anomalies_hidden": anomalies_hidden,
             "insights": insights,
         },
+    }
+
+
+# ===========================================================================
+# Best RIPs board — discovery-first. One card per product carried by Allied,
+# Fedway AND Opici, each distributor's full RIP ladder shown one line per tier
+# with Needed-for-Purchase (net of QD) + RIP-Profit economics, plus flags for
+# where the three distributors differ. Browse the standout rebates, then drill
+# into Compare RIPs.
+# ===========================================================================
+
+# Fixed to the three NJ distributors this board compares (see project rules).
+_BEST_RIP_SLUGS = ["allied", "fedway", "opici"]
+
+
+@router.get("/best-rips")
+def best_rips(
+    q: str = Query(""),
+    product_type: str = Query(""),
+    brand: str = Query("", description="Brand name contains"),
+    only_differences: bool = Query(True, description="Only products where the three distributors' RIP terms differ (a distributor missing the RIP, different timing/quantity, or a profit-%% gap). On by default — the board is for spotting divergence."),
+    min_profit: float = Query(0.0, ge=0, description="Hide cards whose best RIP profit %% is below this"),
+    time_sensitive_only: bool = Query(False, description="Only products where some distributor's RIP is a dated/time-limited deal"),
+    hide_expired: bool = Query(True, description="Drop tier lines whose window has already ended"),
+    sort: str = Query("best_profit", description="best_profit | deepest | gap | expiring | product"),
+    order: str = Query("desc"),
+    limit: int = Query(2000, ge=1, le=50000),
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    """Best RIPs board: one card per product that Allied, Fedway AND Opici all
+    carry and at least one of them files a RIP on. Each distributor block shows
+    its full RIP ladder, one line per tier, with the Needed-for-Purchase (net of
+    QD) and RIP-Profit-%% economics; a distributor that carries the SKU but files
+    no RIP this edition shows as 'No RIP' (a real difference, not a gap).
+
+    Scope is the three NJ distributors only, and only SKUs all three carry, so
+    the diff is like-for-like. All tier/unit/rebate math comes from the canonical
+    pricing.attach_tiers + rip_utils helpers — nothing re-implemented here."""
+    with get_duckdb() as con:
+        src = read_parquet(con, "cpl_enriched")
+        known = {r[0] for r in con.execute(
+            f"SELECT DISTINCT wholesaler FROM {src}").fetchall()}
+        slugs = [s for s in _BEST_RIP_SLUGS if s in known]
+        if len(slugs) < 2:
+            raise HTTPException(400, "Need Allied/Fedway/Opici data loaded for this board")
+        eds = _editions_for(con, src, slugs)
+        raw = _common_rows(con, src, slugs, eds)
+
+        by_key: dict[str, dict[str, dict]] = {}
+        for r in raw:
+            by_key.setdefault(r["match_key"], {})[r["wholesaler"]] = r
+
+        # Carried by ALL selected distributors (like-for-like), and at least ONE
+        # files a RIP — a distributor with no RIP is shown as a difference.
+        keys = [k for k, per in by_key.items()
+                if len(per) == len(slugs) and any(per[w].get("has_rip") for w in slugs)]
+
+        # Narrow on search BEFORE the expensive tier build (same as compare_rips).
+        if q or brand or product_type:
+            qq, bb, pt = q.lower(), brand.lower(), product_type.lower()
+            def _match(per):
+                recs = per.values()
+                if pt and not any((r.get("product_type") or "").lower() == pt for r in recs):
+                    return False
+                if bb and not any(bb in (r.get("brand") or "").lower() for r in recs):
+                    return False
+                if qq and not any(
+                    qq in (r.get("product_name") or "").lower()
+                    or qq in (r.get("brand") or "").lower()
+                    or qq in str(r.get("upc") or "").lstrip("0")
+                    for r in recs):
+                    return False
+                return True
+            keys = [k for k in keys if _match(by_key[k])]
+
+        flat = [by_key[k][w] for k in keys for w in slugs]
+        _pricing.attach_tiers(con, flat)
+        mix = _case_mix_sizes(con, src, slugs, eds)
+
+    rows = []
+    for key in keys:
+        per = by_key[key]
+        any_row = per[slugs[0]]
+        dists = {}
+        for w in slugs:
+            rec = per[w]
+            pack = rec.get("uqd") or 1.0
+            tiers = rec.get("tiers", []) or []
+            lines = _best_rip_tier_lines(tiers, pack)
+            if hide_expired:
+                lines = [ln for ln in lines if ln["window_status"] != "expired"]
+            has_rip = bool(rec.get("has_rip")) and bool(lines)
+            deepest_rebate, deepest_at = _rip_deepest(tiers, pack)
+            best_profit = max((ln["rip_profit_pct"] or 0 for ln in lines), default=0.0)
+            dists[w] = {
+                "has_rip": has_rip,
+                "rip_code": rec.get("rip_code"),
+                "frontline": rec.get("frontline_case_price"),
+                "case_mix": _product_case_mix(rec, mix, w),
+                "deepest_rebate": deepest_rebate,
+                "deepest_at_cases": deepest_at,
+                "min_cases": _min_cases_to_rip(tiers, pack),
+                "best_profit_pct": round(best_profit, 1) if best_profit else None,
+                "active_days": _rip_active_days(tiers),
+                "expires_in_days": _rip_expires_in(tiers),
+                "has_time_sensitive": _rip_has_time_sensitive(tiers),
+                "tiers": lines,
+                "unit_qty": rec.get("unit_qty"),
+                "unit_volume": rec.get("unit_volume"),
+            }
+
+        ripping = [w for w in slugs if dists[w]["has_rip"]]
+        missing = [w for w in slugs if not dists[w]["has_rip"]]
+        # Card winner = highest RIP profit %; delta vs the runner-up.
+        profits = {w: dists[w]["best_profit_pct"] for w in ripping
+                   if dists[w]["best_profit_pct"]}
+        best_w = best_profit_pct = profit_delta = None
+        if profits:
+            best_w = max(profits, key=profits.get)
+            best_profit_pct = profits[best_w]
+            if len(profits) > 1:
+                second = sorted(profits.values(), reverse=True)[1]
+                profit_delta = round(best_profit_pct - second, 1)
+        profit_gap = (round(max(profits.values()) - min(profits.values()), 1)
+                      if len(profits) > 1 else 0.0)
+
+        # Where the three differ: a distributor missing the RIP, different timing
+        # (dated vs all-month), different quantity to unlock, or a profit-%% gap.
+        timing_differs = len({dists[w]["has_time_sensitive"] for w in ripping}) > 1
+        quantity_differs = len({dists[w]["min_cases"] for w in ripping}) > 1
+        differs = bool(missing) or timing_differs or quantity_differs or profit_gap >= 1.0
+
+        rows.append({
+            "match_key": key,
+            "upc_norm": key.split("|")[0],
+            "size_key": key.split("|")[1] if "|" in key else "",
+            "product_name": min((per[w].get("product_name") for w in slugs),
+                                key=lambda s: len(s or "")),
+            "product_type": any_row.get("product_type"),
+            "brand": any_row.get("brand"),
+            "vintage": any_row.get("vintage"),
+            "unit_qty": any_row.get("unit_qty"),
+            "unit_volume": any_row.get("unit_volume"),
+            "unit_type": any_row.get("unit_type"),
+            "upc": any_row.get("upc"),
+            "dists": dists,
+            "ripping": ripping,
+            "missing": missing,
+            "best_distributor": best_w,
+            "best_profit_pct": best_profit_pct,
+            "profit_delta": profit_delta,
+            "profit_gap": profit_gap,
+            "deepest_rebate": max((dists[w]["deepest_rebate"] or 0 for w in slugs), default=0.0),
+            "timing_differs": timing_differs,
+            "quantity_differs": quantity_differs,
+            "differs": differs,
+            "soonest_expiry": min((dists[w]["expires_in_days"] for w in slugs
+                                   if dists[w]["expires_in_days"] is not None), default=None),
+        })
+
+    if time_sensitive_only:
+        rows = [r for r in rows
+                if any(r["dists"][w]["has_time_sensitive"] for w in r["ripping"])]
+    total = len(rows)  # full board universe for this search context
+    if only_differences:
+        rows = [r for r in rows if r["differs"]]
+    if min_profit > 0:
+        rows = [r for r in rows if (r["best_profit_pct"] or 0) >= min_profit]
+
+    keymap = {
+        "best_profit": lambda r: r["best_profit_pct"] or 0,
+        "deepest": lambda r: r["deepest_rebate"] or 0,
+        "gap": lambda r: r["profit_gap"] or 0,
+        # soonest-expiring first (smallest days); None = no dated window -> last
+        "expiring": lambda r: r["soonest_expiry"] if r["soonest_expiry"] is not None else 1e9,
+        "product": lambda r: (r["product_name"] or "").lower(),
+    }
+    _ascending = ("product", "expiring")
+    rows.sort(key=keymap.get(sort, keymap["best_profit"]),
+              reverse=False if sort in _ascending else (order != "asc"))
+    rows = rows[:limit]
+
+    return {
+        "wholesalers": slugs,
+        "editions": eds,
+        "total": total,
+        "rows": rows,
     }
 
 

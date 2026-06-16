@@ -51,6 +51,7 @@ const NAV_GROUPS: {
       { path: '/time-sensitive', label: 'Time-Sensitive Deals', icon: Clock },
       { path: '/compare-prices', label: 'Compare Prices', icon: Scale },
       { path: '/compare-rips', label: 'Compare RIPs', icon: Layers },
+      { path: '/best-rips', label: 'Best RIPs', icon: BadgeDollarSign },
       { path: '/price-360', label: 'Price 360', icon: Target, adminOnly: true },
       { path: '/edition-compare', label: 'Edition Comparison', icon: CalendarClock },
       { path: '/price-drops', label: 'Price Drops', icon: ArrowDownRight },

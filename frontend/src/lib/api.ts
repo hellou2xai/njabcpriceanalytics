@@ -527,7 +527,74 @@ export const compare = {
     request<EditionOptions>(`/api/compare/editions/options?wholesaler=${wholesaler}`),
   editions: (params: Record<string, unknown>) =>
     request<EditionCompareResponse>(`/api/compare/editions${qs(params)}`),
+  bestRips: (params?: Record<string, unknown>) =>
+    request<BestRipResponse>(`/api/compare/best-rips${qs(params)}`),
 };
+
+// ---- Best RIPs board (Allied / Fedway / Opici) ----
+export interface BestRipTier {
+  buy_label: string | null;        // '2 cs' / '3 btl' — the qualifying buy
+  cases: number | null;            // physical cases to unlock
+  code: string | null;
+  unit: string | null;
+  rebate_per_case: number | null;  // RIP-only $/case
+  total_rebate: number | null;     // cases * rebate_per_case (the '/$100' in '2C / $100')
+  after_qd_per_case: number | null;// list - QD at this volume (net of QD, before RIP)
+  price_after: number | null;      // after QD + this RIP
+  needed_for_purchase: number | null; // cases * after_qd_per_case — cash you put down
+  rip_profit_pct: number | null;   // rebate / needed * 100 — return on cash down
+  window_status: string | null;
+  is_time_sensitive: boolean;
+  from_date: string | null;
+  to_date: string | null;
+}
+export interface BestRipDist {
+  has_rip: boolean;                // false = carries the SKU but no RIP this edition
+  rip_code: string | null;
+  frontline: number | null;
+  case_mix: number | null;
+  deepest_rebate: number | null;
+  deepest_at_cases: number | null;
+  min_cases: number | null;
+  best_profit_pct: number | null;
+  active_days: number | null;
+  expires_in_days: number | null;
+  has_time_sensitive: boolean;
+  tiers: BestRipTier[];
+  unit_qty: string | null;
+  unit_volume: string | null;
+}
+export interface BestRipRow {
+  match_key: string;
+  upc_norm: string;
+  size_key: string;
+  product_name: string;
+  product_type: string | null;
+  brand: string | null;
+  vintage: string | null;
+  unit_qty: string | null;
+  unit_volume: string | null;
+  unit_type: string | null;
+  upc: string | null;
+  dists: Record<string, BestRipDist>;
+  ripping: string[];               // distributors that file a RIP
+  missing: string[];               // carry the SKU, no RIP this edition
+  best_distributor: string | null; // highest RIP profit %
+  best_profit_pct: number | null;
+  profit_delta: number | null;     // winner's lead over the runner-up (pp)
+  profit_gap: number | null;       // spread between RIPing distributors (pp)
+  deepest_rebate: number | null;
+  timing_differs: boolean;
+  quantity_differs: boolean;
+  differs: boolean;
+  soonest_expiry: number | null;   // days to the nearest dated RIP ending
+}
+export interface BestRipResponse {
+  wholesalers: string[];
+  editions: Record<string, string>;
+  total: number;
+  rows: BestRipRow[];
+}
 
 // ---- Edition comparison ----
 export interface EditionOptions {

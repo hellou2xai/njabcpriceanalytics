@@ -9,6 +9,7 @@ import { compare } from '../lib/api';
 import type { BestRipRow, BestRipDist, BestRipTier } from '../lib/api';
 import { distributorName } from '../lib/distributors';
 import ProductSearchBox from '../components/ProductSearchBox';
+import ProductThumb from '../components/ProductThumb';
 import RipMembersModal from '../components/RipMembersModal';
 import { ErrorState } from '../components/DataState';
 import DataLoading from '../components/DataLoading';
@@ -65,6 +66,17 @@ function DistBlock({ w, d, row, isWinner, onRipClick }: {
 }) {
   const accent = ACCENTS[w] || '#64748b';
   const name = distributorName(w);
+
+  if (!d.carried) {
+    return (
+      <div className="br-dist br-dist--norip">
+        <div className="br-dist-head">
+          <span className="br-dist-name" style={{ color: accent }}>{name}</span>
+          <span className="br-norip br-norip--absent">Not carried</span>
+        </div>
+      </div>
+    );
+  }
 
   if (!d.has_rip) {
     return (
@@ -146,13 +158,16 @@ function Card({ row, onRipClick }: { row: BestRipRow; onRipClick: (w: string, c:
   return (
     <div className="br-card">
       <div className="br-card-head">
-        <div className="br-card-title">
-          <span className="br-name">{row.product_name}</span>
-          <span className="br-meta">
-            {size && <span>{size}</span>}
-            {vint && <span className="br-vint">{vint}</span>}
-            {row.upc && <span className="br-upc">UPC {row.upc}</span>}
-          </span>
+        <div className="br-card-lead">
+          <ProductThumb src={row.image_url} alt={row.product_name} size={48} expandable />
+          <div className="br-card-title">
+            <span className="br-name">{row.product_name}</span>
+            <span className="br-meta">
+              {size && <span>{size}</span>}
+              {vint && <span className="br-vint">{vint}</span>}
+              {row.upc && <span className="br-upc">UPC {row.upc}</span>}
+            </span>
+          </div>
         </div>
         <div className="br-card-flags">
           {row.best_profit_pct != null && (
@@ -188,7 +203,7 @@ function Card({ row, onRipClick }: { row: BestRipRow; onRipClick: (w: string, c:
 export default function BestRips() {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<Sort>('best_profit');
-  const [onlyDiff, setOnlyDiff] = useState(true);
+  const [onlyDiff, setOnlyDiff] = useState(false);
   const [tsOnly, setTsOnly] = useState(false);
   const [hideExpired, setHideExpired] = useState(true);
   const [minProfit, setMinProfit] = useState(0);
@@ -243,7 +258,7 @@ export default function BestRips() {
       </div>
 
       <div className="br-filters">
-        <label className="br-chk"><input type="checkbox" checked={onlyDiff} onChange={e => setOnlyDiff(e.target.checked)} /> Only where the three differ</label>
+        <label className="br-chk"><input type="checkbox" checked={onlyDiff} onChange={e => setOnlyDiff(e.target.checked)} /> Only where distributors differ</label>
         <label className="br-chk"><input type="checkbox" checked={tsOnly} onChange={e => setTsOnly(e.target.checked)} /> Time-sensitive only</label>
         <label className="br-chk"><input type="checkbox" checked={hideExpired} onChange={e => setHideExpired(e.target.checked)} /> Hide expired tiers</label>
         <label className="br-range">
@@ -257,11 +272,12 @@ export default function BestRips() {
       {data && !isLoading && (
         <>
           <div className="br-count">
-            {data.rows.length} of {data.total} products
-            {onlyDiff ? ' where the three distributors differ' : ' with a RIP at one of the three'}
+            Showing {data.rows.length} of {data.total.toLocaleString()} RIPs
+            {onlyDiff ? ' where the distributors differ' : ' across Allied, Fedway & Opici'}
+            {data.total > data.rows.length && ' — refine with search or sort to narrow'}
           </div>
           {data.rows.length === 0 ? (
-            <div className="br-empty">No products match these filters. Try turning off “Only where the three differ”.</div>
+            <div className="br-empty">No RIPs match these filters.</div>
           ) : (
             <div className="br-grid">
               {data.rows.map((row: BestRipRow) => (

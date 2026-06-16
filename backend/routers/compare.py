@@ -31,6 +31,7 @@ from backend import pricing as _pricing
 from backend.auth import get_optional_user, get_current_user
 from backend.db import get_duckdb, read_parquet
 from backend.enrichment_join import attach_sku_mapping as _attach_sku_mapping
+from backend.enrichment_join import attach_enrichment_image as _attach_image
 from backend.size_std import _to_ml
 
 router = APIRouter(prefix="/api/compare", tags=["compare"])
@@ -158,9 +159,14 @@ def _size_key(raw) -> str:
     return f"M{round(ml / 5) * 5}"  # bottles/cans: bucket to 5 ml
 
 
-def _common_rows(con, src: str, slugs: list[str], eds: dict[str, str]) -> list[dict]:
+def _common_rows(con, src: str, slugs: list[str], eds: dict[str, str],
+                 require_all: bool = True) -> list[dict]:
     """One best-offer row per (identity key, wholesaler), restricted to
     identity keys present at ALL selected wholesalers.
+
+    Pass ``require_all=False`` to keep the best offer at EVERY wholesaler that
+    carries each key (no intersection) — used by the Best RIPs board, which
+    shows a RIP even when only one distributor carries the product.
 
     Identity = normalised UPC + physical-size bucket + bottles-per-case +
     vintage (vintage-sensitive categories only). Size and pack are normalised
@@ -251,6 +257,9 @@ def _common_rows(con, src: str, slugs: list[str], eds: dict[str, str]) -> list[d
             )
         if cur is None or _rank(r) < _rank(cur):
             best[k] = r
+
+    if not require_all:
+        return list(best.values())
 
     # Keep only keys present at ALL selected wholesalers.
     per_key: dict[str, int] = {}
@@ -1808,7 +1817,7 @@ def best_rips(
     q: str = Query(""),
     product_type: str = Query(""),
     brand: str = Query("", description="Brand name contains"),
-    only_differences: bool = Query(True, description="Only products where the three distributors' RIP terms differ (a distributor missing the RIP, different timing/quantity, or a profit-%% gap). On by default — the board is for spotting divergence."),
+    only_differences: bool = Query(False, description="Only cards where the distributors that carry the product differ on RIP terms (missing the RIP, different timing/quantity, or a profit-%% gap)."),
     min_profit: float = Query(0.0, ge=0, description="Hide cards whose best RIP profit %% is below this"),
     time_sensitive_only: bool = Query(False, description="Only products where some distributor's RIP is a dated/time-limited deal"),
     hide_expired: bool = Query(True, description="Drop tier lines whose window has already ended"),
@@ -1817,15 +1826,16 @@ def best_rips(
     limit: int = Query(2000, ge=1, le=50000),
     user: Optional[dict] = Depends(get_optional_user),
 ):
-    """Best RIPs board: one card per product that Allied, Fedway AND Opici all
-    carry and at least one of them files a RIP on. Each distributor block shows
-    its full RIP ladder, one line per tier, with the Needed-for-Purchase (net of
-    QD) and RIP-Profit-%% economics; a distributor that carries the SKU but files
-    no RIP this edition shows as 'No RIP' (a real difference, not a gap).
+    """Best RIPs board: EVERY RIP across Allied, Fedway and Opici. One card per
+    product that ANY of the three files a RIP on — including products only one of
+    them carries. Each distributor block shows its full RIP ladder, one line per
+    tier, with the Needed-for-Purchase (net of QD) and RIP-Profit-%% economics.
+    A distributor that carries the SKU but files no RIP shows as 'No RIP'; one
+    that doesn't stock it at all shows as 'Not carried'.
 
-    Scope is the three NJ distributors only, and only SKUs all three carry, so
-    the diff is like-for-like. All tier/unit/rebate math comes from the canonical
-    pricing.attach_tiers + rip_utils helpers — nothing re-implemented here."""
+    Scope is the three NJ distributors only. All tier/unit/rebate math comes from
+    the canonical pricing.attach_tiers + rip_utils helpers — nothing
+    re-implemented here. Product images come from product_enrichment (Go-UPC)."""
     with get_duckdb() as con:
         src = read_parquet(con, "cpl_enriched")
         known = {r[0] for r in con.execute(
@@ -1834,16 +1844,17 @@ def best_rips(
         if len(slugs) < 2:
             raise HTTPException(400, "Need Allied/Fedway/Opici data loaded for this board")
         eds = _editions_for(con, src, slugs)
-        raw = _common_rows(con, src, slugs, eds)
+        # require_all=False: keep every distributor that CARRIES each SKU, so a
+        # RIP shows even when only one of the three stocks the product.
+        raw = _common_rows(con, src, slugs, eds, require_all=False)
 
         by_key: dict[str, dict[str, dict]] = {}
         for r in raw:
             by_key.setdefault(r["match_key"], {})[r["wholesaler"]] = r
 
-        # Carried by ALL selected distributors (like-for-like), and at least ONE
-        # files a RIP — a distributor with no RIP is shown as a difference.
+        # Every product at least one of the three files a RIP on.
         keys = [k for k, per in by_key.items()
-                if len(per) == len(slugs) and any(per[w].get("has_rip") for w in slugs)]
+                if any(per[w].get("has_rip") for w in per)]
 
         # Narrow on search BEFORE the expensive tier build (same as compare_rips).
         if q or brand or product_type:
@@ -1863,16 +1874,34 @@ def best_rips(
                 return True
             keys = [k for k in keys if _match(by_key[k])]
 
-        flat = [by_key[k][w] for k in keys for w in slugs]
+        # present recs only (a key need not be carried by all three)
+        flat = [by_key[k][w] for k in keys for w in by_key[k]]
         _pricing.attach_tiers(con, flat)
+        try:
+            _attach_image(con, flat)          # rec["image_url"] from Go-UPC
+        except Exception:
+            pass
         mix = _case_mix_sizes(con, src, slugs, eds)
+
+    def _absent_dist():
+        return {
+            "carried": False, "has_rip": False, "rip_code": None, "frontline": None,
+            "case_mix": None, "deepest_rebate": None, "deepest_at_cases": None,
+            "min_cases": None, "best_profit_pct": None, "active_days": None,
+            "expires_in_days": None, "has_time_sensitive": False, "tiers": [],
+            "unit_qty": None, "unit_volume": None,
+        }
 
     rows = []
     for key in keys:
         per = by_key[key]
-        any_row = per[slugs[0]]
+        present = [w for w in slugs if w in per]
+        any_row = per[present[0]]
         dists = {}
         for w in slugs:
+            if w not in per:
+                dists[w] = _absent_dist()      # distributor doesn't stock this SKU
+                continue
             rec = per[w]
             pack = rec.get("uqd") or 1.0
             tiers = rec.get("tiers", []) or []
@@ -1883,6 +1912,7 @@ def best_rips(
             deepest_rebate, deepest_at = _rip_deepest(tiers, pack)
             best_profit = max((ln["rip_profit_pct"] or 0 for ln in lines), default=0.0)
             dists[w] = {
+                "carried": True,
                 "has_rip": has_rip,
                 "rip_code": rec.get("rip_code"),
                 "frontline": rec.get("frontline_case_price"),
@@ -1899,8 +1929,9 @@ def best_rips(
                 "unit_volume": rec.get("unit_volume"),
             }
 
-        ripping = [w for w in slugs if dists[w]["has_rip"]]
-        missing = [w for w in slugs if not dists[w]["has_rip"]]
+        ripping = [w for w in present if dists[w]["has_rip"]]
+        missing = [w for w in present if not dists[w]["has_rip"]]   # carries, no RIP
+        not_carried = [w for w in slugs if w not in per]
         # Card winner = highest RIP profit %; delta vs the runner-up.
         profits = {w: dists[w]["best_profit_pct"] for w in ripping
                    if dists[w]["best_profit_pct"]}
@@ -1914,17 +1945,21 @@ def best_rips(
         profit_gap = (round(max(profits.values()) - min(profits.values()), 1)
                       if len(profits) > 1 else 0.0)
 
-        # Where the three differ: a distributor missing the RIP, different timing
-        # (dated vs all-month), different quantity to unlock, or a profit-%% gap.
+        # Where the distributors differ: not stocked / carries-but-no-RIP / timing
+        # (dated vs all-month) / quantity to unlock / a profit-%% gap.
         timing_differs = len({dists[w]["has_time_sensitive"] for w in ripping}) > 1
         quantity_differs = len({dists[w]["min_cases"] for w in ripping}) > 1
-        differs = bool(missing) or timing_differs or quantity_differs or profit_gap >= 1.0
+        differs = bool(missing or not_carried) or timing_differs or quantity_differs or profit_gap >= 1.0
+
+        # Go-UPC image: first present rec that has one (same UPC across all three).
+        image_url = next((per[w].get("image_url") for w in present
+                          if per[w].get("image_url")), None)
 
         rows.append({
             "match_key": key,
             "upc_norm": key.split("|")[0],
             "size_key": key.split("|")[1] if "|" in key else "",
-            "product_name": min((per[w].get("product_name") for w in slugs),
+            "product_name": min((per[w].get("product_name") for w in present),
                                 key=lambda s: len(s or "")),
             "product_type": any_row.get("product_type"),
             "brand": any_row.get("brand"),
@@ -1933,9 +1968,11 @@ def best_rips(
             "unit_volume": any_row.get("unit_volume"),
             "unit_type": any_row.get("unit_type"),
             "upc": any_row.get("upc"),
+            "image_url": image_url,
             "dists": dists,
             "ripping": ripping,
             "missing": missing,
+            "not_carried": not_carried,
             "best_distributor": best_w,
             "best_profit_pct": best_profit_pct,
             "profit_delta": profit_delta,

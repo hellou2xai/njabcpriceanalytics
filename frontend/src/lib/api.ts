@@ -549,6 +549,7 @@ export interface BestRipTier {
   to_date: string | null;
 }
 export interface BestRipDist {
+  carried: boolean;                // false = doesn't stock this SKU at all
   has_rip: boolean;                // false = carries the SKU but no RIP this edition
   rip_code: string | null;
   frontline: number | null;
@@ -576,9 +577,11 @@ export interface BestRipRow {
   unit_volume: string | null;
   unit_type: string | null;
   upc: string | null;
+  image_url: string | null;        // Go-UPC product image (R2 CDN)
   dists: Record<string, BestRipDist>;
   ripping: string[];               // distributors that file a RIP
   missing: string[];               // carry the SKU, no RIP this edition
+  not_carried: string[];           // don't stock the SKU at all
   best_distributor: string | null; // highest RIP profit %
   best_profit_pct: number | null;
   profit_delta: number | null;     // winner's lead over the runner-up (pp)

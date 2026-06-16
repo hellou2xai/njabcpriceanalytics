@@ -112,8 +112,9 @@ const num = (s) => {
   record('KPI · Active Discounts', await kpiVal('Active Discounts'), kpi.active_discounts);
   record('KPI · Clearance Items', await kpiVal('Clearance Items'), kpi.clearance_items);
   record('KPI · Active RIPs', await kpiVal('Active RIPs'), kpi.active_rips);
-  record('KPI · Price Drops (== endpoint)', await kpiVal('Price Drops'), kpi.price_drops);
-  record('KPI · Price Increases (== endpoint)', await kpiVal('Price Increases'), kpi.price_increases);
+  // Canonical definition (chosen): matched 2-edition price-comparison.
+  record('KPI · Price Drops (== price-comparison)', await kpiVal('Price Drops'), cmpDown);
+  record('KPI · Price Increases (== price-comparison)', await kpiVal('Price Increases'), cmpUp);
 
   // ---- Insight tiles (must equal their own data source) ----
   record('Tile · New Items', await tileVal('New Items'), newItems.total);

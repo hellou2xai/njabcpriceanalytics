@@ -135,6 +135,20 @@ export default function Dashboard() {
   });
   const { data: myNotes } = useQuery({ queryKey: ['notes', 'all'], queryFn: notes.all });
 
+  // Price Drops / Increases KPIs are derived from the SAME matched-edition
+  // price-comparison the "Price Changes (MoM)" tile uses, so the headline count,
+  // the tile and the comparison pages all agree on one definition of a price
+  // move (latest two editions, deduped by SKU). See FOUNDATION / the dashboard
+  // tile accuracy test.
+  const cmpDrops = useMemo(
+    () => (priceCmp?.items ?? []).filter((r: any) => (r.delta_pct ?? 0) < 0).length,
+    [priceCmp],
+  );
+  const cmpHikes = useMemo(
+    () => (priceCmp?.items ?? []).filter((r: any) => (r.delta_pct ?? 0) > 0).length,
+    [priceCmp],
+  );
+
   return (
     <div className="page">
       <SmartHeaderStrip rightSlot={<WholesalerFilter value={wholesaler} onChange={setWholesaler} />} />
@@ -154,9 +168,9 @@ export default function Dashboard() {
                    to="/discounts" title="Open the Discounts ranker" />
           <KPICard label="Clearance Items" value={kpis.clearance_items} color="#dc2626" icon={<TrendingDown size={20} />}
                    to="/clearance" title="Open the Clearance / Closeout list" />
-          <KPICard label="Price Drops" value={kpis.price_drops} color="#16a34a" icon={<ArrowDownRight size={20} />}
+          <KPICard label="Price Drops" value={priceCmp ? cmpDrops : '…'} color="#16a34a" icon={<ArrowDownRight size={20} />}
                    to="/price-drops" title="Open Price Drops" />
-          <KPICard label="Price Increases" value={kpis.price_increases} color="#ea580c" icon={<ArrowUpRight size={20} />}
+          <KPICard label="Price Increases" value={priceCmp ? cmpHikes : '…'} color="#ea580c" icon={<ArrowUpRight size={20} />}
                    to="/price-increases" title="Open Price Increases" />
           <KPICard label="Active RIPs" value={kpis.active_rips} color="#7c3aed" icon={<Zap size={20} />}
                    to="/catalog?hasRip=1" title="Open Catalog filtered to products with a RIP rebate" />

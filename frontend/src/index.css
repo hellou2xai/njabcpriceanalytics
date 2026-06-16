@@ -4420,6 +4420,15 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
   background: #fef3c7; color: #92400e;
 }
 
+/* Future screens shown in the nav as disabled "Soon" placeholders. */
+.nav-link-soon { cursor: default; opacity: 0.55; }
+.nav-link-soon:hover { background: transparent; color: inherit; }
+.nav-soon-marker {
+  margin-left: auto; font-size: 9px; font-weight: 700; letter-spacing: 0.6px;
+  padding: 2px 6px; border-radius: 4px; text-transform: uppercase;
+  background: var(--surface-hover, #e5e7eb); color: var(--text-muted, #6b7280);
+}
+
 /* ===== Pro Insights teaser tiles + drill-down modal (Dashboard) =====
    Four POS-driven sample tiles slotted between My Workspace and
    Insights & Opportunities. Tiles share the catalog Pro amber wash so

@@ -21,16 +21,15 @@ import { useActivityTracker } from '../lib/activityTracker';
 // Left menu grouped into labelled sections of related screens.
 const NAV_GROUPS: {
   header: string;
-  items: { path: string; label: string; icon: typeof LayoutDashboard; adminOnly?: boolean }[];
+  items: { path: string; label: string; icon: typeof LayoutDashboard; adminOnly?: boolean; soon?: boolean }[];
 }[] = [
   {
     header: 'Overview',
     items: [
       { path: '/tours', label: 'Guided Tour', icon: Compass },
       { path: '/how-to-guide', label: 'How To Guide', icon: BookOpen },
-      { path: '/assistant', label: 'Celar AI Assistant', icon: Sparkles },
       { path: '/', label: 'Home', icon: Home },
-      { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { path: '/assistant', label: 'Celar AI Assistant', icon: Sparkles },
       { path: '/alerts', label: 'Alerts', icon: Bell },
     ],
   },
@@ -39,28 +38,31 @@ const NAV_GROUPS: {
     items: [
       { path: '/catalog', label: 'Catalog', icon: Package, adminOnly: true },
       { path: '/products', label: 'Products', icon: LayoutGrid },
-      { path: '/whats-new', label: "What's New for You", icon: Newspaper },
-      { path: '/new-items', label: 'New Items', icon: Sparkles },
+      { path: '/rips-soon', label: 'RIPs', icon: BadgeDollarSign, soon: true },
+      { path: '/qd-soon', label: 'QD', icon: Percent, soon: true },
       { path: '/combos', label: 'Combos', icon: Combine },
+      { path: '/new-items', label: 'New Items', icon: Sparkles },
+      { path: '/time-sensitive', label: 'Time-Sensitive Deals', icon: Clock },
     ],
   },
   {
-    header: 'Promotions',
+    header: 'Analysis',
     items: [
-      { path: '/rate-shop', label: 'Rate Shop', icon: ShoppingBag, adminOnly: true },
-      { path: '/time-sensitive', label: 'Time-Sensitive Deals', icon: Clock },
       { path: '/compare-prices', label: 'Compare Prices', icon: Scale },
       { path: '/compare-rips', label: 'Compare RIPs', icon: Layers },
       { path: '/best-rips', label: 'Best RIPs', icon: BadgeDollarSign },
-      { path: '/price-360', label: 'Price 360', icon: Target, adminOnly: true },
-      { path: '/edition-compare', label: 'Edition Comparison', icon: CalendarClock },
+      { path: '/edition-compare', label: 'Monthly Comparison', icon: CalendarClock },
       { path: '/price-drops', label: 'Price Drops', icon: ArrowDownRight },
       { path: '/price-increases', label: 'Price Increases', icon: ArrowUpRight },
+      { path: '/rate-shop', label: 'Rate Shop', icon: ShoppingBag, adminOnly: true },
+      { path: '/price-360', label: 'Price 360', icon: Target, adminOnly: true },
     ],
   },
   {
-    header: 'My work',
+    header: 'Store Hub',
     items: [
+      { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { path: '/whats-new', label: "What's New for You", icon: Newspaper },
       { path: '/watchlist', label: 'Favorites', icon: Star },
       { path: '/todo', label: 'To-Do', icon: ListTodo },
       { path: '/notes', label: 'Notes', icon: StickyNote },
@@ -310,7 +312,15 @@ export default function Layout() {
                       className={`nav-group-chevron${groupCollapsed ? ' is-collapsed' : ''}`} />
                   </button>
                 )}
-                {!groupCollapsed && items.map(({ path, label, icon: Icon, adminOnly }) => (
+                {!groupCollapsed && items.map(({ path, label, icon: Icon, adminOnly, soon }) => (
+                  soon ? (
+                    <div key={path} className="nav-link nav-link-soon" aria-disabled="true"
+                         title={sidebarCollapsed ? `${label} (coming soon)` : 'Coming soon'}>
+                      <Icon size={18} />
+                      {!sidebarCollapsed && <span>{label}</span>}
+                      {!sidebarCollapsed && <span className="nav-soon-marker">Soon</span>}
+                    </div>
+                  ) :
                   path === '/tours' ? (
                     <div key={path} className="nav-tours-wrap">
                       <Link

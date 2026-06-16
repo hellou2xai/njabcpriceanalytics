@@ -1785,6 +1785,11 @@ def _attach_best_qd(records):
                 m = re.match(r"^\s*(\d+(?:\.\d+)?)", str(rec.get(f"discount_{i}_qty") or ""))
                 best_qty = float(m.group(1)) if m else None
         cases = int(math.ceil(best_qty - 1e-9)) if best_qty and best_qty > 0 else None
+        # A 1-case QD is just the baseline single-case price (already the headline),
+        # not a volume bracket worth a sticker — skip it.
+        if cases is not None and cases <= 1:
+            rec["best_qd"] = None
+            continue
         try:
             pack = float(rec.get("unit_qty") or 0)
         except (TypeError, ValueError):

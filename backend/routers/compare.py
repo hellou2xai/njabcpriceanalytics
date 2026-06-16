@@ -1141,11 +1141,15 @@ def _best_rip_tier_lines(tiers: list, pack: float) -> list[dict]:
             rpc = t.get("save_per_case") or 0.0
         pa = t.get("price_after")
         after_qd = (pa + rpc) if pa is not None else None
-        # Sanity guard: a RIP rebate can NEVER exceed the cash you put down
-        # (profit >= 100% is physically impossible). Such a tier is a source-data
-        # error — e.g. an extra zero in a distributor's RIP amount ($4,200 vs
-        # $420) — so drop it rather than show an absurd profit %.
-        if after_qd is None or after_qd <= 0 or (rpc and rpc >= after_qd):
+        # Sanity guard: a real RIP rebate is a modest fraction of the case price.
+        # A rebate that returns > 60% of the cash you put down is almost always a
+        # source-data error — an extra zero in the amount ($4,200 vs $420), or a
+        # pack/price mismatch under one shared UPC (Absolut Grapefruit 50ML filed
+        # as a 10-count $58.80 case at one distributor and a 120-count $229 case
+        # at another, with the same $50 rebate -> a phantom 85% deal). Drop it
+        # rather than float an absurd profit % to the top of the board. (Same
+        # 60%-of-price threshold Compare RIPs uses to hide anomalies.)
+        if after_qd is None or after_qd <= 0 or (rpc and rpc / after_qd > 0.60):
             continue
         needed = (round(cases * after_qd, 2)
                   if cases is not None and after_qd is not None else None)

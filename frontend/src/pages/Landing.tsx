@@ -60,6 +60,12 @@ const ROLES = [
     ],
     ctaLabel: 'Create your free account', cta: 'signup',
     visual: 'buyers' as const,
+    outcome: { stat: '15-25%', label: 'in rebates most stores leave on the table' },
+    features: [
+      { title: 'Smart catalog & landed cost', desc: 'Every SKU shows its true landed cost and full RIP ladder. Search by brand alias, misspelling or barcode and land on the right product.' },
+      { title: 'Compare Prices & RIPs', desc: 'Allied, Fedway, Opici and every filer on the same UPC, side by side. See whose rebate actually wins at the volume you buy.' },
+      { title: 'Edition tracking & alerts', desc: 'Month-over-month price drops, increases and new items, plus an alert the day a new edition lands and before a rebate expires.' },
+    ],
   },
   {
     key: 'distributors', anchor: 'for-distributors', Icon: Truck, tab: 'Distributors',
@@ -74,6 +80,12 @@ const ROLES = [
     ],
     ctaLabel: 'Talk to us', cta: 'mail',
     visual: 'distributors' as const,
+    outcome: { stat: 'Every UPC', label: 'compared on real effective price, after every discount' },
+    features: [
+      { title: 'Competitive positioning', desc: 'See exactly where your posted price and RIP win or lose on every shared UPC, after every discount and rebate.' },
+      { title: 'Prove after-rebate value', desc: 'Show retailers the real landed value of your programs, not a 400-page price book they will never read.' },
+      { title: 'Filing intelligence', desc: 'Spot where you have fallen behind a competing filer and fix it before your next CPL goes in.' },
+    ],
   },
   {
     key: 'producers', anchor: 'for-producers', Icon: Factory, tab: 'Producers',
@@ -88,6 +100,12 @@ const ROLES = [
     ],
     ctaLabel: 'Request a brand briefing', cta: 'mail',
     visual: 'producers' as const,
+    outcome: { stat: 'Statewide', label: 'shelf-level pricing across every NJ distributor' },
+    features: [
+      { title: 'Statewide shelf view', desc: 'How your SKUs are priced and promoted across every NJ distributor and every monthly edition.' },
+      { title: 'RIP participation & pull-through', desc: 'Measure how much of each rebate actually reaches retailer cost, by distributor and by size.' },
+      { title: 'Benchmark & data QA', desc: 'Compare against the category by size, pack and vintage, and catch pack or price errors filed under your UPCs.' },
+    ],
   },
 ];
 
@@ -223,19 +241,24 @@ export default function Landing() {
             <span className="lp-brand-tag lp-hide-sm">NJ · Liquor Intelligence</span>
           </div>
 
-          <div className="lp-nav-links">
-            <a href="#roles" className="lp-navlink lp-hide-md" onClick={(e) => { e.preventDefault(); jumpTo('roles'); }}>Who it's for</a>
-            <a href="#capabilities" className="lp-navlink lp-hide-md" onClick={(e) => { e.preventDefault(); jumpTo('capabilities'); }}>Capabilities</a>
-            <a href="#how" className="lp-navlink lp-hide-md" onClick={(e) => { e.preventDefault(); jumpTo('how'); }}>How it works</a>
-            <span className="lp-nav-sep lp-hide-md" />
+          {/* Role-led primary nav (Provi-style), centered between logo and actions */}
+          <div className="lp-nav-center lp-hide-md">
+            <a className="lp-navlink" onClick={() => jumpTo('for-buyers')}>Buyers</a>
+            <a className="lp-navlink" onClick={() => jumpTo('for-distributors')}>Distributors</a>
+            <a className="lp-navlink" onClick={() => jumpTo('for-producers')}>Brands</a>
+            <a className="lp-navlink" onClick={() => jumpTo('capabilities')}>Capabilities</a>
+            <a className="lp-navlink" onClick={() => jumpTo('how')}>How it works</a>
+          </div>
+
+          <div className="lp-nav-actions">
             <WhatsAppShareButton className="sidebar-toggle lp-hide-sm" showLabel={false}
               title="Share via WhatsApp" source="landing-nav" />
             <button className="sidebar-toggle lp-theme-toggle" onClick={toggle} title="Toggle theme" aria-label="Toggle theme"
               style={{ display: 'inline-flex' }}>
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             </button>
-            <a className="lp-navlink lp-hide-sm" onClick={() => navigate('/login')} style={{ cursor: 'pointer' }}>Log in</a>
-            <button className="btn lp-hide-sm" onClick={() => goSignup()}>Create account</button>
+            <a className="lp-navlink lp-login lp-hide-sm" onClick={() => navigate('/login')} style={{ cursor: 'pointer' }}>Log in</a>
+            <button className="btn lp-signup lp-hide-sm" onClick={() => goSignup()}>Sign up</button>
 
             {/* Hamburger — phones/tablets only */}
             <button className="sidebar-toggle lp-burger" onClick={() => setMenuOpen(o => !o)}
@@ -382,8 +405,26 @@ export default function Landing() {
             </div>
             <div className="lp-role-visual">
               <RoleVisual kind={r.visual} />
+              {r.outcome && (
+                <div className="lp-role-outcome">
+                  <span className="lp-role-outcome-stat">{r.outcome.stat}</span>
+                  <span className="lp-role-outcome-label">{r.outcome.label}</span>
+                </div>
+              )}
             </div>
           </div>
+
+          {r.features && (
+            <div className="lp-container lp-role-features">
+              {r.features.map((f, k) => (
+                <div key={k} className="lp-role-feature">
+                  <span className="lp-rf-ico"><Check size={16} /></span>
+                  <h4>{f.title}</h4>
+                  <p>{f.desc}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
       ))}
 

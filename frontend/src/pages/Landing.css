@@ -44,9 +44,13 @@
   font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase;
   letter-spacing: 0.14em; color: var(--text-muted); margin-left: 6px;
 }
-.lp-nav-links { display: flex; align-items: center; gap: 22px; }
-.lp-nav-links a.lp-navlink { color: var(--text-muted); font-size: 14px; font-weight: 500; }
-.lp-nav-links a.lp-navlink:hover { color: var(--text); }
+.lp-nav-center { flex: 1; display: flex; align-items: center; justify-content: center; gap: 30px; }
+.lp-nav-actions { display: flex; align-items: center; gap: 16px; }
+.lp-navlink { color: var(--text); font-size: 15px; font-weight: 600; cursor: pointer; }
+.lp-navlink:hover { color: var(--accent); }
+.lp-navlink.lp-login { color: var(--text-muted); font-weight: 600; }
+.lp-navlink.lp-login:hover { color: var(--text); }
+.lp-signup { padding: 9px 20px; font-weight: 700; }
 .lp-nav-sep { width: 1px; height: 18px; background: var(--border); }
 .lp-hide-sm { }  /* hidden on phones */
 .lp-hide-md { }  /* hidden on tablets + phones (inline anchors live in the drawer) */
@@ -57,7 +61,7 @@
   .lp-nav .lp-hide-md { display: none !important; }
   .lp-burger { display: inline-flex !important; }
   .lp-nav-inner { gap: 10px; }
-  .lp-nav-links { gap: 12px; }
+  .lp-nav-actions { gap: 12px; }
 }
 /* Phone: keep only logo, theme toggle and the hamburger in the bar. */
 @media (max-width: 720px) {
@@ -281,8 +285,31 @@
   .lp-role-cta { align-self: stretch; justify-content: center; }
 }
 
+/* ---- Per-role feature trio (fills out each dedicated area) ---- */
+.lp-role-features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 52px; }
+.lp-role-feature {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 24px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.lp-role-feature:hover { transform: translateY(-2px); box-shadow: var(--shadow-pop); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.lp-section.alt .lp-role-feature { background: var(--bg); }
+.lp-rf-ico {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: var(--radius-sm);
+  background: var(--accent-weak); color: var(--accent); margin-bottom: 14px;
+}
+.lp-role-feature h4 { font-size: 16.5px; font-weight: 700; line-height: 1.25; margin-bottom: 9px; }
+.lp-role-feature p { color: var(--text-muted); font-size: 14px; line-height: 1.55; }
+@media (max-width: 900px) { .lp-role-features { grid-template-columns: 1fr; gap: 12px; margin-top: 32px; } }
+
+/* ---- Role outcome stat (under the mock) ---- */
+.lp-role-outcome { display: flex; align-items: baseline; gap: 12px; margin-top: 18px; max-width: 440px; width: 100%; }
+.lp-role-outcome-stat { font-family: var(--font-mono); font-weight: 700; font-size: 26px; letter-spacing: -0.02em; color: var(--accent); flex-shrink: 0; }
+.lp-role-outcome-label { font-size: 13px; line-height: 1.45; color: var(--text-muted); }
+
 /* ---- Role visual mocks ---- */
-.lp-role-visual { display: flex; justify-content: center; }
+.lp-role-visual { display: flex; flex-direction: column; align-items: center; }
 .lp-mock {
   width: 100%; max-width: 440px;
   background: var(--surface); border: 1px solid var(--border);

@@ -1,6 +1,8 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Sun, Moon, ArrowRight, Store, Truck, Factory } from 'lucide-react';
+import {
+  Sun, Moon, ArrowRight, Store, Truck, Factory, Menu, X, Check,
+} from 'lucide-react';
 import WhatsAppShareButton from '../components/WhatsAppShare';
 import { shareOnWhatsAppCached } from '../lib/share';
 import './Landing.css';
@@ -39,13 +41,15 @@ const CAPABILITIES = [
 ];
 
 // Who it's for — the SAME public-filings engine, tuned to each side of NJ's
-// three-tier market. Buyers is the live product (sign up); distributors and
-// producers are grounded value props with a talk-to-us CTA.
-const AUDIENCES = [
+// three-tier market. Each role gets its own dedicated section on the page with
+// its own heading, value props and a role-specific product mock. Buyers is the
+// live product (sign up); distributors and producers get a talk-to-us CTA.
+const ROLES = [
   {
-    key: 'buyers', Icon: Store, kicker: 'Retailers & Licensees', primary: true,
+    key: 'buyers', anchor: 'for-buyers', Icon: Store, tab: 'Buyers',
+    kicker: 'For Retailers & Licensees', primary: true,
     title: 'Buy smarter every edition',
-    blurb: 'The live product today. Stop reading 400-page price books with a highlighter.',
+    blurb: 'The live product today. Stop reading 400-page price books with a highlighter and start ordering from a daily action list built around what your store actually buys.',
     points: [
       'True landed cost on every SKU — list minus every discount minus your best RIP rebate, not the sticker.',
       'The whole RIP program decoded: tiered brackets, monthly-recycled codes, break-even and profit % per case.',
@@ -55,11 +59,13 @@ const AUDIENCES = [
       'Ask in plain English or by voice — the built-in assistant answers from your live data.',
     ],
     ctaLabel: 'Create your free account', cta: 'signup',
+    visual: 'buyers' as const,
   },
   {
-    key: 'distributors', Icon: Truck, kicker: 'Wholesalers & Distributors',
+    key: 'distributors', anchor: 'for-distributors', Icon: Truck, tab: 'Distributors',
+    kicker: 'For Wholesalers & Distributors',
     title: 'Prove your deal is the best deal',
-    blurb: 'Competitive pricing & RIP intelligence on the same normalized data your buyers see.',
+    blurb: 'Competitive pricing and RIP intelligence on the same normalized data your buyers see. Know exactly where you win, where you lose, and fix it before the next filing.',
     points: [
       'See exactly how your posted prices and RIPs stack up against competing filers on every shared UPC.',
       'Show retailers the real, after-rebate value of your programs — not just a price book.',
@@ -67,11 +73,13 @@ const AUDIENCES = [
       'Reach buyers at the moment they’re comparing and deciding.',
     ],
     ctaLabel: 'Talk to us', cta: 'mail',
+    visual: 'distributors' as const,
   },
   {
-    key: 'producers', Icon: Factory, kicker: 'Producers & Brands',
+    key: 'producers', anchor: 'for-producers', Icon: Factory, tab: 'Producers',
+    kicker: 'For Producers & Brands',
     title: 'See your brand at the shelf, statewide',
-    blurb: 'Shelf-level visibility into how your brand is priced and promoted across NJ.',
+    blurb: 'Shelf-level visibility into how your brand is priced and promoted across New Jersey. Track participation, benchmark the category, and catch data errors before they distort the market.',
     points: [
       'Track how your SKUs are priced and promoted across every NJ distributor and edition.',
       'Measure RIP participation and its real pull-through to retailer cost.',
@@ -79,6 +87,7 @@ const AUDIENCES = [
       'Catch pack/price data errors under your UPCs before they distort the market.',
     ],
     ctaLabel: 'Request a brand briefing', cta: 'mail',
+    visual: 'producers' as const,
   },
 ];
 
@@ -91,10 +100,99 @@ const STEPS = [
     desc: 'Sortable by profit. Filterable by category, distributor, and expiration. Exportable as a printable buy list for your next rep visit.' },
 ];
 
+// ---- Role-specific product mocks (pure CSS/markup, no images) ----------------
+function RoleVisual({ kind }: { kind: 'buyers' | 'distributors' | 'producers' }) {
+  if (kind === 'buyers') {
+    return (
+      <div className="lp-mock" aria-hidden>
+        <div className="lp-mock-head">
+          <span className="lp-mock-title">Tito's Handmade Vodka 1.75L</span>
+          <span className="lp-mock-pill">UPC · 619947000020</span>
+        </div>
+        <div className="lp-mock-rows">
+          <div className="lp-mock-row"><span>List price</span><span className="mono">$28.99</span></div>
+          <div className="lp-mock-row"><span>Post-off + depletion</span><span className="mono">− $2.10</span></div>
+          <div className="lp-mock-row"><span>Best RIP (10 cs @ $3.25)</span><span className="mono accent">− $3.25</span></div>
+          <div className="lp-mock-row total"><span>True landed cost</span><span className="mono">$23.64</span></div>
+        </div>
+        <div className="lp-mock-ladder">
+          <div className="lp-mock-ladder-lbl">RIP ladder</div>
+          <div className="lp-mock-bars">
+            <div className="lp-bar"><span className="fill" style={{ height: '38%' }} /><b>5 cs</b><i>$1.80</i></div>
+            <div className="lp-bar win"><span className="fill" style={{ height: '70%' }} /><b>10 cs</b><i>$3.25</i></div>
+            <div className="lp-bar"><span className="fill" style={{ height: '94%' }} /><b>15 cs</b><i>$4.40</i></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  if (kind === 'distributors') {
+    return (
+      <div className="lp-mock" aria-hidden>
+        <div className="lp-mock-head">
+          <span className="lp-mock-title">Effective price · same UPC</span>
+          <span className="lp-mock-pill">Glenlivet 12yr 750mL</span>
+        </div>
+        <div className="lp-cmp">
+          <div className="lp-cmp-row win">
+            <span className="who">You</span>
+            <span className="track"><span className="fill" style={{ width: '62%' }} /></span>
+            <span className="mono">$31.10</span>
+            <span className="lp-cmp-badge">Best</span>
+          </div>
+          <div className="lp-cmp-row">
+            <span className="who">Filer B</span>
+            <span className="track"><span className="fill" style={{ width: '78%' }} /></span>
+            <span className="mono">$33.40</span>
+          </div>
+          <div className="lp-cmp-row">
+            <span className="who">Filer C</span>
+            <span className="track"><span className="fill" style={{ width: '90%' }} /></span>
+            <span className="mono">$35.05</span>
+          </div>
+        </div>
+        <div className="lp-mock-foot">
+          <span>After every discount and RIP, per bottle</span>
+          <span className="accent">You win on 18 of 24 shared SKUs</span>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="lp-mock" aria-hidden>
+      <div className="lp-mock-head">
+        <span className="lp-mock-title">Your brand, statewide</span>
+        <span className="lp-mock-pill">June 2026 edition</span>
+      </div>
+      <div className="lp-mock-rows">
+        <div className="lp-mock-row"><span>Distributors carrying</span><span className="mono">4 of 5</span></div>
+        <div className="lp-mock-row"><span>SKUs tracked</span><span className="mono">37</span></div>
+        <div className="lp-mock-row"><span>RIP participation</span><span className="mono accent">61%</span></div>
+        <div className="lp-mock-row"><span>Avg retailer landed Δ</span><span className="mono">− $2.84</span></div>
+      </div>
+      <div className="lp-mock-ladder">
+        <div className="lp-mock-ladder-lbl">RIP participation by size</div>
+        <div className="lp-mock-bars">
+          <div className="lp-bar"><span className="fill" style={{ height: '52%' }} /><b>750</b><i>52%</i></div>
+          <div className="lp-bar win"><span className="fill" style={{ height: '78%' }} /><b>1.0L</b><i>78%</i></div>
+          <div className="lp-bar"><span className="fill" style={{ height: '40%' }} /><b>1.75</b><i>40%</i></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Landing() {
   const navigate = useNavigate();
   const { theme, toggle } = useTheme();
   const [email, setEmail] = useState('');
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  // Lock body scroll while the mobile drawer is open.
+  useEffect(() => {
+    document.body.style.overflow = menuOpen ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [menuOpen]);
 
   const goSignup = (e?: string) =>
     navigate(`/login?signup=1${e ? `&email=${encodeURIComponent(e)}` : ''}`);
@@ -107,32 +205,67 @@ export default function Landing() {
     goSignup(email.trim() || undefined);
   };
 
+  // Smooth-scroll to an in-page anchor and close the mobile drawer.
+  const jumpTo = (id: string) => {
+    setMenuOpen(false);
+    const el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   return (
     <div className="lp">
       {/* ---- Nav ---- */}
       <nav className="lp-nav">
         <div className="lp-container lp-nav-inner">
-          <div className="lp-brand">
+          <div className="lp-brand" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} style={{ cursor: 'pointer' }}>
             <span className="lp-logo">C</span>
             <span className="lp-wordmark">CELR<span className="dot">.</span>ai</span>
             <span className="lp-brand-tag lp-hide-sm">NJ · Liquor Intelligence</span>
           </div>
+
           <div className="lp-nav-links">
-            <a href="#audiences" className="lp-navlink lp-hide-sm">Who it's for</a>
-            <a href="#capabilities" className="lp-navlink lp-hide-sm">Capabilities</a>
-            <a href="#how" className="lp-navlink lp-hide-sm">How it works</a>
-            <span className="lp-nav-sep lp-hide-sm" />
-            <WhatsAppShareButton className="sidebar-toggle" showLabel={false}
+            <a href="#roles" className="lp-navlink lp-hide-md" onClick={(e) => { e.preventDefault(); jumpTo('roles'); }}>Who it's for</a>
+            <a href="#capabilities" className="lp-navlink lp-hide-md" onClick={(e) => { e.preventDefault(); jumpTo('capabilities'); }}>Capabilities</a>
+            <a href="#how" className="lp-navlink lp-hide-md" onClick={(e) => { e.preventDefault(); jumpTo('how'); }}>How it works</a>
+            <span className="lp-nav-sep lp-hide-md" />
+            <WhatsAppShareButton className="sidebar-toggle lp-hide-sm" showLabel={false}
               title="Share via WhatsApp" source="landing-nav" />
             <button className="sidebar-toggle lp-theme-toggle" onClick={toggle} title="Toggle theme" aria-label="Toggle theme"
               style={{ display: 'inline-flex' }}>
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             </button>
-            <a className="lp-navlink" onClick={() => navigate('/login')} style={{ cursor: 'pointer' }}>Log in</a>
-            <button className="btn" onClick={() => goSignup()}>Create account</button>
+            <a className="lp-navlink lp-hide-sm" onClick={() => navigate('/login')} style={{ cursor: 'pointer' }}>Log in</a>
+            <button className="btn lp-hide-sm" onClick={() => goSignup()}>Create account</button>
+
+            {/* Hamburger — phones/tablets only */}
+            <button className="sidebar-toggle lp-burger" onClick={() => setMenuOpen(o => !o)}
+              aria-label="Menu" aria-expanded={menuOpen} style={{ display: 'none' }}>
+              {menuOpen ? <X size={20} /> : <Menu size={20} />}
+            </button>
           </div>
         </div>
       </nav>
+
+      {/* ---- Mobile drawer ---- */}
+      {menuOpen && (
+        <div className="lp-drawer" role="dialog" aria-modal="true">
+          <button className="lp-drawer-scrim" aria-label="Close menu" onClick={() => setMenuOpen(false)} />
+          <div className="lp-drawer-panel">
+            <a onClick={() => jumpTo('roles')}>Who it's for</a>
+            <a onClick={() => jumpTo('for-buyers')} className="sub">For Buyers</a>
+            <a onClick={() => jumpTo('for-distributors')} className="sub">For Distributors</a>
+            <a onClick={() => jumpTo('for-producers')} className="sub">For Producers</a>
+            <a onClick={() => jumpTo('capabilities')}>Capabilities</a>
+            <a onClick={() => jumpTo('how')}>How it works</a>
+            <div className="lp-drawer-rule" />
+            <a onClick={() => { setMenuOpen(false); navigate('/login'); }}>Log in</a>
+            <button className="btn lp-drawer-cta" onClick={() => { setMenuOpen(false); goSignup(); }}>
+              Create your free account <ArrowRight size={16} />
+            </button>
+            <a className="lp-drawer-share" onClick={() => { setMenuOpen(false); shareOnWhatsAppCached('landing-drawer'); }}>Share via WhatsApp</a>
+          </div>
+        </div>
+      )}
 
       {/* ---- Hero ---- */}
       <section className="lp-hero">
@@ -148,13 +281,12 @@ export default function Landing() {
             </h1>
             <p className="lp-lead">
               CELR.ai turns the monthly pile of wholesaler price books into a daily action list
-              for New Jersey liquor store owners. Spot the right opportunities faster, protect
-              your margins, and uncover rebates and profits you may be missing. Buy smarter,
-              price sharper, and never miss another deal opportunity.
+              for New Jersey's liquor trade. Spot the right opportunities faster, protect
+              your margins, and uncover rebates and profits you may be missing.
             </p>
             <div className="lp-cta-row">
               <button className="btn lp-btn-lg" onClick={() => goSignup()}>Create your free account</button>
-              <a href="#capabilities" className="btn btn-secondary lp-btn-lg">See the 8 capabilities</a>
+              <a href="#roles" className="btn btn-secondary lp-btn-lg" onClick={(e) => { e.preventDefault(); jumpTo('roles'); }}>Find your role</a>
               <span className="lp-cta-note">Free during early access · No credit card</span>
             </div>
           </div>
@@ -192,54 +324,71 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ---- Who it's for ---- */}
-      <section id="audiences" className="lp-section alt">
+      {/* ---- Who it's for: role selector ---- */}
+      <section id="roles" className="lp-section alt lp-roles-intro">
         <div className="lp-container">
-          <div className="lp-caps-head">
-            <div>
-              <div className="section-label" style={{ color: 'var(--accent)' }}>Who it's for</div>
-              <h2 className="lp-section-h2">
-                One source of truth for <span className="muted">every side of the NJ market.</span>
-              </h2>
-            </div>
-            <p className="intro">
-              CELR is the only platform that decodes New Jersey's monthly ABC price filings — and
-              the RIP rebate program — down to the case. One engine, tuned to what each tier needs.
-            </p>
-          </div>
-
-          <div className="lp-aud-grid">
-            {AUDIENCES.map(a => (
-              <div key={a.key} className={`lp-aud${a.primary ? ' feature' : ''}`}>
-                <div className="lp-aud-top">
-                  <span className="lp-aud-icon"><a.Icon size={20} /></span>
-                  <span className="section-label">{a.kicker}</span>
-                </div>
-                <h3 className="lp-aud-title">{a.title}</h3>
-                <p className="lp-aud-blurb">{a.blurb}</p>
-                <div className="lp-cap-rule" />
-                <ul className="lp-aud-list">
-                  {a.points.map((p, i) => (
-                    <li key={i}><span className="mk">❖</span><span>{p}</span></li>
-                  ))}
-                </ul>
-                {a.cta === 'signup' ? (
-                  <button className="btn lp-aud-cta" onClick={() => goSignup()}>
-                    {a.ctaLabel} <ArrowRight size={15} />
-                  </button>
-                ) : (
-                  <a className="btn btn-secondary lp-aud-cta" href={mailTo(a.kicker)}>
-                    {a.ctaLabel} <ArrowRight size={15} />
-                  </a>
-                )}
-              </div>
+          <div className="section-label" style={{ color: 'var(--accent)' }}>Who it's for</div>
+          <h2 className="lp-section-h2">
+            One source of truth for <span className="muted">every side of the NJ market.</span>
+          </h2>
+          <p className="lp-roles-sub">
+            CELR decodes New Jersey's monthly ABC price filings and the RIP rebate program down to
+            the case. One engine, a dedicated view for each tier. Pick yours.
+          </p>
+          <div className="lp-role-tabs">
+            {ROLES.map(r => (
+              <a key={r.key} className={`lp-role-tab${r.primary ? ' primary' : ''}`}
+                onClick={() => jumpTo(r.anchor)}>
+                <span className="lp-role-tab-icon"><r.Icon size={18} /></span>
+                <span className="lp-role-tab-text">
+                  <b>{r.tab}</b>
+                  <i>{r.primary ? 'Live now' : 'Talk to us'}</i>
+                </span>
+              </a>
             ))}
           </div>
         </div>
       </section>
 
+      {/* ---- Dedicated role sections (alternating) ---- */}
+      {ROLES.map((r, i) => (
+        <section key={r.key} id={r.anchor}
+          className={`lp-section lp-role${i % 2 === 1 ? ' alt' : ''}`}>
+          <div className={`lp-container lp-role-grid${i % 2 === 1 ? ' reverse' : ''}`}>
+            <div className="lp-role-copy">
+              <div className="lp-role-kicker">
+                <span className="lp-role-icon"><r.Icon size={18} /></span>
+                <span className="section-label">{r.kicker}</span>
+                {r.primary
+                  ? <span className="lp-role-badge live">Live now</span>
+                  : <span className="lp-role-badge">Early access</span>}
+              </div>
+              <h2 className="lp-role-title">{r.title}</h2>
+              <p className="lp-role-blurb">{r.blurb}</p>
+              <ul className="lp-role-list">
+                {r.points.map((p, j) => (
+                  <li key={j}><span className="mk"><Check size={15} /></span><span>{p}</span></li>
+                ))}
+              </ul>
+              {r.cta === 'signup' ? (
+                <button className="btn lp-btn-lg lp-role-cta" onClick={() => goSignup()}>
+                  {r.ctaLabel} <ArrowRight size={16} />
+                </button>
+              ) : (
+                <a className="btn btn-secondary lp-btn-lg lp-role-cta" href={mailTo(r.kicker)}>
+                  {r.ctaLabel} <ArrowRight size={16} />
+                </a>
+              )}
+            </div>
+            <div className="lp-role-visual">
+              <RoleVisual kind={r.visual} />
+            </div>
+          </div>
+        </section>
+      ))}
+
       {/* ---- The pain ---- */}
-      <section className="lp-section">
+      <section className="lp-section alt">
         <div className="lp-container lp-pain-grid">
           <div>
             <div className="section-label" style={{ color: 'var(--accent)' }}>The old way</div>
@@ -291,7 +440,7 @@ export default function Landing() {
       </section>
 
       {/* ---- Capabilities ---- */}
-      <section id="capabilities" className="lp-section alt">
+      <section id="capabilities" className="lp-section">
         <div className="lp-container">
           <div className="lp-caps-head">
             <div>
@@ -329,7 +478,7 @@ export default function Landing() {
       </section>
 
       {/* ---- How it works ---- */}
-      <section id="how" className="lp-section">
+      <section id="how" className="lp-section alt">
         <div className="lp-container lp-how-grid">
           <div>
             <div className="section-label" style={{ color: 'var(--accent)' }}>How it works</div>
@@ -355,7 +504,7 @@ export default function Landing() {
       </section>
 
       {/* ---- Testimonial ---- */}
-      <section className="lp-section alt">
+      <section className="lp-section">
         <div className="lp-container lp-quote-wrap">
           <div className="lp-quote-mark">❖</div>
           <blockquote className="lp-quote">
@@ -368,7 +517,7 @@ export default function Landing() {
       </section>
 
       {/* ---- Subscribe / CTA ---- */}
-      <section id="subscribe" className="lp-section">
+      <section id="subscribe" className="lp-section alt">
         <div className="lp-container lp-cta-grid">
           <div>
             <div className="section-label" style={{ color: 'var(--accent)' }}>Early access</div>
@@ -442,10 +591,18 @@ export default function Landing() {
               </p>
             </div>
             <div className="lp-footer-col">
+              <h4>Who it's for</h4>
+              <ul>
+                <li><a onClick={() => jumpTo('for-buyers')} style={{ cursor: 'pointer' }}>For Buyers</a></li>
+                <li><a onClick={() => jumpTo('for-distributors')} style={{ cursor: 'pointer' }}>For Distributors</a></li>
+                <li><a onClick={() => jumpTo('for-producers')} style={{ cursor: 'pointer' }}>For Producers</a></li>
+              </ul>
+            </div>
+            <div className="lp-footer-col">
               <h4>Product</h4>
               <ul>
-                <li><a href="#capabilities">Capabilities</a></li>
-                <li><a href="#how">How it works</a></li>
+                <li><a onClick={() => jumpTo('capabilities')} style={{ cursor: 'pointer' }}>Capabilities</a></li>
+                <li><a onClick={() => jumpTo('how')} style={{ cursor: 'pointer' }}>How it works</a></li>
                 <li><a onClick={() => goSignup()} style={{ cursor: 'pointer' }}>Create account</a></li>
                 <li><a onClick={() => navigate('/login')} style={{ cursor: 'pointer' }}>Log in</a></li>
                 <li><a onClick={() => shareOnWhatsAppCached('landing-footer')} style={{ cursor: 'pointer' }}>Share via WhatsApp</a></li>
@@ -457,13 +614,6 @@ export default function Landing() {
                 <li><a onClick={() => navigate('/terms')} style={{ cursor: 'pointer' }}>Terms of Service</a></li>
                 <li><a onClick={() => navigate('/privacy')} style={{ cursor: 'pointer' }}>Privacy Policy</a></li>
                 <li><a onClick={() => window.dispatchEvent(new Event('celr:cookie-preferences'))} style={{ cursor: 'pointer' }}>Cookie preferences</a></li>
-              </ul>
-            </div>
-            <div className="lp-footer-col">
-              <h4>Contact</h4>
-              <ul>
-                <li>hello@celr.ai</li>
-                <li>New Jersey, USA</li>
               </ul>
             </div>
           </div>

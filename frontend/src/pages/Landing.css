@@ -22,7 +22,7 @@
 
 /* ---- Nav ---- */
 .lp-nav {
-  position: sticky; top: 0; z-index: 30;
+  position: sticky; top: 0; z-index: 60;
   background: color-mix(in srgb, var(--bg) 88%, transparent);
   backdrop-filter: saturate(1.1) blur(8px);
   border-bottom: 1px solid var(--border);
@@ -48,20 +48,53 @@
 .lp-nav-links a.lp-navlink { color: var(--text-muted); font-size: 14px; font-weight: 500; }
 .lp-nav-links a.lp-navlink:hover { color: var(--text); }
 .lp-nav-sep { width: 1px; height: 18px; background: var(--border); }
-.lp-hide-sm { } /* hidden on small screens via the query below */
-@media (max-width: 760px) {
-  .lp-nav-links .lp-hide-sm, .lp-nav .lp-hide-sm { display: none !important; }
-  .lp-nav-inner { padding: 12px 0; gap: 10px; }
-  .lp-nav-links { gap: 14px; }
+.lp-hide-sm { }  /* hidden on phones */
+.lp-hide-md { }  /* hidden on tablets + phones (inline anchors live in the drawer) */
+.lp-burger { }
+
+/* Tablet + phone: collapse the inline anchors into the hamburger drawer. */
+@media (max-width: 900px) {
+  .lp-nav .lp-hide-md { display: none !important; }
+  .lp-burger { display: inline-flex !important; }
+  .lp-nav-inner { gap: 10px; }
+  .lp-nav-links { gap: 12px; }
 }
-@media (max-width: 430px) {
-  .lp-nav-links { gap: 9px; }
-  .lp-nav-links .btn { padding: 8px 12px; font-size: 13px; }
+/* Phone: keep only logo, theme toggle and the hamburger in the bar. */
+@media (max-width: 720px) {
+  .lp-nav .lp-hide-sm { display: none !important; }
+  .lp-nav-inner { padding: 12px 0; }
   .lp-wordmark { font-size: 18px; }
 }
-/* On the narrowest phones, drop the theme toggle (least essential) so the
-   WhatsApp share button and the Create-account button always stay visible. */
-@media (max-width: 374px) { .lp-theme-toggle { display: none; } }
+
+/* ---- Mobile drawer ---- */
+.lp-drawer { position: fixed; inset: 0; z-index: 50; }
+.lp-drawer-scrim {
+  position: absolute; inset: 0; border: 0; cursor: pointer;
+  background: color-mix(in srgb, #000 45%, transparent);
+  backdrop-filter: blur(2px);
+  animation: lp-fade 0.16s ease;
+}
+.lp-drawer-panel {
+  position: absolute; top: 0; right: 0; bottom: 0;
+  width: min(86vw, 340px);
+  background: var(--bg); border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-pop);
+  padding: 88px 22px 28px;
+  display: flex; flex-direction: column; gap: 4px;
+  overflow-y: auto;
+  animation: lp-slide 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.lp-drawer-panel a {
+  display: block; padding: 13px 6px; font-size: 17px; font-weight: 600;
+  color: var(--text); cursor: pointer; border-radius: var(--radius-sm);
+}
+.lp-drawer-panel a:active { background: var(--surface); }
+.lp-drawer-panel a.sub { font-size: 14.5px; font-weight: 500; color: var(--text-muted); padding: 9px 6px 9px 18px; }
+.lp-drawer-rule { height: 1px; background: var(--border); margin: 10px 0; }
+.lp-drawer-cta { width: 100%; justify-content: center; padding: 14px 16px; font-size: 15px; margin-top: 6px; }
+.lp-drawer-share { color: var(--accent) !important; font-weight: 500 !important; font-size: 14px !important; margin-top: 4px; }
+@keyframes lp-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes lp-slide { from { transform: translateX(20px); opacity: 0.4; } to { transform: translateX(0); opacity: 1; } }
 
 /* ---- Eyebrow / pills ---- */
 .lp-eyebrow {
@@ -119,6 +152,15 @@
 @media (max-width: 900px) {
   .lp-hero-grid { grid-template-columns: 1fr; gap: 36px; }
   .lp-hero { padding: 48px 0 8px; }
+}
+/* Phone: stack hero CTAs full-width and order the note last. */
+@media (max-width: 560px) {
+  .lp-hero { padding: 32px 0 6px; }
+  .lp-cta-row { gap: 12px; }
+  .lp-cta-row .lp-btn-lg { width: 100%; justify-content: center; }
+  .lp-cta-note { order: 3; width: 100%; text-align: center; }
+  .lp-stat { padding: 16px; }
+  .lp-stat-num { font-size: 28px; }
 }
 
 /* ---- Trust strip ---- */
@@ -181,30 +223,101 @@
 @media (max-width: 1024px) { .lp-caps-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 560px) { .lp-caps-grid { grid-template-columns: 1fr; } }
 
-/* ---- Who it's for (audiences) ---- */
-.lp-aud-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; align-items: stretch; }
-.lp-aud {
-  display: flex; flex-direction: column;
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 26px;
+/* ---- Who it's for: role selector ---- */
+.lp-roles-intro { padding-bottom: 40px; }
+.lp-roles-sub { color: var(--text-muted); font-size: clamp(15px, 1.5vw, 18px); line-height: 1.6; max-width: 640px; margin-top: 16px; }
+.lp-role-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 30px; }
+.lp-role-tab {
+  display: flex; align-items: center; gap: 13px; cursor: pointer;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px 18px;
   transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
 }
-.lp-aud:hover { transform: translateY(-3px); box-shadow: var(--shadow-pop); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
-.lp-aud.feature { border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: linear-gradient(180deg, var(--accent-weak), var(--surface)); }
-.lp-aud-top { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
-.lp-aud-icon {
+.lp-role-tab:hover { transform: translateY(-2px); box-shadow: var(--shadow-pop); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.lp-role-tab.primary { border-color: color-mix(in srgb, var(--accent) 50%, transparent); background: linear-gradient(180deg, var(--accent-weak), var(--bg)); }
+.lp-role-tab-icon {
+  width: 42px; height: 42px; flex-shrink: 0; border-radius: var(--radius-sm);
+  background: var(--accent-weak); color: var(--accent);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.lp-role-tab-text { display: flex; flex-direction: column; line-height: 1.25; }
+.lp-role-tab-text b { font-size: 16px; font-weight: 700; }
+.lp-role-tab-text i { font-family: var(--font-mono); font-style: normal; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); margin-top: 2px; }
+.lp-role-tab.primary .lp-role-tab-text i { color: var(--accent); }
+@media (max-width: 760px) { .lp-role-tabs { grid-template-columns: 1fr; gap: 10px; } }
+
+/* ---- Dedicated role sections ---- */
+.lp-role { scroll-margin-top: 72px; }
+.lp-role-grid { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 56px; align-items: center; }
+.lp-role-grid.reverse .lp-role-copy { order: 2; }
+.lp-role-grid.reverse .lp-role-visual { order: 1; }
+.lp-role-kicker { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.lp-role-kicker .section-label { color: var(--text-muted); margin: 0; }
+.lp-role-icon {
   width: 40px; height: 40px; flex-shrink: 0; border-radius: var(--radius-sm);
   background: var(--accent-weak); color: var(--accent);
   display: inline-flex; align-items: center; justify-content: center;
 }
-.lp-aud-top .section-label { color: var(--text-muted); margin: 0; }
-.lp-aud-title { font-size: 19px; font-weight: 700; line-height: 1.2; margin-bottom: 8px; }
-.lp-aud-blurb { color: var(--text-muted); font-size: 14px; line-height: 1.55; margin-bottom: 14px; }
-.lp-aud-list { list-style: none; display: flex; flex-direction: column; gap: 11px; margin: 0 0 22px; }
-.lp-aud-list li { display: flex; gap: 9px; font-size: 14px; line-height: 1.5; color: var(--text); }
-.lp-aud-list .mk { color: var(--accent); flex-shrink: 0; }
-.lp-aud-cta { margin-top: auto; justify-content: center; width: 100%; padding: 11px 16px; }
-@media (max-width: 980px) { .lp-aud-grid { grid-template-columns: 1fr; } }
+.lp-role-badge {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.12em; color: var(--text-muted);
+  border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px;
+}
+.lp-role-badge.live { color: var(--green); border-color: color-mix(in srgb, var(--green) 40%, transparent); background: color-mix(in srgb, var(--green) 10%, transparent); }
+.lp-role-title { font-size: clamp(26px, 3.2vw, 38px); line-height: 1.12; letter-spacing: -0.02em; font-weight: 800; }
+.lp-role-blurb { color: var(--text-muted); font-size: clamp(15px, 1.5vw, 18px); line-height: 1.6; margin-top: 16px; max-width: 560px; }
+.lp-role-list { list-style: none; display: flex; flex-direction: column; gap: 13px; margin: 24px 0 28px; }
+.lp-role-list li { display: flex; gap: 11px; font-size: 15px; line-height: 1.5; color: var(--text); }
+.lp-role-list .mk {
+  flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--accent-weak); color: var(--accent);
+  display: inline-flex; align-items: center; justify-content: center; margin-top: 1px;
+}
+.lp-role-cta { align-self: flex-start; }
+@media (max-width: 900px) {
+  .lp-role-grid, .lp-role-grid.reverse { grid-template-columns: 1fr; gap: 32px; }
+  .lp-role-grid.reverse .lp-role-copy { order: 1; }
+  .lp-role-grid.reverse .lp-role-visual { order: 2; }
+  .lp-role-cta { align-self: stretch; justify-content: center; }
+}
+
+/* ---- Role visual mocks ---- */
+.lp-role-visual { display: flex; justify-content: center; }
+.lp-mock {
+  width: 100%; max-width: 440px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 22px; box-shadow: var(--shadow-card);
+}
+.lp-mock-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
+.lp-mock-title { font-weight: 700; font-size: 15px; }
+.lp-mock-pill { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); border: 1px solid var(--border); border-radius: 999px; padding: 4px 9px; white-space: nowrap; }
+.lp-mock-rows { display: flex; flex-direction: column; }
+.lp-mock-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 2px; font-size: 14px; border-bottom: 1px dashed var(--border); }
+.lp-mock-row .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.lp-mock-row .accent { color: var(--accent); font-weight: 600; }
+.lp-mock-row.total { border-bottom: none; margin-top: 6px; padding-top: 12px; border-top: 2px solid var(--border); font-weight: 700; font-size: 16px; }
+.lp-mock-row.total .mono { color: var(--green); font-size: 18px; }
+.lp-mock-ladder { margin-top: 18px; }
+.lp-mock-ladder-lbl, .lp-mock-foot span:first-child { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); }
+.lp-mock-bars { display: flex; align-items: flex-end; gap: 14px; height: 96px; margin-top: 12px; }
+.lp-bar { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 4px; position: relative; }
+.lp-bar .fill { width: 100%; background: color-mix(in srgb, var(--accent) 28%, transparent); border-radius: 6px 6px 0 0; min-height: 8px; transition: height 0.3s ease; }
+.lp-bar.win .fill { background: var(--accent); }
+.lp-bar b { font-family: var(--font-mono); font-size: 11px; font-weight: 700; }
+.lp-bar i { font-family: var(--font-mono); font-style: normal; font-size: 10.5px; color: var(--text-muted); }
+.lp-bar.win i { color: var(--accent); font-weight: 600; }
+.lp-mock-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+.lp-mock-foot .accent { font-size: 12px; font-weight: 600; color: var(--accent); }
+/* comparison rows (distributors) */
+.lp-cmp { display: flex; flex-direction: column; gap: 12px; }
+.lp-cmp-row { display: flex; align-items: center; gap: 12px; font-size: 13.5px; }
+.lp-cmp-row .who { width: 56px; flex-shrink: 0; font-weight: 600; }
+.lp-cmp-row .track { flex: 1; height: 12px; border-radius: 999px; background: var(--border); overflow: hidden; }
+.lp-cmp-row .track .fill { display: block; height: 100%; background: color-mix(in srgb, var(--text-muted) 45%, transparent); border-radius: 999px; }
+.lp-cmp-row.win .track .fill { background: var(--accent); }
+.lp-cmp-row .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; width: 56px; text-align: right; flex-shrink: 0; }
+.lp-cmp-row.win .mono { color: var(--accent); font-weight: 700; }
+.lp-cmp-badge { font-family: var(--font-mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); background: var(--accent-weak); border-radius: 999px; padding: 3px 8px; flex-shrink: 0; }
 
 /* ---- How it works ---- */
 .lp-how-grid { display: grid; grid-template-columns: 1fr 1.7fr; gap: 40px; }

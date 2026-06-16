@@ -88,7 +88,7 @@ const ROLES = [
     ],
   },
   {
-    key: 'producers', anchor: 'for-producers', Icon: Factory, tab: 'Producers',
+    key: 'producers', anchor: 'for-producers', Icon: Factory, tab: 'Producers & Brands',
     kicker: 'For Producers & Brands',
     title: 'See your brand at the shelf, statewide',
     blurb: 'Shelf-level visibility into how your brand is priced and promoted across New Jersey. Track participation, benchmark the category, and catch data errors before they distort the market.',
@@ -245,7 +245,7 @@ export default function Landing() {
           <div className="lp-nav-center lp-hide-md">
             <a className="lp-navlink" onClick={() => jumpTo('for-buyers')}>Buyers</a>
             <a className="lp-navlink" onClick={() => jumpTo('for-distributors')}>Distributors</a>
-            <a className="lp-navlink" onClick={() => jumpTo('for-producers')}>Brands</a>
+            <a className="lp-navlink" onClick={() => jumpTo('for-producers')}>Producers &amp; Brands</a>
             <a className="lp-navlink" onClick={() => jumpTo('capabilities')}>Capabilities</a>
             <a className="lp-navlink" onClick={() => jumpTo('how')}>How it works</a>
           </div>
@@ -277,7 +277,7 @@ export default function Landing() {
             <a onClick={() => jumpTo('roles')}>Who it's for</a>
             <a onClick={() => jumpTo('for-buyers')} className="sub">For Buyers</a>
             <a onClick={() => jumpTo('for-distributors')} className="sub">For Distributors</a>
-            <a onClick={() => jumpTo('for-producers')} className="sub">For Producers</a>
+            <a onClick={() => jumpTo('for-producers')} className="sub">For Producers &amp; Brands</a>
             <a onClick={() => jumpTo('capabilities')}>Capabilities</a>
             <a onClick={() => jumpTo('how')}>How it works</a>
             <div className="lp-drawer-rule" />
@@ -636,7 +636,7 @@ export default function Landing() {
               <ul>
                 <li><a onClick={() => jumpTo('for-buyers')} style={{ cursor: 'pointer' }}>For Buyers</a></li>
                 <li><a onClick={() => jumpTo('for-distributors')} style={{ cursor: 'pointer' }}>For Distributors</a></li>
-                <li><a onClick={() => jumpTo('for-producers')} style={{ cursor: 'pointer' }}>For Producers</a></li>
+                <li><a onClick={() => jumpTo('for-producers')} style={{ cursor: 'pointer' }}>For Producers &amp; Brands</a></li>
               </ul>
             </div>
             <div className="lp-footer-col">

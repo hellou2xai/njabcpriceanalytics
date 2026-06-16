@@ -1740,6 +1740,7 @@ def search_products(
         _attach_enrichment_image(con, records)
         _attach_sku_mapping(con, records)
         _attach_dup_upc(con, src, records)
+        _attach_best_qd(records)   # deepest QD bracket for the card sticker
 
         return {
             "total": count,
@@ -1747,6 +1748,58 @@ def search_products(
             "offset": offset,
             "items": records,
             "corrected_query": corrected_query,
+        }
+
+
+def _attach_best_qd(records):
+    """Attach `best_qd` = the deepest QUANTITY-DISCOUNT bracket for the Products
+    card sticker (RIP is NOT a QD). All inputs are already on the row:
+    best_case_price / best_unit_price (price after the best QD, per case & bottle),
+    frontline_case_price, and the discount_N_qty/amt brackets.
+
+      cases          physical cases to unlock the deepest QD
+      case_price     best case price (best_case_price)
+      bottle_price   best per-bottle cost (best_unit_price, else case/pack)
+      save_per_case  frontline_case_price - best_case_price
+      total_cost     cases * case_price  (cash to buy the bracket)
+      total_save     cases * save_per_case
+
+    None when there is no real QD (best_case_price not below frontline)."""
+    for rec in records:
+        front = rec.get("frontline_case_price")
+        best = rec.get("best_case_price")
+        if front is None or best is None or best >= front - 0.005:
+            rec["best_qd"] = None
+            continue
+        # deepest bracket = the discount tier with the largest per-case amount
+        best_amt, best_qty = -1.0, None
+        for i in range(1, 6):
+            try:
+                af = float(rec.get(f"discount_{i}_amt"))
+            except (TypeError, ValueError):
+                continue
+            if af != af or af <= 0:
+                continue
+            if af > best_amt:
+                best_amt = af
+                m = re.match(r"^\s*(\d+(?:\.\d+)?)", str(rec.get(f"discount_{i}_qty") or ""))
+                best_qty = float(m.group(1)) if m else None
+        cases = int(math.ceil(best_qty - 1e-9)) if best_qty and best_qty > 0 else None
+        try:
+            pack = float(rec.get("unit_qty") or 0)
+        except (TypeError, ValueError):
+            pack = 0.0
+        bp = rec.get("best_unit_price")
+        bottle = (round(float(bp), 2) if bp is not None
+                  else (round(best / pack, 2) if pack else None))
+        save_pc = round(front - best, 2)
+        rec["best_qd"] = {
+            "cases": cases,
+            "case_price": round(best, 2),
+            "bottle_price": bottle,
+            "save_per_case": save_pc,
+            "total_cost": round(cases * best, 2) if cases else None,
+            "total_save": round(cases * save_pc, 2) if cases else None,
         }
 
 

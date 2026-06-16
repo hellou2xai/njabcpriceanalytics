@@ -235,40 +235,36 @@ function oneCaseQdCase(s: Product): number | null {
   return front;
 }
 
-// Best quantity discount for the card sticker: the DEEPEST QD bracket, from the
-// precomputed best_case_price (price after the best QD — on the list row, no tier
-// fetch) plus the bracket quantity from the discount_tiers summary. RIP is NOT a
-// QD, so it's excluded. Returns null when there's no real QD saving.
-function bestQd(s?: Product | null): { cases: number | null; priceAfter: number; save: number } | null {
-  if (!s) return null;
-  const front = s.frontline_case_price ?? null;
-  const best = s.best_case_price ?? null;
-  if (best == null || front == null || best >= front - 0.005) return null;
-  const pack = bottlesPerCase(s.product_name, s.unit_qty);
-  let cases: number | null = null;
-  const tiers = s.discount_tiers ?? [];
-  if (tiers.length) {
-    let deep = tiers[0];
-    for (const t of tiers) if ((t.amount ?? 0) > (deep.amount ?? 0)) deep = t;
-    const isBtl = /^\s*b/i.test(String(deep.unit ?? ''));
-    cases = isBtl ? (pack ? Math.ceil(deep.qty / pack) : deep.qty) : deep.qty;
-  }
-  return { cases, priceAfter: best, save: Math.round((front - best) * 100) / 100 };
-}
-
-// Best-QD sticker for the card header (top-right). Shows the deepest quantity
-// discount: bracket, resulting case price, and $/case saved vs the list price.
+// Best-QD sticker for the card header (top-right). Shows the deepest quantity-
+// discount bracket from the backend-computed `best_qd` (RIP excluded): the case
+// requirement, the best case price AND best bottle cost, $/case saved, and the
+// total cash for the bracket. Falls back across rows so it shows on the list row
+// (best_qd is on every Products list row, no tier fetch needed).
 function BestQdSticker({ s }: { s?: Product | null }) {
-  const qd = bestQd(s);
+  const qd = s?.best_qd;
   if (!qd) return null;
-  const bracket = qd.cases != null ? `buy ${qd.cases} case${qd.cases === 1 ? '' : 's'}` : 'best bracket';
+  const cs = qd.cases;
+  const money = (v: number | null | undefined) =>
+    v == null ? '' : `$${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const moneyR = (v: number | null | undefined) =>
+    v == null ? '' : `$${Math.round(v).toLocaleString()}`;
   return (
     <span className="prod-bestqd"
-      title={`Best quantity discount: ${bracket} → $${qd.priceAfter.toFixed(2)}/case · save $${qd.save.toFixed(2)}/case (excludes RIP)`}>
-      <span className="prod-bestqd-k">Best QD</span>
-      {qd.cases != null && <span className="prod-bestqd-q">{qd.cases} cs</span>}
-      <span className="prod-bestqd-p">${qd.priceAfter.toFixed(2)}/cs</span>
-      <span className="prod-bestqd-s">save ${qd.save.toFixed(2)}</span>
+      title={`Best quantity discount${cs != null ? `: buy ${cs} case${cs === 1 ? '' : 's'}` : ''} → ${money(qd.case_price)}/case`
+        + (qd.bottle_price != null ? ` · ${money(qd.bottle_price)}/bottle` : '')
+        + ` · save ${money(qd.save_per_case)}/case`
+        + (qd.total_cost != null ? ` · ${moneyR(qd.total_cost)} total cost` : '')
+        + (qd.total_save != null ? ` · ${moneyR(qd.total_save)} total saved` : '')
+        + ' (excludes RIP)'}>
+      <span className="prod-bestqd-head">
+        <span className="prod-bestqd-k">Best QD</span>
+        {cs != null && <span className="prod-bestqd-q">{cs} cs</span>}
+      </span>
+      <span className="prod-bestqd-p">{money(qd.case_price)}/cs{qd.bottle_price != null && <> · {money(qd.bottle_price)}/btl</>}</span>
+      <span className="prod-bestqd-s">
+        save {money(qd.save_per_case)}/cs
+        {qd.total_cost != null && <> · {moneyR(qd.total_cost)} total</>}
+      </span>
     </span>
   );
 }

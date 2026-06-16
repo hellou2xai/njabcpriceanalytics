@@ -314,6 +314,15 @@ export interface ProductBreakdownEdition {
   has_rip: boolean;
   discount_tiers: { qty: number; unit: string; amount: number }[];
   rip_tiers: { qty: number; unit: string; amount: number; save_per_case: number }[];
+  // Deepest quantity-discount bracket for the card sticker (RIP excluded).
+  best_qd?: {
+    cases: number | null;        // cases to unlock the best QD
+    case_price: number;          // best case price
+    bottle_price: number | null; // best per-bottle cost
+    save_per_case: number;       // $/case saved vs frontline
+    total_cost: number | null;   // cases * case_price
+    total_save: number | null;   // cases * save_per_case
+  } | null;
 }
 
 // Go-UPC enrichment for a product (image + canonical details), matched by UPC.

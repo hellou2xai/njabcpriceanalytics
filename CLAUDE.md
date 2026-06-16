@@ -2,6 +2,26 @@
 
 Instructions for Claude Code (and human contributors) working in this repo.
 
+## Everything is EDITION-specific (no exceptions)
+- A CPL is published monthly as an `edition` (`YYYY-MM`). Prices, quantity
+  discounts, RIP codes, RIP tiers, and RIP membership are ALL re-issued each
+  edition, and **RIP codes are recycled** — code `10954` can be Parrot Bay in
+  May and Sarti Rosa in June. Treating any of these as global is a bug.
+- EVERY price/RIP/tier/savings read MUST be scoped to one (edition, distributor).
+  When a query resolves a "current" price, it resolves it for a specific edition
+  — never "the latest matching code" across months.
+- EVERY modal, popover, quick-view, or drill-down that shows pricing (price,
+  tiers, RIP rebate, savings, members list) MUST be opened with the edition of
+  the row/card it came from and pass that edition to the backend
+  (`/api/catalog/rip-siblings`, `/api/catalog/product`, etc. all take `edition`).
+  Do NOT let it default to the current calendar month — the source row may be a
+  past or future edition (e.g. the Best RIPs board shows multiple months).
+- The displayed RIP code on a card/row MUST be the code that actually produced
+  the shown (edition-specific) tier ladder, not the CPL's nominal `rip_code`,
+  so the badge and its members modal always agree within the edition.
+- Multi-edition trend/sparkline views are the ONLY place multiple editions mix,
+  and only to show history — the "current"/headline value is still one edition.
+
 ## Pricing / catalog math
 - `backend/FOUNDATION.md` is the contract. All pricing, savings, RIP, tier,
   ranking, and "best buy" math MUST follow it and live in the canonical

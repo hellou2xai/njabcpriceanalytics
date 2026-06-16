@@ -113,7 +113,7 @@ function RipProductsImpl() {
   const [size, setSize] = useState('');
   const [newNext, setNewNext] = useState(false);
   // Open RIP-members popup: { wholesaler, rip_code } when set, null when closed.
-  const [ripModal, setRipModal] = useState<{ wholesaler: string; ripCode: string } | null>(null);
+  const [ripModal, setRipModal] = useState<{ wholesaler: string; ripCode: string; edition?: string } | null>(null);
   const [sort, setSort] = useState('rip_save_per_case');
   const [order, setOrder] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(0);
@@ -940,7 +940,7 @@ function RipProductsImpl() {
                                   title={`Show every product included in RIP ${rc}`}
                                   onClick={e => {
                                     e.stopPropagation();
-                                    setRipModal({ wholesaler: item.wholesaler, ripCode: rc });
+                                    setRipModal({ wholesaler: item.wholesaler, ripCode: rc, edition: item.curr_edition ?? undefined });
                                   }}
                                 >
                                   {rc}
@@ -1029,6 +1029,7 @@ function RipProductsImpl() {
         <RipMembersModal
           wholesaler={ripModal.wholesaler}
           ripCode={ripModal.ripCode}
+          edition={ripModal.edition}
           onClose={() => setRipModal(null)}
         />
       )}

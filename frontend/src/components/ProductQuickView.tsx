@@ -208,8 +208,11 @@ function QuickViewModal({
   // other vintages sharing this product's barcode still show as members.
   const { data: ripSiblings } = useQuery({
     enabled: !!ripCode,
-    queryKey: ['rip-siblings', wholesaler, ripCode, upc, productName, vintage],
+    // Scope to the edition this detail is bound to — RIP codes recycle monthly,
+    // so the siblings/tiers must match the month being viewed, not the latest.
+    queryKey: ['rip-siblings', wholesaler, ripCode, upc, productName, vintage, effectiveMonths?.curr],
     queryFn: () => catalog.ripSiblings(wholesaler, ripCode!, {
+      edition: effectiveMonths?.curr,
       exclude_upc: upc, exclude_name: productName || undefined,
       exclude_vintage: vintage || undefined,
     }),

@@ -231,7 +231,7 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
   // Open RIP-members popup: { wholesaler, ripCode } when set, null when closed.
   // Triggered by clicking any of the per-row RIP chips below; the chip's
   // onClick stops propagation so the row's quick-view doesn't also fire.
-  const [ripModal, setRipModal] = useState<{ wholesaler: string; ripCode: string } | null>(null);
+  const [ripModal, setRipModal] = useState<{ wholesaler: string; ripCode: string; edition?: string } | null>(null);
 
   // Precompute per-cluster banner metadata when groupByRip is on. Cluster
   // boundaries are the points where rip_group_code changes between
@@ -731,7 +731,7 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                                       : undefined}
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      setRipModal({ wholesaler: item.wholesaler, ripCode: String(c) });
+                                      setRipModal({ wholesaler: item.wholesaler, ripCode: String(c), edition: item.edition ?? undefined });
                                     }}
                                   >
                                     🔗 RIP {c}
@@ -1001,6 +1001,7 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
         <RipMembersModal
           wholesaler={ripModal.wholesaler}
           ripCode={ripModal.ripCode}
+          edition={ripModal.edition}
           onClose={() => setRipModal(null)}
         />
       )}

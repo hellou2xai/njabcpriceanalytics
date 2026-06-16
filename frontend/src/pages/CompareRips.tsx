@@ -104,9 +104,10 @@ function Metric({ icon, label, value, hint, tone }: {
 }
 
 /** Per-distributor panel for one product, in plain language. */
-function DistPanel({ w, d, row, cases, accent, isWinner, onRipClick }: {
+function DistPanel({ w, d, row, cases, accent, isWinner, edition, onRipClick }: {
   w: string; d: CompareRipDist; row: CompareRipRow; cases: number; accent: string; isWinner: boolean;
-  onRipClick: (wholesaler: string, code: string) => void;
+  edition?: string;
+  onRipClick: (wholesaler: string, code: string, edition?: string) => void;
 }) {
   const pack = row.unit_qty ? parseFloat(row.unit_qty) : null;
   const unitNoun = perUnitNoun(d.unit_volume, d.unit_type);
@@ -304,7 +305,7 @@ function DistPanel({ w, d, row, cases, accent, isWinner, onRipClick }: {
           {d.rip_code.trim().split(/\s+/).filter(Boolean).map(rc => (
             <button key={rc} type="button" className="rip-code-badge rip-code-chip"
               title={`Show every product included in RIP ${rc} (the products you can mix to hit the tier)`}
-              onClick={() => onRipClick(w, rc)}>
+              onClick={() => onRipClick(w, rc, edition)}>
               {rc}
             </button>
           ))}
@@ -399,8 +400,9 @@ export default function CompareRips() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [shown, setShown] = useState(40);
   const [railOpen, setRailOpen] = useState(true);
-  const [ripModal, setRipModal] = useState<{ wholesaler: string; ripCode: string } | null>(null);
-  const openRip = (wholesaler: string, ripCode: string) => setRipModal({ wholesaler, ripCode });
+  const [ripModal, setRipModal] = useState<{ wholesaler: string; ripCode: string; edition?: string } | null>(null);
+  const openRip = (wholesaler: string, ripCode: string, edition?: string) =>
+    setRipModal({ wholesaler, ripCode, edition });
   const navigate = useNavigate();
   const goToProduct = (name: string, wholesaler?: string) =>
     navigate(`/products?q=${encodeURIComponent(name)}${wholesaler ? `&wholesaler=${wholesaler}` : ''}`);
@@ -751,7 +753,8 @@ export default function CompareRips() {
                       <div className="rip2-dists" style={{ gridTemplateColumns: `repeat(${selected.length}, 1fr)` }}>
                         {selected.map(w => (
                           <DistPanel key={w} w={w} d={r.dists[w]} row={r} cases={cases}
-                            accent={accent[w]} isWinner={win === w} onRipClick={openRip} />
+                            accent={accent[w]} isWinner={win === w} edition={data?.editions?.[w]}
+                            onRipClick={openRip} />
                         ))}
                       </div>
 
@@ -785,6 +788,7 @@ export default function CompareRips() {
         <RipMembersModal
           wholesaler={ripModal.wholesaler}
           ripCode={ripModal.ripCode}
+          edition={ripModal.edition}
           onClose={() => setRipModal(null)}
         />
       )}

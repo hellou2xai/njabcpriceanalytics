@@ -134,16 +134,19 @@ function MiniCard({ p, actions = false }: { p: Product; actions?: boolean }) {
 // ---- "Other products in this Case Mix RIP" — one section PER program ----
 // exclude_name limits the exclusion to THIS listing, so sibling SKUs and
 // other vintages sharing this product's barcode still show as members.
-function RipMembersSection({ wholesaler, code, upc, name }: {
+function RipMembersSection({ wholesaler, code, upc, name, edition }: {
   wholesaler: string;
   code: string;
   upc?: string | null;
   name?: string | null;
+  edition?: string | null;
 }) {
   const { data } = useQuery({
     enabled: !!code && !!wholesaler,
-    queryKey: ['pd-rip-siblings', wholesaler, code, upc, name],
+    // RIP codes recycle monthly — scope to this product's edition.
+    queryKey: ['pd-rip-siblings', wholesaler, code, upc, name, edition ?? ''],
     queryFn: () => catalog.ripSiblings(wholesaler, code, {
+      edition: edition ?? undefined,
       exclude_upc: upc ?? undefined, exclude_name: name || undefined,
     }),
   });
@@ -623,7 +626,7 @@ export default function ProductDetail() {
               brand-mix RIP and a standalone RIP each show their own members. */}
           {ripCodes.map(code => (
             <RipMembersSection key={code} wholesaler={wholesaler} code={code}
-              upc={upc} name={name} />
+              upc={upc} name={name} edition={size.edition} />
           ))}
 
           {/* More from the same manufacturer. */}

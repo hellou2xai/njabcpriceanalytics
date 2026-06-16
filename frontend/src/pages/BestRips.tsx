@@ -85,7 +85,7 @@ function WindowBadge({ d }: { d: BestRipDist }) {
 /** One distributor's RIP ladder, one line per tier. */
 function DistBlock({ w, d, row, isWinner, onRipClick }: {
   w: string; d: BestRipDist; row: BestRipRow; isWinner: boolean;
-  onRipClick: (wholesaler: string, code: string) => void;
+  onRipClick: (wholesaler: string, code: string, edition: string) => void;
 }) {
   const accent = ACCENTS[w] || '#64748b';
   const name = distributorName(w);
@@ -128,7 +128,7 @@ function DistBlock({ w, d, row, isWinner, onRipClick }: {
           </span>
         )}
         {d.rip_code && (
-          <button className="br-code" onClick={() => onRipClick(w, String(d.rip_code))}
+          <button className="br-code" onClick={() => onRipClick(w, String(d.rip_code), row.edition)}
             title={`See every product under RIP ${d.rip_code}${d.case_mix ? ` (mix across ${d.case_mix})` : ''}`}>
             <Tag size={11} /> RIP {d.rip_code}{d.case_mix && d.case_mix > 1 ? ` · mix ${d.case_mix}` : ''}
           </button>
@@ -172,7 +172,7 @@ function TierLine({ t, isBest }: { t: BestRipTier; isBest: boolean }) {
   );
 }
 
-function Card({ row, slugs, onRipClick }: { row: BestRipRow; slugs: string[]; onRipClick: (w: string, c: string) => void }) {
+function Card({ row, slugs, onRipClick }: { row: BestRipRow; slugs: string[]; onRipClick: (w: string, c: string, edition: string) => void }) {
   const present = slugs.filter(w => row.dists[w]);
   const vint = wineVintage(row.product_type, row.vintage);
   const size = [row.unit_qty, row.unit_volume].filter(Boolean).join(' × ');
@@ -238,7 +238,7 @@ export default function BestRips() {
   const [minProfit, setMinProfit] = useState(0);
   const [dists, setDists] = useState<string[]>(['allied', 'fedway', 'opici']);
   const [months, setMonths] = useState<string[]>([]);   // [] = server default (latest two)
-  const [modal, setModal] = useState<{ w: string; code: string } | null>(null);
+  const [modal, setModal] = useState<{ w: string; code: string; edition: string } | null>(null);
 
   const toggleDist = (w: string) => setDists(prev =>
     prev.includes(w)
@@ -357,7 +357,7 @@ export default function BestRips() {
             <div className="br-grid">
               {data.rows.map((row: BestRipRow) => (
                 <Card key={row.match_key} row={row} slugs={data.wholesalers}
-                  onRipClick={(w, code) => setModal({ w, code })} />
+                  onRipClick={(w, code, edition) => setModal({ w, code, edition })} />
               ))}
             </div>
           )}
@@ -365,7 +365,7 @@ export default function BestRips() {
       )}
 
       {modal && (
-        <RipMembersModal wholesaler={modal.w} ripCode={modal.code} onClose={() => setModal(null)} />
+        <RipMembersModal wholesaler={modal.w} ripCode={modal.code} edition={modal.edition} onClose={() => setModal(null)} />
       )}
     </div>
   );

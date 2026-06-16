@@ -15,11 +15,13 @@ import { useModalFocus } from './useModalFocus';
  * mount the same modal, kept in sync.
  */
 export default function RipMembersModal({
-  wholesaler, ripCode, onClose,
-}: { wholesaler: string; ripCode: string; onClose: () => void }) {
+  wholesaler, ripCode, edition, onClose,
+}: { wholesaler: string; ripCode: string; edition?: string; onClose: () => void }) {
   const { data, isLoading } = useQuery({
-    queryKey: ['rip-siblings-modal', wholesaler, ripCode],
-    queryFn: () => catalog.ripSiblings(wholesaler, ripCode),
+    // RIP codes are recycled month-to-month, so scope to the card's edition —
+    // otherwise code 10954 shows June's product when opened from a May card.
+    queryKey: ['rip-siblings-modal', wholesaler, ripCode, edition ?? ''],
+    queryFn: () => catalog.ripSiblings(wholesaler, ripCode, edition ? { edition } : undefined),
   });
   const boxRef = useRef<HTMLDivElement>(null);
   useModalFocus(boxRef, true);

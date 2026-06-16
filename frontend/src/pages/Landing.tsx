@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Sun, Moon, ArrowRight, Store, Truck, Factory, Menu, X, Check,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import WhatsAppShareButton from '../components/WhatsAppShare';
 import { shareOnWhatsAppCached } from '../lib/share';
 import './Landing.css';
@@ -44,7 +45,22 @@ const CAPABILITIES = [
 // three-tier market. Each role gets its own dedicated section on the page with
 // its own heading, value props and a role-specific product mock. Buyers is the
 // live product (sign up); distributors and producers get a talk-to-us CTA.
-const ROLES = [
+interface PanelRow { k: string; v: string; hi?: boolean }
+interface DeepDive {
+  label: string; heading: string; intro: string; points: string[];
+  panel: { title: string; rows: PanelRow[] };
+}
+interface Role {
+  key: string; anchor: string; Icon: LucideIcon; tab: string; primary?: boolean;
+  kicker: string; title: string; blurb: string; points: string[];
+  ctaLabel: string; cta: 'signup' | 'mail';
+  visual: 'buyers' | 'distributors' | 'producers';
+  outcome?: { stat: string; label: string };
+  features?: { title: string; desc: string }[];
+  deepDive?: DeepDive;
+}
+
+const ROLES: Role[] = [
   {
     key: 'buyers', anchor: 'for-buyers', Icon: Store, tab: 'Buyers',
     kicker: 'For Retailers & Licensees', primary: true,
@@ -59,7 +75,7 @@ const ROLES = [
       'Ask in plain English or by voice — the built-in assistant answers from your live data.',
     ],
     ctaLabel: 'Create your free account', cta: 'signup',
-    visual: 'buyers' as const,
+    visual: 'buyers',
     outcome: { stat: '15-25%', label: 'in rebates most stores leave on the table' },
     features: [
       { title: 'Smart catalog & landed cost', desc: 'Every SKU shows its true landed cost and full RIP ladder. Search by brand alias, misspelling or barcode and land on the right product.' },
@@ -79,13 +95,33 @@ const ROLES = [
       'Reach buyers at the moment they’re comparing and deciding.',
     ],
     ctaLabel: 'Talk to us', cta: 'mail',
-    visual: 'distributors' as const,
+    visual: 'distributors',
     outcome: { stat: 'Every UPC', label: 'compared on real effective price, after every discount' },
     features: [
       { title: 'Competitive positioning', desc: 'See exactly where your posted price and RIP win or lose on every shared UPC, after every discount and rebate.' },
       { title: 'Prove after-rebate value', desc: 'Show retailers the real landed value of your programs, not a 400-page price book they will never read.' },
       { title: 'Filing intelligence', desc: 'Spot where you have fallen behind a competing filer and fix it before your next CPL goes in.' },
     ],
+    deepDive: {
+      label: 'Where you stand',
+      heading: 'See your book the way the buyer already does',
+      intro: 'Every buyer on CELR compares your posted price and RIP against every other filer on the same UPC. Walk into the account knowing the same numbers they do.',
+      points: [
+        'Win / loss on every shared SKU, ranked by how far you lead or trail on real effective price.',
+        'The exact per-bottle gap to the leading filer, after every discount, post-off and rebate.',
+        'Whether your RIP brackets are actually reachable for the small stores the program is meant to serve.',
+        'A month-over-month diff of your own book: what you raised, cut, added or dropped against the field.',
+      ],
+      panel: {
+        title: 'This month · shared SKUs',
+        rows: [
+          { k: 'SKUs compared', v: '240' },
+          { k: 'You win on price', v: '168', hi: true },
+          { k: 'Within 1%', v: '41' },
+          { k: 'You trail', v: '31' },
+        ],
+      },
+    },
   },
   {
     key: 'producers', anchor: 'for-producers', Icon: Factory, tab: 'Producers & Brands',
@@ -99,13 +135,33 @@ const ROLES = [
       'Catch pack/price data errors under your UPCs before they distort the market.',
     ],
     ctaLabel: 'Request a brand briefing', cta: 'mail',
-    visual: 'producers' as const,
+    visual: 'producers',
     outcome: { stat: 'Statewide', label: 'shelf-level pricing across every NJ distributor' },
     features: [
       { title: 'Statewide shelf view', desc: 'How your SKUs are priced and promoted across every NJ distributor and every monthly edition.' },
       { title: 'RIP participation & pull-through', desc: 'Measure how much of each rebate actually reaches retailer cost, by distributor and by size.' },
       { title: 'Benchmark & data QA', desc: 'Compare against the category by size, pack and vintage, and catch pack or price errors filed under your UPCs.' },
     ],
+    deepDive: {
+      label: 'Brand visibility',
+      heading: 'Follow your brand from filing to shelf',
+      intro: 'You set the brand registration and the suggested price. CELR shows what each distributor actually does with it, edition after edition, down to the bottle.',
+      points: [
+        'Every distributor carrying each SKU, at what posted and effective price.',
+        'RIP participation and rebate depth, broken out by size and by pack.',
+        'Edition-over-edition movement in your brand’s real cost to the retailer.',
+        'Pack, price and vintage errors filed under your UPCs, flagged before they spread across the market.',
+      ],
+      panel: {
+        title: 'June 2026 · your portfolio',
+        rows: [
+          { k: 'Distributors carrying', v: '4 of 5' },
+          { k: 'SKUs tracked', v: '37' },
+          { k: 'Avg RIP participation', v: '61%', hi: true },
+          { k: 'Data flags to review', v: '3' },
+        ],
+      },
+    },
   },
 ];
 
@@ -229,6 +285,91 @@ export default function Landing() {
     const el = document.getElementById(id);
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
+
+  // One dedicated role area: headline + value props + product mock + feature
+  // trio, and (for distributors / brands) a second deep-dive band.
+  const renderRole = (r: Role, opts: { reverse: boolean; alt: boolean }) => (
+    <section key={r.key} id={r.anchor} className={`lp-section lp-role${opts.alt ? ' alt' : ''}`}>
+      <div className={`lp-container lp-role-grid${opts.reverse ? ' reverse' : ''}`}>
+        <div className="lp-role-copy">
+          <div className="lp-role-kicker">
+            <span className="lp-role-icon"><r.Icon size={18} /></span>
+            <span className="section-label">{r.kicker}</span>
+            {r.primary
+              ? <span className="lp-role-badge live">Live now</span>
+              : <span className="lp-role-badge">Early access</span>}
+          </div>
+          <h2 className="lp-role-title">{r.title}</h2>
+          <p className="lp-role-blurb">{r.blurb}</p>
+          <ul className="lp-role-list">
+            {r.points.map((p, j) => (
+              <li key={j}><span className="mk"><Check size={15} /></span><span>{p}</span></li>
+            ))}
+          </ul>
+          {r.cta === 'signup' ? (
+            <button className="btn lp-btn-lg lp-role-cta" onClick={() => goSignup()}>
+              {r.ctaLabel} <ArrowRight size={16} />
+            </button>
+          ) : (
+            <a className="btn btn-secondary lp-btn-lg lp-role-cta" href={mailTo(r.kicker)}>
+              {r.ctaLabel} <ArrowRight size={16} />
+            </a>
+          )}
+        </div>
+        <div className="lp-role-visual">
+          <RoleVisual kind={r.visual} />
+          {r.outcome && (
+            <div className="lp-role-outcome">
+              <span className="lp-role-outcome-stat">{r.outcome.stat}</span>
+              <span className="lp-role-outcome-label">{r.outcome.label}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {r.features && (
+        <div className="lp-container lp-role-features">
+          {r.features.map((f, k) => (
+            <div key={k} className="lp-role-feature">
+              <span className="lp-rf-ico"><Check size={16} /></span>
+              <h4>{f.title}</h4>
+              <p>{f.desc}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {r.deepDive && (
+        <div className={`lp-container lp-dd-grid${opts.reverse ? '' : ' reverse'}`}>
+          <div className="lp-dd-copy">
+            <div className="section-label" style={{ color: 'var(--accent)' }}>{r.deepDive.label}</div>
+            <h3 className="lp-dd-h">{r.deepDive.heading}</h3>
+            <p className="lp-dd-intro">{r.deepDive.intro}</p>
+            <ul className="lp-role-list">
+              {r.deepDive.points.map((p, j) => (
+                <li key={j}><span className="mk"><Check size={15} /></span><span>{p}</span></li>
+              ))}
+            </ul>
+          </div>
+          <div className="lp-role-visual">
+            <div className="lp-mock">
+              <div className="lp-mock-head">
+                <span className="lp-mock-title">{r.deepDive.panel.title}</span>
+              </div>
+              <div className="lp-mock-rows">
+                {r.deepDive.panel.rows.map((row, j) => (
+                  <div key={j} className="lp-mock-row">
+                    <span>{row.k}</span>
+                    <span className={`mono${row.hi ? ' accent' : ''}`}>{row.v}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
 
   return (
     <div className="lp">
@@ -373,62 +514,10 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ---- Dedicated role sections (alternating) ---- */}
-      {ROLES.map((r, i) => (
-        <section key={r.key} id={r.anchor}
-          className={`lp-section lp-role${i % 2 === 1 ? ' alt' : ''}`}>
-          <div className={`lp-container lp-role-grid${i % 2 === 1 ? ' reverse' : ''}`}>
-            <div className="lp-role-copy">
-              <div className="lp-role-kicker">
-                <span className="lp-role-icon"><r.Icon size={18} /></span>
-                <span className="section-label">{r.kicker}</span>
-                {r.primary
-                  ? <span className="lp-role-badge live">Live now</span>
-                  : <span className="lp-role-badge">Early access</span>}
-              </div>
-              <h2 className="lp-role-title">{r.title}</h2>
-              <p className="lp-role-blurb">{r.blurb}</p>
-              <ul className="lp-role-list">
-                {r.points.map((p, j) => (
-                  <li key={j}><span className="mk"><Check size={15} /></span><span>{p}</span></li>
-                ))}
-              </ul>
-              {r.cta === 'signup' ? (
-                <button className="btn lp-btn-lg lp-role-cta" onClick={() => goSignup()}>
-                  {r.ctaLabel} <ArrowRight size={16} />
-                </button>
-              ) : (
-                <a className="btn btn-secondary lp-btn-lg lp-role-cta" href={mailTo(r.kicker)}>
-                  {r.ctaLabel} <ArrowRight size={16} />
-                </a>
-              )}
-            </div>
-            <div className="lp-role-visual">
-              <RoleVisual kind={r.visual} />
-              {r.outcome && (
-                <div className="lp-role-outcome">
-                  <span className="lp-role-outcome-stat">{r.outcome.stat}</span>
-                  <span className="lp-role-outcome-label">{r.outcome.label}</span>
-                </div>
-              )}
-            </div>
-          </div>
+      {/* ---- Buyers: the live product. All retail-store content lives under here. ---- */}
+      {renderRole(ROLES[0], { reverse: false, alt: false })}
 
-          {r.features && (
-            <div className="lp-container lp-role-features">
-              {r.features.map((f, k) => (
-                <div key={k} className="lp-role-feature">
-                  <span className="lp-rf-ico"><Check size={16} /></span>
-                  <h4>{f.title}</h4>
-                  <p>{f.desc}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      ))}
-
-      {/* ---- The pain ---- */}
+      {/* ---- The pain (retail / buyer) ---- */}
       <section className="lp-section alt">
         <div className="lp-container lp-pain-grid">
           <div>
@@ -556,6 +645,10 @@ export default function Landing() {
           <div className="lp-quote-by">Pilot owner · Bergen County · 3-store group</div>
         </div>
       </section>
+
+      {/* ---- Other roles: distributors and producers/brands, each with depth ---- */}
+      {renderRole(ROLES[1], { reverse: true, alt: true })}
+      {renderRole(ROLES[2], { reverse: false, alt: true })}
 
       {/* ---- Subscribe / CTA ---- */}
       <section id="subscribe" className="lp-section alt">

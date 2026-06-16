@@ -29,32 +29,36 @@
 }
 .lp-nav-inner {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 0;
+  padding: 18px 0; gap: 22px;
 }
-.lp-brand { display: flex; align-items: center; gap: 10px; }
+.lp-brand { display: flex; align-items: center; gap: 12px; }
 .lp-logo {
-  width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0;
+  width: 42px; height: 42px; border-radius: 11px; flex-shrink: 0;
   background: var(--accent); color: #fff;
   display: inline-flex; align-items: center; justify-content: center;
-  font-weight: 800; font-size: 18px; letter-spacing: -0.5px;
+  font-weight: 800; font-size: 22px; letter-spacing: -0.5px;
 }
-.lp-wordmark { font-size: 20px; font-weight: 800; letter-spacing: -0.4px; }
+.lp-wordmark { font-size: 24px; font-weight: 800; letter-spacing: -0.4px; }
 .lp-wordmark .dot { color: var(--accent); }
 .lp-brand-tag {
-  font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase;
+  font-family: var(--font-mono); font-size: 11px; text-transform: uppercase;
   letter-spacing: 0.14em; color: var(--text-muted); margin-left: 6px;
+  white-space: nowrap;
 }
 .lp-nav-center { flex: 1; display: flex; align-items: center; justify-content: center; gap: 30px; }
-.lp-nav-actions { display: flex; align-items: center; gap: 16px; }
-.lp-navlink { color: var(--text); font-size: 15px; font-weight: 600; cursor: pointer; }
+.lp-nav-actions { display: flex; align-items: center; gap: 18px; flex-shrink: 0; }
+.lp-navlink { color: var(--text); font-size: 16px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .lp-navlink:hover { color: var(--accent); }
 .lp-navlink.lp-login { color: var(--text-muted); font-weight: 600; }
 .lp-navlink.lp-login:hover { color: var(--text); }
-.lp-signup { padding: 9px 20px; font-weight: 700; }
+.lp-signup { padding: 12px 26px; font-weight: 700; font-size: 15.5px; }
 .lp-nav-sep { width: 1px; height: 18px; background: var(--border); }
 .lp-hide-sm { }  /* hidden on phones */
 .lp-hide-md { }  /* hidden on tablets + phones (inline anchors live in the drawer) */
 .lp-burger { }
+
+/* Laptops: drop the brand tagline so the role links never collide with it. */
+@media (max-width: 1280px) { .lp-brand-tag { display: none; } }
 
 /* Tablet + phone: collapse the inline anchors into the hamburger drawer. */
 @media (max-width: 900px) {
@@ -302,6 +306,24 @@
 .lp-role-feature h4 { font-size: 16.5px; font-weight: 700; line-height: 1.25; margin-bottom: 9px; }
 .lp-role-feature p { color: var(--text-muted); font-size: 14px; line-height: 1.55; }
 @media (max-width: 900px) { .lp-role-features { grid-template-columns: 1fr; gap: 12px; margin-top: 32px; } }
+
+/* ---- Per-role deep-dive band (distributors / brands get a second block) ---- */
+.lp-dd-grid {
+  display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 56px; align-items: center;
+  margin-top: 56px; padding-top: 44px; border-top: 1px solid var(--border);
+}
+.lp-dd-grid.reverse .lp-dd-copy { order: 2; }
+.lp-dd-grid.reverse .lp-role-visual { order: 1; }
+.lp-dd-h { font-size: clamp(22px, 2.4vw, 30px); line-height: 1.15; letter-spacing: -0.02em; font-weight: 800; margin-top: 10px; }
+.lp-dd-intro { color: var(--text-muted); font-size: clamp(15px, 1.4vw, 17px); line-height: 1.6; margin-top: 14px; max-width: 560px; }
+@media (max-width: 900px) {
+  .lp-dd-grid, .lp-dd-grid.reverse { grid-template-columns: 1fr; gap: 28px; margin-top: 40px; padding-top: 32px; }
+  .lp-dd-grid.reverse .lp-dd-copy { order: 1; }
+  .lp-dd-grid.reverse .lp-role-visual { order: 2; }
+}
+
+/* Anchor offset so jumped-to sections clear the (taller) sticky nav. */
+.lp section[id] { scroll-margin-top: 92px; }
 
 /* ---- Role outcome stat (under the mock) ---- */
 .lp-role-outcome { display: flex; align-items: baseline; gap: 12px; margin-top: 18px; max-width: 440px; width: 100%; }

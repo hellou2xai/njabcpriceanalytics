@@ -5675,6 +5675,20 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 
 /* ---- Expanded size rows ---- */
 .prod-card-body { border-top: 1px solid var(--border); }
+/* 4-level grouped body: CELR card -> Distributor -> Distributor Product -> sizes */
+.prod-dist-group { border-top: 1px solid var(--border); }
+.prod-dist-group:first-child { border-top: 0; }
+.prod-dist-head { display: flex; align-items: center; gap: 7px; padding: 8px 16px;
+  background: var(--surface-hover); font-size: 12.5px; font-weight: 700; color: var(--text);
+  text-transform: uppercase; letter-spacing: .03em; }
+.prod-dist-head svg { color: var(--accent); }
+.prod-dist-name { flex: 0 0 auto; }
+.prod-dist-count { margin-left: auto; font-family: var(--font-mono); font-size: 10.5px;
+  font-weight: 500; letter-spacing: .04em; color: var(--text-muted); text-transform: none; }
+.prod-distprod-group { border-top: 1px solid var(--border); }
+.prod-distprod-group:first-child { border-top: 0; }
+.prod-distprod-head { padding: 6px 16px 2px; font-size: 12.5px; font-weight: 600;
+  color: var(--text-muted); }
 .prod-size-row {
   display: grid; grid-template-columns: 1.3fr 1fr 1.5fr auto; gap: 16px; align-items: center;
   padding: 14px 16px 14px 64px; border-bottom: 1px solid var(--border);

@@ -322,13 +322,43 @@ function priceRange(sizes: Product[]): { lo: Product; hi: Product; loPrice: numb
   return { lo: lo.s, hi: hi.s, loPrice: lo.p, hiPrice: hi.p };
 }
 
-function SizeRow({ size, cart, updateQty, primaryName, showDeals = true }: {
+// Nest a grouped card's sizes into the 4-level hierarchy the Products view shows:
+//   CELR Product (the card) -> Distributor -> Distributor Product Name -> Size/Price.
+// Distributor product names differ across distributors, but UPC matching already
+// unified them under one CELR family (the card); here we only split WITHIN a
+// distributor by its own catalogue name. Page wholesaler sorts first.
+function nestByDistributor(sizes: Product[], pageWholesaler: string) {
+  const byDist = new Map<string, Product[]>();
+  for (const s of sizes) {
+    const arr = byDist.get(s.wholesaler) ?? [];
+    arr.push(s);
+    byDist.set(s.wholesaler, arr);
+  }
+  const order = [...byDist.keys()].sort((a, b) =>
+    (a === pageWholesaler ? 0 : 1) - (b === pageWholesaler ? 0 : 1)
+    || distributorName(a).localeCompare(distributorName(b)));
+  return order.map(w => {
+    const byName = new Map<string, Product[]>();
+    for (const s of byDist.get(w)!) {
+      const nm = (cleanDisplayName(s.product_name) || s.product_name || '—').trim();
+      const arr = byName.get(nm) ?? [];
+      arr.push(s);
+      byName.set(nm, arr);
+    }
+    return { wholesaler: w, products: [...byName.entries()].map(([name, ss]) => ({ name, sizes: ss })) };
+  });
+}
+
+function SizeRow({ size, cart, updateQty, primaryName, showDeals = true, hideDist = false }: {
   size: Product;
   cart: CartState;
   updateQty: (key: string, field: 'cases' | 'units', value: number) => void;
   primaryName?: string;
   // Detail view (Price details) shows the deal ladder on screen; Summary hides it.
   showDeals?: boolean;
+  // Hide the per-row distributor chip when a Distributor header already shows it
+  // (the 4-level grouped card body).
+  hideDist?: boolean;
 }) {
   const cartKey = `${size.product_name}|${size.wholesaler}|${size.upc ?? ''}|${size.unit_volume ?? ''}`;
   const qty = cart[cartKey] ?? { cases: 0, units: 0 };
@@ -359,7 +389,7 @@ function SizeRow({ size, cart, updateQty, primaryName, showDeals = true }: {
         {size.product_name && size.product_name.trim().toUpperCase() !== (primaryName ?? '').trim().toUpperCase() && (
           <div className="prod-size-variant">{size.product_name}</div>
         )}
-        <div className="prod-size-dist"><Store size={11} /> {distributorName(size.wholesaler)}</div>
+        {!hideDist && <div className="prod-size-dist"><Store size={11} /> {distributorName(size.wholesaler)}</div>}
         <div className="prod-size-pack">{packPhrase(pack, size.unit_volume, size.unit_type)}</div>
         {sku && <div className="prod-size-sku">SKU: {sku}</div>}
         {size.vintage != null && String(size.vintage) !== '0' && String(size.vintage).trim() !== '' && (
@@ -627,10 +657,39 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
       {expanded && (
         <div className="prod-card-body">
           {isFetching && fullSizes.length === 0 && <div className="prod-size-loading">Loading all sizes…</div>}
-          {sizes.map((size, i) => (
-            <SizeRow key={`${size.product_name}|${size.upc ?? ''}|${size.unit_volume ?? ''}|${i}`}
-              size={size} cart={cart} updateQty={updateQty} primaryName={group.displayName} showDeals={showDeals} />
-          ))}
+          {group.flat ? (
+            // Flat mode: one card == one distributor+size; no nesting needed.
+            sizes.map((size, i) => (
+              <SizeRow key={`${size.product_name}|${size.upc ?? ''}|${size.unit_volume ?? ''}|${i}`}
+                size={size} cart={cart} updateQty={updateQty} primaryName={group.displayName} showDeals={showDeals} />
+            ))
+          ) : (
+            // Grouped (CELR family) card: Distributor -> Distributor Product Name -> sizes.
+            nestByDistributor(sizes, group.wholesaler).map(d => (
+              <div className="prod-dist-group" key={d.wholesaler}>
+                <div className="prod-dist-head">
+                  <Store size={13} /> <span className="prod-dist-name">{distributorName(d.wholesaler)}</span>
+                  <span className="prod-dist-count">
+                    {d.products.reduce((n, p) => n + p.sizes.length, 0)} size{d.products.reduce((n, p) => n + p.sizes.length, 0) === 1 ? '' : 's'}
+                  </span>
+                </div>
+                {d.products.map((p, pi) => (
+                  <div className="prod-distprod-group" key={`${p.name}|${pi}`}>
+                    {/* Distributor's own product name — shown when it differs from
+                        the CELR family header (same UPC, different catalogue name). */}
+                    {p.name && p.name.trim().toUpperCase() !== (group.displayName ?? '').trim().toUpperCase() && (
+                      <div className="prod-distprod-head">{p.name}</div>
+                    )}
+                    {p.sizes.map((size, i) => (
+                      <SizeRow key={`${size.upc ?? ''}|${size.unit_volume ?? ''}|${i}`}
+                        size={size} cart={cart} updateQty={updateQty} primaryName={p.name}
+                        showDeals={showDeals} hideDist />
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ))
+          )}
         </div>
       )}
     </div>

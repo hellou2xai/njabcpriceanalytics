@@ -570,12 +570,19 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
         -- applicability — it has to be an explicit (code, UPC) match.
         -- Some wholesalers (Fedway) cram multiple rip codes into one cell
         -- separated by whitespace, e.g. '10049 30017'. Split them so each
-        -- code matches independently.
+        -- code matches independently. BUT a code containing letters is a single
+        -- DESCRIPTIVE code (opici "Veuve Clicquot Yellow Brut") — splitting it
+        -- on spaces shreds it into words that byte-match no RIP-sheet row, so a
+        -- multi-listing opici UPC (e.g. a 12-pack + 24-pack of one barcode) that
+        -- needs the strict (code, UPC) match loses its RIP. Only whitespace-
+        -- separated NUMERIC codes are truly multiple codes.
         cpl_codes AS (
             SELECT c.*,
                    UNNEST(
                        CASE WHEN c.rip_code IS NULL OR c.rip_code = ''
                             THEN ['']
+                            WHEN regexp_matches(CAST(c.rip_code AS VARCHAR), '[A-Za-z]')
+                            THEN [CAST(c.rip_code AS VARCHAR)]
                             ELSE string_split(REGEXP_REPLACE(c.rip_code, '\\s+', ' '), ' ')
                        END
                    ) AS single_code

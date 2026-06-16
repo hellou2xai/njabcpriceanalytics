@@ -1908,7 +1908,10 @@ def best_rips(
             lines = _best_rip_tier_lines(tiers, pack)
             if hide_expired:
                 lines = [ln for ln in lines if ln["window_status"] != "expired"]
-            has_rip = bool(rec.get("has_rip")) and bool(lines)
+            # Trust the canonical tier builder, not the precomputed has_rip flag:
+            # cpl_enriched.has_rip can lag (e.g. Opici text-coded RIPs the old
+            # code-split missed), so a real RIP would otherwise read as "No RIP".
+            has_rip = bool(lines)
             deepest_rebate, deepest_at = _rip_deepest(tiers, pack)
             best_profit = max((ln["rip_profit_pct"] or 0 for ln in lines), default=0.0)
             dists[w] = {

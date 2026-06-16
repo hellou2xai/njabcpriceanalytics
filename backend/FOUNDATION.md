@@ -61,6 +61,15 @@ Matching strategy: UPC-keyed first (`rip_per_code_upc`), code-level
 fallback (`rip_per_code`) for wholesalers (Fedway) that anchor a RIP to
 a stub UPC like `812066000000`. Fedway also crams multiple RIP codes
 into one CPL cell separated by whitespace — `cpl_codes` UNNESTs them.
+A cell is split into multiple codes ONLY when it is whitespace-separated
+NUMERIC codes (Fedway `10241 50009`). A code containing letters is a
+single DESCRIPTIVE code (Opici uses the product label as the code, e.g.
+`Veuve Clicquot Yellow Brut`) and is kept WHOLE — splitting it on spaces
+would shred it into words that byte-match no RIP-sheet row, silently
+dropping the RIP for any multi-listing UPC (one barcode listed as both a
+12-pack and a 24-pack) that needs the strict `(code, UPC)` match. The
+same split rule lives in `pricing.attach_tiers._split_codes` so the live
+tier ladder agrees with the precomputed columns.
 
 ### 2.2 Effective case price
 

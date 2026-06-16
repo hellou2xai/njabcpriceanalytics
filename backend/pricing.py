@@ -422,6 +422,13 @@ def attach_tiers(con, records, ref_date=None) -> None:
         s = str(rc).strip()
         if not s or s in ("None", "nan", "0"):
             return []
+        # A cell packs MULTIPLE codes only as whitespace-separated NUMERIC codes
+        # (Fedway "10604 120001"). A code containing letters is a single
+        # DESCRIPTIVE code (Opici "Veuve Clicquot Yellow Brut") — splitting it on
+        # spaces shreds it into words that match no RIP-sheet row, so the strict
+        # (code, upc) join silently drops the whole RIP. Keep it whole.
+        if re.search(r"[A-Za-z]", s):
+            return [s]
         # Split on whitespace; drop blanks; preserve order; dedupe.
         out, seen = [], set()
         for part in s.split():

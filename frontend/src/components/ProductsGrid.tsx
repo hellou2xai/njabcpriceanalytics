@@ -35,9 +35,10 @@ import { isRealUpc } from '../lib/upc';
 import type { Product } from '../lib/api';
 
 // Full-page product-detail deep link for a product family.
-function detailUrl(wholesaler: string, productName: string, upc?: string | null): string {
+function detailUrl(wholesaler: string, productName: string, upc?: string | null, unitVolume?: string | null): string {
   const q = new URLSearchParams({ w: wholesaler, n: productName });
   if (upc) q.set('u', String(upc));
+  if (unitVolume) q.set('s', String(unitVolume));   // exact size, so the link pins one SKU
   return `/product?${q.toString()}`;
 }
 
@@ -378,8 +379,8 @@ function SizeRow({ size, cart, updateQty, primaryName, showDeals = true, hideDis
   const months = buildMonths(size);
   return (
     <div className="prod-size-row">
-      <Link to={detailUrl(size.wholesaler, size.product_name, size.upc)} className="prod-size-id"
-        title="Open full product details">
+      <Link to={detailUrl(size.wholesaler, size.product_name, size.upc, size.unit_volume)} className="prod-size-id"
+        title="Open this product — exact size and UPC">
         <div className="prod-size-name">{size.unit_volume || '-'} {containerTitle(size.unit_volume, size.unit_type)}</div>
         {/* The distributor's EXACT catalogue name always shows on the listing
             line (it's how the buyer matches the row to the distributor's own
@@ -582,11 +583,12 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
           <ProductThumb src={group.imageUrl} alt={group.productName} size={56} expandable />
         </Link>
         <div className="prod-card-meta">
-          <Link to={detailUrl(group.wholesaler, group.productName, first?.upc)}
-            className="prod-card-name" onClick={e => e.stopPropagation()}
-            title="Open full product details">
+          {/* CELR family header — NOT a link: it's a family (many distributors/
+              sizes), not one SKU. Drill in via a distributor product name below. */}
+          <span className="prod-card-name prod-card-name--plain"
+            title={stripHeaderVintage(group.displayName, group.productType)}>
             {stripHeaderVintage(group.displayName, group.productType)}
-          </Link>
+          </span>
           <div className="prod-card-type">
             {[group.productType, group.brand].filter(Boolean).join(' · ')}
             {group.celrNumber && (
@@ -665,8 +667,8 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
             ))
           ) : (
             // Grouped (CELR family) card: Distributor -> Distributor Product Name -> sizes.
-            nestByDistributor(sizes, group.wholesaler).map(d => (
-              <div className="prod-dist-group" key={d.wholesaler}>
+            nestByDistributor(sizes, group.wholesaler).map((d, di) => (
+              <div className={`prod-dist-group${di % 2 === 1 ? ' prod-dist-group--alt' : ''}`} key={d.wholesaler}>
                 <div className="prod-dist-head">
                   <Store size={13} /> <span className="prod-dist-name">{distributorName(d.wholesaler)}</span>
                   <span className="prod-dist-count">

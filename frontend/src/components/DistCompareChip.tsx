@@ -26,6 +26,7 @@ interface DistOffer {
   frontline: number | null;
   oneCsQD: number | null;       // case price after the 1-case QD
   best: number;                 // best landed $/case after ALL QD + RIP (live now)
+  bestBtl: number;              // best landed $/BOTTLE — the pack-normalized cost
   pack: number | null;          // bottles per case (for the $/btl savings)
   qd: CatalogTier[];
   rip: CatalogTier[];
@@ -56,7 +57,12 @@ function buildOffer(w: string, rows: Product[]): DistOffer {
       oneCsQD = one.length ? Math.min(...one.map(t => t.price_after as number)) : f;
     }
   }
-  return { wholesaler: w, frontline, oneCsQD, best: best === Infinity ? (frontline ?? 0) : best, pack, qd, rip };
+  const finalBest = best === Infinity ? (frontline ?? 0) : best;
+  // Pack-normalized cost: distributors list the SAME size in different pack sizes
+  // (a 6-pack vs a 12-pack of 750ML), so case prices aren't comparable — compare
+  // per BOTTLE so the chip never reports a phantom saving from a pack mismatch.
+  const bestBtl = pack && pack > 0 ? finalBest / pack : finalBest;
+  return { wholesaler: w, frontline, oneCsQD, best: finalBest, bestBtl, pack, qd, rip };
 }
 
 // Group the product's size rows by physical size; return the offers for the size
@@ -75,11 +81,11 @@ function pickComparison(sizes: Product[]): { sizeLabel: string; offers: DistOffe
     for (const r of rows) (byDist.get(r.wholesaler) ?? byDist.set(r.wholesaler, []).get(r.wholesaler)!).push(r);
     if (byDist.size < 2) continue;
     const offers = [...byDist.entries()].map(([w, rs]) => buildOffer(w, rs))
-      .filter(o => o.best > 0)             // drop rows with no usable price
-      .sort((a, b) => a.best - b.best);
+      .filter(o => o.bestBtl > 0)          // drop rows with no usable price
+      .sort((a, b) => a.bestBtl - b.bestBtl);   // compare per BOTTLE (pack-normalized)
     if (offers.length < 2) continue;
-    const spread = offers[offers.length - 1].best - offers[0].best;
-    if (spread <= 0.01) continue;          // only when it's cheaper somewhere
+    const spread = offers[offers.length - 1].bestBtl - offers[0].bestBtl;
+    if (spread <= 0.01) continue;          // only when it's genuinely cheaper per bottle
     const sizeLabel = rows[0].unit_volume ?? '';
     const better = !pick || offers.length > pick.offers.length
       || (offers.length === pick.offers.length && spread > pick.spread);
@@ -164,10 +170,11 @@ export default function DistCompareChip({ sizes, selfWholesaler }: { sizes: Prod
   // chip as a BEST-PRICE nudge: name the cheapest distributor and the savings
   // ($/cs and $/btl) vs THIS card. Otherwise (product page) show the absolute.
   const self = selfWholesaler ? offers.find(o => o.wholesaler === selfWholesaler) : null;
-  const selfIsBest = self ? Math.abs(self.best - cheapest.best) < 0.01 : false;
-  const saveCs = self && !selfIsBest ? self.best - cheapest.best : 0;
-  const pack = cheapest.pack ?? self?.pack ?? null;
-  const saveBtl = pack && saveCs > 0 ? saveCs / pack : null;
+  // Compare per BOTTLE so a 6-pack vs 12-pack of the same size isn't a phantom deal.
+  const selfIsBest = self ? Math.abs(self.bestBtl - cheapest.bestBtl) < 0.01 : false;
+  const saveBtl = self && !selfIsBest ? self.bestBtl - cheapest.bestBtl : 0;
+  // Per-case equivalent only when this card's pack is known (at its pack size).
+  const saveCs = saveBtl > 0 && self?.pack ? saveBtl * self.pack : 0;
 
   return (
     <span
@@ -180,8 +187,8 @@ export default function DistCompareChip({ sizes, selfWholesaler }: { sizes: Prod
         {selfWholesaler
           ? (selfIsBest
               ? <>✓ Best price · <strong>{distributorName(cheapest.wholesaler)}</strong></>
-              : <>Best price: <strong>{distributorName(cheapest.wholesaler)}</strong> · save {money(saveCs)}/cs{saveBtl != null ? ` (${money(saveBtl)}/btl)` : ''}</>)
-          : <><strong>{distributorName(cheapest.wholesaler)}</strong> cheapest {money(cheapest.best)}/cs<span className="dcc-vs"> · vs {offers.length} distributors</span></>}
+              : <>Best price: <strong>{distributorName(cheapest.wholesaler)}</strong> · save {money(saveBtl)}/btl{saveCs > 0 ? ` (${money(saveCs)}/cs)` : ''}</>)
+          : <><strong>{distributorName(cheapest.wholesaler)}</strong> cheapest {money(cheapest.bestBtl)}/btl<span className="dcc-vs"> · vs {offers.length} distributors</span></>}
       </span>
       {hover && pos && (
         <div

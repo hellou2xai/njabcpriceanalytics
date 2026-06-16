@@ -5595,6 +5595,10 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .prod-card-meta { flex: 1; min-width: 0; }
 .prod-card-name { background: none; border: 0; padding: 0; text-align: left; cursor: pointer; font-size: 16px; font-weight: 700; color: var(--text); }
 .prod-card-name:hover { color: var(--accent); text-decoration: underline; }
+/* CELR family header rendered as plain text (not a link) — drill in via a
+   distributor product name below instead. */
+.prod-card-name--plain { display: block; cursor: default; }
+.prod-card-name--plain:hover { color: var(--text); text-decoration: none; }
 .prod-card-type { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
 .prod-card-spark { display: inline-block; margin-top: 6px; }
 /* QD/RIP price summary on the collapsed card (rep size). */
@@ -5676,10 +5680,13 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 /* ---- Expanded size rows ---- */
 .prod-card-body { border-top: 1px solid var(--border); }
 /* 4-level grouped body: CELR card -> Distributor -> Distributor Product -> sizes */
-.prod-dist-group { border-top: 1px solid var(--border); }
+.prod-dist-group { border-top: 1px solid var(--border); background: var(--surface); }
 .prod-dist-group:first-child { border-top: 0; }
+/* Subtle per-vendor zebra: alternate vendor blocks white / light gray so each
+   distributor is easy to tell apart. One uniform shade per vendor block. */
+.prod-dist-group--alt { background: var(--surface-hover); }
 .prod-dist-head { display: flex; align-items: center; gap: 7px; padding: 8px 16px;
-  background: var(--surface-hover); font-size: 12.5px; font-weight: 700; color: var(--text);
+  background: color-mix(in srgb, var(--text) 5%, transparent); font-size: 12.5px; font-weight: 700; color: var(--text);
   text-transform: uppercase; letter-spacing: .03em; }
 .prod-dist-head svg { color: var(--accent); }
 .prod-dist-name { flex: 0 0 auto; }

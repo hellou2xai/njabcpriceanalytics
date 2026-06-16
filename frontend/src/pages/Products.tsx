@@ -74,8 +74,10 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
   // "Group products" toggle: OFF by default shows one row per distributor +
   // size (UPC variants collapsed to the best price); ON restores the
   // cross-distributor family cards. Persisted.
+  // Grouped (CELR family) view is the DEFAULT; the choice persists and only an
+  // explicit opt-out ('0') turns it off.
   const [grouped, setGroupedState] = useState(() =>
-    localStorage.getItem('lpb_products_grouped') === '1');
+    localStorage.getItem('lpb_products_grouped') !== '0');
   const setGrouped = (v: boolean) => {
     setGroupedState(v);
     localStorage.setItem('lpb_products_grouped', v ? '1' : '0');

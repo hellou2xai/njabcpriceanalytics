@@ -44,6 +44,20 @@ _TIE_EPS = 0.005
 # buyer can actually get today and old promos don't confuse the comparison.
 _ACTIVE_NOW = {"active", "whole_month", "evergreen"}
 
+
+def _has_rip_signal(rec: dict) -> bool:
+    """Cheap pre-tier candidate test: does this CPL row plausibly have a RIP?
+    True when the precomputed has_rip flag is set OR a real rip_code is present.
+    The rip_code check catches RIPs the precomputed flag can lag on — e.g. Opici
+    files a descriptive text code and a multi-listing UPC's has_rip can read
+    False in a stale cache. This only widens the candidate set fed to
+    attach_tiers; the precise gate (the distributor actually has RIP tiers) is
+    applied after the canonical ladder is built."""
+    if rec.get("has_rip"):
+        return True
+    code = str(rec.get("rip_code") or "").strip()
+    return bool(code) and code.lower() not in ("0", "none", "nan")
+
 # Same validity rule as catalog: a real barcode, not stub/placeholder filler.
 _VALID_UPC = (
     "upc IS NOT NULL AND upc <> '' AND upc <> '0'"
@@ -1406,9 +1420,13 @@ def compare_rips(
         for r in raw:
             by_key.setdefault(r["match_key"], {})[r["wholesaler"]] = r
 
-        # Keep only products that ALL selected distributors RIP.
+        # Candidate products: carried by ALL selected distributors, each showing
+        # a RIP SIGNAL (precomputed has_rip OR a real rip_code). The precise gate
+        # — every distributor actually has RIP tiers from the canonical ladder —
+        # is applied after attach_tiers below, so Opici text-coded RIPs the stale
+        # has_rip flag misses still show without waiting for a cache rebuild.
         keys = [k for k, per in by_key.items()
-                if len(per) == len(slugs) and all(per[w].get("has_rip") for w in slugs)]
+                if len(per) == len(slugs) and all(_has_rip_signal(per[w]) for w in slugs)]
 
         # Apply the text/brand/type narrowing HERE, before the expensive tier
         # build, so a product-name search only runs attach_tiers on the handful of
@@ -1528,6 +1546,14 @@ def compare_rips(
                 "unit_volume": rec.get("unit_volume"),
                 "unit_type": rec.get("unit_type"),
             }
+
+        # Precise RIP gate: this is a RIP-vs-RIP comparison, so every selected
+        # distributor must ACTUALLY have a RIP tier from the canonical ladder.
+        # Replaces the old precomputed-has_rip filter so text-coded RIPs (Opici)
+        # the stale flag misses are included, and candidates with only a dangling
+        # rip_code but no real tier are dropped.
+        if not all(dists[w]["rip_tiers"] for w in slugs):
+            continue
 
         # winner at N
         landed_n = {w: d["landed_at_n"] for w, d in dists.items() if d["landed_at_n"] is not None}
@@ -2054,7 +2080,7 @@ def assistant_rip_comparison(con, match: str, wholesalers: Optional[list[str]] =
     best_key, best_n = None, 0
     for k in cand_keys:
         per = by_key[k]
-        n_rip = sum(1 for w in slugs if per.get(w) and per[w].get("has_rip"))
+        n_rip = sum(1 for w in slugs if per.get(w) and _has_rip_signal(per[w]))
         if n_rip >= 2 and n_rip > best_n:
             best_n, best_key = n_rip, k
     if not best_key:
@@ -2062,9 +2088,17 @@ def assistant_rip_comparison(con, match: str, wholesalers: Optional[list[str]] =
                 "note": "No product matched with a RIP at 2+ of the selected distributors."}
 
     per = by_key[best_key]
-    present = [w for w in slugs if per.get(w) and per[w].get("has_rip")]
+    present = [w for w in slugs if per.get(w) and _has_rip_signal(per[w])]
     flat = [per[w] for w in present]
     _pricing.attach_tiers(con, flat)
+    # Precise gate on the canonical ladder: keep only distributors that actually
+    # have a RIP tier (drops a dangling rip_code with no real tier; includes
+    # Opici text codes the stale has_rip flag misses).
+    present = [w for w in present
+               if any(t.get("source") == "rip" for t in (per[w].get("tiers") or []))]
+    if len(present) < 2:
+        return {"found": False, "match": match,
+                "note": "No product matched with a RIP at 2+ of the selected distributors."}
     mix = _case_mix_sizes(con, src, present, eds)
     n = float(cases)
 

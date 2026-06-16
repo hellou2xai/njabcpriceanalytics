@@ -5608,6 +5608,16 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .prod-card-dist { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-muted); margin-top: 5px; font-weight: 600; background: var(--surface-hover); border: 1px solid var(--border); padding: 2px 8px; border-radius: 999px; }
 .prod-card-dist-icon { color: var(--text-muted); }
 .prod-card-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; text-align: right; flex-shrink: 0; }
+/* Best-QD sticker: deepest quantity-discount bracket, top-right of the card. */
+.prod-bestqd { display: inline-flex; align-items: baseline; gap: 6px; margin-bottom: 2px;
+  padding: 3px 9px; border-radius: var(--radius-pill); font-size: 11px; line-height: 1.2;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--accent-strong); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.prod-bestqd-k { font-weight: 800; text-transform: uppercase; letter-spacing: .04em; font-size: 9.5px; }
+.prod-bestqd-q { font-weight: 700; }
+.prod-bestqd-p { font-weight: 700; }
+.prod-bestqd-s { color: var(--green); font-weight: 600; }
 .prod-card-range { font-size: 15px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
 /* bottle price beside the case price: SAME size/weight, muted colour only */
 .prod-card-range-btl { color: var(--text-muted); }

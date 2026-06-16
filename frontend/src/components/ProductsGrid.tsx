@@ -235,6 +235,44 @@ function oneCaseQdCase(s: Product): number | null {
   return front;
 }
 
+// Best quantity discount for the card sticker: the DEEPEST QD bracket, from the
+// precomputed best_case_price (price after the best QD — on the list row, no tier
+// fetch) plus the bracket quantity from the discount_tiers summary. RIP is NOT a
+// QD, so it's excluded. Returns null when there's no real QD saving.
+function bestQd(s?: Product | null): { cases: number | null; priceAfter: number; save: number } | null {
+  if (!s) return null;
+  const front = s.frontline_case_price ?? null;
+  const best = s.best_case_price ?? null;
+  if (best == null || front == null || best >= front - 0.005) return null;
+  const pack = bottlesPerCase(s.product_name, s.unit_qty);
+  let cases: number | null = null;
+  const tiers = s.discount_tiers ?? [];
+  if (tiers.length) {
+    let deep = tiers[0];
+    for (const t of tiers) if ((t.amount ?? 0) > (deep.amount ?? 0)) deep = t;
+    const isBtl = /^\s*b/i.test(String(deep.unit ?? ''));
+    cases = isBtl ? (pack ? Math.ceil(deep.qty / pack) : deep.qty) : deep.qty;
+  }
+  return { cases, priceAfter: best, save: Math.round((front - best) * 100) / 100 };
+}
+
+// Best-QD sticker for the card header (top-right). Shows the deepest quantity
+// discount: bracket, resulting case price, and $/case saved vs the list price.
+function BestQdSticker({ s }: { s?: Product | null }) {
+  const qd = bestQd(s);
+  if (!qd) return null;
+  const bracket = qd.cases != null ? `buy ${qd.cases} case${qd.cases === 1 ? '' : 's'}` : 'best bracket';
+  return (
+    <span className="prod-bestqd"
+      title={`Best quantity discount: ${bracket} → $${qd.priceAfter.toFixed(2)}/case · save $${qd.save.toFixed(2)}/case (excludes RIP)`}>
+      <span className="prod-bestqd-k">Best QD</span>
+      {qd.cases != null && <span className="prod-bestqd-q">{qd.cases} cs</span>}
+      <span className="prod-bestqd-p">${qd.priceAfter.toFixed(2)}/cs</span>
+      <span className="prod-bestqd-s">save ${qd.save.toFixed(2)}</span>
+    </span>
+  );
+}
+
 // True per-bottle list price, correcting slash-multipacks (unit_qty = trays)
 // the same way every other per-bottle surface does.
 function bottleUnitPrice(s: Product): number | null {
@@ -571,6 +609,7 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
           </div>
         )}
         <div className="prod-card-right">
+          <BestQdSticker s={repRow ?? range?.lo ?? first} />
           {range && (
             <>
               <CardPriceLine s={range.lo} repRow={repRow} />

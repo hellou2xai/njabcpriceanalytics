@@ -1141,6 +1141,12 @@ def _best_rip_tier_lines(tiers: list, pack: float) -> list[dict]:
             rpc = t.get("save_per_case") or 0.0
         pa = t.get("price_after")
         after_qd = (pa + rpc) if pa is not None else None
+        # Sanity guard: a RIP rebate can NEVER exceed the cash you put down
+        # (profit >= 100% is physically impossible). Such a tier is a source-data
+        # error — e.g. an extra zero in a distributor's RIP amount ($4,200 vs
+        # $420) — so drop it rather than show an absurd profit %.
+        if after_qd is None or after_qd <= 0 or (rpc and rpc >= after_qd):
+            continue
         needed = (round(cases * after_qd, 2)
                   if cases is not None and after_qd is not None else None)
         total_rebate = round(cases * rpc, 2) if cases is not None and rpc else None
@@ -1907,6 +1913,10 @@ def best_rips(
                 slugs + sel_months).fetchall():
             month_ws.setdefault(e, []).append(w)
         cur_ym = _pricing.current_yyyy_mm()
+        # Only the top candidates can rank into the visible page, so build the
+        # expensive tier ladders for a generous multiple of `limit`, not the
+        # whole universe. Big headroom keeps display filters from starving.
+        cand_k = max(limit * 4, 1500)
 
         def _absent_dist():
             return {
@@ -1946,7 +1956,33 @@ def best_rips(
                     return True
                 mkeys = [k for k in mkeys if _match(bk[k])]
 
-            flat = [bk[k][w] for k in mkeys for w in bk[k]]
+            n_cand = len(mkeys)   # full candidate universe for this month
+            # PERF: preselect the top candidates by a CHEAP proxy from precomputed
+            # columns before the expensive attach_tiers (which would otherwise run
+            # over the whole ~8k-product universe just to show ~400). Proxy uses
+            # rip_savings (deepest full-month rebate) and rip_savings/frontline
+            # (profit), guarded against impossible amounts (source typos).
+            def _proxy(k):
+                best_sav, profs = 0.0, []
+                for _w2, rec in bk[k].items():
+                    sav = rec.get("rip_savings") or 0
+                    front = rec.get("frontline_case_price") or 0
+                    if sav and sav > 0 and front and sav < front:
+                        best_sav = max(best_sav, sav)
+                        profs.append(sav / front)
+                if sort in ("deepest", "expiring"):
+                    return best_sav
+                if sort == "gap":
+                    return (max(profs) - min(profs)) if len(profs) > 1 else 0.0
+                return max(profs) if profs else 0.0   # best_profit (default)
+            if sort == "product":
+                mkeys.sort(key=lambda k: min(
+                    (bk[k][w].get("product_name") or "" for w in bk[k]), key=len).lower())
+            else:
+                mkeys.sort(key=_proxy, reverse=True)
+            sel = mkeys[:cand_k]
+
+            flat = [bk[k][w] for k in sel for w in bk[k]]
             # Classify each edition's windows from ITS month: today for the
             # current edition, mid-month otherwise — so a future July edition
             # loaded in June reads as a real (not "upcoming") RIP.
@@ -1959,7 +1995,7 @@ def best_rips(
             mmix = _case_mix_sizes(con, src, wm, eds_m)
 
             out = []
-            for key in mkeys:
+            for key in sel:
                 per = bk[key]
                 present = [w for w in slugs if w in per]
                 any_row = per[present[0]]
@@ -2053,55 +2089,62 @@ def best_rips(
                     "soonest_expiry": min((dists[w]["expires_in_days"] for w in slugs
                                            if dists[w]["expires_in_days"] is not None), default=None),
                 })
-            return out
+            return out, n_cand
 
         rows = []
+        universe = 0
         for m in sel_months:
-            rows.extend(_cards_for_month(m))
+            cards, n_cand = _cards_for_month(m)
+            rows.extend(cards)
+            universe += n_cand
 
         # ---- Month-over-month RIP trend sticker ------------------------------
         # RIP codes are recycled each edition, so DON'T match by code across
         # months — track the AMOUNT (rip_savings = deepest full-month rebate per
         # case, i.e. the deepest tier) keyed by product identity (UPC + size).
-        # Relative to EACH card's own edition: this = card month, last/next = the
-        # adjacent editions (only if loaded), so the card flags when its RIP is
-        # better. Codes are ignored — only amounts are compared.
+        # CALENDAR-relative: last / this / next month around the current edition.
+        # Only meaningful on the current edition's cards (a past-month card isn't
+        # "this month"). A slot with no loaded edition stays null (so an unloaded
+        # next month never shows a value).
         def _shift_ym(ym: str, delta: int) -> str:
             i = int(ym[:4]) * 12 + (int(ym[5:7]) - 1) + delta
             return f"{i // 12:04d}-{i % 12 + 1:02d}"
-        need = {e for m in sel_months for d in (-1, 0, 1)
-                if (e := _shift_ym(m, d)) in all_eds}
+        slot_ed = {"last": _shift_ym(cur_ym, -1), "this": cur_ym, "next": _shift_ym(cur_ym, 1)}
+        t_eds = [e for e in slot_ed.values() if e in all_eds]   # loaded slots only
         trend_amt: dict = {}   # (upc_norm, size_key, edition) -> max rip_savings
-        if need:
-            t_eds = sorted(need)
+        if t_eds:
             tph = ",".join("?" * len(t_eds))
             for _w, e, upc, uv, rs in con.execute(
                     f"SELECT wholesaler, edition, upc, unit_volume, rip_savings FROM {src} "
                     f"WHERE wholesaler IN ({ph}) AND edition IN ({tph}) "
-                    f"AND rip_savings IS NOT NULL AND rip_savings > 0",
+                    f"AND rip_savings IS NOT NULL AND rip_savings > 0 "
+                    # drop impossible rebates (>= case price) — source typos
+                    f"AND frontline_case_price IS NOT NULL "
+                    f"AND rip_savings < frontline_case_price",
                     slugs + t_eds).fetchall():
                 k = (str(upc or "").lstrip("0"), _size_key(uv), e)
                 if float(rs) > trend_amt.get(k, 0):
                     trend_amt[k] = round(float(rs), 2)
         for r in rows:
-            ed = r["edition"]
             ident = (r["upc_norm"], r["size_key"])
-            this_a = trend_amt.get((*ident, ed))
-            last_a = trend_amt.get((*ident, _shift_ym(ed, -1)))
-            next_a = trend_amt.get((*ident, _shift_ym(ed, 1)))
-            present = {s: a for s, a in (("this", this_a), ("last", last_a), ("next", next_a))
-                       if a is not None}
+            amts = {s: (trend_amt.get((*ident, e)) if e in all_eds else None)
+                    for s, e in slot_ed.items()}
+            present = {s: v for s, v in amts.items() if v is not None}
             best = None
-            if len(present) >= 2:
+            # only the current edition's cards carry the calendar this/last/next
+            if r["edition"] == cur_ym and len(present) >= 2:
                 top = max(present, key=present.get)
-                # ~equal-or-better in the card's own month reads as "best now"
                 best = "this" if ("this" in present and present[top] - present["this"] < 1.0) else top
-            r["rip_trend"] = {"this": this_a, "last": last_a, "next": next_a, "best": best}
+            r["rip_trend"] = {
+                "this": amts["this"], "last": amts["last"], "next": amts["next"],
+                "this_ed": slot_ed["this"], "last_ed": slot_ed["last"], "next_ed": slot_ed["next"],
+                "best": best,
+            }
 
     if time_sensitive_only:
         rows = [r for r in rows
                 if any(r["dists"][w]["has_time_sensitive"] for w in r["ripping"])]
-    total = len(rows)  # full board universe for this search context
+    total = universe  # full candidate universe (pre-display-filter) for this context
     if only_differences:
         rows = [r for r in rows if r["differs"]]
     if min_profit > 0:

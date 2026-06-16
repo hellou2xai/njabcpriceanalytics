@@ -31,8 +31,11 @@ const monthLabel = (ym?: string | null) => {
     this tracks the deepest rebate AMOUNT per case across last/this/next. */
 function TrendSticker({ t }: { t: BestRipTrend }) {
   if (!t.best) return null;
-  const fmt = (v: number | null) => (v == null ? '—' : `$${v}/cs`);
-  const tip = `Deepest rebate per case — Last month: ${fmt(t.last)} · This month: ${fmt(t.this)} · Next month: ${fmt(t.next)}`;
+  // Tooltip lists only the months that have data (loaded), with real labels.
+  const parts = ([['last', t.last_ed, t.last], ['this', t.this_ed, t.this], ['next', t.next_ed, t.next]] as const)
+    .filter(([, , v]) => v != null)
+    .map(([, ed, v]) => `${monthLabel(ed)}: $${v}/cs`);
+  const tip = `Deepest rebate per case — ${parts.join(' · ')}`;
   if (t.best === 'this')
     return <span className="br-trend br-trend--now" title={tip}><TrendingUp size={11} /> Best RIP this month</span>;
   if (t.best === 'next')
@@ -254,9 +257,14 @@ export default function BestRips() {
     limit: 400,
   }), [query, sort, dists, months, onlyDiff, tsOnly, hideExpired, minProfit]);
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, isFetching, error } = useQuery({
     queryKey: ['best-rips', params],
     queryFn: () => compare.bestRips(params),
+    // The board is a heavy aggregate; cache aggressively and keep the previous
+    // page visible while refetching so filter toggles don't flash a spinner.
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+    placeholderData: (prev) => prev,
   });
 
   // Selected months default to the server's choice (latest two) until the user picks.
@@ -341,6 +349,7 @@ export default function BestRips() {
             Showing {data.rows.length} of {data.total.toLocaleString()} RIPs
             {onlyDiff ? ' where the distributors differ' : ` across ${data.wholesalers.map(distributorName).join(', ')}`}
             {data.total > data.rows.length && ' — refine with search or sort to narrow'}
+            {isFetching && <span className="br-updating"> · updating…</span>}
           </div>
           {data.rows.length === 0 ? (
             <div className="br-empty">No RIPs match these filters.</div>

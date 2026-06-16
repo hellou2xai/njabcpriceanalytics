@@ -37,6 +37,7 @@
 .br-range b { color: #2563eb; }
 
 .br-count { font-size: 12.5px; color: #64748b; margin-bottom: 10px; }
+.br-updating { color: #2563eb; font-weight: 600; }
 .br-empty { padding: 40px; text-align: center; color: #94a3b8; background: #f8fafc; border-radius: 12px; }
 
 /* card grid */

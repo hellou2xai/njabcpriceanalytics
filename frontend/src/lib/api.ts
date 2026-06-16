@@ -569,6 +569,9 @@ export interface BestRipTrend {
   this: number | null;             // deepest full-month rebate $/cs, this calendar month
   last: number | null;             // ... last month
   next: number | null;             // ... next month (null until loaded)
+  this_ed: string;                 // YYYY-MM for each slot, for labels
+  last_ed: string;
+  next_ed: string;
   best: 'this' | 'last' | 'next' | null;  // where the better RIP is (null = no comparison)
 }
 export interface BestRipRow {

@@ -18,5 +18,16 @@ export default defineConfig([
     languageOptions: {
       globals: globals.browser,
     },
+    rules: {
+      // Browser globals (size, name, length, status, top, …) silently shadow an
+      // intended local, so a typo like `size.edition` (meaning a local `size`)
+      // type-checks against window.size and crashes at runtime. Forbid bare use
+      // of the collision-prone ones — a declared local of the same name still
+      // shadows the global and is NOT flagged.
+      'no-restricted-globals': ['error',
+        'size', 'name', 'length', 'status', 'top', 'parent',
+        'origin', 'closed', 'event', 'external', 'frames',
+      ],
+    },
   },
 ])

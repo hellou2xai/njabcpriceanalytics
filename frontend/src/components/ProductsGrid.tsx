@@ -263,7 +263,7 @@ function BestQdSticker({ s }: { s?: Product | null }) {
       <span className="prod-bestqd-p">{money(qd.case_price)}/cs{qd.bottle_price != null && <> · {money(qd.bottle_price)}/btl</>}</span>
       <span className="prod-bestqd-s">
         save {money(qd.save_per_case)}/cs
-        {qd.total_cost != null && <> · {moneyR(qd.total_cost)} total</>}
+        {qd.total_save != null && <> · {moneyR(qd.total_save)} total QD</>}
       </span>
     </span>
   );

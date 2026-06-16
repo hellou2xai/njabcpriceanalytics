@@ -435,6 +435,13 @@ export default function ProductDetail() {
     }
     return out;
   }, [sizes, ripCode]);
+
+  // Edition the page is showing (the page wholesaler's size, else the first),
+  // so the RIP members modal is scoped to this month — codes recycle monthly.
+  const ripEdition = useMemo(
+    () => (sizes.find(s => s.wholesaler === wholesaler) ?? sizes[0])?.edition ?? undefined,
+    [sizes, wholesaler],
+  );
   const anyDisc = sizes.some(s => s.has_discount);   // quantity discount
   const anyRip = sizes.some(s => s.has_rip);          // RIP
   // Half-case RIP: any size whose RIP tier counts a physical case as <1 toward
@@ -626,7 +633,7 @@ export default function ProductDetail() {
               brand-mix RIP and a standalone RIP each show their own members. */}
           {ripCodes.map(code => (
             <RipMembersSection key={code} wholesaler={wholesaler} code={code}
-              upc={upc} name={name} edition={size.edition} />
+              upc={upc} name={name} edition={ripEdition} />
           ))}
 
           {/* More from the same manufacturer. */}

@@ -3,10 +3,10 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   BadgeDollarSign, Trophy, AlertTriangle, Clock, Layers, Search,
-  TrendingUp, Tag,
+  TrendingUp, TrendingDown, Tag, CalendarClock,
 } from 'lucide-react';
 import { compare } from '../lib/api';
-import type { BestRipRow, BestRipDist, BestRipTier } from '../lib/api';
+import type { BestRipRow, BestRipDist, BestRipTier, BestRipTrend } from '../lib/api';
 import { distributorName } from '../lib/distributors';
 import ProductSearchBox from '../components/ProductSearchBox';
 import ProductThumb from '../components/ProductThumb';
@@ -20,6 +20,25 @@ const money = (v?: number | null) =>
 const pct = (v?: number | null) => (v == null ? '–' : `${Number(v).toFixed(1)}%`);
 const ACCENTS: Record<string, string> = { allied: '#2563eb', fedway: '#d97706', opici: '#7c3aed' };
 const DIST_OPTS = ['allied', 'fedway', 'opici'];
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const monthLabel = (ym?: string | null) => {
+  if (!ym) return '';
+  const [y, m] = ym.split('-').map(Number);
+  return m ? `${MONTH_ABBR[m - 1]} ${y}` : ym;
+};
+
+/** Month-over-month "when is the RIP best" sticker. RIP codes change monthly, so
+    this tracks the deepest rebate AMOUNT per case across last/this/next. */
+function TrendSticker({ t }: { t: BestRipTrend }) {
+  if (!t.best) return null;
+  const fmt = (v: number | null) => (v == null ? '—' : `$${v}/cs`);
+  const tip = `Deepest rebate per case — Last month: ${fmt(t.last)} · This month: ${fmt(t.this)} · Next month: ${fmt(t.next)}`;
+  if (t.best === 'this')
+    return <span className="br-trend br-trend--now" title={tip}><TrendingUp size={11} /> Best RIP this month</span>;
+  if (t.best === 'next')
+    return <span className="br-trend br-trend--next" title={tip}><TrendingUp size={11} /> Better next month</span>;
+  return <span className="br-trend br-trend--last" title={tip}><TrendingDown size={11} /> Was better last month</span>;
+}
 
 type Sort = 'best_profit' | 'deepest' | 'gap' | 'expiring' | 'product';
 const SORTS: { key: Sort; label: string; hint: string }[] = [
@@ -168,6 +187,7 @@ function Card({ row, slugs, onRipClick }: { row: BestRipRow; slugs: string[]; on
               ? <Link className="br-name br-name--link" to={productHref}>{row.product_name}</Link>
               : <span className="br-name">{row.product_name}</span>}
             <span className="br-meta">
+              <span className="br-edchip" title={`RIP from the ${monthLabel(row.edition)} edition`}><CalendarClock size={10} /> {monthLabel(row.edition)}</span>
               {size && <span>{size}</span>}
               {vint && <span className="br-vint">{vint}</span>}
               {row.upc && <span className="br-upc">UPC {row.upc}</span>}
@@ -180,6 +200,7 @@ function Card({ row, slugs, onRipClick }: { row: BestRipRow; slugs: string[]; on
               <TrendingUp size={13} /> {pct(row.best_profit_pct)}
             </span>
           )}
+          <TrendSticker t={row.rip_trend} />
           {row.differs && (
             <span className="br-differs" title="The three distributors differ on RIP terms (missing, timing, quantity or profit)">
               <AlertTriangle size={12} /> Differs
@@ -213,6 +234,7 @@ export default function BestRips() {
   const [hideExpired, setHideExpired] = useState(true);
   const [minProfit, setMinProfit] = useState(0);
   const [dists, setDists] = useState<string[]>(['allied', 'fedway', 'opici']);
+  const [months, setMonths] = useState<string[]>([]);   // [] = server default (latest two)
   const [modal, setModal] = useState<{ w: string; code: string } | null>(null);
 
   const toggleDist = (w: string) => setDists(prev =>
@@ -224,19 +246,26 @@ export default function BestRips() {
     q: query || undefined,
     sort,
     wholesalers: dists.join(','),
+    months: months.length ? months.join(',') : undefined,  // empty -> latest two
     only_differences: onlyDiff,
     time_sensitive_only: tsOnly,
     hide_expired: hideExpired,
     min_profit: minProfit || undefined,
     limit: 400,
-  }), [query, sort, dists, onlyDiff, tsOnly, hideExpired, minProfit]);
+  }), [query, sort, dists, months, onlyDiff, tsOnly, hideExpired, minProfit]);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['best-rips', params],
     queryFn: () => compare.bestRips(params),
   });
 
-  const edition = data ? Object.values(data.editions)[0] : null;
+  // Selected months default to the server's choice (latest two) until the user picks.
+  const selMonths = months.length ? months : (data?.months ?? []);
+  const toggleMonth = (m: string) => {
+    const base = months.length ? months : (data?.months ?? []);
+    const next = base.includes(m) ? base.filter(x => x !== m) : [...base, m];
+    setMonths(next.length ? next : base);   // keep at least one
+  };
 
   return (
     <div className="br-page">
@@ -247,7 +276,9 @@ export default function BestRips() {
             one line per RIP tier. <b>Needed for purchase</b> is net of the quantity discount;
             <b> RIP profit</b> is the rebate as a % of that cash down.</p>
         </div>
-        {edition && <span className="br-edition"><Layers size={13} /> {edition}</span>}
+        {selMonths.length > 0 && (
+          <span className="br-edition"><Layers size={13} /> {selMonths.map(monthLabel).join(' · ')}</span>
+        )}
       </div>
 
       <div className="br-toolbar">
@@ -281,6 +312,18 @@ export default function BestRips() {
             </button>
           ))}
         </span>
+        {data && data.available_months.length > 0 && (
+          <span className="br-distpick">
+            <span className="br-distpick-lbl">Months:</span>
+            {data.available_months.map(m => (
+              <button key={m} type="button"
+                className={`br-distbtn${selMonths.includes(m) ? ' br-distbtn--on br-monthbtn--on' : ''}`}
+                onClick={() => toggleMonth(m)}>
+                {monthLabel(m)}
+              </button>
+            ))}
+          </span>
+        )}
         <label className="br-chk"><input type="checkbox" checked={onlyDiff} onChange={e => setOnlyDiff(e.target.checked)} /> Only where distributors differ</label>
         <label className="br-chk"><input type="checkbox" checked={tsOnly} onChange={e => setTsOnly(e.target.checked)} /> Time-sensitive only</label>
         <label className="br-chk"><input type="checkbox" checked={hideExpired} onChange={e => setHideExpired(e.target.checked)} /> Hide expired tiers</label>

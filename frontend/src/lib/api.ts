@@ -565,8 +565,15 @@ export interface BestRipDist {
   unit_qty: string | null;
   unit_volume: string | null;
 }
+export interface BestRipTrend {
+  this: number | null;             // deepest full-month rebate $/cs, this calendar month
+  last: number | null;             // ... last month
+  next: number | null;             // ... next month (null until loaded)
+  best: 'this' | 'last' | 'next' | null;  // where the better RIP is (null = no comparison)
+}
 export interface BestRipRow {
   match_key: string;
+  edition: string;                 // YYYY-MM this card's RIP is from
   upc_norm: string;
   size_key: string;
   product_name: string;
@@ -591,10 +598,12 @@ export interface BestRipRow {
   quantity_differs: boolean;
   differs: boolean;
   soonest_expiry: number | null;   // days to the nearest dated RIP ending
+  rip_trend: BestRipTrend;
 }
 export interface BestRipResponse {
   wholesalers: string[];
-  editions: Record<string, string>;
+  months: string[];                // selected editions shown
+  available_months: string[];      // all loaded editions, newest first
   total: number;
   rows: BestRipRow[];
 }

@@ -116,6 +116,22 @@ function useTheme() {
   return { theme, toggle };
 }
 
+type TextSize = 'small' | 'medium' | 'large';
+// App-wide text size, persisted in localStorage. Applied as a data attribute on
+// <html>; CSS scales the page content (the nav keeps its size so the --nav-w
+// offset stays correct). Persists until the user changes it.
+function useTextSize() {
+  const [size, setSize] = useState<TextSize>(() => {
+    const s = localStorage.getItem('lpb_text_size');
+    return s === 'small' || s === 'large' ? s : 'medium';
+  });
+  useEffect(() => {
+    document.documentElement.setAttribute('data-textsize', size);
+    localStorage.setItem('lpb_text_size', size);
+  }, [size]);
+  return { size, setSize };
+}
+
 function useIsMobile(breakpoint = 1024) {
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < breakpoint);
   useEffect(() => {
@@ -156,6 +172,7 @@ export default function Layout() {
   });
 
   const { theme, toggle: toggleTheme } = useTheme();
+  const { size: textSize, setSize: setTextSize } = useTextSize();
   const location = useLocation();
 
   // Persist collapsed state for desktop
@@ -356,6 +373,23 @@ export default function Layout() {
           })}
         </nav>
         <div className="sidebar-footer">
+          <div className="sidebar-textsize" title="Text size (saved for next time)">
+            {!sidebarCollapsed && <span className="sidebar-textsize-lbl">Text size</span>}
+            <div className="textsize-seg">
+              {(['small', 'medium', 'large'] as const).map(s => (
+                <button
+                  key={s}
+                  type="button"
+                  data-size={s}
+                  className={`textsize-seg-btn${textSize === s ? ' on' : ''}`}
+                  onClick={() => setTextSize(s)}
+                  title={`${s[0].toUpperCase()}${s.slice(1)} text`}
+                  aria-label={`${s} text`}
+                  aria-pressed={textSize === s}
+                >A</button>
+              ))}
+            </div>
+          </div>
           <WhatsAppShareButton
             className="sidebar-logout sidebar-share"
             label="Share via WhatsApp"

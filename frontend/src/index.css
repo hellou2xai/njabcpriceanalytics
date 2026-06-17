@@ -1538,6 +1538,26 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
 .sidebar-logout:hover { color: var(--red); background: var(--surface-hover); }
 /* Share button reuses the logout layout but is not destructive. */
 .sidebar-share:hover { color: var(--text); background: var(--surface-hover); }
+
+/* ---- App-wide text size (persisted; set on <html data-textsize>) ----
+   Scales the page CONTENT; the fixed nav keeps its size so the --nav-w offset
+   stays correct. medium = no rule (zoom 1). */
+html[data-textsize="small"] .main-content { zoom: 0.9; }
+html[data-textsize="large"] .main-content { zoom: 1.12; }
+.sidebar-textsize { display: flex; align-items: center; gap: 8px; padding: 2px 8px 4px; }
+.sidebar-textsize-lbl { font-size: 12px; color: var(--nav-text, var(--text-muted)); }
+.textsize-seg { display: inline-flex; gap: 3px; margin-left: auto; }
+.textsize-seg-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 26px; padding: 2px 6px; line-height: 1; cursor: pointer; font-weight: 700;
+  border: 1px solid var(--nav-border, var(--border)); border-radius: 6px;
+  background: transparent; color: var(--nav-text, var(--text-muted)); transition: all .12s;
+}
+.textsize-seg-btn[data-size="small"] { font-size: 10px; }
+.textsize-seg-btn[data-size="medium"] { font-size: 13px; }
+.textsize-seg-btn[data-size="large"] { font-size: 16px; }
+.textsize-seg-btn:hover { color: var(--nav-text-hover, var(--text)); border-color: var(--nav-text-hover, var(--text)); }
+.textsize-seg-btn.on { background: var(--cta, var(--accent)); color: #fff; border-color: var(--cta, var(--accent)); }
 .sidebar-profile {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 16px; color: var(--text-muted); text-decoration: none;

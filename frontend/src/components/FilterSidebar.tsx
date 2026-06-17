@@ -1,12 +1,12 @@
 import { useState, useEffect, type ReactNode } from 'react';
-import { ChevronDown, ChevronUp, Filter as FilterIcon, XCircle } from 'lucide-react';
+import { ChevronLeft, ChevronUp, SlidersHorizontal, XCircle } from 'lucide-react';
 
 export type FilterOption = { label: string; value: string; count?: number };
 
 // `highlight` lets a page mark one section (e.g. a Display toggle) as the
 // primary thing the user should notice. Highlighted sections render with an
-// accent border + tint, pin to the LEFT of the toolbar, and keep their place
-// even when the toolbar is collapsed.
+// accent tint and PIN to the TOP of the rail, so a key toggle like
+// "Group by Case Mix RIP" is the first thing seen and stays put.
 type CommonSectionProps = { highlight?: boolean };
 export type FilterSection = CommonSectionProps & (
   | {
@@ -81,195 +81,197 @@ interface FilterSidebarProps {
 }
 
 /**
- * Horizontal filter toolbar pinned above the page content.
+ * The app's single, shared filter control: a collapsible VERTICAL LEFT RAIL
+ * pinned beside the page content. Every list/analysis page uses this so the
+ * filtering experience looks and behaves identically across the app (it reuses
+ * the same `prod-filter-*` rail skin the Catalog/Products rail uses).
  *
- * Replaced the prior vertical sidebar so list pages get their full width back
- * for the data. The component name and prop API stay the same so every page
- * already using it (Combos, Clearance, Discounts, MajorDiscounts, PriceMovers,
- * RipProducts, Rips, ...) picks up the new layout without changes.
- *
- * Sections lay out as labelled inline controls that wrap to additional rows
- * on narrow screens; a Clear/Reset action is anchored on the LEFT so it's the
- * first thing users see, matching the user's "Clear all filters tagged in the
- * horizontal menu on the left" request. A right-aligned Hide toggle collapses
- * the toolbar to a single row when the user wants the data to take over.
+ * The section-model prop API (`sections[]` of pills / multi-pills / select /
+ * text / range / toggle / custom, plus `storageKey`, `onReset`, `children`) is
+ * unchanged from the previous horizontal-toolbar layout, so pages that already
+ * passed sections pick up the rail with no edits. Pages pass their results as
+ * `children`; the rail owns the 2-column grid and the collapse/expand state.
  */
 export default function FilterSidebar({ storageKey, sections, onReset, children }: FilterSidebarProps) {
   const lsKey = `filter_toolbar_${storageKey}`;
-  const [collapsed, setCollapsed] = useState<boolean>(() => {
-    const stored = localStorage.getItem(lsKey);
-    return stored === 'true';
-  });
+  const [collapsed, setCollapsed] = useState<boolean>(() => localStorage.getItem(lsKey) === 'true');
+  useEffect(() => { localStorage.setItem(lsKey, String(collapsed)); }, [collapsed, lsKey]);
 
-  useEffect(() => {
-    localStorage.setItem(lsKey, String(collapsed));
-  }, [collapsed, lsKey]);
+  // Highlighted sections pin to the TOP of the rail, then everything else keeps
+  // its given order.
+  const ordered = [...sections.filter(s => s.highlight), ...sections.filter(s => !s.highlight)];
 
-  // Highlighted sections are pinned to the LEFT, immediately after the Clear
-  // action, so the user can't miss them. Everything else keeps its original
-  // order on the right.
-  const highlightedSections = sections.filter(s => s.highlight);
-  const regularSections = sections.filter(s => !s.highlight);
+  if (collapsed) {
+    return (
+      <div className="filter-rail-layout filter-rail-layout--collapsed">
+        <button
+          type="button"
+          className="prod-rail-reopen"
+          onClick={() => setCollapsed(false)}
+          title="Show filters"
+          aria-label="Show filters"
+        >
+          <SlidersHorizontal size={16} />
+          <span className="prod-rail-reopen-label">Filters</span>
+        </button>
+        <div className="filter-rail-main">{children}</div>
+      </div>
+    );
+  }
 
   return (
-    <div className="page-with-filters horizontal">
-      <div className={`filter-toolbar ${collapsed ? 'is-collapsed' : ''}`}>
-        <div className="filter-toolbar-row">
-          {onReset && (
-            <button
-              className="filter-toolbar-clear"
-              onClick={onReset}
-              type="button"
-              title="Clear all filters on this page"
-            >
-              <XCircle size={14} /> Clear all filters
-            </button>
-          )}
-          {!onReset && (
-            <span className="filter-toolbar-label">
-              <FilterIcon size={14} /> Filters
+    <div className="filter-rail-layout">
+      <aside className="prod-filter-rail">
+        <button
+          type="button"
+          className="prod-filter-collapse-handle"
+          onClick={() => setCollapsed(true)}
+          title="Collapse the filter rail"
+          aria-label="Collapse the filter rail"
+        >
+          <ChevronLeft size={16} />
+        </button>
+        <div className="prod-filter-rail-body">
+          <div className="prod-filter-rail-head">
+            <span className="prod-filter-rail-title"><SlidersHorizontal size={16} /> Filters</span>
+            <span className="prod-filter-rail-actions">
+              {onReset && (
+                <button type="button" className="prod-filter-clear" onClick={onReset} title="Clear all filters on this page">
+                  <XCircle size={13} /> Clear all
+                </button>
+              )}
             </span>
-          )}
-
-          {/* Highlighted sections stay visible even when the rest are hidden,
-              so a key toggle like "Group by Case Mix RIP" is always reachable. */}
-          {highlightedSections.length > 0 && (
-            <div className="filter-toolbar-sections is-highlight">
-              {highlightedSections.map(s => (
-                <FilterSectionInline key={s.key} section={s} />
-              ))}
-            </div>
-          )}
-
-          {!collapsed && regularSections.length > 0 && (
-            <div className="filter-toolbar-sections">
-              {regularSections.map(s => (
-                <FilterSectionInline key={s.key} section={s} />
-              ))}
-            </div>
-          )}
-
-          <button
-            className="filter-toolbar-toggle"
-            onClick={() => setCollapsed(c => !c)}
-            title={collapsed ? 'Show filters' : 'Hide filters'}
-            type="button"
-          >
-            {collapsed
-              ? (<><ChevronDown size={14} /> Show filters</>)
-              : (<><ChevronUp size={14} /> Hide</>)}
-          </button>
+          </div>
+          {ordered.map(s => (
+            <FilterRailSection key={s.key} section={s} />
+          ))}
         </div>
-      </div>
-
-      <div className="page-with-filters-main">
-        {children}
-      </div>
+      </aside>
+      <div className="filter-rail-main">{children}</div>
     </div>
   );
 }
 
-function FilterSectionInline({ section: s }: { section: FilterSection }) {
+/** One collapsible rail section: an accordion head (the section title) over the
+    control body. Highlighted sections render with the accent tint. */
+function FilterRailSection({ section: s }: { section: FilterSection }) {
+  const [open, setOpen] = useState(true);
   return (
-    <div className={`filter-toolbar-section${s.highlight ? ' is-highlight' : ''}`} data-section-type={s.type}>
-      <div className="filter-toolbar-section-title">{s.title}</div>
-      <div className="filter-toolbar-section-body">
-        {s.type === 'pills' && (
-          <div className="filter-pills">
-            {s.options.map(opt => (
+    <div className={`prod-filter-sect${open ? '' : ' is-collapsed'}${s.highlight ? ' is-highlight' : ''}`}>
+      <button type="button" className="prod-filter-sect-head" onClick={() => setOpen(o => !o)} aria-expanded={open}>
+        <span>{s.title}</span>
+        <ChevronUp size={15} className={`prod-filter-chev${open ? '' : ' is-collapsed'}`} />
+      </button>
+      {open && (
+        <div className="prod-filter-sect-body">
+          <FilterSectionControl section={s} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The control for a section, by type. Unchanged from the prior toolbar so
+    every section behaves exactly as before — only the chrome around it moved
+    from a horizontal toolbar to the vertical rail. */
+function FilterSectionControl({ section: s }: { section: FilterSection }) {
+  return (
+    <>
+      {s.type === 'pills' && (
+        <div className="filter-pills">
+          {s.options.map(opt => (
+            <button
+              key={opt.value}
+              className={`filter-pill ${s.value === opt.value ? 'active' : ''}`}
+              onClick={() => s.onChange(opt.value)}
+              type="button"
+            >
+              {opt.label}
+              {opt.count != null && <span className="filter-pill-count">{opt.count}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {s.type === 'multi-pills' && (
+        <div className="filter-pills">
+          {s.options.map(opt => {
+            const active = s.values.includes(opt.value);
+            return (
               <button
                 key={opt.value}
-                className={`filter-pill ${s.value === opt.value ? 'active' : ''}`}
-                onClick={() => s.onChange(opt.value)}
+                className={`filter-pill ${active ? 'active' : ''}`}
+                onClick={() => {
+                  if (active) s.onChange(s.values.filter(v => v !== opt.value));
+                  else s.onChange([...s.values, opt.value]);
+                }}
                 type="button"
               >
                 {opt.label}
                 {opt.count != null && <span className="filter-pill-count">{opt.count}</span>}
               </button>
-            ))}
-          </div>
-        )}
+            );
+          })}
+        </div>
+      )}
 
-        {s.type === 'multi-pills' && (
-          <div className="filter-pills">
-            {s.options.map(opt => {
-              const active = s.values.includes(opt.value);
-              return (
-                <button
-                  key={opt.value}
-                  className={`filter-pill ${active ? 'active' : ''}`}
-                  onClick={() => {
-                    if (active) s.onChange(s.values.filter(v => v !== opt.value));
-                    else s.onChange([...s.values, opt.value]);
-                  }}
-                  type="button"
-                >
-                  {opt.label}
-                  {opt.count != null && <span className="filter-pill-count">{opt.count}</span>}
-                </button>
-              );
-            })}
-          </div>
-        )}
+      {s.type === 'select' && (
+        <select
+          className="filter-select"
+          value={s.value}
+          onChange={e => s.onChange(e.target.value)}
+        >
+          {s.placeholder !== undefined && <option value="">{s.placeholder}</option>}
+          {s.options.map(opt => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}{opt.count != null ? ` (${opt.count})` : ''}
+            </option>
+          ))}
+        </select>
+      )}
 
-        {s.type === 'select' && (
-          <select
-            className="filter-select"
-            value={s.value}
-            onChange={e => s.onChange(e.target.value)}
-          >
-            {s.placeholder !== undefined && <option value="">{s.placeholder}</option>}
-            {s.options.map(opt => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}{opt.count != null ? ` (${opt.count})` : ''}
-              </option>
-            ))}
-          </select>
-        )}
+      {s.type === 'text' && (
+        <input
+          type="text"
+          className="filter-text"
+          placeholder={s.placeholder}
+          value={s.value}
+          onChange={e => s.onChange(e.target.value)}
+        />
+      )}
 
-        {s.type === 'text' && (
+      {s.type === 'range' && (
+        <div className="filter-range">
           <input
-            type="text"
-            className="filter-text"
-            placeholder={s.placeholder}
-            value={s.value}
-            onChange={e => s.onChange(e.target.value)}
+            type="number"
+            className="filter-range-input"
+            placeholder={s.minPlaceholder ?? 'Min'}
+            value={s.min}
+            onChange={e => s.onMinChange(e.target.value)}
           />
-        )}
+          <span className="filter-range-sep">to</span>
+          <input
+            type="number"
+            className="filter-range-input"
+            placeholder={s.maxPlaceholder ?? 'Max'}
+            value={s.max}
+            onChange={e => s.onMaxChange(e.target.value)}
+          />
+        </div>
+      )}
 
-        {s.type === 'range' && (
-          <div className="filter-range">
-            <input
-              type="number"
-              className="filter-range-input"
-              placeholder={s.minPlaceholder ?? 'Min'}
-              value={s.min}
-              onChange={e => s.onMinChange(e.target.value)}
-            />
-            <span className="filter-range-sep">to</span>
-            <input
-              type="number"
-              className="filter-range-input"
-              placeholder={s.maxPlaceholder ?? 'Max'}
-              value={s.max}
-              onChange={e => s.onMaxChange(e.target.value)}
-            />
-          </div>
-        )}
+      {s.type === 'toggle' && (
+        <label className="filter-toggle">
+          <input
+            type="checkbox"
+            checked={s.value}
+            onChange={e => s.onChange(e.target.checked)}
+          />
+          <span>{s.label}</span>
+        </label>
+      )}
 
-        {s.type === 'toggle' && (
-          <label className="filter-toggle">
-            <input
-              type="checkbox"
-              checked={s.value}
-              onChange={e => s.onChange(e.target.checked)}
-            />
-            <span>{s.label}</span>
-          </label>
-        )}
-
-        {s.type === 'custom' && s.render()}
-      </div>
-    </div>
+      {s.type === 'custom' && s.render()}
+    </>
   );
 }

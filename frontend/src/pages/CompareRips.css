@@ -10,18 +10,20 @@
 }
 
 /* ---- layout: rail + main ---- */
-.rip2-layout { display: grid; grid-template-columns: 260px 1fr; gap: 22px; align-items: start; }
+/* Matches the shared filter-rail skin (.products-layout / .prod-filter-rail) so
+   Compare RIPs lines up with every other page's left rail. */
+.rip2-layout { display: grid; grid-template-columns: 248px 1fr; gap: 20px; align-items: start; }
 .rip2-layout.rail-closed { grid-template-columns: auto 1fr; }
 
 /* ---- left filter rail ---- */
 .rip2-rail {
-  position: sticky; top: 16px; align-self: start;
-  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
-  padding: 4px 14px 14px; max-height: calc(100vh - 32px); overflow-y: auto;
+  position: sticky; top: 12px; align-self: start;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 4px 14px 14px; max-height: calc(100vh - 24px); overflow-y: auto;
 }
 .rip2-rail-head {
   display: flex; align-items: center; justify-content: space-between;
-  font-weight: 600; font-size: 0.9rem; padding: 12px 0 8px; position: sticky; top: 0;
+  font-weight: 700; font-size: 15px; color: var(--text); padding: 12px 0 8px; position: sticky; top: 0;
   background: var(--surface); border-bottom: 1px solid var(--border); z-index: 1;
 }
 .rip2-rail-head > span { display: inline-flex; align-items: center; gap: 7px; }
@@ -36,9 +38,9 @@
 .rip2-rail-open span { writing-mode: vertical-rl; text-orientation: mixed; }
 .rip2-rail-open:hover { color: var(--accent); border-color: var(--accent); }
 
-.rip2-rail-sect { padding: 14px 0; border-bottom: 1px dashed var(--border); }
+.rip2-rail-sect { padding: 12px 0; border-bottom: 1px solid var(--border); }
 .rip2-rail-sect:last-child { border-bottom: none; }
-.rip2-rail-label { font-size: 0.74rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin-bottom: 9px; }
+.rip2-rail-label { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 9px; }
 .rip2-rail-help { font-size: 0.74rem; color: var(--text-muted); margin-top: 6px; line-height: 1.4; }
 
 .rip2-chips { display: flex; flex-wrap: wrap; gap: 6px; }

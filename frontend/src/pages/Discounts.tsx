@@ -105,9 +105,7 @@ export default function Discounts() {
         Admin view of the full discount ranker. Same columns as every other Promotions page.
       </p>
 
-      <div className="catalog-layout">
-        <FilterSidebar storageKey="discounts" sections={sections} onReset={resetFilters} />
-
+      <FilterSidebar storageKey="discounts" sections={sections} onReset={resetFilters}>
         <div className="catalog-results">
           <PromotionsToolbar
             sortValue={sort}
@@ -145,7 +143,7 @@ export default function Discounts() {
           </ContextMenuProvider>
           )}
         </div>
-      </div>
+      </FilterSidebar>
     </div>
   );
 }

@@ -174,9 +174,8 @@ function MajorDiscountsImpl() {
         Products with the biggest active discounts this edition. Largest savings per case at the top.
       </p>
 
-      <div className="catalog-layout">
-        <FilterSidebar storageKey="md-filters" sections={sections}
-          onReset={() => { setQ(''); setWholesaler(''); setProductType(''); setMinSave(''); setMinDiscount(''); setHasRip(''); setHasCloseout(''); setSize(''); setTrackedOnly(false); setSort('biggest-save'); }} />
+      <FilterSidebar storageKey="md-filters" sections={sections}
+          onReset={() => { setQ(''); setWholesaler(''); setProductType(''); setMinSave(''); setMinDiscount(''); setHasRip(''); setHasCloseout(''); setSize(''); setTrackedOnly(false); setSort('biggest-save'); }}>
 
         <div className="catalog-results">
           <PromotionsToolbar
@@ -226,7 +225,7 @@ function MajorDiscountsImpl() {
           )}
           <PromotionsPager page={page} total={items.length} limit={limit} onPageChange={setPage} view={view} />
         </div>
-      </div>
+      </FilterSidebar>
     </div>
   );
 }

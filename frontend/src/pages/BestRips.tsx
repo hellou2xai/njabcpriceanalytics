@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
-  BadgeDollarSign, Trophy, AlertTriangle, Clock, Layers, Search,
+  BadgeDollarSign, Trophy, AlertTriangle, Clock, Layers,
   TrendingUp, TrendingDown, Tag, CalendarClock,
 } from 'lucide-react';
 import { compare } from '../lib/api';
@@ -11,6 +11,7 @@ import { distributorName } from '../lib/distributors';
 import ProductSearchBox from '../components/ProductSearchBox';
 import ProductThumb from '../components/ProductThumb';
 import RipMembersModal from '../components/RipMembersModal';
+import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
 import { ErrorState } from '../components/DataState';
 import DataLoading from '../components/DataLoading';
 import './BestRips.css';
@@ -240,11 +241,6 @@ export default function BestRips() {
   const [months, setMonths] = useState<string[]>([]);   // [] = server default (latest two)
   const [modal, setModal] = useState<{ w: string; code: string; edition: string } | null>(null);
 
-  const toggleDist = (w: string) => setDists(prev =>
-    prev.includes(w)
-      ? (prev.length > 1 ? prev.filter(x => x !== w) : prev)  // keep at least one
-      : [...DIST_OPTS.filter(d => prev.includes(d) || d === w)]); // preserve canonical order
-
   const params = useMemo(() => ({
     q: query || undefined,
     sort,
@@ -269,14 +265,52 @@ export default function BestRips() {
 
   // Selected months default to the server's choice (latest two) until the user picks.
   const selMonths = months.length ? months : (data?.months ?? []);
-  const toggleMonth = (m: string) => {
-    const base = months.length ? months : (data?.months ?? []);
-    const next = base.includes(m) ? base.filter(x => x !== m) : [...base, m];
-    setMonths(next.length ? next : base);   // keep at least one
+  const resetFilters = () => {
+    setQuery(''); setSort('best_profit'); setOnlyDiff(false); setTsOnly(false);
+    setHideExpired(true); setMinProfit(0); setDists([...DIST_OPTS]); setMonths([]);
   };
+
+  const sections: FilterSection[] = [
+    { type: 'custom', key: 'q', title: 'Product',
+      render: () => (
+        <ProductSearchBox value={query} onChange={setQuery}
+          onSelect={(p) => setQuery(p.product_name)}
+          placeholder="Product, brand or barcode…" />
+      ) },
+    { type: 'multi-pills', key: 'dist', title: 'Distributors',
+      options: DIST_OPTS.map(w => ({ label: distributorName(w), value: w })),
+      values: dists,
+      onChange: (vals) => setDists(vals.length ? DIST_OPTS.filter(d => vals.includes(d)) : dists) },
+    ...(data && data.available_months.length > 0
+      ? [{
+          type: 'multi-pills', key: 'months', title: 'Months',
+          options: data.available_months.map(m => ({ label: monthLabel(m), value: m })),
+          values: selMonths,
+          onChange: (vals: string[]) => setMonths(vals.length ? vals : selMonths),
+        } as FilterSection]
+      : []),
+    { type: 'pills', key: 'sort', title: 'Sort by',
+      options: SORTS.map(s => ({ label: s.label, value: s.key })),
+      value: sort, onChange: (v) => setSort(v as Sort) },
+    { type: 'toggle', key: 'diff', title: 'Differences', label: 'Only where distributors differ',
+      value: onlyDiff, onChange: setOnlyDiff },
+    { type: 'toggle', key: 'ts', title: 'Time-sensitive', label: 'Time-sensitive only',
+      value: tsOnly, onChange: setTsOnly },
+    { type: 'toggle', key: 'exp', title: 'Expired tiers', label: 'Hide expired tiers',
+      value: hideExpired, onChange: setHideExpired },
+    { type: 'custom', key: 'minp', title: 'Min RIP profit',
+      render: () => (
+        <label className="filter-rail-range">
+          <b>{minProfit}%</b>
+          <input type="range" min={0} max={40} step={1} value={minProfit}
+            onChange={e => setMinProfit(Number(e.target.value))} />
+        </label>
+      ) },
+  ];
 
   return (
     <div className="br-page">
+      <FilterSidebar storageKey="best-rips" sections={sections} onReset={resetFilters}>
       <div className="br-hero">
         <div>
           <h1><BadgeDollarSign size={22} /> Best RIPs</h1>
@@ -287,58 +321,6 @@ export default function BestRips() {
         {selMonths.length > 0 && (
           <span className="br-edition"><Layers size={13} /> {selMonths.map(monthLabel).join(' · ')}</span>
         )}
-      </div>
-
-      <div className="br-toolbar">
-        <div className="br-search">
-          <Search size={15} className="br-search-ico" />
-          <ProductSearchBox
-            value={query}
-            onChange={setQuery}
-            onSelect={(p) => setQuery(p.product_name)}
-            placeholder="Filter by product, brand or barcode…"
-          />
-        </div>
-        <div className="br-sorts">
-          {SORTS.map(s => (
-            <button key={s.key} title={s.hint}
-              className={`br-sort${sort === s.key ? ' br-sort--on' : ''}`}
-              onClick={() => setSort(s.key)}>{s.label}</button>
-          ))}
-        </div>
-      </div>
-
-      <div className="br-filters">
-        <span className="br-distpick">
-          <span className="br-distpick-lbl">Distributors:</span>
-          {DIST_OPTS.map(w => (
-            <button key={w} type="button"
-              className={`br-distbtn${dists.includes(w) ? ' br-distbtn--on' : ''}`}
-              style={dists.includes(w) ? { borderColor: ACCENTS[w], color: ACCENTS[w] } : undefined}
-              onClick={() => toggleDist(w)}>
-              {distributorName(w)}
-            </button>
-          ))}
-        </span>
-        {data && data.available_months.length > 0 && (
-          <span className="br-distpick">
-            <span className="br-distpick-lbl">Months:</span>
-            {data.available_months.map(m => (
-              <button key={m} type="button"
-                className={`br-distbtn${selMonths.includes(m) ? ' br-distbtn--on br-monthbtn--on' : ''}`}
-                onClick={() => toggleMonth(m)}>
-                {monthLabel(m)}
-              </button>
-            ))}
-          </span>
-        )}
-        <label className="br-chk"><input type="checkbox" checked={onlyDiff} onChange={e => setOnlyDiff(e.target.checked)} /> Only where distributors differ</label>
-        <label className="br-chk"><input type="checkbox" checked={tsOnly} onChange={e => setTsOnly(e.target.checked)} /> Time-sensitive only</label>
-        <label className="br-chk"><input type="checkbox" checked={hideExpired} onChange={e => setHideExpired(e.target.checked)} /> Hide expired tiers</label>
-        <label className="br-range">
-          Min RIP profit: <b>{minProfit}%</b>
-          <input type="range" min={0} max={40} step={1} value={minProfit} onChange={e => setMinProfit(Number(e.target.value))} />
-        </label>
       </div>
 
       {isLoading && <DataLoading />}
@@ -363,6 +345,7 @@ export default function BestRips() {
           )}
         </>
       )}
+      </FilterSidebar>
 
       {modal && (
         <RipMembersModal wholesaler={modal.w} ripCode={modal.code} edition={modal.edition} onClose={() => setModal(null)} />

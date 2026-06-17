@@ -5575,6 +5575,28 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 .prod-filter-price input { width: 64px; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--text); font-size: 13px; }
 .prod-filter-price span { color: var(--text-muted); font-size: 12px; }
 .prod-filter-price .btn { padding: 6px 12px; }
+
+/* ---- Shared filter-rail layout (FilterSidebar) ----
+   Clones the Catalog/Products .products-layout grid so every page that uses the
+   shared FilterSidebar rail lines up identically: a 248px sticky rail + fluid
+   content, collapsing to a 40px reopen strip. */
+.filter-rail-layout { display: grid; grid-template-columns: 248px 1fr; gap: 20px; align-items: start; }
+.filter-rail-layout--collapsed { grid-template-columns: 40px 1fr; gap: 14px; }
+.filter-rail-main { min-width: 0; }
+@media (max-width: 1023px) {
+  .filter-rail-layout, .filter-rail-layout--collapsed { grid-template-columns: 1fr; }
+}
+/* A highlighted rail section (e.g. a primary Display toggle) gets the accent tint. */
+.prod-filter-sect.is-highlight { background: var(--accent-weak, rgba(37,99,235,.06)); }
+.prod-filter-sect.is-highlight .prod-filter-sect-head { color: var(--accent); }
+/* Pills inside the narrow rail wrap and sit flush-left. */
+.prod-filter-sect-body .filter-pills { margin-bottom: 0; }
+.prod-filter-sect-body .filter-select,
+.prod-filter-sect-body .filter-text { width: 100%; min-width: 0; }
+/* A labelled range slider used as a `custom` rail section (e.g. Min RIP profit). */
+.filter-rail-range { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text); }
+.filter-rail-range input[type="range"] { width: 100%; accent-color: var(--accent); }
+.filter-rail-range b { color: var(--accent); }
 .prod-filter-search { width: 100%; padding: 7px 9px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--text); font-size: 13px; }
 .prod-filter-showall { background: none; border: 0; color: var(--accent); font-size: 12px; font-weight: 600; cursor: pointer; padding: 6px 2px 0; }
 

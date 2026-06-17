@@ -253,9 +253,8 @@ export default function TimeSensitive() {
         Promotions and special prices that end on a specific date and do not recur next month. Easy to miss.
       </p>
 
-      <div className="catalog-layout">
-        <FilterSidebar storageKey="ts-filters" sections={sections}
-          onReset={() => { setQ(''); setWholesaler(''); setProductType(''); setValidity(''); setMinSave(''); setMinDiscount(''); setMinGp(''); setHasRip(''); setHasCloseout(''); setSize(''); setTrackedOnly(false); setSort('ending'); }} />
+      <FilterSidebar storageKey="ts-filters" sections={sections}
+          onReset={() => { setQ(''); setWholesaler(''); setProductType(''); setValidity(''); setMinSave(''); setMinDiscount(''); setMinGp(''); setHasRip(''); setHasCloseout(''); setSize(''); setTrackedOnly(false); setSort('ending'); }}>
 
         <div className="catalog-results">
           <PromotionsToolbar
@@ -306,7 +305,7 @@ export default function TimeSensitive() {
           )}
           <PromotionsPager page={page} total={items.length} limit={limit} onPageChange={setPage} view={view} />
         </div>
-      </div>
+      </FilterSidebar>
     </div>
   );
 }

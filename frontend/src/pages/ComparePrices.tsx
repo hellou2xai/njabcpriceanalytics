@@ -9,6 +9,7 @@ import { distributorName, perUnitAbbr, abgSku, skuLabel } from '../lib/distribut
 import RowActions from '../components/RowActions';
 import ProductSearchBox from '../components/ProductSearchBox';
 import TierBadge from '../components/TierBadge';
+import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
 import './ComparePrices.css';
 
 const money = (v?: number | null) => (v == null ? '–' : `$${Number(v).toFixed(2)}`);
@@ -488,6 +489,42 @@ export default function ComparePrices() {
   const sum = data?.summary;
   const nCols = selected.length * 3 + 4;
 
+  const resetFilters = () => {
+    setQ(''); setPtype(''); setOnlyDiff(true); setMinSpread('1');
+    setCases('0'); setPriceMonths('cur'); setShown(pageSize);
+  };
+
+  const sections: FilterSection[] = [
+    { type: 'custom', key: 'q', title: 'Product',
+      render: () => (
+        <ProductSearchBox value={q}
+          onChange={v => { setQ(v); setShown(pageSize); }}
+          onSelect={p => { setQ(p.product_name); setShown(pageSize); }}
+          placeholder="Product, brand or UPC…" />
+      ) },
+    { type: 'select', key: 'cat', title: 'Category', placeholder: 'All categories',
+      value: ptype, options: types.map(t => ({ label: t, value: t })),
+      onChange: setPtype },
+    { type: 'toggle', key: 'diff', title: 'Differences', label: 'Only differences',
+      value: onlyDiff, onChange: setOnlyDiff },
+    { type: 'custom', key: 'min', title: 'Min $ spread',
+      render: () => (
+        <input className="filter-text" type="number" min={0} placeholder="Min $ spread"
+          value={minSpread} onChange={e => setMinSpread(e.target.value)} />
+      ) },
+    { type: 'select', key: 'vol', title: 'Volume',
+      value: cases,
+      options: [['0', 'Best deal'], ['1', '1 cs'], ['2', '2 cs'], ['3', '3 cs'],
+                ['5', '5 cs'], ['10', '10 cs'], ['25', '25 cs'], ['50', '50 cs']]
+        .map(([v, l]) => ({ value: v, label: l })),
+      onChange: (v) => { setCases(v); setShown(pageSize); } },
+    { type: 'pills', key: 'months', title: 'Price Comparison',
+      value: priceMonths,
+      options: [{ value: 'cur', label: 'This month' }, { value: 'prev', label: 'Last month' },
+                { value: 'both', label: 'Both' }],
+      onChange: (v) => { setPriceMonths(v as 'cur' | 'prev' | 'both'); setShown(pageSize); } },
+  ];
+
   return (
     <div className="page">
       {/* wrapper keeps this h2 out of the global `.page > h2` sticky rule,
@@ -570,54 +607,9 @@ export default function ComparePrices() {
             </div>
           )}
 
-          {/* ---- filters ---- */}
+          <FilterSidebar storageKey="compare-prices" sections={sections} onReset={resetFilters}>
+          {/* ---- results header (display controls; filters live in the rail) ---- */}
           <div className="cmp-filters">
-            <ProductSearchBox
-              value={q}
-              onChange={v => { setQ(v); setShown(pageSize); }}
-              onSelect={p => { setQ(p.product_name); setShown(pageSize); }}
-              placeholder="Search product, brand or UPC…"
-            />
-            <select value={ptype} onChange={e => setPtype(e.target.value)}>
-              <option value="">All categories</option>
-              {types.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-            <label className="cmp-check" title="Untick to include products priced identically at every selected distributor">
-              <input type="checkbox" checked={onlyDiff} onChange={e => setOnlyDiff(e.target.checked)} />
-              Only differences
-            </label>
-            <input
-              className="cmp-min"
-              type="number"
-              min={0}
-              placeholder="Min $ spread"
-              value={minSpread}
-              onChange={e => setMinSpread(e.target.value)}
-            />
-            <label className="cmp-pp" title="“Best deal” shows each distributor's deepest tier (max volume). Pick a quantity to see the price you'd actually pay at that volume — the cheaper distributor can change with volume.">
-              Volume
-              <select value={cases} onChange={e => { setCases(e.target.value); setShown(pageSize); }}>
-                <option value="0">Best deal</option>
-                <option value="1">1 cs</option>
-                <option value="2">2 cs</option>
-                <option value="3">3 cs</option>
-                <option value="5">5 cs</option>
-                <option value="10">10 cs</option>
-                <option value="25">25 cs</option>
-                <option value="50">50 cs</option>
-              </select>
-            </label>
-            <div className="cmp-pp cmp-months" role="radiogroup" aria-label="Price comparison months"
-              title="Show this month, last month, or both months stacked (most recent on top).">
-              <span>Price Comparison</span>
-              {([['cur', 'This month'], ['prev', 'Last month'], ['both', 'Both']] as const).map(([v, lbl]) => (
-                <label key={v} className={priceMonths === v ? 'on' : ''}>
-                  <input type="radio" name="priceMonths" checked={priceMonths === v}
-                    onChange={() => { setPriceMonths(v); setShown(pageSize); }} />
-                  {lbl}
-                </label>
-              ))}
-            </div>
             <button type="button" className="cmp-expandall"
               onClick={() => setAll(!allExpanded)}
               title={allExpanded ? 'Collapse every row’s deal detail' : 'Expand every row’s deal detail'}>
@@ -830,6 +822,7 @@ export default function ComparePrices() {
               ({(rows.length - shown).toLocaleString()} remaining)
             </button>
           )}
+          </FilterSidebar>
         </>
       )}
     </div>

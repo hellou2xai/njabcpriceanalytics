@@ -261,9 +261,8 @@ export default function PriceMovers({ direction }: Props) {
         )}
       </div>
 
-      <div className="catalog-layout">
-        <FilterSidebar storageKey={`pm-${direction}-filters`} sections={sections}
-          onReset={() => { setQ(''); setWholesaler(''); setValidity('current_only'); setProductType(''); setMinChange(''); setMinDollar(''); setHasRip(''); setSizes([]); setTrackedOnly(false); setSort('biggest-pct'); }} />
+      <FilterSidebar storageKey={`pm-${direction}-filters`} sections={sections}
+          onReset={() => { setQ(''); setWholesaler(''); setValidity('current_only'); setProductType(''); setMinChange(''); setMinDollar(''); setHasRip(''); setSizes([]); setTrackedOnly(false); setSort('biggest-pct'); }}>
 
         <div className="catalog-results">
           <PromotionsToolbar
@@ -312,7 +311,7 @@ export default function PriceMovers({ direction }: Props) {
           )}
           <PromotionsPager page={page} total={items.length} limit={limit} onPageChange={setPage} view={view} />
         </div>
-      </div>
+      </FilterSidebar>
     </div>
   );
 }

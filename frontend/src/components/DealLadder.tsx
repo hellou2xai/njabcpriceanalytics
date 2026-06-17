@@ -81,8 +81,11 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
   const rip = [...(cur?.ripTiers ?? [])].sort(byRebate);
   const btlOf = (c?: number | null) => (pack && c != null ? c / pack : null);
   // Best (lowest) case price reached by a QD tier and by a RIP tier — those
-  // lines get the yellow "best deal" highlight (red font).
-  const bestQdEff = disc.length ? Math.min(...disc.map(t => t.eff)) : null;
+  // lines get the yellow "best deal" highlight (red font). A 1-case QD is just
+  // the single-case price, not a quantity discount, so it's excluded from the
+  // best-QD band (matches the "In QD (>1 CS)" filter).
+  const realQd = disc.filter(t => caseQty(t) > 1 + 1e-9);
+  const bestQdEff = realQd.length ? Math.min(...realQd.map(t => t.eff)) : null;
   const bestRipEff = rip.length ? Math.min(...rip.map(t => t.eff)) : null;
 
   if (disc.length === 0 && rip.length === 0) {
@@ -113,7 +116,7 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
     const off = frontline != null && t.eff < frontline ? frontline - t.eff : null;
     // RIP rows: the rebate ALONE (the RIP-sheet number), never rebate+QD mixed.
     const ripSave = kind === 'rip' ? (t.ripOnlySave ?? null) : null;
-    const isBest = (kind === 'qd' && bestQdEff != null && t.eff <= bestQdEff + 1e-9)
+    const isBest = (kind === 'qd' && bestQdEff != null && caseQty(t) > 1 + 1e-9 && t.eff <= bestQdEff + 1e-9)
       || (kind === 'rip' && bestRipEff != null && t.eff <= bestRipEff + 1e-9);
     return (
       <div key={`${kind}${i}`} className={`prod-deal-line${isBest ? ' prod-deal-best' : ''}`}>

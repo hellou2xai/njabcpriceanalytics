@@ -5766,6 +5766,17 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .prod-deal-after { color: var(--text-muted); }
 /* bottle price beside the case price: same size AND weight, muted colour only */
 .prod-deal-btl { color: var(--text-muted); font-weight: 700; }
+/* Best QD / best RIP tier on a ladder: yellow highlight + red font. */
+.prod-deal-line.prod-deal-best { background: #fef9c3; border-radius: 5px; padding: 1px 5px; }
+.prod-deal-line.prod-deal-best,
+.prod-deal-line.prod-deal-best strong,
+.prod-deal-line.prod-deal-best .prod-deal-btl,
+.prod-deal-line.prod-deal-best .prod-deal-off { color: #dc2626; }
+/* Deepest entry in the RIP Tier glance line. */
+.prod-deal-rip-summary .prod-rip-tiers .prod-rip-tier-best,
+.prod-deal-rip-summary .prod-rip-tiers .prod-rip-tier-best strong {
+  background: #fef9c3; border-radius: 4px; padding: 0 4px; color: #dc2626;
+}
 .prod-deals-none { font-size: 12px; color: var(--text-muted); font-style: italic; }
 .prod-schedule-link { background: none; border: 0; padding: 0; color: var(--accent); font-size: 12px; font-weight: 600; cursor: pointer; text-decoration: underline; }
 .prod-size-order { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }

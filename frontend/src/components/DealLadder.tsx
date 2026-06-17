@@ -80,6 +80,10 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
     .sort((a, b) => statusRank(a) - statusRank(b) || byWindow(a, b));
   const rip = [...(cur?.ripTiers ?? [])].sort(byRebate);
   const btlOf = (c?: number | null) => (pack && c != null ? c / pack : null);
+  // Best (lowest) case price reached by a QD tier and by a RIP tier — those
+  // lines get the yellow "best deal" highlight (red font).
+  const bestQdEff = disc.length ? Math.min(...disc.map(t => t.eff)) : null;
+  const bestRipEff = rip.length ? Math.min(...rip.map(t => t.eff)) : null;
 
   if (disc.length === 0 && rip.length === 0) {
     return emptyText ? <span className="prod-deals-none">{emptyText}</span> : null;
@@ -109,8 +113,10 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
     const off = frontline != null && t.eff < frontline ? frontline - t.eff : null;
     // RIP rows: the rebate ALONE (the RIP-sheet number), never rebate+QD mixed.
     const ripSave = kind === 'rip' ? (t.ripOnlySave ?? null) : null;
+    const isBest = (kind === 'qd' && bestQdEff != null && t.eff <= bestQdEff + 1e-9)
+      || (kind === 'rip' && bestRipEff != null && t.eff <= bestRipEff + 1e-9);
     return (
-      <div key={`${kind}${i}`} className="prod-deal-line">
+      <div key={`${kind}${i}`} className={`prod-deal-line${isBest ? ' prod-deal-best' : ''}`}>
         <TierBadge kind={kind} />
         {/* Dated-window sticker sits LEFT (after the pill) so its variable
             length never drags a line's tail out and wrecks the column.
@@ -184,6 +190,7 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
   const summary = [...summaryMap.entries()]
     .map(([label, v]) => ({ label, ...v }))
     .sort((a, b) => a.q - b.q);
+  const bestTotal = summary.length ? Math.max(...summary.map(s => s.total)) : null;
 
   return (
     <>
@@ -194,7 +201,11 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
           <span className="prod-rip-tier-label">RIP Tier</span>{' '}
           <span className="prod-rip-tiers">
             {summary.map((s, i) => (
-              <span key={i}>{i > 0 && ', '}{s.label}/<strong>${s.total.toFixed(2)}</strong></span>
+              <span key={i}>{i > 0 && ', '}
+                <span className={bestTotal != null && s.total >= bestTotal - 1e-9 ? 'prod-rip-tier-best' : undefined}>
+                  {s.label}/<strong>${s.total.toFixed(2)}</strong>
+                </span>
+              </span>
             ))}
           </span>
         </div>

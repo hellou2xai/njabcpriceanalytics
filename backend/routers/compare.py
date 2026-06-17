@@ -2450,6 +2450,7 @@ def best_qd(
     only_differences: bool = Query(False, description="Only cards where a quantity discount is available at 2+ selected distributors AND they differ (one carries it without a QD, different timing/quantity, or a discount-%% gap)."),
     min_discount: float = Query(0.0, ge=0, description="Hide cards whose best discount %% off list is below this"),
     cases: float = Query(0, ge=0, description="Only products with a quantity discount reachable at this many cases; 0 = best deal at any volume."),
+    exclude_single_cs: bool = Query(False, description="Exclude 1-case quantity discounts (a 1-cs QD is just the single-case price); show only real volume QDs above 1 case."),
     time_sensitive_only: bool = Query(False, description="Only products where some distributor's QD is a dated/time-limited deal"),
     hide_expired: bool = Query(True, description="Drop tier lines whose window has already ended"),
     sort: str = Query("best_discount", description="best_discount | deepest | gap | expiring | product"),
@@ -2471,8 +2472,8 @@ def best_qd(
     tier/unit/discount math comes from the canonical pricing.attach_tiers +
     rip_utils helpers — nothing re-implemented here. Images come from Go-UPC."""
     cache_key = ("best_qd", _cache_tag(), q, product_type, brand, wholesalers,
-                 months, only_differences, min_discount, cases, time_sensitive_only,
-                 hide_expired, sort, order, limit)
+                 months, only_differences, min_discount, cases, exclude_single_cs,
+                 time_sensitive_only, hide_expired, sort, order, limit)
     cached = _board_cache_get(cache_key)
     if cached is not None:
         return cached
@@ -2631,6 +2632,10 @@ def best_qd(
                     # n_cases, so the card's QD reflects the best deal AT that volume.
                     if n_cases:
                         lines = [ln for ln in lines if ln["cases"] is not None and ln["cases"] <= n_cases]
+                    # Exclude 1-case QDs (just the single-case price, not a real
+                    # volume discount) — same idea as the "In QD (>1 CS)" filter.
+                    if exclude_single_cs:
+                        lines = [ln for ln in lines if ln["cases"] is not None and ln["cases"] > 1]
                     has_qd = bool(lines)
                     deepest_discount, deepest_at = _qd_deepest(tiers, pack, front)
                     if n_cases:  # constrain "deepest" to what's reachable at n_cases
@@ -2760,9 +2765,10 @@ def best_qd(
         rows = [r for r in rows
                 if any(r["dists"][w]["has_time_sensitive"] for w in r["discounting"])]
     total = universe
-    # Eligible-at-volume: only products where some distributor has a QD reachable
-    # at n_cases (has_qd was recomputed against the volume filter above).
-    if n_cases:
+    # Eligible-at-volume / real-QD-only: only products where some distributor
+    # still has a QD after the volume / 1-cs filters (has_qd was recomputed
+    # against those filters above).
+    if n_cases or exclude_single_cs:
         rows = [r for r in rows if r["discounting"]]
     if only_differences:
         rows = [r for r in rows if r["differs"]]

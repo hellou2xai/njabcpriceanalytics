@@ -241,6 +241,7 @@ export default function BestQd() {
   const [brand, setBrand] = useState('');        // brand (server: brand contains)
   const [sizes, setSizes] = useState<string[]>([]);  // size (client-side on returned rows)
   const [cases, setCases] = useState(0);         // best deal reachable at N cases (0 = any)
+  const [excl1cs, setExcl1cs] = useState(false); // exclude 1-case QDs (real volume only)
 
   const params = useMemo(() => ({
     q: query || undefined,
@@ -254,8 +255,9 @@ export default function BestQd() {
     product_type: ptype || undefined,
     brand: brand || undefined,
     cases: cases || undefined,
+    exclude_single_cs: excl1cs,
     limit: 400,
-  }), [query, sort, dists, months, onlyDiff, tsOnly, hideExpired, minDiscount, ptype, brand, cases]);
+  }), [query, sort, dists, months, onlyDiff, tsOnly, hideExpired, minDiscount, ptype, brand, cases, excl1cs]);
 
   const { data, isLoading, isFetching, error } = useQuery({
     queryKey: ['best-qd', params],
@@ -288,7 +290,7 @@ export default function BestQd() {
   const resetFilters = () => {
     setQuery(''); setSort('best_discount'); setOnlyDiff(false); setTsOnly(false);
     setHideExpired(true); setMinDiscount(0); setDists([...DIST_OPTS]); setMonths([]);
-    setPtype(''); setBrand(''); setSizes([]); setCases(0);
+    setPtype(''); setBrand(''); setSizes([]); setCases(0); setExcl1cs(false);
   };
 
   const sections: FilterSection[] = [
@@ -315,6 +317,9 @@ export default function BestQd() {
           </div>
         </div>
       ) },
+    { type: 'toggle', key: 'excl1cs', title: 'Quantity discount',
+      label: 'Exclude 1-case QD (real volume only)',
+      value: excl1cs, onChange: setExcl1cs },
     { type: 'select', key: 'cat', title: 'Category', placeholder: 'All categories',
       value: ptype, options: catOpts.map(c => ({ label: c, value: c })), onChange: setPtype },
     { type: 'select', key: 'brand', title: 'Brand', placeholder: 'All brands',

@@ -538,6 +538,8 @@ export const compare = {
     request<EditionCompareResponse>(`/api/compare/editions${qs(params)}`),
   bestRips: (params?: Record<string, unknown>) =>
     request<BestRipResponse>(`/api/compare/best-rips${qs(params)}`),
+  bestQd: (params?: Record<string, unknown>) =>
+    request<BestQdResponse>(`/api/compare/best-qd${qs(params)}`),
 };
 
 // ---- Best RIPs board (Allied / Fedway / Opici) ----
@@ -618,6 +620,85 @@ export interface BestRipResponse {
   available_months: string[];      // all loaded editions, newest first
   total: number;
   rows: BestRipRow[];
+}
+
+// ---- Best QD board (quantity discounts; Allied / Fedway / Opici) ----
+// A QD is a straight price cut at a volume threshold (no rebate comes back),
+// so the headline metric is the discount % off the list case price.
+export interface BestQdTier {
+  buy_label: string | null;        // '2 cs' / '3 btl' — the qualifying buy
+  cases: number | null;            // physical cases to unlock
+  code: string | null;
+  unit: string | null;
+  discount_per_case: number | null;// $/case off the list case price
+  price_after: number | null;      // list case price after this discount
+  price_after_btl: number | null;  // that, per bottle
+  discount_pct: number | null;     // discount_per_case / frontline * 100 — % off list
+  total_save: number | null;       // cases * discount_per_case at the qualifying buy
+  window_status: string | null;
+  is_time_sensitive: boolean;
+  from_date: string | null;
+  to_date: string | null;
+}
+export interface BestQdDist {
+  carried: boolean;                // false = doesn't stock this SKU at all
+  has_qd: boolean;                 // false = carries the SKU but no QD this edition
+  frontline: number | null;
+  deepest_discount: number | null; // deepest $/case at any volume
+  deepest_at_cases: number | null;
+  min_cases: number | null;        // fewest cases to unlock any QD
+  best_discount_pct: number | null;
+  active_days: number | null;
+  expires_in_days: number | null;
+  has_time_sensitive: boolean;
+  tiers: BestQdTier[];
+  unit_qty: string | null;
+  unit_volume: string | null;
+}
+export interface BestQdTrend {
+  this: number | null;             // deepest full-month QD $/cs, this calendar month
+  last: number | null;             // ... last month
+  next: number | null;             // ... next month (null until loaded)
+  this_ed: string;                 // YYYY-MM for each slot, for labels
+  last_ed: string;
+  next_ed: string;
+  best: 'this' | 'last' | 'next' | null;  // where the better QD is (null = no comparison)
+}
+export interface BestQdRow {
+  match_key: string;
+  edition: string;                 // YYYY-MM this card's QD is from
+  upc_norm: string;
+  size_key: string;
+  product_name: string;
+  product_type: string | null;
+  brand: string | null;
+  vintage: string | null;
+  unit_qty: string | null;
+  unit_volume: string | null;
+  unit_type: string | null;
+  upc: string | null;
+  image_url: string | null;        // Go-UPC product image (R2 CDN)
+  dists: Record<string, BestQdDist>;
+  discounting: string[];           // distributors that file a QD
+  missing: string[];               // carry the SKU, no QD this edition
+  not_carried: string[];           // don't stock the SKU at all
+  best_distributor: string | null; // deepest discount %
+  best_discount_pct: number | null;
+  discount_delta: number | null;   // winner's lead over the runner-up (pp)
+  discount_gap: number | null;     // spread between discounting distributors (pp)
+  deepest_discount: number | null;
+  timing_differs: boolean;
+  quantity_differs: boolean;
+  differs: boolean;
+  soonest_expiry: number | null;   // days to the nearest dated QD ending
+  qd_trend: BestQdTrend;
+}
+export interface BestQdResponse {
+  wholesalers: string[];
+  months: string[];                // selected editions shown
+  available_months: string[];      // all loaded editions, newest first
+  total: number;
+  rows: BestQdRow[];
 }
 
 // ---- Edition comparison ----

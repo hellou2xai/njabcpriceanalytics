@@ -32,6 +32,7 @@ import Discounts from './pages/Discounts';
 import ComparePrices from './pages/ComparePrices';
 import CompareRips from './pages/CompareRips';
 import BestRips from './pages/BestRips';
+import BestQd from './pages/BestQd';
 import Price360 from './pages/Price360';
 import EditionCompare from './pages/EditionCompare';
 import RateShop from './pages/RateShop';
@@ -158,6 +159,7 @@ function AuthenticatedApp() {
             <Route path="/compare-prices" element={<ComparePrices />} />
             <Route path="/compare-rips" element={<CompareRips />} />
             <Route path="/best-rips" element={<BestRips />} />
+            <Route path="/best-qd" element={<BestQd />} />
             <Route path="/price-360" element={<AdminRoute><Price360 /></AdminRoute>} />
             <Route path="/edition-compare" element={<EditionCompare />} />
             <Route path="/rate-shop" element={<AdminRoute><RateShop /></AdminRoute>} />

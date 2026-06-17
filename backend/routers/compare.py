@@ -1176,10 +1176,13 @@ def _best_rip_tier_lines(tiers: list, pack: float) -> list[dict]:
     return lines
 
 
-def _rip_active_days(tiers: list, ref_date=None) -> int:
+def _rip_active_days(tiers: list, ref_date=None, source: str = "rip") -> int:
     """Distinct days in the edition month a RIP rebate is live for this SKU.
     A whole-month / evergreen RIP = the full month; dated windows contribute
-    their day-span (clamped to the month). Higher = the rebate covers more days."""
+    their day-span (clamped to the month). Higher = the rebate covers more days.
+
+    ``source`` selects which tier family to measure ('rip' or 'discount'); the
+    Best QD board passes 'discount' to reuse the identical window arithmetic."""
     import calendar as _cal
     from datetime import date as _date, timedelta as _td
     ref = _pricing._to_date(ref_date) or _pricing.eastern_today()
@@ -1188,7 +1191,7 @@ def _rip_active_days(tiers: list, ref_date=None) -> int:
     full = (m_end - m_start).days + 1
     days = set()
     for t in tiers:
-        if t.get("source") != "rip":
+        if t.get("source") != source:
             continue
         st = t.get("window_status")
         if st in ("evergreen", "whole_month"):
@@ -1204,15 +1207,16 @@ def _rip_active_days(tiers: list, ref_date=None) -> int:
     return len(days)
 
 
-def _rip_expires_in(tiers: list, ref_date=None) -> Optional[int]:
+def _rip_expires_in(tiers: list, ref_date=None, source: str = "rip") -> Optional[int]:
     """Days until the nearest LIVE dated RIP ends (urgency to buy). Looks only at
     dated windows that are live TODAY; a concurrent whole-month rebate no longer
     masks them, so a deal that is whole-month on one tier but ends Jun 17 on a
-    deeper tier still reads as ending soon. None when no dated window is live."""
+    deeper tier still reads as ending soon. None when no dated window is live.
+    ``source`` selects the tier family ('rip' or 'discount')."""
     ref = _pricing._to_date(ref_date) or _pricing.eastern_today()
     cands = []
     for t in tiers:
-        if t.get("source") != "rip" or t.get("window_status") != "active":
+        if t.get("source") != source or t.get("window_status") != "active":
             continue
         to = _pricing._to_date(t.get("to_date"))
         if to:
@@ -1220,11 +1224,12 @@ def _rip_expires_in(tiers: list, ref_date=None) -> Optional[int]:
     return min(cands) if cands else None
 
 
-def _rip_has_time_sensitive(tiers: list) -> bool:
-    """True when this SKU has a dated/time-limited RIP window (live now or
-    starting later this month), regardless of any concurrent whole-month rebate.
-    This is what makes a rebate 'time-limited' rather than always-on."""
-    return any(t.get("source") == "rip"
+def _rip_has_time_sensitive(tiers: list, source: str = "rip") -> bool:
+    """True when this SKU has a dated/time-limited window (live now or starting
+    later this month), regardless of any concurrent whole-month deal. This is
+    what makes a deal 'time-limited' rather than always-on. ``source`` selects
+    the tier family ('rip' or 'discount')."""
+    return any(t.get("source") == source
                and t.get("window_status") in ("active", "upcoming")
                for t in tiers)
 
@@ -1251,6 +1256,105 @@ def _rip_deepest(tiers: list, pack: float):
             thr = _cases_threshold(t, pack)
             at = _m.ceil(thr - 1e-9) if thr is not None else None
     return (round(best, 2), at) if best > 0 else (0.0, None)
+
+
+# ---------------------------------------------------------------------------
+# Quantity-Discount (QD) economics — the Best QD board's analogue of the RIP
+# helpers above. A QD is a straight price cut at a volume threshold (no rebate
+# that comes back), so the headline metric is the DISCOUNT % off the list case
+# price, not a return-on-cash %. Source tier family is 'discount' (the label
+# pricing.attach_tiers stamps on CPL quantity-discount tiers).
+# ---------------------------------------------------------------------------
+
+# A QD that strips > 60% off the list price is almost always a source filing
+# error (a pack/price mismatch under one shared UPC, e.g. a 10-count case priced
+# as a 120-count) or a closeout mis-filed as a quantity tier, not a real volume
+# discount. Drop it rather than float an absurd deal to the top of the board.
+# Same 60%-of-price threshold the Best RIPs board uses in _best_rip_tier_lines.
+_QD_MAX_DISCOUNT_FRAC = 0.60
+
+
+def _best_qd_tier_lines(tiers: list, pack: float, frontline: Optional[float]) -> list[dict]:
+    """One line per QD tier for the Best QD board, carrying the economics the
+    card shows:
+
+      buy_label         '2 cs' / '3 btl' — the qualifying buy
+      cases             physical cases to unlock (None for a pure bottle tier)
+      discount_per_case $/case the tier takes off the list case price
+      price_after       list case price after this discount
+      price_after_btl   that, per bottle
+      discount_pct      discount_per_case / frontline * 100 — % off list
+      total_save        cases * discount_per_case — saved at the qualifying buy
+
+    Bottle-unit tiers convert via the canonical _cases_threshold / _buy_label —
+    no unit math re-implemented here."""
+    import math as _m
+    lines = []
+    for t in tiers:
+        if t.get("source") != "discount":
+            continue
+        save = t.get("save_per_case") or 0.0
+        pa = t.get("price_after")
+        if not save or save <= 0 or pa is None:
+            continue
+        # Drop impossible discounts (see _QD_MAX_DISCOUNT_FRAC) so a data error
+        # never floats to the top of the board.
+        if frontline and frontline > 0 and save / frontline > _QD_MAX_DISCOUNT_FRAC:
+            continue
+        thr = _cases_threshold(t, pack)
+        cases = _m.ceil(thr - 1e-9) if thr is not None else None
+        disc_pct = (round(save / frontline * 100, 1)
+                    if frontline and frontline > 0 else None)
+        lines.append({
+            "buy_label": _buy_label(t, pack),
+            "cases": cases,
+            "code": t.get("code"),
+            "unit": t.get("unit"),
+            "discount_per_case": round(save, 2),
+            "price_after": round(pa, 2),
+            "price_after_btl": round(pa / pack, 2) if pack else None,
+            "discount_pct": disc_pct,
+            "total_save": round(cases * save, 2) if cases is not None else None,
+            "window_status": t.get("window_status"),
+            "is_time_sensitive": bool(t.get("is_time_sensitive")),
+            "from_date": t.get("from_date"),
+            "to_date": t.get("to_date"),
+        })
+    lines.sort(key=lambda r: (r["cases"] if r["cases"] is not None else 1e9))
+    return lines
+
+
+def _qd_deepest(tiers: list, pack: float, frontline: Optional[float]):
+    """Deepest QD discount $/case reachable at ANY volume, and the cases to
+    reach it. Mirrors _rip_deepest; honours the same impossible-discount guard.
+    Returns (discount, cases) or (0.0, None)."""
+    import math as _m
+    best, at = 0.0, None
+    for t in tiers:
+        if t.get("source") != "discount":
+            continue
+        save = t.get("save_per_case") or 0.0
+        if frontline and frontline > 0 and save / frontline > _QD_MAX_DISCOUNT_FRAC:
+            continue
+        if save > best:
+            best = save
+            thr = _cases_threshold(t, pack)
+            at = _m.ceil(thr - 1e-9) if thr is not None else None
+    return (round(best, 2), at) if best > 0 else (0.0, None)
+
+
+def _min_cases_to_qd(tiers: list, pack: float) -> Optional[int]:
+    """Fewest cases that unlock ANY quantity discount (the 'least you must buy'
+    metric). Mirrors _min_cases_to_rip."""
+    import math as _m
+    mins = []
+    for t in tiers:
+        if t.get("source") != "discount":
+            continue
+        thr = _cases_threshold(t, pack)
+        if thr is not None and thr > 0:
+            mins.append(_m.ceil(thr - 1e-9))
+    return min(mins) if mins else None
 
 
 def _p360_tier_rows(tiers: list, pack: float, source: str) -> list[dict]:
@@ -2172,6 +2276,315 @@ def best_rips(
     }
     _ascending = ("product", "expiring")
     rows.sort(key=keymap.get(sort, keymap["best_profit"]),
+              reverse=False if sort in _ascending else (order != "asc"))
+    rows = rows[:limit]
+
+    return {
+        "wholesalers": slugs,
+        "months": sel_months,
+        "available_months": all_eds,
+        "total": total,
+        "rows": rows,
+    }
+
+
+@router.get("/best-qd")
+def best_qd(
+    q: str = Query(""),
+    product_type: str = Query(""),
+    brand: str = Query("", description="Brand name contains"),
+    wholesalers: str = Query("", description="Comma-separated subset of Allied/Fedway/Opici to compare (empty = all three)."),
+    months: str = Query("", description="Comma-separated editions (YYYY-MM) to show; empty = latest TWO editions present in the data."),
+    only_differences: bool = Query(False, description="Only cards where a quantity discount is available at 2+ selected distributors AND they differ (one carries it without a QD, different timing/quantity, or a discount-%% gap)."),
+    min_discount: float = Query(0.0, ge=0, description="Hide cards whose best discount %% off list is below this"),
+    time_sensitive_only: bool = Query(False, description="Only products where some distributor's QD is a dated/time-limited deal"),
+    hide_expired: bool = Query(True, description="Drop tier lines whose window has already ended"),
+    sort: str = Query("best_discount", description="best_discount | deepest | gap | expiring | product"),
+    order: str = Query("desc"),
+    limit: int = Query(2000, ge=1, le=50000),
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    """Best QD board: the standout QUANTITY DISCOUNTS across Allied, Fedway and
+    Opici. One card per product that ANY of the three files a quantity discount
+    on — including products only one of them carries. Each distributor block
+    shows its full QD ladder, one line per tier, with the discount $/case, the
+    resulting case + bottle price, and the %% off list. A distributor that
+    carries the SKU but files no QD shows as 'No QD'; one that doesn't stock it
+    shows as 'Not carried'.
+
+    A QD is a straight price cut at a volume threshold (unlike a RIP, no money
+    comes back), so the headline metric is the DISCOUNT %% off the list case
+    price. Scope is the same three NJ distributors as the Best RIPs board. All
+    tier/unit/discount math comes from the canonical pricing.attach_tiers +
+    rip_utils helpers — nothing re-implemented here. Images come from Go-UPC."""
+    with get_duckdb() as con:
+        src = read_parquet(con, "cpl_enriched")
+        known = {r[0] for r in con.execute(
+            f"SELECT DISTINCT wholesaler FROM {src}").fetchall()}
+        avail = [s for s in _BEST_RIP_SLUGS if s in known]
+        if not avail:
+            raise HTTPException(400, "Need Allied/Fedway/Opici data loaded for this board")
+        if wholesalers.strip():
+            req = {w.strip() for w in wholesalers.split(",") if w.strip()}
+            slugs = [s for s in avail if s in req]
+            if not slugs:
+                raise HTTPException(400, "Pick at least one of Allied, Fedway, Opici")
+        else:
+            slugs = avail
+        ph = ",".join("?" * len(slugs))
+        all_eds = [r[0] for r in con.execute(
+            f"SELECT DISTINCT edition FROM {src} WHERE wholesaler IN ({ph}) "
+            f"ORDER BY edition DESC", slugs).fetchall()]
+        if not all_eds:
+            raise HTTPException(400, "No editions loaded for the selected distributors")
+        if months.strip():
+            want = {m.strip() for m in months.split(",") if m.strip()}
+            sel_months = [m for m in all_eds if m in want]
+        else:
+            sel_months = all_eds[:2]
+        if not sel_months:
+            sel_months = all_eds[:1]
+
+        eph = ",".join("?" * len(sel_months))
+        month_ws: dict[str, list] = {}
+        for w, e in con.execute(
+                f"SELECT DISTINCT wholesaler, edition FROM {src} "
+                f"WHERE wholesaler IN ({ph}) AND edition IN ({eph})",
+                slugs + sel_months).fetchall():
+            month_ws.setdefault(e, []).append(w)
+        cur_ym = _pricing.current_yyyy_mm()
+        cand_k = max(limit * 4, 1500)
+
+        def _absent_dist():
+            return {
+                "carried": False, "has_qd": False, "frontline": None,
+                "deepest_discount": None, "deepest_at_cases": None,
+                "min_cases": None, "best_discount_pct": None, "active_days": None,
+                "expires_in_days": None, "has_time_sensitive": False, "tiers": [],
+                "unit_qty": None, "unit_volume": None,
+            }
+
+        def _cards_for_month(month: str) -> tuple[list[dict], int]:
+            wm = [w for w in slugs if w in month_ws.get(month, [])]
+            if not wm:
+                return [], 0
+            eds_m = {w: month for w in wm}
+            raw = _common_rows(con, src, wm, eds_m, require_all=False)
+            bk: dict[str, dict[str, dict]] = {}
+            for r in raw:
+                bk.setdefault(r["match_key"], {})[r["wholesaler"]] = r
+            # Candidates: any SKU some distributor files a quantity discount on.
+            mkeys = [k for k, per in bk.items() if any(per[w].get("has_discount") for w in per)]
+            if q or brand or product_type:
+                qq, bb, pt = q.lower(), brand.lower(), product_type.lower()
+                def _match(per):
+                    recs = per.values()
+                    if pt and not any((r.get("product_type") or "").lower() == pt for r in recs):
+                        return False
+                    if bb and not any(bb in (r.get("brand") or "").lower() for r in recs):
+                        return False
+                    if qq and not any(
+                        qq in (r.get("product_name") or "").lower()
+                        or qq in (r.get("brand") or "").lower()
+                        or qq in str(r.get("upc") or "").lstrip("0")
+                        for r in recs):
+                        return False
+                    return True
+                mkeys = [k for k in mkeys if _match(bk[k])]
+
+            n_cand = len(mkeys)
+            # PERF: preselect by a CHEAP proxy from the precomputed discount
+            # columns (frontline - best_case_price = deepest full-month QD $/case)
+            # before the expensive attach_tiers. Guarded against impossible
+            # discounts the same way _best_qd_tier_lines is.
+            def _proxy(k):
+                best_disc, pcts = 0.0, []
+                for _w2, rec in bk[k].items():
+                    front = rec.get("frontline_case_price") or 0
+                    bcp = rec.get("best_case_price")
+                    if not front or bcp is None or bcp >= front:
+                        continue
+                    disc = front - bcp
+                    if disc / front > _QD_MAX_DISCOUNT_FRAC:
+                        continue
+                    best_disc = max(best_disc, disc)
+                    pcts.append(disc / front)
+                if sort in ("deepest", "expiring"):
+                    return best_disc
+                if sort == "gap":
+                    return (max(pcts) - min(pcts)) if len(pcts) > 1 else 0.0
+                return max(pcts) if pcts else 0.0   # best_discount (default)
+            if sort == "product":
+                mkeys.sort(key=lambda k: min(
+                    (bk[k][w].get("product_name") or "" for w in bk[k]), key=len).lower())
+            else:
+                mkeys.sort(key=_proxy, reverse=True)
+            sel = mkeys[:cand_k]
+
+            flat = [bk[k][w] for k in sel for w in bk[k]]
+            ref = None if month == cur_ym else f"{month}-15"
+            _pricing.attach_tiers(con, flat, ref_date=ref)
+            try:
+                _attach_image(con, flat)
+            except Exception:
+                pass
+
+            out = []
+            for key in sel:
+                per = bk[key]
+                present = [w for w in slugs if w in per]
+                any_row = per[present[0]]
+                dists = {}
+                for w in slugs:
+                    if w not in per:
+                        dists[w] = _absent_dist()
+                        continue
+                    rec = per[w]
+                    pack = rec.get("uqd") or 1.0
+                    front = rec.get("frontline_case_price")
+                    tiers = rec.get("tiers", []) or []
+                    lines = _best_qd_tier_lines(tiers, pack, front)
+                    if hide_expired:
+                        lines = [ln for ln in lines if ln["window_status"] != "expired"]
+                    has_qd = bool(lines)
+                    deepest_discount, deepest_at = _qd_deepest(tiers, pack, front)
+                    best_disc_pct = max((ln["discount_pct"] or 0 for ln in lines), default=0.0)
+                    dists[w] = {
+                        "carried": True,
+                        "has_qd": has_qd,
+                        "frontline": front,
+                        "deepest_discount": deepest_discount,
+                        "deepest_at_cases": deepest_at,
+                        "min_cases": _min_cases_to_qd(tiers, pack),
+                        "best_discount_pct": round(best_disc_pct, 1) if best_disc_pct else None,
+                        "active_days": _rip_active_days(tiers, ref, source="discount"),
+                        "expires_in_days": _rip_expires_in(tiers, ref, source="discount"),
+                        "has_time_sensitive": _rip_has_time_sensitive(tiers, source="discount"),
+                        "tiers": lines,
+                        "unit_qty": rec.get("unit_qty"),
+                        "unit_volume": rec.get("unit_volume"),
+                    }
+
+                discounting = [w for w in present if dists[w]["has_qd"]]
+                missing = [w for w in present if not dists[w]["has_qd"]]
+                not_carried = [w for w in slugs if w not in per]
+                pcts = {w: dists[w]["best_discount_pct"] for w in discounting
+                        if dists[w]["best_discount_pct"]}
+                best_w = best_discount_pct = discount_delta = None
+                if pcts:
+                    best_w = max(pcts, key=pcts.get)
+                    best_discount_pct = pcts[best_w]
+                    if len(pcts) > 1:
+                        second = sorted(pcts.values(), reverse=True)[1]
+                        discount_delta = round(best_discount_pct - second, 1)
+                discount_gap = (round(max(pcts.values()) - min(pcts.values()), 1)
+                                if len(pcts) > 1 else 0.0)
+
+                timing_differs = len({dists[w]["has_time_sensitive"] for w in discounting}) > 1
+                quantity_differs = len({dists[w]["min_cases"] for w in discounting}) > 1
+                differs = len(discounting) >= 2 and (
+                    discount_gap >= 1.0 or timing_differs or quantity_differs or bool(missing))
+
+                image_url = next((per[w].get("image_url") for w in present
+                                  if per[w].get("image_url")), None)
+
+                out.append({
+                    "match_key": f"{month}|{key}",
+                    "edition": month,
+                    "upc_norm": key.split("|")[0],
+                    "size_key": key.split("|")[1] if "|" in key else "",
+                    "product_name": min((per[w].get("product_name") for w in present),
+                                        key=lambda s: len(s or "")),
+                    "product_type": any_row.get("product_type"),
+                    "brand": any_row.get("brand"),
+                    "vintage": any_row.get("vintage"),
+                    "unit_qty": any_row.get("unit_qty"),
+                    "unit_volume": any_row.get("unit_volume"),
+                    "unit_type": any_row.get("unit_type"),
+                    "upc": any_row.get("upc"),
+                    "image_url": image_url,
+                    "dists": dists,
+                    "discounting": discounting,
+                    "missing": missing,
+                    "not_carried": not_carried,
+                    "best_distributor": best_w,
+                    "best_discount_pct": best_discount_pct,
+                    "discount_delta": discount_delta,
+                    "discount_gap": discount_gap,
+                    "deepest_discount": max((dists[w]["deepest_discount"] or 0 for w in slugs), default=0.0),
+                    "timing_differs": timing_differs,
+                    "quantity_differs": quantity_differs,
+                    "differs": differs,
+                    "soonest_expiry": min((dists[w]["expires_in_days"] for w in slugs
+                                           if dists[w]["expires_in_days"] is not None), default=None),
+                })
+            return out, n_cand
+
+        rows = []
+        universe = 0
+        for m in sel_months:
+            cards, n_cand = _cards_for_month(m)
+            rows.extend(cards)
+            universe += n_cand
+
+        # ---- Month-over-month QD trend sticker -------------------------------
+        # Track the deepest full-month QD $/case (frontline - best_case_price,
+        # both precomputed in cpl_enriched) keyed by product identity, around the
+        # current calendar month. Same shape as the Best RIPs trend.
+        def _shift_ym(ym: str, delta: int) -> str:
+            i = int(ym[:4]) * 12 + (int(ym[5:7]) - 1) + delta
+            return f"{i // 12:04d}-{i % 12 + 1:02d}"
+        slot_ed = {"last": _shift_ym(cur_ym, -1), "this": cur_ym, "next": _shift_ym(cur_ym, 1)}
+        t_eds = [e for e in slot_ed.values() if e in all_eds]
+        trend_amt: dict = {}
+        if t_eds:
+            tph = ",".join("?" * len(t_eds))
+            for _w, e, upc, uv, front, bcp in con.execute(
+                    f"SELECT wholesaler, edition, upc, unit_volume, "
+                    f"frontline_case_price, best_case_price FROM {src} "
+                    f"WHERE wholesaler IN ({ph}) AND edition IN ({tph}) "
+                    f"AND best_case_price IS NOT NULL AND frontline_case_price IS NOT NULL "
+                    f"AND best_case_price < frontline_case_price",
+                    slugs + t_eds).fetchall():
+                disc = float(front) - float(bcp)
+                if disc <= 0:
+                    continue
+                k = (str(upc or "").lstrip("0"), _size_key(uv), e)
+                if disc > trend_amt.get(k, 0):
+                    trend_amt[k] = round(disc, 2)
+        for r in rows:
+            ident = (r["upc_norm"], r["size_key"])
+            amts = {s: (trend_amt.get((*ident, e)) if e in all_eds else None)
+                    for s, e in slot_ed.items()}
+            present = {s: v for s, v in amts.items() if v is not None}
+            best = None
+            if r["edition"] == cur_ym and len(present) >= 2:
+                top = max(present, key=present.get)
+                best = "this" if ("this" in present and present[top] - present["this"] < 1.0) else top
+            r["qd_trend"] = {
+                "this": amts["this"], "last": amts["last"], "next": amts["next"],
+                "this_ed": slot_ed["this"], "last_ed": slot_ed["last"], "next_ed": slot_ed["next"],
+                "best": best,
+            }
+
+    if time_sensitive_only:
+        rows = [r for r in rows
+                if any(r["dists"][w]["has_time_sensitive"] for w in r["discounting"])]
+    total = universe
+    if only_differences:
+        rows = [r for r in rows if r["differs"]]
+    if min_discount > 0:
+        rows = [r for r in rows if (r["best_discount_pct"] or 0) >= min_discount]
+
+    keymap = {
+        "best_discount": lambda r: r["best_discount_pct"] or 0,
+        "deepest": lambda r: r["deepest_discount"] or 0,
+        "gap": lambda r: r["discount_gap"] or 0,
+        "expiring": lambda r: r["soonest_expiry"] if r["soonest_expiry"] is not None else 1e9,
+        "product": lambda r: (r["product_name"] or "").lower(),
+    }
+    _ascending = ("product", "expiring")
+    rows.sort(key=keymap.get(sort, keymap["best_discount"]),
               reverse=False if sort in _ascending else (order != "asc"))
     rows = rows[:limit]
 

@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Home, LayoutDashboard, Package, ShoppingCart, Bell, Star, Menu, X, Combine,
+  LayoutDashboard, Package, ShoppingCart, Bell, Star, Menu, X, Combine,
   Sun, Moon, LogOut, BadgeDollarSign, ClipboardList, LayoutGrid,
-  ChevronLeft, ChevronRight, ChevronDown, StickyNote, UserCog, Settings, Shield, Sparkles, BookOpen, ListTodo,
+  ChevronLeft, ChevronRight, ChevronDown, StickyNote, UserCog, Settings, Shield, Sparkles, ListTodo,
   Activity, Clock, Percent, Compass, ArrowDownRight, ArrowUpRight, ThumbsUp,
   Bot, Database, Settings2, Newspaper, Scale, XCircle, Layers, Target, CalendarClock, ShoppingBag,
 } from 'lucide-react';
@@ -27,8 +27,6 @@ const NAV_GROUPS: {
     header: 'Overview',
     items: [
       { path: '/tours', label: 'Guided Tour', icon: Compass },
-      { path: '/how-to-guide', label: 'How To Guide', icon: BookOpen },
-      { path: '/', label: 'Home', icon: Home },
       { path: '/assistant', label: 'Celar AI Assistant', icon: Sparkles },
       { path: '/alerts', label: 'Alerts', icon: Bell },
     ],
@@ -39,7 +37,7 @@ const NAV_GROUPS: {
       { path: '/catalog', label: 'Catalog', icon: Package, adminOnly: true },
       { path: '/products', label: 'Products', icon: LayoutGrid },
       { path: '/rips-soon', label: 'RIPs', icon: BadgeDollarSign, soon: true },
-      { path: '/qd-soon', label: 'QD', icon: Percent, soon: true },
+      { path: '/best-qd', label: 'QD', icon: Percent },
       { path: '/combos', label: 'Combos', icon: Combine },
       { path: '/new-items', label: 'New Items', icon: Sparkles },
       { path: '/time-sensitive', label: 'Time-Sensitive Deals', icon: Clock },
@@ -50,7 +48,6 @@ const NAV_GROUPS: {
     items: [
       { path: '/compare-prices', label: 'Compare Prices', icon: Scale },
       { path: '/compare-rips', label: 'Compare RIPs', icon: Layers },
-      { path: '/best-rips', label: 'Best RIPs', icon: BadgeDollarSign },
       { path: '/edition-compare', label: 'Monthly Comparison', icon: CalendarClock },
       { path: '/price-drops', label: 'Price Drops', icon: ArrowDownRight },
       { path: '/price-increases', label: 'Price Increases', icon: ArrowUpRight },

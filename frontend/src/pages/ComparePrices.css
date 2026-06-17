@@ -101,6 +101,11 @@
   color: var(--green); font-weight: 700;
   background: color-mix(in srgb, var(--green) 9%, transparent);
 }
+/* The headline best price (cheapest effective in the row): yellow + red. Comes
+   after .cmp-win so it overrides on the winning effective cell. */
+.cmp-table td.cmp-price.cmp-best { color: #dc2626; font-weight: 700; background: #fef9c3; }
+.cmp-table td.cmp-price.cmp-best .cmp-sub,
+.cmp-table td.cmp-price.cmp-best .cmp-mval { color: #dc2626; }
 .cmp-table td.cmp-price.cmp-tie { color: var(--text-muted); font-style: italic; }
 .cmp-sub { display: block; font-size: 10.5px; color: var(--text-muted); font-weight: 400; }
 

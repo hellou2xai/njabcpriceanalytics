@@ -47,6 +47,10 @@
 .br-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(440px, 1fr)); gap: 16px; }
 .br-card { background: #fff; border: 1px solid #e7ecf2; border-radius: 14px; overflow: hidden;
   box-shadow: 0 1px 3px rgba(15,23,42,.04); display: flex; flex-direction: column; }
+/* The best-RIP-profit card(s) on the board wear a yellow "best" band. */
+.br-card--top { border-color: #f59e0b; box-shadow: 0 0 0 2px #fde68a, 0 1px 3px rgba(15,23,42,.06); }
+.br-topband { background: linear-gradient(90deg, #fde68a, #fcd34d); color: #92400e;
+  font-weight: 700; font-size: 12px; letter-spacing: .02em; text-align: center; padding: 5px 10px; }
 
 .br-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;
   padding: 13px 15px; border-bottom: 1px solid #f1f5f9; background: linear-gradient(180deg,#fcfdfe,#f8fafc); }

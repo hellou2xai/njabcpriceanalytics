@@ -214,6 +214,32 @@ def _size_key(raw) -> str:
     return f"M{round(ml / 5) * 5}"  # bottles/cans: bucket to 5 ml
 
 
+def _cpn_for_upcs(con, upc_norms) -> dict[str, int]:
+    """Map normalised UPCs to their CELR product-family number (cpn). Lets the
+    discovery boards MERGE the same product filed under different barcodes by
+    each distributor onto one card (e.g. Allied 674868000146 and Fedway
+    64868000146 are both Glenlivet Jamaica edition = cpn 5016; without this they
+    split into two cards that each wrongly read 'Not carried'). Empty dict when
+    the registry isn't loaded."""
+    ups = [u for u in set(upc_norms) if u]
+    if not ups:
+        return {}
+    try:
+        cp = read_parquet(con, "celr_products")
+    except Exception:
+        return {}
+    out: dict[str, int] = {}
+    ph = ",".join("?" * len(ups))
+    try:
+        for u, c in con.execute(
+                f"SELECT upc_norm, cpn FROM {cp} WHERE upc_norm IN ({ph})", ups).fetchall():
+            if c is not None:
+                out[str(u)] = int(c)
+    except Exception:
+        return {}
+    return out
+
+
 _COMMON_ROW_FLAGS = {"has_discount", "has_rip"}  # whitelist for flag_any
 
 
@@ -2043,7 +2069,7 @@ def best_rips(
     product_type: str = Query(""),
     brand: str = Query("", description="Brand name contains"),
     wholesalers: str = Query("", description="Comma-separated subset of Allied/Fedway/Opici to compare (empty = all three)."),
-    months: str = Query("", description="Comma-separated editions (YYYY-MM) to show; empty = latest TWO editions present in the data."),
+    months: str = Query("", description="Comma-separated editions (YYYY-MM) to show; empty = latest edition present in the data (the month pills can add more)."),
     only_differences: bool = Query(False, description="Only cards where the RIP is available at 2+ selected distributors AND they differ (one carries it without a RIP, different timing/quantity, or a profit-%% gap)."),
     min_profit: float = Query(0.0, ge=0, description="Hide cards whose best RIP profit %% is below this"),
     time_sensitive_only: bool = Query(False, description="Only products where some distributor's RIP is a dated/time-limited deal"),
@@ -2092,14 +2118,15 @@ def best_rips(
             f"ORDER BY edition DESC", slugs).fetchall()]
         if not all_eds:
             raise HTTPException(400, "No editions loaded for the selected distributors")
-        # Month filter: default to the latest TWO editions PRESENT in the data
-        # (not the calendar month) — so a freshly loaded July edition shows up
-        # next to June immediately, before the calendar rolls over.
+        # Month filter: default to the LATEST edition present in the data (not the
+        # calendar month, so a freshly loaded July edition shows immediately). One
+        # edition by default so the same product isn't shown as a duplicate card
+        # per month; the month pills let the user add more.
         if months.strip():
             want = {m.strip() for m in months.split(",") if m.strip()}
             sel_months = [m for m in all_eds if m in want]
         else:
-            sel_months = all_eds[:2]
+            sel_months = all_eds[:1]
         if not sel_months:
             sel_months = all_eds[:1]
 
@@ -2136,9 +2163,24 @@ def best_rips(
             # gate applied to candidates below), so we don't materialise the
             # whole catalogue just to drop most of it.
             raw = _common_rows(con, src, wm, eds_m, require_all=False, flag_any="has_rip")
+            # Merge offers by CELR product family so the SAME product filed under
+            # different barcodes by each distributor lands on ONE card (else each
+            # wrongly shows the other as "Not carried"). Falls back to the raw
+            # match_key; size/pack/vintage stay in the key so different sizes of a
+            # family remain separate cards.
+            fam = _cpn_for_upcs(con, [r["upc_norm"] for r in raw])
+            def _gkey(r):
+                cpn = fam.get(r["upc_norm"])
+                return r["match_key"] if cpn is None else "|".join([f"F{cpn}"] + r["match_key"].split("|")[1:])
+            def _better_rip(a, b):
+                fa, fb = bool(a.get("has_rip")), bool(b.get("has_rip"))
+                return fa if fa != fb else (a.get("rip_savings") or 0) > (b.get("rip_savings") or 0)
             bk: dict[str, dict[str, dict]] = {}
             for r in raw:
-                bk.setdefault(r["match_key"], {})[r["wholesaler"]] = r
+                per_w = bk.setdefault(_gkey(r), {})
+                cur = per_w.get(r["wholesaler"])
+                if cur is None or _better_rip(r, cur):
+                    per_w[r["wholesaler"]] = r
             mkeys = [k for k, per in bk.items() if any(per[w].get("has_rip") for w in per)]
             # Narrow on search BEFORE the tier build (same as compare_rips).
             if q or brand or product_type:
@@ -2272,7 +2314,7 @@ def best_rips(
                 out.append({
                     "match_key": f"{month}|{key}",
                     "edition": month,
-                    "upc_norm": key.split("|")[0],
+                    "upc_norm": any_row.get("upc_norm"),
                     "size_key": key.split("|")[1] if "|" in key else "",
                     "product_name": min((per[w].get("product_name") for w in present),
                                         key=lambda s: len(s or "")),
@@ -2390,7 +2432,7 @@ def best_qd(
     product_type: str = Query(""),
     brand: str = Query("", description="Brand name contains"),
     wholesalers: str = Query("", description="Comma-separated subset of Allied/Fedway/Opici to compare (empty = all three)."),
-    months: str = Query("", description="Comma-separated editions (YYYY-MM) to show; empty = latest TWO editions present in the data."),
+    months: str = Query("", description="Comma-separated editions (YYYY-MM) to show; empty = latest edition present in the data (the month pills can add more)."),
     only_differences: bool = Query(False, description="Only cards where a quantity discount is available at 2+ selected distributors AND they differ (one carries it without a QD, different timing/quantity, or a discount-%% gap)."),
     min_discount: float = Query(0.0, ge=0, description="Hide cards whose best discount %% off list is below this"),
     time_sensitive_only: bool = Query(False, description="Only products where some distributor's QD is a dated/time-limited deal"),
@@ -2443,7 +2485,7 @@ def best_qd(
             want = {m.strip() for m in months.split(",") if m.strip()}
             sel_months = [m for m in all_eds if m in want]
         else:
-            sel_months = all_eds[:2]
+            sel_months = all_eds[:1]
         if not sel_months:
             sel_months = all_eds[:1]
 
@@ -2475,9 +2517,27 @@ def best_qd(
             # somewhere (the same gate applied to candidates below), so we skip
             # materialising the rest of the catalogue.
             raw = _common_rows(con, src, wm, eds_m, require_all=False, flag_any="has_discount")
+            # Merge offers by CELR product family so the SAME product filed under
+            # different barcodes by each distributor lands on ONE card (else each
+            # wrongly shows the other as "Not carried"). Falls back to the raw
+            # match_key; size/pack/vintage stay in the key.
+            fam = _cpn_for_upcs(con, [r["upc_norm"] for r in raw])
+            def _gkey(r):
+                cpn = fam.get(r["upc_norm"])
+                return r["match_key"] if cpn is None else "|".join([f"F{cpn}"] + r["match_key"].split("|")[1:])
+            def _better_qd(a, b):
+                fa, fb = bool(a.get("has_discount")), bool(b.get("has_discount"))
+                if fa != fb:
+                    return fa
+                da = (a.get("frontline_case_price") or 0) - (a.get("best_case_price") or 0)
+                db = (b.get("frontline_case_price") or 0) - (b.get("best_case_price") or 0)
+                return da > db
             bk: dict[str, dict[str, dict]] = {}
             for r in raw:
-                bk.setdefault(r["match_key"], {})[r["wholesaler"]] = r
+                per_w = bk.setdefault(_gkey(r), {})
+                cur = per_w.get(r["wholesaler"])
+                if cur is None or _better_qd(r, cur):
+                    per_w[r["wholesaler"]] = r
             # Candidates: any SKU some distributor files a quantity discount on.
             mkeys = [k for k, per in bk.items() if any(per[w].get("has_discount") for w in per)]
             if q or brand or product_type:
@@ -2596,7 +2656,7 @@ def best_qd(
                 out.append({
                     "match_key": f"{month}|{key}",
                     "edition": month,
-                    "upc_norm": key.split("|")[0],
+                    "upc_norm": any_row.get("upc_norm"),
                     "size_key": key.split("|")[1] if "|" in key else "",
                     "product_name": min((per[w].get("product_name") for w in present),
                                         key=lambda s: len(s or "")),

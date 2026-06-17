@@ -172,7 +172,7 @@ function TierLine({ t, isBest }: { t: BestQdTier; isBest: boolean }) {
   );
 }
 
-function Card({ row, slugs }: { row: BestQdRow; slugs: string[] }) {
+function Card({ row, slugs, isTop }: { row: BestQdRow; slugs: string[]; isTop?: boolean }) {
   const present = slugs.filter(w => row.dists[w]);
   const vint = wineVintage(row.product_type, row.vintage);
   const size = [row.unit_qty, row.unit_volume].filter(Boolean).join(' × ');
@@ -180,7 +180,8 @@ function Card({ row, slugs }: { row: BestQdRow; slugs: string[] }) {
   const productHref = primaryW ? detailUrl(primaryW, row.product_name, row.upc) : null;
 
   return (
-    <div className="bq-card">
+    <div className={`bq-card${isTop ? ' bq-card--top' : ''}`}>
+      {isTop && <div className="bq-topband">★ Best quantity discount on the board</div>}
       <div className="bq-card-head">
         <div className="bq-card-lead">
           <ProductThumb src={row.image_url} alt={row.product_name} size={48} expandable />
@@ -279,6 +280,8 @@ export default function BestQd() {
     const all = data?.rows ?? [];
     return sizes.length ? all.filter(r => sizes.includes(r.unit_volume ?? '')) : all;
   }, [data, sizes]);
+  // The deepest discount % on the board — its card(s) get the yellow "best" band.
+  const topPct = useMemo(() => rows.reduce((m, r) => Math.max(m, r.best_discount_pct ?? 0), 0), [rows]);
 
   const resetFilters = () => {
     setQuery(''); setSort('best_discount'); setOnlyDiff(false); setTsOnly(false);
@@ -366,7 +369,8 @@ export default function BestQd() {
           ) : (
             <div className="bq-grid">
               {rows.map((row: BestQdRow) => (
-                <Card key={row.match_key} row={row} slugs={data.wholesalers} />
+                <Card key={row.match_key} row={row} slugs={data.wholesalers}
+                  isTop={(row.best_discount_pct ?? 0) > 0 && row.best_discount_pct === topPct} />
               ))}
             </div>
           )}

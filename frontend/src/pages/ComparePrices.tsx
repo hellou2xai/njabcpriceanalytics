@@ -32,14 +32,16 @@ const fmtDay = (iso?: string | null) => {
 const winText = (from?: string | null, to?: string | null) => `${fmtDay(from)}–${fmtDay(to)}`;
 
 function WinnerCell({
-  value, prev, isWinner, isTie, sub, prevSub, mark, sep, mode = 'cur', curMonth, prevMonth,
+  value, prev, isWinner, isTie, best, sub, prevSub, mark, sep, mode = 'cur', curMonth, prevMonth,
 }: {
   value?: number | null; prev?: number | null;
-  isWinner: boolean; isTie: boolean;
+  isWinner: boolean; isTie: boolean; best?: boolean;
   sub?: string | null; prevSub?: string | null; mark?: ReactNode; sep?: boolean;
   mode?: 'cur' | 'prev' | 'both'; curMonth?: string; prevMonth?: string;
 }) {
-  const cls = `cmp-price${isWinner ? ' cmp-win' : ''}${isTie ? ' cmp-tie' : ''}${sep ? ' cmp-sep' : ''}`;
+  // `best` = the cheapest effective (Best Net) cell in the row — the headline
+  // winning price, shown in a yellow highlight with red text.
+  const cls = `cmp-price${isWinner ? ' cmp-win' : ''}${best ? ' cmp-best' : ''}${isTie ? ' cmp-tie' : ''}${sep ? ' cmp-sep' : ''}`;
   // Last-month only: show the prior value (no winner highlight — that's a
   // current-month verdict).
   if (mode === 'prev') {
@@ -746,7 +748,7 @@ export default function ComparePrices() {
                                 ) : null} />
                               <WinnerCell value={p?.effective} prev={p?.prev?.effective}
                                 mode={priceMonths} curMonth={curMo} prevMonth={prevMo}
-                                isWinner={winner === w} isTie={winner === 'tie'}
+                                isWinner={winner === w} isTie={winner === 'tie'} best={winner === w}
                                 sub={p?.btl_effective != null ? `${money(p.btl_effective)}/${mUnit}` : null}
                                 prevSub={p?.prev?.btl_effective != null ? `${money(p.prev.btl_effective)}/${mUnit}` : null} />
                             </Fragment>

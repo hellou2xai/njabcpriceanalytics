@@ -173,7 +173,7 @@ function TierLine({ t, isBest }: { t: BestRipTier; isBest: boolean }) {
   );
 }
 
-function Card({ row, slugs, onRipClick }: { row: BestRipRow; slugs: string[]; onRipClick: (w: string, c: string, edition: string) => void }) {
+function Card({ row, slugs, onRipClick, isTop }: { row: BestRipRow; slugs: string[]; onRipClick: (w: string, c: string, edition: string) => void; isTop?: boolean }) {
   const present = slugs.filter(w => row.dists[w]);
   const vint = wineVintage(row.product_type, row.vintage);
   const size = [row.unit_qty, row.unit_volume].filter(Boolean).join(' × ');
@@ -182,7 +182,8 @@ function Card({ row, slugs, onRipClick }: { row: BestRipRow; slugs: string[]; on
   const productHref = primaryW ? detailUrl(primaryW, row.product_name, row.upc) : null;
 
   return (
-    <div className="br-card">
+    <div className={`br-card${isTop ? ' br-card--top' : ''}`}>
+      {isTop && <div className="br-topband">★ Best RIP profit on the board</div>}
       <div className="br-card-head">
         <div className="br-card-lead">
           <ProductThumb src={row.image_url} alt={row.product_name} size={48} expandable />
@@ -286,6 +287,8 @@ export default function BestRips() {
     const all = data?.rows ?? [];
     return sizes.length ? all.filter(r => sizes.includes(r.unit_volume ?? '')) : all;
   }, [data, sizes]);
+  // The best RIP profit % on the board — its card(s) get the yellow "best" band.
+  const topPct = useMemo(() => rows.reduce((m, r) => Math.max(m, r.best_profit_pct ?? 0), 0), [rows]);
 
   const resetFilters = () => {
     setQuery(''); setSort('best_profit'); setOnlyDiff(false); setTsOnly(false);
@@ -373,7 +376,8 @@ export default function BestRips() {
             <div className="br-grid">
               {rows.map((row: BestRipRow) => (
                 <Card key={row.match_key} row={row} slugs={data.wholesalers}
-                  onRipClick={(w, code, edition) => setModal({ w, code, edition })} />
+                  onRipClick={(w, code, edition) => setModal({ w, code, edition })}
+                  isTop={(row.best_profit_pct ?? 0) > 0 && row.best_profit_pct === topPct} />
               ))}
             </div>
           )}

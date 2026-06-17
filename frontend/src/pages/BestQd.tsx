@@ -240,6 +240,7 @@ export default function BestQd() {
   const [ptype, setPtype] = useState('');        // category (server: product_type)
   const [brand, setBrand] = useState('');        // brand (server: brand contains)
   const [sizes, setSizes] = useState<string[]>([]);  // size (client-side on returned rows)
+  const [cases, setCases] = useState(0);         // best deal reachable at N cases (0 = any)
 
   const params = useMemo(() => ({
     q: query || undefined,
@@ -252,8 +253,9 @@ export default function BestQd() {
     min_discount: minDiscount || undefined,
     product_type: ptype || undefined,
     brand: brand || undefined,
+    cases: cases || undefined,
     limit: 400,
-  }), [query, sort, dists, months, onlyDiff, tsOnly, hideExpired, minDiscount, ptype, brand]);
+  }), [query, sort, dists, months, onlyDiff, tsOnly, hideExpired, minDiscount, ptype, brand, cases]);
 
   const { data, isLoading, isFetching, error } = useQuery({
     queryKey: ['best-qd', params],
@@ -286,7 +288,7 @@ export default function BestQd() {
   const resetFilters = () => {
     setQuery(''); setSort('best_discount'); setOnlyDiff(false); setTsOnly(false);
     setHideExpired(true); setMinDiscount(0); setDists([...DIST_OPTS]); setMonths([]);
-    setPtype(''); setBrand(''); setSizes([]);
+    setPtype(''); setBrand(''); setSizes([]); setCases(0);
   };
 
   const sections: FilterSection[] = [
@@ -300,6 +302,19 @@ export default function BestQd() {
       options: DIST_OPTS.map(w => ({ label: distributorName(w), value: w })),
       values: dists,
       onChange: (vals) => setDists(vals.length ? DIST_OPTS.filter(d => vals.includes(d)) : dists) },
+    { type: 'custom', key: 'cases', title: 'Best deal at (cases)',
+      render: () => (
+        <div className="filter-rail-cases">
+          <div className="filter-rail-cases-val">{cases > 0 ? `At ${cases} case${cases > 1 ? 's' : ''}` : 'Any volume (deepest)'}</div>
+          <input type="range" min={0} max={25} step={1} value={Math.min(cases, 25)}
+            onChange={e => setCases(Number(e.target.value))} />
+          <div className="filter-rail-cases-manual">
+            <input type="number" min={0} value={cases || ''} placeholder="0"
+              onChange={e => setCases(Math.max(0, Math.floor(Number(e.target.value) || 0)))} />
+            <span>cases · 0 = any</span>
+          </div>
+        </div>
+      ) },
     { type: 'select', key: 'cat', title: 'Category', placeholder: 'All categories',
       value: ptype, options: catOpts.map(c => ({ label: c, value: c })), onChange: setPtype },
     { type: 'select', key: 'brand', title: 'Brand', placeholder: 'All brands',
@@ -360,6 +375,7 @@ export default function BestQd() {
         <>
           <div className="bq-count">
             Showing {rows.length} of {data.total.toLocaleString()} products with a quantity discount
+            {cases > 0 ? ` reachable at ${cases} cs` : ''}
             {onlyDiff ? ' where the distributors differ' : ` across ${data.wholesalers.map(distributorName).join(', ')}`}
             {data.total > rows.length && ' — refine with search or sort to narrow'}
             {isFetching && <span className="bq-updating"> · updating…</span>}

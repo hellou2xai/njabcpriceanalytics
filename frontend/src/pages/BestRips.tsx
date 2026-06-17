@@ -243,6 +243,7 @@ export default function BestRips() {
   const [ptype, setPtype] = useState('');        // category (server: product_type)
   const [brand, setBrand] = useState('');        // brand (server: brand contains)
   const [sizes, setSizes] = useState<string[]>([]);  // size (client-side on returned rows)
+  const [cases, setCases] = useState(0);         // best deal reachable at N cases (0 = any)
   const [modal, setModal] = useState<{ w: string; code: string; edition: string } | null>(null);
 
   const params = useMemo(() => ({
@@ -256,8 +257,9 @@ export default function BestRips() {
     min_profit: minProfit || undefined,
     product_type: ptype || undefined,
     brand: brand || undefined,
+    cases: cases || undefined,
     limit: 400,
-  }), [query, sort, dists, months, onlyDiff, tsOnly, hideExpired, minProfit, ptype, brand]);
+  }), [query, sort, dists, months, onlyDiff, tsOnly, hideExpired, minProfit, ptype, brand, cases]);
 
   const { data, isLoading, isFetching, error } = useQuery({
     queryKey: ['best-rips', params],
@@ -293,7 +295,7 @@ export default function BestRips() {
   const resetFilters = () => {
     setQuery(''); setSort('best_profit'); setOnlyDiff(false); setTsOnly(false);
     setHideExpired(true); setMinProfit(0); setDists([...DIST_OPTS]); setMonths([]);
-    setPtype(''); setBrand(''); setSizes([]);
+    setPtype(''); setBrand(''); setSizes([]); setCases(0);
   };
 
   const sections: FilterSection[] = [
@@ -307,6 +309,19 @@ export default function BestRips() {
       options: DIST_OPTS.map(w => ({ label: distributorName(w), value: w })),
       values: dists,
       onChange: (vals) => setDists(vals.length ? DIST_OPTS.filter(d => vals.includes(d)) : dists) },
+    { type: 'custom', key: 'cases', title: 'Best deal at (cases)',
+      render: () => (
+        <div className="filter-rail-cases">
+          <div className="filter-rail-cases-val">{cases > 0 ? `At ${cases} case${cases > 1 ? 's' : ''}` : 'Any volume (deepest)'}</div>
+          <input type="range" min={0} max={25} step={1} value={Math.min(cases, 25)}
+            onChange={e => setCases(Number(e.target.value))} />
+          <div className="filter-rail-cases-manual">
+            <input type="number" min={0} value={cases || ''} placeholder="0"
+              onChange={e => setCases(Math.max(0, Math.floor(Number(e.target.value) || 0)))} />
+            <span>cases · 0 = any</span>
+          </div>
+        </div>
+      ) },
     { type: 'select', key: 'cat', title: 'Category', placeholder: 'All categories',
       value: ptype, options: catOpts.map(c => ({ label: c, value: c })), onChange: setPtype },
     { type: 'select', key: 'brand', title: 'Brand', placeholder: 'All brands',
@@ -366,6 +381,7 @@ export default function BestRips() {
         <>
           <div className="br-count">
             Showing {rows.length} of {data.total.toLocaleString()} RIPs
+            {cases > 0 ? ` reachable at ${cases} cs` : ''}
             {onlyDiff ? ' where the distributors differ' : ` across ${data.wholesalers.map(distributorName).join(', ')}`}
             {data.total > rows.length && ' — refine with search or sort to narrow'}
             {isFetching && <span className="br-updating"> · updating…</span>}

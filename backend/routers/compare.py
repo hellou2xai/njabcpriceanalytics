@@ -2072,6 +2072,7 @@ def best_rips(
     months: str = Query("", description="Comma-separated editions (YYYY-MM) to show; empty = latest edition present in the data (the month pills can add more)."),
     only_differences: bool = Query(False, description="Only cards where the RIP is available at 2+ selected distributors AND they differ (one carries it without a RIP, different timing/quantity, or a profit-%% gap)."),
     min_profit: float = Query(0.0, ge=0, description="Hide cards whose best RIP profit %% is below this"),
+    cases: float = Query(0, ge=0, description="Only products with a RIP reachable at this many cases; 0 = best deal at any volume."),
     time_sensitive_only: bool = Query(False, description="Only products where some distributor's RIP is a dated/time-limited deal"),
     hide_expired: bool = Query(True, description="Drop tier lines whose window has already ended"),
     sort: str = Query("best_profit", description="best_profit | deepest | gap | expiring | product"),
@@ -2090,11 +2091,12 @@ def best_rips(
     the canonical pricing.attach_tiers + rip_utils helpers — nothing
     re-implemented here. Product images come from product_enrichment (Go-UPC)."""
     cache_key = ("best_rips", _cache_tag(), q, product_type, brand, wholesalers,
-                 months, only_differences, min_profit, time_sensitive_only,
+                 months, only_differences, min_profit, cases, time_sensitive_only,
                  hide_expired, sort, order, limit)
     cached = _board_cache_get(cache_key)
     if cached is not None:
         return cached
+    n_cases = cases if cases and cases > 0 else None
     with get_duckdb() as con:
         src = read_parquet(con, "cpl_enriched")
         known = {r[0] for r in con.execute(
@@ -2254,10 +2256,18 @@ def best_rips(
                     lines = _best_rip_tier_lines(tiers, pack)
                     if hide_expired:
                         lines = [ln for ln in lines if ln["window_status"] != "expired"]
+                    # Volume filter: keep only tiers a buyer can actually unlock at
+                    # n_cases, so the card's RIP reflects the best deal AT that volume.
+                    if n_cases:
+                        lines = [ln for ln in lines if ln["cases"] is not None and ln["cases"] <= n_cases]
                     # Trust the canonical tier builder, not the precomputed has_rip
                     # flag, which can lag (Opici text-coded RIPs).
                     has_rip = bool(lines)
                     deepest_rebate, deepest_at = _rip_deepest(tiers, pack)
+                    if n_cases:  # constrain "deepest" to what's reachable at n_cases
+                        deepest_rebate = max((ln["rebate_per_case"] or 0 for ln in lines), default=0.0)
+                        deepest_at = next((ln["cases"] for ln in lines
+                                           if (ln["rebate_per_case"] or 0) == deepest_rebate), None)
                     best_profit = max((ln["rip_profit_pct"] or 0 for ln in lines), default=0.0)
                     # The badge code and mix-count must be the code that ACTUALLY
                     # produced the shown ladder THIS edition (deepest tier's code),
@@ -2397,6 +2407,10 @@ def best_rips(
         rows = [r for r in rows
                 if any(r["dists"][w]["has_time_sensitive"] for w in r["ripping"])]
     total = universe  # full candidate universe (pre-display-filter) for this context
+    # Eligible-at-volume: only products where some distributor has a RIP reachable
+    # at n_cases (has_rip was recomputed against the volume filter above).
+    if n_cases:
+        rows = [r for r in rows if r["ripping"]]
     if only_differences:
         rows = [r for r in rows if r["differs"]]
     if min_profit > 0:
@@ -2435,6 +2449,7 @@ def best_qd(
     months: str = Query("", description="Comma-separated editions (YYYY-MM) to show; empty = latest edition present in the data (the month pills can add more)."),
     only_differences: bool = Query(False, description="Only cards where a quantity discount is available at 2+ selected distributors AND they differ (one carries it without a QD, different timing/quantity, or a discount-%% gap)."),
     min_discount: float = Query(0.0, ge=0, description="Hide cards whose best discount %% off list is below this"),
+    cases: float = Query(0, ge=0, description="Only products with a quantity discount reachable at this many cases; 0 = best deal at any volume."),
     time_sensitive_only: bool = Query(False, description="Only products where some distributor's QD is a dated/time-limited deal"),
     hide_expired: bool = Query(True, description="Drop tier lines whose window has already ended"),
     sort: str = Query("best_discount", description="best_discount | deepest | gap | expiring | product"),
@@ -2456,11 +2471,12 @@ def best_qd(
     tier/unit/discount math comes from the canonical pricing.attach_tiers +
     rip_utils helpers — nothing re-implemented here. Images come from Go-UPC."""
     cache_key = ("best_qd", _cache_tag(), q, product_type, brand, wholesalers,
-                 months, only_differences, min_discount, time_sensitive_only,
+                 months, only_differences, min_discount, cases, time_sensitive_only,
                  hide_expired, sort, order, limit)
     cached = _board_cache_get(cache_key)
     if cached is not None:
         return cached
+    n_cases = cases if cases and cases > 0 else None
     with get_duckdb() as con:
         src = read_parquet(con, "cpl_enriched")
         known = {r[0] for r in con.execute(
@@ -2611,8 +2627,16 @@ def best_qd(
                     lines = _best_qd_tier_lines(tiers, pack, front)
                     if hide_expired:
                         lines = [ln for ln in lines if ln["window_status"] != "expired"]
+                    # Volume filter: keep only tiers a buyer can actually unlock at
+                    # n_cases, so the card's QD reflects the best deal AT that volume.
+                    if n_cases:
+                        lines = [ln for ln in lines if ln["cases"] is not None and ln["cases"] <= n_cases]
                     has_qd = bool(lines)
                     deepest_discount, deepest_at = _qd_deepest(tiers, pack, front)
+                    if n_cases:  # constrain "deepest" to what's reachable at n_cases
+                        deepest_discount = max((ln["discount_per_case"] or 0 for ln in lines), default=0.0)
+                        deepest_at = next((ln["cases"] for ln in lines
+                                           if (ln["discount_per_case"] or 0) == deepest_discount), None)
                     best_disc_pct = max((ln["discount_pct"] or 0 for ln in lines), default=0.0)
                     dists[w] = {
                         "carried": True,
@@ -2736,6 +2760,10 @@ def best_qd(
         rows = [r for r in rows
                 if any(r["dists"][w]["has_time_sensitive"] for w in r["discounting"])]
     total = universe
+    # Eligible-at-volume: only products where some distributor has a QD reachable
+    # at n_cases (has_qd was recomputed against the volume filter above).
+    if n_cases:
+        rows = [r for r in rows if r["discounting"]]
     if only_differences:
         rows = [r for r in rows if r["differs"]]
     if min_discount > 0:

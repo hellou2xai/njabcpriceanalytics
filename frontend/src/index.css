@@ -5766,8 +5766,10 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .prod-deal-after { color: var(--text-muted); }
 /* bottle price beside the case price: same size AND weight, muted colour only */
 .prod-deal-btl { color: var(--text-muted); font-weight: 700; }
-/* Best QD / best RIP tier on a ladder: yellow highlight + red font. */
-.prod-deal-line.prod-deal-best { background: #fef9c3; border-radius: 5px; padding: 1px 5px; }
+/* Best QD / best RIP tier on a ladder: yellow highlight + red font. The band
+   hugs the text (fit-content) instead of stretching the full row width. */
+.prod-deal-line.prod-deal-best { background: #fef9c3; border-radius: 5px; padding: 1px 5px;
+  width: fit-content; max-width: 100%; align-self: flex-start; }
 .prod-deal-line.prod-deal-best,
 .prod-deal-line.prod-deal-best strong,
 .prod-deal-line.prod-deal-best .prod-deal-btl,

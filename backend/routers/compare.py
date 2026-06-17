@@ -39,6 +39,47 @@ router = APIRouter(prefix="/api/compare", tags=["compare"])
 _MAX_WHOLESALERS = 3
 _TIE_EPS = 0.005
 
+# --- Board response cache --------------------------------------------------
+# The Best RIPs / Best QD boards are heavy aggregates whose output is a pure
+# function of (pricing-cache data, query params) — it does NOT depend on the
+# user. Recomputing them on every request is the dominant cost, especially on a
+# single-CPU Render dyno where DuckDB runs single-threaded. Memoise the response
+# keyed on the CURRENT cache-file path, so the first request after a data reload
+# pays the cost and the rest are instant; a reload swaps the cache file (new
+# path) and the key changes, so the board can never serve stale data.
+import threading as _threading
+from collections import OrderedDict as _OrderedDict
+
+_BOARD_CACHE: "_OrderedDict[tuple, dict]" = _OrderedDict()
+_BOARD_CACHE_LOCK = _threading.Lock()
+_BOARD_CACHE_MAX = 64  # bounded; each entry is one trimmed board response
+
+
+def _cache_tag() -> str:
+    """Identity of the current pricing-cache file; part of every board cache
+    key so a reload (new file) invalidates the memo automatically."""
+    try:
+        from backend.pricing_cache import get_pricing_path
+        return str(get_pricing_path())
+    except Exception:
+        return ""
+
+
+def _board_cache_get(key: tuple):
+    with _BOARD_CACHE_LOCK:
+        hit = _BOARD_CACHE.get(key)
+        if hit is not None:
+            _BOARD_CACHE.move_to_end(key)
+        return hit
+
+
+def _board_cache_put(key: tuple, value: dict) -> None:
+    with _BOARD_CACHE_LOCK:
+        _BOARD_CACHE[key] = value
+        _BOARD_CACHE.move_to_end(key)
+        while len(_BOARD_CACHE) > _BOARD_CACHE_MAX:
+            _BOARD_CACHE.popitem(last=False)
+
 # A deal counts toward today's price only when its window is live NOW. Past
 # (expired) and future (upcoming) deals are excluded so the grid reflects what a
 # buyer can actually get today and old promos don't confuse the comparison.
@@ -173,8 +214,11 @@ def _size_key(raw) -> str:
     return f"M{round(ml / 5) * 5}"  # bottles/cans: bucket to 5 ml
 
 
+_COMMON_ROW_FLAGS = {"has_discount", "has_rip"}  # whitelist for flag_any
+
+
 def _common_rows(con, src: str, slugs: list[str], eds: dict[str, str],
-                 require_all: bool = True) -> list[dict]:
+                 require_all: bool = True, flag_any: Optional[str] = None) -> list[dict]:
     """One best-offer row per (identity key, wholesaler), restricted to
     identity keys present at ALL selected wholesalers.
 
@@ -182,12 +226,36 @@ def _common_rows(con, src: str, slugs: list[str], eds: dict[str, str],
     carries each key (no intersection) — used by the Best RIPs board, which
     shows a RIP even when only one distributor carries the product.
 
+    ``flag_any`` ('has_discount' | 'has_rip') restricts the SCAN to UPCs that
+    carry that deal at SOME in-scope (wholesaler, edition), before the rows are
+    materialised into Python. The Best RIPs / Best QD boards gate candidates on
+    exactly this flag afterwards, so pushing it into SQL is behaviour-preserving
+    — it just avoids paying the to_dict / nan-clean / key-build cost for the
+    majority of the catalogue that has no such deal anywhere. Sibling rows of a
+    kept UPC (a distributor that carries it WITHOUT the deal) are retained, so
+    the boards' 'carries it but no deal' / 'differs' detection still works.
+
     Identity = normalised UPC + physical-size bucket + bottles-per-case +
     vintage (vintage-sensitive categories only). Size and pack are normalised
     in Python (_size_key / _pack_norm) because distributors spell the same
     physical size many ways ('12OZ' vs '355ML', '24' vs '2 12-Packs')."""
     ed_pred, ed_params = _edition_pred(slugs, eds)
     vn = _pricing.vintage_norm_sql("vintage")
+
+    # Optional candidate pre-filter: keep only UPCs flagged at some in-scope
+    # (wholesaler, edition). Materialised into a connection temp table so the
+    # main query references it param-free (no positional-param ordering hazard).
+    flag_clause = ""
+    if flag_any:
+        if flag_any not in _COMMON_ROW_FLAGS:
+            raise ValueError(f"unsupported flag_any: {flag_any}")
+        con.execute(f"""
+            CREATE OR REPLACE TEMP TABLE _cr_flag_upcs AS
+            SELECT DISTINCT LTRIM(upc, '0') AS un
+            FROM {src}
+            WHERE {ed_pred} AND {_VALID_UPC} AND {flag_any} = TRUE
+        """, ed_params)
+        flag_clause = "AND LTRIM(e.upc, '0') IN (SELECT un FROM _cr_flag_upcs)"
     # Exclude a row as "part of a combo bundle" ONLY when its combo_code is a
     # real code in that wholesaler's COMBO sheet. Some distributors (Shore
     # Point, Jersey Beverage) repurpose the CPL combo-code column for internal
@@ -222,6 +290,7 @@ def _common_rows(con, src: str, slugs: list[str], eds: dict[str, str],
         FROM {src} e
         WHERE {ed_pred}
           AND {_VALID_UPC}
+          {flag_clause}
           AND (combo_code IS NULL OR combo_code = '' OR combo_code = '0'
                OR {combo_pred})
     """
@@ -546,6 +615,11 @@ def compare_products(
     VOLUME — so a low-volume buyer isn't shown a winner they can't actually reach.
     At-volume uses the canonical tier ladder (attach_tiers) + `_applied_tier_at`,
     never a re-implemented formula."""
+    cache_key = ("compare_products", _cache_tag(), wholesalers, q, product_type,
+                 only_differences, min_spread, cases, sort, order, limit, months)
+    cached = _board_cache_get(cache_key)
+    if cached is not None:
+        return cached
     n_cases = cases if cases and cases > 0 else None
     with get_duckdb() as con:
         src = read_parquet(con, "cpl_enriched")
@@ -753,7 +827,7 @@ def compare_products(
               reverse=(order != "asc") if sort != "product" else (order == "desc"))
     rows = rows[:limit]
 
-    return {
+    result = {
         "wholesalers": slugs,
         "editions": eds,
         "prev_editions": prev_eds,
@@ -780,6 +854,8 @@ def compare_products(
             "insights": insights,
         },
     }
+    _board_cache_put(cache_key, result)
+    return result
 
 
 def _pretty_w(slug: str) -> str:
@@ -1524,6 +1600,13 @@ def compare_rips(
     map, the min cases to unlock a rebate, the best 1-case outcome, and the
     case-mix breadth."""
     import math as _m
+    cache_key = ("compare_rips", _cache_tag(), wholesalers, cases, q, product_type,
+                 brand, only_differences, min_diff, include_anomalies,
+                 time_sensitive_only, combo_only, expiring_only, timing_diff_only,
+                 qty_diff_only, better_terms_only, sort, order, limit)
+    cached = _board_cache_get(cache_key)
+    if cached is not None:
+        return cached
     with get_duckdb() as con:
         src = read_parquet(con, "cpl_enriched")
         slugs = _parse_wholesalers(wholesalers, con)
@@ -1920,7 +2003,7 @@ def compare_rips(
                 f"{flips} product(s) change the best-RIP distributor as your "
                 f"volume grows. Check the break-even before you commit.")
 
-    return {
+    result = {
         "wholesalers": slugs,
         "editions": eds,
         "cases": n,
@@ -1938,6 +2021,8 @@ def compare_rips(
             "insights": insights,
         },
     }
+    _board_cache_put(cache_key, result)
+    return result
 
 
 # ===========================================================================
@@ -1978,6 +2063,12 @@ def best_rips(
     Scope is the three NJ distributors only. All tier/unit/rebate math comes from
     the canonical pricing.attach_tiers + rip_utils helpers — nothing
     re-implemented here. Product images come from product_enrichment (Go-UPC)."""
+    cache_key = ("best_rips", _cache_tag(), q, product_type, brand, wholesalers,
+                 months, only_differences, min_profit, time_sensitive_only,
+                 hide_expired, sort, order, limit)
+    cached = _board_cache_get(cache_key)
+    if cached is not None:
+        return cached
     with get_duckdb() as con:
         src = read_parquet(con, "cpl_enriched")
         known = {r[0] for r in con.execute(
@@ -2041,7 +2132,10 @@ def best_rips(
                 return []
             eds_m = {w: month for w in wm}
             # require_all=False: keep every distributor that CARRIES each SKU.
-            raw = _common_rows(con, src, wm, eds_m, require_all=False)
+            # flag_any='has_rip': only scan UPCs with a RIP somewhere (the same
+            # gate applied to candidates below), so we don't materialise the
+            # whole catalogue just to drop most of it.
+            raw = _common_rows(con, src, wm, eds_m, require_all=False, flag_any="has_rip")
             bk: dict[str, dict[str, dict]] = {}
             for r in raw:
                 bk.setdefault(r["match_key"], {})[r["wholesaler"]] = r
@@ -2279,13 +2373,15 @@ def best_rips(
               reverse=False if sort in _ascending else (order != "asc"))
     rows = rows[:limit]
 
-    return {
+    result = {
         "wholesalers": slugs,
         "months": sel_months,
         "available_months": all_eds,
         "total": total,
         "rows": rows,
     }
+    _board_cache_put(cache_key, result)
+    return result
 
 
 @router.get("/best-qd")
@@ -2317,6 +2413,12 @@ def best_qd(
     price. Scope is the same three NJ distributors as the Best RIPs board. All
     tier/unit/discount math comes from the canonical pricing.attach_tiers +
     rip_utils helpers — nothing re-implemented here. Images come from Go-UPC."""
+    cache_key = ("best_qd", _cache_tag(), q, product_type, brand, wholesalers,
+                 months, only_differences, min_discount, time_sensitive_only,
+                 hide_expired, sort, order, limit)
+    cached = _board_cache_get(cache_key)
+    if cached is not None:
+        return cached
     with get_duckdb() as con:
         src = read_parquet(con, "cpl_enriched")
         known = {r[0] for r in con.execute(
@@ -2369,7 +2471,10 @@ def best_qd(
             if not wm:
                 return [], 0
             eds_m = {w: month for w in wm}
-            raw = _common_rows(con, src, wm, eds_m, require_all=False)
+            # flag_any='has_discount': only scan UPCs with a quantity discount
+            # somewhere (the same gate applied to candidates below), so we skip
+            # materialising the rest of the catalogue.
+            raw = _common_rows(con, src, wm, eds_m, require_all=False, flag_any="has_discount")
             bk: dict[str, dict[str, dict]] = {}
             for r in raw:
                 bk.setdefault(r["match_key"], {})[r["wholesaler"]] = r
@@ -2588,13 +2693,15 @@ def best_qd(
               reverse=False if sort in _ascending else (order != "asc"))
     rows = rows[:limit]
 
-    return {
+    result = {
         "wholesalers": slugs,
         "months": sel_months,
         "available_months": all_eds,
         "total": total,
         "rows": rows,
     }
+    _board_cache_put(cache_key, result)
+    return result
 
 
 def assistant_rip_comparison(con, match: str, wholesalers: Optional[list[str]] = None,

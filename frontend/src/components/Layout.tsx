@@ -36,7 +36,7 @@ const NAV_GROUPS: {
     items: [
       { path: '/catalog', label: 'Catalog', icon: Package, adminOnly: true },
       { path: '/products', label: 'Products', icon: LayoutGrid },
-      { path: '/rips-soon', label: 'RIPs', icon: BadgeDollarSign, soon: true },
+      { path: '/best-rips', label: 'RIPs', icon: BadgeDollarSign },
       { path: '/best-qd', label: 'QD', icon: Percent },
       { path: '/combos', label: 'Combos', icon: Combine },
       { path: '/new-items', label: 'New Items', icon: Sparkles },

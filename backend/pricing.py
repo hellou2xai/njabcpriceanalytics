@@ -502,7 +502,7 @@ def attach_tiers(con, records, ref_date=None) -> None:
                   AND wholesaler IN ({ph_ws})
                   AND edition IN ({ph_ed})
             """, rp).fetchdf()
-            for _, c in cr_rows.iterrows():
+            for c in cr_rows.to_dict("records"):
                 credit_map[(str(c["rip_code"]), c["wholesaler"], c["edition"],
                             str(c["upc"]))] = c
         except Exception:
@@ -527,12 +527,12 @@ def attach_tiers(con, records, ref_date=None) -> None:
                 HAVING COUNT(DISTINCT rc.case_credit) = 1
             """, {k: v for k, v in rp.items()
                   if k.startswith("ws_") or k.startswith("ed_")}).fetchdf()
-            for _, c in crp.iterrows():
+            for c in crp.to_dict("records"):
                 credit_pack[(str(c["rip_code"]), c["wholesaler"], c["edition"],
                              str(c["uv"] or ""), str(c["uqn"] or ""))] = float(c["case_credit"])
         except Exception:
             pass
-        for _, r in rip_rows.iterrows():
+        for r in rip_rows.to_dict("records"):
             # Time-sensitive flag for THIS RIP source row, attached to every
             # tier it produces. The buyer sees the tier in the ladder either
             # way, but the UI can render it distinctly. derive.py excludes
@@ -629,7 +629,7 @@ def attach_tiers(con, records, ref_date=None) -> None:
                   AND NOT (EXTRACT(day FROM CAST(from_date AS DATE)) = 1
                            AND CAST(to_date AS DATE) = (date_trunc('month', CAST(to_date AS DATE)) + INTERVAL 1 MONTH - INTERVAL 1 DAY))
             """, pp).fetchdf()
-            for _, r in prows.iterrows():
+            for r in prows.to_dict("records"):
                 part_rows.setdefault((r["wholesaler"], r["edition"], str(r["un"])), []).append(r)
         except Exception:
             part_rows = {}
@@ -657,7 +657,7 @@ def attach_tiers(con, records, ref_date=None) -> None:
                        OR (EXTRACT(day FROM CAST(from_date AS DATE)) = 1
                            AND CAST(to_date AS DATE) = (date_trunc('month', CAST(to_date AS DATE)) + INTERVAL 1 MONTH - INTERVAL 1 DAY)))
             """, pp).fetchdf()
-            for _, r in fq.iterrows():
+            for r in fq.to_dict("records"):
                 s = full_qty.setdefault((r["wholesaler"], r["edition"], str(r["un"])), set())
                 for j in range(1, 6):
                     a = r.get(f"d{j}a")
@@ -709,7 +709,7 @@ def attach_tiers(con, records, ref_date=None) -> None:
                   AND from_date IS NOT NULL AND to_date IS NOT NULL
                   AND (rip_amt_1 > 0 OR rip_amt_2 > 0 OR rip_amt_3 > 0 OR rip_amt_4 > 0)
             """, gp).fetchdf()
-            for _, r in gwins.iterrows():
+            for r in gwins.to_dict("records"):
                 wf, wt = _to_date(r["from_date"]), _to_date(r["to_date"])
                 ukey = (r["wholesaler"], r["edition"], str(r["un"]))
                 if wf and wt:
@@ -767,7 +767,7 @@ def attach_tiers(con, records, ref_date=None) -> None:
                   AND LTRIM(CAST(upc AS VARCHAR), '0') IN ({gu})
                 GROUP BY wholesaler, edition, LTRIM(CAST(upc AS VARCHAR), '0')
             """, gp).fetchdf()
-            for _, r in lc.iterrows():
+            for r in lc.to_dict("records"):
                 if int(r["n"]) > 1:
                     multi_listing.add((r["wholesaler"], r["edition"], str(r["un"])))
         except Exception:

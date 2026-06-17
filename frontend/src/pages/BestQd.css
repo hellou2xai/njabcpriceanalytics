@@ -1,4 +1,7 @@
-.bq-page { padding: 18px 22px 60px; max-width: 1500px; margin: 0 auto; }
+/* Full-width content area: the filter rail sits flush-left against the nav and
+   the card grid uses the whole width. (No max-width/centering — that left the
+   rail floating in a big empty gap on wide screens.) */
+.bq-page { padding: 18px 22px 60px; }
 
 /* hero */
 .bq-hero { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; }

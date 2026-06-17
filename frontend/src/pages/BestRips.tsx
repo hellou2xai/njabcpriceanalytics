@@ -239,6 +239,9 @@ export default function BestRips() {
   const [minProfit, setMinProfit] = useState(0);
   const [dists, setDists] = useState<string[]>(['allied', 'fedway', 'opici']);
   const [months, setMonths] = useState<string[]>([]);   // [] = server default (latest two)
+  const [ptype, setPtype] = useState('');        // category (server: product_type)
+  const [brand, setBrand] = useState('');        // brand (server: brand contains)
+  const [sizes, setSizes] = useState<string[]>([]);  // size (client-side on returned rows)
   const [modal, setModal] = useState<{ w: string; code: string; edition: string } | null>(null);
 
   const params = useMemo(() => ({
@@ -250,8 +253,10 @@ export default function BestRips() {
     time_sensitive_only: tsOnly,
     hide_expired: hideExpired,
     min_profit: minProfit || undefined,
+    product_type: ptype || undefined,
+    brand: brand || undefined,
     limit: 400,
-  }), [query, sort, dists, months, onlyDiff, tsOnly, hideExpired, minProfit]);
+  }), [query, sort, dists, months, onlyDiff, tsOnly, hideExpired, minProfit, ptype, brand]);
 
   const { data, isLoading, isFetching, error } = useQuery({
     queryKey: ['best-rips', params],
@@ -265,9 +270,27 @@ export default function BestRips() {
 
   // Selected months default to the server's choice (latest two) until the user picks.
   const selMonths = months.length ? months : (data?.months ?? []);
+
+  // Facet options derived from the loaded board (data-scoped, like Price Movers).
+  const catOpts = useMemo(
+    () => Array.from(new Set((data?.rows ?? []).map(r => r.product_type).filter(Boolean) as string[])).sort(),
+    [data]);
+  const brandOpts = useMemo(
+    () => Array.from(new Set((data?.rows ?? []).map(r => r.brand).filter(Boolean) as string[])).sort(),
+    [data]);
+  const sizeOpts = useMemo(
+    () => Array.from(new Set((data?.rows ?? []).map(r => r.unit_volume).filter(Boolean) as string[])).sort(),
+    [data]);
+  // Size narrows the already-fetched rows client-side (the board API has no size param).
+  const rows = useMemo(() => {
+    const all = data?.rows ?? [];
+    return sizes.length ? all.filter(r => sizes.includes(r.unit_volume ?? '')) : all;
+  }, [data, sizes]);
+
   const resetFilters = () => {
     setQuery(''); setSort('best_profit'); setOnlyDiff(false); setTsOnly(false);
     setHideExpired(true); setMinProfit(0); setDists([...DIST_OPTS]); setMonths([]);
+    setPtype(''); setBrand(''); setSizes([]);
   };
 
   const sections: FilterSection[] = [
@@ -281,6 +304,17 @@ export default function BestRips() {
       options: DIST_OPTS.map(w => ({ label: distributorName(w), value: w })),
       values: dists,
       onChange: (vals) => setDists(vals.length ? DIST_OPTS.filter(d => vals.includes(d)) : dists) },
+    { type: 'select', key: 'cat', title: 'Category', placeholder: 'All categories',
+      value: ptype, options: catOpts.map(c => ({ label: c, value: c })), onChange: setPtype },
+    { type: 'select', key: 'brand', title: 'Brand', placeholder: 'All brands',
+      value: brand, options: brandOpts.map(b => ({ label: b, value: b })), onChange: setBrand },
+    ...(sizeOpts.length > 0
+      ? [{
+          type: 'multi-pills', key: 'size', title: 'Size',
+          options: sizeOpts.map(s => ({ label: s, value: s })),
+          values: sizes, onChange: (vals: string[]) => setSizes(vals),
+        } as FilterSection]
+      : []),
     ...(data && data.available_months.length > 0
       ? [{
           type: 'multi-pills', key: 'months', title: 'Months',
@@ -328,16 +362,16 @@ export default function BestRips() {
       {data && !isLoading && (
         <>
           <div className="br-count">
-            Showing {data.rows.length} of {data.total.toLocaleString()} RIPs
+            Showing {rows.length} of {data.total.toLocaleString()} RIPs
             {onlyDiff ? ' where the distributors differ' : ` across ${data.wholesalers.map(distributorName).join(', ')}`}
-            {data.total > data.rows.length && ' — refine with search or sort to narrow'}
+            {data.total > rows.length && ' — refine with search or sort to narrow'}
             {isFetching && <span className="br-updating"> · updating…</span>}
           </div>
-          {data.rows.length === 0 ? (
+          {rows.length === 0 ? (
             <div className="br-empty">No RIPs match these filters.</div>
           ) : (
             <div className="br-grid">
-              {data.rows.map((row: BestRipRow) => (
+              {rows.map((row: BestRipRow) => (
                 <Card key={row.match_key} row={row} slugs={data.wholesalers}
                   onRipClick={(w, code, edition) => setModal({ w, code, edition })} />
               ))}

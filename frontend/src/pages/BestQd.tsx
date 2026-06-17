@@ -236,6 +236,9 @@ export default function BestQd() {
   const [minDiscount, setMinDiscount] = useState(0);
   const [dists, setDists] = useState<string[]>(['allied', 'fedway', 'opici']);
   const [months, setMonths] = useState<string[]>([]);   // [] = server default (latest two)
+  const [ptype, setPtype] = useState('');        // category (server: product_type)
+  const [brand, setBrand] = useState('');        // brand (server: brand contains)
+  const [sizes, setSizes] = useState<string[]>([]);  // size (client-side on returned rows)
 
   const params = useMemo(() => ({
     q: query || undefined,
@@ -246,8 +249,10 @@ export default function BestQd() {
     time_sensitive_only: tsOnly,
     hide_expired: hideExpired,
     min_discount: minDiscount || undefined,
+    product_type: ptype || undefined,
+    brand: brand || undefined,
     limit: 400,
-  }), [query, sort, dists, months, onlyDiff, tsOnly, hideExpired, minDiscount]);
+  }), [query, sort, dists, months, onlyDiff, tsOnly, hideExpired, minDiscount, ptype, brand]);
 
   const { data, isLoading, isFetching, error } = useQuery({
     queryKey: ['best-qd', params],
@@ -259,9 +264,26 @@ export default function BestQd() {
 
   const selMonths = months.length ? months : (data?.months ?? []);
 
+  // Facet options derived from the loaded board (data-scoped, like Price Movers).
+  const catOpts = useMemo(
+    () => Array.from(new Set((data?.rows ?? []).map(r => r.product_type).filter(Boolean) as string[])).sort(),
+    [data]);
+  const brandOpts = useMemo(
+    () => Array.from(new Set((data?.rows ?? []).map(r => r.brand).filter(Boolean) as string[])).sort(),
+    [data]);
+  const sizeOpts = useMemo(
+    () => Array.from(new Set((data?.rows ?? []).map(r => r.unit_volume).filter(Boolean) as string[])).sort(),
+    [data]);
+  // Size narrows the already-fetched rows client-side (the board API has no size param).
+  const rows = useMemo(() => {
+    const all = data?.rows ?? [];
+    return sizes.length ? all.filter(r => sizes.includes(r.unit_volume ?? '')) : all;
+  }, [data, sizes]);
+
   const resetFilters = () => {
     setQuery(''); setSort('best_discount'); setOnlyDiff(false); setTsOnly(false);
     setHideExpired(true); setMinDiscount(0); setDists([...DIST_OPTS]); setMonths([]);
+    setPtype(''); setBrand(''); setSizes([]);
   };
 
   const sections: FilterSection[] = [
@@ -275,6 +297,17 @@ export default function BestQd() {
       options: DIST_OPTS.map(w => ({ label: distributorName(w), value: w })),
       values: dists,
       onChange: (vals) => setDists(vals.length ? DIST_OPTS.filter(d => vals.includes(d)) : dists) },
+    { type: 'select', key: 'cat', title: 'Category', placeholder: 'All categories',
+      value: ptype, options: catOpts.map(c => ({ label: c, value: c })), onChange: setPtype },
+    { type: 'select', key: 'brand', title: 'Brand', placeholder: 'All brands',
+      value: brand, options: brandOpts.map(b => ({ label: b, value: b })), onChange: setBrand },
+    ...(sizeOpts.length > 0
+      ? [{
+          type: 'multi-pills', key: 'size', title: 'Size',
+          options: sizeOpts.map(s => ({ label: s, value: s })),
+          values: sizes, onChange: (vals: string[]) => setSizes(vals),
+        } as FilterSection]
+      : []),
     ...(data && data.available_months.length > 0
       ? [{
           type: 'multi-pills', key: 'months', title: 'Months',
@@ -323,16 +356,16 @@ export default function BestQd() {
       {data && !isLoading && (
         <>
           <div className="bq-count">
-            Showing {data.rows.length} of {data.total.toLocaleString()} products with a quantity discount
+            Showing {rows.length} of {data.total.toLocaleString()} products with a quantity discount
             {onlyDiff ? ' where the distributors differ' : ` across ${data.wholesalers.map(distributorName).join(', ')}`}
-            {data.total > data.rows.length && ' — refine with search or sort to narrow'}
+            {data.total > rows.length && ' — refine with search or sort to narrow'}
             {isFetching && <span className="bq-updating"> · updating…</span>}
           </div>
-          {data.rows.length === 0 ? (
+          {rows.length === 0 ? (
             <div className="bq-empty">No quantity discounts match these filters.</div>
           ) : (
             <div className="bq-grid">
-              {data.rows.map((row: BestQdRow) => (
+              {rows.map((row: BestQdRow) => (
                 <Card key={row.match_key} row={row} slugs={data.wholesalers} />
               ))}
             </div>

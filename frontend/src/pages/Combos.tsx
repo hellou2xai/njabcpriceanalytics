@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { deals, cart, type Combo } from '../lib/api';
+import { deals, cart, catalog, type Combo } from '../lib/api';
 import SortableTable from '../components/SortableTable';
 import RowLimitSelect from '../components/RowLimitSelect';
 import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
@@ -14,6 +14,13 @@ import DataLoading from '../components/DataLoading';
 
 const $ = (v: number | null | undefined, d = 2) =>
   v == null ? '—' : `$${Number(v).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d })}`;
+
+const _MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** 'YYYY-MM' -> 'Jul 2026'. */
+function monthLabel(ed: string): string {
+  const m = /^(\d{4})-(\d{1,2})/.exec(ed);
+  return m ? `${_MONTHS[parseInt(m[2], 10) - 1] ?? ''} ${m[1]}`.trim() : ed;
+}
 
 const fmtDate = (d?: string | null): string | null => {
   if (!d) return null;
@@ -502,13 +509,23 @@ export default function Combos() {
   const [q, setQ] = useState(searchParams.get('code') ?? '');
   const [minSavings, setMinSavings] = useState('');
   const [validity, setValidity] = useState('');
+  // Which edition's combos to load ('' = current month basis, with this/next
+  // outlook). A specific YYYY-MM shows that month's combos.
+  const [comboMonth, setComboMonth] = useState('');
   const [limit, setLimit] = useState(100);
   const [detailCombo, setDetailCombo] = useState<Combo | null>(null);
 
+  // Loaded editions for the "Combo month" picker (most recent first).
+  const { data: editionsData } = useQuery({ queryKey: ['combo-editions'], queryFn: catalog.editions });
+  const monthOpts = useMemo(
+    () => [...new Set((editionsData ?? []).map(e => e.edition))].sort().reverse().slice(0, 6),
+    [editionsData]);
+
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['combos', wholesaler, q],
+    queryKey: ['combos', wholesaler, q, comboMonth],
     // Fetch all combos; the row-limit below pages them client-side.
-    queryFn: () => deals.combos({ wholesaler: wholesaler || undefined, q: q || undefined, limit: 100000 }),
+    queryFn: () => deals.combos({ wholesaler: wholesaler || undefined, q: q || undefined,
+      edition: comboMonth || undefined, limit: 100000 }),
   });
 
   const items = useMemo(() => {
@@ -534,6 +551,9 @@ export default function Combos() {
 
   const sections: FilterSection[] = [
     { type: 'text', key: 'q', title: 'Search', placeholder: 'Combo description', value: q, onChange: setQ },
+    { type: 'select', key: 'combo_month', title: 'Combo month', placeholder: 'Current month',
+      value: comboMonth, onChange: setComboMonth,
+      options: monthOpts.map(ed => ({ value: ed, label: monthLabel(ed) })) },
     { type: 'pills', key: 'wholesaler', title: 'Distributor', options: ALL_DISTRIBUTORS, value: wholesaler, onChange: setWholesaler },
     {
       type: 'pills', key: 'min_savings', title: 'Min Savings',
@@ -555,7 +575,7 @@ export default function Combos() {
     },
   ];
 
-  const resetFilters = () => { setQ(''); setWholesaler(''); setMinSavings(''); setValidity(''); };
+  const resetFilters = () => { setQ(''); setWholesaler(''); setMinSavings(''); setValidity(''); setComboMonth(''); };
 
   return (
     <FilterSidebar storageKey="combos" sections={sections} onReset={resetFilters}>

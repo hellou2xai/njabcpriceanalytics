@@ -14,6 +14,10 @@
   --accent: #2f6fe4;
   --accent-strong: #2257bf;
   --accent-weak: color-mix(in srgb, var(--accent) 9%, transparent);
+  /* Design-system highlight: the ONE accent for the "best / changed / standout"
+     value (red font on yellow). See frontend/DESIGN_SYSTEM.md §2. */
+  --hl-fg: #dc2626;
+  --hl-bg: #fef9c3;
   --green: #1f7e45;
   --red: #dc2626;
   --orange: #ea580c;
@@ -2955,10 +2959,15 @@ tr:hover .row-menu-btn { opacity: 1; }
    amount/percent reads as red font on a yellow highlight so the movement pops,
    consistent with the Edition Comparison breakdown. */
 .pm-diff {
-  color: #dc2626; background: #fef9c3; border-radius: 4px;
+  color: var(--hl-fg); background: var(--hl-bg); border-radius: 4px;
   padding: 0 5px; font-weight: 700;
 }
-.pm-diff strong { color: #dc2626; }
+.pm-diff strong { color: var(--hl-fg); }
+
+/* Design-system "best / changed / standout" utility (DESIGN_SYSTEM.md §2).
+   Prefer this over re-hardcoding the red-on-yellow accent. */
+.hl-best { color: var(--hl-fg); background: var(--hl-bg); border-radius: 4px; padding: 0 4px; font-weight: 700; }
+.hl-best * { color: var(--hl-fg); }
 
 .mes-popover {
   position: absolute; left: 50%; bottom: calc(100% + 8px);
@@ -5574,7 +5583,7 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
    right edge) is never clipped by overflow. */
 .prod-filter-rail-body {
   background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 6px 0;
+  border-radius: var(--radius); padding: 6px 0 16px;
   max-height: calc(100vh - 24px); overflow-y: auto; overflow-x: hidden;
 }
 /* In the narrow (248px) rail, TEXT inputs + selects must be FLUID — the
@@ -5626,7 +5635,10 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 .prod-filter-chev.is-collapsed { transform: rotate(180deg); }
 .prod-filter-sect-body { padding: 0 14px 12px; }
 .prod-filter-tracked { margin-bottom: 8px; }
-.prod-filter-list { display: flex; flex-direction: column; gap: 2px; max-height: 240px; overflow-y: auto; }
+/* overflow-x: hidden is REQUIRED: overflow-y:auto otherwise computes overflow-x
+   to auto, and a long facet label (ellipsis aside) triggers a horizontal
+   scrollbar inside the list. Rows truncate via .prod-filter-check below. */
+.prod-filter-list { display: flex; flex-direction: column; gap: 2px; max-height: 240px; overflow-y: auto; overflow-x: hidden; }
 .prod-filter-check {
   display: flex; align-items: center; gap: 8px; padding: 5px 2px; cursor: pointer;
   font-size: 13px; color: var(--text);

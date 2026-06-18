@@ -841,6 +841,7 @@ export interface Price360Offer {
   invoice_btl: number | null;
   net_case: number | null;
   net_btl: number | null;
+  next_net_case: number | null;   // next month's effective case price, when loaded
   rip_rebate_full: number;
   rip_rebate_credited: number;
   savings_case: number;
@@ -904,6 +905,8 @@ export interface RipTierRow {
 }
 export interface CompareRipDist {
   frontline: number | null;
+  edition?: string | null;          // source edition (for the next-month label)
+  next_net_case?: number | null;    // next month's effective case price, when loaded
   abv_proof: string | null;
   vintage: string | null;       // this distributor's own vintage (4-digit), for the card
   landed_at_n: number | null;

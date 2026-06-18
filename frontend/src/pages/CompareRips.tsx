@@ -10,6 +10,7 @@ import { compare } from '../lib/api';
 import type { CompareRipRow, CompareRipDist } from '../lib/api';
 import { distributorName, perUnitNoun, priceUnitWord } from '../lib/distributors';
 import ProductSearchBox from '../components/ProductSearchBox';
+import NextMonthChip from '../components/NextMonthChip';
 import RowActions from '../components/RowActions';
 import RipMembersModal from '../components/RipMembersModal';
 import PriceSparklines from '../components/PriceSparklines';
@@ -197,6 +198,7 @@ function DistPanel({ w, d, row, cases, accent, isWinner, edition, onRipClick }: 
         price per case when buying {cases} case{cases !== 1 ? 's' : ''}
         {myTotal != null && <span className="rip2-dist-total"> · {money(myTotal)} total outlay</span>}
       </div>
+      <NextMonthChip current={d.landed_at_n} next={d.next_net_case} edition={d.edition} />
       {/* Two price layers: List, then the price AFTER the quantity discount, then
           the price AFTER the RIP (= what you pay). Each step shows the running
           price plus the amount it took off, so it reconciles to the headline. */}

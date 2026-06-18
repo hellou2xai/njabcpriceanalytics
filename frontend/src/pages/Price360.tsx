@@ -6,6 +6,7 @@ import { compare } from '../lib/api';
 import type { Price360Offer } from '../lib/api';
 import { distributorName, priceUnitWord, perUnitNoun, isKegUnit } from '../lib/distributors';
 import ProductSearchBox from '../components/ProductSearchBox';
+import NextMonthChip from '../components/NextMonthChip';
 import RowActions from '../components/RowActions';
 import { ErrorState } from '../components/DataState';
 import DataLoading from '../components/DataLoading';
@@ -55,6 +56,7 @@ function OfferCard({ offer, onProduct, tie, unitVolume, unitQty, unitType }: {
           {o.frontline_case != null && o.frontline_case !== o.net_case && (
             <span className="p360-front">{money(o.frontline_case)}</span>
           )}
+          <NextMonthChip current={o.net_case} next={o.next_net_case} edition={o.edition} />
         </div>
         {/* secondary: savings (never dominant) */}
         {o.savings_case > 0 && (

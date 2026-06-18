@@ -304,7 +304,7 @@ def _common_rows(con, src: str, slugs: list[str], eds: dict[str, str],
                from_date, to_date,
                frontline_case_price, frontline_unit_price,
                best_case_price, best_unit_price,
-               effective_case_price, rip_savings, total_savings_per_case,
+               effective_case_price, next_effective_case_price, rip_savings, total_savings_per_case,
                has_discount, has_rip, rip_code, rip_windows,
                discount_1_qty, discount_1_amt, discount_2_qty, discount_2_amt,
                discount_3_qty, discount_3_amt, discount_4_qty, discount_4_amt,
@@ -1727,12 +1727,17 @@ def compare_rips(
                 unlock_cases = unlock_investment = unlock_rebate_total = None
             dists[w] = {
                 "frontline": front,
+                "edition": rec.get("edition"),
                 "abv_proof": rec.get("abv_proof"),
                 # this distributor's OWN vintage (normalised 4-digit), so the card
                 # can show it per side and the buyer sees both years are the same.
                 "vintage": rec.get("vintage_norm") or rec.get("vintage"),
                 "landed_at_n": _landed_at(tiers, front, n, pack),
                 "landed_at_1": _landed_at(tiers, front, 1, pack),
+                # Next month's effective case price (when that edition is loaded),
+                # for the next-month visibility chip beside this month's landed cost.
+                "next_net_case": (round(float(rec["next_effective_case_price"]), 2)
+                                  if rec.get("next_effective_case_price") is not None else None),
                 "rip_at_1": rip_1,
                 "rip_at_n": rip_n,
                 # per-bottle normalisation (rebate $ spread over the pack)
@@ -3123,6 +3128,10 @@ def price360_offers(con, match: str, typical_map: Optional[dict] = None,
             "invoice_case": invoice_case,
             "invoice_btl": rec.get("best_unit_price"),
             "net_case": net_case, "net_btl": round(net_case / pack, 2) if pack else None,
+            # Next month's effective case price (when that edition is loaded), so
+            # the label can show "what I'll pay next month" alongside this month.
+            "next_net_case": (round(float(rec["next_effective_case_price"]), 2)
+                              if rec.get("next_effective_case_price") is not None else None),
             "rip_rebate_full": rip_rebate,
             "rip_rebate_credited": reach["credited_rebate"],
             "savings_case": sav_case, "savings_pct": sav_pct,

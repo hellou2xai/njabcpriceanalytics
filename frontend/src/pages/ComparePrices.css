@@ -124,7 +124,13 @@
 .cmp-table .cmp-sep { border-left: 2px solid color-mix(in srgb, var(--border) 80%, var(--text-muted)); }
 
 /* Per-distributor UPC + vendor item number in the expanded ladder. */
-.cmp-ladder-ids { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 10.5px; color: var(--text-muted); margin: 1px 0 4px; font-variant-numeric: tabular-nums; }
+.cmp-ladder-ids { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 10px; font-size: 10.5px; color: var(--text-muted); margin: 1px 0 4px; font-variant-numeric: tabular-nums; }
+/* Vintage stands out — the key wine identifier for near-identical SKUs. */
+.cmp-ladder-vintage {
+  font-weight: 700; color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-radius: 5px; padding: 0 6px;
+}
 
 /* Expand-all / collapse-all toggle. */
 .cmp-expandall { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; font-weight: 600; color: var(--accent); background: none; border: 1px solid var(--border); border-radius: 8px; padding: 4px 9px; cursor: pointer; }

@@ -1034,7 +1034,7 @@ def compare_tiers(
         ed_pred, ed_params = _edition_pred(slugs, eds)
         df = con.execute(f"""
             SELECT wholesaler, edition, upc, product_name, product_type,
-                   unit_qty, unit_volume, vintage, rip_code, dist_item_no,
+                   unit_qty, unit_volume, vintage, abv_proof, rip_code, dist_item_no,
                    frontline_case_price, frontline_unit_price,
                    best_case_price, effective_case_price,
                    discount_1_qty, discount_1_amt, discount_2_qty, discount_2_amt,
@@ -1090,6 +1090,8 @@ def compare_tiers(
             "unit_qty": rec.get("unit_qty"),
             "unit_volume": rec.get("unit_volume"),
             "vintage": rec.get("vintage"),
+            "abv_proof": rec.get("abv_proof"),
+            "product_type": rec.get("product_type"),
             "abg_sku": rec.get("abg_sku"),
             "frontline": rec.get("frontline_case_price"),
             "after_qd": rec.get("_live_qd"),

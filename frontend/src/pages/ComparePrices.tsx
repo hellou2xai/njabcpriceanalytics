@@ -248,12 +248,22 @@ function LadderPanel({ slugs, params, onOpen }: {
                 {lad.unit_volume ? <span className="cmp-ladder-size"> · {lad.unit_qty} × {lad.unit_volume}</span> : null}
               </button>
             )}
-            {lad && (abgSku(w, lad.abg_sku) || lad.upc) && (
-              <div className="cmp-ladder-ids">
-                {abgSku(w, lad.abg_sku) && <span>{skuLabel(w)} {lad.abg_sku}</span>}
-                {lad.upc && <span>UPC {lad.upc}</span>}
-              </div>
-            )}
+            {/* Identifying info so near-identical SKUs are distinguishable:
+                vintage (wine), proof/ABV, this distributor's item number, UPC. */}
+            {lad && (() => {
+              const vint = lad.vintage && !/^(0|0\.0+|na|n\/a|nv|none)$/i.test(String(lad.vintage)) ? String(lad.vintage) : null;
+              const proof = lad.abv_proof && !/^(0|0\.0+|na|n\/a|none|nan)$/i.test(String(lad.abv_proof)) ? String(lad.abv_proof) : null;
+              const sku = abgSku(w, lad.abg_sku);
+              if (!vint && !proof && !sku && !lad.upc) return null;
+              return (
+                <div className="cmp-ladder-ids">
+                  {vint && <span className="cmp-ladder-vintage">Vintage {vint}</span>}
+                  {proof && <span>{proof} proof/ABV</span>}
+                  {sku && <span>{skuLabel(w)} {lad.abg_sku}</span>}
+                  {lad.upc && <span>UPC {lad.upc}</span>}
+                </div>
+              );
+            })()}
             {!lad ? <div className="cmp-ladder-none">Not found</div> : (
               <>
                 <div className="cmp-ladder-line cmp-ladder-front">

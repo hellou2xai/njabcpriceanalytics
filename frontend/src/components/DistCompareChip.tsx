@@ -176,6 +176,12 @@ export default function DistCompareChip({ sizes, selfWholesaler }: { sizes: Prod
   // Per-case equivalent only when this card's pack is known (at its pack size).
   const saveCs = saveBtl > 0 && self?.pack ? saveBtl * self.pack : 0;
 
+  // On a distributor card, only surface the chip when a DIFFERENT distributor is
+  // genuinely cheaper (actionable savings). If this card's distributor is the
+  // cheapest or tied, suppress the chip — a "you're already best / it's a tie"
+  // badge is just noise.
+  if (selfWholesaler && selfIsBest) return null;
+
   return (
     <span
       className={`dcc${selfWholesaler ? ' dcc-self' : ''}${selfIsBest ? ' dcc-isbest' : ''}`}

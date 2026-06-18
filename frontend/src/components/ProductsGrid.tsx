@@ -28,7 +28,7 @@ import DistCompareChip from './DistCompareChip';
 import TierBadge from './TierBadge';
 import { buildMonths } from '../lib/promotionsSparkline';
 import { catalog } from '../lib/api';
-import { useProductSizes, bottlesPerCase, stripHeaderVintage } from '../lib/productSizes';
+import { useProductSizes, bottlesPerCase, stripHeaderVintage, sizeToMl } from '../lib/productSizes';
 import { useComboLink } from '../lib/comboLink';
 import { distributorName, abgSku, skuLabel, containerTitle, containerNoun, packPhrase, priceUnitWord, perUnitNoun, isKegUnit } from '../lib/distributors';
 import { isRealUpc } from '../lib/upc';
@@ -391,8 +391,9 @@ function nestByDistributor(sizes: Product[], pageWholesaler: string) {
   });
 }
 
-function SizeRow({ size, cart, updateQty, primaryName, showDeals = true, hideDist = false }: {
+function SizeRow({ size, cart, updateQty, primaryName, showDeals = true, hideDist = false, crossDist }: {
   size: Product;
+  crossDist?: Product[];   // cross-distributor rows (rep UPC) for the per-item best-price chip
   cart: CartState;
   updateQty: (key: string, field: 'cases' | 'units', value: number) => void;
   primaryName?: string;
@@ -418,6 +419,9 @@ function SizeRow({ size, cart, updateQty, primaryName, showDeals = true, hideDis
   // deals can never disagree with the chart (the row's flat `tiers` array can
   // be dropped on the multi-UPC variant search while price_3mo survives).
   const months = buildMonths(size);
+  // Same-size rows across distributors (from the card's cross-distributor fetch),
+  // for the per-item cheaper-distributor chip. Empty for sizes not in that fetch.
+  const sizeSibs = (crossDist ?? []).filter(p => sizeToMl(p.unit_volume) === sizeToMl(size.unit_volume));
   return (
     <div className="prod-size-row">
       <Link to={detailUrl(size.wholesaler, size.product_name, size.upc, size.unit_volume)} className="prod-size-id"
@@ -440,6 +444,10 @@ function SizeRow({ size, cart, updateQty, primaryName, showDeals = true, hideDis
       </Link>
       <div className="prod-size-price">
         <span className="prod-size-badges">
+          {/* Per-item: which month this size's price is best in, and (when a
+              cheaper distributor exists for THIS size) the best-price chip. */}
+          <BetterMonthSticker s={size} />
+          <DistCompareChip sizes={sizeSibs} selfWholesaler={size.wholesaler} />
           <IntroSticker ym={size.introduced_edition} />
           {size.has_discount && <TierBadge kind="qd" />}
           {size.has_rip && <TierBadge kind="rip" />}
@@ -649,16 +657,16 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
               </span>
             )}
           </div>
+          {/* Group header keeps only family-level stickers. The better-price
+              month tag AND the cheaper-distributor chip moved to the individual
+              size rows below — the group isn't always the right unit for either
+              (sizes differ on which month/distributor wins). */}
           <div className="prod-card-stickers" onClick={e => e.stopPropagation()}>
-            <BetterMonthSticker s={rep} repRow={repRow} />
             <IntroSticker ym={group.sizes.reduce<string | null>(
               (mx, s) => (s.introduced_edition && (!mx || s.introduced_edition > mx)
                 ? s.introduced_edition : mx), null)} />
             <DealTimingSticker deals={repRow?.deal_windows ?? []} gaps={repRow?.rip_gaps}
               everyDay={everyDayFromTiers(repRow?.tiers, repRow?.frontline_case_price)} />
-            {/* Best-price-across-distributors nudge for THIS card's SKU; hover
-                shows the full per-distributor QD + RIP ladder. */}
-            <DistCompareChip sizes={crossDistRows} selfWholesaler={group.wholesaler} />
           </div>
           {/* Sparkline sits next to the name so its hover tooltip opens over the
               left/content area, not off the right edge. */}
@@ -705,7 +713,7 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
             // Flat mode: one card == one distributor+size; no nesting needed.
             sizes.map((size, i) => (
               <SizeRow key={`${size.product_name}|${size.upc ?? ''}|${size.unit_volume ?? ''}|${i}`}
-                size={size} cart={cart} updateQty={updateQty} primaryName={group.displayName} showDeals={showDeals} />
+                size={size} cart={cart} updateQty={updateQty} primaryName={group.displayName} showDeals={showDeals} crossDist={crossDistRows} />
             ))
           ) : (
             // Grouped (CELR family) card: Distributor -> Distributor Product Name -> sizes.
@@ -727,7 +735,7 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
                     {p.sizes.map((size, i) => (
                       <SizeRow key={`${size.upc ?? ''}|${size.unit_volume ?? ''}|${i}`}
                         size={size} cart={cart} updateQty={updateQty} primaryName={p.name}
-                        showDeals={showDeals} hideDist />
+                        showDeals={showDeals} hideDist crossDist={crossDistRows} />
                     ))}
                   </div>
                 ))}

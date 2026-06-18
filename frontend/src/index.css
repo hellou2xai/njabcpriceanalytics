@@ -5585,6 +5585,7 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 6px 0 16px;
   max-height: calc(100vh - 24px); overflow-y: auto; overflow-x: hidden;
+  scrollbar-gutter: stable;
 }
 /* In the narrow (248px) rail, TEXT inputs + selects must be FLUID — the
    toolbar-era min-widths (140/180px) plus non-border-box sizing forced a

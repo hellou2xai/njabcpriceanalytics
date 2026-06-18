@@ -1,7 +1,9 @@
 """
 Opici Family Distributing — wholesaler config.
 
-Files: "2026 {Month} Price File.xlsx"
+Files: "2026 {Month} Price File.xlsx" or "OPICI 2026 {Month} Price File.xlsx"
+       (the distributor started prefixing the workbook name with "OPICI" in
+       the July 2026 edition; both forms are matched below)
 Sheets: Template, CPL, RIP, COMBO
 Notes:
   - 5 discount tiers (most wholesalers have 3)
@@ -29,5 +31,5 @@ CONFIG = {
         "VERMOUTH": "Vermouth",
     },
     "skip_sheets": ["template"],
-    "file_pattern": "2026*Price File*.xlsx",
+    "file_pattern": ["2026*Price File*.xlsx", "OPICI*Price File*.xlsx"],
 }

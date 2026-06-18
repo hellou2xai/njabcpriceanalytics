@@ -5828,13 +5828,33 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .prod-distprod-group:first-child { border-top: 0; }
 .prod-distprod-head { padding: 6px 16px 2px; font-size: 12.5px; font-weight: 600;
   color: var(--text-muted); }
+/* Identity + price + order on the top row; the (wide) deal ladder gets its own
+   full-width row below so it never has to scroll inside a cramped column, and
+   the order block (steppers + Add to cart/list) top-aligns instead of floating
+   in the middle with a big gap. Grid AREAS so DOM order is irrelevant. */
 .prod-size-row {
-  display: grid; grid-template-columns: 1.3fr 1fr 1.5fr auto; gap: 16px; align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) auto;
+  grid-template-areas:
+    "id price order"
+    "deals deals deals";
+  gap: 8px 16px; align-items: start;
   padding: 14px 16px 14px 64px; border-bottom: 1px solid var(--border);
 }
-@media (max-width: 1100px) { .prod-size-row { grid-template-columns: 1.3fr 1fr auto; } .prod-size-deals { grid-column: 1 / -1; } }
+.prod-size-id { grid-area: id; }
+.prod-size-price { grid-area: price; }
+.prod-size-order { grid-area: order; }
+.prod-size-deals { grid-area: deals; }
 .prod-size-row:last-child { border-bottom: 0; }
-@media (max-width: 720px) { .prod-size-row { grid-template-columns: 1fr; padding-left: 16px; gap: 10px; } }
+/* Narrow: stack everything in one column, deals before the order block. */
+@media (max-width: 720px) {
+  .prod-size-row {
+    grid-template-columns: 1fr;
+    grid-template-areas: "id" "price" "deals" "order";
+    padding-left: 16px; gap: 10px;
+  }
+  .prod-size-order { align-items: stretch; }
+}
 .prod-size-name { font-size: 15px; font-weight: 700; color: var(--text); }
 .prod-size-pack { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
 .prod-size-dist { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; font-weight: 600; color: var(--text); margin-top: 3px; }
@@ -5880,7 +5900,7 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
    Tier | Buy | $/cs | $/btl | Save. Best tier in its class = red on yellow. */
 /* Wrapper keeps the ladder inside its card: it shrinks to fit, and on very
    narrow widths scrolls horizontally instead of overlapping neighbouring text. */
-.prod-deal-wrap { width: 100%; max-width: 100%; overflow-x: auto; }
+.prod-deal-wrap { width: 100%; max-width: 560px; overflow-x: auto; }
 .prod-deal-table { width: 100%; max-width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; table-layout: auto; }
 .prod-deal-table th { text-align: left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); padding: 2px 6px; border-bottom: 1px solid var(--border); }
 .prod-deal-table th.prod-deal-num, .prod-deal-table td.prod-deal-num { text-align: right; }

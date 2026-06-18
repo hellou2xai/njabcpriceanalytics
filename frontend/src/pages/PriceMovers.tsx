@@ -404,7 +404,7 @@ function MoverCard({ d, isDrop, open }: { d: PriceMover; isDrop: boolean; open: 
         )}
         <span className="deal-now" style={{ color: colour }}>{money(headNow)}<span className="deal-unit">/cs</span></span>
         {delta != null && (
-          <span className="deal-save" style={{ color: colour }}>
+          <span className="deal-save pm-diff">
             <strong>{delta > 0 ? '+' : ''}{money(delta)}/cs</strong>{deltaPct != null ? ` · ${pct(deltaPct, true)}` : ''}
           </span>
         )}
@@ -413,8 +413,8 @@ function MoverCard({ d, isDrop, open }: { d: PriceMover; isDrop: boolean; open: 
         <div className="deal-card-listline text-muted" style={{ fontSize: 11, marginTop: -4, marginBottom: 4 }}>
           List: {money(flWas)} → <strong>{money(flNow)}</strong>
           {flDelta != null && (
-            <> ({flDelta > 0 ? '+' : ''}{money(flDelta)}
-            {flDeltaPct != null && ` · ${pct(flDeltaPct, true)}`})</>
+            <span className="pm-diff"> ({flDelta > 0 ? '+' : ''}{money(flDelta)}
+            {flDeltaPct != null && ` · ${pct(flDeltaPct, true)}`})</span>
           )}{' '}
           <span title="Effective price hides most of this list change because the RIP rebate offsets it.">· RIP absorbs</span>
         </div>

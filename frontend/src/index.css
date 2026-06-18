@@ -2951,6 +2951,15 @@ tr:hover .row-menu-btn { opacity: 1; }
 .nextmo-up   { color: var(--red, #dc2626);  border-color: color-mix(in srgb, var(--red, #dc2626) 45%, var(--border)); }
 .nextmo-flat { color: var(--text-muted); }
 
+/* Month-over-month DIFF emphasis (Price Drops / Increases cards): the change
+   amount/percent reads as red font on a yellow highlight so the movement pops,
+   consistent with the Edition Comparison breakdown. */
+.pm-diff {
+  color: #dc2626; background: #fef9c3; border-radius: 4px;
+  padding: 0 5px; font-weight: 700;
+}
+.pm-diff strong { color: #dc2626; }
+
 .mes-popover {
   position: absolute; left: 50%; bottom: calc(100% + 8px);
   transform: translateX(-50%); z-index: 100;

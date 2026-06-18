@@ -688,6 +688,17 @@ export default function Combos() {
               render: r => r.availability === 'ending'
                 ? <span className="text-muted">Ends</span>
                 : <span className="text-green">{$(r.next_total_savings)}</span> },
+            { key: 'valid_from', label: 'Valid From', sortable: true,
+              exportValue: r => (validity === 'next' ? (r.next_valid_from ?? r.valid_from) : r.valid_from) ?? '',
+              render: r => {
+                // Match the Valid Through column: under "next month" show the
+                // next-month start so a continuing combo reads its July dates.
+                const vf = validity === 'next' ? (r.next_valid_from ?? r.valid_from) : r.valid_from;
+                const vt = validity === 'next' ? (r.next_valid_through ?? r.valid_through) : r.valid_through;
+                return vf
+                  ? <span style={{ fontSize: 12.5 }} title={vt ? `${fmtDate(vf)} to ${fmtDate(vt)}` : undefined}>{fmtDate(vf)}</span>
+                  : <span className="text-muted">—</span>;
+              } },
             { key: 'valid_through', label: 'Valid Through', sortable: true,
               exportValue: r => (validity === 'next' ? (r.next_valid_through ?? r.valid_through) : r.valid_through) ?? '',
               render: r => {

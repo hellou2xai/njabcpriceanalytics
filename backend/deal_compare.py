@@ -20,6 +20,7 @@ change flags, and a best-time-to-buy summary, then returns the list.
 from __future__ import annotations
 
 from backend.ai_catalog_query import _current_ym
+from backend.pricing import _clean_upc
 
 _MONTHS = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -93,7 +94,11 @@ def deal_compare(con, products: list[dict], cap: int = 60) -> list[dict]:
     for p in subset:
         ws = p.get("wholesaler")
         un = _upc_norm(p.get("upc"))
-        if not ws or not un or ws not in eds:
+        # Only REAL barcodes key the month-over-month lookup. A placeholder stub
+        # ('0', '1111', repeated-digit, short) is shared by many products, so
+        # grouping by it would borrow a stranger's deal trend. Skip enrichment
+        # for those rather than show wrong economics.
+        if not ws or not un or ws not in eds or not _clean_upc(p.get("upc")):
             continue
         keys.setdefault((ws, un), []).append(p)
         for k in ("prior", "current", "next"):

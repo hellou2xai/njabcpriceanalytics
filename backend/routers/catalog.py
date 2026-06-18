@@ -4036,10 +4036,17 @@ def get_rip_siblings(
         # way). Show, don't hide.
         by_upc: dict = {}
         for r in records:
-            by_upc.setdefault(str(r.get("upc") or "").lstrip("0"), []).append(r)
+            # A placeholder/junk barcode ('0', repeated-digit stub) is shared by
+            # many unrelated SKUs — never treat it as a "reused barcode" group
+            # (that welds unrelated siblings). Give each such row its own key so
+            # it passes through individually; only REAL barcodes get the
+            # multi-listing dedup below.
+            u = str(r.get("upc") or "").lstrip("0")
+            key = u if _is_clean_upc(r.get("upc")) else f"__stub_{id(r)}"
+            by_upc.setdefault(key, []).append(r)
         # UPCs that DO exist on the CPL must never get a "not in current
         # CPL" stub, even when every one of their listings is filtered out.
-        cpl_upcs = set(by_upc.keys())
+        cpl_upcs = {k for k in by_upc if not k.startswith("__stub_")}
         filtered = []
         for rows in by_upc.values():
             names = {str(r.get("product_name") or "").strip().upper() for r in rows}

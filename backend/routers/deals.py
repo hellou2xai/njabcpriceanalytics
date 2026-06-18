@@ -563,6 +563,17 @@ def get_combos(
                     "combo_price_each": _f(r.get("combo_price_each"))}
             # Track every (qty, prices) row for the CURRENT slot so a volume
             # ladder can be detected and rebuilt later.
+            # Key by UPC only when it's a REAL barcode — a placeholder ('0')
+            # is shared by unrelated components, so keying on it collapses two
+            # different products into one line. Placeholder rows key by their
+            # resolved name (+qty/price) instead. On a real-UPC clash keep the
+            # row with the higher combo_price_each so $0 duplicate halves drop.
+            _real = bool(comp["upc"]) and len(str(comp["upc"]).lstrip("0")) >= 8
+            # Identity for VOLUME-LADDER detection (same product repeated at
+            # multiple qty tiers): a real barcode, else the product name — never
+            # the shared stub, which would falsely read unrelated '0'-UPC
+            # components as one ladder.
+            _qkey = comp["upc"] if _real else ("_noupc", comp["product_name"])
             if slot == "curr":
                 qn = None
                 try:
@@ -571,13 +582,7 @@ def get_combos(
                     qn = None
                 if qn:
                     g["tier_rows"].append({**comp, "qty_n": qn})
-                    g["qtys_by_upc"].setdefault(comp["upc"], set()).add(qn)
-            # Key by UPC only when it's a REAL barcode — a placeholder ('0')
-            # is shared by unrelated components, so keying on it collapses two
-            # different products into one line. Placeholder rows key by their
-            # resolved name (+qty/price) instead. On a real-UPC clash keep the
-            # row with the higher combo_price_each so $0 duplicate halves drop.
-            _real = bool(comp["upc"]) and len(str(comp["upc"]).lstrip("0")) >= 8
+                    g["qtys_by_upc"].setdefault(_qkey, set()).add(qn)
             key = comp["upc"] if _real else ("_noupc", comp["product_name"],
                                              comp["qty_per_pack"], comp["combo_price_each"])
             bucket = g["comp_curr"] if slot == "curr" else g["comp_next"]
@@ -1830,7 +1835,10 @@ def _build_rip_items(con, wholesaler=None, product_type=None, q="", rip_code=Non
             # One-shot enrichment lookup for orphan names/brands. The
             # enrichment table is keyed by normalised UPC (leading zeros
             # stripped), same as how cpl_enriched joins it elsewhere.
-            upcs_for_lookup = sorted({k[1] for k in orphan_index.keys()})
+            # Only REAL barcodes — a placeholder stub would pull a stranger's
+            # Go-UPC name/brand onto an orphan component.
+            upcs_for_lookup = sorted({k[1] for k in orphan_index.keys()
+                                      if k[1] and len(str(k[1]).lstrip("0")) >= 8})
             enrich_map: dict = {}
             try:
                 placeholders = ", ".join(f"$u_{i}" for i in range(len(upcs_for_lookup)))

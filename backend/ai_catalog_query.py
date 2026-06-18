@@ -446,18 +446,32 @@ def _enrich_products_with_tiers(con, products: list[dict]) -> None:
     # Pull the full row for each (wholesaler, upc, unit_volume, vintage, unit_qty)
     # tuple. We use the current edition per wholesaler so the tiers we attach
     # are the ones the user actually sees on the page.
+    from backend.pricing import _clean_upc
     cym = _current_ym()
     ws_set = sorted({p.get("wholesaler") for p in products if p.get("wholesaler")})
-    upc_set = sorted({str(p.get("upc") or "") for p in products if p.get("upc")})
-    if not ws_set or not upc_set:
+    # Real barcodes fetch by UPC; placeholder stubs ('0' etc., shared by many
+    # products) fetch by (wholesaler, product_name) ONLY so they can't borrow a
+    # stranger's tiers/sparkline.
+    upc_set = sorted({str(p.get("upc") or "") for p in products if _clean_upc(p.get("upc"))})
+    name_pairs = sorted({(p.get("wholesaler"), p.get("product_name")) for p in products
+                         if not _clean_upc(p.get("upc")) and p.get("wholesaler") and p.get("product_name")})
+    if not ws_set or (not upc_set and not name_pairs):
         return
     ws_ph = ", ".join(f"$ws_{i}" for i in range(len(ws_set)))
-    upc_ph = ", ".join(f"$u_{i}" for i in range(len(upc_set)))
     params = {"cym": cym}
     for i, v in enumerate(ws_set):
         params[f"ws_{i}"] = v
-    for i, v in enumerate(upc_set):
-        params[f"u_{i}"] = v
+    where_or = []
+    if upc_set:
+        upc_ph = ", ".join(f"$u_{i}" for i in range(len(upc_set)))
+        for i, v in enumerate(upc_set):
+            params[f"u_{i}"] = v
+        where_or.append(f"c.upc IN ({upc_ph})")
+    if name_pairs:
+        np_ph = ", ".join(f"($pw_{i}, $pn_{i})" for i in range(len(name_pairs)))
+        for i, (w, n) in enumerate(name_pairs):
+            params[f"pw_{i}"], params[f"pn_{i}"] = w, n
+        where_or.append(f"(c.wholesaler, c.product_name) IN ({np_ph})")
     try:
         rows = con.execute(f"""
             WITH cur AS (
@@ -468,7 +482,7 @@ def _enrich_products_with_tiers(con, products: list[dict]) -> None:
             SELECT c.* FROM cpl_enriched c
             JOIN cur ON c.wholesaler = cur.wholesaler AND c.edition = cur.ed
             WHERE c.wholesaler IN ({ws_ph})
-              AND c.upc IN ({upc_ph})
+              AND ({" OR ".join(where_or)})
         """, params).fetchdf().to_dict(orient="records")
     except Exception:
         return
@@ -478,12 +492,19 @@ def _enrich_products_with_tiers(con, products: list[dict]) -> None:
     idx_full: dict = {}
     idx_vol: dict = {}
     idx_upc: dict = {}
+    idx_name: dict = {}   # (ws, name, vol, uq) / (ws, name, vol) / (ws, name)
     for r in rows:
-        ws = r.get("wholesaler"); upc = str(r.get("upc") or "")
+        ws = r.get("wholesaler"); raw = str(r.get("upc") or "")
+        nm = r.get("product_name") or ""
         vol = r.get("unit_volume") or ""; uq = str(r.get("unit_qty") or "")
-        idx_full[(ws, upc, vol, uq)] = r
-        idx_vol.setdefault((ws, upc, vol), r)
-        idx_upc.setdefault((ws, upc), r)
+        # UPC index ONLY for real barcodes — a placeholder stub would weld SKUs.
+        if _clean_upc(raw):
+            idx_full[(ws, raw, vol, uq)] = r
+            idx_vol.setdefault((ws, raw, vol), r)
+            idx_upc.setdefault((ws, raw), r)
+        idx_name.setdefault((ws, nm, vol, uq), r)
+        idx_name.setdefault((ws, nm, vol), r)
+        idx_name.setdefault((ws, nm), r)
     # Attach tiers on the row dicts first (one batched call), then copy the
     # tier arrays back onto the slim product dicts.
     pricing.attach_tiers(con, rows)
@@ -501,11 +522,16 @@ def _enrich_products_with_tiers(con, products: list[dict]) -> None:
     except Exception:
         pass
     for p in products:
-        ws = p.get("wholesaler"); upc = str(p.get("upc") or "")
+        ws = p.get("wholesaler"); raw = str(p.get("upc") or "")
+        nm = p.get("product_name") or ""
         vol = p.get("unit_volume") or ""; uq = str(p.get("unit_qty") or "")
-        match = (idx_full.get((ws, upc, vol, uq))
-                 or idx_vol.get((ws, upc, vol))
-                 or idx_upc.get((ws, upc)))
+        clean = _clean_upc(raw)
+        match = ((clean and (idx_full.get((ws, raw, vol, uq))
+                             or idx_vol.get((ws, raw, vol))
+                             or idx_upc.get((ws, raw))))
+                 or idx_name.get((ws, nm, vol, uq))
+                 or idx_name.get((ws, nm, vol))
+                 or idx_name.get((ws, nm)))
         if not match:
             p.setdefault("tiers", [])
             p.setdefault("discount_tiers", [])

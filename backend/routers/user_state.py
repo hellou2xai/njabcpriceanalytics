@@ -113,8 +113,12 @@ def _enrich_order_lines(lines: list[dict], ref_date: Optional[str] = None) -> li
             by_full.setdefault((ws, nm, up), rec)
             by_name[(ws, nm, vol)] = rec
             by_name.setdefault((ws, nm), rec)
-            by_upc[(ws, up, vol)] = rec
-            by_upc.setdefault((ws, up), rec)
+            # UPC-only fallback ONLY for real barcodes — a placeholder stub
+            # ('0', repeated-digit) is shared by many products and would attach a
+            # stranger's cost/tiers to an order line.
+            if _pricing._clean_upc(up):
+                by_upc[(ws, up, vol)] = rec
+                by_upc.setdefault((ws, up), rec)
 
         # RIP tiers (case-unit) for the matched rip_codes. A CPL cell can pack
         # several codes ("240002 250002") — split them so each matches its own
@@ -164,7 +168,8 @@ def _enrich_order_lines(lines: list[dict], ref_date: Optional[str] = None) -> li
             ws, up, nm, vol = l.get("wholesaler"), str(l["upc"]) if l.get("upc") else "", l.get("product_name"), l.get("unit_volume")
             rec = (by_full.get((ws, nm, up, vol)) or by_full.get((ws, nm, up))
                    or by_name.get((ws, nm, vol)) or by_name.get((ws, nm))
-                   or by_upc.get((ws, up, vol)) or by_upc.get((ws, up)))
+                   or (_pricing._clean_upc(up) and (by_upc.get((ws, up, vol)) or by_upc.get((ws, up))))
+                   or None)
             if not rec:
                 continue
             cc = rec["case_cost"] or 0.0

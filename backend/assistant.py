@@ -2789,7 +2789,11 @@ def _t_analyze_cart(con, args, ctx):
 
     def _norm(u):
         return str(u or "").lstrip("0")
-    upcs = sorted({_norm(it["upc"]) for it in items if _norm(it["upc"])})
+    # Real barcodes only: a placeholder stub ('0', '1111', repeated-digit) is
+    # shared by many products, so matching cross-distributor prices / swaps / RIP
+    # membership by it would borrow a stranger's data. Stub-UPC items get no
+    # upc-keyed comparison.
+    upcs = sorted({_norm(it["upc"]) for it in items if _norm(it["upc"]) and _pricing._clean_upc(it.get("upc"))})
     # Canonical prev / current / next effective prices (shared edition logic).
     pricing, prev_rows, next_rows, next_edition_loaded = _eff_windows(con, upcs)
     by_upc, disc_map, pack_map, front_map = {}, {}, {}, {}
@@ -3080,7 +3084,11 @@ def _t_optimize_cart(con, args, ctx):
 
     def _norm(u):
         return str(u or "").lstrip("0")
-    upcs = sorted({_norm(it["upc"]) for it in items if _norm(it["upc"])})
+    # Real barcodes only: a placeholder stub ('0', '1111', repeated-digit) is
+    # shared by many products, so matching cross-distributor prices / swaps / RIP
+    # membership by it would borrow a stranger's data. Stub-UPC items get no
+    # upc-keyed comparison.
+    upcs = sorted({_norm(it["upc"]) for it in items if _norm(it["upc"]) and _pricing._clean_upc(it.get("upc"))})
     # Cross-distributor compare on the canonical CURRENT edition (mirrors the
     # catalog). We need product_name per (w, upc), which _eff_windows doesn't carry,
     # so query directly — but with the same current-edition rule.
@@ -3159,7 +3167,11 @@ def _t_cart_timing(con, args, ctx):
 
     def _norm(u):
         return str(u or "").lstrip("0")
-    upcs = sorted({_norm(it["upc"]) for it in items if _norm(it["upc"])})
+    # Real barcodes only: a placeholder stub ('0', '1111', repeated-digit) is
+    # shared by many products, so matching cross-distributor prices / swaps / RIP
+    # membership by it would borrow a stranger's data. Stub-UPC items get no
+    # upc-keyed comparison.
+    upcs = sorted({_norm(it["upc"]) for it in items if _norm(it["upc"]) and _pricing._clean_upc(it.get("upc"))})
     cur_map, _prev_rows, next_rows, next_loaded = _eff_windows(con, upcs)
 
     buy_now, wait, stable, unknown, bn_total, w_total = [], [], [], [], 0.0, 0.0
@@ -3206,7 +3218,7 @@ def _rip_tier_plan(con, items):
     analysis so both work on any item set (cart, favorites, or a list)."""
     def _norm(u):
         return str(u or "").lstrip("0")
-    upcs = sorted({_norm(it["upc"]) for it in items if _norm(it.get("upc"))})
+    upcs = sorted({_norm(it["upc"]) for it in items if _norm(it.get("upc")) and _pricing._clean_upc(it.get("upc"))})
     meta = {}   # (wholesaler, un) -> (rip_code, pack)
     if upcs:
         ph = ", ".join("?" for _ in upcs)

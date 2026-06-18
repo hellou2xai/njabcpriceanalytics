@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from backend.db import get_duckdb, read_parquet
 from backend.pg import get_pg
 from backend.auth import get_current_user
+from backend.pricing import _clean_upc
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 
@@ -462,8 +463,11 @@ def _order_checks(pg, con, enriched, rip, eds, uid):
             except Exception:
                 pass
 
-        # (b) cheaper at another distributor (same barcode, current edition)
-        if upc and cur_eff:
+        # (b) cheaper at another distributor (same barcode, current edition).
+        # Only for REAL barcodes: a placeholder stub ('0') strips to '' and would
+        # match every stub product at other distributors -> a false "cheaper
+        # elsewhere" alert against an unrelated product.
+        if upc and cur_eff and _clean_upc(upc):
             try:
                 p = {"unorm": str(upc).lstrip("0"), "ws": ws, "cut": float(cur_eff) * 0.95}
                 clause = _ed_clause(eds, p)

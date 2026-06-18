@@ -2931,6 +2931,12 @@ tr:hover .row-menu-btn { opacity: 1; }
   color: var(--text-muted); background: var(--surface-2, #f1f5f9);
   border: 1px solid var(--border); border-radius: 5px; padding: 0 4px;
 }
+/* Next-month preview point (a future edition loaded early): set apart from the
+   current/historical months so it never reads as the live month. */
+.mes-month-sticker.mes-month-next {
+  color: var(--cta, #2563eb); border-color: var(--cta, #2563eb);
+  border-style: dashed; background: transparent; font-style: italic;
+}
 
 .mes-popover {
   position: absolute; left: 50%; bottom: calc(100% + 8px);

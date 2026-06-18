@@ -13,6 +13,7 @@ import { useState, useRef, useLayoutEffect, useEffect } from 'react';
 import { Clock, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { fmtDateRange } from '../lib/dealDates';
 import type { MonthBreakdown, RipTier } from './MonthEffectiveSparkline';
+import { currentMonth } from './MonthEffectiveSparkline';
 import type { CatalogTier } from '../lib/api';
 
 export interface RipGap { from: string; to: string; days: number }
@@ -22,7 +23,7 @@ const money = (n?: number | null) => (n == null ? '' : `$${n.toLocaleString(unde
 
 // Build the dated-deal list from a product's price_3mo months (Products/detail).
 export function datedFromMonths(months: MonthBreakdown[]): DatedDeal[] {
-  const cur = months.length ? months[months.length - 1] : null;
+  const cur = currentMonth(months);
   if (!cur) return [];
   const front = cur.frontline ?? null;
   const out: DatedDeal[] = [];
@@ -66,7 +67,7 @@ export function everyDayFromTiers(tiers: CatalogTier[] | undefined, frontline?: 
 }
 
 export function everyDayFromMonths(months: MonthBreakdown[]): DatedDeal | null {
-  const cur = months.length ? months[months.length - 1] : null;
+  const cur = currentMonth(months);
   if (!cur || cur.frontline == null) return null;
   const front = cur.frontline;
   const cand = [

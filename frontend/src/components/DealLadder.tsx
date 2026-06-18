@@ -16,6 +16,7 @@
  * so there is exactly one place that turns canonical tiers into UI.
  */
 import type { MonthBreakdown, RipTier } from './MonthEffectiveSparkline';
+import { currentMonth } from './MonthEffectiveSparkline';
 import TierBadge from './TierBadge';
 import { windowBadge, fmtDateRange } from '../lib/dealDates';
 import { priceUnit, perUnitAbbr, isKegUnit } from '../lib/distributors';
@@ -56,7 +57,9 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
   const csWord = priceUnit(unitVolume, unitType);   // 'keg' | 'cs'
   const unitNoun = perUnitAbbr(unitVolume, unitType); // 'keg' | 'can' | 'btl'
   const keg = isKegUnit(unitVolume, unitType);       // kegs have no per-bottle
-  const cur = months.length ? months[months.length - 1] : null;
+  // Current month = newest NON-future block: a next-month preview loaded early
+  // shows on the sparkline but must not drive the current RIP/QD ladder.
+  const cur = currentMonth(months);
   const frontline = cur?.frontline ?? null;
   // Sort by the deal's EFFECTIVE WINDOW first (evergreen/full-month before
   // dated; earlier windows before later), then by CASE-EQUIVALENT qty — so a

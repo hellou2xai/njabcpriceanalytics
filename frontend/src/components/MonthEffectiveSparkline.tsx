@@ -44,6 +44,16 @@ export interface MonthBreakdown {
   disc1?: number | null;          // 1-case-discount price -> the "1cs" series
   pack?: number | null;           // bottles per case (for $/btl)
   size?: string | null;           // unit_volume, shown in the bottle-price brackets
+  future?: boolean;               // next-month preview (loaded early): on the chart, off the ladder
+}
+
+/** The block ladders/stickers treat as the current month: the newest block
+ *  that is NOT a future (next-month preview) edition; falls back to the newest.
+ *  The sparkline itself still plots every block, including the future one. */
+export function currentMonth(months: MonthBreakdown[]): MonthBreakdown | null {
+  if (!months || months.length === 0) return null;
+  for (let i = months.length - 1; i >= 0; i--) if (!months[i].future) return months[i];
+  return months[months.length - 1];
 }
 
 interface Props {
@@ -126,7 +136,7 @@ function MonthBlock({ b }: { b: MonthBreakdown }) {
 
   return (
     <div className="mes-block">
-      <div className="mes-block-head">{fmtMonth(b.edition) || 'Month'}</div>
+      <div className="mes-block-head">{fmtMonth(b.edition) || 'Month'}{b.future ? ' · next' : ''}</div>
       <table className="mes-table">
         <tbody>
           <tr><td>Frontline</td><td className="mes-num">{priceCB(b.frontline)}</td></tr>
@@ -332,7 +342,8 @@ export default function MonthEffectiveSparkline({ months }: Props) {
           {chrono.map((m, i) => {
             const mm = /^(\d{4})-(\d{1,2})/.exec(m.edition ?? '');
             const lab = mm ? (MONTHS[parseInt(mm[2], 10) - 1] ?? '') : '';
-            return <span key={i} className="mes-month-sticker">{lab}</span>;
+            return <span key={i} className={`mes-month-sticker${m.future ? ' mes-month-next' : ''}`}
+              title={m.future ? 'Next month (loaded early)' : undefined}>{lab}{m.future ? '*' : ''}</span>;
           })}
         </span>
       </span>

@@ -1923,6 +1923,9 @@ export interface Price3moBlock {
   disc1_price: number | null;
   rip_price: number | null;
   tiers: CatalogTier[];
+  // True when this block is the next-month preview (loaded early). It plots on
+  // the sparkline + tooltip, but the current-month ladder/stickers skip it.
+  future?: boolean;
 }
 
 export interface DiscountTier extends TierWindow {

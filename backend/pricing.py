@@ -1452,8 +1452,15 @@ def attach_price_3mo(con, records) -> None:
     where ``rip_price`` is that edition's ``effective_case_price`` (best RIP
     applied) and ``disc1_price`` is the case price after the best 1-case CPL
     discount with NO RIP (``frontline - best_disc_at(disc_tiers, 1, pack)``).
-    Powers the two-line 3-month sparkline + its popover. NEVER invents a future
-    month: only editions that exist are returned (1-3 blocks). No-op on []."""
+    Powers the two-line 3-month sparkline + its popover.
+
+    Window: the last 3 EXISTING editions on-or-before the current month, PLUS
+    the immediate next edition when it is already LOADED (``future: True``), so
+    a published-early next month (e.g. July loaded mid-June) shows on the
+    sparkline + tooltip as an extra trailing point. The headline grid row, RIP
+    and QD ladder stay on the current month: the future block is flagged so the
+    ladder/stickers skip it (frontend ``currentMonth`` picks the newest
+    non-future block). Never invents a month that is not in the data. No-op on []."""
     if not records:
         return
     upcs = sorted({str(r["upc"]) for r in records if r.get("upc")})
@@ -1472,14 +1479,26 @@ def attach_price_3mo(con, records) -> None:
                 SELECT wholesaler, edition,
                        ROW_NUMBER() OVER (PARTITION BY wholesaler ORDER BY edition DESC) AS rn
                 FROM (SELECT DISTINCT wholesaler, edition FROM {src} WHERE edition <= $cym)
+            ),
+            nxt AS (
+                -- The immediate next edition, only if it is already loaded. Shown
+                -- on the sparkline as an extra trailing point (future-flagged).
+                SELECT wholesaler, MIN(edition) AS edition
+                FROM (SELECT DISTINCT wholesaler, edition FROM {src} WHERE edition > $cym)
+                GROUP BY wholesaler
+            ),
+            keep AS (
+                SELECT wholesaler, edition, FALSE AS is_future FROM eds WHERE rn <= 3
+                UNION ALL
+                SELECT wholesaler, edition, TRUE AS is_future FROM nxt
             )
             SELECT c.wholesaler, c.edition, c.upc, c.product_name, c.unit_volume, c.unit_qty, c.vintage,
                    c.frontline_case_price, c.frontline_unit_price, c.effective_case_price,
                    c.discount_1_qty, c.discount_1_amt, c.discount_2_qty, c.discount_2_amt,
                    c.discount_3_qty, c.discount_3_amt, c.discount_4_qty, c.discount_4_amt,
-                   c.discount_5_qty, c.discount_5_amt, c.rip_code
+                   c.discount_5_qty, c.discount_5_amt, c.rip_code, keep.is_future
             FROM {src} c
-            JOIN eds ON c.wholesaler = eds.wholesaler AND c.edition = eds.edition AND eds.rn <= 3
+            JOIN keep ON c.wholesaler = keep.wholesaler AND c.edition = keep.edition
             WHERE c.upc IN ({upc_ph})
         """, params).fetchdf()
     except Exception:
@@ -1510,6 +1529,9 @@ def attach_price_3mo(con, records) -> None:
             "disc1_price": round(front - disc1, 2) if front is not None else None,
             "rip_price": _num(d.get("effective_case_price")),
             "tiers": d.get("tiers") or [],
+            # Next-month preview (loaded early): shown on the sparkline + tooltip
+            # but skipped by the current-month ladder/stickers.
+            "future": bool(d.get("is_future")),
         })
 
     def _keys(ws, upc, nm, vol, uq, vn):

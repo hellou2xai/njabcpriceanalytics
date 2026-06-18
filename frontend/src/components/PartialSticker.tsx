@@ -7,6 +7,7 @@
  * window data (is_time_sensitive / window_status / from_date / to_date).
  */
 import type { MonthBreakdown, RipTier } from './MonthEffectiveSparkline';
+import { currentMonth } from './MonthEffectiveSparkline';
 import { windowBadge, fmtDateRange } from '../lib/dealDates';
 import type { WindowStatus } from '../lib/api';
 
@@ -29,7 +30,7 @@ function pick(tiers: RipTier[] | undefined, kind: 'QD' | 'RIP'): PartialInfo | n
 
 // Partial QD + RIP (current month) for a product, deduped to one per kind.
 export function partialDeals(months: MonthBreakdown[]): PartialInfo[] {
-  const cur = months.length ? months[months.length - 1] : null;
+  const cur = currentMonth(months);
   if (!cur) return [];
   return [pick(cur.discountTiers, 'QD'), pick(cur.ripTiers, 'RIP')].filter(Boolean) as PartialInfo[];
 }

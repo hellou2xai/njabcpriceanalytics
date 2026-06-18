@@ -51,6 +51,7 @@ export function buildMonths(item: SparkSourceItem): MonthBreakdown[] {
       disc1: b.disc1_price,
       pack,
       size,
+      future: b.future ?? false,
     };
   });
 }

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams, useLocation } from 'react-router-dom';
 import { Search, SlidersHorizontal, Sparkles } from 'lucide-react';
@@ -65,7 +65,9 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
   const [limit, setLimit] = useState(60);
   const [trackedOnly, setTrackedOnly] = useState(false);
   // New Items: filter to one introduced edition (YYYY-MM); '' = all of the window.
+  // Defaults to the most recent loaded edition (July, here) on open.
   const [introducedMonth, setIntroducedMonth] = useState('');
+  const niMonthDefaulted = useRef(false);
   // Sort is by product_name by default so a product's sizes arrive contiguously
   // and group cleanly. Price sorts are offered too (server-side).
   const [sort, setSort] = useState<'product_name' | 'frontline_case_price' | 'effective_case_price'>('product_name');
@@ -246,6 +248,16 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
   const introMonthOpts = useMemo(
     () => [...new Set((niEditions ?? []).map(e => e.edition))].sort().reverse().slice(0, 4),
     [niEditions]);
+  // Default the New Items view to the MOST RECENT introduced month (e.g. July)
+  // so the freshest items show first; only auto-sets once and not over a manual
+  // pick (incl. "Last 4 months").
+  useEffect(() => {
+    if (newItems && !niMonthDefaulted.current && introMonthOpts.length && introducedMonth === '') {
+      niMonthDefaulted.current = true;
+      setIntroducedMonth(introMonthOpts[0]);
+      setPage(0);
+    }
+  }, [newItems, introMonthOpts, introducedMonth]);
 
   // New Items shows one card per newly-introduced FAMILY (not every size), so
   // grouping is forced on regardless of the persisted toggle.
@@ -416,9 +428,9 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
                 <label className="products-sort">
                   <span>Introduced</span>
                   <select value={introducedMonth}
-                    onChange={e => { setIntroducedMonth(e.target.value); setPage(0); }}>
-                    <option value="">Last 4 months</option>
+                    onChange={e => { niMonthDefaulted.current = true; setIntroducedMonth(e.target.value); setPage(0); }}>
                     {introMonthOpts.map(ed => <option key={ed} value={ed}>{monthLabel(ed)}</option>)}
+                    <option value="">Last 4 months</option>
                   </select>
                 </label>
               )}

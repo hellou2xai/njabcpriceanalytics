@@ -648,12 +648,14 @@ def _introduced_window(con, months: int) -> dict[tuple, str]:
     distributors renaming items between editions, e.g. Highgrade). Runs as a
     read-only SELECT so it works on the read-only pricing connection."""
     src = read_parquet(con, "cpl_enriched")
-    current_ym = _current_yyyy_mm()
     valid_upc = _VALID_UPC_SQL.format(col="upc")
+    # New Items reflects the latest LOADED editions, so July introductions show
+    # the moment July is ingested — NOT calendar-gated to the current month
+    # (which was hiding all of July's new items).
     eds = con.execute(f"""
         SELECT DISTINCT edition FROM {src}
-        WHERE edition <= $cym ORDER BY edition DESC LIMIT $months
-    """, {"cym": current_ym, "months": int(months)}).fetchdf()
+        ORDER BY edition DESC LIMIT $months
+    """, {"months": int(months)}).fetchdf()
     window_eds = [r["edition"] for _, r in eds.iterrows()]
     if not window_eds:
         return {}
@@ -683,8 +685,8 @@ def _introduced_window(con, months: int) -> dict[tuple, str]:
             FROM firstapp GROUP BY wholesaler, upc_norm
         )
         SELECT wholesaler, upc_norm, introduced_edition FROM introduced
-        WHERE introduced_edition >= $ws AND introduced_edition <= $cym
-    """, {"cym": current_ym, "ws": window_start}).fetchall()
+        WHERE introduced_edition >= $ws
+    """, {"ws": window_start}).fetchall()
     return {(w, u): ed for (w, u, ed) in rows}
 
 

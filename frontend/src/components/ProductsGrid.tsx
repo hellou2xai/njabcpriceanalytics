@@ -12,7 +12,7 @@
  * Everything else (semantic search, filters, facets, the cart) is the same
  * machinery the Catalog page uses — this is purely a new presentation layer.
  */
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, Store } from 'lucide-react';
@@ -622,7 +622,41 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
     queryKey: ['rep-tiers', rep?.wholesaler, rep?.upc],
     queryFn: () => catalog.search({ wholesaler: rep!.wholesaler, upcs: String(rep!.upc), include_tiers: true, limit: 1 }),
   });
-  const repRow = (repTierData?.items?.[0] as Product | undefined) ?? rep;
+  // Placeholder-UPC sizes ('0', repeated-digit stubs) CAN'T be fetched by
+  // barcode (a stub addresses nothing / many products), so the by-upc tier
+  // fetches above skip them and the ladder/sparkline came back empty ("No deals"
+  // + a borrowed history). Fetch this product's tiers by NAME instead and merge
+  // them into the placeholder sizes by (size, pack, vintage). One request/card.
+  const hasPlaceholderSize = useMemo(
+    () => group.sizes.some(s => !isRealUpc(s.upc)), [group.sizes]);
+  const { data: nameTierData } = useQuery({
+    enabled: (inView || expanded || warm) && hasPlaceholderSize && !!group.wholesaler && !!group.productName,
+    staleTime: 5 * 60_000,
+    queryKey: ['card-name-tiers', group.wholesaler, group.productName],
+    queryFn: () => catalog.search({ wholesaler: group.wholesaler, q: group.productName, include_tiers: true, limit: 50 }),
+  });
+  const nameRows = useMemo(() => (nameTierData?.items ?? []) as Product[], [nameTierData]);
+  // Copy the name-fetched tier/history fields onto a placeholder-UPC size that
+  // matches by size + pack + vintage. Real-barcode rows pass through untouched.
+  const enrichPlaceholder = useCallback((s: Product): Product => {
+    if (isRealUpc(s.upc) || nameRows.length === 0) return s;
+    const m = nameRows.find(r =>
+      (r.product_name ?? '').trim().toUpperCase() === (s.product_name ?? '').trim().toUpperCase() &&
+      sizeToMl(r.unit_volume) === sizeToMl(s.unit_volume) &&
+      String(r.unit_qty ?? '') === String(s.unit_qty ?? '') &&
+      String(r.vintage ?? '') === String(s.vintage ?? ''));
+    if (!m) return s;
+    return {
+      ...s,
+      tiers: m.tiers, price_3mo: m.price_3mo, next_tiers: m.next_tiers,
+      effective_case_price: m.effective_case_price ?? s.effective_case_price,
+      next_effective_case_price: m.next_effective_case_price ?? s.next_effective_case_price,
+      has_rip: m.has_rip ?? s.has_rip, has_discount: m.has_discount ?? s.has_discount,
+    };
+  }, [nameRows]);
+  const repRow = isRealUpc(rep?.upc)
+    ? ((repTierData?.items?.[0] as Product | undefined) ?? rep)
+    : (rep ? enrichPlaceholder(rep) : rep);
   const repMonths = repRow ? buildMonths(repRow) : [];
 
   // Cross-distributor best-price nudge: the SAME UPC at OTHER distributors. One
@@ -688,9 +722,11 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
     } else {
       base = fullSizes.length ? withOwnRows(fullSizes) : group.sizes;
     }
-    return [...base].sort((a, b) =>
+    // Enrich placeholder-UPC rows with the name-fetched tiers/history (real
+    // barcodes pass through), so their ladder + sparkline match everyone else.
+    return [...base].map(enrichPlaceholder).sort((a, b) =>
       toMl(a.unit_volume) - toMl(b.unit_volume) || a.wholesaler.localeCompare(b.wholesaler));
-  }, [group.flat, repRow, multiDist, multiData, fullSizes, group.sizes]);
+  }, [group.flat, repRow, multiDist, multiData, fullSizes, group.sizes, enrichPlaceholder]);
   const optionCount = sizes.length;
 
   return (

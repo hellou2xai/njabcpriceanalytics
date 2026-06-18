@@ -5738,6 +5738,17 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .prod-bestqd-q { font-weight: 800; font-size: 12px; }
 .prod-bestqd-p { font-weight: 700; font-size: 11.5px; }
 .prod-bestqd-s { color: var(--green); font-weight: 600; font-size: 10.5px; }
+/* Best-RIP sticker: the rebate twin of Best QD, tinted green (money back). */
+.prod-bestrip { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 1px;
+  margin-bottom: 4px; padding: 4px 10px; border-radius: var(--radius-sm); line-height: 1.25;
+  background: color-mix(in srgb, var(--green) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--green) 32%, transparent);
+  color: var(--green); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.prod-bestrip-head { display: inline-flex; align-items: baseline; gap: 6px; }
+.prod-bestrip-k { font-weight: 800; text-transform: uppercase; letter-spacing: .05em; font-size: 9px; }
+.prod-bestrip-q { font-weight: 800; font-size: 12px; }
+.prod-bestrip-p { font-weight: 700; font-size: 11.5px; color: var(--text); }
+.prod-bestrip-s { color: var(--green); font-weight: 700; font-size: 10.5px; }
 .prod-card-range { font-size: 15px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
 /* bottle price beside the case price: SAME size/weight, muted colour only */
 .prod-card-range-btl { color: var(--text-muted); }

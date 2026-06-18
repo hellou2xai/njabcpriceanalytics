@@ -270,6 +270,62 @@ function BestQdSticker({ s }: { s?: Product | null }) {
   );
 }
 
+// Best-RIP sticker for the card header, the rebate twin of BestQdSticker. Shows
+// the deepest RIP rebate for the card's current-month block: the cases to
+// qualify, the case price AFTER the rebate (and per bottle), the rebate ALONE
+// per case, and the total RIP $ at that buy. Computed from the row's price_3mo
+// tiers (the same data the ladder uses), so it only renders where tiers are
+// loaded (e.g. New Items cards in price-details mode). Returns null otherwise.
+function BestRipSticker({ s }: { s?: Product | null }) {
+  if (!s) return null;
+  const months = buildMonths(s);
+  // current-month block = newest non-future, else newest (mirror currentMonth).
+  const cur = months.length
+    ? ([...months].reverse().find(m => !m.future) ?? months[months.length - 1])
+    : null;
+  const rip = cur?.ripTiers ?? [];
+  if (!rip.length) return null;
+  let best = rip[0];
+  for (const t of rip) if ((t.ripOnlySave ?? 0) > (best.ripOnlySave ?? 0)) best = t;
+  const reb = best.ripOnlySave ?? 0;
+  if (reb <= 0.005) return null;
+  const pack = cur?.pack ?? (Number(s.unit_qty) > 0 ? Number(s.unit_qty) : null);
+  // Buy quantity in CASES (mirror DealLadder.buyLabel): a bottle tier converts
+  // via pack; the half-case rule prefers the real qualifying cases.
+  const isBtl = /^\s*b/i.test(best.unit);
+  const cases = (isBtl && pack && pack > 0)
+    ? best.qty / pack
+    : (best.qualifiedCases != null && best.qualifiedCases !== best.qty)
+      ? best.qualifiedCases : best.qty;
+  const csR = cases != null ? (Number.isInteger(cases) ? cases : Math.round(cases * 100) / 100) : null;
+  const eff = best.eff;
+  const btl = pack && pack > 0 ? eff / pack : null;
+  const total = cases != null ? cases * reb : null;
+  const money = (v: number | null | undefined) =>
+    v == null ? '' : `$${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const moneyR = (v: number | null | undefined) =>
+    v == null ? '' : `$${Math.round(v).toLocaleString()}`;
+  return (
+    <span className="prod-bestrip"
+      title={`Best RIP rebate${csR != null ? `: buy ${csR} case${csR === 1 ? '' : 's'}` : ''}`
+        + ` → ${money(eff)}/case after rebate`
+        + (btl != null ? ` · ${money(btl)}/bottle` : '')
+        + ` · ${money(reb)}/case back`
+        + (total != null ? ` · ${moneyR(total)} total RIP` : '')
+        + ' (rebate alone, not blended with QD)'}>
+      <span className="prod-bestrip-head">
+        <span className="prod-bestrip-k">Best RIP</span>
+        {csR != null && <span className="prod-bestrip-q">{csR} cs</span>}
+      </span>
+      <span className="prod-bestrip-p">{money(eff)}/cs{btl != null && <> · {money(btl)}/btl</>}</span>
+      <span className="prod-bestrip-s">
+        RIP {money(reb)}/cs back
+        {total != null && <> · {moneyR(total)} total RIP</>}
+      </span>
+    </span>
+  );
+}
+
 // Better-price month sticker: is the effective case price best THIS month, or
 // cheaper NEXT month (when that edition is loaded)? Labelled with the actual
 // month NAME and coloured by which wins (green = buy now, blue = cheaper next).
@@ -699,6 +755,7 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
         )}
         <div className="prod-card-right">
           <BestQdSticker s={repRow ?? range?.lo ?? first} />
+          <BestRipSticker s={repRow ?? range?.lo ?? first} />
           {range && (
             <>
               <CardPriceLine s={range.lo} repRow={repRow} />

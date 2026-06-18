@@ -2,6 +2,15 @@
 
 Instructions for Claude Code (and human contributors) working in this repo.
 
+## Troubleshooting: always verify against PROD
+- For ANY reported issue ("not working", "still nothing", "wrong data"),
+  reproduce by calling the LIVE prod API (`curl https://nj.celr.ai/api/...`)
+  BEFORE concluding anything or claiming a fix. Check the actual JSON.
+- "Pushed" is NOT "live": Render serves the previous build for ~5-8 min per
+  deploy. Confirm the fix is on the serving build (test prod), don't assume.
+- Use a control case to separate filter vs data vs deploy (e.g. if July is
+  empty, test June/May on prod; if those work, it's the deploy/gate, not the code).
+
 ## Everything is EDITION-specific (no exceptions)
 - A CPL is published monthly as an `edition` (`YYYY-MM`). Prices, quantity
   discounts, RIP codes, RIP tiers, and RIP membership are ALL re-issued each

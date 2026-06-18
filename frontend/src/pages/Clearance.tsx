@@ -4,6 +4,7 @@ import { deals, watchlist, catalog } from '../lib/api';
 import SortableTable from '../components/SortableTable';
 import FavoriteButton from '../components/FavoriteButton';
 import ProductThumb from '../components/ProductThumb';
+import NextMonthChip from '../components/NextMonthChip';
 import TrackedOnlyToggle from '../components/TrackedOnlyToggle';
 import RowLimitSelect from '../components/RowLimitSelect';
 import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
@@ -117,6 +118,9 @@ export default function Clearance() {
                 render: r => `$${r.frontline_case_price}` },
               { key: 'effective_case_price', label: 'Best Price', align: 'right',
                 render: r => `$${r.effective_case_price}` },
+              { key: 'next_effective_case_price', label: 'Next mo', align: 'right',
+                render: r => <NextMonthChip current={r.effective_case_price as number | null}
+                  next={r.next_effective_case_price as number | null} edition={r.edition as string | null} /> },
               { key: 'discount_pct', label: 'Savings %', align: 'right',
                 render: r => <span className="text-green">{r.discount_pct}%</span> },
               { key: 'closeout_permit', label: 'Permit' },

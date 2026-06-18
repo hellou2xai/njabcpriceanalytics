@@ -275,14 +275,22 @@ def get_clearance_items(
             where.append("edition = $edition")
             params["edition"] = edition
         else:
-            where.append(f"edition = (SELECT MAX(edition) FROM {src}" +
-                        (f" WHERE wholesaler = $wholesaler" if wholesaler else "") + ")")
+            # Current month the buyer pays now (latest edition on-or-before
+            # today), NOT the latest LOADED edition — so a next month loaded
+            # early doesn't silently replace this month's clearance prices.
+            # Matches Discounts / Combos / Compare; next-month price rides along
+            # as next_effective_case_price for the "next mo" chip.
+            from backend import pricing as _pricing
+            params["cym"] = _pricing.current_yyyy_mm()
+            where.append(
+                f"edition = (SELECT COALESCE(MAX(CASE WHEN edition <= $cym THEN edition END), MAX(edition)) "
+                f"FROM {src}" + (" WHERE wholesaler = $wholesaler" if wholesaler else "") + ")")
 
         w = " AND ".join(where)
         df = con.execute(f"""
             SELECT wholesaler, edition, upc, product_name, product_type,
                    unit_volume, frontline_case_price, best_case_price,
-                   effective_case_price, discount_pct, total_savings_per_case,
+                   effective_case_price, next_effective_case_price, discount_pct, total_savings_per_case,
                    closeout_permit
             FROM {src}
             WHERE {w}
@@ -302,7 +310,14 @@ def get_combo_index():
     the latest edition per wholesaler."""
     with get_duckdb() as con:
         src = read_parquet(con, "combo")
-        eds = con.execute(f"SELECT wholesaler, MAX(edition) AS ed FROM {src} GROUP BY wholesaler").fetchdf()
+        # Current month (on-or-before today), so the catalog's combo flags match
+        # the current-month grid instead of a next month loaded early.
+        from backend import pricing as _pricing
+        eds = con.execute(
+            f"SELECT wholesaler, COALESCE(MAX(CASE WHEN edition <= $cym THEN edition END), MAX(edition)) AS ed "
+            f"FROM {src} GROUP BY wholesaler",
+            {"cym": _pricing.current_yyyy_mm()},
+        ).fetchdf()
         ed_map = dict(zip(eds["wholesaler"], eds["ed"]))
         if not ed_map:
             return {"items": []}

@@ -1,6 +1,7 @@
 import SortableTable from './SortableTable';
 import { distributorName } from '../lib/distributors';
 import { AI_EXPLAINERS_ENABLED } from '../lib/flags';
+import NextMonthChip from './NextMonthChip';
 
 /** The canonical promotion row shape. Every Promotions page adapts its native
  *  rows to this shape before handing them to PromotionsTable, so the table
@@ -23,6 +24,8 @@ export interface PromotionRow {
   disc_per_case?: number | null;      // savings per case (always positive)
   net_case_price?: number | null;
   net_btl_price?: number | null;
+  edition?: string | null;              // current row's edition (for the next-month label)
+  next_net_case_price?: number | null;  // next month's effective case price, when loaded
   gp_pct?: number | null;
   off_pct?: number | null;
   has_rip?: boolean | null;
@@ -107,6 +110,13 @@ export default function PromotionsTable({ rows, exportName, onRowClick }: Props)
             render: r => money(r.net_case_price as number | null) },
           { key: 'net_btl_price', label: 'Net/btl', align: 'right', sortable: true,
             render: r => money(r.net_btl_price as number | null) },
+          { key: 'next_net_case_price', label: 'Next mo/cs', align: 'right', sortable: true,
+            sortValue: r => (r.next_net_case_price as number | null) ?? Number.POSITIVE_INFINITY,
+            exportValue: r => (r.next_net_case_price as number | null) ?? '',
+            render: r => {
+              const rr = r as unknown as PromotionRow;
+              return <NextMonthChip current={rr.net_case_price} next={rr.next_net_case_price} edition={rr.edition} />;
+            } },
           { key: 'gp_pct', label: 'GP%', align: 'right', sortable: true,
             sortValue: r => (r.gp_pct as number | null) ?? -999,
             exportValue: r => { const g = r.gp_pct as number | null; return g == null ? '' : Number(g.toFixed(1)); },

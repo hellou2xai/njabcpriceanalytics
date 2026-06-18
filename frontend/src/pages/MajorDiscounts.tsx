@@ -370,6 +370,8 @@ function productToPromotionRow(p: Product): PromotionRow {
     disc_per_case: p.total_savings_per_case ?? null,
     net_case_price: net,
     net_btl_price: netBtl,
+    edition: p.edition ?? null,
+    next_net_case_price: p.next_effective_case_price ?? null,
     gp_pct: gp,
     off_pct: p.discount_pct ?? null,
     has_rip: p.has_rip ?? false,

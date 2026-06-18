@@ -205,7 +205,7 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
     && !wholesaler && !region && !varietal && !trackedOnly;
 
   const { data, isLoading } = useCachedQuery(
-    ['products', q, wholesaler, sort, order, page, limit, trackedOnly, filterKey, region, varietal, newItems, introducedMonth],
+    ['products', q, wholesaler, sort, order, page, limit, trackedOnly, filterKey, region, varietal, newItems, introducedMonth, priceDetails],
     () => catalog.search({
       q,
       wholesaler: wholesaler || undefined,
@@ -219,9 +219,12 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
       // Storefront browsing: rows that have a product image rank first when
       // sorting by name (relevance still wins for typed searches).
       images_first: sort === 'product_name' ? true : undefined,
-      // The collapsed cards only need price + deal flags, not the full tier
-      // ladder — so we skip include_tiers here (it makes the search ~8x slower).
-      // Tiers are fetched per product on expand and on the detail page.
+      // The general catalog's collapsed cards only need price + deal flags, not
+      // the full tier ladder — so we skip include_tiers there (it's ~8x slower)
+      // and fetch tiers per product on expand. New Items is a small curated set,
+      // so when its cards show price details we fetch tiers up front to render
+      // the QD/RIP ladder right on the card (no expand needed).
+      include_tiers: (newItems && priceDetails) ? true : undefined,
       region: region || undefined,
       varietal: varietal || undefined,
     }),

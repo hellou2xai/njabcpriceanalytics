@@ -5834,32 +5834,25 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .prod-distprod-group:first-child { border-top: 0; }
 .prod-distprod-head { padding: 6px 16px 2px; font-size: 12.5px; font-weight: 600;
   color: var(--text-muted); }
-/* Identity + price + order on the top row; the (wide) deal ladder gets its own
-   full-width row below so it never has to scroll inside a cramped column, and
-   the order block (steppers + Add to cart/list) top-aligns instead of floating
-   in the middle with a big gap. Grid AREAS so DOM order is irrelevant. */
+/* Each size/distributor listing is its OWN bordered block under the product
+   header, so products read as distinct, easy-to-identify cards. Inside, a flex
+   row that wraps: identity | price | QD-RIP ladder | order — the ladder sits
+   BESIDE the price (its natural reading spot, not a detached strip), the order
+   block (steppers + Add to cart/list) is pushed right and top-aligned. */
 .prod-size-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) auto;
-  grid-template-areas:
-    "id price order"
-    "deals deals deals";
-  gap: 8px 16px; align-items: start;
-  padding: 14px 16px 14px 64px; border-bottom: 1px solid var(--border);
+  display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 18px;
+  margin: 0 12px 10px 56px; padding: 12px 14px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
 }
-.prod-size-id { grid-area: id; }
-.prod-size-price { grid-area: price; }
-.prod-size-order { grid-area: order; }
-.prod-size-deals { grid-area: deals; }
-.prod-size-row:last-child { border-bottom: 0; }
-/* Narrow: stack everything in one column, deals before the order block. */
+.prod-size-row:last-child { margin-bottom: 12px; }
+.prod-size-id { flex: 1 1 220px; min-width: 0; }
+.prod-size-price { flex: 0 1 auto; }
+.prod-size-deals { flex: 2 1 320px; min-width: 0; }
+.prod-size-order { flex: 0 0 auto; margin-left: auto; }
+/* Narrow: stack; the order block goes full width below. */
 @media (max-width: 720px) {
-  .prod-size-row {
-    grid-template-columns: 1fr;
-    grid-template-areas: "id" "price" "deals" "order";
-    padding-left: 16px; gap: 10px;
-  }
-  .prod-size-order { align-items: stretch; }
+  .prod-size-row { margin-left: 12px; gap: 10px; }
+  .prod-size-order { margin-left: 0; align-items: stretch; width: 100%; }
 }
 .prod-size-name { font-size: 15px; font-weight: 700; color: var(--text); }
 .prod-size-pack { font-size: 13px; color: var(--text-muted); margin-top: 2px; }

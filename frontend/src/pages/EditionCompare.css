@@ -75,7 +75,10 @@
 .ec-card {
   border: 1px solid var(--border); border-left-width: 4px; border-radius: 10px;
   background: var(--surface); padding: 12px 14px; display: flex; flex-direction: column; gap: 10px;
+  transition: box-shadow .12s ease, border-color .12s ease;
 }
+.ec-card:hover { box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08); border-color: color-mix(in srgb, var(--accent) 30%, var(--border)); }
+.ec-card-head { border-bottom: 1px solid var(--border); padding-bottom: 8px; }
 .ec-card--up { border-left-color: var(--red); }
 .ec-card--down { border-left-color: var(--green); }
 .ec-card--added { border-left-color: var(--accent); }

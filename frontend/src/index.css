@@ -5577,14 +5577,18 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
   border-radius: var(--radius); padding: 6px 0;
   max-height: calc(100vh - 24px); overflow-y: auto; overflow-x: hidden;
 }
-/* In the narrow (248px) rail, controls must be FLUID — the toolbar-era
-   min-widths (140/180px) plus a non-border-box sizing forced a horizontal
-   scrollbar. Scope these to the rail so the old horizontal-toolbar usages are
-   untouched. */
+/* In the narrow (248px) rail, TEXT inputs + selects must be FLUID — the
+   toolbar-era min-widths (140/180px) plus non-border-box sizing forced a
+   horizontal scrollbar. Scope to the rail, and ONLY to text-like controls —
+   never checkboxes/radios (the faceted Distributor/Brand/Category/Size lists),
+   which width:100% would stretch into giant boxes and shove their labels off. */
 .prod-filter-sect-body .filter-select,
 .prod-filter-sect-body .filter-text,
 .prod-filter-sect-body .filter-range,
-.prod-filter-sect-body :is(input, select) {
+.prod-filter-sect-body input[type="text"],
+.prod-filter-sect-body input[type="number"],
+.prod-filter-sect-body input[type="search"],
+.prod-filter-sect-body select {
   width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box;
 }
 .prod-filter-sect-body .filter-range-input { width: 100%; min-width: 0; flex: 1; }

@@ -65,8 +65,9 @@
 .bq-vint { color: #7c3aed; font-weight: 600; }
 .bq-upc { font-variant-numeric: tabular-nums; }
 .bq-card-flags { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
-.bq-headline { display: inline-flex; align-items: center; gap: 4px; background: #ecfdf5; color: #047857;
-  border: 1px solid #a7f3d0; padding: 3px 9px; border-radius: 8px; font-size: 13px; font-weight: 700; }
+/* Headline = the single deepest QD on the card: yellow highlight, red font. */
+.bq-headline { display: inline-flex; align-items: center; gap: 4px; background: #fef9c3; color: #dc2626;
+  border: 1px solid #fde68a; padding: 3px 9px; border-radius: 8px; font-size: 13px; font-weight: 700; }
 .bq-differs { display: inline-flex; align-items: center; gap: 4px; background: #fef3c7; color: #92400e;
   border: 1px solid #fde68a; padding: 3px 8px; border-radius: 7px; font-size: 11px; font-weight: 600; }
 .bq-trend { display: inline-flex; align-items: center; gap: 3px; padding: 3px 8px; border-radius: 7px;
@@ -106,15 +107,19 @@
 .bq-tier-buy { font-weight: 650; color: #0f172a; }
 .bq-tier-save { color: #047857; font-weight: 600; }
 .bq-tier-ts { color: #d97706; vertical-align: -1px; margin-left: 3px; }
-.bq-tier--best td { background: #f0fdf4; }
+/* Best (deepest) tier on the ladder: yellow highlight + red font. */
+.bq-tier--best td { background: #fef9c3; }
 .bq-tier--expired td { opacity: .5; text-decoration: line-through; }
 .bq-after { font-weight: 650; color: #0f172a; }
 /* per-bottle price stays the SAME font size as the per-case price beside it
    (house rule: never shrink the bottle price); only muted in colour. */
 .bq-after-btl { color: #334155; font-weight: 600; }
 .bq-pct { font-weight: 700; color: #0f172a; }
-.bq-tier--best .bq-pct { color: #15803d; }
-.bq-best-dot { color: #16a34a; margin-left: 4px; font-size: 10px; }
+.bq-tier--best .bq-pct,
+.bq-tier--best .bq-tier-buy,
+.bq-tier--best .bq-tier-save,
+.bq-tier--best .bq-after { color: #dc2626; }
+.bq-best-dot { color: #dc2626; margin-left: 4px; font-size: 10px; }
 
 /* phone: single column, denser */
 @media (max-width: 1023px) {

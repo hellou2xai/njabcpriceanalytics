@@ -321,8 +321,11 @@ export default function ComparePrices() {
   const [minSpread, setMinSpread] = useState(params.get('min') ?? '1');
   // 0 = each distributor's best deal (deepest tier); >0 = landed price at that volume
   const [cases, setCases] = useState(params.get('cs') ?? '0');
-  const [sortKey, setSortKey] = useState(params.get('s') ?? 'product');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>(params.get('dir') === 'desc' ? 'desc' : 'asc');
+  // Default sort = biggest $ spread first: on a distributor comparison, the
+  // products where switching distributor saves the most are what a buyer wants
+  // on top. (Column headers still re-sort; the rail "Sort by" mirrors this.)
+  const [sortKey, setSortKey] = useState(params.get('s') ?? 'spread');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>(params.get('dir') === 'asc' ? 'asc' : 'desc');
   // Price Comparison view: 'cur' = this month, 'next' = next month (when that
   // edition is loaded), 'prev' = last month, 'both' = both stacked. 'prev'/'both'
   // fetch the prior-edition layers (months=2); 'next' compares at the next edition.
@@ -363,8 +366,8 @@ export default function ComparePrices() {
     if (!onlyDiff) next.set('diff', '0');
     if (minSpread) next.set('min', minSpread);
     if (cases && cases !== '0') next.set('cs', cases);
-    if (sortKey !== 'product') next.set('s', sortKey);
-    if (sortDir !== 'asc') next.set('dir', sortDir);
+    if (sortKey !== 'spread') next.set('s', sortKey);
+    if (sortDir !== 'desc') next.set('dir', sortDir);
     if (pageSize !== 100) next.set('pp', String(pageSize));
     if (next.toString() !== params.toString()) setSearchParams(next, { replace: true });
   }, [selected, q, ptype, onlyDiff, minSpread, cases, sortKey, sortDir, pageSize]);
@@ -513,6 +516,18 @@ export default function ComparePrices() {
   };
 
   const sections: FilterSection[] = [
+    // Sort pinned to the TOP of the rail (matches Edition Comparison). The
+    // value encodes key:dir; the clickable column headers update the same state,
+    // so this dropdown always reflects the current sort.
+    { type: 'select', key: 'sort', title: 'Sort by', highlight: true,
+      value: `${sortKey}:${sortDir}`,
+      options: [
+        { value: 'spread:desc', label: 'Biggest spread ($)' },
+        { value: 'spread_pct:desc', label: 'Biggest spread (%)' },
+        { value: 'product:asc', label: 'Product name (A–Z)' },
+        { value: 'winner:asc', label: 'Winner' },
+      ],
+      onChange: (v) => { const [k, d] = v.split(':'); setSortKey(k); setSortDir(d as 'asc' | 'desc'); } },
     { type: 'custom', key: 'q', title: 'Product',
       render: () => (
         <ProductSearchBox value={q}

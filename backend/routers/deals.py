@@ -99,7 +99,13 @@ def get_top_discounts(
     the *next* edition's effective price so each row can say whether it's cheaper
     now or next month, plus the savings source (CPL discount / RIP / closeout).
     """
-    with get_duckdb() as con:
+    from backend.cache_util import cached_response
+    key = (wholesaler or "", edition or "", product_type or "", float(min_discount_pct),
+           sort, int(limit), bool(per_category))
+
+    def _build(wholesaler=wholesaler, edition=edition, product_type=product_type,
+               min_discount_pct=min_discount_pct, sort=sort, limit=limit, per_category=per_category):
+      with get_duckdb() as con:
         src = read_parquet(con, "cpl_enriched")
 
         # current (this month) + next edition per wholesaler.
@@ -255,6 +261,8 @@ def get_top_discounts(
         attach_vintages_available(con, records)
         return records
 
+    return cached_response("discounts", key, _build)
+
 
 @router.get("/clearance")
 def get_clearance_items(
@@ -263,7 +271,11 @@ def get_clearance_items(
     limit: int = Query(50, ge=1, le=50000),
 ):
     """Clearance / closeout items. Â§7.2"""
-    with get_duckdb() as con:
+    from backend.cache_util import cached_response
+    key = (wholesaler or "", edition or "", int(limit))
+
+    def _build(wholesaler=wholesaler, edition=edition, limit=limit):
+      with get_duckdb() as con:
         src = read_parquet(con, "cpl_enriched")
         where = ["has_closeout = true"]
         params = {}
@@ -301,6 +313,8 @@ def get_clearance_items(
         attach_enrichment_image(con, records)
         attach_sku_mapping(con, records)
         return records
+
+    return cached_response("clearance", key, _build)
 
 
 @router.get("/combo-index")
@@ -382,7 +396,13 @@ def get_combos(
     combo_code. We collapse to a single row per combo and expose the deduped
     component list so the UI shows one line per bundle.
     """
-    with get_duckdb() as con:
+    from backend.cache_util import cached_response
+    key = (wholesaler or "", edition or "", q or "", int(limit))
+
+    # Bind params as defaults so the body can reassign them (e.g. q) without
+    # Python treating them as unbound locals inside the closure.
+    def _build(wholesaler=wholesaler, edition=edition, q=q, limit=limit):
+      with get_duckdb() as con:
         src = read_parquet(con, "combo")
         # cpl_enriched carries the real per-UPC product name. Fedway's combo
         # feed stores the brand_reg_no in product_name (numeric code) and the
@@ -698,6 +718,8 @@ def get_combos(
                 flat_comps.append(c)
         attach_sku_mapping(con, flat_comps)
         return items
+
+    return cached_response("combos", key, _build)
 
 
 def _combo_qty_bottles(qty_per_pack, bottles_per_case):

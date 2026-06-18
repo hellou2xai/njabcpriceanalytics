@@ -346,6 +346,14 @@ def _pm_compute_full(con, direction: str) -> list[dict]:
     try:
         attach_enrichment_image(con, out)
         attach_sku_mapping(con, out)
+        # Enrich the FULL list ONCE here (cached per pricing version) instead of
+        # re-running these DB-heavy passes on every request's page slice. This is
+        # what made Price Drops / Increases slow: the endpoint re-enriched up to
+        # 2000 rows per request. Now the request path is pure in-memory
+        # filter + slice.
+        from backend.routers.catalog import attach_promotion_tiers, attach_vintages_available
+        attach_promotion_tiers(con, out)
+        attach_vintages_available(con, out)
     except Exception:
         pass
     return out
@@ -370,12 +378,27 @@ def _pm_cached(con, direction: str) -> list[dict]:
 
 def warm_pm_cache_async():
     """Pre-compute the price-mover lists in the background so the first request
-    after a deploy or reload doesn't wait through the heavy classification."""
+    after a deploy or reload doesn't wait through the heavy classification AND
+    enrichment (tiers/vintages are now baked into the cached full list). Also
+    warms the default response-cache views (all distributors, the page's default
+    validity) for both directions, so the first interactive load is instant."""
     def _run():
         try:
             with get_duckdb() as con:
                 _pm_cached(con, "down")
                 _pm_cached(con, "up")
+            # Pre-build the response-cache entries the UI actually opens with
+            # (no wholesaler filter; current_only + all; the page's 2000 limit).
+            # Pass EVERY arg explicitly: calling the route fn directly bypasses
+            # FastAPI, so an omitted arg would be its Query(...) sentinel, not a
+            # real value.
+            for direction in ("down", "up"):
+                for validity in ("current_only", "all"):
+                    try:
+                        get_price_movers(wholesaler=None, edition=None,
+                                         direction=direction, validity=validity, limit=2000)
+                    except Exception:
+                        pass
         except Exception as e:
             print(f"[pm] price-movers cache warm skipped: {e}")
     _threading.Thread(target=_run, daemon=True).start()
@@ -430,40 +453,42 @@ def get_price_movers(
     effective (post-discount/RIP) case price, and the has_rip/has_discount
     flags, and runs the catalogue's enrichment join so the card view can show
     the product image."""
-    with get_duckdb() as con:
-        full = _pm_cached(con, direction)
-        out = list(full)
-        if wholesaler:
-            out = [r for r in out if r.get("wholesaler") == wholesaler]
-        # New OR-membership filter: a row may be in BOTH 'current' and 'next'
-        # buckets if it rose (or dropped) in both transitions, so the filter
-        # tests the cur_match / next_match flags rather than the single-bucket
-        # validity label.
-        #   current / current_only → last→this matched the direction
-        #   next    / next_only    → this→next matched the direction
-        #   both / all (default)   → either is true (i.e., every row qualifies)
-        v = (validity or "all").lower()
-        if v in ("current", "current_only"):
-            out = [r for r in out if r.get("cur_match")]
-        elif v in ("next", "next_only"):
-            out = [r for r in out if r.get("next_match")]
-        # 'both', 'all', anything else → no further filter
-        out = out[:limit]
-        # AI blurbs come from a 60s-TTL cached PG read so a busy page does not
-        # hammer Postgres on every request.
-        blurb_map = _cached_mover_blurbs(direction)
-        for row in out:
-            u = (row.get("upc") or "")
-            un = str(u).lstrip("0") if u else ""
-            row["ai_blurb"] = blurb_map.get((row.get("wholesaler"), un, row.get("edition")))
-        # Attach the Discount + RIP tier ladder for THIS month and next month
-        # so the mover card's MonthEffectiveSparkline popover shows the full
-        # ladder, matching the Catalog row's behaviour. Also flag wines with
-        # multiple vintages so the card can wear a sticker.
-        from backend.routers.catalog import attach_promotion_tiers, attach_vintages_available
-        attach_promotion_tiers(con, out)
-        attach_vintages_available(con, out)
-        return out
+    from backend.cache_util import cached_response
+    key = (direction, wholesaler or "", edition or "", (validity or "all").lower(), int(limit))
+
+    def _build():
+        with get_duckdb() as con:
+            full = _pm_cached(con, direction)
+            out = list(full)
+            if wholesaler:
+                out = [r for r in out if r.get("wholesaler") == wholesaler]
+            # New OR-membership filter: a row may be in BOTH 'current' and 'next'
+            # buckets if it rose (or dropped) in both transitions, so the filter
+            # tests the cur_match / next_match flags rather than the single-bucket
+            # validity label.
+            #   current / current_only → last→this matched the direction
+            #   next    / next_only    → this→next matched the direction
+            #   both / all (default)   → either is true (i.e., every row qualifies)
+            v = (validity or "all").lower()
+            if v in ("current", "current_only"):
+                out = [r for r in out if r.get("cur_match")]
+            elif v in ("next", "next_only"):
+                out = [r for r in out if r.get("next_match")]
+            # 'both', 'all', anything else → no further filter
+            out = out[:limit]
+            # Shallow-copy the slice so the per-request ai_blurb stamp below never
+            # mutates the shared cached list. Tier ladders + vintages are already
+            # on each row (enriched once in _pm_compute_full), so this path is a
+            # pure in-memory filter + slice — no DB work per request.
+            out = [dict(r) for r in out]
+            blurb_map = _cached_mover_blurbs(direction)
+            for row in out:
+                u = (row.get("upc") or "")
+                un = str(u).lstrip("0") if u else ""
+                row["ai_blurb"] = blurb_map.get((row.get("wholesaler"), un, row.get("edition")))
+            return out
+
+    return cached_response("price-movers", key, _build)
 
 
 @router.get("/price-mover-editions")

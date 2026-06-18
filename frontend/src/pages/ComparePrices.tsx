@@ -323,15 +323,19 @@ export default function ComparePrices() {
   const [cases, setCases] = useState(params.get('cs') ?? '0');
   const [sortKey, setSortKey] = useState(params.get('s') ?? 'product');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(params.get('dir') === 'desc' ? 'desc' : 'asc');
-  // Price Comparison view: 'cur' = this month only, 'prev' = last month only,
-  // 'both' = both months stacked (most recent on top). 'prev'/'both' fetch the
-  // prior-edition layers (months=2).
-  const [priceMonths, setPriceMonths] = useState<'cur' | 'prev' | 'both'>('cur');
-  // Row detail expansion. Details are EXPANDED BY DEFAULT (allExpanded=true);
-  // `toggled` holds the rows the user flipped against the default, so a row is
-  // open when allExpanded XOR toggled.has(key). "Expand/Collapse all" sets
-  // allExpanded and clears the exceptions.
-  const [allExpanded, setAllExpanded] = useState(true);
+  // Price Comparison view: 'cur' = this month, 'next' = next month (when that
+  // edition is loaded), 'prev' = last month, 'both' = both stacked. 'prev'/'both'
+  // fetch the prior-edition layers (months=2); 'next' compares at the next edition.
+  const [priceMonths, setPriceMonths] = useState<'cur' | 'next' | 'prev' | 'both'>('cur');
+  // Default to NEXT month once, when that edition is loaded (buyer planning the
+  // upcoming month). Only auto-flips while still on the initial 'cur'.
+  const autoNextDone = useRef(false);
+  // Row detail expansion. Details are COLLAPSED BY DEFAULT (allExpanded=false)
+  // for a clean professional table; `toggled` holds the rows the user flipped
+  // against the default, so a row is open when allExpanded XOR toggled.has(key).
+  // The "Expand all / Collapse all" control on top sets allExpanded and clears
+  // the exceptions.
+  const [allExpanded, setAllExpanded] = useState(false);
   const [toggled, setToggled] = useState<Set<string>>(new Set());
   const isExpanded = (key: string) => allExpanded !== toggled.has(key);
   const toggleRow = (key: string) => setToggled(prev => {
@@ -388,7 +392,10 @@ export default function ComparePrices() {
       only_differences: onlyDiff || undefined,
       min_spread: minSpread ? parseFloat(minSpread) : undefined,
       cases: cases && cases !== '0' ? parseFloat(cases) : undefined,
-      months: priceMonths === 'cur' ? undefined : 2,
+      // 'prev'/'both' need the prior-edition layers; 'next' compares AT the next
+      // edition (single month), 'cur' is the current month.
+      months: (priceMonths === 'prev' || priceMonths === 'both') ? 2 : undefined,
+      month_mode: priceMonths === 'next' ? 'next' : 'cur',
     }),
     enabled: ready,
     // Keep the current grid + toolbar on screen while a new view loads (or if it
@@ -396,8 +403,17 @@ export default function ComparePrices() {
     placeholderData: keepPreviousData,
   });
 
+  // Default to next month once it's loaded (buyer plans the upcoming month),
+  // unless the user has already picked a month view.
+  useEffect(() => {
+    if (!autoNextDone.current && data?.next_available && priceMonths === 'cur') {
+      autoNextDone.current = true;
+      setPriceMonths('next');
+    }
+  }, [data?.next_available, priceMonths]);
+
   const toggle = (w: string) => {
-    setAll(true);
+    setAll(false);
     setShown(pageSize);
     setSelected(s => s.includes(w) ? s.filter(x => x !== w)
       : s.length >= 3 ? s : [...s, w]);
@@ -522,9 +538,14 @@ export default function ComparePrices() {
       onChange: (v) => { setCases(v); setShown(pageSize); } },
     { type: 'pills', key: 'months', title: 'Price Comparison',
       value: priceMonths,
-      options: [{ value: 'cur', label: 'This month' }, { value: 'prev', label: 'Last month' },
-                { value: 'both', label: 'Both' }],
-      onChange: (v) => { setPriceMonths(v as 'cur' | 'prev' | 'both'); setShown(pageSize); } },
+      // "Next month" appears only when that edition is already loaded.
+      options: [
+        { value: 'cur', label: 'This month' },
+        ...(data?.next_available ? [{ value: 'next', label: 'Next month' }] : []),
+        { value: 'prev', label: 'Last month' },
+        { value: 'both', label: 'Both' },
+      ],
+      onChange: (v) => { autoNextDone.current = true; setPriceMonths(v as 'cur' | 'next' | 'prev' | 'both'); setShown(pageSize); } },
   ];
 
   return (
@@ -532,7 +553,7 @@ export default function ComparePrices() {
       {/* wrapper keeps this h2 out of the global `.page > h2` sticky rule,
           whose negative margins clipped the picker row below it */}
       <div className="cmp-head">
-        <h2><Scale size={20} style={{ verticalAlign: '-3px', marginRight: 8 }} />Compare Prices</h2>
+        <h2><Scale size={20} style={{ verticalAlign: '-3px', marginRight: 8 }} />Compare Distributor Price</h2>
       </div>
 
       {/* ---- distributor picker ---- */}
@@ -555,7 +576,7 @@ export default function ComparePrices() {
           </button>
         ))}
         {selected.length > 0 && (
-          <button className="cmp-clear" onClick={() => { setSelected([]); setAll(true); }}>
+          <button className="cmp-clear" onClick={() => { setSelected([]); setAll(false); }}>
             Clear
           </button>
         )}
@@ -601,13 +622,6 @@ export default function ComparePrices() {
               <div className="cmp-card-l">savings buying each at its cheapest</div>
             </div>
           </div>
-
-          {/* ---- smart insights ---- */}
-          {!!sum?.insights?.length && (
-            <div className="cmp-insights">
-              {sum.insights.map((t, i) => <div key={i} className="cmp-insight">💡 {t}</div>)}
-            </div>
-          )}
 
           <FilterSidebar storageKey="compare-prices" sections={sections} onReset={resetFilters}>
           {/* ---- results header (display controls; filters live in the rail) ---- */}
@@ -656,10 +670,10 @@ export default function ComparePrices() {
                       {distributorName(w)}
                       <span className="cmp-ed">
                         {priceMonths === 'prev' && data.prev_editions?.[w]
-                          ? data.prev_editions[w]
+                          ? fmtMonth(data.prev_editions[w])
                           : priceMonths === 'both' && data.prev_editions?.[w]
-                            ? `${data.editions[w]} vs ${data.prev_editions[w]}`
-                            : data.editions[w]}
+                            ? `${fmtMonth(data.editions[w])} vs ${fmtMonth(data.prev_editions[w])}`
+                            : fmtMonth(data.editions[w])}
                       </span>
                     </th>
                   ))}

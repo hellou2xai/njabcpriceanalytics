@@ -5575,8 +5575,19 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 .prod-filter-rail-body {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 6px 0;
-  max-height: calc(100vh - 24px); overflow-y: auto;
+  max-height: calc(100vh - 24px); overflow-y: auto; overflow-x: hidden;
 }
+/* In the narrow (248px) rail, controls must be FLUID — the toolbar-era
+   min-widths (140/180px) plus a non-border-box sizing forced a horizontal
+   scrollbar. Scope these to the rail so the old horizontal-toolbar usages are
+   untouched. */
+.prod-filter-sect-body .filter-select,
+.prod-filter-sect-body .filter-text,
+.prod-filter-sect-body .filter-range,
+.prod-filter-sect-body :is(input, select) {
+  width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box;
+}
+.prod-filter-sect-body .filter-range-input { width: 100%; min-width: 0; flex: 1; }
 /* Collapse handle: a small tab on the rail's right edge, vertically centered. */
 .prod-filter-collapse-handle {
   position: absolute; top: 50%; right: -12px; transform: translateY(-50%);

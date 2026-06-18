@@ -92,10 +92,20 @@
 .cmp-table th.cmp-sortable { cursor: pointer; user-select: none; }
 .cmp-table th.cmp-sortable:hover { color: var(--accent); }
 
-/* grid */
+/* grid — professional, centered headers */
+.cmp-table thead th {
+  text-align: center; vertical-align: middle;
+  background: var(--surface-hover); color: var(--text);
+  font-weight: 700; letter-spacing: .02em;
+  border-bottom: 1px solid var(--border); white-space: nowrap;
+}
 .cmp-table th.cmp-group-head { text-align: center; font-size: 12.5px; }
-.cmp-table .cmp-ed { display: block; font-size: 10px; font-weight: 400; letter-spacing: 0; text-transform: none; }
-.cmp-table th.cmp-layer { font-size: 10.5px; text-align: right; padding: 4px 8px; }
+/* Edition month under the distributor name: BOLD so the month each column
+   represents reads at a glance. */
+.cmp-table .cmp-ed { display: block; font-size: 11px; font-weight: 700; letter-spacing: 0; text-transform: none; color: var(--text-muted); margin-top: 2px; }
+.cmp-table th.cmp-layer { font-size: 10.5px; text-align: center; padding: 4px 8px; }
+/* Tidy zebra + hover for a clean, scannable table. */
+.cmp-table tbody tr:hover td { background: color-mix(in srgb, var(--accent) 5%, transparent); }
 .cmp-table td.cmp-price { text-align: right; font-variant-numeric: tabular-nums; }
 .cmp-table td.cmp-price.cmp-win {
   color: var(--green); font-weight: 700;

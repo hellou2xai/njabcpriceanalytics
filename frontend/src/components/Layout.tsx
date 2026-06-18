@@ -46,7 +46,7 @@ const NAV_GROUPS: {
   {
     header: 'Analysis',
     items: [
-      { path: '/compare-prices', label: 'Compare Prices', icon: Scale },
+      { path: '/compare-prices', label: 'Compare Distributor Price', icon: Scale },
       { path: '/compare-rips', label: 'Compare RIPs', icon: Layers },
       { path: '/edition-compare', label: 'Monthly Comparison', icon: CalendarClock },
       { path: '/price-drops', label: 'Price Drops', icon: ArrowDownRight },

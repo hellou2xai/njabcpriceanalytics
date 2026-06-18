@@ -490,6 +490,8 @@ export interface CompareResponse {
   wholesalers: string[];
   editions: Record<string, string>;
   prev_editions?: Record<string, string>;
+  next_available?: boolean;          // a next-month edition is loaded for some distributor
+  month_mode?: string;               // 'cur' | 'next' — which month the board compared at
   total_common: number;
   cases?: number;
   volume_basis?: 'at_volume' | 'best_deal';

@@ -123,27 +123,48 @@ def _parse_wholesalers(raw: str, con) -> list[str]:
     return slugs
 
 
-def _editions_for(con, src: str, slugs: list[str]) -> dict[str, str]:
-    """Current edition per wholesaler (latest edition <= current ET month,
-    falling back to the latest available)."""
+def _editions_for(con, src: str, slugs: list[str], mode: str = "cur") -> dict[str, str]:
+    """Edition to compare per wholesaler.
+
+    mode='cur'  -> the current month the buyer pays now: latest edition on-or-
+                   before today's ET month, falling back to the latest available.
+    mode='next' -> the next month, if it's already loaded (the earliest edition
+                   AFTER today's month); falls back to current, then latest.
+    """
     current_ym = _pricing.current_yyyy_mm()
     placeholders = ",".join("?" * len(slugs))
     rows = con.execute(
         f"""
         SELECT wholesaler,
                MAX(CASE WHEN edition <= ? THEN edition END) AS cur_ed,
+               MIN(CASE WHEN edition >  ? THEN edition END) AS next_ed,
                MAX(edition) AS latest_ed
         FROM {src}
         WHERE wholesaler IN ({placeholders})
         GROUP BY wholesaler
         """,
-        [current_ym] + slugs,
+        [current_ym, current_ym] + slugs,
     ).fetchall()
-    eds = {r[0]: (r[1] or r[2]) for r in rows}
+    if mode == "next":
+        eds = {r[0]: (r[2] or r[1] or r[3]) for r in rows}  # next, else cur, else latest
+    else:
+        eds = {r[0]: (r[1] or r[3]) for r in rows}          # cur, else latest
     missing = [s for s in slugs if s not in eds]
     if missing:
         raise HTTPException(400, f"No data for: {', '.join(missing)}")
     return eds
+
+
+def _next_edition_available(con, src: str, slugs: list[str]) -> bool:
+    """True when ANY selected distributor has an edition loaded for a month after
+    today's — i.e. a 'Next month' comparison is possible."""
+    current_ym = _pricing.current_yyyy_mm()
+    placeholders = ",".join("?" * len(slugs))
+    row = con.execute(
+        f"SELECT 1 FROM {src} WHERE wholesaler IN ({placeholders}) AND edition > ? LIMIT 1",
+        slugs + [current_ym],
+    ).fetchone()
+    return bool(row)
 
 
 def _edition_pred(slugs: list[str], eds: dict[str, str]) -> tuple[str, list]:
@@ -630,6 +651,7 @@ def compare_products(
     order: str = Query("desc"),
     limit: int = Query(2000, ge=1, le=50000),
     months: int = Query(1, ge=1, le=2, description="1 = current month only; 2 = also attach each distributor's PRIOR-edition price layers (prev) for the two-month Price Comparison view."),
+    month_mode: str = Query("cur", description="cur = compare at the current month; next = compare at the NEXT month when that edition is already loaded (else falls back to current)."),
     user: Optional[dict] = Depends(get_optional_user),
 ):
     """The comparison grid: products common to ALL selected distributors with
@@ -642,7 +664,7 @@ def compare_products(
     At-volume uses the canonical tier ladder (attach_tiers) + `_applied_tier_at`,
     never a re-implemented formula."""
     cache_key = ("compare_products", _cache_tag(), wholesalers, q, product_type,
-                 only_differences, min_spread, cases, sort, order, limit, months)
+                 only_differences, min_spread, cases, sort, order, limit, months, month_mode)
     cached = _board_cache_get(cache_key)
     if cached is not None:
         return cached
@@ -650,7 +672,8 @@ def compare_products(
     with get_duckdb() as con:
         src = read_parquet(con, "cpl_enriched")
         slugs = _parse_wholesalers(wholesalers, con)
-        eds = _editions_for(con, src, slugs)
+        eds = _editions_for(con, src, slugs, mode=("next" if month_mode == "next" else "cur"))
+        next_available = _next_edition_available(con, src, slugs)
         raw = _common_rows(con, src, slugs, eds)
         # Set each distributor's Best QD / Best Net from the deals that are LIVE
         # TODAY (expired + upcoming excluded), so the grid shows today's real
@@ -857,6 +880,8 @@ def compare_products(
         "wholesalers": slugs,
         "editions": eds,
         "prev_editions": prev_eds,
+        "next_available": next_available,
+        "month_mode": month_mode,
         "total_common": total,
         "cases": (n_cases or 0),
         "volume_basis": ("at_volume" if n_cases else "best_deal"),

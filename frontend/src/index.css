@@ -6010,6 +6010,13 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pd-section h2 { font-size: 17px; font-weight: 700; color: var(--text); margin: 0 0 8px; display: flex; align-items: center; gap: 8px; }
 .pd-section p { font-size: 14px; line-height: 1.6; color: var(--text); margin: 0; }
 .pd-section-sub { font-size: 13px; color: var(--text-muted); margin: -2px 0 10px !important; }
+/* Next Month Price box: a bordered card holding the Products QD/RIP table. */
+.pd-nextmonth { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px;
+  background: var(--surface); display: inline-block; min-width: 320px; max-width: 100%; }
+.pd-nextmonth h2 { font-size: 15px; margin: 0 0 8px; }
+.pd-nextmonth-list { font-size: 13px; color: var(--text); margin-bottom: 8px; font-variant-numeric: tabular-nums; }
+.pd-nextmonth-list strong { color: var(--text); }
+.pd-nextmonth-delta { color: var(--text-muted); }
 .pd-section-head-row { justify-content: space-between; }
 .pd-viewall { font-size: 13px; color: var(--accent); text-decoration: none; display: inline-flex; align-items: center; gap: 2px; font-weight: 600; }
 .pd-rip-tag { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 5px; background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); }

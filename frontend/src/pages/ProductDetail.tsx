@@ -14,6 +14,8 @@ import QuantityPriceCurve from '../components/QuantityPriceCurve';
 import DealTimingSticker, { everyDayFromTiers, type DatedDeal } from '../components/DealTimingSticker';
 import TierBadge from '../components/TierBadge';
 import { buildMonths } from '../lib/promotionsSparkline';
+import DealLadder from '../components/DealLadder';
+import { currentMonth } from '../components/MonthEffectiveSparkline';
 import { windowBadge, fmtDateRange } from '../lib/dealDates';
 
 // Per-tier partial-month flag for the QD / Mix-RIP stacks on the detail page —
@@ -544,6 +546,21 @@ export default function ProductDetail() {
   const headerVendorSku = headSku && abgSku(headSku.wholesaler, headSku.abg_sku)
     ? `${skuLabel(headSku.wholesaler)} ${headSku.abg_sku}` : null;
 
+  // Next-month price box: the seed size's price_3mo carries the early-loaded
+  // next edition (future block) when it's loaded. Reuse the SAME DealLadder the
+  // Products page renders, in monthMode 'next', so the header shows next month's
+  // full QD/RIP table. Hidden when no next edition is loaded.
+  const primarySize = useMemo(() => {
+    if (!sizes?.length) return null;
+    const u = headSku?.upc, v = headSku?.unit_volume;
+    return sizes.find(s => s.upc === u && s.unit_volume === v)
+      ?? sizes.find(s => s.unit_volume === v) ?? sizes[0];
+  }, [sizes, headSku]);
+  const nextMonths = useMemo(() => (primarySize ? buildMonths(primarySize) : []), [primarySize]);
+  const nextBlock = nextMonths.find(m => m.future) ?? null;
+  const curBlock = currentMonth(nextMonths);
+  const nextPack = primarySize ? bottlesPerCase(name, primarySize.unit_qty) : null;
+
   if (!wholesaler || !name) {
     return <div className="page"><p>Product not specified.</p><Link to="/products" className="link-btn">← Back to Products</Link></div>;
   }
@@ -613,6 +630,26 @@ export default function ProductDetail() {
               </dl>
             </div>
           </div>
+
+          {/* Next Month Price — the SAME QD/RIP tier table the Products page
+              uses (DealLadder, monthMode='next'), shown only when next month's
+              edition is loaded. List + full deal detail for next month. */}
+          {nextBlock && (
+            <section className="pd-section pd-nextmonth">
+              <h2>Next Month Price{primarySize?.unit_volume ? ` · ${primarySize.unit_volume}` : ''}</h2>
+              <div className="pd-nextmonth-list">
+                List <strong>{nextBlock.frontline != null ? `$${nextBlock.frontline.toFixed(2)}` : '—'}</strong>/{priceUnit(primarySize?.unit_volume, primarySize?.unit_type)}
+                {curBlock?.frontline != null && nextBlock.frontline != null && Math.abs(curBlock.frontline - nextBlock.frontline) > 0.005 && (
+                  <span className="pd-nextmonth-delta">
+                    {' '}({nextBlock.frontline > curBlock.frontline ? '+' : ''}${(nextBlock.frontline - curBlock.frontline).toFixed(2)} vs this month)
+                  </span>
+                )}
+              </div>
+              <DealLadder months={nextMonths} pack={nextPack} monthMode="next"
+                unitVolume={primarySize?.unit_volume} unitType={primarySize?.unit_type}
+                emptyText="No quantity or RIP deals next month" />
+            </section>
+          )}
 
           {hasDesc && (
             <section className="pd-section">

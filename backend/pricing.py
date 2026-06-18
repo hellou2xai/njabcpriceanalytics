@@ -180,6 +180,25 @@ def norm_vintage(v) -> Optional[str]:
     return None
 
 
+def _clean_upc(upc) -> bool:
+    """True only for a REAL barcode, not a stub/placeholder. Mirror of
+    catalog._is_clean_upc / the _VALID_UPC_SQL predicate: rejects NULL/blank/'0',
+    all-same-digit fillers ('000…','111…','999…'), '999999…' sentinels, repeated-
+    digit stubs (Allied's 111111111117), and codes < 8 digits after leading
+    zeros. A placeholder UPC is shared by many unrelated products, so it must
+    NEVER act as a join/group key (it welds strangers together)."""
+    s = str(upc).strip() if upc is not None else ""
+    if s in ("", "0"):
+        return False
+    if re.fullmatch(r"(0+|9+|1+)", s):
+        return False
+    if s.startswith("999999"):
+        return False
+    if re.match(r"^(\d)\1{8,}", s):
+        return False
+    return len(s.lstrip("0")) >= 8
+
+
 # ---------------------------------------------------------------------------
 # Pure function: best applicable CPL discount at N cases.
 # Extracted from the closure inside `_attach_discount_rip_tiers` so it can
@@ -1374,14 +1393,31 @@ def attach_next_tiers(con, records) -> None:
     if not records:
         return
     next_ym = next_yyyy_mm()
-    upcs = sorted({str(r["upc"]) for r in records if r.get("upc")})
-    if not upcs:
+    # Real barcodes match by UPC; placeholder UPCs ('0' etc., shared by many
+    # products) match by (wholesaler, product_name) ONLY — never borrow a
+    # stranger's next-month tiers through a shared stub.
+    clean_upcs = sorted({str(r["upc"]) for r in records if _clean_upc(r.get("upc"))})
+    name_pairs = sorted({(r.get("wholesaler"), r.get("product_name"))
+                         for r in records
+                         if not _clean_upc(r.get("upc"))
+                         and r.get("wholesaler") and r.get("product_name")})
+    if not clean_upcs and not name_pairs:
         for r in records:
             r["next_tiers"] = []
         return
     src = read_parquet(con, "cpl_enriched")
-    upc_ph = ", ".join(f"$u{i}" for i in range(len(upcs)))
-    up_params = {f"u{i}": u for i, u in enumerate(upcs)}
+    up_params = {"next_ym": next_ym}
+    where_or = []
+    if clean_upcs:
+        upc_ph = ", ".join(f"$u{i}" for i in range(len(clean_upcs)))
+        for i, u in enumerate(clean_upcs):
+            up_params[f"u{i}"] = u
+        where_or.append(f"upc IN ({upc_ph})")
+    if name_pairs:
+        np_ph = ", ".join(f"($pw{i}, $pn{i})" for i in range(len(name_pairs)))
+        for i, (w, n) in enumerate(name_pairs):
+            up_params[f"pw{i}"], up_params[f"pn{i}"] = w, n
+        where_or.append(f"(wholesaler, product_name) IN ({np_ph})")
     try:
         df = con.execute(f"""
             SELECT wholesaler, edition, upc, product_name, unit_volume, unit_qty, vintage,
@@ -1391,8 +1427,8 @@ def attach_next_tiers(con, records) -> None:
                    discount_5_qty, discount_5_amt,
                    rip_code
             FROM {src}
-            WHERE edition = $next_ym AND upc IN ({upc_ph})
-        """, {**up_params, "next_ym": next_ym}).fetchdf()
+            WHERE edition = $next_ym AND ({" OR ".join(where_or)})
+        """, up_params).fetchdf()
     except Exception:
         for r in records:
             r["next_tiers"] = []
@@ -1405,22 +1441,26 @@ def attach_next_tiers(con, records) -> None:
     for _, nr in df.iterrows():
         d = dict(nr)
         next_rows.append(d)
-        ws = d.get("wholesaler"); upc = str(d.get("upc") or "")
+        ws = d.get("wholesaler"); raw_upc = str(d.get("upc") or "")
+        upc = raw_upc if _clean_upc(raw_upc) else ""   # placeholder -> no upc key
         nm = d.get("product_name") or ""; vol = d.get("unit_volume") or ""
         uq = uq_key(d.get("unit_qty"))
         vn = norm_vintage(d.get("vintage"))
-        by_full[(ws, upc, nm, vol, uq, vn)] = d
-        by_full.setdefault((ws, upc, nm, vol, uq), d)
-        by_full.setdefault((ws, upc, nm, vol), d)
-        by_full.setdefault((ws, upc, nm), d)
+        if upc:
+            by_full[(ws, upc, nm, vol, uq, vn)] = d
+            by_full.setdefault((ws, upc, nm, vol, uq), d)
+            by_full.setdefault((ws, upc, nm, vol), d)
+            by_full.setdefault((ws, upc, nm), d)
         by_name[(ws, nm, vol, uq, vn)] = d
         by_name.setdefault((ws, nm, vol, uq), d)
         by_name.setdefault((ws, nm, vol), d)
         by_name.setdefault((ws, nm), d)
-        by_upc[(ws, upc, vol, uq, vn)] = d
-        by_upc.setdefault((ws, upc, vol, uq), d)
-        by_upc.setdefault((ws, upc, vol), d)
-        by_upc.setdefault((ws, upc), d)
+        # by_upc keys ONLY for real barcodes — never index a placeholder stub.
+        if upc:
+            by_upc[(ws, upc, vol, uq, vn)] = d
+            by_upc.setdefault((ws, upc, vol, uq), d)
+            by_upc.setdefault((ws, upc, vol), d)
+            by_upc.setdefault((ws, upc), d)
 
     # Reuse attach_tiers on the next-edition dicts; it sets
     # next_rows[i]["tiers"] in place using next-edition rip_code/edition.
@@ -1428,17 +1468,19 @@ def attach_next_tiers(con, records) -> None:
         attach_tiers(con, next_rows)
 
     for rec in records:
-        ws = rec.get("wholesaler"); upc = str(rec.get("upc") or "")
+        ws = rec.get("wholesaler"); raw_upc = str(rec.get("upc") or "")
+        upc = raw_upc if _clean_upc(raw_upc) else ""   # placeholder -> name-only
         nm = rec.get("product_name") or ""; vol = rec.get("unit_volume") or ""
         uq = uq_key(rec.get("unit_qty"))
         vn = norm_vintage(rec.get("vintage"))
-        match = (by_full.get((ws, upc, nm, vol, uq, vn)) or by_full.get((ws, upc, nm, vol, uq))
-                 or by_full.get((ws, upc, nm, vol)) or by_full.get((ws, upc, nm))
-                 or by_name.get((ws, nm, vol, uq, vn)) or by_name.get((ws, nm, vol, uq))
-                 or by_name.get((ws, nm, vol)) or by_name.get((ws, nm))
-                 or by_upc.get((ws, upc, vol, uq, vn)) or by_upc.get((ws, upc, vol, uq))
-                 or by_upc.get((ws, upc, vol))
-                 or by_upc.get((ws, upc)))
+        # UPC lookups only when the barcode is real; otherwise name + size only.
+        match = (
+            (upc and (by_full.get((ws, upc, nm, vol, uq, vn)) or by_full.get((ws, upc, nm, vol, uq))
+                      or by_full.get((ws, upc, nm, vol)) or by_full.get((ws, upc, nm))))
+            or by_name.get((ws, nm, vol, uq, vn)) or by_name.get((ws, nm, vol, uq))
+            or by_name.get((ws, nm, vol)) or by_name.get((ws, nm))
+            or (upc and (by_upc.get((ws, upc, vol, uq, vn)) or by_upc.get((ws, upc, vol, uq))
+                         or by_upc.get((ws, upc, vol)) or by_upc.get((ws, upc)))))
         rec["next_tiers"] = match.get("tiers", []) if match else []
 
 
@@ -1463,16 +1505,36 @@ def attach_price_3mo(con, records) -> None:
     non-future block). Never invents a month that is not in the data. No-op on []."""
     if not records:
         return
-    upcs = sorted({str(r["upc"]) for r in records if r.get("upc")})
-    if not upcs:
+    # Split records by whether they carry a REAL barcode. A placeholder UPC
+    # ('0', all-same-digit fillers, repeated-digit stubs) is shared by MANY
+    # unrelated products, so matching on it welds strangers together and the
+    # sparkline / tier ladder picks up another product's history (the Gran Gala
+    # 750ML upc='0' bug). Those rows match by (wholesaler, product_name) + size
+    # ONLY — never by the shared stub.
+    clean_upcs = sorted({str(r["upc"]) for r in records if _clean_upc(r.get("upc"))})
+    name_pairs = sorted({(r.get("wholesaler"), r.get("product_name"))
+                         for r in records
+                         if not _clean_upc(r.get("upc"))
+                         and r.get("wholesaler") and r.get("product_name")})
+    if not clean_upcs and not name_pairs:
         for r in records:
             r["price_3mo"] = []
         return
     src = read_parquet(con, "cpl_enriched")
     cym = current_yyyy_mm()
-    upc_ph = ", ".join(f"$u{i}" for i in range(len(upcs)))
-    params = {f"u{i}": u for i, u in enumerate(upcs)}
-    params["cym"] = cym
+    params = {"cym": cym}
+    where_or = []
+    if clean_upcs:
+        upc_ph = ", ".join(f"$u{i}" for i in range(len(clean_upcs)))
+        for i, u in enumerate(clean_upcs):
+            params[f"u{i}"] = u
+        where_or.append(f"c.upc IN ({upc_ph})")
+    if name_pairs:
+        np_ph = ", ".join(f"($pw{i}, $pn{i})" for i in range(len(name_pairs)))
+        for i, (w, n) in enumerate(name_pairs):
+            params[f"pw{i}"], params[f"pn{i}"] = w, n
+        where_or.append(f"(c.wholesaler, c.product_name) IN ({np_ph})")
+    where_clause = " OR ".join(where_or)
     try:
         df = con.execute(f"""
             WITH eds AS (
@@ -1499,7 +1561,7 @@ def attach_price_3mo(con, records) -> None:
                    c.discount_5_qty, c.discount_5_amt, c.rip_code, keep.is_future
             FROM {src} c
             JOIN keep ON c.wholesaler = keep.wholesaler AND c.edition = keep.edition
-            WHERE c.upc IN ({upc_ph})
+            WHERE {where_clause}
         """, params).fetchdf()
     except Exception:
         for r in records:
@@ -1516,7 +1578,9 @@ def attach_price_3mo(con, records) -> None:
     from collections import defaultdict
     groups: dict = defaultdict(list)
     for d in rows:
-        ws = d.get("wholesaler"); upc = str(d.get("upc") or "")
+        ws = d.get("wholesaler"); raw_upc = str(d.get("upc") or "")
+        # Placeholder UPC -> blank in the key so it can't weld to another stub.
+        upc = raw_upc if _clean_upc(raw_upc) else ""
         nm = d.get("product_name") or ""; vol = d.get("unit_volume") or ""
         uq = uq_key(d.get("unit_qty")); vn = norm_vintage(d.get("vintage"))
         pack = _num(d.get("unit_qty")) or 1.0
@@ -1535,9 +1599,15 @@ def attach_price_3mo(con, records) -> None:
         })
 
     def _keys(ws, upc, nm, vol, uq, vn):
-        return [(ws, upc, nm, vol, uq, vn), (ws, upc, nm, vol, uq), (ws, upc, nm, vol),
-                (ws, upc, nm), (ws, nm, vol, uq, vn), (ws, nm, vol, uq), (ws, nm, vol),
-                (ws, nm), (ws, upc, vol, uq, vn), (ws, upc, vol, uq), (ws, upc, vol), (ws, upc)]
+        # Real barcode: UPC-bearing keys first (most precise), then name keys.
+        if upc:
+            return [(ws, upc, nm, vol, uq, vn), (ws, upc, nm, vol, uq), (ws, upc, nm, vol),
+                    (ws, upc, nm), (ws, nm, vol, uq, vn), (ws, nm, vol, uq), (ws, nm, vol),
+                    (ws, nm), (ws, upc, vol, uq, vn), (ws, upc, vol, uq), (ws, upc, vol), (ws, upc)]
+        # Placeholder UPC ('0' etc.): NAME + size ONLY. Never a (ws, upc, …) or
+        # bare (ws, upc) key — the shared stub would borrow a stranger's history.
+        return [(ws, "", nm, vol, uq, vn), (ws, "", nm, vol, uq), (ws, "", nm, vol),
+                (ws, "", nm), (ws, nm, vol, uq, vn), (ws, nm, vol, uq), (ws, nm, vol), (ws, nm)]
 
     index: dict = {}
     for full in groups:
@@ -1545,7 +1615,8 @@ def attach_price_3mo(con, records) -> None:
             index.setdefault(k, full)
 
     for rec in records:
-        ws = rec.get("wholesaler"); upc = str(rec.get("upc") or "")
+        ws = rec.get("wholesaler"); raw_upc = str(rec.get("upc") or "")
+        upc = raw_upc if _clean_upc(raw_upc) else ""
         nm = rec.get("product_name") or ""; vol = rec.get("unit_volume") or ""
         uq = uq_key(rec.get("unit_qty")); vn = norm_vintage(rec.get("vintage"))
         blocks = []

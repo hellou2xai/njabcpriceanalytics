@@ -15,6 +15,7 @@
  * Used by the Products list expanded size rows AND the collapsed product card,
  * so there is exactly one place that turns canonical tiers into UI.
  */
+import { Fragment } from 'react';
 import type { MonthBreakdown, RipTier } from './MonthEffectiveSparkline';
 import { currentMonth } from './MonthEffectiveSparkline';
 import TierBadge from './TierBadge';
@@ -114,7 +115,9 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
     }
     return `${t.qty} ${uw(t.unit)}`;
   };
-  const line = (kind: 'qd' | 'rip', t: RipTier, i: number, noFlag = false) => {
+  // One tier as a TABLE ROW (Type | Buy | $/cs | $/btl | Save). Best tier in its
+  // class gets the red-on-yellow highlight (unchanged convention).
+  const Row = (kind: 'qd' | 'rip', t: RipTier, i: number, noFlag = false) => {
     const b = btlOf(t.eff);
     const off = frontline != null && t.eff < frontline ? frontline - t.eff : null;
     // RIP rows: the rebate ALONE (the RIP-sheet number), never rebate+QD mixed.
@@ -122,28 +125,19 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
     const isBest = (kind === 'qd' && bestQdEff != null && caseQty(t) > 1 + 1e-9 && t.eff <= bestQdEff + 1e-9)
       || (kind === 'rip' && bestRipEff != null && t.eff <= bestRipEff + 1e-9);
     return (
-      <div key={`${kind}${i}`} className={`prod-deal-line${isBest ? ' prod-deal-best' : ''}`}>
-        <TierBadge kind={kind} />
-        {/* Dated-window sticker sits LEFT (after the pill) so its variable
-            length never drags a line's tail out and wrecks the column.
-            Suppressed when the whole RIP group shares one window — the
-            sticker then renders ONCE on the group header instead. */}
-        {!noFlag && <PartialFlag t={t} />}{' '}
-        {buyLabel(t)} → <strong>${t.eff.toFixed(2)}/{csWord}</strong>
-        {b != null && !keg && <span className="prod-deal-btl"> · ${b.toFixed(2)}/{unitNoun}</span>}
-        {kind === 'rip' && ripSave != null && ripSave > 0.005 && (
-          <span className="prod-deal-off"
-            title="The RIP rebate alone, per case — the number on the RIP sheet. The price shown already includes any stacked case discount.">
-            {' '}(RIP -${ripSave.toFixed(2)}/{csWord})
-          </span>
-        )}
-        {kind === 'qd' && off != null && off > 0.005 && (
-          <span className="prod-deal-off"
-            title="Total discount off the list price at this tier, per case.">
-            {' '}(−${off.toFixed(2)}/{csWord})
-          </span>
-        )}
-      </div>
+      <tr key={`${kind}${i}`} className={`prod-deal-trow${isBest ? ' prod-deal-best' : ''}`}>
+        <td className="prod-deal-td-type"><TierBadge kind={kind} />{!noFlag && <PartialFlag t={t} />}</td>
+        <td className="prod-deal-td-buy">{buyLabel(t)}</td>
+        <td className="prod-deal-num"><strong>${t.eff.toFixed(2)}</strong></td>
+        <td className="prod-deal-num">{b != null && !keg ? `$${b.toFixed(2)}` : '—'}</td>
+        <td className="prod-deal-num prod-deal-save">
+          {kind === 'rip' && ripSave != null && ripSave > 0.005
+            ? <span title="The RIP rebate alone, per case — the RIP-sheet number.">RIP −${ripSave.toFixed(2)}</span>
+            : kind === 'qd' && off != null && off > 0.005
+              ? <span title="Total discount off list at this tier, per case.">−${off.toFixed(2)}</span>
+              : '—'}
+        </td>
+      </tr>
     );
   };
 
@@ -177,59 +171,36 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
     return g.tiers.every(t => winKey(t) === winKey(t0)) ? t0 : null;
   };
 
-  // "RIP Tier" glance line ADDED above the detailed RIP rows: each tier's real
-  // buy-in and the TOTAL RIP rebate at that tier = cases x RIP-per-case (what
-  // the buyer actually gets back), NOT the per-case figure and NOT the price —
-  // "5 cs/$50.00, 10 cs/$150.00, 20 cs/$400.00", ascending, in the RIP colour.
-  // The per-tier price/bottle/window detail stays below.
-  const sortQty = (t: RipTier) => (t.qualifiedCases ?? caseQty(t));
-  const summaryMap = new Map<string, { q: number; total: number }>();
-  for (const t of rip) {
-    const per = t.ripOnlySave ?? null;
-    if (per == null || per <= 0) continue;
-    const q = sortQty(t);
-    const total = Math.round(q * per * 100) / 100;   // cases x RIP per case
-    const label = buyLabel(t);
-    const prev = summaryMap.get(label);
-    if (!prev || total > prev.total) summaryMap.set(label, { q, total });
-  }
-  const summary = [...summaryMap.entries()]
-    .map(([label, v]) => ({ label, ...v }))
-    .sort((a, b) => a.q - b.q);
-  const bestTotal = summary.length ? Math.max(...summary.map(s => s.total)) : null;
-
   return (
-    <>
-      {disc.map((t, i) => line('qd', t, i))}
-      {summary.length > 0 && (
-        <div className="prod-deal-line prod-deal-rip-summary"
-          title="RIP Tier — the total RIP rebate at each tier (cases x RIP per case), i.e. the dollars you get back, not the per-case figure or the price.">
-          <span className="prod-rip-tier-label">RIP Tier</span>{' '}
-          <span className="prod-rip-tiers">
-            {summary.map((s, i) => (
-              <span key={i}>{i > 0 && ', '}
-                <span className={bestTotal != null && s.total >= bestTotal - 1e-9 ? 'prod-rip-tier-best' : undefined}>
-                  {s.label}/<strong>${s.total.toFixed(2)}</strong>
-                </span>
-              </span>
-            ))}
-          </span>
-        </div>
-      )}
-      {ripGroups.map((g, gi) => {
-        const hoist = hoistedFlag(g);
-        return (
-          <div key={`rg${gi}`} className={multiProgram ? 'prod-rip-group' : undefined}>
-            {(multiProgram || hoist) && (
-              <div className="prod-rip-group-hdr" title="A separate RIP program for this product — pick the one that matches how much you buy. These do not stack.">
-                RIP{g.code ? ` ${g.code}` : ''}
-                {hoist && <PartialFlag t={hoist} />}
-              </div>
-            )}
-            {g.tiers.map((t, i) => line('rip', t, i, !!hoist))}
-          </div>
-        );
-      })}
-    </>
+    <table className="prod-deal-table">
+      <thead>
+        <tr>
+          <th>Tier</th>
+          <th>Buy</th>
+          <th className="prod-deal-num">/{csWord}</th>
+          <th className="prod-deal-num">/{unitNoun}</th>
+          <th className="prod-deal-num">Save</th>
+        </tr>
+      </thead>
+      <tbody>
+        {disc.map((t, i) => Row('qd', t, i))}
+        {ripGroups.map((g, gi) => {
+          const hoist = hoistedFlag(g);
+          return (
+            <Fragment key={`rg${gi}`}>
+              {(multiProgram || hoist) && (
+                <tr className="prod-deal-grouphdr">
+                  <td colSpan={5}
+                    title="A separate RIP program for this product — pick the one matching how much you buy. These do not stack.">
+                    RIP{g.code ? ` ${g.code}` : ''}{hoist && <PartialFlag t={hoist} />}
+                  </td>
+                </tr>
+              )}
+              {g.tiers.map((t, i) => Row('rip', t, i, !!hoist))}
+            </Fragment>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }

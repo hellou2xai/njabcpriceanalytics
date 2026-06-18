@@ -284,14 +284,25 @@ function _nextMonthName(ed?: string | null): string {
   const m = /^(\d{4})-(\d{1,2})/.exec(ed ?? '');
   return m ? (_FULL_MONTHS[parseInt(m[2], 10) % 12] ?? '') : '';   // +1 month, wraps Dec→Jan
 }
+// CURRENT = the calendar month the buyer pays now (e.g. June), NOT the row's
+// edition or the latest loaded month. Anchored to today's date.
+function _currentYM(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
 function BetterMonthSticker({ s, repRow }: { s?: Product | null; repRow?: Product | null }) {
   const row = (repRow && s?.upc && repRow.upc === s.upc && repRow.wholesaler === s.wholesaler)
     ? repRow : (s ?? repRow);
   const cur = row?.effective_case_price ?? null;
-  const curMo = _monthName(row?.edition);
-  if (cur == null || !curMo) return null;
+  if (cur == null) return null;
+  const cym = _currentYM();
+  // "This month vs next month" is only meaningful on the CURRENT month's
+  // listing. A future-edition row (e.g. a July listing in New Items) is NOT
+  // "current", so never label it current — just don't show the tag there.
+  if ((row?.edition ?? '') !== cym) return null;
+  const curMo = _monthName(cym);
+  const nextMo = _nextMonthName(cym);
   const next = row?.next_effective_case_price ?? null;
-  const nextMo = _nextMonthName(row?.edition);
   const money = (v: number) => `$${v.toFixed(2)}`;
   if (next != null && next < cur - 0.01) {
     const save = cur - next;

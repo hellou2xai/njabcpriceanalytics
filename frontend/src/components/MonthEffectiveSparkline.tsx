@@ -81,7 +81,7 @@ function TierWin({ t }: { t: RipTier }) {
 // One small N-point line for a monthly series. Colour reads from the buyer's
 // view of the HISTORY: price lower now than 3 months ago = green (good), higher
 // = red, flat = grey. Missing months are skipped (no future month invented).
-function Chip({ values, label, title }: { values: (number | null | undefined)[]; label: string; title: string }) {
+function Chip({ values, futures, label, title }: { values: (number | null | undefined)[]; futures?: boolean[]; label: string; title: string }) {
   const real = values
     .map((v, i) => ({ v, i }))
     .filter((p): p is { v: number; i: number } => p.v != null);
@@ -92,18 +92,29 @@ function Chip({ values, label, title }: { values: (number | null | undefined)[];
   const vals = real.map(p => p.v);
   const min = Math.min(...vals), max = Math.max(...vals), range = Math.max(max - min, 0.01);
   const ys = (v: number) => BOTTOM - ((v - min) / range) * (BOTTOM - TOP);
-  // Series is chronological (oldest leftmost, like any price chart), so the
-  // last entry is the current price. Cheaper now than 3 months ago = green.
-  const newest = vals[vals.length - 1], oldest = vals[0];
-  const colour = newest < oldest - 0.005 ? '#16a34a' : newest > oldest + 0.005 ? '#dc2626' : '#6b7280';
+  // The HEADLINE number is the CURRENT month — the newest NON-future point. A
+  // next-month edition loaded early is plotted as a trailing point but must not
+  // become the headline (it would show next month's price as "now"). Falls back
+  // to the latest real point if every point is future.
+  const curPt = (() => {
+    for (let k = real.length - 1; k >= 0; k--) {
+      if (!(futures && futures[real[k].i])) return real[k];
+    }
+    return real[real.length - 1];
+  })();
+  const headVal = curPt.v, oldest = vals[0];
+  // Cheaper now than 3 months ago = green (compare the CURRENT point, not a
+  // future preview, to the oldest).
+  const colour = headVal < oldest - 0.005 ? '#16a34a' : headVal > oldest + 0.005 ? '#dc2626' : '#6b7280';
   const poly = real.map(p => `${xs(p.i).toFixed(1)},${ys(p.v).toFixed(1)}`).join(' ');
   return (
     <span className="mes-chip2" title={title}>
       <svg width={W} height={H} aria-hidden>
         {real.length > 1 && <polyline points={poly} fill="none" stroke={colour} strokeWidth={1.75} />}
-        {real.map(p => <circle key={p.i} cx={xs(p.i)} cy={ys(p.v)} r={2.4} fill={colour} />)}
+        {real.map(p => <circle key={p.i} cx={xs(p.i)} cy={ys(p.v)} r={2.4}
+          fill={futures && futures[p.i] ? '#fff' : colour} stroke={colour} strokeWidth={futures && futures[p.i] ? 1.2 : 0} />)}
         <text x={2} y={H - 4} fontSize="9.5" fontWeight="600" fill="var(--text-muted, #64748b)">{label}</text>
-        <text x={W - 2} y={H - 4} fontSize="10" fontWeight="700" fill={colour} textAnchor="end">${newest.toFixed(0)}</text>
+        <text x={W - 2} y={H - 4} fontSize="10" fontWeight="700" fill={colour} textAnchor="end">${headVal.toFixed(0)}</text>
       </svg>
     </span>
   );
@@ -334,8 +345,8 @@ export default function MonthEffectiveSparkline({ months }: Props) {
     <span className={`mes-wrap${placeBelow ? ' mes-wrap-below' : ''}${pinned ? ' mes-wrap-pinned' : ''}`}
           ref={wrapRef} onMouseEnter={onWrapEnter}>
       <span className="mes-chips2">
-        <Chip values={chrono.map(m => m.disc1)} label="1cs" title="Price after the 1-case discount, last 3 months" />
-        <Chip values={chrono.map(m => m.bestEff)} label="RIP" title="Best effective price (best RIP), last 3 months" />
+        <Chip values={chrono.map(m => m.disc1)} futures={chrono.map(m => !!m.future)} label="1cs" title="Price after the 1-case discount, last 3 months" />
+        <Chip values={chrono.map(m => m.bestEff)} futures={chrono.map(m => !!m.future)} label="RIP" title="Best effective price (best RIP), last 3 months" />
         {/* Month-name stickers under the chips, chronological (Apr, May, Jun)
             to match the chip points, so the buyer can read which point is which. */}
         <span className="mes-months">

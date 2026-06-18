@@ -96,11 +96,7 @@ _pm_lock = _threading.Lock()
 def _pm_compute_full(con, direction: str) -> list[dict]:
     """Compute the full classified mover list for a direction (no filters)."""
     from backend.enrichment_join import attach_enrichment_image, attach_sku_mapping
-    from datetime import date as _date
     import pandas as pd
-
-    today = _date.today()
-    current_ym = f"{today.year:04d}-{today.month:02d}"
 
     src = read_parquet(con, "price_changes")
     cpl = read_parquet(con, "cpl_enriched")
@@ -114,12 +110,17 @@ def _pm_compute_full(con, direction: str) -> list[dict]:
     else:
         vintage_expr = "NULL AS vintage"
 
+    # Compare the LATEST TWO editions LOADED, not the calendar month. The moment
+    # July is ingested the page compares June -> July (cur_ed = the most recent
+    # edition present; each row's prev_case_price is the edition before it). There
+    # is nothing past the latest load, so next_ed is always null (the next-month
+    # projection only made sense under the old calendar-gated rule). This matches
+    # the dashboard mover counts, which already key off MAX(edition).
     eds_df = con.execute(
         f"""SELECT wholesaler,
-               COALESCE(MAX(CASE WHEN edition <= $c THEN edition END), MAX(edition)) AS cur_ed,
-               MIN(CASE WHEN edition > $c THEN edition END) AS next_ed
-            FROM {cpl} GROUP BY wholesaler""",
-        {"c": current_ym},
+               MAX(edition) AS cur_ed,
+               CAST(NULL AS VARCHAR) AS next_ed
+            FROM {cpl} GROUP BY wholesaler"""
     ).fetchdf()
 
     ed_by_ws: dict = {}

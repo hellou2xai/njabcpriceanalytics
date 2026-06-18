@@ -749,8 +749,13 @@ def search_products(
                 FROM {src}
                 GROUP BY wholesaler
             """, {"current_ym": current_ym}).fetchdf()
+            # New Items shows products at the edition they actually exist in, so
+            # July introductions (only in the July file) aren't filtered out by
+            # the current-month (June) edition. Use the latest LOADED edition in
+            # that mode; otherwise the current calendar month.
             latest_map = {
-                r["wholesaler"]: r["current_ed"] or r["latest_ed"]
+                r["wholesaler"]: (r["latest_ed"] if introduced_within_months
+                                  else (r["current_ed"] or r["latest_ed"]))
                 for _, r in max_eds.iterrows()
             }
 
@@ -3510,8 +3515,13 @@ def search_facets(
                 FROM {src}
                 GROUP BY wholesaler
             """, {"current_ym": current_ym}).fetchdf()
+            # New Items shows products at the edition they actually exist in, so
+            # July introductions (only in the July file) aren't filtered out by
+            # the current-month (June) edition. Use the latest LOADED edition in
+            # that mode; otherwise the current calendar month.
             latest_map = {
-                r["wholesaler"]: r["current_ed"] or r["latest_ed"]
+                r["wholesaler"]: (r["latest_ed"] if introduced_within_months
+                                  else (r["current_ed"] or r["latest_ed"]))
                 for _, r in max_eds.iterrows()
             }
 

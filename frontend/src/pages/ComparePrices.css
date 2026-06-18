@@ -105,6 +105,12 @@
 .cmp-table .cmp-ed { display: block; font-size: 11px; font-weight: 700; letter-spacing: 0; text-transform: none; color: var(--text-muted); margin-top: 2px; }
 .cmp-table th.cmp-layer { font-size: 10.5px; text-align: center; padding: 4px 8px; }
 /* Tidy zebra + hover for a clean, scannable table. */
+/* Zebra striping BY PRODUCT so adjacent rows are easy to tell apart. Lower
+   specificity than the winner/best tints (.cmp-win / .cmp-best keep their
+   colour) and placed before :hover so hover still wins. */
+.cmp-table tbody tr.cmp-row-alt > td { background: color-mix(in srgb, var(--text) 4%, transparent); }
+/* A clearer separator line between products (each clickable product row). */
+.cmp-table tbody tr.clickable > td { border-top: 1px solid color-mix(in srgb, var(--border) 65%, var(--text-muted)); }
 .cmp-table tbody tr:hover td { background: color-mix(in srgb, var(--accent) 5%, transparent); }
 .cmp-table td.cmp-price { text-align: right; font-variant-numeric: tabular-nums; }
 .cmp-table td.cmp-price.cmp-win {

@@ -729,12 +729,12 @@ export default function ComparePrices() {
                 </tr>
               </thead>
               <tbody>
-                {rows.slice(0, shown).map(r => {
+                {rows.slice(0, shown).map((r, idx) => {
                   const isOpen = isExpanded(r.match_key);
                   const winner = r.winner_effective;
                   return (
                     <Fragment key={r.match_key}>
-                      <tr className="clickable" onClick={() => toggleRow(r.match_key)}>
+                      <tr className={`clickable${idx % 2 ? ' cmp-row-alt' : ''}`} onClick={() => toggleRow(r.match_key)}>
                         <td className="cmp-prod">
                           {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                           {/* Plain text (no hyperlink): clicking the row expands

@@ -489,22 +489,18 @@ def _enrich_products_with_tiers(con, products: list[dict]) -> None:
     # Index by (wholesaler, upc, unit_volume, unit_qty) for stable matching;
     # fall back to (wholesaler, upc, unit_volume) when unit_qty isn't in
     # the resolved dict.
-    idx_full: dict = {}
-    idx_vol: dict = {}
-    idx_upc: dict = {}
-    idx_name: dict = {}   # (ws, name, vol, uq) / (ws, name, vol) / (ws, name)
+    # Index by the ONE canonical SKU identity (real barcode -> upc+pack+vintage,
+    # surviving renames; stub -> name+size+pack+vintage), with the same safe
+    # unambiguous-barcode fallback for partial product dicts.
+    from collections import defaultdict
+    from backend.pricing import sku_identity, _match_ident
+    by_ident: dict = {}
+    upc_idents: dict = defaultdict(set)
     for r in rows:
-        ws = r.get("wholesaler"); raw = str(r.get("upc") or "")
-        nm = r.get("product_name") or ""
-        vol = r.get("unit_volume") or ""; uq = str(r.get("unit_qty") or "")
-        # UPC index ONLY for real barcodes — a placeholder stub would weld SKUs.
-        if _clean_upc(raw):
-            idx_full[(ws, raw, vol, uq)] = r
-            idx_vol.setdefault((ws, raw, vol), r)
-            idx_upc.setdefault((ws, raw), r)
-        idx_name.setdefault((ws, nm, vol, uq), r)
-        idx_name.setdefault((ws, nm, vol), r)
-        idx_name.setdefault((ws, nm), r)
+        ident = sku_identity(r)
+        by_ident.setdefault(ident, r)
+        if ident[0] == "U":
+            upc_idents[(ident[1], ident[2])].add(ident)
     # Attach tiers on the row dicts first (one batched call), then copy the
     # tier arrays back onto the slim product dicts.
     pricing.attach_tiers(con, rows)
@@ -522,16 +518,8 @@ def _enrich_products_with_tiers(con, products: list[dict]) -> None:
     except Exception:
         pass
     for p in products:
-        ws = p.get("wholesaler"); raw = str(p.get("upc") or "")
-        nm = p.get("product_name") or ""
-        vol = p.get("unit_volume") or ""; uq = str(p.get("unit_qty") or "")
-        clean = _clean_upc(raw)
-        match = ((clean and (idx_full.get((ws, raw, vol, uq))
-                             or idx_vol.get((ws, raw, vol))
-                             or idx_upc.get((ws, raw))))
-                 or idx_name.get((ws, nm, vol, uq))
-                 or idx_name.get((ws, nm, vol))
-                 or idx_name.get((ws, nm)))
+        key = _match_ident(p, by_ident, upc_idents)
+        match = by_ident.get(key) if key else None
         if not match:
             p.setdefault("tiers", [])
             p.setdefault("discount_tiers", [])

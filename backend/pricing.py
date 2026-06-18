@@ -199,6 +199,50 @@ def _clean_upc(upc) -> bool:
     return len(s.lstrip("0")) >= 8
 
 
+def sku_identity(rec) -> tuple:
+    """THE canonical SKU identity for cross-edition / cross-source matching.
+    Used by every history/next-month/tier matcher so they all agree and none
+    can "borrow" another product's data.
+
+    - REAL barcode  -> ("U", wholesaler, upc_norm, unit_qty, vintage). NAME is
+      deliberately excluded: a barcode is the stable identity and distributors
+      legitimately RENAME the same barcode across editions (e.g. Highgrade), so
+      keying on name would lose history. unit_qty + vintage stay in the key
+      because one barcode can carry multiple pack sizes / vintages, which are
+      DIFFERENT SKUs (mirror of derive.py / attach_tiers identity).
+    - PLACEHOLDER barcode ('0', all-same-digit, repeated-digit stub, < 8 digits)
+      -> ("N", wholesaler, name, size, unit_qty, vintage). A stub identifies
+      nothing and is shared by many products, so the full DESCRIPTIVE identity
+      is the only safe key — and it ALWAYS includes pack size + vintage so a
+      6-pack never welds to a 12-pack, nor one vintage to another.
+
+    No relaxation/fallback: if the identity doesn't match exactly, the caller
+    gets no data (correct) rather than a stranger's (wrong)."""
+    raw = rec.get("upc")
+    ws = rec.get("wholesaler")
+    uq = uq_key(rec.get("unit_qty"))
+    vn = norm_vintage(rec.get("vintage"))
+    if _clean_upc(raw):
+        return ("U", ws, str(raw).lstrip("0"), uq, vn)
+    return ("N", ws, (rec.get("product_name") or ""), (rec.get("unit_volume") or ""), uq, vn)
+
+
+def _match_ident(rec, groups: dict, upc_idents: dict):
+    """Resolve a record to its group key. Exact canonical identity first. For a
+    PARTIAL real-barcode record (carries a barcode but not pack/vintage, e.g. the
+    compare sparklines endpoint), fall back to the barcode ONLY when it is
+    unambiguous — exactly one (pack, vintage) under that barcode. A placeholder
+    record gets the exact identity only, never a fallback, so it can't borrow."""
+    ident = sku_identity(rec)
+    if ident in groups:
+        return ident
+    if ident[0] == "U":
+        cands = upc_idents.get((ident[1], ident[2]))
+        if cands and len(cands) == 1:
+            return next(iter(cands))
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Pure function: best applicable CPL discount at N cases.
 # Extracted from the closure inside `_attach_discount_rip_tiers` so it can
@@ -1434,33 +1478,20 @@ def attach_next_tiers(con, records) -> None:
             r["next_tiers"] = []
         return
 
+    # Index next-edition rows by the ONE canonical SKU identity. No relaxation —
+    # a real barcode matches across a rename (name not in the key); a stub
+    # matches only on name + size + pack + vintage, so nothing borrows.
+    from collections import defaultdict
     next_rows: list[dict] = []
-    by_full: dict = {}
-    by_name: dict = {}
-    by_upc: dict = {}
+    by_ident: dict = {}
+    upc_idents: dict = defaultdict(set)
     for _, nr in df.iterrows():
         d = dict(nr)
         next_rows.append(d)
-        ws = d.get("wholesaler"); raw_upc = str(d.get("upc") or "")
-        upc = raw_upc if _clean_upc(raw_upc) else ""   # placeholder -> no upc key
-        nm = d.get("product_name") or ""; vol = d.get("unit_volume") or ""
-        uq = uq_key(d.get("unit_qty"))
-        vn = norm_vintage(d.get("vintage"))
-        if upc:
-            by_full[(ws, upc, nm, vol, uq, vn)] = d
-            by_full.setdefault((ws, upc, nm, vol, uq), d)
-            by_full.setdefault((ws, upc, nm, vol), d)
-            by_full.setdefault((ws, upc, nm), d)
-        by_name[(ws, nm, vol, uq, vn)] = d
-        by_name.setdefault((ws, nm, vol, uq), d)
-        by_name.setdefault((ws, nm, vol), d)
-        by_name.setdefault((ws, nm), d)
-        # by_upc keys ONLY for real barcodes — never index a placeholder stub.
-        if upc:
-            by_upc[(ws, upc, vol, uq, vn)] = d
-            by_upc.setdefault((ws, upc, vol, uq), d)
-            by_upc.setdefault((ws, upc, vol), d)
-            by_upc.setdefault((ws, upc), d)
+        ident = sku_identity(d)
+        by_ident.setdefault(ident, d)
+        if ident[0] == "U":
+            upc_idents[(ident[1], ident[2])].add(ident)
 
     # Reuse attach_tiers on the next-edition dicts; it sets
     # next_rows[i]["tiers"] in place using next-edition rip_code/edition.
@@ -1468,19 +1499,8 @@ def attach_next_tiers(con, records) -> None:
         attach_tiers(con, next_rows)
 
     for rec in records:
-        ws = rec.get("wholesaler"); raw_upc = str(rec.get("upc") or "")
-        upc = raw_upc if _clean_upc(raw_upc) else ""   # placeholder -> name-only
-        nm = rec.get("product_name") or ""; vol = rec.get("unit_volume") or ""
-        uq = uq_key(rec.get("unit_qty"))
-        vn = norm_vintage(rec.get("vintage"))
-        # UPC lookups only when the barcode is real; otherwise name + size only.
-        match = (
-            (upc and (by_full.get((ws, upc, nm, vol, uq, vn)) or by_full.get((ws, upc, nm, vol, uq))
-                      or by_full.get((ws, upc, nm, vol)) or by_full.get((ws, upc, nm))))
-            or by_name.get((ws, nm, vol, uq, vn)) or by_name.get((ws, nm, vol, uq))
-            or by_name.get((ws, nm, vol)) or by_name.get((ws, nm))
-            or (upc and (by_upc.get((ws, upc, vol, uq, vn)) or by_upc.get((ws, upc, vol, uq))
-                         or by_upc.get((ws, upc, vol)) or by_upc.get((ws, upc)))))
+        key = _match_ident(rec, by_ident, upc_idents)
+        match = by_ident.get(key) if key else None
         rec["next_tiers"] = match.get("tiers", []) if match else []
 
 
@@ -1572,22 +1592,19 @@ def attach_price_3mo(con, records) -> None:
     if rows:
         attach_tiers(con, rows)   # each edition row gets its own tier ladder
 
-    # Group blocks by the full SKU identity, then index looser keys to it so a
-    # record matches even when only name/upc/size are known (mirror of
-    # attach_next_tiers' fallback chain).
+    # Group blocks by the ONE canonical SKU identity (sku_identity): real
+    # barcodes by (upc, pack, vintage) — survives cross-edition renames; stubs by
+    # (name, size, pack, vintage). No relaxation, so nothing borrows.
     from collections import defaultdict
     groups: dict = defaultdict(list)
+    upc_idents: dict = defaultdict(set)   # (ws, upc_norm) -> {idents}, REAL barcodes
     for d in rows:
-        ws = d.get("wholesaler"); raw_upc = str(d.get("upc") or "")
-        # Placeholder UPC -> blank in the key so it can't weld to another stub.
-        upc = raw_upc if _clean_upc(raw_upc) else ""
-        nm = d.get("product_name") or ""; vol = d.get("unit_volume") or ""
-        uq = uq_key(d.get("unit_qty")); vn = norm_vintage(d.get("vintage"))
         pack = _num(d.get("unit_qty")) or 1.0
         front = _num(d.get("frontline_case_price"))
         disc_tiers = [t for t in (d.get("tiers") or []) if t.get("source") == "discount"]
         disc1 = best_disc_at(disc_tiers, 1.0, pack) if (front and disc_tiers) else 0.0
-        groups[(ws, upc, nm, vol, uq, vn)].append({
+        ident = sku_identity(d)
+        groups[ident].append({
             "edition": d.get("edition"),
             "frontline": front,
             "disc1_price": round(front - disc1, 2) if front is not None else None,
@@ -1597,36 +1614,13 @@ def attach_price_3mo(con, records) -> None:
             # but skipped by the current-month ladder/stickers.
             "future": bool(d.get("is_future")),
         })
-
-    def _keys(ws, upc, nm, vol, uq, vn):
-        # Real barcode: UPC-bearing keys first (most precise), then name keys.
-        if upc:
-            return [(ws, upc, nm, vol, uq, vn), (ws, upc, nm, vol, uq), (ws, upc, nm, vol),
-                    (ws, upc, nm), (ws, nm, vol, uq, vn), (ws, nm, vol, uq), (ws, nm, vol),
-                    (ws, nm), (ws, upc, vol, uq, vn), (ws, upc, vol, uq), (ws, upc, vol), (ws, upc)]
-        # Placeholder UPC ('0' etc.): NAME + size ONLY. Never a (ws, upc, …) or
-        # bare (ws, upc) key — the shared stub would borrow a stranger's history.
-        return [(ws, "", nm, vol, uq, vn), (ws, "", nm, vol, uq), (ws, "", nm, vol),
-                (ws, "", nm), (ws, nm, vol, uq, vn), (ws, nm, vol, uq), (ws, nm, vol), (ws, nm)]
-
-    index: dict = {}
-    for full in groups:
-        for k in _keys(*full):
-            index.setdefault(k, full)
+        if ident[0] == "U":
+            upc_idents[(ident[1], ident[2])].add(ident)
 
     for rec in records:
-        ws = rec.get("wholesaler"); raw_upc = str(rec.get("upc") or "")
-        upc = raw_upc if _clean_upc(raw_upc) else ""
-        nm = rec.get("product_name") or ""; vol = rec.get("unit_volume") or ""
-        uq = uq_key(rec.get("unit_qty")); vn = norm_vintage(rec.get("vintage"))
-        blocks = []
-        for k in _keys(ws, upc, nm, vol, uq, vn):
-            full = index.get(k)
-            if full:
-                blocks = groups[full]
-                break
+        blocks = groups.get(_match_ident(rec, groups, upc_idents))
         # Oldest -> newest, so the sparkline plots left (older) to right (newer).
-        rec["price_3mo"] = sorted(blocks, key=lambda b: b.get("edition") or "")
+        rec["price_3mo"] = sorted(blocks or [], key=lambda b: b.get("edition") or "")
 
 
 # ---------------------------------------------------------------------------

@@ -727,14 +727,10 @@ export default function ComparePrices() {
                       <tr className="clickable" onClick={() => toggleRow(r.match_key)}>
                         <td className="cmp-prod">
                           {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                          <span
-                            className="cmp-prod-name"
-                            onClick={e => {
-                              e.stopPropagation();
-                              const w = winner && winner !== 'tie' ? winner : selected[0];
-                              goToProduct(r.prices[w]?.product_name ?? r.product_name, w);
-                            }}
-                          >
+                          {/* Plain text (no hyperlink): clicking the row expands
+                              it; users open individual items from the expanded
+                              detail. */}
+                          <span className="cmp-prod-name">
                             {r.product_name}
                           </span>
                           <span className="cmp-size">
@@ -847,11 +843,28 @@ export default function ComparePrices() {
               </tbody>
             </table>
           </div>
-          {rows.length > shown && (
-            <button className="btn cmp-more" onClick={() => setShown(s => s + pageSize)}>
-              Show {Math.min(pageSize, rows.length - shown).toLocaleString()} more
-              ({(rows.length - shown).toLocaleString()} remaining)
-            </button>
+          {/* Clear end-of-section footer so the bottom of the table is never
+              ambiguous (and the last rows clear the floating assistant button /
+              horizontal scrollbar). Shows a Show-more action while rows remain,
+              else an explicit end marker. */}
+          {rows.length > 0 && (
+            <div className="cmp-foot">
+              {rows.length > shown ? (
+                <>
+                  <button className="btn cmp-more" onClick={() => setShown(s => s + pageSize)}>
+                    Show {Math.min(pageSize, rows.length - shown).toLocaleString()} more
+                    ({(rows.length - shown).toLocaleString()} remaining)
+                  </button>
+                  <div className="cmp-foot-note">
+                    Showing {Math.min(shown, rows.length).toLocaleString()} of {rows.length.toLocaleString()} products
+                  </div>
+                </>
+              ) : (
+                <div className="cmp-foot-end">
+                  End of comparison · {rows.length.toLocaleString()} product{rows.length === 1 ? '' : 's'}
+                </div>
+              )}
+            </div>
           )}
           </FilterSidebar>
         </>

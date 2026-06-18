@@ -122,6 +122,24 @@ function RichMonth({ b, pack, current }: { b: MonthBreakdown; pack: number | nul
   // RIP tiers ascending by rebate amount (consistent everywhere RIP shows)
   const rip = [...(b.ripTiers ?? [])].sort(
     (a, c) => (a.ripOnlySave ?? 0) - (c.ripOnlySave ?? 0) || a.qty - c.qty);
+  // Per-tier TOTAL amounts (cases x per-case) for the yellow glance line:
+  // "RIP: 3 cs / $30 · 5 cs / $100" and the QD equivalent — the dollars you
+  // actually get at each tier, same identity the DealLadder totals use.
+  const _csOf = (t: RipTier) => {
+    if (/^\s*b/i.test(t.unit) && pack && pack > 0) return t.qty / pack;
+    if (t.qualifiedCases != null && t.qualifiedCases !== t.qty) return t.qualifiedCases;
+    return t.qty;
+  };
+  const _fmtCs = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100));
+  const ripTotals = rip.map(t => {
+    const r = t.ripOnlySave ?? 0; const c = _csOf(t);
+    return r > 0.005 ? `${_fmtCs(c)} cs / $${(c * r).toFixed(2)}` : null;
+  }).filter(Boolean) as string[];
+  const qdTotals = disc.map(t => {
+    const off = (b.frontline != null && t.eff < b.frontline) ? b.frontline - t.eff : 0;
+    const c = _csOf(t);
+    return off > 0.005 ? `${_fmtCs(c)} cs / $${(c * off).toFixed(2)}` : null;
+  }).filter(Boolean) as string[];
   const tierLine = (t: RipTier, kind: 'disc' | 'rip', i: number) => {
     // RIP rows show the rebate ALONE (the RIP-sheet number) — DealLadder rule.
     const off = kind === 'rip'
@@ -151,6 +169,16 @@ function RichMonth({ b, pack, current }: { b: MonthBreakdown; pack: number | nul
     <span className="psk-pop-block">
       <span className="psk-pop-month">{fmtMonth(b.edition)}{b.future ? ' · next' : current ? ' · current' : ''}</span>
       <span className="psk-pop-line"><em>List</em>{priceCB(b.frontline, pack, b.size)}</span>
+      {(qdTotals.length > 0 || ripTotals.length > 0) && (
+        <span className="psk-pop-totals">
+          {qdTotals.length > 0 && (
+            <span className="psk-tot-line"><span className="psk-tot-k">QD</span> {qdTotals.join(' · ')}</span>
+          )}
+          {ripTotals.length > 0 && (
+            <span className="psk-tot-line"><span className="psk-tot-k">RIP</span> {ripTotals.join(' · ')}</span>
+          )}
+        </span>
+      )}
       {(disc.length > 0 || rip.length > 0) && (
         <span className="psk-pop-deals">
           <span className="psk-pop-deals-h">Quantity deals</span>

@@ -2,6 +2,12 @@
 
 Instructions for Claude Code (and human contributors) working in this repo.
 
+## Caching: load once per page, don't refetch on scroll
+- A list/analysis page caches its FULL result set on load and paginates/filters
+  client-side. Scrolling must NEVER trigger a refetch (no lazy per-scroll loads
+  that flicker or reset). User-independent endpoints memoize server-side too
+  (backend/cache_util.py, keyed on the pricing-cache file path).
+
 ## Troubleshooting: always verify against PROD
 - For ANY reported issue ("not working", "still nothing", "wrong data"),
   reproduce by calling the LIVE prod API (`curl https://nj.celr.ai/api/...`)

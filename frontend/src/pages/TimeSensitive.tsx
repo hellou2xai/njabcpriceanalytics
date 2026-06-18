@@ -120,8 +120,13 @@ export default function TimeSensitive() {
     // `days_to_expire < 0` else-branch here was a leftover from the removed
     // "Past deals" toggle and emptied the page (nothing is both unexpired AND
     // expired).
+    // 'future' shows ONLY not-yet-started (upcoming) deals. Every other view —
+    // including the default "All" — shows active AND upcoming dated deals, so
+    // next month's deals (e.g. July windows loaded mid-June) are visible now
+    // instead of hidden until the calendar flips. (Previously the default
+    // filtered to started-only, which dropped all of July and also broke the
+    // "Continues next month" option.)
     if (validity === 'future') res = res.filter(i => (daysUntilStart(i.from_date) ?? -1) > 0);
-    else res = res.filter(i => (daysUntilStart(i.from_date) ?? 0) <= 0);
     // A deal that runs the WHOLE calendar month isn't time-sensitive, so it is
     // EXCLUDED by default (and under the assistant's ?window=partial). Only an
     // explicit ?window=full surfaces those full-month promos.

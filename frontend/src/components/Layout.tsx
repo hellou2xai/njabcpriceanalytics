@@ -123,7 +123,8 @@ type TextSize = 'small' | 'medium' | 'large';
 function useTextSize() {
   const [size, setSize] = useState<TextSize>(() => {
     const s = localStorage.getItem('lpb_text_size');
-    return s === 'small' || s === 'large' ? s : 'medium';
+    // Largest by default; honour a saved choice (small/medium/large) if present.
+    return s === 'small' || s === 'medium' || s === 'large' ? (s as TextSize) : 'large';
   });
   useEffect(() => {
     document.documentElement.setAttribute('data-textsize', size);
@@ -310,6 +311,23 @@ export default function Layout() {
           </div>
         </div>
         <nav className="sidebar-nav">
+          <div className="sidebar-textsize" title="Text size (saved for next time)">
+            {!sidebarCollapsed && <span className="sidebar-textsize-lbl">Text size</span>}
+            <div className="textsize-seg">
+              {(['small', 'medium', 'large'] as const).map(s => (
+                <button
+                  key={s}
+                  type="button"
+                  data-size={s}
+                  className={`textsize-seg-btn${textSize === s ? ' on' : ''}`}
+                  onClick={() => setTextSize(s)}
+                  title={`${s[0].toUpperCase()}${s.slice(1)} text`}
+                  aria-label={`${s} text`}
+                  aria-pressed={textSize === s}
+                >A</button>
+              ))}
+            </div>
+          </div>
           {NAV_GROUPS.map(group => {
             const items = group.items.filter(it => !it.adminOnly || user?.is_admin);
             if (items.length === 0) return null;
@@ -373,23 +391,6 @@ export default function Layout() {
           })}
         </nav>
         <div className="sidebar-footer">
-          <div className="sidebar-textsize" title="Text size (saved for next time)">
-            {!sidebarCollapsed && <span className="sidebar-textsize-lbl">Text size</span>}
-            <div className="textsize-seg">
-              {(['small', 'medium', 'large'] as const).map(s => (
-                <button
-                  key={s}
-                  type="button"
-                  data-size={s}
-                  className={`textsize-seg-btn${textSize === s ? ' on' : ''}`}
-                  onClick={() => setTextSize(s)}
-                  title={`${s[0].toUpperCase()}${s.slice(1)} text`}
-                  aria-label={`${s} text`}
-                  aria-pressed={textSize === s}
-                >A</button>
-              ))}
-            </div>
-          </div>
           <WhatsAppShareButton
             className="sidebar-logout sidebar-share"
             label="Share via WhatsApp"

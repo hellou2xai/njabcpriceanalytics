@@ -1544,7 +1544,8 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
    stays correct. medium = no rule (zoom 1). */
 html[data-textsize="small"] .main-content { zoom: 0.9; }
 html[data-textsize="large"] .main-content { zoom: 1.12; }
-.sidebar-textsize { display: flex; align-items: center; gap: 8px; padding: 2px 8px 4px; }
+.sidebar-textsize { display: flex; align-items: center; gap: 8px; padding: 2px 8px 10px;
+  margin-bottom: 6px; border-bottom: 1px solid var(--nav-border, var(--border)); }
 .sidebar-textsize-lbl { font-size: 12px; color: var(--nav-text, var(--text-muted)); }
 .textsize-seg { display: inline-flex; gap: 3px; margin-left: auto; }
 .textsize-seg-btn {

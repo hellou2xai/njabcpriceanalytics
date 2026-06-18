@@ -5842,7 +5842,8 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .prod-size-row {
   display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 18px;
   margin: 0 12px 10px 56px; padding: 12px 14px;
-  border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
+  /* Just a border to tell one product/listing from the next — no card styling. */
+  border: 1px solid var(--border); border-radius: 8px;
 }
 .prod-size-row:last-child { margin-bottom: 12px; }
 .prod-size-id { flex: 1 1 220px; min-width: 0; }

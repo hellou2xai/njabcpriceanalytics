@@ -59,6 +59,25 @@ def _sql_str(v: str) -> str:
     return "'" + str(v).replace("'", "''") + "'"
 
 
+def _pg_type(duck_type: str) -> str:
+    """Map a DuckDB column type (from the Parquet read) to a Postgres type for
+    ALTER TABLE ADD COLUMN. Used to self-heal additive schema drift: a new month
+    can add a column the existing Postgres table predates. Conservative — falls
+    back to TEXT, which round-trips anything."""
+    t = str(duck_type).upper()
+    if "BOOL" in t:
+        return "BOOLEAN"
+    if "TIMESTAMP" in t:
+        return "TIMESTAMP"
+    if "DATE" in t:
+        return "DATE"
+    if any(k in t for k in ("DOUBLE", "FLOAT", "REAL", "DECIMAL", "NUMERIC")):
+        return "DOUBLE PRECISION"
+    if any(k in t for k in ("BIGINT", "HUGEINT", "INTEGER", "INT", "SMALLINT")):
+        return "BIGINT"
+    return "TEXT"
+
+
 def _pg_table_exists(con, t: str) -> bool:
     try:
         con.execute(f"SELECT 1 FROM pg.{t} LIMIT 1")
@@ -83,8 +102,10 @@ def ingest(database_url: str, wholesalers=None, editions=None, full: bool = Fals
     con.execute(f"ATTACH '{pg_libpq(database_url)}' AS pg (TYPE postgres)")
     try:
         for t in ALL_TABLES:
-            cols = [d[0] for d in con.execute(
-                f"SELECT * FROM {_parquet_select(t)} LIMIT 0").description]
+            desc = con.execute(
+                f"SELECT * FROM {_parquet_select(t)} LIMIT 0").description
+            cols = [d[0] for d in desc]
+            coltypes = {d[0]: d[1] for d in desc}
             partitionable = ("wholesaler" in cols) and ("edition" in cols)
 
             # Scope the Parquet read to the requested partitions (only for tables
@@ -115,6 +136,7 @@ def ingest(database_url: str, wholesalers=None, editions=None, full: bool = Fals
                 print(f"  {t}: 0 rows (no matching partitions, skipped)")
                 continue
             tuples = ", ".join(f"({_sql_str(w)}, {_sql_str(e)})" for w, e in parts)
+            collist = ", ".join(f'"{c}"' for c in cols)
             # The partition DELETE runs server-side via psycopg: DuckDB's
             # postgres bridge rewrites DELETE into thousands of per-ctid
             # deletes, and a remote (Render) server kills the connection
@@ -122,9 +144,35 @@ def ingest(database_url: str, wholesalers=None, editions=None, full: bool = Fals
             # is a single fast statement.
             import psycopg
             with psycopg.connect(database_url) as _pg:
+                # Self-heal additive schema drift: a new month can introduce a
+                # column the Postgres table predates (e.g. Fedway's dist_item_no
+                # added mid-2026). Add any Parquet column the table is missing
+                # BEFORE inserting, so the load never aborts on "table has N
+                # columns but M values were supplied". The INSERT below names
+                # every column, so column ORDER never matters either (a column
+                # added in the MIDDLE of the Parquet schema still lands right).
+                existing = {r[0] for r in _pg.execute(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = %s AND table_schema = current_schema()",
+                    (t,)).fetchall()}
+                added = []
+                for c in cols:
+                    if c not in existing:
+                        _pg.execute(
+                            f'ALTER TABLE {t} ADD COLUMN "{c}" {_pg_type(coltypes[c])}')
+                        added.append(c)
+                        print(f"    + {t}.{c} ({_pg_type(coltypes[c])}) added")
                 _pg.execute(
                     f"DELETE FROM {t} WHERE (wholesaler, edition) IN ({tuples})")
-            con.execute(f"INSERT INTO pg.{t} SELECT * FROM {src}")
+            # The DuckDB postgres bridge caches the attached catalog, so a column
+            # just added over psycopg is invisible to it. Refresh before INSERT.
+            if added:
+                try:
+                    con.execute("CALL pg_clear_cache()")
+                except duckdb.Error:
+                    con.execute("DETACH pg")
+                    con.execute(f"ATTACH '{pg_libpq(database_url)}' AS pg (TYPE postgres)")
+            con.execute(f"INSERT INTO pg.{t} ({collist}) SELECT {collist} FROM {src}")
             n = con.execute(f"SELECT count(*) FROM {src}").fetchone()[0]
             print(f"  {t}: {n} rows ({len(parts)} partition(s))")
     finally:

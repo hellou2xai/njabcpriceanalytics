@@ -111,4 +111,8 @@ CONFIG = {
     "skip_sheets": ["terms"],
     "file_pattern": "Fedway Associates*CPL*.xlsx",
     "post_process": _post_process_combo,
+    # Fedway carries its internal item number in an unnamed CPL column right of
+    # the last labelled header (column Z), one per product. Capture it as
+    # dist_item_no so every Fedway product can show its item number.
+    "cpl_dist_item_after_headers": True,
 }

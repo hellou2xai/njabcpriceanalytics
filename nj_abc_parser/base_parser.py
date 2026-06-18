@@ -251,6 +251,17 @@ class NJABCParser:
         col_map = self._build_column_mapping(ws, header_row, self.cpl_header_map)
         logger.debug(f"[{self.slug}] CPL header at row {header_row}, mapped {len(col_map)} columns")
 
+        # Distributor item number: Fedway appends an UNNAMED column right of the
+        # last labelled CPL header (column Z) carrying its internal item number,
+        # one per product row (same key as the RIP sheet's dist_item_no). The
+        # header cell is blank there, so map the first unmapped column after the
+        # rightmost mapped one. Gated by config so other wholesalers, whose
+        # trailing column may be empty or something else, are untouched.
+        if col_map and self.config.get("cpl_dist_item_after_headers"):
+            extra_idx = max(col_map.keys()) + 1
+            if extra_idx not in col_map:
+                col_map[extra_idx] = "dist_item_no"
+
         df = self._extract_rows(ws, header_row, col_map, CPL_COLUMNS)
         if df is None:
             return None
@@ -366,6 +377,15 @@ class NJABCParser:
 
         df["unit_qty"] = df["unit_qty"].apply(_to_str_stripped)
         df["abv_proof"] = df["abv_proof"].apply(_to_str_stripped)
+
+        # Distributor item number (Fedway column Z): Excel floats ("10040.0") ->
+        # clean digit strings; anything non-numeric -> None. Mirrors _clean_rip.
+        if "dist_item_no" in df.columns:
+            df["dist_item_no"] = df["dist_item_no"].apply(
+                lambda v: str(v).split(".")[0].strip()
+                if v is not None and str(v).split(".")[0].strip().isdigit()
+                else None
+            )
 
         # Drop rows where product_name is empty (junk rows)
         df = df[df["product_name"].notna() & (df["product_name"] != "")]

@@ -43,6 +43,12 @@ CPL_COLUMNS = [
     "discount_4_amt",
     "discount_5_qty",
     "discount_5_amt",
+    # Distributor-internal item number. Not part of the official NJ ABC
+    # template: Fedway appends it as an UNNAMED column right of the last
+    # labelled CPL header (column Z), one per product row. Same identifier as
+    # the RIP sheet's dist_item_no. Captured only for wholesalers whose config
+    # sets cpl_dist_item_after_headers (Fedway); NULL for everyone else.
+    "dist_item_no",
 ]
 
 # Standard NJ ABC CPL header → canonical name mapping.

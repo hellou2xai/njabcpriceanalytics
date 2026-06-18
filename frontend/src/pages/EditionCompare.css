@@ -84,8 +84,8 @@
 .ec-card--added { border-left-color: var(--accent); }
 .ec-card--removed { border-left-color: var(--text-muted); opacity: 0.85; }
 .ec-card--flat { border-left-color: var(--border); }
-.ec-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-.ec-card-id { min-width: 0; }
+.ec-card-head { display: flex; align-items: flex-start; gap: 10px; }
+.ec-card-id { flex: 1 1 auto; min-width: 0; }
 .ec-card-name { display: block; font-weight: 700; font-size: 14px; color: var(--text); cursor: pointer; }
 .ec-card-name:hover { color: var(--accent); text-decoration: underline; }
 .ec-card-sub { font-size: 12px; color: var(--text-muted); }
@@ -99,4 +99,5 @@
 .ec-card-bd { width: 100%; border-collapse: collapse; font-size: 12px; }
 .ec-card-bd td { padding: 2px 6px; }
 .ec-card-bd .ec-bd-val { white-space: normal; }
+.ec-card-spark { display: flex; align-items: center; }
 .ec-card-actions { display: flex; gap: 6px; flex-wrap: wrap; }

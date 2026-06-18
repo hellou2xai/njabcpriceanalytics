@@ -3459,11 +3459,42 @@ def edition_comparison(con, wholesaler: str, older: str = "", newer: str = "",
               reverse=(order != "asc") if sort != "product" else (order == "desc"))
     rows = rows[:limit]
 
+    # Product thumbnail per row (one batch query by UPC, served from R2) — cheap
+    # even for the full set, so every card gets an image. The sparkline/tier
+    # popover is NOT attached here (it would mean attach_tiers over ~60k edition
+    # rows per request); the card view lazy-loads it for the visible page only
+    # via /editions/sparklines.
+    try:
+        _attach_image(con, rows)
+    except Exception:
+        pass
+
     return {
         "wholesaler": wholesaler, "single_edition": False,
         "older": ol, "newer": nw, "editions": eds, "scope": scope,
         "total": total, "summary": summary, "rows": rows,
     }
+
+
+@router.get("/editions/sparklines")
+def edition_sparklines(
+    wholesaler: str = Query(...),
+    upcs: str = Query("", description="comma-separated UPCs for the VISIBLE card page"),
+):
+    """price_3mo (sparkline line + per-edition QD/RIP tier ladder for the hover
+    popover) for a batch of UPCs — the Edition Comparison card view's current
+    page only, so we never attach tiers over the full ~15k-row comparison.
+    Returns {upc: price_3mo[]}."""
+    ups = [u.strip() for u in (upcs or "").split(",") if u.strip()][:600]
+    if not ups:
+        return {}
+    recs = [{"wholesaler": wholesaler, "upc": u} for u in ups]
+    with get_duckdb() as con:
+        try:
+            _pricing.attach_price_3mo(con, recs)
+        except Exception:
+            return {}
+    return {r["upc"]: (r.get("price_3mo") or []) for r in recs}
 
 
 @router.get("/editions")

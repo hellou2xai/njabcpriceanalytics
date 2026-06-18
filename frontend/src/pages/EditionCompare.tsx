@@ -8,6 +8,10 @@ import { distributorName, DISTRIBUTOR_NAMES, perUnitAbbr } from '../lib/distribu
 import ProductSearchBox from '../components/ProductSearchBox';
 import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
 import RowActions from '../components/RowActions';
+import ProductThumb from '../components/ProductThumb';
+import MonthEffectiveSparkline from '../components/MonthEffectiveSparkline';
+import { buildSparkProps } from '../lib/promotionsSparkline';
+import type { Price3moBlock } from '../lib/api';
 import { ErrorState } from '../components/DataState';
 import DataLoading from '../components/DataLoading';
 import './ComparePrices.css';
@@ -104,8 +108,9 @@ function BreakdownBody({ r }: { r: EditionRow }) {
 // for BOTH editions per case AND per unit, the change pill, what-moved layers,
 // the full cost breakdown, and row actions). Changed values keep the red-on-
 // yellow highlight. Same data as the table — no loss.
-function EditionCard({ r, older, newer, wholesaler, onOpen }: {
-  r: EditionRow; older?: string; newer?: string; wholesaler: string; onOpen: (name: string) => void;
+function EditionCard({ r, older, newer, wholesaler, onOpen, price3mo }: {
+  r: EditionRow; older?: string; newer?: string; wholesaler: string;
+  onOpen: (name: string) => void; price3mo?: Price3moBlock[] | null;
 }) {
   const netChanged = r.status === 'both' && r.net_delta_case != null && Math.abs(r.net_delta_case) >= 0.005;
   const unitAbbr = perUnitAbbr(r.unit_volume, r.unit_type);
@@ -113,9 +118,11 @@ function EditionCard({ r, older, newer, wholesaler, onOpen }: {
     : r.status === 'removed' ? 'ec-card--removed'
     : netChanged ? (r.net_delta_case! > 0 ? 'ec-card--up' : 'ec-card--down')
     : 'ec-card--flat';
+  const hasSpark = !!(price3mo && price3mo.length);
   return (
     <div className={`ec-card ${cls}`}>
       <div className="ec-card-head">
+        <ProductThumb src={r.image_url ?? undefined} alt={r.product_name} size={48} />
         <div className="ec-card-id">
           <span className="ec-card-name" onClick={() => onOpen(r.product_name)} title={r.product_name}>{r.product_name}</span>
           <span className="ec-card-sub">{r.unit_qty} × {r.unit_volume}</span>
@@ -147,6 +154,12 @@ function EditionCard({ r, older, newer, wholesaler, onOpen }: {
 
       {r.status === 'both' && (
         <table className="ec-bd-table ec-card-bd"><BreakdownBody r={r} /></table>
+      )}
+
+      {hasSpark && (
+        <div className="ec-card-spark" onClick={e => e.stopPropagation()}>
+          <MonthEffectiveSparkline {...buildSparkProps({ unit_qty: r.unit_qty, unit_volume: r.unit_volume, price_3mo: price3mo })} />
+        </div>
       )}
 
       {r.status !== 'removed' && (
@@ -281,6 +294,19 @@ export default function EditionCompare() {
   const rangeFrom = total ? safePage * limit + 1 : 0;
   const rangeTo = Math.min((safePage + 1) * limit, total);
 
+  // Sparklines (price_3mo + tier popover) are loaded ONLY for the visible card
+  // page — attaching them to the full ~15k-row comparison would be far too
+  // heavy. One batch call per page; a page change refetches, scrolling does not.
+  const shownUpcs = useMemo(
+    () => (view === 'cards' ? (shown.map(r => r.upc).filter(Boolean) as string[]) : []),
+    [view, shown]);
+  const { data: sparkMap } = useQuery({
+    queryKey: ['ec-sparklines', wholesaler, shownUpcs],
+    queryFn: () => compare.editionSparklines(wholesaler, shownUpcs),
+    enabled: view === 'cards' && shownUpcs.length > 0,
+    staleTime: 5 * 60_000,
+  });
+
   const resetFilters = () => {
     setQ(''); setChange(''); setProductType(''); setSizes([]); setLayersSel([]);
     setMinPrice(''); setMaxPrice(''); setOnlyChanged(false); setSort('inc_dollar');
@@ -399,7 +425,8 @@ export default function EditionCompare() {
                 <div className="ec-cards">
                   {shown.map(r => (
                     <EditionCard key={r.ident} r={r} older={data.older ?? undefined} newer={data.newer ?? undefined}
-                      wholesaler={wholesaler} onOpen={goToProduct} />
+                      wholesaler={wholesaler} onOpen={goToProduct}
+                      price3mo={r.upc ? sparkMap?.[r.upc] : undefined} />
                   ))}
                   {total === 0 && <div className="cmp-none ec-cards-none">No products match these filters.</div>}
                 </div>

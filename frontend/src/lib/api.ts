@@ -540,6 +540,11 @@ export const compare = {
     request<EditionOptions>(`/api/compare/editions/options?wholesaler=${wholesaler}`),
   editions: (params: Record<string, unknown>) =>
     request<EditionCompareResponse>(`/api/compare/editions${qs(params)}`),
+  // Sparkline (price_3mo) for a batch of UPCs — the comparison card view's
+  // visible page only. Returns { upc: Price3moBlock[] }.
+  editionSparklines: (wholesaler: string, upcs: string[]) =>
+    request<Record<string, Price3moBlock[]>>(
+      `/api/compare/editions/sparklines?wholesaler=${encodeURIComponent(wholesaler)}&upcs=${encodeURIComponent(upcs.join(','))}`),
   bestRips: (params?: Record<string, unknown>) =>
     request<BestRipResponse>(`/api/compare/best-rips${qs(params)}`),
   bestQd: (params?: Record<string, unknown>) =>
@@ -734,6 +739,12 @@ export interface EditionRow {
   rip_a?: number | null;
   rip_b?: number | null;
   layers: string[];
+  // Go-UPC thumbnail (attached server-side by UPC) for the card view.
+  image_url?: string | null;
+  vintage?: string | number | null;
+  // 3-month sparkline blocks, lazy-loaded for the visible card page only via
+  // compare.editionSparklines (merged into the row client-side).
+  price_3mo?: Price3moBlock[] | null;
 }
 export interface EditionCompareResponse {
   wholesaler: string;

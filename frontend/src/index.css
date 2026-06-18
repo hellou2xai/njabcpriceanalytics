@@ -5884,18 +5884,33 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .prod-deal-table { width: 100%; max-width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; table-layout: auto; }
 .prod-deal-table th { text-align: left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); padding: 2px 6px; border-bottom: 1px solid var(--border); }
 .prod-deal-table th.prod-deal-num, .prod-deal-table td.prod-deal-num { text-align: right; }
+/* Grouped top header: "After QD / RIP" spans the two price columns, "Savings"
+   sits over the per-case save column. Centred, with a hairline tying the label
+   to the columns it covers. */
+.prod-deal-hgrp th { border-bottom: none; padding-bottom: 0; }
+.prod-deal-table th.prod-deal-hgrp-c { text-align: center; font-size: 9px; font-weight: 700;
+  color: var(--text-muted); letter-spacing: .02em; border-bottom: 1px solid var(--border); }
 .prod-deal-table td { padding: 2px 6px; color: var(--text); }
 /* Only the numeric columns stay on one line; the Tier/Buy text may wrap so the
    table flexes to its container instead of forcing overflow + overlap. */
 .prod-deal-table td.prod-deal-num, .prod-deal-table th.prod-deal-num { white-space: nowrap; }
 .prod-deal-td-type { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .prod-deal-td-buy { font-weight: 600; white-space: nowrap; }
-/* Headline totals line above the ladder: best QD off + best RIP back, per case. */
-.prod-deal-totals { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0 0 4px; font-size: 11px; }
-.prod-deal-tot { color: var(--text-muted); }
-.prod-deal-tot strong { color: var(--text); }
-.prod-deal-tot-qd strong { color: var(--green); }
-.prod-deal-tot-rip strong { color: var(--accent); }
+/* Per-tier TOTAL glance lines above the ladder: at each tier, the dollars the
+   buyer actually gets (cases x per-case). One line for QD, one for RIP; best
+   tier in each gets the red-on-yellow highlight. The table below keeps the
+   per-tier price/bottle/window detail. */
+.prod-deal-totals { display: flex; flex-direction: column; gap: 3px; margin: 0 0 6px; font-size: 11px; }
+.prod-deal-tot { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; line-height: 1.3; }
+.prod-deal-tot-k { font-weight: 800; text-transform: uppercase; letter-spacing: .04em; font-size: 9px; flex: 0 0 auto; }
+.prod-deal-tot-qd .prod-deal-tot-k { color: var(--green); }
+.prod-deal-tot-rip .prod-deal-tot-k { color: var(--accent); }
+.prod-deal-tot-vals { display: inline-flex; flex-wrap: wrap; gap: 2px 6px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.prod-deal-tot-vals > span:not(:first-child)::before { content: '·'; margin-right: 6px; color: var(--border-strong, #9ca3af); }
+.prod-deal-tot-vals strong { color: var(--text); font-weight: 700; }
+/* Best (largest) total in each line: the red-on-yellow highlight convention. */
+.prod-deal-tot-best { background: #fef9c3; border-radius: 3px; padding: 0 4px; }
+.prod-deal-tot-best, .prod-deal-tot-best strong { color: #dc2626; }
 .prod-deal-save { color: var(--green); }
 .prod-deal-grouphdr td { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: var(--accent); padding-top: 6px; }
 .prod-deal-trow.prod-deal-best td,

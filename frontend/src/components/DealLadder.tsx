@@ -91,12 +91,6 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
   const realQd = disc.filter(t => caseQty(t) > 1 + 1e-9);
   const bestQdEff = realQd.length ? Math.min(...realQd.map(t => t.eff)) : null;
   const bestRipEff = rip.length ? Math.min(...rip.map(t => t.eff)) : null;
-  // Headline totals, per case: the deepest QD discount off list, and the largest
-  // RIP rebate (rebate alone, never blended with QD). Shown as one summary line
-  // ABOVE the ladder so the buyer reads the max QD + max RIP back at a glance.
-  const qdOffTotal = frontline != null && bestQdEff != null && bestQdEff < frontline
-    ? frontline - bestQdEff : null;
-  const ripBackTotal = rip.length ? Math.max(...rip.map(t => t.ripOnlySave ?? 0)) : 0;
 
   if (disc.length === 0 && rip.length === 0) {
     return emptyText ? <span className="prod-deals-none">{emptyText}</span> : null;
@@ -121,6 +115,31 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
     }
     return `${t.qty} ${uw(t.unit)}`;
   };
+
+  // Per-tier TOTAL glance lines shown ABOVE the table: at each tier, the dollars
+  // the buyer actually gets (cases x per-case), not the per-case figure or the
+  // price. RIP total = cases x RIP-per-case; QD total = cases x discount-off.
+  // "5 cs / $50.00 · 10 cs / $150.00 · 20 cs / $400.00", ascending, best in the
+  // red-on-yellow highlight. The detailed per-tier ladder stays in the table.
+  const sortQty = (t: RipTier) => (t.qualifiedCases ?? caseQty(t));
+  const tierTotals = (tiers: RipTier[], perOf: (t: RipTier) => number | null) => {
+    const m = new Map<string, { q: number; total: number }>();
+    for (const t of tiers) {
+      const per = perOf(t);
+      if (per == null || per <= 0.005) continue;
+      const q = sortQty(t);
+      const total = Math.round(q * per * 100) / 100;
+      const label = buyLabel(t);
+      const prev = m.get(label);
+      if (!prev || total > prev.total) m.set(label, { q, total });
+    }
+    const list = [...m.entries()].map(([label, v]) => ({ label, ...v })).sort((a, b) => a.q - b.q);
+    const best = list.length ? Math.max(...list.map(s => s.total)) : null;
+    return { list, best };
+  };
+  const ripTotals = tierTotals(rip, t => t.ripOnlySave ?? null);
+  const qdTotals = tierTotals(disc, t => (frontline != null && t.eff < frontline ? frontline - t.eff : null));
+
   // One tier as a TABLE ROW (Type | Buy | $/cs | $/btl | Save). Best tier in its
   // class gets the red-on-yellow highlight (unchanged convention).
   const Row = (kind: 'qd' | 'rip', t: RipTier, i: number, noFlag = false) => {
@@ -179,30 +198,53 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
 
   return (
     <div className="prod-deal-wrap">
-      {(qdOffTotal != null || ripBackTotal > 0.005) && (
+      {(qdTotals.list.length > 0 || ripTotals.list.length > 0) && (
         <div className="prod-deal-totals">
-          {qdOffTotal != null && qdOffTotal > 0.005 && (
-            <span className="prod-deal-tot prod-deal-tot-qd"
-              title="Best total quantity discount off list, per case.">
-              QD up to <strong>−${qdOffTotal.toFixed(2)}</strong>/{csWord}
-            </span>
+          {qdTotals.list.length > 0 && (
+            <div className="prod-deal-tot prod-deal-tot-qd"
+              title="QD Tier — the total quantity-discount you save at each tier (cases x discount off list per case), i.e. the dollars off, not the per-case figure or the price.">
+              <span className="prod-deal-tot-k">QD Tier</span>
+              <span className="prod-deal-tot-vals">
+                {qdTotals.list.map((s, i) => (
+                  <span key={i} className={qdTotals.best != null && s.total >= qdTotals.best - 1e-9 ? 'prod-deal-tot-best' : undefined}>
+                    {s.label} / <strong>${s.total.toFixed(2)}</strong>
+                  </span>
+                ))}
+              </span>
+            </div>
           )}
-          {ripBackTotal > 0.005 && (
-            <span className="prod-deal-tot prod-deal-tot-rip"
-              title="Largest RIP rebate, per case (rebate alone, not blended with QD).">
-              RIP up to <strong>${ripBackTotal.toFixed(2)}</strong>/{csWord} back
-            </span>
+          {ripTotals.list.length > 0 && (
+            <div className="prod-deal-tot prod-deal-tot-rip"
+              title="RIP Tier — the total RIP rebate at each tier (cases x RIP per case), i.e. the dollars you get back, not the per-case figure or the price.">
+              <span className="prod-deal-tot-k">RIP Tier</span>
+              <span className="prod-deal-tot-vals">
+                {ripTotals.list.map((s, i) => (
+                  <span key={i} className={ripTotals.best != null && s.total >= ripTotals.best - 1e-9 ? 'prod-deal-tot-best' : undefined}>
+                    {s.label} / <strong>${s.total.toFixed(2)}</strong>
+                  </span>
+                ))}
+              </span>
+            </div>
           )}
         </div>
       )}
     <table className="prod-deal-table">
       <thead>
+        {/* Grouped header: the price columns are the landed price AFTER QD/RIP,
+            the last column is the savings PER CASE. Spelt out so the buyer never
+            has to guess what /cs and /btl mean here. */}
+        <tr className="prod-deal-hgrp">
+          <th></th>
+          <th></th>
+          <th className="prod-deal-num prod-deal-hgrp-c" colSpan={2}>After QD / RIP</th>
+          <th className="prod-deal-num prod-deal-hgrp-c">Savings</th>
+        </tr>
         <tr>
           <th>Tier</th>
           <th>Buy</th>
           <th className="prod-deal-num">/{csWord}</th>
           <th className="prod-deal-num">/{unitNoun}</th>
-          <th className="prod-deal-num">Save</th>
+          <th className="prod-deal-num">/{csWord}</th>
         </tr>
       </thead>
       <tbody>

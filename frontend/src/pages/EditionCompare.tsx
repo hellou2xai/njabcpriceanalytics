@@ -67,6 +67,98 @@ function DeltaPill({ r }: { r: EditionRow }) {
   );
 }
 
+// The four-line cost breakdown (net cost, frontline, invoice-after-QD, RIP
+// rebate) shared by the table's hover popover AND the card view, so the two can
+// never drift. Each line shows older → newer; a changed line renders red on
+// yellow (the .ec-bd-changed convention).
+type BdLine = { label: string; a?: number | null; b?: number | null; d?: number | null; p?: number | null };
+function bdRows(r: EditionRow): BdLine[] {
+  return [
+    { label: 'Net cost', a: r.net_a_case, b: r.net_b_case, d: r.net_delta_case, p: r.net_delta_pct },
+    { label: 'Frontline', a: r.frontline_a, b: r.frontline_b },
+    { label: 'Invoice (after QD)', a: r.invoice_a, b: r.invoice_b },
+    { label: 'RIP rebate', a: r.rip_a, b: r.rip_b },
+  ];
+}
+function BreakdownBody({ r }: { r: EditionRow }) {
+  return (
+    <tbody>
+      {bdRows(r).map(l => {
+        const changed = l.a != null && l.b != null && Math.abs(l.a - l.b) > 0.005;
+        return (
+          <tr key={l.label} className={changed ? 'ec-bd-changed' : ''}>
+            <td className="ec-bd-lab">{l.label}</td>
+            <td className="ec-bd-val">{money(l.a)} → {money(l.b)}
+              {l.d != null && Math.abs(l.d) > 0.005 && (
+                <span className="ec-bd-d"> ({l.d > 0 ? '+' : ''}${Math.abs(l.d).toFixed(2)}{l.p != null ? `, ${pct(l.p)}` : ''})</span>
+              )}
+            </td>
+          </tr>
+        );
+      })}
+    </tbody>
+  );
+}
+
+// Card-view row: every datum the table row carries (product + size, net price
+// for BOTH editions per case AND per unit, the change pill, what-moved layers,
+// the full cost breakdown, and row actions). Changed values keep the red-on-
+// yellow highlight. Same data as the table — no loss.
+function EditionCard({ r, older, newer, wholesaler, onOpen }: {
+  r: EditionRow; older?: string; newer?: string; wholesaler: string; onOpen: (name: string) => void;
+}) {
+  const netChanged = r.status === 'both' && r.net_delta_case != null && Math.abs(r.net_delta_case) >= 0.005;
+  const unitAbbr = perUnitAbbr(r.unit_volume, r.unit_type);
+  const cls = r.status === 'added' ? 'ec-card--added'
+    : r.status === 'removed' ? 'ec-card--removed'
+    : netChanged ? (r.net_delta_case! > 0 ? 'ec-card--up' : 'ec-card--down')
+    : 'ec-card--flat';
+  return (
+    <div className={`ec-card ${cls}`}>
+      <div className="ec-card-head">
+        <div className="ec-card-id">
+          <span className="ec-card-name" onClick={() => onOpen(r.product_name)} title={r.product_name}>{r.product_name}</span>
+          <span className="ec-card-sub">{r.unit_qty} × {r.unit_volume}</span>
+        </div>
+        <DeltaPill r={r} />
+      </div>
+
+      <div className="ec-card-prices">
+        <div className="ec-card-pcol">
+          <span className="ec-card-mlab">{older}</span>
+          <span className="ec-card-pcase">{r.status === 'added' ? '—' : money(r.net_a_case)}</span>
+          {r.status !== 'added' && <span className="ec-card-pbtl">{money(r.net_a_btl)}/{unitAbbr}</span>}
+        </div>
+        <ArrowRight size={16} className="ec-card-arrow" />
+        <div className="ec-card-pcol">
+          <span className="ec-card-mlab">{newer}</span>
+          <span className={`ec-card-pcase${netChanged ? ' ec-changed-val' : ''}`}>{r.status === 'removed' ? '—' : money(r.net_b_case)}</span>
+          {r.status !== 'removed' && <span className="ec-card-pbtl">{money(r.net_b_btl)}/{unitAbbr}</span>}
+        </div>
+      </div>
+
+      {r.layers.length > 0 && (
+        <div className="ec-card-layers ec-layers">
+          {r.layers.map(l => (
+            <span key={l} className={`ec-layer ${l.startsWith('rip') ? 'ec-layer-rip' : ''}`}>{LAYER_LABEL[l] ?? l}</span>
+          ))}
+        </div>
+      )}
+
+      {r.status === 'both' && (
+        <table className="ec-bd-table ec-card-bd"><BreakdownBody r={r} /></table>
+      )}
+
+      {r.status !== 'removed' && (
+        <div className="ec-card-actions">
+          <RowActions productName={r.product_name} wholesaler={wholesaler}
+            upc={r.upc ?? undefined} unitVolume={r.unit_volume ?? undefined} unitQty={r.unit_qty ?? undefined} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function EditionCompare() {
   const [params, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -89,6 +181,11 @@ export default function EditionCompare() {
   const [onlyChanged, setOnlyChanged] = useState(false);
   const [page, setPage] = useState(0);
   const [limit, setLimit] = useState(500);
+  // Card view (default) vs table view. The card shows every column the table
+  // does plus the inline breakdown; the table is the dense original. Persisted.
+  const [view, setView] = useState<'cards' | 'table'>(
+    () => (localStorage.getItem('ec-view') as 'cards' | 'table') || 'cards');
+  useEffect(() => { localStorage.setItem('ec-view', view); }, [view]);
   // Hovered row for the styled "what changed" breakdown popover (fixed-position
   // so the table's overflow never clips it; changed lines render red on yellow).
   const [bd, setBd] = useState<{ r: EditionRow; left: number; top: number; above: boolean } | null>(null);
@@ -290,9 +387,24 @@ export default function EditionCompare() {
 
           <FilterSidebar storageKey="edition-compare-filters" sections={sections} onReset={resetFilters}>
             <div className="ec-results">
+              <div className="ec-viewbar">
+                <div className="ec-viewtoggle" role="group" aria-label="Layout">
+                  <button type="button" className={view === 'cards' ? 'on' : ''} onClick={() => setView('cards')}>Card view</button>
+                  <button type="button" className={view === 'table' ? 'on' : ''} onClick={() => setView('table')}>Table view</button>
+                </div>
+              </div>
               <Pager where="top" />
 
-              {/* grid */}
+              {view === 'cards' ? (
+                <div className="ec-cards">
+                  {shown.map(r => (
+                    <EditionCard key={r.ident} r={r} older={data.older ?? undefined} newer={data.newer ?? undefined}
+                      wholesaler={wholesaler} onOpen={goToProduct} />
+                  ))}
+                  {total === 0 && <div className="cmp-none ec-cards-none">No products match these filters.</div>}
+                </div>
+              ) : (
+              /* grid */
               <div className="table-container">
                 <table className="dense-table ec-table">
                   <thead>
@@ -345,6 +457,7 @@ export default function EditionCompare() {
                   </tbody>
                 </table>
               </div>
+              )}
 
               {total > 0 && <Pager where="bottom" />}
             </div>
@@ -359,26 +472,7 @@ export default function EditionCompare() {
           style={{ position: 'fixed', left: bd.left, top: bd.top,
             transform: bd.above ? 'translateY(-100%)' : 'none' }}>
           <div className="ec-bd-head">{data.older} → {data.newer}</div>
-          <table className="ec-bd-table"><tbody>
-            {([
-              { label: 'Net cost', a: bd.r.net_a_case, b: bd.r.net_b_case, d: bd.r.net_delta_case, p: bd.r.net_delta_pct },
-              { label: 'Frontline', a: bd.r.frontline_a, b: bd.r.frontline_b },
-              { label: 'Invoice (after QD)', a: bd.r.invoice_a, b: bd.r.invoice_b },
-              { label: 'RIP rebate', a: bd.r.rip_a, b: bd.r.rip_b },
-            ] as const).map(l => {
-              const changed = l.a != null && l.b != null && Math.abs(l.a - l.b) > 0.005;
-              return (
-                <tr key={l.label} className={changed ? 'ec-bd-changed' : ''}>
-                  <td className="ec-bd-lab">{l.label}</td>
-                  <td className="ec-bd-val">{money(l.a)} → {money(l.b)}
-                    {'d' in l && l.d != null && Math.abs(l.d) > 0.005 && (
-                      <span className="ec-bd-d"> ({l.d > 0 ? '+' : ''}${Math.abs(l.d).toFixed(2)}{l.p != null ? `, ${pct(l.p)}` : ''})</span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody></table>
+          <table className="ec-bd-table"><BreakdownBody r={bd.r} /></table>
         </div>
       )}
     </div>

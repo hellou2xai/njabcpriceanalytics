@@ -45,7 +45,7 @@ function PartialFlag({ t }: { t: RipTier }) {
   );
 }
 
-export default function DealLadder({ months, pack, emptyText, unitVolume, unitType }: {
+export default function DealLadder({ months, pack, emptyText, unitVolume, unitType, monthMode = 'current' }: {
   months: MonthBreakdown[];
   pack: number | null;
   // When set, renders this note if there are no deals; when omitted, renders
@@ -54,13 +54,20 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
   // Container so prices read in the real unit (keg/can/bottle), not always btl/cs.
   unitVolume?: string | null;
   unitType?: string | null;
+  // Which month's RIP/QD ladder to show: 'current' (the calendar month, default)
+  // or 'next' (the early-loaded next edition, when present). Driven by the
+  // Products rail "RIP / QD month" filter.
+  monthMode?: 'current' | 'next';
 }) {
   const csWord = priceUnit(unitVolume, unitType);   // 'keg' | 'cs'
   const unitNoun = perUnitAbbr(unitVolume, unitType); // 'keg' | 'can' | 'btl'
   const keg = isKegUnit(unitVolume, unitType);       // kegs have no per-bottle
-  // Current month = newest NON-future block: a next-month preview loaded early
-  // shows on the sparkline but must not drive the current RIP/QD ladder.
-  const cur = currentMonth(months);
+  // Which block to show. 'current' = newest NON-future block (the calendar
+  // month); 'next' = the early-loaded next edition when present (else fall back
+  // to current). The sparkline still plots every month regardless.
+  const cur = monthMode === 'next'
+    ? (months.find(m => m.future) ?? currentMonth(months))
+    : currentMonth(months);
   const frontline = cur?.frontline ?? null;
   // Sort by the deal's EFFECTIVE WINDOW first (evergreen/full-month before
   // dated; earlier windows before later), then by CASE-EQUIVALENT qty — so a

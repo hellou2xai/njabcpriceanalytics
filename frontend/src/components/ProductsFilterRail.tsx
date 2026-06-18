@@ -56,9 +56,15 @@ interface Props {
   onTrackedChange?: (v: boolean) => void;
   // When provided, the rail shows a collapse control in its header.
   onCollapse?: () => void;
+  // "RIP / QD month": which month's tier ladder the cards show. Only rendered
+  // when a next edition is loaded (nextMonthLabel set).
+  dealMonth?: 'current' | 'next';
+  onDealMonthChange?: (v: 'current' | 'next') => void;
+  currentMonthLabel?: string;
+  nextMonthLabel?: string;
 }
 
-export default function ProductsFilterRail({ filters, onChange, items, facets, trackedOnly, onTrackedChange, onCollapse }: Props) {
+export default function ProductsFilterRail({ filters, onChange, items, facets, trackedOnly, onTrackedChange, onCollapse, dealMonth = 'current', onDealMonthChange, currentMonthLabel, nextMonthLabel }: Props) {
   const [priceMin, setPriceMin] = useState(filters.priceMin?.toString() ?? '');
   const [priceMax, setPriceMax] = useState(filters.priceMax?.toString() ?? '');
   const [brandSearch, setBrandSearch] = useState('');
@@ -148,6 +154,18 @@ export default function ProductsFilterRail({ filters, onChange, items, facets, t
           <span>In combo</span><span className="prod-filter-count">{comboCount}</span>
         </label>
       </Section>
+
+      {onDealMonthChange && nextMonthLabel && (
+        <Section title="RIP / QD month">
+          <div className="prod-filter-segmented"
+            title="Which month's RIP and QD tiers the cards show. Defaults to the current month; switch to preview next month's deals (loaded early).">
+            <button type="button" className={dealMonth === 'current' ? 'on' : ''}
+              onClick={() => onDealMonthChange('current')}>{currentMonthLabel || 'This month'}</button>
+            <button type="button" className={dealMonth === 'next' ? 'on' : ''}
+              onClick={() => onDealMonthChange('next')}>{nextMonthLabel}</button>
+          </div>
+        </Section>
+      )}
 
       <Section title="Time Sensitive Deals">
         <label className="prod-filter-check"

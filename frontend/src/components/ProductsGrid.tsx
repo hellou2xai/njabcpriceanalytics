@@ -276,12 +276,15 @@ function BestQdSticker({ s }: { s?: Product | null }) {
 // per case, and the total RIP $ at that buy. Computed from the row's price_3mo
 // tiers (the same data the ladder uses), so it only renders where tiers are
 // loaded (e.g. New Items cards in price-details mode). Returns null otherwise.
-function BestRipSticker({ s }: { s?: Product | null }) {
+function BestRipSticker({ s, monthMode = 'current' }: { s?: Product | null; monthMode?: 'current' | 'next' }) {
   if (!s) return null;
   const months = buildMonths(s);
-  // current-month block = newest non-future, else newest (mirror currentMonth).
+  // Block to read: 'next' = the early-loaded next edition when present; else the
+  // current-month block (newest non-future, mirroring currentMonth).
   const cur = months.length
-    ? ([...months].reverse().find(m => !m.future) ?? months[months.length - 1])
+    ? (monthMode === 'next'
+        ? (months.find(m => m.future) ?? [...months].reverse().find(m => !m.future) ?? months[months.length - 1])
+        : ([...months].reverse().find(m => !m.future) ?? months[months.length - 1]))
     : null;
   const rip = cur?.ripTiers ?? [];
   if (!rip.length) return null;
@@ -458,7 +461,7 @@ function nestByDistributor(sizes: Product[], pageWholesaler: string) {
   });
 }
 
-function SizeRow({ size, cart, updateQty, primaryName, showDeals = true, hideDist = false, crossDist }: {
+function SizeRow({ size, cart, updateQty, primaryName, showDeals = true, hideDist = false, crossDist, dealMonth = 'current' }: {
   size: Product;
   crossDist?: Product[];   // cross-distributor rows (rep UPC) for the per-item best-price chip
   cart: CartState;
@@ -469,6 +472,8 @@ function SizeRow({ size, cart, updateQty, primaryName, showDeals = true, hideDis
   // Hide the per-row distributor chip when a Distributor header already shows it
   // (the 4-level grouped card body).
   hideDist?: boolean;
+  // Which month's RIP/QD ladder to show ('current' | 'next').
+  dealMonth?: 'current' | 'next';
 }) {
   const cartKey = `${size.product_name}|${size.wholesaler}|${size.upc ?? ''}|${size.unit_volume ?? ''}`;
   const qty = cart[cartKey] ?? { cases: 0, units: 0 };
@@ -544,7 +549,7 @@ function SizeRow({ size, cart, updateQty, primaryName, showDeals = true, hideDis
       {showDeals && (
         <div className="prod-size-deals">
           <DealLadder months={months} pack={pack} emptyText="No deals this month"
-            unitVolume={size.unit_volume} unitType={size.unit_type} />
+            unitVolume={size.unit_volume} unitType={size.unit_type} monthMode={dealMonth} />
         </div>
       )}
       <div className="prod-size-order">
@@ -567,7 +572,7 @@ function SizeRow({ size, cart, updateQty, primaryName, showDeals = true, hideDis
   );
 }
 
-function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded = false }: {
+function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded = false, dealMonth = 'current' }: {
   group: ProductGroup;
   cart: CartState;
   updateQty: (key: string, field: 'cases' | 'units', value: number) => void;
@@ -577,6 +582,8 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
   // Start expanded (used on an active search, so result details + add-to-cart
   // show without a click). Per-card collapse still works afterwards.
   defaultExpanded?: boolean;
+  // Which month's RIP/QD ladder to show ('current' | 'next').
+  dealMonth?: 'current' | 'next';
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   // Hover/focus intent: start the expand-time fetches (full size set + tiers)
@@ -749,13 +756,13 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
             so keeping it here duplicated every deal on screen. */}
         {showDeals && !expanded && repMonths.length > 0 && (
           <div className="prod-card-deals">
-            <DealLadder months={repMonths} pack={repPack}
+            <DealLadder months={repMonths} pack={repPack} monthMode={dealMonth}
               unitVolume={rep?.unit_volume} unitType={rep?.unit_type} />
           </div>
         )}
         <div className="prod-card-right">
           <BestQdSticker s={repRow ?? range?.lo ?? first} />
-          <BestRipSticker s={repRow ?? range?.lo ?? first} />
+          <BestRipSticker s={repRow ?? range?.lo ?? first} monthMode={dealMonth} />
           {range && (
             <>
               <CardPriceLine s={range.lo} repRow={repRow} />
@@ -781,7 +788,7 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
             // Flat mode: one card == one distributor+size; no nesting needed.
             sizes.map((size, i) => (
               <SizeRow key={`${size.product_name}|${size.upc ?? ''}|${size.unit_volume ?? ''}|${i}`}
-                size={size} cart={cart} updateQty={updateQty} primaryName={group.displayName} showDeals={showDeals} crossDist={crossDistRows} />
+                size={size} cart={cart} updateQty={updateQty} primaryName={group.displayName} showDeals={showDeals} crossDist={crossDistRows} dealMonth={dealMonth} />
             ))
           ) : (
             // Grouped (CELR family) card: Distributor -> Distributor Product Name -> sizes.
@@ -803,7 +810,7 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
                     {p.sizes.map((size, i) => (
                       <SizeRow key={`${size.upc ?? ''}|${size.unit_volume ?? ''}|${i}`}
                         size={size} cart={cart} updateQty={updateQty} primaryName={p.name}
-                        showDeals={showDeals} hideDist crossDist={crossDistRows} />
+                        showDeals={showDeals} hideDist crossDist={crossDistRows} dealMonth={dealMonth} />
                     ))}
                   </div>
                 ))}
@@ -827,9 +834,11 @@ interface Props {
   grouped?: boolean;
   // Start every card expanded (used on an active product search).
   expandAll?: boolean;
+  // Which month's RIP/QD ladder the cards show (rail "RIP / QD month" filter).
+  dealMonth?: 'current' | 'next';
 }
 
-export default function ProductsGrid({ items, cart, updateQty, showDeals = true, grouped = false, expandAll = false }: Props) {
+export default function ProductsGrid({ items, cart, updateQty, showDeals = true, grouped = false, expandAll = false, dealMonth = 'current' }: Props) {
   const groups = useMemo(() => groupByProduct(items, grouped), [items, grouped]);
 
   if (groups.length === 0) {
@@ -840,7 +849,7 @@ export default function ProductsGrid({ items, cart, updateQty, showDeals = true,
     <div className="prod-grid">
       {groups.map(g => (
         <Fragment key={g.key}>
-          <ProductCard group={g} cart={cart} updateQty={updateQty} showDeals={showDeals} defaultExpanded={expandAll} />
+          <ProductCard group={g} cart={cart} updateQty={updateQty} showDeals={showDeals} defaultExpanded={expandAll} dealMonth={dealMonth} />
         </Fragment>
       ))}
     </div>

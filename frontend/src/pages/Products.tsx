@@ -82,6 +82,9 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
     setPriceDetails(v);
     localStorage.setItem('lpb_products_price_details', v ? '1' : '0');
   };
+  // Which month's RIP/QD tier ladder the cards show: 'current' (default) or
+  // 'next' (the early-loaded next edition). Display-only; doesn't refetch.
+  const [dealMonth, setDealMonth] = useState<'current' | 'next'>('current');
   // "Group products" toggle: OFF by default shows one row per distributor +
   // size (UPC variants collapsed to the best price); ON restores the
   // cross-distributor family cards. Persisted.
@@ -243,11 +246,24 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
     { enabled: showGrid && (!q.trim() || !!data), persist: isAisleView },
   );
 
-  // New Items: the introduced-month filter options = the last 4 loaded editions
-  // (stable list, independent of the current month filter).
+  // Loaded editions: powers the New Items introduced-month filter AND the
+  // general "RIP / QD month" rail toggle (current vs early-loaded next month).
   const { data: niEditions } = useQuery({
-    queryKey: ['ni-editions'], queryFn: catalog.editions, enabled: newItems,
+    queryKey: ['ni-editions'], queryFn: catalog.editions,
   });
+  // The early-loaded NEXT edition (if any): the first loaded edition after the
+  // current calendar month. Drives the rail "RIP / QD month" toggle.
+  const nextLoadedEd = useMemo(() => {
+    const d = new Date();
+    const cym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    return [...new Set((niEditions ?? []).map(e => e.edition))].sort().find(e => e > cym) ?? null;
+  }, [niEditions]);
+  const curMonthShort = useMemo(() => _MONTHS[new Date().getMonth()] ?? 'This month', []);
+  const nextMonthShort = useMemo(() => {
+    if (!nextLoadedEd) return undefined;
+    const m = /^(\d{4})-(\d{1,2})/.exec(nextLoadedEd);
+    return m ? (_MONTHS[parseInt(m[2], 10) - 1] ?? nextLoadedEd) : nextLoadedEd;
+  }, [nextLoadedEd]);
   const introMonthOpts = useMemo(
     () => [...new Set((niEditions ?? []).map(e => e.edition))].sort().reverse().slice(0, 4),
     [niEditions]);
@@ -411,6 +427,10 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
             trackedOnly={trackedOnly}
             onTrackedChange={v => { setTrackedOnly(v); setPage(0); }}
             onCollapse={() => toggleRail(true)}
+            dealMonth={dealMonth}
+            onDealMonthChange={setDealMonth}
+            currentMonthLabel={curMonthShort}
+            nextMonthLabel={nextMonthShort}
           />
         )}
 
@@ -472,7 +492,7 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
           </div>
 
           {isLoading ? <p>Loading…</p> : (
-            <ProductsGrid items={items} cart={cart} updateQty={updateQty} showDeals={priceDetails} grouped={effGrouped} expandAll={!newItems && !!q.trim()} />
+            <ProductsGrid items={items} cart={cart} updateQty={updateQty} showDeals={priceDetails} grouped={effGrouped} expandAll={!newItems && !!q.trim()} dealMonth={dealMonth} />
           )}
 
           <div className="pagination">

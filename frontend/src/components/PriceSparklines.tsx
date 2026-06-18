@@ -149,7 +149,7 @@ function RichMonth({ b, pack, current }: { b: MonthBreakdown; pack: number | nul
   };
   return (
     <span className="psk-pop-block">
-      <span className="psk-pop-month">{fmtMonth(b.edition)}{current ? ' · current' : ''}</span>
+      <span className="psk-pop-month">{fmtMonth(b.edition)}{b.future ? ' · next' : current ? ' · current' : ''}</span>
       <span className="psk-pop-line"><em>List</em>{priceCB(b.frontline, pack, b.size)}</span>
       {(disc.length > 0 || rip.length > 0) && (
         <span className="psk-pop-deals">
@@ -268,6 +268,12 @@ export default function PriceSparklines({ wholesaler, productName, upc, unitVolu
   // Whichever block source currently has content powers the popover (rich
   // replaces light once the on-hover tier fetch lands).
   const blockCount = richBlocks.length || lightBlocks.length;
+  // The "· current" label marks the CURRENT CALENDAR month, not just the newest
+  // block. A next-month edition loaded early (future-flagged) is the newest
+  // point but is NOT current — it gets "· next" instead. Blocks are newest-first.
+  const _cym = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; })();
+  const richCurIdx = (() => { const i = richBlocks.findIndex(b => !b.future); return i === -1 ? 0 : i; })();
+  const lightCurIdx = (() => { const i = lightBlocks.findIndex(p => (p.edition || '') <= _cym); return i === -1 ? 0 : i; })();
 
   useLayoutEffect(() => {
     if (!hover || !rect) { setPos(null); return; }
@@ -303,10 +309,10 @@ export default function PriceSparklines({ wholesaler, productName, upc, unitVolu
               style={{ position: 'fixed', left: pos.left, top: pos.top }}>
           <span className="psk-pop-title">Price schedule{vtg ? ` · ${vtg} vintage` : ''}</span>
           {richBlocks.length > 0
-            ? richBlocks.map((b, i) => <RichMonth key={i} b={b} current={i === 0} pack={bottlesPerCase(productName, b.pack ?? undefined)} />)
+            ? richBlocks.map((b, i) => <RichMonth key={i} b={b} current={i === richCurIdx} pack={bottlesPerCase(productName, b.pack ?? undefined)} />)
             : (
               <>
-                {lightBlocks.map((p, i) => <LightMonth key={i} p={p} pack={pack} size={unitVolume} current={i === 0} />)}
+                {lightBlocks.map((p, i) => <LightMonth key={i} p={p} pack={pack} size={unitVolume} current={i === lightCurIdx} />)}
                 <span className="psk-pop-loading">Loading the full QD / RIP tier schedule…</span>
               </>
             )}

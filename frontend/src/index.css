@@ -5636,6 +5636,12 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 .prod-filter-chev.is-collapsed { transform: rotate(180deg); }
 .prod-filter-sect-body { padding: 0 14px 12px; }
 .prod-filter-tracked { margin-bottom: 8px; }
+/* Two-option month toggle (RIP / QD month): a small segmented control. */
+.prod-filter-segmented { display: inline-flex; width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.prod-filter-segmented button { flex: 1 1 0; min-width: 0; padding: 6px 8px; font-size: 12px; font-weight: 600;
+  background: var(--surface, #fff); color: var(--text); border: 0; cursor: pointer; white-space: nowrap; }
+.prod-filter-segmented button + button { border-left: 1px solid var(--border); }
+.prod-filter-segmented button.on { background: var(--accent); color: #fff; }
 /* overflow-x: hidden is REQUIRED: overflow-y:auto otherwise computes overflow-x
    to auto, and a long facet label (ellipsis aside) triggers a horizontal
    scrollbar inside the list. Rows truncate via .prod-filter-check below. */

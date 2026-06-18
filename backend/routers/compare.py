@@ -3416,6 +3416,9 @@ def edition_comparison(con, wholesaler: str, older: str = "", newer: str = "",
         rows = [r for r in rows if r["status"] == "removed"]
     elif change == "rip":
         rows = [r for r in rows if any(str(l).startswith("rip") for l in r.get("layers", []))]
+    elif change == "qd":
+        # Quantity-discount / invoice price moved between the two editions.
+        rows = [r for r in rows if "discount" in r.get("layers", [])]
     elif change == "changed":
         rows = [r for r in rows if r["status"] != "both"
                 or (r.get("net_delta_case") and abs(r["net_delta_case"]) >= 0.005)]

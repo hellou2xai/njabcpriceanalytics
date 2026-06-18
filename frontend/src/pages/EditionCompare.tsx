@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { CalendarClock, ArrowRight, ArrowDownRight, ArrowUpRight, PlusCircle, MinusCircle, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -29,9 +29,28 @@ const CHANGES = [
   { v: 'added', label: 'New items' },
   { v: 'removed', label: 'Removed' },
   { v: 'rip', label: 'RIP changed' },
+  { v: 'qd', label: 'QD changed' },
 ];
 
 const PAGE_SIZES = [50, 100, 200, 500];
+
+// Directional sort options, framed for a buyer doing a month-over-month review.
+// Each maps to the backend's (sort key, order). "Cost increase" = net cost rose
+// most (act before reordering); "Cost drop" = fell most (buy / margin).
+const SORT_OPTIONS = [
+  { value: 'inc_dollar', label: 'Cost increase ($) — biggest first' },
+  { value: 'drop_dollar', label: 'Cost drop ($) — biggest first' },
+  { value: 'inc_pct', label: 'Cost increase (%) — biggest first' },
+  { value: 'drop_pct', label: 'Cost drop (%) — biggest first' },
+  { value: 'name', label: 'Product name (A–Z)' },
+];
+const SORT_MAP: Record<string, { sort: string; order: string }> = {
+  inc_dollar: { sort: 'net_delta', order: 'desc' },
+  drop_dollar: { sort: 'net_delta', order: 'asc' },
+  inc_pct: { sort: 'net_delta_pct', order: 'desc' },
+  drop_pct: { sort: 'net_delta_pct', order: 'asc' },
+  name: { sort: 'product', order: 'asc' },
+};
 
 function DeltaPill({ r }: { r: EditionRow }) {
   if (r.status === 'added') return <span className="ec-pill ec-added"><PlusCircle size={12} /> New</span>;
@@ -56,7 +75,10 @@ export default function EditionCompare() {
   const [newer, setNewer] = useState(params.get('b') ?? '');
   const [q, setQ] = useState(params.get('q') ?? '');
   const [change, setChange] = useState(params.get('change') ?? '');
-  const [sort, setSort] = useState(params.get('sort') ?? 'net_delta');
+  // Buyer-meaningful, DIRECTIONAL sort for month-over-month: what got more
+  // expensive (act before reordering / re-price) vs what got cheaper (buy /
+  // margin), in $ and %. Default = biggest cost increase (the watch-out).
+  const [sort, setSort] = useState(params.get('sort') ?? 'inc_dollar');
   // Client-side facets (the result set is fully returned, so these filter the
   // grid without another round-trip — same rail + behaviour as every list page).
   const [productType, setProductType] = useState('');
@@ -66,7 +88,10 @@ export default function EditionCompare() {
   const [maxPrice, setMaxPrice] = useState('');
   const [onlyChanged, setOnlyChanged] = useState(false);
   const [page, setPage] = useState(0);
-  const [limit, setLimit] = useState(100);
+  const [limit, setLimit] = useState(500);
+  // Hovered row for the styled "what changed" breakdown popover (fixed-position
+  // so the table's overflow never clips it; changed lines render red on yellow).
+  const [bd, setBd] = useState<{ r: EditionRow; left: number; top: number; above: boolean } | null>(null);
 
   const goToProduct = (name: string) =>
     navigate(`/products?q=${encodeURIComponent(name)}&wholesaler=${wholesaler}`);
@@ -89,15 +114,17 @@ export default function EditionCompare() {
     if (newer) next.set('b', newer);
     if (q) next.set('q', q);
     if (change) next.set('change', change);
-    if (sort !== 'net_delta') next.set('sort', sort);
+    if (sort !== 'inc_dollar') next.set('sort', sort);
     if (next.toString() !== params.toString()) setSearchParams(next, { replace: true });
   }, [wholesaler, older, newer, q, change, sort]);
 
+  const sm = SORT_MAP[sort] ?? SORT_MAP.inc_dollar;
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['edition-compare', wholesaler, older, newer, q, change, sort],
     queryFn: () => compare.editions({
       wholesaler, older: older || undefined, newer: newer || undefined,
-      match: q || undefined, change: change || undefined, sort,
+      match: q || undefined, change: change || undefined,
+      sort: sm.sort, order: sm.order,
       // Pull the FULL comparison (endpoint caps at 50k); the page paginates
       // client-side. Without this the API defaulted to 3000, so the count was
       // wrong (it claimed all products compared but returned only 3000).
@@ -159,10 +186,14 @@ export default function EditionCompare() {
 
   const resetFilters = () => {
     setQ(''); setChange(''); setProductType(''); setSizes([]); setLayersSel([]);
-    setMinPrice(''); setMaxPrice(''); setOnlyChanged(false); setSort('net_delta');
+    setMinPrice(''); setMaxPrice(''); setOnlyChanged(false); setSort('inc_dollar');
   };
 
   const sections: FilterSection[] = [
+    // Sort pinned to the TOP of the rail (it's the first decision a buyer makes
+    // on a month-over-month review), with directional, buyer-meaningful options.
+    { type: 'select', key: 'sort', title: 'Sort by', highlight: true, value: sort, onChange: setSort,
+      options: SORT_OPTIONS },
     { type: 'custom', key: 'q', title: 'Search', render: () => (
       <ProductSearchBox value={q} placeholder="Product or brand…"
         onChange={v => setQ(v)} onSelect={p => setQ(p.product_name)} />
@@ -175,11 +206,6 @@ export default function EditionCompare() {
     { type: 'multi-pills', key: 'layers', title: 'What moved', values: layersSel, onChange: setLayersSel, options: layerOptions },
     { type: 'range', key: 'price', title: 'Net price / case', min: minPrice, max: maxPrice,
       onMinChange: setMinPrice, onMaxChange: setMaxPrice, minPlaceholder: 'Min $', maxPlaceholder: 'Max $' },
-    { type: 'select', key: 'sort', title: 'Sort by', value: sort, onChange: setSort, options: [
-      { value: 'net_delta', label: 'Biggest $ change' },
-      { value: 'net_delta_pct', label: 'Biggest % change' },
-      { value: 'product', label: 'Product name' },
-    ] },
     { type: 'toggle', key: 'changed', title: 'Only changed', value: onlyChanged, onChange: setOnlyChanged, label: 'Hide unchanged rows' },
   ];
 
@@ -281,15 +307,14 @@ export default function EditionCompare() {
                   </thead>
                   <tbody>
                     {shown.map(r => {
-                      // full price breakdown for the "what changed" tooltip
-                      const tip = r.status !== 'both' ? '' : [
-                        `${data.older} → ${data.newer}`,
-                        `Net cost:  ${money(r.net_a_case)} → ${money(r.net_b_case)}` +
-                          (r.net_delta_case != null ? `  (${r.net_delta_case > 0 ? '+' : ''}$${r.net_delta_case.toFixed(2)}, ${pct(r.net_delta_pct)})` : ''),
-                        `Frontline: ${money(r.frontline_a)} → ${money(r.frontline_b)}`,
-                        `Invoice (after discount): ${money(r.invoice_a)} → ${money(r.invoice_b)}`,
-                        `RIP rebate: ${money(r.rip_a)} → ${money(r.rip_b)}`,
-                      ].join('\n');
+                      const netChanged = r.status === 'both' && r.net_delta_case != null && Math.abs(r.net_delta_case) >= 0.005;
+                      const onEnter = (e: ReactMouseEvent) => {
+                        if (r.status !== 'both') return;
+                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                        const above = rect.bottom + 190 > window.innerHeight;
+                        setBd({ r, left: Math.min(rect.left, window.innerWidth - 320),
+                          top: above ? rect.top : rect.bottom, above });
+                      };
                       return (
                       <tr key={r.ident} className={`${r.status === 'both' && (!r.net_delta_case || Math.abs(r.net_delta_case) < 0.005) ? 'ec-nochange' : ''}`}>
                         <td className="ec-prod">
@@ -297,9 +322,10 @@ export default function EditionCompare() {
                           <span className="cmp-size">{r.unit_qty} × {r.unit_volume}</span>
                         </td>
                         <td className="ec-num">{r.status === 'added' ? '—' : money(r.net_a_case)}<span className="cmp-sub">{r.status === 'added' ? '' : `${money(r.net_a_btl)}/${perUnitAbbr(r.unit_volume, r.unit_type)}`}</span></td>
-                        <td className="ec-num">{r.status === 'removed' ? '—' : money(r.net_b_case)}<span className="cmp-sub">{r.status === 'removed' ? '' : `${money(r.net_b_btl)}/${perUnitAbbr(r.unit_volume, r.unit_type)}`}</span></td>
-                        <td title={tip}><DeltaPill r={r} /></td>
-                        <td className="ec-layers" title={tip}>
+                        {/* Changed value highlighted: red font on yellow when net cost moved. */}
+                        <td className={`ec-num${netChanged ? ' ec-changed-val' : ''}`}>{r.status === 'removed' ? '—' : money(r.net_b_case)}<span className="cmp-sub">{r.status === 'removed' ? '' : `${money(r.net_b_btl)}/${perUnitAbbr(r.unit_volume, r.unit_type)}`}</span></td>
+                        <td className="ec-change-cell" onMouseEnter={onEnter} onMouseLeave={() => setBd(null)}><DeltaPill r={r} /></td>
+                        <td className="ec-layers" onMouseEnter={onEnter} onMouseLeave={() => setBd(null)}>
                           {r.layers.map(l => (
                             <span key={l} className={`ec-layer ${l.startsWith('rip') ? 'ec-layer-rip' : ''}`}>{LAYER_LABEL[l] ?? l}</span>
                           ))}
@@ -324,6 +350,36 @@ export default function EditionCompare() {
             </div>
           </FilterSidebar>
         </>
+      )}
+
+      {/* Styled "what changed" breakdown — fixed so the table overflow never
+          clips it. Each component line that moved renders red on yellow. */}
+      {bd && data && (
+        <div className="ec-breakdown" role="tooltip"
+          style={{ position: 'fixed', left: bd.left, top: bd.top,
+            transform: bd.above ? 'translateY(-100%)' : 'none' }}>
+          <div className="ec-bd-head">{data.older} → {data.newer}</div>
+          <table className="ec-bd-table"><tbody>
+            {([
+              { label: 'Net cost', a: bd.r.net_a_case, b: bd.r.net_b_case, d: bd.r.net_delta_case, p: bd.r.net_delta_pct },
+              { label: 'Frontline', a: bd.r.frontline_a, b: bd.r.frontline_b },
+              { label: 'Invoice (after QD)', a: bd.r.invoice_a, b: bd.r.invoice_b },
+              { label: 'RIP rebate', a: bd.r.rip_a, b: bd.r.rip_b },
+            ] as const).map(l => {
+              const changed = l.a != null && l.b != null && Math.abs(l.a - l.b) > 0.005;
+              return (
+                <tr key={l.label} className={changed ? 'ec-bd-changed' : ''}>
+                  <td className="ec-bd-lab">{l.label}</td>
+                  <td className="ec-bd-val">{money(l.a)} → {money(l.b)}
+                    {'d' in l && l.d != null && Math.abs(l.d) > 0.005 && (
+                      <span className="ec-bd-d"> ({l.d > 0 ? '+' : ''}${Math.abs(l.d).toFixed(2)}{l.p != null ? `, ${pct(l.p)}` : ''})</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody></table>
+        </div>
       )}
     </div>
   );

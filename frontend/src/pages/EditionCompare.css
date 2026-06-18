@@ -42,3 +42,23 @@
 .ec-pagebtns { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; }
 .ec-pagenum { font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
 .ec-pagebtns .btn { display: inline-flex; align-items: center; gap: 3px; }
+
+/* What-changed breakdown popover (fixed-position so the table overflow never
+   clips it). Each component line that moved renders RED FONT on YELLOW. */
+.ec-change-cell, .ec-layers { cursor: help; }
+.ec-breakdown {
+  z-index: 200; min-width: 280px; max-width: 360px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18); padding: 8px 10px; pointer-events: none;
+}
+.ec-bd-head { font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .03em; }
+.ec-bd-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.ec-bd-table td { padding: 3px 6px; white-space: nowrap; }
+.ec-bd-lab { color: var(--text-muted); }
+.ec-bd-val { text-align: right; font-variant-numeric: tabular-nums; }
+.ec-bd-changed td { color: #dc2626; background: #fef9c3; font-weight: 700; }
+.ec-bd-changed .ec-bd-lab { color: #dc2626; }
+.ec-bd-d { font-weight: 700; }
+/* The changed net value in the grid itself: red font on a yellow highlight. */
+.ec-num.ec-changed-val { color: #dc2626; background: #fef9c3; border-radius: 5px; padding: 0 4px; }
+.ec-num.ec-changed-val .cmp-sub { color: #b45309; }

@@ -6010,6 +6010,8 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pd-section h2 { font-size: 17px; font-weight: 700; color: var(--text); margin: 0 0 8px; display: flex; align-items: center; gap: 8px; }
 .pd-section p { font-size: 14px; line-height: 1.6; color: var(--text); margin: 0; }
 .pd-section-sub { font-size: 13px; color: var(--text-muted); margin: -2px 0 10px !important; }
+/* Seed bottle size in the product title, e.g. "GLENLIVET 12Y (50ML)". */
+.pd-title-size { color: var(--text-muted); font-weight: 600; font-size: 0.7em; }
 /* Next Month Price box: a bordered card holding the Products QD/RIP table. */
 .pd-nextmonth { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px;
   background: var(--surface); display: inline-block; min-width: 320px; max-width: 100%; }

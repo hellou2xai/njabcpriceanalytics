@@ -270,6 +270,47 @@ function BestQdSticker({ s }: { s?: Product | null }) {
   );
 }
 
+// Better-price month sticker: is the effective case price best THIS month, or
+// cheaper NEXT month (when that edition is loaded)? Labelled with the actual
+// month NAME and coloured by which wins (green = buy now, blue = cheaper next).
+// Tooltip explains WHY with the real per-case numbers.
+const _FULL_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
+function _monthName(ed?: string | null): string {
+  const m = /^(\d{4})-(\d{1,2})/.exec(ed ?? '');
+  return m ? (_FULL_MONTHS[parseInt(m[2], 10) - 1] ?? '') : '';
+}
+function _nextMonthName(ed?: string | null): string {
+  const m = /^(\d{4})-(\d{1,2})/.exec(ed ?? '');
+  return m ? (_FULL_MONTHS[parseInt(m[2], 10) % 12] ?? '') : '';   // +1 month, wraps Dec→Jan
+}
+function BetterMonthSticker({ s, repRow }: { s?: Product | null; repRow?: Product | null }) {
+  const row = (repRow && s?.upc && repRow.upc === s.upc && repRow.wholesaler === s.wholesaler)
+    ? repRow : (s ?? repRow);
+  const cur = row?.effective_case_price ?? null;
+  const curMo = _monthName(row?.edition);
+  if (cur == null || !curMo) return null;
+  const next = row?.next_effective_case_price ?? null;
+  const nextMo = _nextMonthName(row?.edition);
+  const money = (v: number) => `$${v.toFixed(2)}`;
+  if (next != null && next < cur - 0.01) {
+    const save = cur - next;
+    return (
+      <span className="prod-bettermo prod-bettermo--next"
+        title={`Cheaper next month — ${nextMo}: ${money(next)}/cs vs ${curMo}: ${money(cur)}/cs. Save ${money(save)}/cs by waiting.`}>
+        Best · {nextMo}
+      </span>
+    );
+  }
+  let tip = `Best price this month — ${curMo}: ${money(cur)}/cs.`;
+  if (next != null) tip += next > cur + 0.01
+    ? ` Next month (${nextMo}) rises to ${money(next)}/cs (+${money(next - cur)}/cs) — buy now.`
+    : ` Next month (${nextMo}): ${money(next)}/cs (same).`;
+  return (
+    <span className="prod-bettermo prod-bettermo--now" title={tip}>Best · {curMo}</span>
+  );
+}
+
 // True per-bottle list price, correcting slash-multipacks (unit_qty = trays)
 // the same way every other per-bottle surface does.
 function bottleUnitPrice(s: Product): number | null {
@@ -609,6 +650,7 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
             )}
           </div>
           <div className="prod-card-stickers" onClick={e => e.stopPropagation()}>
+            <BetterMonthSticker s={rep} repRow={repRow} />
             <IntroSticker ym={group.sizes.reduce<string | null>(
               (mx, s) => (s.introduced_edition && (!mx || s.introduced_edition > mx)
                 ? s.introduced_edition : mx), null)} />

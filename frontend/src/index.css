@@ -5755,6 +5755,12 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pd-deal-halfcase { background: color-mix(in srgb, #c2410c 15%, transparent); color: #c2410c; text-transform: none; letter-spacing: .02em; cursor: help; }
 /* New Items "introduced" sticker — green pill with the introduced month. */
 .prod-new-sticker { display: inline-flex; align-items: center; gap: 3px; padding: 1px 8px; border-radius: 999px; font-size: 10px; font-weight: 800; letter-spacing: .02em; white-space: nowrap; background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); border: 1px solid color-mix(in srgb, var(--green) 30%, transparent); cursor: default; }
+/* Better-price month tag: which month the effective case price is best in. Two
+   colours so it reads at a glance — green = best THIS month (buy now), blue =
+   cheaper NEXT month (consider waiting). Tooltip explains with the numbers. */
+.prod-bettermo { display: inline-flex; align-items: center; gap: 3px; padding: 1px 8px; border-radius: 999px; font-size: 10px; font-weight: 800; letter-spacing: .02em; white-space: nowrap; cursor: default; }
+.prod-bettermo--now { background: color-mix(in srgb, var(--green, #16a34a) 16%, transparent); color: var(--green, #16a34a); border: 1px solid color-mix(in srgb, var(--green, #16a34a) 30%, transparent); }
+.prod-bettermo--next { background: color-mix(in srgb, #2563eb 15%, transparent); color: #1d4ed8; border: 1px solid color-mix(in srgb, #2563eb 32%, transparent); }
 
 /* Distributor-comparison chip + side-by-side ladder tooltip (DistCompareChip). */
 .dcc { display: inline-flex; position: relative; margin: 4px 0 2px; }

@@ -154,6 +154,13 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
     const off = frontline != null && t.eff < frontline ? frontline - t.eff : null;
     // RIP rows: the rebate ALONE (the RIP-sheet number), never rebate+QD mixed.
     const ripSave = kind === 'rip' ? (t.ripOnlySave ?? null) : null;
+    // RIP Profit % = rebate / after-QD outlay (= price_after + rebate) * 100 —
+    // the return on the cash you put down, the SAME identity Compare RIPs /
+    // Best RIPs use (FOUNDATION). >60% is treated as a source-data anomaly and
+    // suppressed rather than shown.
+    const afterQd = ripSave != null ? t.eff + ripSave : null;
+    const ripProfitPct = (ripSave != null && ripSave > 0.005 && afterQd != null && afterQd > 0
+      && ripSave / afterQd <= 0.60) ? (ripSave / afterQd) * 100 : null;
     const isBest = (kind === 'qd' && bestQdEff != null && caseQty(t) > 1 + 1e-9 && t.eff <= bestQdEff + 1e-9)
       || (kind === 'rip' && bestRipEff != null && t.eff <= bestRipEff + 1e-9);
     return (
@@ -168,6 +175,11 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
             : kind === 'qd' && off != null && off > 0.005
               ? <span title="Total discount off list at this tier, per case.">−${off.toFixed(2)}</span>
               : '—'}
+        </td>
+        <td className="prod-deal-num prod-deal-profit">
+          {ripProfitPct != null
+            ? <span title="RIP profit: the rebate as a % of the after-QD cash you put down (rebate ÷ (price after RIP + rebate)).">{ripProfitPct.toFixed(1)}%</span>
+            : '—'}
         </td>
       </tr>
     );
@@ -245,6 +257,7 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
           <th></th>
           <th className="prod-deal-num prod-deal-hgrp-c" colSpan={2}>After QD / RIP</th>
           <th className="prod-deal-num prod-deal-hgrp-c">Savings</th>
+          <th className="prod-deal-num prod-deal-hgrp-c">RIP profit</th>
         </tr>
         <tr>
           <th>Tier</th>
@@ -252,6 +265,7 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
           <th className="prod-deal-num">/{csWord}</th>
           <th className="prod-deal-num">/{unitNoun}</th>
           <th className="prod-deal-num">/{csWord}</th>
+          <th className="prod-deal-num">%</th>
         </tr>
       </thead>
       <tbody>
@@ -262,7 +276,7 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
             <Fragment key={`rg${gi}`}>
               {(multiProgram || hoist) && (
                 <tr className="prod-deal-grouphdr">
-                  <td colSpan={5}
+                  <td colSpan={6}
                     title="A separate RIP program for this product — pick the one matching how much you buy. These do not stack.">
                     RIP{g.code ? ` ${g.code}` : ''}{hoist && <PartialFlag t={hoist} />}
                   </td>

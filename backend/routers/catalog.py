@@ -716,6 +716,7 @@ def search_products(
     varietal: Optional[str] = Query(None, description="Varietal / style hint, e.g. 'cabernet', 'pinot noir', 'ipa', 'bourbon', 'reposado', 'single malt'. Combine with region for queries like 'California cabernets' or 'Kentucky bourbon'."),
     tracked_only: bool = Query(False, description="If true, only return products on the watchlist"),
     introduced_within_months: Optional[int] = Query(None, ge=1, le=12, description="If set, restrict to items first introduced (by UPC first-appearance) within the last N editions, and attach introduced_edition per row. Powers the New Items page (same universe as /new-items) while keeping the full search/filter/facet stack."),
+    introduced_edition: Optional[str] = Query(None, description="With introduced_within_months: narrow to items introduced in this ONE edition (YYYY-MM). Powers the New Items 'Introduced' month filter."),
     sort: str = Query("product_name", description="Sort field"),
     order: str = Query("asc", description="asc or desc"),
     limit: int = Query(50, ge=1, le=50000),
@@ -759,6 +760,8 @@ def search_products(
         intro_map: dict[tuple, str] = {}
         if introduced_within_months:
             intro_map = _introduced_window(con, introduced_within_months)
+            if introduced_edition:
+                intro_map = {k: v for k, v in intro_map.items() if v == introduced_edition}
             if not intro_map:
                 where.append("1 = 0")   # nothing new in window -> empty grid
             else:
@@ -3486,6 +3489,7 @@ def search_facets(
     has_rip: Optional[bool] = None,
     has_discount: Optional[bool] = None,
     introduced_within_months: Optional[int] = Query(None, ge=1, le=12, description="Restrict facet counts to the New Items universe (items introduced in the last N editions), mirroring /search."),
+    introduced_edition: Optional[str] = Query(None, description="Narrow facet counts to one introduced month (YYYY-MM), mirroring /search."),
 ):
     """Drill-down facet counts. Each facet's counts honour all the OTHER active
     filters (but not its own dimension), so the numbers reconcile with the
@@ -3538,6 +3542,8 @@ def search_facets(
         # New Items universe (same restriction as /search) so facet counts match.
         if introduced_within_months:
             intro_map = _introduced_window(con, introduced_within_months)
+            if introduced_edition:
+                intro_map = {k: v for k, v in intro_map.items() if v == introduced_edition}
             if not intro_map:
                 base.append("1 = 0")
             else:

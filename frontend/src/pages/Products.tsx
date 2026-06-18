@@ -48,6 +48,13 @@ function filtersFromParams(params: URLSearchParams): CatalogFilters {
   };
 }
 
+const _MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** 'YYYY-MM' -> 'Mon YYYY' (e.g. '2026-07' -> 'Jul 2026'). */
+function monthLabel(ed: string): string {
+  const m = /^(\d{4})-(\d{1,2})/.exec(ed);
+  return m ? `${_MONTHS[parseInt(m[2], 10) - 1] ?? ''} ${m[1]}`.trim() : ed;
+}
+
 export default function Products({ newItems = false }: { newItems?: boolean } = {}) {
   const [params, setSearchParams] = useSearchParams();
   const [q, setQ] = useState(params.get('q') ?? '');
@@ -57,6 +64,8 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
   const [page, setPage] = useState(0);
   const [limit, setLimit] = useState(60);
   const [trackedOnly, setTrackedOnly] = useState(false);
+  // New Items: filter to one introduced edition (YYYY-MM); '' = all of the window.
+  const [introducedMonth, setIntroducedMonth] = useState('');
   // Sort is by product_name by default so a product's sizes arrive contiguously
   // and group cleanly. Price sorts are offered too (server-side).
   const [sort, setSort] = useState<'product_name' | 'frontline_case_price' | 'effective_case_price'>('product_name');
@@ -194,14 +203,16 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
     && !wholesaler && !region && !varietal && !trackedOnly;
 
   const { data, isLoading } = useCachedQuery(
-    ['products', q, wholesaler, sort, order, page, limit, trackedOnly, filterKey, region, varietal, newItems],
+    ['products', q, wholesaler, sort, order, page, limit, trackedOnly, filterKey, region, varietal, newItems, introducedMonth],
     () => catalog.search({
       q,
       wholesaler: wholesaler || undefined,
       sort, order,
       limit, offset: page * limit,
       ...filterParams,
-      introduced_within_months: newItems ? 3 : undefined,
+      // New Items = the last 4 loaded editions; optionally one introduced month.
+      introduced_within_months: newItems ? 4 : undefined,
+      introduced_edition: newItems ? (introducedMonth || undefined) : undefined,
       tracked_only: trackedOnly || undefined,
       // Storefront browsing: rows that have a product image rank first when
       // sorting by name (relevance still wins for typed searches).
@@ -220,15 +231,28 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
   // misspelling (which matches nothing and blanked the whole filter rail).
   const effectiveQ = data?.corrected_query ?? q;
   const { data: facets } = useCachedQuery(
-    ['products-facets', effectiveQ, wholesaler, filterKey, newItems],
+    ['products-facets', effectiveQ, wholesaler, filterKey, newItems, introducedMonth],
     () => catalog.facets({ q: effectiveQ, wholesaler: wholesaler || undefined, ...filterParams,
-      introduced_within_months: newItems ? 3 : undefined }),
+      introduced_within_months: newItems ? 4 : undefined,
+      introduced_edition: newItems ? (introducedMonth || undefined) : undefined }),
     { enabled: showGrid && (!q.trim() || !!data), persist: isAisleView },
   );
 
+  // New Items: the introduced-month filter options = the last 4 loaded editions
+  // (stable list, independent of the current month filter).
+  const { data: niEditions } = useQuery({
+    queryKey: ['ni-editions'], queryFn: catalog.editions, enabled: newItems,
+  });
+  const introMonthOpts = useMemo(
+    () => [...new Set((niEditions ?? []).map(e => e.edition))].sort().reverse().slice(0, 4),
+    [niEditions]);
+
+  // New Items shows one card per newly-introduced FAMILY (not every size), so
+  // grouping is forced on regardless of the persisted toggle.
+  const effGrouped = newItems ? true : grouped;
   const items = (data?.items ?? []) as Product[];
   const total = data?.total ?? 0;
-  const productCount = countProductGroups(items, grouped);
+  const productCount = countProductGroups(items, effGrouped);
 
   // Publish the matched-row count so the AI assistant can echo the same number.
   const { report } = useResultCount();
@@ -378,8 +402,8 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
         <div className="products-main">
           <div className="products-toolbar">
             <span className="products-showing">
-              {isLoading ? 'Loading…' : grouped ? (
-                <>Showing <strong>{productCount}</strong> product{productCount === 1 ? '' : 's'}
+              {isLoading ? 'Loading…' : effGrouped ? (
+                <>Showing <strong>{productCount}</strong> {newItems ? 'new product' : 'product'}{productCount === 1 ? '' : 's'}
                   {' '}<span className="products-showing-sub">({total.toLocaleString()} sizes)</span></>
               ) : (
                 <>Showing <strong>{productCount}</strong> listing{productCount === 1 ? '' : 's'}
@@ -387,12 +411,26 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
               )}
             </span>
             <div className="products-toolbar-right">
+              {/* New Items: filter to the month a product was introduced. */}
+              {newItems && (
+                <label className="products-sort">
+                  <span>Introduced</span>
+                  <select value={introducedMonth}
+                    onChange={e => { setIntroducedMonth(e.target.value); setPage(0); }}>
+                    <option value="">Last 4 months</option>
+                    {introMonthOpts.map(ed => <option key={ed} value={ed}>{monthLabel(ed)}</option>)}
+                  </select>
+                </label>
+              )}
+              {/* Group toggle is hidden in New Items (always grouped by family). */}
+              {!newItems && (
               <label className="products-group-toggle"
                 title="OFF (default): one row per size per distributor, with multiple barcodes (vintages / closeouts) collapsed to the best price. ON: combine a product's sizes and distributors into one family card.">
                 <input type="checkbox" checked={grouped}
                   onChange={e => { setGrouped(e.target.checked); setPage(0); }} />
                 Group products
               </label>
+              )}
               <div className="products-detail-toggle" role="group" aria-label="Deal detail level"
                 title="Price details shows every QD/RIP tier on the cards; Summary keeps cards compact (expand a card for full details).">
                 <button type="button" className={priceDetails ? 'on' : ''} onClick={() => setDetails(true)}>Price details</button>
@@ -419,7 +457,7 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
           </div>
 
           {isLoading ? <p>Loading…</p> : (
-            <ProductsGrid items={items} cart={cart} updateQty={updateQty} showDeals={priceDetails} grouped={grouped} expandAll={newItems || !!q.trim()} />
+            <ProductsGrid items={items} cart={cart} updateQty={updateQty} showDeals={priceDetails} grouped={effGrouped} expandAll={!newItems && !!q.trim()} />
           )}
 
           <div className="pagination">

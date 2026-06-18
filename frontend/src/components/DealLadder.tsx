@@ -91,6 +91,12 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
   const realQd = disc.filter(t => caseQty(t) > 1 + 1e-9);
   const bestQdEff = realQd.length ? Math.min(...realQd.map(t => t.eff)) : null;
   const bestRipEff = rip.length ? Math.min(...rip.map(t => t.eff)) : null;
+  // Headline totals, per case: the deepest QD discount off list, and the largest
+  // RIP rebate (rebate alone, never blended with QD). Shown as one summary line
+  // ABOVE the ladder so the buyer reads the max QD + max RIP back at a glance.
+  const qdOffTotal = frontline != null && bestQdEff != null && bestQdEff < frontline
+    ? frontline - bestQdEff : null;
+  const ripBackTotal = rip.length ? Math.max(...rip.map(t => t.ripOnlySave ?? 0)) : 0;
 
   if (disc.length === 0 && rip.length === 0) {
     return emptyText ? <span className="prod-deals-none">{emptyText}</span> : null;
@@ -172,6 +178,23 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
   };
 
   return (
+    <div className="prod-deal-wrap">
+      {(qdOffTotal != null || ripBackTotal > 0.005) && (
+        <div className="prod-deal-totals">
+          {qdOffTotal != null && qdOffTotal > 0.005 && (
+            <span className="prod-deal-tot prod-deal-tot-qd"
+              title="Best total quantity discount off list, per case.">
+              QD up to <strong>−${qdOffTotal.toFixed(2)}</strong>/{csWord}
+            </span>
+          )}
+          {ripBackTotal > 0.005 && (
+            <span className="prod-deal-tot prod-deal-tot-rip"
+              title="Largest RIP rebate, per case (rebate alone, not blended with QD).">
+              RIP up to <strong>${ripBackTotal.toFixed(2)}</strong>/{csWord} back
+            </span>
+          )}
+        </div>
+      )}
     <table className="prod-deal-table">
       <thead>
         <tr>
@@ -202,5 +225,6 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
         })}
       </tbody>
     </table>
+    </div>
   );
 }

@@ -5867,12 +5867,24 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 
 /* Tabular QD/RIP ladder (easier to scan than the old line list). Columns:
    Tier | Buy | $/cs | $/btl | Save. Best tier in its class = red on yellow. */
-.prod-deal-table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
-.prod-deal-table th { text-align: left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); padding: 2px 8px; border-bottom: 1px solid var(--border); }
+/* Wrapper keeps the ladder inside its card: it shrinks to fit, and on very
+   narrow widths scrolls horizontally instead of overlapping neighbouring text. */
+.prod-deal-wrap { width: 100%; max-width: 100%; overflow-x: auto; }
+.prod-deal-table { width: 100%; max-width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; table-layout: auto; }
+.prod-deal-table th { text-align: left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); padding: 2px 6px; border-bottom: 1px solid var(--border); }
 .prod-deal-table th.prod-deal-num, .prod-deal-table td.prod-deal-num { text-align: right; }
-.prod-deal-table td { padding: 2px 8px; color: var(--text); white-space: nowrap; }
-.prod-deal-td-type { display: flex; align-items: center; gap: 4px; }
-.prod-deal-td-buy { font-weight: 600; }
+.prod-deal-table td { padding: 2px 6px; color: var(--text); }
+/* Only the numeric columns stay on one line; the Tier/Buy text may wrap so the
+   table flexes to its container instead of forcing overflow + overlap. */
+.prod-deal-table td.prod-deal-num, .prod-deal-table th.prod-deal-num { white-space: nowrap; }
+.prod-deal-td-type { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.prod-deal-td-buy { font-weight: 600; white-space: nowrap; }
+/* Headline totals line above the ladder: best QD off + best RIP back, per case. */
+.prod-deal-totals { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0 0 4px; font-size: 11px; }
+.prod-deal-tot { color: var(--text-muted); }
+.prod-deal-tot strong { color: var(--text); }
+.prod-deal-tot-qd strong { color: var(--green); }
+.prod-deal-tot-rip strong { color: var(--accent); }
 .prod-deal-save { color: var(--green); }
 .prod-deal-grouphdr td { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: var(--accent); padding-top: 6px; }
 .prod-deal-trow.prod-deal-best td,

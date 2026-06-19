@@ -186,7 +186,14 @@ body {
    (which the long-page window scroll was defeating). Mobile keeps page scroll. */
 @media (min-width: 1025px) {
   .app-layout { height: 100vh; overflow: hidden; }
-  .main-content { height: 100vh; overflow-y: auto; box-sizing: border-box; }
+  /* Height must DIVIDE OUT the text-size zoom: the content area is the scroll
+     container, and `zoom: Z` (large/small text) renders a 100vh box at 100vh*Z.
+     At large text (Z=1.12) that made the container 112vh tall, pushing its
+     bottom 12% — the pagination / page footer — BELOW the viewport where it
+     could never be scrolled into view (on EVERY page). calc(100vh / Z) makes
+     the RENDERED height exactly one viewport again. --mc-zoom is set next to
+     each zoom rule; defaults to 1 (medium, no zoom). */
+  .main-content { height: calc(100vh / var(--mc-zoom, 1)); overflow-y: auto; box-sizing: border-box; }
 }
 
 /* ---- Page ---- */
@@ -1546,8 +1553,11 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
 /* ---- App-wide text size (persisted; set on <html data-textsize>) ----
    Scales the page CONTENT; the fixed nav keeps its size so the --nav-w offset
    stays correct. medium = no rule (zoom 1). */
-html[data-textsize="small"] .main-content { zoom: 0.9; }
-html[data-textsize="large"] .main-content { zoom: 1.12; }
+/* --mc-zoom mirrors the zoom factor so the desktop scroll-container height
+   (calc(100vh / var(--mc-zoom))) cancels it out and the page footer/pager stays
+   reachable. Keep the two values in sync. */
+html[data-textsize="small"] .main-content { zoom: 0.9; --mc-zoom: 0.9; }
+html[data-textsize="large"] .main-content { zoom: 1.12; --mc-zoom: 1.12; }
 .sidebar-textsize { display: flex; align-items: center; gap: 8px; padding: 2px 8px 10px;
   margin-bottom: 6px; border-bottom: 1px solid var(--nav-border, var(--border)); }
 .sidebar-textsize-lbl { font-size: 12px; color: var(--nav-text, var(--text-muted)); }

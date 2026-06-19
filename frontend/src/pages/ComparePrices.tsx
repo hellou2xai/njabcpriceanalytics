@@ -181,15 +181,15 @@ function ladderLines(lad: CompareLadder): { text: string; warn?: boolean }[] {
        ?? (liveDisc.length ? liveDisc.reduce((a, b) => ((a.price_after ?? Infinity) <= (b.price_after ?? Infinity) ? a : b)) : null))
     : null;
   if (qd != null && f != null && qd < f - 0.005) {
-    const buy = qdTier ? ` — buy ${qdTier.qty} ${qdTier.unit}` : '';
+    const buy = qdTier ? `, buy ${qdTier.qty} ${qdTier.unit}` : '';
     const ends = qdTier?.window_status === 'active'
-      ? ` (this deal ends ${fmtDay(qdTier.to_date)})` : '';
-    lines.push({ text: `Best QD today ${money(qd)}/cs${buy}${ends}.`, warn: qdTier?.window_status === 'active' });
+      ? ` (this deal runs ${fmtDay(qdTier.from_date)} to ${fmtDay(qdTier.to_date)})` : '';
+    lines.push({ text: `Best QD ${money(qd)}/cs${buy}${ends}.`, warn: qdTier?.window_status === 'active' });
   } else if (qd != null && f != null) {
-    lines.push({ text: `No quantity discount active today (${money(qd)}/cs).` });
+    lines.push({ text: `No quantity discount active (${money(qd)}/cs).` });
   }
   if (net != null && qd != null && net < qd - 0.005) {
-    lines.push({ text: `Best Net today ${money(net)}/cs — a RIP rebate takes off ${money(qd - net)}/cs more.` });
+    lines.push({ text: `Best Net ${money(net)}/cs. A RIP rebate takes off ${money(qd - net)}/cs more.` });
   }
   // a deeper discount that only starts later this month (not counted today)
   const upcoming = (lad.tiers ?? [])
@@ -287,8 +287,8 @@ function LadderPanel({ slugs, params, onOpen }: {
                     )}
                     {t.window_status === 'active' && (
                       <span className="cmp-ladder-window"
-                            title={`Live now, ends ${fmtDay(t.to_date)}.`}>
-                        <Clock size={9} /> ends {fmtDay(t.to_date)}
+                            title={`Live now, valid ${fmtDay(t.from_date)} to ${fmtDay(t.to_date)}.`}>
+                        <Clock size={9} /> {fmtDay(t.from_date)} to {fmtDay(t.to_date)}
                       </span>
                     )}
                     {t.window_status === 'upcoming' && (
@@ -344,10 +344,11 @@ export default function ComparePrices() {
   // Physical-size filter (standardized buckets: 750ML, 1.75L, ...), client-side
   // over the loaded common set. Empty = all sizes.
   const [sizes, setSizes] = useState<string[]>(params.get('sz')?.split(',').filter(Boolean) ?? []);
-  // Default sort = biggest $ spread first: on a distributor comparison, the
-  // products where switching distributor saves the most are what a buyer wants
-  // on top. (Column headers still re-sort; the rail "Sort by" mirrors this.)
-  const [sortKey, setSortKey] = useState(params.get('s') ?? 'spread');
+  // Default sort = biggest % spread first: the percentage gap is the fairer
+  // "is it worth switching distributor" signal (a $1,950 gap on a $30k bottle is
+  // only 7%, while $90 on a $224 item is 40%+). (Column headers still re-sort;
+  // the rail "Sort by" mirrors this; the $ gap is shown under each %.)
+  const [sortKey, setSortKey] = useState(params.get('s') ?? 'spread_pct');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(params.get('dir') === 'asc' ? 'asc' : 'desc');
   // Price Comparison view: 'cur' = this month, 'next' = next month (when that
   // edition is loaded), 'prev' = last month, 'both' = both stacked. 'prev'/'both'
@@ -392,7 +393,7 @@ export default function ComparePrices() {
     if (sizes.length) next.set('sz', sizes.join(','));
     if (confidence !== 'high') next.set('conf', confidence);
     if (verifiedFilter !== 'all') next.set('vf', verifiedFilter);
-    if (sortKey !== 'spread') next.set('s', sortKey);
+    if (sortKey !== 'spread_pct') next.set('s', sortKey);
     if (sortDir !== 'desc') next.set('dir', sortDir);
     if (pageSize !== 100) next.set('pp', String(pageSize));
     if (next.toString() !== params.toString()) setSearchParams(next, { replace: true });
@@ -605,7 +606,7 @@ export default function ComparePrices() {
       options: [
         { value: 'spread:desc', label: 'Biggest spread ($)' },
         { value: 'spread_pct:desc', label: 'Biggest spread (%)' },
-        { value: 'product:asc', label: 'Product name (A–Z)' },
+        { value: 'product:asc', label: 'Product name (A-Z)' },
         { value: 'winner:asc', label: 'Winner' },
       ],
       onChange: (v) => { const [k, d] = v.split(':'); setSortKey(k); setSortDir(d as 'asc' | 'desc'); } },
@@ -797,8 +798,9 @@ export default function ComparePrices() {
                       </span>
                     </th>
                   ))}
-                  <th rowSpan={2} className="cmp-sortable cmp-sep" onClick={() => clickSort('spread', 'desc')}>
-                    Spread{arrow('spread')}
+                  <th rowSpan={2} className="cmp-sortable cmp-sep" onClick={() => clickSort('spread_pct', 'desc')}
+                      title="Price gap between the cheapest and dearest distributor, as a percentage of the cheapest. The dollar gap is shown underneath.">
+                    Spread %{arrow('spread_pct')}
                   </th>
                   <th rowSpan={2} className="cmp-sortable" onClick={() => clickSort('winner')}>
                     Winner{arrow('winner')}
@@ -817,7 +819,7 @@ export default function ComparePrices() {
                       </th>
                       <th className="cmp-layer cmp-sortable" onClick={() => clickSort(`${w}::effective`)}
                           title={atVol ? `Landed price at ${cases} case(s): after QD + the best RIP rebate you can actually reach at that volume` : "Best effective price: after quantity discounts + best full-month RIP rebate (deepest tier)"}>
-                        {atVol ? `Net @${cases}cs` : 'Best net'}{arrow(`${w}::effective`)}
+                        {atVol ? `Net +RIP @${cases}cs` : 'Best net +RIP'}{arrow(`${w}::effective`)}
                       </th>
                     </Fragment>
                   ))}
@@ -911,8 +913,8 @@ export default function ComparePrices() {
                           );
                         })}
                         <td className="cmp-spread cmp-sep">
-                          {money(r.spread)}
-                          {r.spread_pct != null && <span className="cmp-sub">{r.spread_pct}%</span>}
+                          {r.spread_pct != null ? `${r.spread_pct}%` : money(r.spread)}
+                          {r.spread_pct != null && <span className="cmp-sub">{money(r.spread)}</span>}
                           {r.spread_pct != null && r.spread_pct > 100 && (
                             <span className="cmp-suspicious"
                               title="This price gap is over 100% — almost always a distributor filing/data error (e.g. a pack-size mismatch under one shared barcode), not a real deal. Verify with your sales rep before trusting it.">

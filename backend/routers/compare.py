@@ -326,7 +326,7 @@ def _common_rows(con, src: str, slugs: list[str], eds: dict[str, str],
                frontline_case_price, frontline_unit_price,
                best_case_price, best_unit_price,
                effective_case_price, next_effective_case_price, rip_savings, total_savings_per_case,
-               has_discount, has_rip, rip_code, rip_windows,
+               has_discount, has_rip, rip_code, rip_windows, dist_item_no,
                discount_1_qty, discount_1_amt, discount_2_qty, discount_2_amt,
                discount_3_qty, discount_3_amt, discount_4_qty, discount_4_amt,
                discount_5_qty, discount_5_amt,
@@ -425,7 +425,11 @@ def _price_obj(d: dict) -> dict:
         "upc": d.get("upc"),
         "edition": d.get("edition"),
         "product_name": d.get("product_name"),
-        "item_no": d.get("abg_sku"),   # distributor's own catalogue number
+        # Fedway's authoritative item number is dist_item_no ON the CPL row (it
+        # always matches the priced UPC); Allied's is the ABG SKU from
+        # sku_mapping. dist_item_no wins so a sku_mapping UPC mismatch can't blank
+        # the Fedway number (e.g. YAMAZAKI 12YR sharing a barcode with Allied).
+        "item_no": d.get("dist_item_no") or d.get("abg_sku"),
         "frontline": front,
         "after_qd": bq,
         "effective": net,

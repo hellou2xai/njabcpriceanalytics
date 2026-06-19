@@ -408,6 +408,27 @@ def build_pricing_cache() -> Path:
                     FROM product_enrichment pe
                     WHERE pe.upc = cpl_enriched.upc_norm""")
 
+            # Distributor item numbers, made EDITION-INDEPENDENT. Fedway's
+            # authoritative number lives on the CPL row (dist_item_no), but that
+            # column is only populated for the editions that were enriched, so a
+            # non-enriched edition would show no number; and the prior fedway
+            # sku_mapping rows were keyed on enrichment UPCs that don't always
+            # match the priced UPC (e.g. YAMAZAKI 12YR on a barcode it shares with
+            # Allied). Fold the LATEST dist_item_no per (distributor, UPC) into
+            # sku_mapping — the enrichment table attach_sku_mapping reads on every
+            # page — so the number resolves by UPC for ANY edition.
+            _try("DELETE FROM sku_mapping WHERE distributor = 'fedway'")
+            _try("""
+                INSERT INTO sku_mapping (distributor, abg_sku, upc, upc_norm, brand_reg, item_name)
+                SELECT 'fedway', dist_item_no, upc, upc_norm, NULL, product_name FROM (
+                    SELECT upc, upc_norm, dist_item_no, product_name,
+                           ROW_NUMBER() OVER (PARTITION BY upc_norm ORDER BY edition DESC) AS rn
+                    FROM cpl_enriched
+                    WHERE wholesaler = 'fedway'
+                      AND dist_item_no IS NOT NULL AND dist_item_no <> ''
+                ) WHERE rn = 1
+            """)
+
             # rip_cluster_sizes_pre: precompute the "Case Mix RIP" cluster size
             # per (wholesaler, edition, rip_code) — the single ~7s hash-join the
             # grouped grid (group_by_rip) rebuilt on every request

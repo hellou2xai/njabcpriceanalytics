@@ -60,7 +60,7 @@ def _cached_deal_blurbs() -> dict:
         _deal_blurb_cache["expires_at"] = now + 60
         return m
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request, Response
 from typing import Optional
 
 from backend.db import get_duckdb, read_parquet
@@ -92,6 +92,8 @@ def get_top_discounts(
     sort: str = Query("total_savings_per_case", description="Sort by"),
     limit: int = Query(50, ge=1, le=50000),
     per_category: bool = Query(False, description="If true, return top `limit` per product category instead of overall"),
+    request: Request = None,
+    response: Response = None,
 ):
     """Discount ranker. §7.1.
 
@@ -261,6 +263,11 @@ def get_top_discounts(
         attach_vintages_available(con, records)
         return records
 
+    if request is not None and response is not None:
+        from backend.http_cache import public_conditional
+        _nm = public_conditional(request, response, ("discounts", key))
+        if _nm is not None:
+            return _nm
     return cached_response("discounts", key, _build)
 
 
@@ -269,6 +276,8 @@ def get_clearance_items(
     wholesaler: Optional[str] = None,
     edition: Optional[str] = None,
     limit: int = Query(50, ge=1, le=50000),
+    request: Request = None,
+    response: Response = None,
 ):
     """Clearance / closeout items. Â§7.2"""
     from backend.cache_util import cached_response
@@ -314,6 +323,11 @@ def get_clearance_items(
         attach_sku_mapping(con, records)
         return records
 
+    if request is not None and response is not None:
+        from backend.http_cache import public_conditional
+        _nm = public_conditional(request, response, ("clearance", key))
+        if _nm is not None:
+            return _nm
     return cached_response("clearance", key, _build)
 
 
@@ -388,6 +402,8 @@ def get_combos(
     edition: Optional[str] = None,
     q: str = "",
     limit: int = Query(50, ge=1, le=100000),
+    request: Request = None,
+    response: Response = None,
 ):
     """Bundle/combo deals. ONE row per combo (components grouped). §7.3
 
@@ -724,6 +740,11 @@ def get_combos(
         attach_sku_mapping(con, flat_comps)
         return items
 
+    if request is not None and response is not None:
+        from backend.http_cache import public_conditional
+        _nm = public_conditional(request, response, ("combos", key))
+        if _nm is not None:
+            return _nm
     return cached_response("combos", key, _build)
 
 

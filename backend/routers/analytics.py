@@ -6,7 +6,7 @@ Covers: Â§6 Dashboard, Â§8 Analytics, Â§15 Materialized Views
 
 import math
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request, Response
 from typing import Optional
 
 from backend.db import get_duckdb, read_parquet
@@ -444,6 +444,8 @@ def get_price_movers(
     direction: str = Query("down", description="up or down"),
     validity: str = Query("all", description="all | current_only | next_only | both"),
     limit: int = Query(500, ge=1, le=50000),
+    request: Request = None,
+    response: Response = None,
 ):
     """Top price movers (6.2, 8.1). Resilient to older ingested data that may
     lack some derived columns (e.g. vintage_norm) - any missing column is
@@ -488,6 +490,11 @@ def get_price_movers(
                 row["ai_blurb"] = blurb_map.get((row.get("wholesaler"), un, row.get("edition")))
             return out
 
+    if request is not None and response is not None:
+        from backend.http_cache import public_conditional
+        _nm = public_conditional(request, response, ("price-movers", key))
+        if _nm is not None:
+            return _nm
     return cached_response("price-movers", key, _build)
 
 

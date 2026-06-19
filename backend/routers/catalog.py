@@ -9,7 +9,7 @@ import math
 import re
 from datetime import date
 
-from fastapi import APIRouter, Query, Depends
+from fastapi import APIRouter, Query, Depends, Request, Response
 from typing import Optional
 
 from backend.db import get_duckdb, read_parquet
@@ -745,6 +745,8 @@ def search_products(
     images_first: bool = Query(False, description="If true, products that have an enrichment image sort before those without (storefront category browsing). Sits under text-relevance ranking and RIP clustering, above the user's sort field."),
     as_of: Optional[str] = Query(None, description="Reference date (YYYY-MM-DD, default today ET) used to classify RIP windows and compute the date-aware 'live now' RIP price overlay per row. Does not change the grid's sort/filter; only annotates each row + tier."),
     user: Optional[dict] = Depends(get_optional_user),
+    request: Request = None,
+    response: Response = None,
 ):
     """Full-text search with faceted filtering. Defaults to latest edition to avoid duplicates."""
     # Response memoization. The grid is USER-INDEPENDENT unless tracked_only is
@@ -765,6 +767,13 @@ def search_products(
             limit, offset, include_tiers, group_by_rip, images_first,
             as_of or _pricing.eastern_today().isoformat(),
         )
+        # Public HTTP cache + ETag (only the user-independent path qualifies, i.e.
+        # not tracked_only). A matching If-None-Match returns 304 before any work.
+        if request is not None and response is not None:
+            from backend.http_cache import public_conditional
+            _nm = public_conditional(request, response, _ckey)
+            if _nm is not None:
+                return _nm
         _hit = _cache.peek("catalog_search", _ckey)
         if _hit is not None:
             return _hit
@@ -3627,6 +3636,8 @@ def search_facets(
     has_discount: Optional[bool] = None,
     introduced_within_months: Optional[int] = Query(None, ge=1, le=12, description="Restrict facet counts to the New Items universe (items introduced in the last N editions), mirroring /search."),
     introduced_edition: Optional[str] = Query(None, description="Narrow facet counts to one introduced month (YYYY-MM), mirroring /search."),
+    request: Request = None,
+    response: Response = None,
 ):
     """Drill-down facet counts. Each facet's counts honour all the OTHER active
     filters (but not its own dimension), so the numbers reconcile with the
@@ -3639,6 +3650,11 @@ def search_facets(
              unit_kinds, min_price, max_price, has_rip, has_discount,
              introduced_within_months, introduced_edition,
              _pricing.eastern_today().isoformat())
+    if request is not None and response is not None:
+        from backend.http_cache import public_conditional
+        _nm = public_conditional(request, response, _ckey)
+        if _nm is not None:
+            return _nm
     _hit = _cache.peek("catalog_facets", _ckey)
     if _hit is not None:
         return _hit

@@ -504,11 +504,17 @@ def _active_qd_from_raw(con, slugs: list[str], eds: dict[str, str],
         return {}
     ed_pred, ed_params = _edition_pred(slugs, eds)
     today = _pricing.eastern_today().isoformat()
+    cur_ym = today[:7]
     upc_ph = ",".join("?" * len(upcs))
-    # a window is live today when it contains today, or has no dates (evergreen)
+    # A window is "live" for the edition being compared: evaluated against TODAY
+    # for the CURRENT month (so the grid shows today's real price), but against
+    # mid-month for any OTHER edition (the Next-month / Last-month comparison).
+    # Otherwise a full-month NEXT-month QD window (e.g. 07-01..07-31) is dropped
+    # because today (in June) isn't inside it, and that distributor wrongly shows
+    # its list price with no QD — making the competitor falsely win the row.
+    ref = "CAST(CASE WHEN edition = ? THEN ? ELSE edition || '-15' END AS DATE)"
     active_sql = ("(from_date IS NULL OR to_date IS NULL OR "
-                  "(CAST(from_date AS DATE) <= CAST(? AS DATE) "
-                  "AND CAST(? AS DATE) <= CAST(to_date AS DATE)))")
+                  f"(CAST(from_date AS DATE) <= {ref} AND {ref} <= CAST(to_date AS DATE)))")
     df = con.execute(f"""
         SELECT wholesaler, upc, unit_volume, unit_qty, from_date, to_date,
                discount_1_qty, discount_1_amt, discount_2_qty, discount_2_amt,
@@ -518,7 +524,7 @@ def _active_qd_from_raw(con, slugs: list[str], eds: dict[str, str],
         WHERE {ed_pred} AND {_VALID_UPC}
           AND upc_norm IN ({upc_ph})
           AND {active_sql}
-    """, ed_params + list(upcs) + [today, today]).df()
+    """, ed_params + list(upcs) + [cur_ym, today, cur_ym, today]).df()
     out: dict[tuple, tuple] = {}
     for r in df.to_dict("records"):
         # SQL already restricted to live windows; classify only for the marker

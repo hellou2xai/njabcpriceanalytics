@@ -463,6 +463,7 @@ export interface CompareRow {
   brand: string | null;
   unit_qty: string | null;
   unit_volume: string | null;
+  unit_volume_std?: string | null;   // standardized size bucket (750ML, 1.75L, ...)
   unit_type: string | null;
   vintage: string | null;
   upc: string | null;

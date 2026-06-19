@@ -339,6 +339,9 @@ export default function ComparePrices() {
   const isAdmin = !!user?.is_admin;
   const queryClient = useQueryClient();
   const [confidence, setConfidence] = useState(params.get('conf') ?? 'high');
+  // Physical-size filter (standardized buckets: 750ML, 1.75L, ...), client-side
+  // over the loaded common set. Empty = all sizes.
+  const [sizes, setSizes] = useState<string[]>(params.get('sz')?.split(',').filter(Boolean) ?? []);
   // Default sort = biggest $ spread first: on a distributor comparison, the
   // products where switching distributor saves the most are what a buyer wants
   // on top. (Column headers still re-sort; the rail "Sort by" mirrors this.)
@@ -384,11 +387,13 @@ export default function ComparePrices() {
     if (!onlyDiff) next.set('diff', '0');
     if (minSpread) next.set('min', minSpread);
     if (cases && cases !== '0') next.set('cs', cases);
+    if (sizes.length) next.set('sz', sizes.join(','));
+    if (confidence !== 'high') next.set('conf', confidence);
     if (sortKey !== 'spread') next.set('s', sortKey);
     if (sortDir !== 'desc') next.set('dir', sortDir);
     if (pageSize !== 100) next.set('pp', String(pageSize));
     if (next.toString() !== params.toString()) setSearchParams(next, { replace: true });
-  }, [selected, q, ptype, onlyDiff, minSpread, cases, sortKey, sortDir, pageSize]);
+  }, [selected, q, ptype, onlyDiff, minSpread, cases, sizes, confidence, sortKey, sortDir, pageSize]);
 
   // page-size change resets the visible window
   useEffect(() => { setShown(pageSize); }, [pageSize]);
@@ -521,8 +526,21 @@ export default function ComparePrices() {
   const arrow = (key: string) =>
     sortKey === key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
 
+  // Size options for the rail, derived from the FULL loaded set (so they don't
+  // vanish as you filter), most-common sizes first.
+  const sizeOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const r of data?.rows ?? []) {
+      const s = (r.unit_volume_std || r.unit_volume || '').trim();
+      if (s) counts.set(s, (counts.get(s) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([v]) => v);
+  }, [data]);
+
   const rows = useMemo(() => {
-    const base = [...(data?.rows ?? [])];
+    const sizeSet = new Set(sizes);
+    const base = (data?.rows ?? []).filter(r =>
+      sizeSet.size === 0 || sizeSet.has((r.unit_volume_std || r.unit_volume || '').trim()));
     const dir = sortDir === 'asc' ? 1 : -1;
     const missing = sortDir === 'asc' ? Infinity : -Infinity;
     const val = (r: (typeof base)[number]): string | number => {
@@ -544,14 +562,14 @@ export default function ComparePrices() {
       return (va as number) < (vb as number) ? -dir : (va as number) > (vb as number) ? dir : 0;
     });
     return base;
-  }, [data, sortKey, sortDir]);
+  }, [data, sortKey, sortDir, sizes]);
 
   const sum = data?.summary;
   const nCols = selected.length * 3 + 4;
 
   const resetFilters = () => {
     setQ(''); setPtype(''); setOnlyDiff(true); setMinSpread('1');
-    setCases('0'); setPriceMonths('cur'); setShown(pageSize);
+    setCases('0'); setPriceMonths('cur'); setSizes([]); setShown(pageSize);
   };
 
   const sections: FilterSection[] = [
@@ -577,6 +595,10 @@ export default function ComparePrices() {
     { type: 'select', key: 'cat', title: 'Category', placeholder: 'All categories',
       value: ptype, options: types.map(t => ({ label: t, value: t })),
       onChange: setPtype },
+    ...(sizeOptions.length > 1 ? [{ type: 'multi-pills' as const, key: 'sizes', title: 'Size',
+      options: sizeOptions.map(s => ({ value: s, label: s })),
+      values: sizes,
+      onChange: (v: string[]) => { setSizes(v); setShown(pageSize); } }] : []),
     { type: 'toggle', key: 'diff', title: 'Differences', label: 'Only differences',
       value: onlyDiff, onChange: setOnlyDiff },
     { type: 'custom', key: 'min', title: 'Min $ spread',

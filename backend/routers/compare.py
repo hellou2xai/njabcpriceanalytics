@@ -323,7 +323,7 @@ def _common_rows(con, src: str, slugs: list[str], eds: dict[str, str],
         )"""
     sql = f"""
         SELECT wholesaler, edition, upc, product_name, product_type, brand,
-               unit_qty, unit_volume, unit_type, vintage, abv_proof,
+               unit_qty, unit_volume, unit_volume_std, unit_type, vintage, abv_proof,
                from_date, to_date,
                frontline_case_price, frontline_unit_price,
                best_case_price, best_unit_price,
@@ -778,6 +778,7 @@ def compare_products(
             "brand": any_row.get("brand"),
             "unit_qty": any_row.get("unit_qty"),
             "unit_volume": any_row.get("unit_volume"),
+            "unit_volume_std": any_row.get("unit_volume_std"),
             "unit_type": any_row.get("unit_type"),
             "vintage": any_row.get("vintage"),
             "upc": any_row.get("upc"),

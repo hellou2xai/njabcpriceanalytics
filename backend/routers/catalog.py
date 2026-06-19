@@ -276,7 +276,11 @@ def _q_clause(q: str, extra_aliases: dict | None = None,
         for term in terms:                            # literal + each alias phrase (OR'd:
             k = f"qt{counter['i']}"                   # catalogue names abbreviate brands)
             counter["i"] += 1
-            params[k] = f"%{term}%"
+            # Strip apostrophes so a query like "titos" / "jack daniels" matches
+            # the possessive catalogue spelling "TITO'S" / "JACK DANIEL'S" (the
+            # column side is stripped to match in the LIKE below). Thousands of
+            # brands carry a possessive 'S.
+            params[k] = "%" + term.replace("'", "") + "%"
             keys.append(k)
             # Required match: a row must have at least one of these structured
             # fields contain the token. Description is INTENTIONALLY excluded
@@ -289,8 +293,8 @@ def _q_clause(q: str, extra_aliases: dict | None = None,
             # category, category_path and region all match it via the
             # enrichment side.
             sub = (
-                f"UPPER({name_col}) LIKE UPPER(${k}) "
-                f"OR UPPER(COALESCE({brand_col},'')) LIKE UPPER(${k}) "
+                f"REPLACE(UPPER({name_col}), '''', '') LIKE UPPER(${k}) "
+                f"OR REPLACE(UPPER(COALESCE({brand_col},'')), '''', '') LIKE UPPER(${k}) "
                 f"OR UPPER(COALESCE(unit_volume,'')) LIKE UPPER(${k}) "
                 f"OR UPPER(COALESCE(unit_volume_std,'')) LIKE UPPER(${k}) "
                 # rip_code: typing '109359' or 'Lindemans' in the catalog
@@ -308,14 +312,14 @@ def _q_clause(q: str, extra_aliases: dict | None = None,
                     f"UPPER(COALESCE(_pe.category,'')) LIKE UPPER(${k}) "
                     f"OR UPPER(COALESCE(_pe.category_path,'')) LIKE UPPER(${k}) "
                     f"OR UPPER(COALESCE(_pe.region,'')) LIKE UPPER(${k}) "
-                    f"OR UPPER(COALESCE(_pe.name,'')) LIKE UPPER(${k})))")
+                    f"OR REPLACE(UPPER(COALESCE(_pe.name,'')), '''', '') LIKE UPPER(${k})))")
             subs.append(f"({sub})")
         token_clauses.append("(" + " OR ".join(subs) + ")")
         # Relevance: NAME match scores 1.0 per token. Description match
         # (boost-only — no longer qualifies a row on its own) adds 0.25.
         # Combined name + description match (1.25) ranks above name-only
         # (1.0) which ranks above brand/category/volume match (0.0).
-        name_only = " OR ".join(f"UPPER({name_col}) LIKE UPPER(${k})" for k in keys)
+        name_only = " OR ".join(f"REPLACE(UPPER({name_col}), '''', '') LIKE UPPER(${k})" for k in keys)
         rel_terms.append(f"(CASE WHEN ({name_only}) THEN 1 ELSE 0 END)")
         if enrich_table:
             desc_only = " OR ".join(

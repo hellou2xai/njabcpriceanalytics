@@ -1,11 +1,12 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { useQuery, keepPreviousData, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { ChevronDown, ChevronUp, ChevronRight, Zap, Scale, Clock, Download, AlertTriangle } from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronRight, Zap, Scale, Clock, Download, AlertTriangle, MessageSquare } from 'lucide-react';
 import { compare, catalog } from '../lib/api';
-import type { CatalogTier, CompareLadder } from '../lib/api';
+import type { CatalogTier, CompareLadder, CompareRow } from '../lib/api';
 import { distributorName, perUnitAbbr, abgSku, skuLabel } from '../lib/distributors';
+import { useAuth } from '../contexts/AuthContext';
 import RowActions from '../components/RowActions';
 import ProductSearchBox from '../components/ProductSearchBox';
 import TierBadge from '../components/TierBadge';
@@ -331,6 +332,13 @@ export default function ComparePrices() {
   const [minSpread, setMinSpread] = useState(params.get('min') ?? '1');
   // 0 = each distributor's best deal (deepest tier); >0 = landed price at that volume
   const [cases, setCases] = useState(params.get('cs') ?? '0');
+  // Confidence filter. high (default) = hide rows an admin has commented/flagged;
+  // commented = only those (admin review); all = everything. Public is always
+  // forced to 'high' server-side. Admins can write a comment to flag a row.
+  const { user } = useAuth();
+  const isAdmin = !!user?.is_admin;
+  const queryClient = useQueryClient();
+  const [confidence, setConfidence] = useState(params.get('conf') ?? 'high');
   // Default sort = biggest $ spread first: on a distributor comparison, the
   // products where switching distributor saves the most are what a buyer wants
   // on top. (Column headers still re-sort; the rail "Sort by" mirrors this.)
@@ -397,7 +405,7 @@ export default function ComparePrices() {
     return () => clearTimeout(t);
   }, [q]);
   const { data, isLoading, error } = useQuery({
-    queryKey: ['compare-products', selected, qDebounced, ptype, onlyDiff, minSpread, cases, priceMonths],
+    queryKey: ['compare-products', selected, qDebounced, ptype, onlyDiff, minSpread, cases, priceMonths, confidence],
     queryFn: () => compare.products({
       wholesalers: selected.join(','),
       q: qDebounced || undefined,
@@ -409,6 +417,7 @@ export default function ComparePrices() {
       // edition (single month), 'cur' is the current month.
       months: (priceMonths === 'prev' || priceMonths === 'both') ? 2 : undefined,
       month_mode: priceMonths === 'next' ? 'next' : 'cur',
+      confidence,   // high (default, hides admin-commented rows) | commented | all
     }),
     enabled: ready,
     // Keep the current grid + toolbar on screen while a new view loads (or if it
@@ -430,6 +439,26 @@ export default function ComparePrices() {
     setShown(pageSize);
     setSelected(s => s.includes(w) ? s.filter(x => x !== w)
       : s.length >= 3 ? s : [...s, w]);
+  };
+
+  // Admin: add/edit/clear a row comment. A commented row is "low confidence" and
+  // is hidden from the public by the default High-confidence filter.
+  const editComment = async (r: CompareRow) => {
+    const next = window.prompt(
+      `Admin comment for "${r.product_name}" (${r.edition || ''}).\n` +
+      `A commented row is hidden from public view (default High-confidence filter). ` +
+      `Leave blank to clear.`,
+      r.comment ?? '');
+    if (next === null) return;   // cancelled
+    try {
+      await compare.setRowComment({
+        edition: r.edition || '', match_key: r.match_key,
+        comment: next.trim(), product_name: r.product_name,
+      });
+      queryClient.invalidateQueries({ queryKey: ['compare-products'] });
+    } catch {
+      alert('Could not save the comment.');
+    }
   };
 
   const accent = useMemo(() => {
@@ -571,6 +600,16 @@ export default function ComparePrices() {
         { value: 'both', label: 'Both' },
       ],
       onChange: (v) => { autoNextDone.current = true; setPriceMonths(v as 'cur' | 'next' | 'prev' | 'both'); setShown(pageSize); } },
+    // Admin-only: a commented row is hidden from everyone by the default 'High'
+    // filter; flip to Flagged to review/edit them. Public never sees this.
+    ...(isAdmin ? [{ type: 'pills' as const, key: 'conf', title: 'Confidence (admin)',
+      value: confidence,
+      options: [
+        { value: 'high', label: 'High (no flags)' },
+        { value: 'commented', label: 'Flagged' },
+        { value: 'all', label: 'All' },
+      ],
+      onChange: (v: string) => { setConfidence(v); setShown(pageSize); } }] : []),
   ];
 
   return (
@@ -761,6 +800,20 @@ export default function ComparePrices() {
                             >
                               <Clock size={11} /> ends soon
                             </span>
+                          )}
+                          {isAdmin && (
+                            <button
+                              className={`cmp-comment-btn${r.has_comment ? ' flagged' : ''}`}
+                              title={r.has_comment
+                                ? `Flagged (hidden from public): ${r.comment ?? ''} — click to edit`
+                                : 'Add admin comment (flags + hides this row from public)'}
+                              onClick={(e) => { e.stopPropagation(); editComment(r); }}
+                            >
+                              <MessageSquare size={12} />
+                            </button>
+                          )}
+                          {isAdmin && r.has_comment && r.comment && (
+                            <span className="cmp-comment-text" title={r.comment}>{r.comment}</span>
                           )}
                         </td>
                         {selected.map(w => {

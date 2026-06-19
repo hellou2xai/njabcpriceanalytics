@@ -453,6 +453,9 @@ export interface ComparePrice {
 
 export interface CompareRow {
   match_key: string;
+  edition?: string;                 // representative monthly edition (comment key)
+  has_comment?: boolean;            // an admin flagged/commented this row
+  comment?: string | null;          // the admin comment (admin only)
   upc_norm: string;
   size_key: string;
   product_name: string;
@@ -520,6 +523,13 @@ export const compare = {
   options: () => request<CompareOption[]>('/api/compare/options'),
   products: (params: Record<string, unknown>) =>
     request<CompareResponse>(`/api/compare/products${qs(params)}`),
+  // Admin: add/replace (or clear, with empty comment) a row comment. A commented
+  // row is hidden by the default High-confidence filter.
+  setRowComment: (body: { edition: string; match_key: string; comment: string; product_name?: string | null }) =>
+    request<{ status: string }>('/api/compare/row-comment', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   tiers: (params: Record<string, unknown>) =>
     request<{ wholesalers: string[]; ladders: Record<string, CompareLadder> }>(
       `/api/compare/tiers${qs(params)}`),

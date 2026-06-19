@@ -26,10 +26,12 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from backend import pricing as _pricing
-from backend.auth import get_optional_user, get_current_user
-from backend.db import get_duckdb, read_parquet
+from backend.auth import get_optional_user, get_current_user, require_admin
+from backend.db import get_duckdb, read_parquet, NOW_UTC
+from backend.pg import get_pg
 from backend.enrichment_join import attach_sku_mapping as _attach_sku_mapping
 from backend.enrichment_join import attach_enrichment_image as _attach_image
 from backend.size_std import _to_ml
@@ -663,6 +665,7 @@ def compare_products(
     limit: int = Query(2000, ge=1, le=50000),
     months: int = Query(1, ge=1, le=2, description="1 = current month only; 2 = also attach each distributor's PRIOR-edition price layers (prev) for the two-month Price Comparison view."),
     month_mode: str = Query("cur", description="cur = compare at the current month; next = compare at the NEXT month when that edition is already loaded (else falls back to current)."),
+    confidence: str = Query("high", description="high = hide admin-commented rows (default); commented = only commented rows (admin review); all = everything."),
     user: Optional[dict] = Depends(get_optional_user),
 ):
     """The comparison grid: products common to ALL selected distributors with
@@ -678,7 +681,7 @@ def compare_products(
                  only_differences, min_spread, cases, sort, order, limit, months, month_mode)
     cached = _board_cache_get(cache_key)
     if cached is not None:
-        return cached
+        return _apply_row_comments(cached, user, confidence)
     n_cases = cases if cases and cases > 0 else None
     with get_duckdb() as con:
         src = read_parquet(con, "cpl_enriched")
@@ -765,6 +768,9 @@ def compare_products(
         parts = key.split("|")
         row = {
             "match_key": key,
+            # representative edition for this row (the comment key is
+            # (edition, match_key)); distributors usually share it.
+            "edition": max((d.get("edition") or "" for d in per.values()), default=""),
             "upc_norm": parts[0],
             "size_key": parts[1] if len(parts) > 1 else "",
             "product_name": name,
@@ -921,7 +927,94 @@ def compare_products(
         },
     }
     _board_cache_put(cache_key, result)
-    return result
+    return _apply_row_comments(result, user, confidence)
+
+
+# ---------------------------------------------------------------------------
+# Admin row comments. A commented Compare row is "low confidence" (manually
+# reviewed/flagged, e.g. inactive in the original site) and is hidden by the
+# default High-confidence filter; only admins can write them. Edition-scoped.
+# ---------------------------------------------------------------------------
+class RowCommentIn(BaseModel):
+    edition: str
+    match_key: str
+    comment: str = ""
+    product_name: Optional[str] = None
+
+
+@router.post("/row-comment")
+def set_row_comment(body: RowCommentIn, user: dict = Depends(require_admin)):
+    """Add/replace, or clear (blank comment), an admin comment on one compare row
+    scoped to its monthly edition. Admin only."""
+    ed = (body.edition or "").strip()
+    mk = (body.match_key or "").strip()
+    if not ed or not mk:
+        raise HTTPException(400, "edition and match_key are required")
+    txt = (body.comment or "").strip()
+    with get_pg() as con:
+        if not txt:
+            con.execute("DELETE FROM compare_row_comments WHERE edition=%s AND match_key=%s", (ed, mk))
+            return {"status": "cleared", "edition": ed, "match_key": mk}
+        con.execute(f"""
+            INSERT INTO compare_row_comments (edition, match_key, comment, product_name, created_by, updated_at)
+            VALUES (%s, %s, %s, %s, %s, {NOW_UTC})
+            ON CONFLICT (edition, match_key) DO UPDATE SET
+                comment = EXCLUDED.comment,
+                product_name = COALESCE(EXCLUDED.product_name, compare_row_comments.product_name),
+                updated_at = {NOW_UTC}
+        """, (ed, mk, txt, body.product_name, user["id"]))
+    return {"status": "saved", "edition": ed, "match_key": mk, "comment": txt}
+
+
+def _load_row_comments(editions) -> dict:
+    """{(edition, match_key): comment} for the given editions. Read live (not
+    cached) so a freshly added/cleared flag takes effect on the next load."""
+    eds = sorted({e for e in (editions or []) if e})
+    if not eds:
+        return {}
+    ph = ",".join("%s" for _ in eds)
+    out: dict = {}
+    try:
+        with get_pg() as con:
+            rows = con.execute(
+                f"SELECT edition, match_key, comment FROM compare_row_comments WHERE edition IN ({ph})",
+                eds,
+            ).fetchall()
+        for r in rows:
+            out[(r["edition"], r["match_key"])] = r["comment"]
+    except Exception:
+        pass
+    return out
+
+
+def _apply_row_comments(result: dict, user, confidence: str) -> dict:
+    """Post-cache, user-aware: mark each row's comment state and apply the
+    confidence filter. Kept OUT of the cached computation so one cache entry
+    serves every confidence value and admin/public alike, and a new flag is live.
+
+      high      -> rows WITHOUT a comment (default; hides flagged rows)
+      commented -> only rows WITH a comment (admin review)
+      all       -> everything
+    Comment TEXT is admin-only; everyone gets has_comment."""
+    rows = result.get("rows") or []
+    is_admin = bool(user and user.get("is_admin"))
+    if not is_admin:
+        confidence = "high"   # the public can never reveal flagged rows
+    comments = _load_row_comments({r.get("edition") for r in rows})
+    out = []
+    for r in rows:
+        c = comments.get((r.get("edition"), r.get("match_key")))
+        has_c = c is not None
+        if confidence == "high" and has_c:
+            continue
+        if confidence == "commented" and not has_c:
+            continue
+        nr = dict(r)
+        nr["has_comment"] = has_c
+        if has_c and is_admin:
+            nr["comment"] = c
+        out.append(nr)
+    return {**result, "rows": out}
 
 
 def _pretty_w(slug: str) -> str:

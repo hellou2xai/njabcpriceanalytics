@@ -432,6 +432,23 @@ def init_user_db():
             created_at text DEFAULT {NOW_UTC},
             completed_at text
         )""",
+        # Admin comments on Compare Distributor Prices rows. EDITION-specific so a
+        # product flagged inactive one month can be clean the next. A row that has
+        # a comment is treated as "low confidence" (manually reviewed/flagged) and
+        # is hidden by the page's default High-confidence filter; only admins can
+        # write them. One comment per (edition, match_key).
+        f"""CREATE TABLE IF NOT EXISTS compare_row_comments (
+            id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            edition text NOT NULL,
+            match_key text NOT NULL,
+            comment text NOT NULL,
+            product_name text,
+            created_by integer REFERENCES users(id) ON DELETE SET NULL,
+            created_at text DEFAULT {NOW_UTC},
+            updated_at text DEFAULT {NOW_UTC}
+        )""",
+        """CREATE UNIQUE INDEX IF NOT EXISTS uq_compare_comment
+            ON compare_row_comments(edition, match_key)""",
         # Share events: one row each time someone taps "Share via WhatsApp",
         # for signed-in users (user_id/email) and anonymous landing visitors.
         f"""CREATE TABLE IF NOT EXISTS share_events (

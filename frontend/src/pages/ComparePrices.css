@@ -261,3 +261,16 @@
 .cmp-tri svg { display: block; }
 .cmp-tri-leg { display: inline-flex; gap: 8px; font-size: 9.5px; font-weight: 500; }
 .cmp-tri-flat { font-size: 10.5px; color: var(--text-muted); font-style: italic; font-weight: 400; }
+
+/* Admin row comments: flag/comment button + inline text */
+.cmp-comment-btn {
+  background: none; border: none; cursor: pointer; padding: 1px 3px;
+  color: #9ca3af; display: inline-flex; align-items: center; border-radius: 4px;
+}
+.cmp-comment-btn:hover { color: #6366f1; background: #eef2ff; }
+.cmp-comment-btn.flagged { color: #d97706; }
+.cmp-comment-text {
+  font-size: 11px; color: #b45309; font-style: italic; margin-left: 4px;
+  max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  vertical-align: middle;
+}

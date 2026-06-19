@@ -337,6 +337,66 @@ def build_pricing_cache() -> Path:
                 """)
             except Exception:
                 pass
+
+            # ---- Indexes (PERF_TODO #1) --------------------------------------
+            # The hot per-request lookups (per-card /search, product detail,
+            # rip-siblings, cross-distributor compare) filter a single product by
+            # its NORMALISED UPC. Two costs to remove: (1) `LTRIM(upc,'0')` runs
+            # the function on all ~176k rows EVERY call, and (2) a function on a
+            # column can never use an index. So we materialise the normalised
+            # value into a plain `upc_norm` column and index THAT. Measured on the
+            # live table: LTRIM(upc,'0')=? ~20ms -> upc_norm=? plain ~1.5ms ->
+            # upc_norm=? indexed ~0.2ms (a 60-card grid resolves in one ~1.8ms
+            # query). CAST(.. AS VARCHAR) first so a Postgres-typed numeric UPC
+            # normalises the same as the parquet string. Built LAST because the
+            # price_trend CREATE OR REPLACE above rebuilds cpl_enriched and would
+            # otherwise drop the column/index. DuckDB has only ART indexes (no
+            # covering/INCLUDE); they serve point lookups, IN-lists and equality
+            # joins, not the memoised full-grid sort. All best-effort: a missing
+            # table/column must never fail the build.
+            def _try(sql):
+                try:
+                    con.execute(sql)
+                except Exception:
+                    pass
+
+            for _t in ("cpl_enriched", "rip", "combo"):
+                _try(f"ALTER TABLE {_t} ADD COLUMN upc_norm VARCHAR")
+                _try(f"UPDATE {_t} SET upc_norm = LTRIM(CAST(upc AS VARCHAR), '0')")
+
+            # (index name, table, columns) — see PRICING_INDEX_INVENTORY.md
+            _INDEXES = [
+                # cpl_enriched: the main catalogue, hottest table
+                ("idx_cpl_upc_norm",    "cpl_enriched",      "upc_norm"),
+                ("idx_cpl_ws_ed",       "cpl_enriched",      "wholesaler, edition"),
+                ("idx_cpl_rip_code",    "cpl_enriched",      "rip_code"),
+                ("idx_cpl_combo_code",  "cpl_enriched",      "combo_code"),
+                # rip: the RIP-tier / case-mix source
+                ("idx_rip_upc_norm",    "rip",               "upc_norm"),
+                ("idx_rip_ws_ed",       "rip",               "wholesaler, edition"),
+                ("idx_rip_ws_ed_code",  "rip",               "wholesaler, edition, rip_code"),
+                ("idx_rip_code",        "rip",               "rip_code"),
+                # combo: bundle/pack-out sheets
+                ("idx_combo_upc_norm",  "combo",             "upc_norm"),
+                ("idx_combo_ws_ed",     "combo",             "wholesaler, edition"),
+                ("idx_combo_code",      "combo",             "combo_code"),
+                # celr family registry
+                ("idx_celr_upc_norm",   "celr_products",     "upc_norm"),
+                ("idx_celr_cpn",        "celr_products",     "cpn"),
+                ("idx_celr_keys_key",   "celr_family_keys",  "key"),
+                # batched per-page attach lookups
+                ("idx_pe_upc",          "product_enrichment", "upc"),
+                ("idx_sku_dist_upcn",   "sku_mapping",       "distributor, upc_norm"),
+                # half-case credit per tier
+                ("idx_credits",         "rip_credits",       "rip_code, wholesaler, edition, upc"),
+                # AI deal blurb attach (per product per edition). NOTE only
+                # ai_deal_blurbs is materialised into the cache; the product- and
+                # mover-blurb lookups run against Postgres directly (get_pg), so
+                # their indexes belong on the PG table, not here.
+                ("idx_ai_deal",         "ai_deal_blurbs",    "wholesaler, edition, upc"),
+            ]
+            for _name, _tbl, _cols in _INDEXES:
+                _try(f"CREATE INDEX {_name} ON {_tbl} ({_cols})")
         finally:
             con.close()
         old = _current_path

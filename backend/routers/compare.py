@@ -666,6 +666,7 @@ def compare_products(
     months: int = Query(1, ge=1, le=2, description="1 = current month only; 2 = also attach each distributor's PRIOR-edition price layers (prev) for the two-month Price Comparison view."),
     month_mode: str = Query("cur", description="cur = compare at the current month; next = compare at the NEXT month when that edition is already loaded (else falls back to current)."),
     confidence: str = Query("high", description="high = hide admin-commented rows (default); commented = only commented rows (admin review); all = everything."),
+    verified: str = Query("all", description="Admin-only review filter: all | yes (verified matches) | no (not-yet-verified). Ignored for the public."),
     user: Optional[dict] = Depends(get_optional_user),
 ):
     """The comparison grid: products common to ALL selected distributors with
@@ -681,7 +682,7 @@ def compare_products(
                  only_differences, min_spread, cases, sort, order, limit, months, month_mode)
     cached = _board_cache_get(cache_key)
     if cached is not None:
-        return _apply_row_comments(cached, user, confidence)
+        return _apply_row_comments(cached, user, confidence, verified)
     n_cases = cases if cases and cases > 0 else None
     with get_duckdb() as con:
         src = read_parquet(con, "cpl_enriched")
@@ -911,6 +912,10 @@ def compare_products(
 
     result = {
         "wholesalers": slugs,
+        # Stable identity of THIS comparison (sorted slugs) — the key the admin
+        # "verified" flag is scoped to, echoed so the toggle posts back the exact
+        # same pair string the loader reads.
+        "pair": ",".join(sorted(slugs)),
         "editions": eds,
         "prev_editions": prev_eds,
         "next_available": next_available,
@@ -939,7 +944,7 @@ def compare_products(
         },
     }
     _board_cache_put(cache_key, result)
-    return _apply_row_comments(result, user, confidence)
+    return _apply_row_comments(result, user, confidence, verified)
 
 
 # ---------------------------------------------------------------------------
@@ -999,20 +1004,29 @@ def _load_row_comments(editions) -> dict:
     return out
 
 
-def _apply_row_comments(result: dict, user, confidence: str) -> dict:
-    """Post-cache, user-aware: mark each row's comment state and apply the
-    confidence filter. Kept OUT of the cached computation so one cache entry
-    serves every confidence value and admin/public alike, and a new flag is live.
+def _apply_row_comments(result: dict, user, confidence: str, verified: str = "all") -> dict:
+    """Post-cache, user-aware: mark each row's comment + verified state and apply
+    the confidence / verified filters. Kept OUT of the cached computation so one
+    cache entry serves every filter value and admin/public alike, and a freshly
+    toggled flag is live on the next load.
 
-      high      -> rows WITHOUT a comment (default; hides flagged rows)
-      commented -> only rows WITH a comment (admin review)
-      all       -> everything
-    Comment TEXT is admin-only; everyone gets has_comment."""
+      confidence: high -> rows WITHOUT a comment (default; hides flagged rows)
+                  commented -> only rows WITH a comment (admin review)
+                  all -> everything
+      verified (admin only): all | yes (verified matches) | no (not yet verified)
+
+    Comment TEXT and the verified flag are admin-only; the public only ever gets
+    has_comment (so the default High filter can hide flagged rows)."""
     rows = result.get("rows") or []
     is_admin = bool(user and user.get("is_admin"))
     if not is_admin:
         confidence = "high"   # the public can never reveal flagged rows
+        verified = "all"      # the verified flag is admin-only, never filters public
     comments = _load_row_comments({r.get("edition") for r in rows})
+    # verified is HEADER/PAIR-specific: load only for this comparison's pair.
+    pair = result.get("pair") or ",".join(sorted(result.get("wholesalers") or []))
+    verified_set = (_load_row_verified({r.get("edition") for r in rows}, pair)
+                    if is_admin else set())
     out = []
     for r in rows:
         c = comments.get((r.get("edition"), r.get("match_key")))
@@ -1021,12 +1035,79 @@ def _apply_row_comments(result: dict, user, confidence: str) -> dict:
             continue
         if confidence == "commented" and not has_c:
             continue
+        is_v = (r.get("edition"), r.get("match_key")) in verified_set
+        if verified == "yes" and not is_v:
+            continue
+        if verified == "no" and is_v:
+            continue
         nr = dict(r)
         nr["has_comment"] = has_c
         if has_c and is_admin:
             nr["comment"] = c
+        if is_admin:
+            nr["verified"] = is_v
         out.append(nr)
     return {**result, "rows": out}
+
+
+# ---------------------------------------------------------------------------
+# Admin "verified" marks. HEADER/PAIR-specific (not item-level like comments):
+# confirms the two matched items in THIS comparison look correct. Admins only,
+# never shown to the public. Edition-scoped.
+# ---------------------------------------------------------------------------
+class RowVerifiedIn(BaseModel):
+    edition: str
+    pair: str
+    match_key: str
+    verified: bool = True
+    product_name: Optional[str] = None
+
+
+@router.post("/row-verified")
+def set_row_verified(body: RowVerifiedIn, user: dict = Depends(require_admin)):
+    """Mark/clear a Compare row as admin-verified for one (edition, pair). Presence
+    of a row = verified; `verified=false` clears it. Admin only."""
+    ed = (body.edition or "").strip()
+    pr = (body.pair or "").strip()
+    mk = (body.match_key or "").strip()
+    if not ed or not pr or not mk:
+        raise HTTPException(400, "edition, pair and match_key are required")
+    with get_pg() as con:
+        if not body.verified:
+            con.execute(
+                "DELETE FROM compare_row_verified WHERE edition=%s AND pair=%s AND match_key=%s",
+                (ed, pr, mk))
+            return {"status": "cleared", "edition": ed, "pair": pr, "match_key": mk}
+        con.execute(f"""
+            INSERT INTO compare_row_verified (edition, pair, match_key, product_name, created_by, updated_at)
+            VALUES (%s, %s, %s, %s, %s, {NOW_UTC})
+            ON CONFLICT (edition, pair, match_key) DO UPDATE SET
+                product_name = COALESCE(EXCLUDED.product_name, compare_row_verified.product_name),
+                updated_at = {NOW_UTC}
+        """, (ed, pr, mk, body.product_name, user["id"]))
+    return {"status": "verified", "edition": ed, "pair": pr, "match_key": mk}
+
+
+def _load_row_verified(editions, pair: str) -> set:
+    """{(edition, match_key)} marked verified for the given editions + this exact
+    distributor pair. Read live (not cached) so a fresh toggle is immediate."""
+    eds = sorted({e for e in (editions or []) if e})
+    if not eds or not pair:
+        return set()
+    ph = ",".join("%s" for _ in eds)
+    out: set = set()
+    try:
+        with get_pg() as con:
+            rows = con.execute(
+                f"SELECT edition, match_key FROM compare_row_verified "
+                f"WHERE pair=%s AND edition IN ({ph})",
+                [pair, *eds],
+            ).fetchall()
+        for r in rows:
+            out.add((r["edition"], r["match_key"]))
+    except Exception:
+        pass
+    return out
 
 
 def _pretty_w(slug: str) -> str:

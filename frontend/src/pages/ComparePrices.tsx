@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQuery, keepPreviousData, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { ChevronDown, ChevronUp, ChevronRight, Zap, Scale, Clock, Download, AlertTriangle, MessageSquare } from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronRight, Zap, Scale, Clock, Download, AlertTriangle, MessageSquare, BadgeCheck } from 'lucide-react';
 import { compare, catalog } from '../lib/api';
 import type { CatalogTier, CompareLadder, CompareRow } from '../lib/api';
 import { distributorName, perUnitAbbr, abgSku, skuLabel } from '../lib/distributors';
@@ -339,6 +339,8 @@ export default function ComparePrices() {
   const isAdmin = !!user?.is_admin;
   const queryClient = useQueryClient();
   const [confidence, setConfidence] = useState(params.get('conf') ?? 'high');
+  // Admin-only "verified" review filter for THIS pair: all | yes | no.
+  const [verifiedFilter, setVerifiedFilter] = useState(params.get('vf') ?? 'all');
   // Physical-size filter (standardized buckets: 750ML, 1.75L, ...), client-side
   // over the loaded common set. Empty = all sizes.
   const [sizes, setSizes] = useState<string[]>(params.get('sz')?.split(',').filter(Boolean) ?? []);
@@ -389,11 +391,12 @@ export default function ComparePrices() {
     if (cases && cases !== '0') next.set('cs', cases);
     if (sizes.length) next.set('sz', sizes.join(','));
     if (confidence !== 'high') next.set('conf', confidence);
+    if (verifiedFilter !== 'all') next.set('vf', verifiedFilter);
     if (sortKey !== 'spread') next.set('s', sortKey);
     if (sortDir !== 'desc') next.set('dir', sortDir);
     if (pageSize !== 100) next.set('pp', String(pageSize));
     if (next.toString() !== params.toString()) setSearchParams(next, { replace: true });
-  }, [selected, q, ptype, onlyDiff, minSpread, cases, sizes, confidence, sortKey, sortDir, pageSize]);
+  }, [selected, q, ptype, onlyDiff, minSpread, cases, sizes, confidence, verifiedFilter, sortKey, sortDir, pageSize]);
 
   // page-size change resets the visible window
   useEffect(() => { setShown(pageSize); }, [pageSize]);
@@ -410,7 +413,7 @@ export default function ComparePrices() {
     return () => clearTimeout(t);
   }, [q]);
   const { data, isLoading, error } = useQuery({
-    queryKey: ['compare-products', selected, qDebounced, ptype, onlyDiff, minSpread, cases, priceMonths, confidence],
+    queryKey: ['compare-products', selected, qDebounced, ptype, onlyDiff, minSpread, cases, priceMonths, confidence, verifiedFilter],
     queryFn: () => compare.products({
       wholesalers: selected.join(','),
       q: qDebounced || undefined,
@@ -423,6 +426,7 @@ export default function ComparePrices() {
       months: (priceMonths === 'prev' || priceMonths === 'both') ? 2 : undefined,
       month_mode: priceMonths === 'next' ? 'next' : 'cur',
       confidence,   // high (default, hides admin-commented rows) | commented | all
+      verified: isAdmin && verifiedFilter !== 'all' ? verifiedFilter : undefined,
     }),
     enabled: ready,
     // Keep the current grid + toolbar on screen while a new view loads (or if it
@@ -463,6 +467,23 @@ export default function ComparePrices() {
       queryClient.invalidateQueries({ queryKey: ['compare-products'] });
     } catch {
       alert('Could not save the comment.');
+    }
+  };
+
+  // Admin: toggle the "verified" mark for THIS comparison pair (header-level).
+  // Confirms the two matched items look correct for this exact (edition, pair);
+  // it does not hide the row, and the public never sees it.
+  const toggleVerified = async (r: CompareRow) => {
+    const pair = data?.pair;
+    if (!pair) return;
+    try {
+      await compare.setRowVerified({
+        edition: r.edition || '', pair, match_key: r.match_key,
+        verified: !r.verified, product_name: r.product_name,
+      });
+      queryClient.invalidateQueries({ queryKey: ['compare-products'] });
+    } catch {
+      alert('Could not update the verified mark.');
     }
   };
 
@@ -635,6 +656,16 @@ export default function ComparePrices() {
         { value: 'all', label: 'All' },
       ],
       onChange: (v: string) => { setConfidence(v); setShown(pageSize); } }] : []),
+    // Admin-only: filter by the per-pair "verified" mark so you can work through
+    // the matches you haven't checked yet for this exact distributor comparison.
+    ...(isAdmin ? [{ type: 'pills' as const, key: 'vf', title: 'Verified (admin)',
+      value: verifiedFilter,
+      options: [
+        { value: 'all', label: 'All' },
+        { value: 'yes', label: 'Verified' },
+        { value: 'no', label: 'Unverified' },
+      ],
+      onChange: (v: string) => { setVerifiedFilter(v); setShown(pageSize); } }] : []),
   ];
 
   return (
@@ -825,6 +856,17 @@ export default function ComparePrices() {
                             >
                               <Clock size={11} /> ends soon
                             </span>
+                          )}
+                          {isAdmin && (
+                            <button
+                              className={`cmp-verify-btn${r.verified ? ' on' : ''}`}
+                              title={r.verified
+                                ? `Verified for ${winnerName(selected[0])} vs ${selected.slice(1).map(winnerName).join(' / ')} — click to unverify`
+                                : 'Mark this match verified (both items look correct) for this comparison'}
+                              onClick={(e) => { e.stopPropagation(); toggleVerified(r); }}
+                            >
+                              <BadgeCheck size={13} />
+                            </button>
                           )}
                           {isAdmin && (
                             <button

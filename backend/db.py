@@ -449,6 +449,25 @@ def init_user_db():
         )""",
         """CREATE UNIQUE INDEX IF NOT EXISTS uq_compare_comment
             ON compare_row_comments(edition, match_key)""",
+        # Admin "verified" marks on a Compare row, confirming the two matched items
+        # in THIS comparison look correct. Unlike the comment (item-level, controls
+        # the public show/hide filter), verified is HEADER/PAIR-specific: the same
+        # product can be a verified-good match against one distributor and not yet
+        # checked against another, so the key carries the sorted distributor pair.
+        # EDITION-specific (a match re-issued each month is re-verified). Presence
+        # of a row = verified; admins only, never shown to the public.
+        f"""CREATE TABLE IF NOT EXISTS compare_row_verified (
+            id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            edition text NOT NULL,
+            pair text NOT NULL,
+            match_key text NOT NULL,
+            product_name text,
+            created_by integer REFERENCES users(id) ON DELETE SET NULL,
+            created_at text DEFAULT {NOW_UTC},
+            updated_at text DEFAULT {NOW_UTC}
+        )""",
+        """CREATE UNIQUE INDEX IF NOT EXISTS uq_compare_verified
+            ON compare_row_verified(edition, pair, match_key)""",
         # Share events: one row each time someone taps "Share via WhatsApp",
         # for signed-in users (user_id/email) and anonymous landing visitors.
         f"""CREATE TABLE IF NOT EXISTS share_events (

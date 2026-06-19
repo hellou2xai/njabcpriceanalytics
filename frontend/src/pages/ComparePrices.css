@@ -274,3 +274,10 @@
   max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   vertical-align: middle;
 }
+/* Admin per-pair "verified" toggle: grey until set, green badge once verified. */
+.cmp-verify-btn {
+  background: none; border: none; cursor: pointer; padding: 1px 3px;
+  color: #cbd5e1; display: inline-flex; align-items: center; border-radius: 4px;
+}
+.cmp-verify-btn:hover { color: #059669; background: #ecfdf5; }
+.cmp-verify-btn.on { color: #059669; }

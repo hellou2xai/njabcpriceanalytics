@@ -456,6 +456,7 @@ export interface CompareRow {
   edition?: string;                 // representative monthly edition (comment key)
   has_comment?: boolean;            // an admin flagged/commented this row
   comment?: string | null;          // the admin comment (admin only)
+  verified?: boolean;               // admin confirmed this match for the pair (admin only)
   upc_norm: string;
   size_key: string;
   product_name: string;
@@ -497,6 +498,7 @@ export interface CompareResponse {
   prev_editions?: Record<string, string>;
   next_available?: boolean;          // a next-month edition is loaded for some distributor
   month_mode?: string;               // 'cur' | 'next' — which month the board compared at
+  pair?: string;                     // sorted slugs identifying this comparison (verified key)
   total_common: number;
   cases?: number;
   volume_basis?: 'at_volume' | 'best_deal';
@@ -528,6 +530,13 @@ export const compare = {
   // row is hidden by the default High-confidence filter.
   setRowComment: (body: { edition: string; match_key: string; comment: string; product_name?: string | null }) =>
     request<{ status: string }>('/api/compare/row-comment', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  // Admin: mark/clear a row as verified (the two matched items look correct) for
+  // this exact (edition, pair). Header/pair-specific, admin-only.
+  setRowVerified: (body: { edition: string; pair: string; match_key: string; verified: boolean; product_name?: string | null }) =>
+    request<{ status: string }>('/api/compare/row-verified', {
       method: 'POST',
       body: JSON.stringify(body),
     }),

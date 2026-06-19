@@ -1224,6 +1224,47 @@ def search_products(
         rip_join_sql = ""
         if group_by_rip:
             rip_src_cte = read_parquet(con, "rip")
+            # The cluster-size sub-CTE (the heavy ~7s hash-join over rip x
+            # cpl_enriched) reads a precomputed cache table when present
+            # (pricing_cache.py: rip_cluster_sizes_pre, byte-identical body);
+            # otherwise it computes inline on an older cache. Keyed on edition,
+            # so recycled RIP codes never merge clusters across months.
+            if _has_table(con, "rip_cluster_sizes_pre"):
+                _rcs_body = "                    SELECT * FROM rip_cluster_sizes_pre"
+            else:
+                _rcs_body = f"""\
+                    SELECT cls.wholesaler  AS rcs_wholesaler,
+                           cls.edition     AS rcs_edition,
+                           cls.rip_code    AS rcs_code,
+                           COUNT(DISTINCT (
+                               LTRIM(CAST(c.upc AS VARCHAR), '0'),
+                               COALESCE(CAST(c.vintage AS VARCHAR), ''),
+                               COALESCE(c.unit_volume, ''),
+                               COALESCE(CAST(c.unit_qty AS VARCHAR), '')
+                           )) AS cluster_members
+                    FROM (
+                        SELECT DISTINCT wholesaler, edition,
+                               CAST(rip_code AS VARCHAR) AS rip_code,
+                               LTRIM(CAST(upc AS VARCHAR), '0') AS upc_n
+                        FROM {rip_src_cte}
+                        WHERE upc IS NOT NULL
+                          AND CAST(upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
+                          AND rip_code IS NOT NULL
+                          AND CAST(rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
+                    ) cls
+                    JOIN {src} c
+                      ON c.wholesaler = cls.wholesaler
+                     AND c.edition    = cls.edition
+                     AND LTRIM(CAST(c.upc AS VARCHAR), '0') = cls.upc_n
+                    WHERE (c.rip_code IS NOT NULL AND CAST(c.rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan'))
+                       OR NOT EXISTS (
+                           SELECT 1 FROM {src} c2
+                           WHERE c2.wholesaler = c.wholesaler AND c2.edition = c.edition
+                             AND LTRIM(CAST(c2.upc AS VARCHAR), '0') = LTRIM(CAST(c.upc AS VARCHAR), '0')
+                             AND COALESCE(CAST(c2.vintage AS VARCHAR), '') = COALESCE(CAST(c.vintage AS VARCHAR), '')
+                             AND c2.rip_code IS NOT NULL
+                             AND CAST(c2.rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan'))
+                    GROUP BY cls.wholesaler, cls.edition, cls.rip_code"""
             rip_cte_sql = f"""
                 WITH mix_listing_counts AS (
                     -- Distinct listings per (wholesaler, edition, UPC). One UPC
@@ -1266,42 +1307,7 @@ def search_products(
                 -- first ordering when group_by_rip is on, so the sort matches the
                 -- row count the user sees on the page.
                 rip_cluster_sizes AS (
-                    SELECT cls.wholesaler  AS rcs_wholesaler,
-                           cls.edition     AS rcs_edition,
-                           cls.rip_code    AS rcs_code,
-                           COUNT(DISTINCT (
-                               LTRIM(CAST(c.upc AS VARCHAR), '0'),
-                               COALESCE(CAST(c.vintage AS VARCHAR), ''),
-                               COALESCE(c.unit_volume, ''),
-                               COALESCE(CAST(c.unit_qty AS VARCHAR), '')
-                           )) AS cluster_members
-                    FROM (
-                        SELECT DISTINCT wholesaler, edition,
-                               CAST(rip_code AS VARCHAR) AS rip_code,
-                               LTRIM(CAST(upc AS VARCHAR), '0') AS upc_n
-                        FROM {rip_src_cte}
-                        WHERE upc IS NOT NULL
-                          AND CAST(upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
-                          AND rip_code IS NOT NULL
-                          AND CAST(rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
-                    ) cls
-                    JOIN {src} c
-                      ON c.wholesaler = cls.wholesaler
-                     AND c.edition    = cls.edition
-                     AND LTRIM(CAST(c.upc AS VARCHAR), '0') = cls.upc_n
-                    -- Exclude a same-UPC sibling that carries NO valid rip_code
-                    -- (promo/gift/VAP variant or unrelated product) when a
-                    -- same-UPC + same-VINTAGE sibling DOES carry one. Different
-                    -- vintages are distinct products and never collapsed.
-                    WHERE (c.rip_code IS NOT NULL AND CAST(c.rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan'))
-                       OR NOT EXISTS (
-                           SELECT 1 FROM {src} c2
-                           WHERE c2.wholesaler = c.wholesaler AND c2.edition = c.edition
-                             AND LTRIM(CAST(c2.upc AS VARCHAR), '0') = LTRIM(CAST(c.upc AS VARCHAR), '0')
-                             AND COALESCE(CAST(c2.vintage AS VARCHAR), '') = COALESCE(CAST(c.vintage AS VARCHAR), '')
-                             AND c2.rip_code IS NOT NULL
-                             AND CAST(c2.rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan'))
-                    GROUP BY cls.wholesaler, cls.edition, cls.rip_code
+{_rcs_body}
                 ),
                 -- Fan rip_groups out by code so a UPC with N rebates emits N
                 -- rows. The LEFT JOIN below preserves UPCs that don't qualify
@@ -1982,6 +1988,24 @@ def _has_image_column(con) -> bool:
         except Exception:
             _HAS_IMAGE_COL[tag] = False
     return _HAS_IMAGE_COL[tag]
+
+
+# Which precomputed cache tables the current pricing file carries (e.g.
+# rip_cluster_sizes_pre). Cached per cache-file path so a reload re-checks.
+_CACHE_TABLES: dict[str, set] = {}
+
+
+def _has_table(con, name: str) -> bool:
+    from backend.cache_util import pricing_tag
+    tag = pricing_tag()
+    if tag not in _CACHE_TABLES:
+        try:
+            _CACHE_TABLES[tag] = {
+                r[0] for r in con.execute(
+                    "SELECT table_name FROM information_schema.tables").fetchall()}
+        except Exception:
+            _CACHE_TABLES[tag] = set()
+    return name in _CACHE_TABLES[tag]
 
 # Canonical container-type bucket from the messy DB unit_type (keg/KEG/Keg,
 # BOTTLE/Bottle/Glass/PET, CAN/Can/can, '5.17 1/6 BBL', ...). A keg is anything

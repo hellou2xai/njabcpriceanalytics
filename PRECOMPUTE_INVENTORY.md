@@ -158,6 +158,18 @@ image — mirror `enrichment_join._joinable_upc` in the UPDATE's WHERE.
 
 ## 3. RIP cluster membership + cluster-size table
 
+**STATUS: DONE (the expensive half).** Precomputed `rip_cluster_sizes_pre`
+(wholesaler, edition, rip_code -> cluster_members) in pricing_cache.py with the
+BYTE-IDENTICAL body of the live CTE — that was the flagged ~7s hash-join. The
+grouped grid reads it (CTE body swapped to `SELECT * FROM rip_cluster_sizes_pre`
+when present, full compute as fallback). Keyed on edition (recycled-code safe).
+Verified: 0 parity mismatches vs the live computation over all 13,611
+(ws,ed,code) rows; local read 91ms -> 5.5ms (prod ~7s win larger). The cheaper
+CTEs (mix_listing_counts, rip_groups, code_split) and the un-flattenable
+single-vs-multi membership rule stay inline. NOT YET done: the full membership
+table that would also absorb #7 (rip_all_codes) and #11 (compare boards'
+`_case_mix_sizes` / `_cpn_for_upcs`) — those still recompute; follow-up.
+
 **What.** `group_by_rip` (the "Group by Case Mix RIP" toggle) fans each UPC out
 to one row per RIP code it belongs to, ordered by cluster size. The membership
 and the cluster size are deterministic per `(edition, distributor)`.

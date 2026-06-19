@@ -390,6 +390,53 @@ def build_pricing_cache() -> Path:
                        AND upc_norm IN (SELECT upc FROM product_enrichment
                                         WHERE image_url IS NOT NULL AND image_url <> '')""")
 
+            # rip_cluster_sizes_pre: precompute the "Case Mix RIP" cluster size
+            # per (wholesaler, edition, rip_code) — the single ~7s hash-join the
+            # grouped grid (group_by_rip) rebuilt on every request
+            # (routers/catalog.py rip_cluster_sizes CTE). Cluster size = distinct
+            # catalog SKUs (upc, vintage, size, pack) the RIP sheet lists under a
+            # code, excluding a same-UPC sibling that carries NO valid code when a
+            # same-UPC+same-vintage sibling DOES. The body is byte-identical to
+            # that CTE (rip + cpl_enriched both live in the cache). KEYED ON
+            # EDITION: RIP codes are recycled per edition, so a size keyed on code
+            # alone would merge May's Parrot Bay with June's Sarti Rosa. The grid
+            # reads this table when present (else recomputes inline).
+            _try("""
+                CREATE TABLE rip_cluster_sizes_pre AS
+                SELECT cls.wholesaler AS rcs_wholesaler,
+                       cls.edition    AS rcs_edition,
+                       cls.rip_code   AS rcs_code,
+                       COUNT(DISTINCT (
+                           LTRIM(CAST(c.upc AS VARCHAR), '0'),
+                           COALESCE(CAST(c.vintage AS VARCHAR), ''),
+                           COALESCE(c.unit_volume, ''),
+                           COALESCE(CAST(c.unit_qty AS VARCHAR), '')
+                       )) AS cluster_members
+                FROM (
+                    SELECT DISTINCT wholesaler, edition,
+                           CAST(rip_code AS VARCHAR) AS rip_code,
+                           LTRIM(CAST(upc AS VARCHAR), '0') AS upc_n
+                    FROM rip
+                    WHERE upc IS NOT NULL
+                      AND CAST(upc AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
+                      AND rip_code IS NOT NULL
+                      AND CAST(rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
+                ) cls
+                JOIN cpl_enriched c
+                  ON c.wholesaler = cls.wholesaler
+                 AND c.edition    = cls.edition
+                 AND LTRIM(CAST(c.upc AS VARCHAR), '0') = cls.upc_n
+                WHERE (c.rip_code IS NOT NULL AND CAST(c.rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan'))
+                   OR NOT EXISTS (
+                       SELECT 1 FROM cpl_enriched c2
+                       WHERE c2.wholesaler = c.wholesaler AND c2.edition = c.edition
+                         AND LTRIM(CAST(c2.upc AS VARCHAR), '0') = LTRIM(CAST(c.upc AS VARCHAR), '0')
+                         AND COALESCE(CAST(c2.vintage AS VARCHAR), '') = COALESCE(CAST(c.vintage AS VARCHAR), '')
+                         AND c2.rip_code IS NOT NULL
+                         AND CAST(c2.rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan'))
+                GROUP BY cls.wholesaler, cls.edition, cls.rip_code
+            """)
+
             # (index name, table, columns) — see PRICING_INDEX_INVENTORY.md
             _INDEXES = [
                 # cpl_enriched: the main catalogue, hottest table
@@ -418,6 +465,8 @@ def build_pricing_cache() -> Path:
                 ("idx_sku_dist_upcn",   "sku_mapping",       "distributor, upc_norm"),
                 # half-case credit per tier
                 ("idx_credits",         "rip_credits",       "rip_code, wholesaler, edition, upc"),
+                # precomputed Case-Mix cluster size (grouped grid)
+                ("idx_rcs_pre",         "rip_cluster_sizes_pre", "rcs_wholesaler, rcs_edition, rcs_code"),
                 # AI deal blurb attach (per product per edition). NOTE only
                 # ai_deal_blurbs is materialised into the cache; the product- and
                 # mover-blurb lookups run against Postgres directly (get_pg), so

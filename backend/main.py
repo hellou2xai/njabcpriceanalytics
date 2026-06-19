@@ -19,6 +19,7 @@ from pathlib import Path
 import math as _math
 from fastapi import FastAPI, Depends, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from dotenv import load_dotenv
@@ -72,6 +73,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Compress responses (PERF_TODO baseline). Grid/board JSON is 79-180 KB and
+# compresses to ~1/6 on the wire; minimum_size skips tiny payloads where the
+# gzip overhead would not pay off. The client opts in via Accept-Encoding, so
+# this is transparent to any caller that doesn't send it.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Register routers
 app.include_router(auth_router)

@@ -425,6 +425,7 @@ def _price_obj(d: dict) -> dict:
         "upc": d.get("upc"),
         "edition": d.get("edition"),
         "product_name": d.get("product_name"),
+        "item_no": d.get("abg_sku"),   # distributor's own catalogue number
         "frontline": front,
         "after_qd": bq,
         "effective": net,
@@ -675,6 +676,10 @@ def compare_products(
         eds = _editions_for(con, src, slugs, mode=("next" if month_mode == "next" else "cur"))
         next_available = _next_edition_available(con, src, slugs)
         raw = _common_rows(con, src, slugs, eds)
+        # Distributor item numbers (Allied ABG SKU / Fedway item no, both in
+        # sku_mapping) so the grid shows each side's own catalogue number.
+        # Gated per-distributor + ambiguity-safe inside attach_sku_mapping.
+        _attach_sku_mapping(con, raw)
         # Set each distributor's Best QD / Best Net from the deals that are LIVE
         # TODAY (expired + upcoming excluded), so the grid shows today's real
         # price and old/future promos don't confuse the winner. The QD comes from

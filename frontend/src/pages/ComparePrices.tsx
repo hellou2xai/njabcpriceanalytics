@@ -772,7 +772,8 @@ export default function ComparePrices() {
                             <Fragment key={w}>
                               <WinnerCell value={p?.frontline} prev={p?.prev?.frontline} sep
                                 mode={priceMonths} curMonth={curMo} prevMonth={prevMo}
-                                isWinner={r.winner_frontline === w} isTie={r.winner_frontline === 'tie'} />
+                                isWinner={r.winner_frontline === w} isTie={r.winner_frontline === 'tie'}
+                                sub={abgSku(w, p?.item_no) ? `${skuLabel(w)} ${p?.item_no}` : null} />
                               <WinnerCell value={p?.after_qd} prev={p?.prev?.after_qd}
                                 mode={priceMonths} curMonth={curMo} prevMonth={prevMo}
                                 isWinner={r.winner_after_qd === w} isTie={r.winner_after_qd === 'tie'}

@@ -425,6 +425,7 @@ export interface ComparePrice {
   upc: string | null;
   edition: string;
   product_name: string;
+  item_no?: string | null;   // distributor's own catalogue number (Allied/Fedway)
   frontline: number | null;
   after_qd: number | null;
   effective: number | null;

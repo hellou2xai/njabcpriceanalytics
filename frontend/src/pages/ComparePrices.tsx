@@ -902,6 +902,8 @@ export default function ComparePrices() {
                                 wholesalers: selected.join(','),
                                 upc_norm: r.upc_norm,
                                 size_key: r.size_key || undefined,
+                                // ladder MUST resolve the same month as the grid
+                                month_mode: priceMonths === 'next' ? 'next' : 'cur',
                               }}
                             />
                           </td>

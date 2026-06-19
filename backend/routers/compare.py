@@ -1131,15 +1131,18 @@ def compare_tiers(
     wholesalers: str = Query(...),
     upc_norm: str = Query(...),
     size_key: str = Query("", description="Physical-size bucket from /products rows"),
+    month_mode: str = Query("cur", description="Must match the grid: 'next' resolves the NEXT edition so the ladder shows the SAME month as the row."),
     user: Optional[dict] = Depends(get_optional_user),
 ):
     """Full QD + RIP tier ladders, side by side, for one matched product.
     Ladders come from pricing.attach_tiers — the same canonical builder the
-    catalog grid and product modal use."""
+    catalog grid and product modal use. ``month_mode`` MUST match the grid so the
+    ladder resolves the same edition (else a Next-month row showed its detail at
+    the current month — e.g. CENOTE: grid Jul $144.54 vs ladder Jun $270)."""
     with get_duckdb() as con:
         src = read_parquet(con, "cpl_enriched")
         slugs = _parse_wholesalers(wholesalers, con)
-        eds = _editions_for(con, src, slugs)
+        eds = _editions_for(con, src, slugs, mode=("next" if month_mode == "next" else "cur"))
         ed_pred, ed_params = _edition_pred(slugs, eds)
         df = con.execute(f"""
             SELECT wholesaler, edition, upc, product_name, product_type,

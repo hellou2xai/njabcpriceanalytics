@@ -408,11 +408,11 @@ def attach_rip_gaps(con, records) -> None:
         for i, v in enumerate(un_l): prm[f"u{i}"] = v
         df = con.execute(f"""
             WITH w AS (
-              SELECT wholesaler, edition, LTRIM(CAST(upc AS VARCHAR), '0') AS un,
+              SELECT wholesaler, edition, upc_norm AS un,
                      from_date, to_date,
-                     MAX(edition) OVER (PARTITION BY wholesaler, LTRIM(CAST(upc AS VARCHAR), '0')) AS led
+                     MAX(edition) OVER (PARTITION BY wholesaler, upc_norm) AS led
               FROM {rip_src}
-              WHERE wholesaler IN ({pw}) AND LTRIM(CAST(upc AS VARCHAR), '0') IN ({pu})
+              WHERE wholesaler IN ({pw}) AND upc_norm IN ({pu})
                 AND from_date IS NOT NULL AND to_date IS NOT NULL
                 AND (rip_amt_1 > 0 OR rip_amt_2 > 0 OR rip_amt_3 > 0 OR rip_amt_4 > 0)
             )
@@ -430,9 +430,9 @@ def attach_rip_gaps(con, records) -> None:
     try:
         craw = read_parquet(con, "cpl")
         df2 = con.execute(f"""
-            SELECT wholesaler, LTRIM(CAST(upc AS VARCHAR), '0') AS un, from_date, to_date
+            SELECT wholesaler, upc_norm AS un, from_date, to_date
             FROM {craw}
-            WHERE wholesaler IN ({pw}) AND LTRIM(CAST(upc AS VARCHAR), '0') IN ({pu})
+            WHERE wholesaler IN ({pw}) AND upc_norm IN ({pu})
               AND from_date IS NOT NULL AND to_date IS NOT NULL
               AND CAST(to_date AS DATE) >= CURRENT_DATE
               AND best_case_price IS NOT NULL AND frontline_case_price IS NOT NULL
@@ -584,7 +584,7 @@ def attach_tiers(con, records, ref_date=None) -> None:
                 FROM {read_parquet(con, "rip_credits")} rc
                 JOIN {read_parquet(con, "cpl_enriched")} c
                   ON c.wholesaler = rc.wholesaler AND c.edition = rc.edition
-                 AND LTRIM(CAST(c.upc AS VARCHAR), '0') = rc.upc
+                 AND c.upc_norm = rc.upc
                 WHERE rc.wholesaler IN ({ph_ws}) AND rc.edition IN ({ph_ed})
                 GROUP BY 1, 2, 3, 4, 5
                 HAVING COUNT(DISTINCT rc.case_credit) = 1
@@ -677,7 +677,7 @@ def attach_tiers(con, records, ref_date=None) -> None:
             for i, v in enumerate(p_ed): pp[f"pe{i}"] = v
             for i, v in enumerate(p_un): pp[f"pu{i}"] = v
             prows = con.execute(f"""
-                SELECT wholesaler, edition, LTRIM(CAST(upc AS VARCHAR), '0') AS un,
+                SELECT wholesaler, edition, upc_norm AS un,
                        CAST(from_date AS DATE) AS from_date, CAST(to_date AS DATE) AS to_date,
                        frontline_case_price AS fcp, best_case_price AS bcp,
                        discount_1_qty AS d1q, discount_1_amt AS d1a,
@@ -687,7 +687,7 @@ def attach_tiers(con, records, ref_date=None) -> None:
                        discount_5_qty AS d5q, discount_5_amt AS d5a
                 FROM {craw}
                 WHERE wholesaler IN ({ph_pw}) AND edition IN ({ph_pe})
-                  AND LTRIM(CAST(upc AS VARCHAR), '0') IN ({ph_pu})
+                  AND upc_norm IN ({ph_pu})
                   AND from_date IS NOT NULL AND to_date IS NOT NULL
                   AND NOT (EXTRACT(day FROM CAST(from_date AS DATE)) = 1
                            AND CAST(to_date AS DATE) = (date_trunc('month', CAST(to_date AS DATE)) + INTERVAL 1 MONTH - INTERVAL 1 DAY))
@@ -707,7 +707,7 @@ def attach_tiers(con, records, ref_date=None) -> None:
         try:
             craw = read_parquet(con, "cpl")
             fq = con.execute(f"""
-                SELECT wholesaler, edition, LTRIM(CAST(upc AS VARCHAR), '0') AS un,
+                SELECT wholesaler, edition, upc_norm AS un,
                        discount_1_qty AS d1q, discount_1_amt AS d1a,
                        discount_2_qty AS d2q, discount_2_amt AS d2a,
                        discount_3_qty AS d3q, discount_3_amt AS d3a,
@@ -715,7 +715,7 @@ def attach_tiers(con, records, ref_date=None) -> None:
                        discount_5_qty AS d5q, discount_5_amt AS d5a
                 FROM {craw}
                 WHERE wholesaler IN ({ph_pw}) AND edition IN ({ph_pe})
-                  AND LTRIM(CAST(upc AS VARCHAR), '0') IN ({ph_pu})
+                  AND upc_norm IN ({ph_pu})
                   AND (from_date IS NULL OR to_date IS NULL
                        OR (EXTRACT(day FROM CAST(from_date AS DATE)) = 1
                            AND CAST(to_date AS DATE) = (date_trunc('month', CAST(to_date AS DATE)) + INTERVAL 1 MONTH - INTERVAL 1 DAY)))
@@ -760,7 +760,7 @@ def attach_tiers(con, records, ref_date=None) -> None:
             for i, v in enumerate(g_ed): gp[f"ge{i}"] = v
             for i, v in enumerate(g_un): gp[f"gu{i}"] = v
             gwins = con.execute(f"""
-                SELECT wholesaler, edition, LTRIM(CAST(upc AS VARCHAR), '0') AS un,
+                SELECT wholesaler, edition, upc_norm AS un,
                        rip_code, rip_description, from_date, to_date,
                        rip_unit_1, rip_qty_1, rip_amt_1,
                        rip_unit_2, rip_qty_2, rip_amt_2,
@@ -768,7 +768,7 @@ def attach_tiers(con, records, ref_date=None) -> None:
                        rip_unit_4, rip_qty_4, rip_amt_4
                 FROM {rip_src}
                 WHERE wholesaler IN ({gw}) AND edition IN ({ge})
-                  AND LTRIM(CAST(upc AS VARCHAR), '0') IN ({gu})
+                  AND upc_norm IN ({gu})
                   AND from_date IS NOT NULL AND to_date IS NOT NULL
                   AND (rip_amt_1 > 0 OR rip_amt_2 > 0 OR rip_amt_3 > 0 OR rip_amt_4 > 0)
             """, gp).fetchdf()
@@ -830,15 +830,15 @@ def attach_tiers(con, records, ref_date=None) -> None:
         try:
             cenr_lc = read_parquet(con, "cpl_enriched")
             lc = con.execute(f"""
-                SELECT wholesaler, edition, LTRIM(CAST(upc AS VARCHAR), '0') AS un,
+                SELECT wholesaler, edition, upc_norm AS un,
                        COUNT(DISTINCT (product_name,
                                        COALESCE(unit_volume, ''),
                                        COALESCE(CAST(vintage AS VARCHAR), ''),
                                        COALESCE(regexp_replace(TRIM(CAST(unit_qty AS VARCHAR)), '\\.0+$', ''), ''))) AS n
                 FROM {cenr_lc}
                 WHERE wholesaler IN ({gw}) AND edition IN ({ge})
-                  AND LTRIM(CAST(upc AS VARCHAR), '0') IN ({gu})
-                GROUP BY wholesaler, edition, LTRIM(CAST(upc AS VARCHAR), '0')
+                  AND upc_norm IN ({gu})
+                GROUP BY wholesaler, edition, upc_norm
             """, gp).fetchdf()
             for r in lc.to_dict("records"):
                 if int(r["n"]) == 1:

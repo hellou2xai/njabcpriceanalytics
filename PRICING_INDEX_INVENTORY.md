@@ -29,10 +29,10 @@ Two independent levers, both needed:
    normalized value into a plain column at cache-build time.
 2. **ART index on that column.** Turns the plain scan into a real point probe.
 
-So the work is: add 3 normalized columns, build ~20 indexes, and rewrite the
+So the work is: add 4 normalized columns, build 20 indexes, and rewrite the
 hottest lookups to filter the plain column (not the function).
 
-## Normalized columns to add at cache-build time (3)
+## Normalized columns to add at cache-build time (4)
 
 Added in `build_pricing_cache()` AFTER the final price_trend `CREATE OR REPLACE
 TABLE cpl_enriched` (that statement rebuilds the table and would drop anything
@@ -42,13 +42,14 @@ Postgres-vs-parquet type drift (UPC can come back numeric from Postgres).
 | Table | New column | Source expression |
 | --- | --- | --- |
 | cpl_enriched | `upc_norm` | `LTRIM(CAST(upc AS VARCHAR),'0')` |
+| cpl (raw) | `upc_norm` | `LTRIM(CAST(upc AS VARCHAR),'0')` |
 | rip | `upc_norm` | `LTRIM(CAST(upc AS VARCHAR),'0')` |
 | combo | `upc_norm` | `LTRIM(CAST(upc AS VARCHAR),'0')` |
 
 Already normalized, reuse as-is (no new column): `product_enrichment.upc`,
 `sku_mapping.upc_norm`, `celr_products.upc_norm`, `celr_family_keys.key`.
 
-## Indexes (18 in the cache + 1 follow-up on Postgres)
+## Indexes (20 in the cache + 1 follow-up on Postgres)
 
 ### cpl_enriched (4) — the main catalog, hottest table
 | Index | Columns | Serves |
@@ -57,6 +58,12 @@ Already normalized, reuse as-is (no new column): `product_enrichment.upc`,
 | idx_cpl_ws_ed | (wholesaler, edition) | the `MAX(edition) per wholesaler` current-edition join (every grid/board/detail) |
 | idx_cpl_rip_code | (rip_code) | group_by_rip / "products under this RIP" |
 | idx_cpl_combo_code | (combo_code) | combo membership / bundle views |
+
+### cpl (2) — the RAW price list (partial-QD windows, RIP-trap detection)
+| Index | Columns | Serves |
+| --- | --- | --- |
+| idx_cplraw_upc_norm | (upc_norm) | partial-QD / full-month qty lookups in pricing.py (per card) |
+| idx_cplraw_ws_ed | (wholesaler, edition) | current-edition raw-row scans |
 
 ### rip (4) — RIP sheet, the tier-ladder source
 | Index | Columns | Serves |
@@ -108,6 +115,19 @@ at these per-request lookups. NON-hot, once-per-month scans can stay as-is.
 - rip-siblings / group_by_rip (routers/catalog.py)
 - cross-distributor compare (routers/compare.py)
 - pricing.py tier/price lookups joined on `LTRIM(upc,'0')`
+
+### Gotcha: materialising `upc_norm` collides with existing query aliases
+Many queries already projected `LTRIM(upc,'0') AS upc_norm`. Once a REAL
+`upc_norm` column exists on the base table, two things break and were fixed:
+1. `SELECT *, LTRIM(upc,'0') AS upc_norm` -> duplicate column name. Fixed by
+   dropping the now-redundant alias (the `*` already carries it). 3 sites in
+   catalog.py (cross_distributor / cross_distributor_combined / distributor_exclusive).
+2. `SELECT LTRIM(upc,'0') AS upc_norm ... GROUP BY upc_norm` -> the `GROUP BY`
+   now binds to the real COLUMN, leaving the SELECT's `LTRIM(...)` ungrouped
+   (Binder Error). Fixed by selecting the bare `upc_norm` column. 2 base-table
+   `ambiguous` CTEs in catalog.py. (CTE-sourced GROUP BYs are unaffected.)
+These only surface on the compare BOARDS, which the tool-level eval does not
+call. Verified by invoking the board endpoints directly + a TestClient pass.
 
 ## Notes / non-goals
 - DuckDB has NO covering/`INCLUDE` indexes (Postgres-ism). ART only. No INCLUDE.

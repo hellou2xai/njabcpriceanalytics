@@ -488,7 +488,7 @@ def _attach_dup_upc(con, src, records):
                          cur AS (
                            SELECT LTRIM(e.upc,'0') AS un, e.wholesaler AS w, e.product_name AS pn
                            FROM {src} e JOIN latest l ON e.wholesaler=l.wholesaler AND e.edition=l.ed
-                           WHERE LTRIM(e.upc,'0') IN ({ph})
+                           WHERE e.upc_norm IN ({ph})
                          ),
                          per AS (SELECT un, w, COUNT(DISTINCT pn) AS pc FROM cur GROUP BY un, w)
                     SELECT un,
@@ -2109,7 +2109,7 @@ def new_items(
             JOIN view_ed v ON v.wholesaler = e.wholesaler AND v.ed = e.edition
             JOIN introduced i
               ON i.wholesaler = e.wholesaler
-             AND i.upc_norm = LTRIM(e.upc, '0')
+             AND i.upc_norm = e.upc_norm
         """
 
         # Month chips: count per introduced edition, before the search box and
@@ -2940,7 +2940,7 @@ def cross_distributor(
                 -- UPCs that map to more than one distinct product within a
                 -- wholesaler/edition. These are unreliable identifiers and
                 -- create false cross-distributor matches.
-                SELECT wholesaler, LTRIM(upc, '0') AS upc_norm, unit_volume
+                SELECT wholesaler, upc_norm, unit_volume
                 FROM {src}
                 WHERE wholesaler IN ($a, $b)
                   AND ((wholesaler = $a AND edition = $ed_a)
@@ -2951,7 +2951,7 @@ def cross_distributor(
             ),
             norm AS (
                 SELECT *,
-                       LTRIM(upc, '0') AS upc_norm,
+                       -- upc_norm now materialised on cpl_enriched (* carries it)
                        -- Standardize vintage: 4-digit kept; 2-digit treated as
                        -- 20XX for <=30 else 19XX; '2020.0' floats stripped;
                        -- 'na' and other junk treated as NULL.
@@ -3165,14 +3165,14 @@ def cross_distributor_combined(
 
         sql = f"""
             WITH ambiguous AS (
-                SELECT wholesaler, LTRIM(upc, '0') AS upc_norm, unit_volume
+                SELECT wholesaler, upc_norm, unit_volume
                 FROM {src}
                 WHERE {ed_filter} AND upc IS NOT NULL AND upc != '' AND upc != '0'
                 GROUP BY wholesaler, upc_norm, unit_volume
                 HAVING COUNT(DISTINCT product_name) > 1
             ),
             norm AS (
-                SELECT *, LTRIM(upc, '0') AS upc_norm,
+                SELECT *,  -- upc_norm materialised on cpl_enriched
                        ({vnorm}) AS vintage_norm,
                        UPPER(product_type) IN ('WINE', 'SPARKLING', 'VERMOUTH') AS is_vintage_product
                 FROM {src}
@@ -3513,8 +3513,7 @@ def distributor_exclusive(
 
         sql = f"""
             WITH norm AS (
-                SELECT *,
-                       LTRIM(upc, '0') AS upc_norm
+                SELECT *  -- upc_norm materialised on cpl_enriched
                 FROM {src}
                 WHERE wholesaler IN ($self, $other)
                   AND upc IS NOT NULL AND upc != '' AND upc != '0'

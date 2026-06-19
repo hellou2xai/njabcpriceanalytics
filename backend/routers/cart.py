@@ -168,7 +168,7 @@ def _attach_cart_pricing(dcon, items):
                        e.discount_4_qty AS d4q, e.discount_4_amt AS d4a,
                        e.discount_5_qty AS d5q, e.discount_5_amt AS d5a
                 FROM {src} e JOIN latest l ON e.wholesaler=l.wholesaler AND e.edition=l.ed
-                WHERE LTRIM(e.upc,'0') IN ({ph})
+                WHERE e.upc_norm IN ({ph})
             """, prm).fetchdf()
             for _, r in df.iterrows():
                 pmap[(r["w"], str(r["un"]), r["pn"] or "", r["uv"] or "")] = r

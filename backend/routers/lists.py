@@ -197,7 +197,7 @@ def _attach_rip_code_for_list_items(dcon, items):
                    e.frontline_case_price AS fc, e.frontline_unit_price AS fu,
                    e.effective_case_price AS ec, e.total_savings_per_case AS sv
             FROM {src} e JOIN latest l ON e.wholesaler=l.wholesaler AND e.edition=l.ed
-            WHERE LTRIM(e.upc,'0') IN ({ph})
+            WHERE e.upc_norm IN ({ph})
         """, prm).fetchdf()
         lookup = {}
         price_by_size = {}

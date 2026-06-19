@@ -360,7 +360,7 @@ def build_pricing_cache() -> Path:
                 except Exception:
                     pass
 
-            for _t in ("cpl_enriched", "rip", "combo"):
+            for _t in ("cpl_enriched", "cpl", "rip", "combo"):
                 _try(f"ALTER TABLE {_t} ADD COLUMN upc_norm VARCHAR")
                 _try(f"UPDATE {_t} SET upc_norm = LTRIM(CAST(upc AS VARCHAR), '0')")
 
@@ -371,6 +371,9 @@ def build_pricing_cache() -> Path:
                 ("idx_cpl_ws_ed",       "cpl_enriched",      "wholesaler, edition"),
                 ("idx_cpl_rip_code",    "cpl_enriched",      "rip_code"),
                 ("idx_cpl_combo_code",  "cpl_enriched",      "combo_code"),
+                # cpl: the RAW price list (partial-QD windows, RIP-trap detection)
+                ("idx_cplraw_upc_norm", "cpl",               "upc_norm"),
+                ("idx_cplraw_ws_ed",    "cpl",               "wholesaler, edition"),
                 # rip: the RIP-tier / case-mix source
                 ("idx_rip_upc_norm",    "rip",               "upc_norm"),
                 ("idx_rip_ws_ed",       "rip",               "wholesaler, edition"),

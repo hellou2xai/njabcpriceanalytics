@@ -302,7 +302,7 @@ def _common_rows(con, src: str, slugs: list[str], eds: dict[str, str],
             FROM {src}
             WHERE {ed_pred} AND {_VALID_UPC} AND {flag_any} = TRUE
         """, ed_params)
-        flag_clause = "AND LTRIM(e.upc, '0') IN (SELECT un FROM _cr_flag_upcs)"
+        flag_clause = "AND e.upc_norm IN (SELECT un FROM _cr_flag_upcs)"
     # Exclude a row as "part of a combo bundle" ONLY when its combo_code is a
     # real code in that wholesaler's COMBO sheet. Some distributors (Shore
     # Point, Jersey Beverage) repurpose the CPL combo-code column for internal
@@ -515,7 +515,7 @@ def _active_qd_from_raw(con, slugs: list[str], eds: dict[str, str],
                discount_5_qty, discount_5_amt
         FROM cpl
         WHERE {ed_pred} AND {_VALID_UPC}
-          AND LTRIM(upc, '0') IN ({upc_ph})
+          AND upc_norm IN ({upc_ph})
           AND {active_sql}
     """, ed_params + list(upcs) + [today, today]).df()
     out: dict[tuple, tuple] = {}
@@ -605,7 +605,7 @@ def _prev_prices(con, src: str, slugs: list[str], eds: dict[str, str],
                UPPER(product_type) IN ('WINE','SPARKLING','VERMOUTH') AS vintage_sensitive
         FROM {src}
         WHERE ({" OR ".join(parts)}) AND {_VALID_UPC}
-          AND LTRIM(upc, '0') IN ({upc_ph})
+          AND upc_norm IN ({upc_ph})
     """, params + list(page_upcs)).df()
 
     def _nz(v):
@@ -1041,7 +1041,7 @@ def compare_tiers(
                    discount_3_qty, discount_3_amt, discount_4_qty, discount_4_amt,
                    discount_5_qty, discount_5_amt
             FROM {src}
-            WHERE {ed_pred} AND LTRIM(upc,'0') = ?
+            WHERE {ed_pred} AND upc_norm = ?
         """, ed_params + [upc_norm]).df()
         records = [_nan_clean(r) for r in df.to_dict(orient="records")]
         if size_key:
@@ -3042,7 +3042,7 @@ def _fetch_product_offers(con, src: str, match: str, size_key: Optional[str] = N
     m = (match or "").strip()
     digits = re.sub(r"\D", "", m)
     is_upc = len(digits) >= 8
-    match_pred = "LTRIM(upc,'0') = ?" if is_upc else "lower(product_name) LIKE ?"
+    match_pred = "upc_norm = ?" if is_upc else "lower(product_name) LIKE ?"
     match_param = digits.lstrip("0") if is_upc else f"%{m.lower()}%"
     # Resolve the text to UPCs first, then pull EVERY distributor carrying those
     # UPCs — the same barcode is often named differently per distributor (Allied
@@ -3067,8 +3067,8 @@ def _fetch_product_offers(con, src: str, match: str, size_key: Optional[str] = N
                {vn} AS vintage_norm,
                UPPER(product_type) IN ('WINE','SPARKLING','VERMOUTH') AS vintage_sensitive
         FROM {src} e WHERE {base}
-          AND LTRIM(upc,'0') IN (
-              SELECT DISTINCT LTRIM(upc,'0') FROM {src}
+          AND upc_norm IN (
+              SELECT DISTINCT upc_norm FROM {src}
               WHERE {base} AND {match_pred})
     """, params).df()
     recs = [_nan_clean(r) for r in df.to_dict(orient="records")]
@@ -3802,7 +3802,7 @@ def basket(source: str = Query("cart", description="cart | favorites"),
                    discount_5_qty, discount_5_amt,
                    LTRIM(upc,'0') AS upc_norm, TRY_CAST(unit_qty AS DOUBLE) AS uqd
             FROM {src} e
-            WHERE {ed_pred} AND {_VALID_UPC} AND LTRIM(upc,'0') IN ({ph})
+            WHERE {ed_pred} AND {_VALID_UPC} AND upc_norm IN ({ph})
         """, ed_params + upcs).df()
         recs = [_nan_clean(r) for r in df.to_dict(orient="records")]
         _pricing.attach_tiers(con, recs)

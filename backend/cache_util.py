@@ -55,6 +55,29 @@ def cached_response(endpoint: str, params: tuple, build: Callable[[], Any]) -> A
     return value
 
 
+def peek(endpoint: str, params: tuple) -> Any:
+    """Return the memoized value for (pricing version, endpoint, params), or None
+    on a miss. For call sites whose result is built inline (a single big function
+    body) rather than via a build() closure — pair with store()."""
+    key = (pricing_tag(), endpoint, params)
+    with _LOCK:
+        hit = _CACHE.get(key)
+        if hit is not None:
+            _CACHE.move_to_end(key)
+        return hit
+
+
+def store(endpoint: str, params: tuple, value: Any) -> None:
+    """Memoize ``value`` for (pricing version, endpoint, params). Treat the stored
+    value as read-only (it is shared across requests)."""
+    key = (pricing_tag(), endpoint, params)
+    with _LOCK:
+        _CACHE[key] = value
+        _CACHE.move_to_end(key)
+        while len(_CACHE) > _MAX:
+            _CACHE.popitem(last=False)
+
+
 def clear() -> None:
     """Drop everything (called on an explicit pricing reload as a belt-and-braces
     measure; the pricing-tag key already makes stale entries unreachable)."""

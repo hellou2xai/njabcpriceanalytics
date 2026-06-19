@@ -21,6 +21,7 @@ from backend.rip_utils import is_bottle_unit as _is_bottle_unit, rip_per_case as
 # assistant engine and MCP read from there so a formula change ripples
 # through every surface (see backend/FOUNDATION.md).
 from backend import pricing as _pricing
+from backend import cache_util as _cache
 
 
 def _current_yyyy_mm() -> str:
@@ -746,6 +747,27 @@ def search_products(
     user: Optional[dict] = Depends(get_optional_user),
 ):
     """Full-text search with faceted filtering. Defaults to latest edition to avoid duplicates."""
+    # Response memoization. The grid is USER-INDEPENDENT unless tracked_only is
+    # on (a per-user watchlist filter), so the same (params, pricing version)
+    # always yields the same answer — the heavy group_by_rip query in particular
+    # then costs nothing on repeat loads. The key includes today's ET date so the
+    # date-sensitive "live now" RIP overlay rolls over daily; pricing_tag() in
+    # cache_util invalidates everything on a data reload.
+    _cacheable = not tracked_only
+    _ckey = None
+    if _cacheable:
+        _ckey = (
+            q, wholesaler, edition, product_type, min_price, max_price,
+            has_discount, has_closeout, has_rip, in_combo, time_sensitive,
+            price_drop, price_increase, brand, unit_volume, divisions, categories,
+            brands, sizes, unit_kinds, upcs, rip_code, region, varietal,
+            tracked_only, introduced_within_months, introduced_edition, sort, order,
+            limit, offset, include_tiers, group_by_rip, images_first,
+            as_of or _pricing.eastern_today().isoformat(),
+        )
+        _hit = _cache.peek("catalog_search", _ckey)
+        if _hit is not None:
+            return _hit
     with get_duckdb() as con:
         # cpl_enriched + a clean `brand_clean` column (enrichment brand). The
         # raw `brand` column is description-polluted, so brand filter + display
@@ -1806,13 +1828,16 @@ def search_products(
         _attach_dup_upc(con, src, records)
         _attach_best_qd(records)   # deepest QD bracket for the card sticker
 
-        return {
+        _result = {
             "total": count,
             "limit": limit,
             "offset": offset,
             "items": records,
             "corrected_query": corrected_query,
         }
+        if _cacheable:
+            _cache.store("catalog_search", _ckey, _result)
+        return _result
 
 
 def _attach_best_qd(records):

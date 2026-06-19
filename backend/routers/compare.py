@@ -1058,7 +1058,7 @@ def compare_export(
     data = compare_products(
         wholesalers=wholesalers, q=q, product_type=product_type,
         only_differences=only_differences, min_spread=min_spread, cases=cases,
-        sort=sort, order=order, limit=50000, month_mode=month_mode,
+        sort=sort, order=order, limit=50000, months=1, month_mode=month_mode,
         confidence=confidence, user=user,
     )
     slugs = data["wholesalers"]

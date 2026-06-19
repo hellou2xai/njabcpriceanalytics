@@ -376,6 +376,41 @@ per-UPC credit row is missing — only when the key is unambiguous (one
 distinct credit). A per-UPC match always wins; the fallback never
 overrides it.
 
+### 3.4.2 RIP ↔ SKU association — reused barcodes (one key, all surfaces)
+
+The RIP sheet identifies a product by **UPC only** (it carries no
+`unit_qty` / `unit_volume` / `vintage` / `product_name`). A single barcode is
+routinely reused for genuinely different SKUs — different pack sizes
+(`CHIVAS REGAL 12YR` 12-pack vs `CHIVAS GOYA 3P` 3-pack on `080432400395`),
+different vintages, or a gift/VAP variant. So **matching a RIP to a SKU by UPC
+alone is ambiguous and MUST NOT be done.**
+
+The canonical rule — a RIP code applies to a specific SKU only when **EITHER**:
+  1. that UPC is **single-listing** in the (wholesaler, edition) — exactly one
+     SKU carries it (then any code the sheet pairs with the UPC applies; pack is
+     unambiguous), **OR**
+  2. the SKU's **own CPL row carries that `rip_code`** (the row-level pairing).
+
+A RIP is **never** attached to a SKU purely because it shares a barcode with a
+sibling that carries the code. This rule governs **every** surface and they must
+agree:
+- `nj_abc_parser/derive.py` (`cpl_codes` join: single-listing OR `single_code =
+  rip_code`) — the precomputed `effective_case_price`.
+- `backend/pricing.py::attach_tiers` — the tier ladder (`/search?include_tiers`,
+  product page, new-items).
+- `backend/routers/catalog.py` group-by-RIP clustering, `/rip-siblings`, and the
+  `/product` modal (including the `?rip_code=` cluster override — the override
+  pins which cluster to show, it does NOT relax the own-code requirement for a
+  multi-listing barcode).
+
+**Listing count is computed from `cpl_enriched` and FAILS CLOSED.** The
+single-vs-multi decision must read `cpl_enriched` (the primary store, present on
+prod's Postgres deployment), NOT the raw `cpl` table (which can be absent on
+prod). If the count cannot be determined, treat the barcode as **multi-listing**
+(strict own-code only). Reading raw `cpl` and defaulting to "single" on error was
+fail-OPEN and leaked RIP 112112 (Chivas Regal 12) onto `CHIVAS GOYA 3P` on prod
+— quoting `$33.27/case · $11.09/bottle` for a product with no rebate.
+
 ### 3.5 CPL + RIP tier stacking
 
 The truth lives in `backend/pricing.py::attach_tiers()` (extracted from

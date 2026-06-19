@@ -2259,20 +2259,41 @@ def get_product_detail(
             # Multi-listing barcodes keep the strict own-code lookup (a reused
             # barcode must not borrow another product's RIP). An explicit
             # rip_code override still pins the modal to that cluster alone.
-            single_listing = True
+            # Fail-CLOSED single-listing test. Source is cpl_enriched (the
+            # primary store, present on prod's Postgres deployment) — NOT raw
+            # `cpl`, which can be absent there and made this query silently fail.
+            # The old default (single_listing = True on error) was fail-OPEN: a
+            # failed lookup made every reused barcode "single", taking the broad
+            # path / skipping the own-code gate below and leaking a sibling SKU's
+            # RIP (RIP 112112 onto CHIVAS GOYA 3P). Default False => uncertain
+            # barcodes are treated as multi-listing => strict own-code only.
+            single_listing = False
             try:
-                craw_d = read_parquet(con, "cpl")
+                cenr_d = read_parquet(con, "cpl_enriched")
                 nrow = con.execute(f"""
                     SELECT COUNT(DISTINCT (product_name, COALESCE(unit_volume, ''),
                                            COALESCE(CAST(vintage AS VARCHAR), ''),
                                            COALESCE(regexp_replace(TRIM(CAST(unit_qty AS VARCHAR)), '\\.0+$', ''), ''))) AS n
-                    FROM {craw_d}
+                    FROM {cenr_d}
                     WHERE wholesaler = $w AND edition = $e
                       AND LTRIM(CAST(upc AS VARCHAR), '0') = $u
                 """, {"w": wholesaler, "e": ed, "u": un_detail}).fetchone()
                 single_listing = bool(nrow) and int(nrow[0]) <= 1
             except Exception:
-                single_listing = True
+                single_listing = False
+            # Multi-listing barcode guard (mirrors derive.py, pricing.attach_tiers
+            # and the grid's RIP clustering): a reused UPC must NOT borrow a
+            # sibling SKU's RIP. When >1 SKU shares this barcode, a code applies
+            # to THIS SKU only if its OWN CPL row carries it — EVEN when the
+            # caller pins a cluster via ?rip_code=. Without this, the override
+            # matched the RIP sheet by (code, UPC) alone and leaked e.g. RIP
+            # 112112 (Chivas Regal 12, 12-pack) onto CHIVAS GOYA 3P, which shares
+            # the barcode but carries no RIP — quoting $33.27/case ($11.09/btl).
+            # Single-listing UPCs are unaffected (they still surface every rebate
+            # on the barcode — the legitimate multi-rebate case).
+            if not single_listing:
+                own_codes = set(_pricing._split_rip_codes(item.get("rip_code")) or [])
+                rcodes = [c for c in rcodes if c in own_codes]
             broad = single_listing and not override_rc
             rc_ph = ", ".join(f"$rc{i}" for i in range(len(rcodes))) or "''"
             # DuckDB rejects bind params the SQL doesn't reference, so the

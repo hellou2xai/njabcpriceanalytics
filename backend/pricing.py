@@ -815,26 +815,36 @@ def attach_tiers(con, records, ref_date=None) -> None:
     # nj_abc_parser/derive.py so the live ladder agrees with the precomputed
     # effective price + semantic search. "Listing" = (product_name, unit_volume,
     # vintage), the same identity derive.py partitions on.
-    multi_listing: set = set()
+    # POSITIVE single-listing set (fail-CLOSED): the broad UPC-wide RIP pull
+    # below applies ONLY to UPCs we can POSITIVELY confirm carry exactly one SKU.
+    # Source is cpl_enriched (the primary store, always present incl. on prod's
+    # Postgres-backed deployment) — NOT the raw `cpl` table, which can be absent
+    # there, making the old `multi_listing` query silently fail (except: pass)
+    # and leave the set empty. With the OLD "not in multi_listing" test an empty
+    # set meant EVERY reused barcode took the broad path and inherited a sibling
+    # SKU's RIP (e.g. RIP 112112 leaking onto CHIVAS GOYA 3P, which shares a
+    # barcode with CHIVAS REGAL 12YR but carries no RIP). Keying on a positive
+    # single-listing set means an empty/failed lookup => no broad pull => no leak.
+    single_listing: set = set()
     if g_ws and g_ed and g_un:
         try:
-            craw_lc = read_parquet(con, "cpl")
+            cenr_lc = read_parquet(con, "cpl_enriched")
             lc = con.execute(f"""
                 SELECT wholesaler, edition, LTRIM(CAST(upc AS VARCHAR), '0') AS un,
                        COUNT(DISTINCT (product_name,
                                        COALESCE(unit_volume, ''),
                                        COALESCE(CAST(vintage AS VARCHAR), ''),
                                        COALESCE(regexp_replace(TRIM(CAST(unit_qty AS VARCHAR)), '\\.0+$', ''), ''))) AS n
-                FROM {craw_lc}
+                FROM {cenr_lc}
                 WHERE wholesaler IN ({gw}) AND edition IN ({ge})
                   AND LTRIM(CAST(upc AS VARCHAR), '0') IN ({gu})
                 GROUP BY wholesaler, edition, LTRIM(CAST(upc AS VARCHAR), '0')
             """, gp).fetchdf()
             for r in lc.to_dict("records"):
-                if int(r["n"]) > 1:
-                    multi_listing.add((r["wholesaler"], r["edition"], str(r["un"])))
+                if int(r["n"]) == 1:
+                    single_listing.add((r["wholesaler"], r["edition"], str(r["un"])))
         except Exception:
-            pass
+            pass  # fail-closed: unknown listing count => broad UPC pull skipped below
 
     def _lookup_rips(rec):
         # Prefer the CLUSTER's code (rip_group_code) when present, so a row
@@ -871,7 +881,7 @@ def attach_tiers(con, records, ref_date=None) -> None:
         # take the lenient UPC-broad path for them (matches derive.py).
         _u = str(upc)
         is_stub = (not _u) or (len(set(_u)) <= 1)
-        if not is_stub and (ws, ed, un) not in multi_listing:
+        if not is_stub and (ws, ed, un) in single_listing:
             out.extend(rip_by_upc.get((ws, ed, un), []))
         return out
 

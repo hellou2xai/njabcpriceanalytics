@@ -309,6 +309,15 @@ export default function BestRips() {
       options: DIST_OPTS.map(w => ({ label: distributorName(w), value: w })),
       values: dists,
       onChange: (vals) => setDists(vals.length ? DIST_OPTS.filter(d => vals.includes(d)) : dists) },
+    // Months sits directly under Distributors (the edition is the primary scope).
+    ...(data && data.available_months.length > 0
+      ? [{
+          type: 'multi-pills', key: 'months', title: 'Months',
+          options: data.available_months.map(m => ({ label: monthLabel(m), value: m })),
+          values: selMonths,
+          onChange: (vals: string[]) => setMonths(vals.length ? vals : selMonths),
+        } as FilterSection]
+      : []),
     { type: 'custom', key: 'cases', title: 'Best deal at (cases)',
       render: () => (
         <div className="filter-rail-cases">
@@ -331,14 +340,6 @@ export default function BestRips() {
           type: 'multi-pills', key: 'size', title: 'Size',
           options: sizeOpts.map(s => ({ label: s, value: s })),
           values: sizes, onChange: (vals: string[]) => setSizes(vals),
-        } as FilterSection]
-      : []),
-    ...(data && data.available_months.length > 0
-      ? [{
-          type: 'multi-pills', key: 'months', title: 'Months',
-          options: data.available_months.map(m => ({ label: monthLabel(m), value: m })),
-          values: selMonths,
-          onChange: (vals: string[]) => setMonths(vals.length ? vals : selMonths),
         } as FilterSection]
       : []),
     { type: 'pills', key: 'sort', title: 'Sort by',

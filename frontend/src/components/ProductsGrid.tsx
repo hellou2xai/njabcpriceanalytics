@@ -276,11 +276,13 @@ function BestQdSticker({ s }: { s?: Product | null }) {
 // per case, and the total RIP $ at that buy. Computed from the row's price_3mo
 // tiers (the same data the ladder uses), so it only renders where tiers are
 // loaded (e.g. New Items cards in price-details mode). Returns null otherwise.
-function BestRipSticker({ s, monthMode = 'current' }: { s?: Product | null; monthMode?: 'current' | 'next' }) {
-  if (!s) return null;
+// The deepest RIP for a size's chosen month block: case price AFTER the rebate
+// (and per bottle), the rebate alone per case, the qualifying cases, and the
+// total RIP $. Returns null when no real rebate exists. ONE place so the header
+// sticker AND the per-size "Best RIP" row can never disagree. Driven from the
+// SAME buildMonths() tiers the ladder + sparkline use.
+function pickBestRip(s: Product, monthMode: 'current' | 'next' = 'current') {
   const months = buildMonths(s);
-  // Block to read: 'next' = the early-loaded next edition when present; else the
-  // current-month block (newest non-future, mirroring currentMonth).
   const cur = months.length
     ? (monthMode === 'next'
         ? (months.find(m => m.future) ?? [...months].reverse().find(m => !m.future) ?? months[months.length - 1])
@@ -296,14 +298,22 @@ function BestRipSticker({ s, monthMode = 'current' }: { s?: Product | null; mont
   // Buy quantity in CASES (mirror DealLadder.buyLabel): a bottle tier converts
   // via pack; the half-case rule prefers the real qualifying cases.
   const isBtl = /^\s*b/i.test(best.unit);
-  const cases = (isBtl && pack && pack > 0)
+  const casesRaw = (isBtl && pack && pack > 0)
     ? best.qty / pack
     : (best.qualifiedCases != null && best.qualifiedCases !== best.qty)
       ? best.qualifiedCases : best.qty;
-  const csR = cases != null ? (Number.isInteger(cases) ? cases : Math.round(cases * 100) / 100) : null;
+  const cases = casesRaw != null ? (Number.isInteger(casesRaw) ? casesRaw : Math.round(casesRaw * 100) / 100) : null;
   const eff = best.eff;
   const btl = pack && pack > 0 ? eff / pack : null;
   const total = cases != null ? cases * reb : null;
+  return { eff, btl, cases, reb, total };
+}
+
+function BestRipSticker({ s, monthMode = 'current' }: { s?: Product | null; monthMode?: 'current' | 'next' }) {
+  if (!s) return null;
+  const picked = pickBestRip(s, monthMode);
+  if (!picked) return null;
+  const { eff, btl, cases: csR, reb, total } = picked;
   const money = (v: number | null | undefined) =>
     v == null ? '' : `$${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const moneyR = (v: number | null | undefined) =>
@@ -530,14 +540,42 @@ function SizeRow({ size, cart, updateQty, primaryName, showDeals = true, hideDis
               title="This product is part of a combo bundle — view the combo">🎁 Combo</Link>
           )}
         </span>
-        {/* Case price first (the buying unit), then per-unit. A keg has no
-            per-bottle price, so only the keg price is shown. */}
-        <div className="prod-size-amounts">
-          <span className="prod-size-case">${caseP.toFixed(2)}/{priceUnitWord(size.unit_volume, size.unit_type)}</span>
-          {!isKegUnit(size.unit_volume, size.unit_type) && (
-            <span className="prod-size-btl">${btlPrice.toFixed(2)}/{perUnitNoun(size.unit_volume, size.unit_type)}</span>
-          )}
-        </div>
+        {/* Three labelled price rows so the buyer reads the headline AND the two
+            best deals at a glance, all in the same case/bottle format:
+              Best 1 CS — the realistic single-case price (after the 1-case QD),
+              Best QD  — the deepest quantity-discount bracket (RIP excluded),
+              Best RIP — the deepest RIP rebate price.
+            QD/RIP rows render only when that deal beats the single-case price
+            (no row that just repeats Best 1 CS, no empty rows). All values come
+            from canonical sources (oneCaseQdCase, best_qd, pickBestRip). */}
+        {(() => {
+          const keg = isKegUnit(size.unit_volume, size.unit_type);
+          const csW = priceUnitWord(size.unit_volume, size.unit_type);
+          const btlW = perUnitNoun(size.unit_volume, size.unit_type);
+          const m = (v: number | null | undefined) => (v == null ? null : `$${v.toFixed(2)}`);
+          const qd = size.best_qd;
+          const rip = pickBestRip(size, dealMonth);
+          const Row = (label: string, cs: number, csCases: number | null | undefined,
+                       btl: number | null, cls?: string) => (
+            <div className={`prod-size-bestrow${cls ? ` ${cls}` : ''}`}>
+              <span className="prod-size-bestrow-k">{label}{csCases != null ? ` · ${csCases} cs` : ''}</span>
+              <span className="prod-size-bestrow-v">
+                <span className="prod-size-case">{m(cs)}/{csW}</span>
+                {!keg && btl != null && <span className="prod-size-btl">{m(btl)}/{btlW}</span>}
+              </span>
+            </div>
+          );
+          return (
+            <div className="prod-size-amounts">
+              {Row('Best 1 CS', caseP, null, keg ? null : btlPrice)}
+              {qd && qd.case_price != null
+                && ((qd.cases ?? 0) > 1 || qd.case_price < caseP - 0.005)
+                && Row('Best QD', qd.case_price, qd.cases, qd.bottle_price ?? null, 'is-qd')}
+              {rip && rip.eff < caseP - 0.005
+                && Row('Best RIP', rip.eff, rip.cases, rip.btl ?? null, 'is-rip')}
+            </div>
+          );
+        })()}
         <PriceSparklines wholesaler={size.wholesaler} productName={size.product_name}
           upc={size.upc} unitVolume={size.unit_volume} unitQty={size.unit_qty} vintage={size.vintage}
           months={months} />

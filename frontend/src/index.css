@@ -5863,7 +5863,15 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .prod-size-vintage { margin-top: 4px; display: inline-block; }
 .prod-size-price { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
 .prod-deal-badge { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); }
-.prod-size-amounts { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+/* Stacked labelled price rows: Best 1 CS (headline) + Best QD + Best RIP. */
+.prod-size-amounts { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+.prod-size-bestrow { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.prod-size-bestrow-k { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--text-muted); min-width: 64px; white-space: nowrap; }
+.prod-size-bestrow-v { display: inline-flex; align-items: baseline; gap: 8px; }
+/* The QD / RIP rows read a notch smaller than the Best 1 CS headline. */
+.prod-size-bestrow.is-qd .prod-size-case, .prod-size-bestrow.is-qd .prod-size-btl,
+.prod-size-bestrow.is-rip .prod-size-case, .prod-size-bestrow.is-rip .prod-size-btl { font-size: 13px; }
 /* Case + bottle price share the line and MUST read at the same size/weight. */
 .prod-size-case { font-size: 15px; font-weight: 700; color: var(--green); font-variant-numeric: tabular-nums; }
 .prod-size-btl { font-size: 15px; font-weight: 700; color: var(--text-muted); font-variant-numeric: tabular-nums; }

@@ -228,6 +228,15 @@ single-vs-multi-listing rule from `derive.py` / `attach_tiers` (FOUNDATION
 
 ## 4. `best_qd` deepest-QD bracket as columns
 
+**STATUS: deferred (deliberate).** `_attach_best_qd` is a ~40-line Python branch
+(regex qty parse, `ceil`, the skip-1-case rule, pack fallback, a nested output
+object). A faithful SQL mirror in derive.py carries real drift risk against
+FOUNDATION-adjacent sticker math, for a loop that is already cheap pure
+arithmetic (no SQL). Low value-for-risk; do only with a strict both-ways parity
+harness if the card path ever shows up in profiling.
+
+### Original analysis
+
 **What.** The Products card sticker shows the deepest quantity-discount bracket
 (cases to unlock, case price, bottle price, save/case, total cost, total save).
 
@@ -424,6 +433,23 @@ would be wrong the moment it is read in a different month).
 ---
 
 ## 9. Stop re-CASTing `rip_code` / `upc` to VARCHAR at query time
+
+**STATUS: columns emitted in derive.py (foundation); consumer repoint
+deferred.** `build_cpl_enriched` now emits `vintage_norm`, `unit_qty_key`,
+`rip_code_str` (byte-identical to the existing `vnorm`/`uqnorm`/CAST; 0
+mismatches on the 176k rebuild, purely additive — verified the rebuild changes
+no existing column beyond the build's own ~700-row multi-threaded
+non-determinism, which is pre-existing). Activates at the next data load (the
+monthly parquet rebuild + ingest); no special re-ingest needed. NOT repointed
+yet: each consumer uses a SITE-SPECIFIC normalisation (the dedup QUALIFY
+partitions on RAW `CAST(vintage AS VARCHAR)`, not the normalised `vintage_norm`;
+`unit_qty_key` == the dedup's `uq_key` and IS a safe swap), and the win is
+marginal (these are window/partition expressions, not index-defeating filters
+like upc_norm). Repoint per-site after the column lands in prod (no fallback
+branching needed then). Net value is the removed SQL/Python drift surface, not
+speed.
+
+### Original analysis
 
 **What.** The catalog and compare queries are saturated with `CAST(rip_code AS
 VARCHAR)`, `CAST(upc AS VARCHAR)`, `LTRIM(CAST(upc AS VARCHAR),'0')`,

@@ -814,6 +814,15 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
         -- uses post-pagination so the filter and the per-row "Better price"
         -- sticker agree. NULL trend = no next-edition match for this row.
         SELECT *,
+            -- Canonical identity normalisations materialised ONCE (PERF_TODO
+            -- precompute #9) so the grid/dedup/identity joins read plain columns
+            -- instead of recomputing the same regexp/CAST per row AND mirroring
+            -- it in Python. Byte-identical to the vnorm/uqnorm used above (and to
+            -- pricing.norm_vintage / pricing.uq_key), so consumers can swap to
+            -- the column with no behaviour change.
+            {vnorm} AS vintage_norm,
+            {uqnorm} AS unit_qty_key,
+            CAST(rip_code AS VARCHAR) AS rip_code_str,
             LEAD(effective_case_price) OVER w AS next_effective_case_price,
             LAG(effective_case_price) OVER w AS prev_effective_case_price,
             -- Both-directional trend so the LATEST loaded edition is never null.

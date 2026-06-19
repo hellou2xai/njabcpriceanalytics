@@ -34,74 +34,92 @@ def get_parquet_dir() -> Path:
 
 
 import threading
+import queue
 
-# ONE long-lived read-only connection to the pricing cache PER WORKER, keyed by
-# the cache file path. Opening the 56MB DuckDB file (and cold-reading its pages)
-# on every request was the dominant per-request cost on Render — local opens are
-# warm and fast, prod opens were not. We open once and hand each request a cheap
-# `.cursor()` (a new connection sharing the already-open database — DuckDB's
-# read-concurrency pattern). The base is reopened only when the pricing file is
-# swapped (a data reload changes get_pricing_path()).
-_DUCK_LOCK = threading.Lock()
-_DUCK_CON = None        # the shared base connection
-_DUCK_PATH: str | None = None
+# A small POOL of independent read-only connections to the pricing cache per
+# worker, keyed by the cache file path. Reusing connections avoids re-opening the
+# 56MB DuckDB file (+ cold page reads) on every request. We use a POOL — not one
+# shared connection — because every connection runs `SET threads TO 1` (needed for
+# deterministic row order), and a SINGLE DuckDB database with threads=1 serializes
+# ALL queries across its cursors: under concurrency (multiple users + the startup
+# warm threads) every request queued behind the others, making pages "ultra slow".
+# Independent connections each have their own execution context, so up to
+# POOL_SIZE queries run truly in parallel. The pool is rebuilt when a reload swaps
+# the pricing file (get_pricing_path() changes).
+_POOL_LOCK = threading.Lock()
+_POOL: "queue.Queue | None" = None
+_POOL_PATH: str | None = None
+POOL_SIZE = 8
 
 
-def _open_pricing_con():
-    """Open (or reopen) the shared read-only base connection at the current
-    pricing path. Caller holds _DUCK_LOCK. Mirrors the old swept-file retry."""
-    global _DUCK_CON, _DUCK_PATH
-    from backend.pricing_cache import get_pricing_path
-    # Do NOT close the old base here: a concurrent request may still be running a
-    # cursor derived from it (e.g. during a reload that swaps the file). Just drop
-    # our reference — the old connection + its in-flight cursors finish naturally
-    # and are closed on GC. Reloads are infrequent, so the brief handle retention
-    # is harmless and avoids closing a base out from under an active query.
-    _DUCK_CON = None
-    path = str(get_pricing_path())
+def _new_pricing_con(path: str):
+    """Open one read-only connection at `path`, retrying once if a reload swept
+    the file between path resolution and open. threads=1 for deterministic order."""
     try:
         con = duckdb.connect(path, read_only=True)
     except (duckdb.IOException, OSError):
-        # A reload swept the file between path resolution and open: re-resolve
-        # (adopts the newest pricing_*.duckdb, or rebuilds if none remain).
         import backend.pricing_cache as _pc
         _pc._current_path = None
-        path = str(get_pricing_path())
+        path = str(_pc.get_pricing_path())
         con = duckdb.connect(path, read_only=True)
-    # Single-threaded so row order is deterministic for queries that tie without
-    # a total ORDER BY (parallel native scans would otherwise vary run-to-run).
     con.execute("SET threads TO 1")
-    _DUCK_CON, _DUCK_PATH = con, path
     return con
+
+
+def _get_pool():
+    """Return (pool, path) for the current pricing file, (re)building the pool on
+    first use or after a reload. Caller does NOT hold the lock."""
+    from backend.pricing_cache import get_pricing_path
+    path = str(get_pricing_path())
+    with _POOL_LOCK:
+        global _POOL, _POOL_PATH
+        if _POOL is None or _POOL_PATH != path:
+            _POOL = queue.Queue()
+            _POOL_PATH = path
+            for _ in range(POOL_SIZE):
+                try:
+                    _POOL.put_nowait(_new_pricing_con(path))
+                except Exception:
+                    break
+        return _POOL, path
 
 
 @contextmanager
 def get_duckdb():
-    """Yield a read-only DuckDB cursor over the pricing cache (materialised from
-    Postgres, or Parquet in dev, by backend.pricing_cache).
+    """Yield a read-only DuckDB connection from the per-worker pool (the pricing
+    cache, materialised from Postgres or Parquet in dev by backend.pricing_cache).
 
-    The underlying file is opened ONCE per worker and kept open; each call gets a
-    fresh cursor (cheap, sharing the open database) so we don't pay the file-open
-    + cold-page-read cost on every request. The base connection is transparently
-    reopened when the pricing file is swapped by a reload."""
-    from backend.pricing_cache import get_pricing_path
-    path = str(get_pricing_path())
-    with _DUCK_LOCK:
-        if _DUCK_CON is None or _DUCK_PATH != path:
-            _open_pricing_con()
-        try:
-            cur = _DUCK_CON.cursor()
-        except Exception:
-            # Base connection went bad (rare); rebuild it and retry once.
-            _open_pricing_con()
-            cur = _DUCK_CON.cursor()
+    Pooled so we don't re-open the cache file every request, and sized so several
+    requests run concurrently (a single shared connection serialized them)."""
+    pool, path = _get_pool()
+    overflow = False
     try:
-        yield cur
+        con = pool.get(timeout=15)
+    except queue.Empty:
+        # Pool exhausted under a burst — a temporary connection (closed after)
+        # keeps the request from stalling rather than blocking indefinitely.
+        con = _new_pricing_con(path)
+        overflow = True
+    try:
+        yield con
     finally:
-        try:
-            cur.close()
-        except Exception:
-            pass
+        if overflow:
+            try:
+                con.close()
+            except Exception:
+                pass
+        else:
+            with _POOL_LOCK:
+                # Return to the pool only if it's still the SAME generation; a
+                # reload may have swapped in a new pool, in which case this
+                # connection points at the old (possibly deleted) file — close it.
+                if _POOL is pool:
+                    pool.put_nowait(con)
+                else:
+                    try:
+                        con.close()
+                    except Exception:
+                        pass
 
 
 def read_parquet(con: duckdb.DuckDBPyConnection, table: str, **kwargs):

@@ -1280,6 +1280,17 @@ def search_products(
                            UNNEST(rg.rip_group_codes) AS membership_code,
                            rg.rip_group_min, rg.rip_group_count, rg.rip_group_codes
                     FROM rip_groups rg
+                ),
+                -- Pre-split each DISTINCT rip_code string into its list of codes
+                -- ONCE (there are only a few hundred distinct values), so the
+                -- membership join below does a cheap list_contains on a ready
+                -- list instead of running regexp_replace + string_split per
+                -- matched (row x candidate-code) PAIR — that residual was the
+                -- single 7s hash-join in EXPLAIN ANALYZE for the grouped grid.
+                code_split AS (
+                    SELECT DISTINCT CAST(rip_code AS VARCHAR) AS rc_raw,
+                           string_split(REGEXP_REPLACE(COALESCE(CAST(rip_code AS VARCHAR), ''), '\\s+', ' '), ' ') AS own_codes
+                    FROM cpl_enriched
                 )
             """
             rip_join_sql = r"""
@@ -1287,6 +1298,8 @@ def search_products(
                   ON mlc.lc_ws  = wholesaler
                  AND mlc.lc_ed  = edition
                  AND mlc.lc_upc = CAST(upc AS VARCHAR)
+                LEFT JOIN code_split cspl
+                  ON cspl.rc_raw = CAST(rip_code AS VARCHAR)
                 LEFT JOIN rip_memberships rm
                   ON rm.rg_wholesaler = wholesaler
                  AND rm.rg_edition    = edition
@@ -1294,13 +1307,13 @@ def search_products(
                  -- Single listing (real UPC, not an all-same-digit stub): member
                  -- by UPC. Many listings: member only of the code(s) THIS row
                  -- actually carries, so a wrong-vintage row (code 0 / blank /
-                 -- different code) drops out of the cluster.
+                 -- different code) drops out of the cluster. own_codes is the
+                 -- row's rip_code pre-split ONCE (code_split CTE) so this residual
+                 -- is a cheap list_contains, not a per-pair regexp+split.
                  AND (
                      (COALESCE(mlc.n_listings, 1) <= 1
                       AND LENGTH(REPLACE(CAST(upc AS VARCHAR), LEFT(CAST(upc AS VARCHAR), 1), '')) > 0)
-                     OR list_contains(
-                          string_split(REGEXP_REPLACE(COALESCE(CAST(rip_code AS VARCHAR), ''), '\s+', ' '), ' '),
-                          rm.membership_code)
+                     OR list_contains(cspl.own_codes, rm.membership_code)
                  )
                 LEFT JOIN rip_cluster_sizes rcs
                   ON rcs.rcs_wholesaler = wholesaler
@@ -1531,6 +1544,18 @@ def search_products(
                       AND rip_code IS NOT NULL
                       AND CAST(rip_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan')
                     GROUP BY wholesaler, edition, CAST(upc AS VARCHAR)
+                ),
+                -- Listings per (ws, ed, upc) so a reused barcode doesn't borrow a
+                -- sibling SKU's RIP family below (same rule as the group_by_rip
+                -- path + derive.py): mirrors FOUNDATION 3.4.2.
+                mix_listing_counts AS (
+                    SELECT wholesaler AS lc_ws, edition AS lc_ed,
+                           CAST(upc AS VARCHAR) AS lc_upc,
+                           COUNT(DISTINCT (product_name, COALESCE(unit_volume, ''),
+                               COALESCE(CAST(vintage AS VARCHAR), ''),
+                               COALESCE(regexp_replace(TRIM(CAST(unit_qty AS VARCHAR)), '\\.0+$', ''), ''))) AS n_listings
+                    FROM {src}
+                    GROUP BY wholesaler, edition, CAST(upc AS VARCHAR)
                 )
             """
             data_join_sql = """
@@ -1538,9 +1563,17 @@ def search_products(
                   ON rg.rg_wholesaler = wholesaler
                  AND rg.rg_edition    = edition
                  AND rg.rg_upc        = CAST(upc AS VARCHAR)
+                LEFT JOIN mix_listing_counts mlc
+                  ON mlc.lc_ws  = wholesaler
+                 AND mlc.lc_ed  = edition
+                 AND mlc.lc_upc = CAST(upc AS VARCHAR)
             """
-            # Off path: keep the canonical-group select so the "RIP family"
-            # tag still rides along on rows even when clustering is off.
+            # Off path: tag a row with its RIP family ONLY when it legitimately
+            # belongs — its own code is in the group, OR the barcode is
+            # single-listing (one SKU, so the sheet's UPC pairing is safe). A
+            # reused barcode whose own code is blank/different (e.g. CHIVAS GOYA
+            # 3P sharing 080432400395 with CHIVAS REGAL 12YR) gets NULL, so
+            # attach_tiers can't borrow the sibling's RIP via rip_group_code.
             rip_select_sql = """
                    CASE
                        WHEN rg.rip_group_min IS NULL THEN NULL
@@ -1548,7 +1581,10 @@ def search_products(
                             AND CAST(rip_code AS VARCHAR) <> '0'
                             AND list_contains(rg.rip_group_codes, CAST(rip_code AS VARCHAR))
                        THEN CAST(rip_code AS VARCHAR)
-                       ELSE rg.rip_group_min
+                       WHEN COALESCE(mlc.n_listings, 1) <= 1
+                            AND LENGTH(REPLACE(CAST(upc AS VARCHAR), LEFT(CAST(upc AS VARCHAR), 1), '')) > 0
+                       THEN rg.rip_group_min
+                       ELSE NULL
                    END AS rip_group_code,
                    rg.rip_group_count,
                    CASE

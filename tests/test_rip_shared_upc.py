@@ -112,6 +112,30 @@ def main() -> int:
         else:
             print("[3] SKIP — no single-listing RIP product in this edition")
 
+    # ---- 4. The /search tier path (the product-page "green box"). The OFF
+    # (no group_by_rip) path tagged a row's rip_group_code by UPC alone, and
+    # attach_tiers then borrowed the sibling's RIP via that group code — a leak
+    # the direct attach_tiers test above does NOT see (it passes records with no
+    # rip_group_code). Exercise the real endpoint when it's reachable.
+    try:
+        import requests
+        base = "http://127.0.0.1:8000"
+        tok = requests.post(f"{base}/api/auth/login",
+                            json={"email": "sambit.tripathy@gmail.com", "password": "Cuttack10!"},
+                            timeout=10).json()["token"]
+        H = {"Authorization": f"Bearer {tok}"}
+        r = requests.get(f"{base}/api/catalog/search",
+                         params={"wholesaler": WS, "upcs": GOYA_UPC, "include_tiers": "true", "limit": 10},
+                         headers=H, timeout=30)
+        for it in r.json().get("items", []):
+            rip = [t for t in (it.get("tiers") or []) if t.get("source") == "rip"]
+            nm = str(it.get("product_name"))
+            if "GOYA" in nm and (len(rip) > 0 or it.get("rip_group_code")):
+                failures.append(f"/search leaked RIP onto GOYA 3P: grp={it.get('rip_group_code')} tiers={len(rip)}")
+            print(f"[4] /search {nm:16} grp={it.get('rip_group_code')} rip_tiers={len(rip)}")
+    except Exception as e:
+        print(f"[4] SKIP /search check (backend not reachable: {type(e).__name__})")
+
     print("\n========== RESULT ==========")
     if failures:
         print(f"FAIL — {len(failures)} issue(s):")

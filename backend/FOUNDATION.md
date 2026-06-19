@@ -402,6 +402,12 @@ agree:
   `/product` modal (including the `?rip_code=` cluster override — the override
   pins which cluster to show, it does NOT relax the own-code requirement for a
   multi-listing barcode).
+- `/search` `rip_group_code` tagging on BOTH paths: group-by-RIP (via the gated
+  membership join) AND the default OFF path (the "RIP family" tag). The OFF path
+  must tag a reused barcode's row only when its own code is in the group OR the
+  barcode is single-listing — never `rg.rip_group_min` by UPC alone — because
+  `attach_tiers` consumes `rip_group_code` as a strict tier-lookup key, so a
+  wrong tag silently re-introduces the leak on the product-page tier ladder.
 
 **Listing count is computed from `cpl_enriched` and FAILS CLOSED.** The
 single-vs-multi decision must read `cpl_enriched` (the primary store, present on

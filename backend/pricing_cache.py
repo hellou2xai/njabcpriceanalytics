@@ -364,6 +364,32 @@ def build_pricing_cache() -> Path:
                 _try(f"ALTER TABLE {_t} ADD COLUMN upc_norm VARCHAR")
                 _try(f"UPDATE {_t} SET upc_norm = LTRIM(CAST(upc AS VARCHAR), '0')")
 
+            # has_image: precompute the default-grid "images first" sort key
+            # (PERF_TODO #4 / the ~9s sort). The storefront grid floats products
+            # with a Go-UPC image to the top; doing that live ran a correlated
+            # EXISTS against product_enrichment for every one of ~176k rows on
+            # every grid load. Materialise it once: a row is "image first" iff it
+            # carries a REAL barcode AND that barcode has a non-empty image. The
+            # valid-barcode test mirrors routers/catalog._VALID_UPC_SQL /
+            # pricing._clean_upc (keep in sync) so a placeholder barcode that
+            # shares an enrichment row never sorts up. Built here because
+            # product_enrichment lives only in the cache; needs upc_norm (above).
+            # ORDER BY has_image DESC is then a plain low-cardinality column the
+            # zonemap drives, no subquery.
+            _valid_upc = (
+                "upc IS NOT NULL AND upc <> '' AND upc <> '0'"
+                " AND NOT regexp_matches(upc, '^(0+|9+|1+)$')"
+                " AND NOT regexp_matches(upc,"
+                " '^(0{9}|1{9}|2{9}|3{9}|4{9}|5{9}|6{9}|7{9}|8{9}|9{9})')"
+                " AND NOT upc LIKE '999999%'"
+                " AND LENGTH(LTRIM(upc, '0')) >= 8"
+            )
+            _try("ALTER TABLE cpl_enriched ADD COLUMN has_image BOOLEAN DEFAULT false")
+            _try(f"""UPDATE cpl_enriched SET has_image = true
+                     WHERE ({_valid_upc})
+                       AND upc_norm IN (SELECT upc FROM product_enrichment
+                                        WHERE image_url IS NOT NULL AND image_url <> '')""")
+
             # (index name, table, columns) — see PRICING_INDEX_INVENTORY.md
             _INDEXES = [
                 # cpl_enriched: the main catalogue, hottest table

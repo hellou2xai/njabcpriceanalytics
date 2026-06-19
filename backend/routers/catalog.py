@@ -1493,23 +1493,18 @@ def search_products(
         # brand-only match (e.g. the Moet Hennessy portfolio) never outranks the
         # real product. Only when the user hasn't picked an explicit sort.
         order_by = f"{sort_col} {sort_dir}"
-        if images_first:
-            # Sort key only: the actual image URL is attached per page later
-            # (attach_enrichment_image), so image presence must be tested in
-            # SQL via the normalised-UPC enrichment table. Skipped quietly
-            # when the table is absent (parquet dev mode before a load).
-            has_enrich_table = bool(con.execute(
-                "SELECT 1 FROM information_schema.tables "
-                "WHERE table_name = 'product_enrichment'"
-            ).fetchone())
-            if has_enrich_table:
-                _img_valid = _VALID_UPC_SQL.format(col="CAST(upc AS VARCHAR)")
-                order_by = (
-                    f"(({_img_valid}) AND EXISTS (SELECT 1 FROM product_enrichment _img "
-                    "WHERE _img.upc = LTRIM(CAST(upc AS VARCHAR), '0') "
-                    "AND _img.image_url IS NOT NULL AND _img.image_url <> '')) DESC, "
-                    + order_by
-                )
+        if images_first and _has_image_column(con):
+            # Image presence is a precomputed boolean `has_image` on cpl_enriched
+            # (built in pricing_cache.py: real-barcode AND a non-empty Go-UPC
+            # image). It replaces an old per-row correlated EXISTS against
+            # product_enrichment (the ~9s sort) that was ALSO buggy: its
+            # unqualified `upc` bound to the inner product_enrichment.upc, so it
+            # floated EVERY real-barcode row up, not the image-having ones.
+            # has_image does the correct per-row match. On a cache too old to
+            # carry the column (never on a real deploy — the boot rebuild adds
+            # it) we simply skip the images-first prefix rather than re-run the
+            # buggy subquery.
+            order_by = "has_image DESC, " + order_by
         if q and sort == "product_name":
             order_by = f"{rel_expr} DESC, {order_by}"
 
@@ -1968,6 +1963,25 @@ _VALID_UPC_SQL = (
     " AND NOT {col} LIKE '999999%'"
     " AND LENGTH(LTRIM({col}, '0')) >= 8"
 )
+
+# Whether the current pricing cache carries the precomputed `has_image` sort
+# column (built in pricing_cache.py). Cached per cache-file path so a reload
+# re-checks. Lets the default storefront grid sort by a plain boolean instead of
+# a per-row correlated EXISTS against product_enrichment.
+_HAS_IMAGE_COL: dict[str, bool] = {}
+
+
+def _has_image_column(con) -> bool:
+    from backend.cache_util import pricing_tag
+    tag = pricing_tag()
+    if tag not in _HAS_IMAGE_COL:
+        try:
+            _HAS_IMAGE_COL[tag] = any(
+                r[0] == "has_image"
+                for r in con.execute("DESCRIBE cpl_enriched").fetchall())
+        except Exception:
+            _HAS_IMAGE_COL[tag] = False
+    return _HAS_IMAGE_COL[tag]
 
 # Canonical container-type bucket from the messy DB unit_type (keg/KEG/Keg,
 # BOTTLE/Bottle/Glass/PET, CAN/Can/can, '5.17 1/6 BBL', ...). A keg is anything

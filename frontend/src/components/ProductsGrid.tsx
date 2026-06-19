@@ -654,9 +654,10 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
     io.observe(cardRef.current);
     return () => io.disconnect();
   }, [inView]);
-  const { data: repTierData } = useQuery({
+  const { data: repTierData, isLoading: repTierLoading } = useQuery({
     enabled: inView && !!rep?.wholesaler && isRealUpc(rep?.upc),
     staleTime: 5 * 60_000,
+    meta: { background: true },   // per-card enrichment — don't drive the global refresh bar
     queryKey: ['rep-tiers', rep?.wholesaler, rep?.upc],
     queryFn: () => catalog.search({ wholesaler: rep!.wholesaler, upcs: String(rep!.upc), include_tiers: true, limit: 1 }),
   });
@@ -667,9 +668,10 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
   // them into the placeholder sizes by (size, pack, vintage). One request/card.
   const hasPlaceholderSize = useMemo(
     () => group.sizes.some(s => !isRealUpc(s.upc)), [group.sizes]);
-  const { data: nameTierData } = useQuery({
+  const { data: nameTierData, isLoading: nameTierLoading } = useQuery({
     enabled: (inView || expanded || warm) && hasPlaceholderSize && !!group.wholesaler && !!group.productName,
     staleTime: 5 * 60_000,
+    meta: { background: true },
     queryKey: ['card-name-tiers', group.wholesaler, group.productName],
     queryFn: () => catalog.search({ wholesaler: group.wholesaler, q: group.productName, include_tiers: true, limit: 50 }),
   });
@@ -696,6 +698,12 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
     ? ((repTierData?.items?.[0] as Product | undefined) ?? rep)
     : (rep ? enrichPlaceholder(rep) : rep);
   const repMonths = repRow ? buildMonths(repRow) : [];
+  // This card's deal detail (sparkline + QD/RIP stickers) streams in AFTER the
+  // page is usable, from the per-card enrichment fetch. While that's in flight
+  // and we have nothing to show yet, render a per-card skeleton so the buyer
+  // KNOWS this card's pricing isn't final — instead of an empty gap (or relying
+  // on the global bar, which we deliberately don't light for background fetches).
+  const dealsLoading = repMonths.length === 0 && (repTierLoading || nameTierLoading);
 
   // Cross-distributor best-price nudge: the SAME UPC at OTHER distributors. One
   // lazy search (when the card scrolls into view) by the rep's barcode across
@@ -705,6 +713,7 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
   const { data: crossDistData } = useQuery({
     enabled: inView && isRealUpc(rep?.upc),
     staleTime: 5 * 60_000,
+    meta: { background: true },
     queryKey: ['card-cross-dist', String(rep?.upc)],
     queryFn: () => catalog.search({ upcs: String(rep!.upc), include_tiers: true, limit: 50 }),
   });
@@ -820,9 +829,11 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
               left/content area, not off the right edge. */}
           {rep && (
             <span className="prod-card-spark" onClick={e => e.stopPropagation()}>
-              <PriceSparklines wholesaler={rep.wholesaler} productName={rep.product_name}
-                upc={rep.upc} unitVolume={rep.unit_volume} unitQty={rep.unit_qty} vintage={rep.vintage}
-                months={repMonths.length ? repMonths : undefined} noSelfFetch={!!rep.upc} />
+              {dealsLoading
+                ? <span className="pg-skel pg-skel-spark" title="Loading price history…" aria-label="Loading price history" />
+                : <PriceSparklines wholesaler={rep.wholesaler} productName={rep.product_name}
+                    upc={rep.upc} unitVolume={rep.unit_volume} unitQty={rep.unit_qty} vintage={rep.vintage}
+                    months={repMonths.length ? repMonths : undefined} noSelfFetch={!!rep.upc} />}
             </span>
           )}
         </div>
@@ -835,6 +846,12 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
           </div>
         )}
         <div className="prod-card-right">
+          {dealsLoading && (
+            <span className="pg-skel-deals" title="Loading deals…" aria-label="Loading deals">
+              <span className="pg-skel pg-skel-line" />
+              <span className="pg-skel pg-skel-line pg-skel-line--sm" />
+            </span>
+          )}
           <BestQdSticker s={repRow ?? range?.lo ?? first} />
           <BestRipSticker s={repRow ?? range?.lo ?? first} monthMode={dealMonth} />
           {range && (

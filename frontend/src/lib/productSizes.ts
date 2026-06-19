@@ -112,6 +112,7 @@ export function useProductSizes(
     enabled: on,
     staleTime: 60_000,
     retry: 1,
+    meta: { background: true },
     queryKey: ['product-variant', wholesaler, productName, upc],
     queryFn: () => catalog.productVariantUpcs(wholesaler, productName, { upc }),
   });
@@ -128,6 +129,7 @@ export function useProductSizes(
     enabled: on && variantSettled,
     staleTime: 60_000,
     retry: 1,
+    meta: { background: true },
     queryKey: ['product-sizes', wholesaler, productName, variantUpcs.join(',')],
     queryFn: () => variantUpcs.length
       ? catalog.search({ wholesaler, upcs: variantUpcs.join(','), include_tiers: true, limit: 200, sort: 'product_name', order: 'asc' })
@@ -157,6 +159,7 @@ export function useProductSizes(
     enabled: on && allDistributors && crossUpcs.length > 0,
     staleTime: 60_000,
     retry: 1,
+    meta: { background: true },
     queryKey: ['product-sizes-cross', crossUpcs.join(',')],
     queryFn: () => catalog.search({ upcs: crossUpcs.join(','), include_tiers: true, limit: 200, sort: 'product_name', order: 'asc' }),
   });

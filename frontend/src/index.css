@@ -5722,6 +5722,17 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .prod-card-name--plain:hover { color: var(--text); text-decoration: none; }
 .prod-card-type { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
 .prod-card-spark { display: inline-block; margin-top: 6px; }
+/* Per-card loading skeletons: the sparkline + deal stickers stream in after the
+   page is usable, so a shimmer marks THIS card's pricing as not-yet-final. */
+@keyframes pgSkelShimmer { 0% { background-position: -200px 0; } 100% { background-position: calc(200px + 100%) 0; } }
+.pg-skel { display: inline-block; border-radius: 6px;
+  background: linear-gradient(90deg, var(--surface-2, #eef1f6) 25%, var(--border, #e2e8f0) 37%, var(--surface-2, #eef1f6) 63%);
+  background-size: 400px 100%; animation: pgSkelShimmer 1.2s ease-in-out infinite; }
+.pg-skel-spark { width: 120px; height: 28px; }
+.pg-skel-deals { display: inline-flex; flex-direction: column; gap: 5px; align-items: flex-end; }
+.pg-skel-line { width: 110px; height: 13px; }
+.pg-skel-line--sm { width: 72px; }
+@media (prefers-reduced-motion: reduce) { .pg-skel { animation: none; } }
 /* QD/RIP price summary on the collapsed card (rep size). */
 /* Fixed-basis column so EVERY card's deal ladder shares the same left edge
    (shrink-wrapped blocks floated at a different x per row read as ragged). */

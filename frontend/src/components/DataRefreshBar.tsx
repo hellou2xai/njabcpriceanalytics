@@ -34,6 +34,11 @@ export default function DataRefreshBar() {
     },
     () => qc.getQueryCache().getAll().filter(q =>
       q.state.fetchStatus === 'fetching' && q.state.status === 'pending'
+      // Background/lazy enrichment (per-card sparkline + best-price fetches,
+      // product-size lookups) populates progressively AFTER the page is usable,
+      // so it must NOT keep the global "Fetching data…" bar lit. Such queries
+      // opt out via meta:{background:true}; only foreground page loads count.
+      && (q.meta as { background?: boolean } | undefined)?.background !== true
     ).length,
     // Server snapshot (SSR / first render before subscribe): nothing fetching.
     () => 0,

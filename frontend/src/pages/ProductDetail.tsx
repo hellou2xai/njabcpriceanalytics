@@ -636,23 +636,41 @@ export default function ProductDetail() {
             </div>
           </div>
 
-          {/* Next Month Price — the SAME QD/RIP tier table the Products page
-              uses (DealLadder, monthMode='next'), shown only when next month's
-              edition is loaded. List + full deal detail for next month. */}
-          {nextBlock && (
+          {/* This Month vs Next Month — the SAME QD/RIP tier table (DealLadder)
+              rendered twice from one buildMonths() series: current month on the
+              left, next month on the right, in an identical tabular format so the
+              buyer can read the change at a glance. The next-month column shows
+              only when next month's edition is loaded. */}
+          {curBlock && (
             <section className="pd-section pd-nextmonth">
-              <h2>Next Month Price{primarySize?.unit_volume ? ` · ${primarySize.unit_volume}` : ''}</h2>
-              <div className="pd-nextmonth-list">
-                List <strong>{nextBlock.frontline != null ? `$${nextBlock.frontline.toFixed(2)}` : '—'}</strong>/{priceUnit(primarySize?.unit_volume, primarySize?.unit_type)}
-                {curBlock?.frontline != null && nextBlock.frontline != null && Math.abs(curBlock.frontline - nextBlock.frontline) > 0.005 && (
-                  <span className="pd-nextmonth-delta">
-                    {' '}({nextBlock.frontline > curBlock.frontline ? '+' : ''}${(nextBlock.frontline - curBlock.frontline).toFixed(2)} vs this month)
-                  </span>
+              <h2>This Month vs Next Month{primarySize?.unit_volume ? ` · ${primarySize.unit_volume}` : ''}</h2>
+              <div className={`pd-month-compare${nextBlock ? '' : ' is-single'}`}>
+                <div className="pd-month-col">
+                  <div className="pd-month-col-head">This month</div>
+                  <div className="pd-nextmonth-list">
+                    List <strong>{curBlock.frontline != null ? `$${curBlock.frontline.toFixed(2)}` : '—'}</strong>/{priceUnit(primarySize?.unit_volume, primarySize?.unit_type)}
+                  </div>
+                  <DealLadder months={nextMonths} pack={nextPack} monthMode="current"
+                    unitVolume={primarySize?.unit_volume} unitType={primarySize?.unit_type}
+                    emptyText="No quantity or RIP deals this month" />
+                </div>
+                {nextBlock && (
+                  <div className="pd-month-col">
+                    <div className="pd-month-col-head">Next month</div>
+                    <div className="pd-nextmonth-list">
+                      List <strong>{nextBlock.frontline != null ? `$${nextBlock.frontline.toFixed(2)}` : '—'}</strong>/{priceUnit(primarySize?.unit_volume, primarySize?.unit_type)}
+                      {curBlock?.frontline != null && nextBlock.frontline != null && Math.abs(curBlock.frontline - nextBlock.frontline) > 0.005 && (
+                        <span className="pd-nextmonth-delta">
+                          {' '}({nextBlock.frontline > curBlock.frontline ? '+' : ''}${(nextBlock.frontline - curBlock.frontline).toFixed(2)} vs this month)
+                        </span>
+                      )}
+                    </div>
+                    <DealLadder months={nextMonths} pack={nextPack} monthMode="next"
+                      unitVolume={primarySize?.unit_volume} unitType={primarySize?.unit_type}
+                      emptyText="No quantity or RIP deals next month" />
+                  </div>
                 )}
               </div>
-              <DealLadder months={nextMonths} pack={nextPack} monthMode="next"
-                unitVolume={primarySize?.unit_volume} unitType={primarySize?.unit_type}
-                emptyText="No quantity or RIP deals next month" />
             </section>
           )}
 

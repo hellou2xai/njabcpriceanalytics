@@ -609,9 +609,15 @@ export default function ProductDetail() {
                 <FavoriteButton productName={name} wholesaler={wholesaler} upc={sizes[0]?.upc} unitVolume={sizes[0]?.unit_volume} />
                 <h1 className="pd-title">
                   {stripHeaderVintage(name, product?.product_type)}
-                  {(primarySize?.unit_volume ?? headSku?.unit_volume) && (
-                    <span className="pd-title-size"> ({primarySize?.unit_volume ?? headSku?.unit_volume})</span>
-                  )}
+                  {(() => {
+                    // Title parenthetical = the exact item's size AND pack
+                    // (e.g. "(1.75L · 6 btl/cs)"), so the headline identifies the
+                    // specific SKU, not just its volume.
+                    const ts = primarySize ?? headSku;
+                    if (!ts?.unit_volume) return null;
+                    const pl = packLabel(ts.unit_volume, bottlesPerCase(name, ts.unit_qty), ts.unit_type);
+                    return <span className="pd-title-size"> ({ts.unit_volume}{pl ? ` · ${pl}` : ''})</span>;
+                  })()}
                 </h1>
                 {product?.celr_product_number && (
                   <span className="prod-card-cpn"

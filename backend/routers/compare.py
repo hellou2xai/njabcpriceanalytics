@@ -225,6 +225,33 @@ def _vintage_key(vintage_norm, vintage_sensitive) -> str:
     return str(v)
 
 
+_YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
+
+
+def _display_name(name: str, vintages: set, vintage_sensitive: bool) -> str:
+    """The row header. Strip the SKU's vintage YEAR so it isn't shown twice (the
+    grid already prints the vintage next to the size).
+
+    Two passes: (1) remove the SKU's own vintage token (e.g. '2021', tolerant of a
+    '2021.0' float from the postgres cache) from ANY category; (2) for vintage-
+    sensitive categories (wine/sparkling/vermouth) also drop a stray 4-digit year,
+    since there a number like 2019 is virtually always a vintage. The category
+    gate is deliberate: it keeps spirit line names that happen to be a year intact
+    (Don Julio 1942, a tequila, is not vintage-sensitive, so 1942 stays)."""
+    s = (name or "").strip()
+    if not s:
+        return s
+    for v in vintages:
+        m = re.match(r"(\d{4})", str(v).strip())
+        if m:
+            s = re.sub(rf"\b{m.group(1)}\b", "", s)
+    if vintage_sensitive:
+        s = _YEAR_RE.sub("", s)
+    # tidy leftover doubled spaces / dangling separators from the removed token
+    s = re.sub(r"\s{2,}", " ", s).strip(" -,·").strip()
+    return s or (name or "").strip()
+
+
 def _size_key(raw) -> str:
     """Physical-size bucket so '12OZ', '12oz' and '355ML' all match (same can),
     and '15.5GAL' matches '1984OZ' (same 1/2-BBL keg). Unparseable sizes fall
@@ -321,8 +348,15 @@ def _common_rows(con, src: str, slugs: list[str], eds: dict[str, str],
             WHERE cb.wholesaler = e.wholesaler AND cb.edition = e.edition
               AND cb.combo_code = e.combo_code
         )"""
+    # Go-UPC enriched product name (cleaner, consumer-facing) is denormalised onto
+    # cpl_enriched in the cache build; absent on an older cache / raw parquet, so
+    # select it only when present and fall back to the CPL name downstream.
+    has_enr = bool(con.execute(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = ? AND column_name = 'enr_name'", [src]).fetchone())
+    enr_sel = "enr_name," if has_enr else "NULL AS enr_name,"
     sql = f"""
-        SELECT wholesaler, edition, upc, product_name, product_type, brand,
+        SELECT wholesaler, edition, upc, product_name, {enr_sel} product_type, brand,
                unit_qty, unit_volume, unit_volume_std, unit_type, vintage, abv_proof,
                from_date, to_date,
                frontline_case_price, frontline_unit_price,
@@ -769,7 +803,16 @@ def compare_products(
         if len(per) != len(slugs):
             continue  # defensive; SQL already guarantees this
         any_row = per[slugs[0]]
-        name = min((d["product_name"] for d in per.values()), key=len)
+        # Header: prefer the Go-UPC enriched name (consumer-facing) over the
+        # distributor's CPL name, then strip the vintage year. Keep the CPL name
+        # for the search filter so a query that hits the distributor wording still
+        # matches. All per-rows share the identity UPC, so enr_name agrees.
+        cpl_name = min((d["product_name"] for d in per.values()), key=len)
+        enr_name = next((d.get("enr_name") for d in per.values()
+                         if (d.get("enr_name") or "").strip()), None)
+        vintages = {d.get("vintage") for d in per.values() if d.get("vintage")}
+        vintage_sensitive = any(d.get("vintage_sensitive") for d in per.values())
+        name = _display_name(enr_name or cpl_name, vintages, vintage_sensitive)
         w_front = _winner(per, "frontline_case_price")
         w_qd = _winner(per, "best_case_price")
         w_eff = _winner(per, "effective_case_price")
@@ -786,6 +829,7 @@ def compare_products(
             "upc_norm": parts[0],
             "size_key": parts[1] if len(parts) > 1 else "",
             "product_name": name,
+            "cpl_name": cpl_name,   # original distributor name, for the q filter
             "product_type": any_row.get("product_type"),
             "brand": any_row.get("brand"),
             "unit_qty": any_row.get("unit_qty"),
@@ -823,6 +867,7 @@ def compare_products(
         # query must match the (normalised) UPC or it returns nothing.
         qd = re.sub(r"\D", "", q).lstrip("0")
         rows = [r for r in rows if qq in (r["product_name"] or "").lower()
+                or qq in (r.get("cpl_name") or "").lower()
                 or qq in (r["brand"] or "").lower()
                 or (len(qd) >= 6 and (r.get("upc_norm") == qd
                                       or qd in ((r.get("upc") or "").lstrip("0"))))]

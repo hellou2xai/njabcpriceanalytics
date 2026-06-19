@@ -258,3 +258,59 @@
 /* Half-case rule marker: the Buy column already shows the real physical
    buy-in; this badge flags WHY it differs from the printed tier. */
 .rip2-halfcase { color: #c2410c; font-size: 0.68rem; font-weight: 700; cursor: help; }
+
+/* ---- results header: product count + Card/Table view toggle ---- */
+.rip2-listbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.rip2-viewtoggle { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; flex-shrink: 0; }
+.rip2-viewtoggle button {
+  border: none; background: var(--surface); color: var(--text-muted);
+  font-size: 12.5px; font-weight: 600; padding: 6px 13px; cursor: pointer; transition: background .12s, color .12s;
+}
+.rip2-viewtoggle button + button { border-left: 1px solid var(--border); }
+.rip2-viewtoggle button.on { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--accent); }
+.rip2-viewtoggle button:hover:not(.on) { background: var(--bg); }
+
+/* ---- compare-RIPs table view ---- */
+.rip2-table { width: 100%; }
+.rip2-table th { vertical-align: bottom; }
+.rip2-th-prod { text-align: left; }
+.rip2-th-dist { text-align: left; border-bottom: 2px solid var(--border); }
+.rip2-th-dist > span:first-child { font-weight: 700; }
+.rip2-th-sub { display: block; font-size: 9.5px; font-weight: 500; color: var(--text-muted); text-transform: none; letter-spacing: 0; margin-top: 2px; }
+.rip2-th-num { text-align: right; white-space: nowrap; }
+
+.rip2-trow { cursor: pointer; transition: background .1s; }
+.rip2-trow:hover { background: color-mix(in srgb, var(--accent) 5%, var(--surface)); }
+.rip2-trow.is-open { background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+.rip2-trow.is-open td { border-bottom: none; }
+
+.rip2-td-prod { min-width: 240px; }
+.rip2-td-prod, .rip2-td-prodbody { display: flex; }
+.rip2-td-prod { align-items: flex-start; gap: 6px; }
+.rip2-td-prodbody { flex-direction: column; min-width: 0; }
+.rip2-td-caret { color: var(--text-muted); margin-top: 1px; flex-shrink: 0; }
+.rip2-td-name {
+  background: none; border: none; padding: 0; text-align: left; cursor: pointer;
+  font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.25;
+}
+.rip2-td-name:hover { color: var(--accent); text-decoration: underline; }
+.rip2-td-sub { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+
+.rip2-td-price { white-space: nowrap; }
+.rip2-td-pricev { font-weight: 600; }
+.rip2-td-price .hl-best { font-size: 13px; }
+.rip2-td-pricesub { display: block; font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+.rip2-td-num { text-align: right; white-space: nowrap; font-weight: 600; font-variant-numeric: tabular-nums; }
+.rip2-td-num .text-muted { font-weight: 400; }
+
+.rip2-td-diff { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; max-width: 230px; }
+.rip2-tchip {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 10.5px; font-weight: 600; padding: 1px 7px; border-radius: var(--radius-pill);
+  color: var(--text-muted); background: var(--bg); border: 1px solid var(--border); white-space: nowrap;
+}
+.rip2-tchip-flip { color: #7c3aed; background: color-mix(in srgb, #7c3aed 9%, var(--surface)); border-color: color-mix(in srgb, #7c3aed 22%, var(--border)); }
+.rip2-tchip-warn { color: #b45309; background: color-mix(in srgb, #d97706 11%, var(--surface)); border-color: color-mix(in srgb, #d97706 26%, var(--border)); }
+.rip2-td-act { white-space: nowrap; }
+
+.rip2-trow-detail > td { padding: 0 4px 14px; background: color-mix(in srgb, var(--accent) 4%, var(--surface)); }

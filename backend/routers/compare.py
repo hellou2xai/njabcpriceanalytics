@@ -1910,6 +1910,7 @@ def compare_rips(
     timing_diff_only: bool = Query(False, description="Only products where distributors differ on rebate TIMING (one dated/time-limited, the other all-month)"),
     qty_diff_only: bool = Query(False, description="Only products where distributors differ on the QUANTITY of cases needed to unlock the rebate"),
     better_terms_only: bool = Query(False, description="Only products where the per-case price is about the same (within $1) but the RIP TERMS differ (less cash to unlock, wider product mix, fewer cases)"),
+    rip_diff_only: bool = Query(False, description="Only products where the RIP itself differs between distributors (timing, cases-to-unlock, cash-to-unlock, or mix breadth) — NOT just the price. This is the page's headline filter: 'where does the RIP actually differ?'"),
     sort: str = Query("spread", description="spread | left_on_table | product | min_cases | best1 | deepest | active_days"),
     order: str = Query("desc"),
     limit: int = Query(2000, ge=1, le=50000),
@@ -1924,7 +1925,7 @@ def compare_rips(
     cache_key = ("compare_rips", _cache_tag(), wholesalers, cases, q, product_type,
                  brand, only_differences, min_diff, include_anomalies,
                  time_sensitive_only, combo_only, expiring_only, timing_diff_only,
-                 qty_diff_only, better_terms_only, sort, order, limit)
+                 qty_diff_only, better_terms_only, rip_diff_only, sort, order, limit)
     cached = _board_cache_get(cache_key)
     if cached is not None:
         return cached
@@ -2226,6 +2227,13 @@ def compare_rips(
         rows = [r for r in rows if r["quantity_differs"]]
     if better_terms_only:
         rows = [r for r in rows if r["better_terms_tie"]]
+    # Headline "RIP Difference" filter: keep only rows where the RIP itself
+    # differs between distributors (timing, cases-to-unlock, cash-to-unlock, or
+    # mix breadth). rip_terms_differ already folds in quantity_differs; timing is
+    # the other axis. Deliberately ignores pure price gaps (those are frontline /
+    # QD differences, not the RIP).
+    if rip_diff_only:
+        rows = [r for r in rows if r["timing_differs"] or r["rip_terms_differ"]]
 
     # AI verdict per row (deterministic, over the break-even data)
     for r in rows:
@@ -2276,7 +2284,8 @@ def compare_rips(
     # combination). Asking for "time-limited rebates" should surface them even if
     # the two distributors land within $1 of each other.
     attribute_filter = (time_sensitive_only or expiring_only or timing_diff_only
-                        or qty_diff_only or combo_only or better_terms_only)
+                        or qty_diff_only or combo_only or better_terms_only
+                        or rip_diff_only)
     if only_differences and not attribute_filter:
         rows = [r for r in rows if r["has_difference"]]
     if min_diff and min_diff > 0 and not attribute_filter:

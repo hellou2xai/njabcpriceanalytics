@@ -244,7 +244,8 @@ def _cpl_clean_brand_view(con) -> str:
 def _q_clause(q: str, extra_aliases: dict | None = None,
               name_col: str = "product_name", brand_col: str = "brand",
               upc_col: str = "upc", enrich_table: str | None = None,
-              enrich_upc_expr: str | None = None) -> tuple[str, dict, str]:
+              enrich_upc_expr: str | None = None,
+              enrich_cols: bool = False) -> tuple[str, dict, str]:
     """Build the search predicate for a free-text query: returns (clause, params,
     relevance_expr).
 
@@ -305,7 +306,15 @@ def _q_clause(q: str, extra_aliases: dict | None = None,
                 # filter, not free-text search).
                 f"OR UPPER(COALESCE(CAST(rip_code AS VARCHAR),'')) LIKE UPPER(${k})"
             )
-            if enrich_table:
+            if enrich_cols:
+                # Denormalised enrichment columns on the row (pricing_cache.py):
+                # plain LIKE, no per-row correlated subquery.
+                sub += (
+                    f" OR UPPER(COALESCE(enr_category,'')) LIKE UPPER(${k}) "
+                    f"OR UPPER(COALESCE(enr_category_path,'')) LIKE UPPER(${k}) "
+                    f"OR UPPER(COALESCE(enr_region,'')) LIKE UPPER(${k}) "
+                    f"OR REPLACE(UPPER(COALESCE(enr_name,'')), '''', '') LIKE UPPER(${k})")
+            elif enrich_table:
                 sub += (
                     f" OR EXISTS (SELECT 1 FROM {enrich_table} _pe "
                     f"WHERE _pe.upc = LTRIM(CAST({_outer_upc} AS VARCHAR), '0') AND ("
@@ -321,7 +330,11 @@ def _q_clause(q: str, extra_aliases: dict | None = None,
         # (1.0) which ranks above brand/category/volume match (0.0).
         name_only = " OR ".join(f"REPLACE(UPPER({name_col}), '''', '') LIKE UPPER(${k})" for k in keys)
         rel_terms.append(f"(CASE WHEN ({name_only}) THEN 1 ELSE 0 END)")
-        if enrich_table:
+        if enrich_cols:
+            desc_only = " OR ".join(
+                f"UPPER(COALESCE(enr_description,'')) LIKE UPPER(${k})" for k in keys)
+            rel_terms.append(f"(CASE WHEN ({desc_only}) THEN 0.25 ELSE 0 END)")
+        elif enrich_table:
             desc_only = " OR ".join(
                 f"UPPER(COALESCE(_pe2.description,'')) LIKE UPPER(${k})" for k in keys
             )
@@ -858,11 +871,15 @@ def search_products(
         # Free-text search also looks inside the Go-UPC enrichment (description,
         # category, region) so subtype queries like "tequila" — which is a
         # Spirits product, not a category — still find matches.
-        _enr = "product_enrichment" if _enrichment_searchable(con) else None
+        # Prefer the denormalised enr_* columns (no per-row subquery); fall back
+        # to the live EXISTS only on a cache too old to carry them.
+        _enr_cols = _has_enrich_cols(con)
+        _enr = None if _enr_cols else ("product_enrichment" if _enrichment_searchable(con) else None)
         _enr_upc = f"{src}.upc" if _enr else None
         if q:
             clause, qp, rel_expr = _q_clause(q, _brand_initialisms(con, src),
-                                             enrich_table=_enr, enrich_upc_expr=_enr_upc)
+                                             enrich_table=_enr, enrich_upc_expr=_enr_upc,
+                                             enrich_cols=_enr_cols)
             # group-by-RIP EXPANSION: when the toggle is on, a row that
             # matches q drags in EVERY OTHER row in its RIP cluster, so a
             # search for one product surfaces the FULL Case Mix the buyer
@@ -1467,7 +1484,8 @@ def search_products(
             def _retry(fixed_q):
                 nonlocal where_clause, rel_expr
                 clause2, qp2, rel2 = _q_clause(fixed_q, _brand_initialisms(con, src),
-                                               enrich_table=_enr, enrich_upc_expr=_enr_upc)
+                                               enrich_table=_enr, enrich_upc_expr=_enr_upc,
+                                               enrich_cols=_enr_cols)
                 where[q_clause_idx] = clause2
                 rel_expr = rel2
                 # Drop the previous query params so none are left bound but unused
@@ -2000,6 +2018,25 @@ def _has_image_column(con) -> bool:
         except Exception:
             _HAS_IMAGE_COL[tag] = False
     return _HAS_IMAGE_COL[tag]
+
+
+# Whether the cache carries the denormalised enrichment-text columns (enr_*),
+# so free-text search reads them as plain columns instead of a per-row EXISTS
+# against product_enrichment. Cached per cache-file path so a reload re-checks.
+_HAS_ENRICH_COLS: dict[str, bool] = {}
+
+
+def _has_enrich_cols(con) -> bool:
+    from backend.cache_util import pricing_tag
+    tag = pricing_tag()
+    if tag not in _HAS_ENRICH_COLS:
+        try:
+            _HAS_ENRICH_COLS[tag] = any(
+                r[0] == "enr_name"
+                for r in con.execute("DESCRIBE cpl_enriched").fetchall())
+        except Exception:
+            _HAS_ENRICH_COLS[tag] = False
+    return _HAS_ENRICH_COLS[tag]
 
 
 # Which precomputed cache tables the current pricing file carries (e.g.

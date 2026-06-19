@@ -390,6 +390,24 @@ def build_pricing_cache() -> Path:
                        AND upc_norm IN (SELECT upc FROM product_enrichment
                                         WHERE image_url IS NOT NULL AND image_url <> '')""")
 
+            # Denormalise the Go-UPC enrichment TEXT the Products search matches
+            # on (name/category/category_path/region/description), so free-text
+            # search reads plain columns on the row instead of running a
+            # correlated EXISTS against product_enrichment FOR EVERY ROW. That
+            # per-row subquery is the search's CPU cost and dominates on the prod
+            # instance (cold "vodka" ~5s there vs <1s with this). Exact parity
+            # with the old join (pe.upc = upc_norm); _q_clause reads enr_* when
+            # present and falls back to the EXISTS on an older cache.
+            for _c in ("enr_name", "enr_category", "enr_category_path",
+                       "enr_region", "enr_description"):
+                _try(f"ALTER TABLE cpl_enriched ADD COLUMN {_c} VARCHAR")
+            _try("""UPDATE cpl_enriched SET
+                      enr_name = pe.name, enr_category = pe.category,
+                      enr_category_path = pe.category_path, enr_region = pe.region,
+                      enr_description = pe.description
+                    FROM product_enrichment pe
+                    WHERE pe.upc = cpl_enriched.upc_norm""")
+
             # rip_cluster_sizes_pre: precompute the "Case Mix RIP" cluster size
             # per (wholesaler, edition, rip_code) — the single ~7s hash-join the
             # grouped grid (group_by_rip) rebuilt on every request

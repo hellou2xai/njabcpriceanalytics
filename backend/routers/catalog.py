@@ -1456,7 +1456,13 @@ def search_products(
         # the shorthand to real brand terms and retry once. Key-gated + cached, so it
         # only fires on genuine misses and never on the common (alias-handled) ones.
         corrected_query = None
-        if (q and count == 0 and offset == 0 and q_clause_idx is not None
+        # Fire the spell-fix when a search returns FEW results, not only zero: a
+        # category/brand typo often still coincidentally matches a stray product
+        # ("tequilla" hit 1 row), which used to block the fixer. _spell_fix only
+        # rewrites tokens that aren't real catalogue words, so a working query is
+        # never disturbed; we adopt a correction only when it finds strictly more
+        # rows, and restore the original otherwise.
+        if (q and count < 5 and offset == 0 and q_clause_idx is not None
                 and any(ch.isalpha() for ch in q)):
             def _retry(fixed_q):
                 nonlocal where_clause, rel_expr
@@ -1481,8 +1487,10 @@ def search_products(
                 fix = _spell_fix(q, _vocab(con, src))
                 if fix and fix.lower() != q.lower():
                     n = _retry(fix)
-                    if n > 0:
+                    if n > count:
                         count, corrected_query = n, fix
+                    else:
+                        _retry(q)   # correction not better — restore original query
             except Exception:
                 pass
 

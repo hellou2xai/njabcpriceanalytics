@@ -556,12 +556,17 @@ function SizeRow({ size, cart, updateQty, primaryName, showDeals = true, hideDis
           const qd = size.best_qd;
           const rip = pickBestRip(size, dealMonth);
           const Row = (label: string, cs: number, csCases: number | null | undefined,
-                       btl: number | null, cls?: string) => (
+                       btl: number | null, cls?: string, btlHi = false) => (
             <div className={`prod-size-bestrow${cls ? ` ${cls}` : ''}`}>
               <span className="prod-size-bestrow-k">{label}{csCases != null ? ` · ${csCases} cs` : ''}</span>
               <span className="prod-size-bestrow-v">
                 <span className="prod-size-case">{m(cs)}/{csW}</span>
-                {!keg && btl != null && <span className="prod-size-btl">{m(btl)}/{btlW}</span>}
+                {!keg && btl != null && (
+                  <span className={`prod-size-btl${btlHi ? ' prod-size-btl--hi' : ''}`}
+                    title={btlHi ? `Per-${btlW} price requires buying ${csCases} cases` : undefined}>
+                    {m(btl)}/{btlW}
+                  </span>
+                )}
               </span>
             </div>
           );
@@ -570,7 +575,10 @@ function SizeRow({ size, cart, updateQty, primaryName, showDeals = true, hideDis
               {Row('Best 1 CS', caseP, null, keg ? null : btlPrice)}
               {qd && qd.case_price != null
                 && ((qd.cases ?? 0) > 1 || qd.case_price < caseP - 0.005)
-                && Row('Best QD', qd.case_price, qd.cases, qd.bottle_price ?? null, 'is-qd')}
+                // Highlight the per-bottle price when this QD only unlocks at a
+                // multi-case buy-in (> 1 CS), so the buyer sees the bottle price
+                // isn't available at a single case.
+                && Row('Best QD', qd.case_price, qd.cases, qd.bottle_price ?? null, 'is-qd', (qd.cases ?? 0) > 1)}
               {rip && rip.eff < caseP - 0.005
                 && Row('Best RIP', rip.eff, rip.cases, rip.btl ?? null, 'is-rip')}
             </div>

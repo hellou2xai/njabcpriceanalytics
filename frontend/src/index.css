@@ -5890,9 +5890,10 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .prod-size-bestrow-k { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em;
   color: var(--text-muted); min-width: 64px; white-space: nowrap; }
 .prod-size-bestrow-v { display: inline-flex; align-items: baseline; gap: 8px; }
-/* The QD / RIP rows read a notch smaller than the Best 1 CS headline. */
-.prod-size-bestrow.is-qd .prod-size-case, .prod-size-bestrow.is-qd .prod-size-btl,
-.prod-size-bestrow.is-rip .prod-size-case, .prod-size-bestrow.is-rip .prod-size-btl { font-size: 13px; }
+/* All three rows (Best 1 CS / Best QD / Best RIP) read at the SAME size/weight. */
+/* QD that only unlocks at >1 case: flag the per-bottle price (red on yellow,
+   the app's "best deal" convention) so it's clear it needs a multi-case buy. */
+.prod-size-bestrow-v .prod-size-btl--hi { background: #fef9c3; color: #dc2626; border-radius: 4px; padding: 0 5px; }
 /* Case + bottle price share the line and MUST read at the same size/weight. */
 .prod-size-case { font-size: 15px; font-weight: 700; color: var(--green); font-variant-numeric: tabular-nums; }
 .prod-size-btl { font-size: 15px; font-weight: 700; color: var(--text-muted); font-variant-numeric: tabular-nums; }

@@ -1860,7 +1860,15 @@ def warm_catalog_grid():
             include_tiers=False, group_by_rip=False, images_first=True,
             as_of=None, user=None,
         )
-        print("[warm] catalog default grid cached", flush=True)
+        # Facets fire alongside the grid on every Products load — warm them too
+        # (default no-filter call) so the first visitor's filter rail is instant.
+        search_facets(
+            q="", wholesaler=None, edition=None, divisions=None, categories=None,
+            brands=None, sizes=None, unit_kinds=None, min_price=None, max_price=None,
+            has_rip=None, has_discount=None, introduced_within_months=None,
+            introduced_edition=None,
+        )
+        print("[warm] catalog default grid + facets cached", flush=True)
     except Exception as e:
         print(f"[warm] catalog grid skipped: {e}", flush=True)
 
@@ -3625,6 +3633,16 @@ def search_facets(
     filters (but not its own dimension), so the numbers reconcile with the
     results you actually see. `total` reflects every active filter.
     """
+    # Facet counts are fully user-independent — memoize them (perf #2 twin of
+    # /search). The Products page fires this on every load alongside the grid;
+    # it was ~1s uncached. Key on all params + ET date; pricing_tag invalidates.
+    _ckey = (q, wholesaler, edition, divisions, categories, brands, sizes,
+             unit_kinds, min_price, max_price, has_rip, has_discount,
+             introduced_within_months, introduced_edition,
+             _pricing.eastern_today().isoformat())
+    _hit = _cache.peek("catalog_facets", _ckey)
+    if _hit is not None:
+        return _hit
     with get_duckdb() as con:
         # cpl_enriched + clean enrichment brand (see _cpl_clean_brand_view).
         src = _cpl_clean_brand_view(con)
@@ -3760,7 +3778,7 @@ def search_facets(
         except Exception:
             has_combo, no_combo = 0, 0
 
-        return {
+        _facets = {
             "total": count(None),
             "has_rip": int(rf["a"]), "no_rip": int(rf["b"]),
             "has_discount": int(dfl["a"]), "no_discount": int(dfl["b"]),
@@ -3775,6 +3793,8 @@ def search_facets(
             # Container type buckets (Bottle / Can / Keg) from the DB unit_type.
             "unit_kinds": grouped(_UNIT_KIND_SQL, "ukind"),
         }
+        _cache.store("catalog_facets", _ckey, _facets)
+        return _facets
 
 
 @router.get("/editions")

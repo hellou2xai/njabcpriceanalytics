@@ -171,7 +171,7 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
         <td className="prod-deal-num">{b != null && !keg ? `$${b.toFixed(2)}` : '—'}</td>
         <td className="prod-deal-num prod-deal-save">
           {kind === 'rip' && ripSave != null && ripSave > 0.005
-            ? <span title="The RIP rebate alone, per case — the RIP-sheet number.">RIP −${ripSave.toFixed(2)}</span>
+            ? <span title="The RIP rebate alone, per case — the RIP-sheet number.">−${ripSave.toFixed(2)}</span>
             : kind === 'qd' && off != null && off > 0.005
               ? <span title="Total discount off list at this tier, per case.">−${off.toFixed(2)}</span>
               : '—'}

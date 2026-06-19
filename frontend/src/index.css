@@ -5902,7 +5902,7 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
    narrow widths scrolls horizontally instead of overlapping neighbouring text. */
 .prod-deal-wrap { width: 100%; max-width: 660px; overflow-x: auto; }
 .prod-deal-table { width: 100%; max-width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; table-layout: auto; }
-.prod-deal-table th { text-align: left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); padding: 2px 6px; border-bottom: 1px solid var(--border); }
+.prod-deal-table th { text-align: left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); padding: 2px 3px; border-bottom: 1px solid var(--border); }
 .prod-deal-table th.prod-deal-num, .prod-deal-table td.prod-deal-num { text-align: right; }
 /* Grouped top header: "After QD / RIP" spans the two price columns, "Savings"
    sits over the per-case save column. Centred, with a hairline tying the label
@@ -5910,7 +5910,7 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .prod-deal-hgrp th { border-bottom: none; padding-bottom: 0; }
 .prod-deal-table th.prod-deal-hgrp-c { text-align: center; font-size: 9px; font-weight: 700;
   color: var(--text-muted); letter-spacing: .02em; border-bottom: 1px solid var(--border); }
-.prod-deal-table td { padding: 2px 6px; color: var(--text); }
+.prod-deal-table td { padding: 2px 3px; color: var(--text); }
 /* Only the numeric columns stay on one line; the Tier/Buy text may wrap so the
    table flexes to its container instead of forcing overflow + overlap. */
 .prod-deal-table td.prod-deal-num, .prod-deal-table th.prod-deal-num { white-space: nowrap; }

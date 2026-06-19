@@ -521,13 +521,22 @@ export default function ProductDetail() {
   const specs = enrichment?.specs
     ? Object.entries(enrichment.specs).filter(([k, v]) => v != null && String(v) !== '' && !_isSizeKey(k) && !_isVintageKey(k))
     : [];
-  // Package size(s) straight from the CPL — always present. One size shows its
-  // pack; multiple sizes list them so the header reflects the whole product.
-  const _sizeVals = Array.from(new Set((sizes ?? []).map(s => s.unit_volume).filter(Boolean) as string[]));
-  const headerSize = _sizeVals.length === 0 ? null
-    : _sizeVals.length === 1
-      ? `${_sizeVals[0]}${packLabel(sizes[0]?.unit_volume, bottlesPerCase(name, sizes[0]?.unit_qty), sizes[0]?.unit_type) ? ` · ${packLabel(sizes[0]?.unit_volume, bottlesPerCase(name, sizes[0]?.unit_qty), sizes[0]?.unit_type)}` : ''}`
-      : _sizeVals.join(' · ');
+  // Package size(s) straight from the CPL — always present. EVERY size shows its
+  // pack (bottles/case), so a multi-size product reads "200ML · 24 btl/cs,
+  // 750ML · 12 btl/cs, …" instead of bare sizes with no pack. Dedup on
+  // (size, pack) so a barcode sold as both a 3-pack and a 12-pack of the same
+  // size lists both. Single-size output is unchanged ("750ML · 3 btl/cs").
+  const _fmtSizePack = (s: Product): string => {
+    const pl = packLabel(s.unit_volume, bottlesPerCase(name, s.unit_qty), s.unit_type);
+    return pl ? `${s.unit_volume} · ${pl}` : String(s.unit_volume ?? '');
+  };
+  const _sizeRows = Array.from(
+    new Map((sizes ?? [])
+      .filter(s => s.unit_volume)
+      .map(s => [`${s.unit_volume}|${bottlesPerCase(name, s.unit_qty) ?? ''}`, s] as const))
+      .values());
+  const headerSize = _sizeRows.length === 0 ? null
+    : _sizeRows.map(_fmtSizePack).join(',  ');
   // Vintage(s) straight from the CPL rows (authoritative, per edition). Wines
   // reuse one barcode across years, so show the distinct real vintage(s) here
   // instead of the enrichment's (which can be a wrong/stale year).
@@ -643,7 +652,7 @@ export default function ProductDetail() {
               only when next month's edition is loaded. */}
           {curBlock && (
             <section className="pd-section pd-nextmonth">
-              <h2>This Month vs Next Month{primarySize?.unit_volume ? ` · ${primarySize.unit_volume}` : ''}</h2>
+              <h2>{nextBlock ? 'This Month vs Next Month' : 'This Month'}{primarySize?.unit_volume ? ` · ${primarySize.unit_volume}` : ''}</h2>
               <div className={`pd-month-compare${nextBlock ? '' : ' is-single'}`}>
                 <div className="pd-month-col">
                   <div className="pd-month-col-head">This month</div>

@@ -199,6 +199,13 @@ def reload_pricing_admin(user: dict = Depends(require_admin)):
     from backend.pricing_cache import build_pricing_cache, ALL_TABLES
     from backend.db import get_duckdb
     build_pricing_cache()
+    # Re-warm the default Products grid memo (perf #2) against the new data.
+    try:
+        import threading
+        from backend.routers.catalog import warm_catalog_grid
+        threading.Thread(target=warm_catalog_grid, daemon=True).start()
+    except Exception as e:
+        print(f"[reload] catalog grid warm skipped: {e}")
     with get_duckdb() as con:
         counts = {t: con.execute(f"SELECT count(*) FROM {t}").fetchone()[0] for t in ALL_TABLES}
     return {"status": "reloaded", "counts": counts}

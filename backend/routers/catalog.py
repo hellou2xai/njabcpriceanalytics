@@ -1840,6 +1840,31 @@ def search_products(
         return _result
 
 
+def warm_catalog_grid():
+    """Pre-build the DEFAULT Products grid response into the memo (perf #2) so the
+    very first visitor after a deploy/reload doesn't eat the cold catalog query.
+    Best-effort, runs in a daemon thread; never raises. The params MUST match the
+    frontend's default page-1 search (Products.tsx) exactly, or the memo key won't
+    line up — q='', sort=product_name/asc, limit=60, images_first=True (set when
+    sort==product_name), no filters, no group_by_rip/include_tiers."""
+    try:
+        search_products(
+            q="", wholesaler=None, edition=None, product_type=None,
+            min_price=None, max_price=None, has_discount=None, has_closeout=None,
+            has_rip=None, in_combo=None, time_sensitive=None, price_drop=None,
+            price_increase=None, brand=None, unit_volume=None, divisions=None,
+            categories=None, brands=None, sizes=None, unit_kinds=None, upcs=None,
+            rip_code=None, region=None, varietal=None, tracked_only=False,
+            introduced_within_months=None, introduced_edition=None,
+            sort="product_name", order="asc", limit=60, offset=0,
+            include_tiers=False, group_by_rip=False, images_first=True,
+            as_of=None, user=None,
+        )
+        print("[warm] catalog default grid cached", flush=True)
+    except Exception as e:
+        print(f"[warm] catalog grid skipped: {e}", flush=True)
+
+
 def _attach_best_qd(records):
     """Attach `best_qd` = the deepest QUANTITY-DISCOUNT bracket for the Products
     card sticker (RIP is NOT a QD). All inputs are already on the row:

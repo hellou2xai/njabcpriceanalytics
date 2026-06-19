@@ -165,6 +165,13 @@ def startup():
         threading.Thread(target=warm_rip_cache, daemon=True).start()
         # Prime the Time-Sensitive Deals payload so the first open is instant.
         threading.Thread(target=warm_time_sensitive_cache, daemon=True).start()
+        # Prime the default Products grid response (perf #2 memo) so the first
+        # visitor doesn't eat the cold catalog query.
+        try:
+            from backend.routers.catalog import warm_catalog_grid
+            threading.Thread(target=warm_catalog_grid, daemon=True).start()
+        except Exception as e:
+            print(f"[startup] catalog grid warm skipped: {e}")
         # Generate any missing AI deal blurbs for the Time-Sensitive Deals page.
         # No-op if ANTHROPIC_API_KEY is unset, capped per run.
         try:
@@ -224,6 +231,13 @@ def reload_pricing(user: dict = Depends(get_current_user)):
     clear_time_sensitive_cache()   # drop the cached Time-Sensitive payloads
     threading.Thread(target=warm_rip_cache, daemon=True).start()
     threading.Thread(target=warm_time_sensitive_cache, daemon=True).start()
+    # Re-warm the default Products grid memo (auto-invalidated by the new
+    # pricing file path) so the post-reload first visitor stays instant.
+    try:
+        from backend.routers.catalog import warm_catalog_grid
+        threading.Thread(target=warm_catalog_grid, daemon=True).start()
+    except Exception as e:
+        print(f"[reload] catalog grid warm skipped: {e}")
     # Re-run AI deal blurb generation for new products surfaced by this reload.
     try:
         from backend.ai_blurbs import warm_blurbs_async

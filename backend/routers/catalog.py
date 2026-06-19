@@ -2321,16 +2321,25 @@ def get_product_detail(
         # the catalog row ("GLENLIVET 12YR SCOTCH 12PK"); requiring the name made
         # the lookup miss and dropped ALL enrichment (size, region, specs, image).
         name_filter = "" if upc else "AND product_name = $product_name"
-        # DuckDB rejects named params a query doesn't reference, so drop
-        # product_name from the main lookup when we're resolving by UPC.
-        main_params = {k: v for k, v in params.items() if not (upc and k == "product_name")}
+        # Resolving by UPC does NOT require an exact name match (display names
+        # differ from catalog names), but a barcode can carry MORE THAN ONE SKU:
+        # CHIVAS GOYA 3P (3-pack, no RIP) and CHIVAS REG 12Y (12-pack, RIP 112112)
+        # share 80432400395. A bare LIMIT 1 with no ORDER BY then returns an
+        # ARBITRARY listing, so the modal for "CHIVAS GOYA 3P" resolved to the
+        # 12-pack and showed RIP 112112 (the recurring Chivas-Goya leak — the
+        # single-listing guard below can't help once the wrong row is chosen).
+        # PREFER the row whose product_name matches the request, then a stable
+        # tiebreak, so the right SKU wins without re-requiring the name. Keep
+        # product_name bound for the ORDER BY (referenced => DuckDB accepts it).
         row = con.execute(f"""
             SELECT * FROM {src}
             WHERE wholesaler = $wholesaler {name_filter}
             {edition_filter}
             {' '.join(extra_filters)}
+            ORDER BY (product_name = $product_name) DESC,
+                     TRY_CAST(unit_qty AS DOUBLE), product_name
             LIMIT 1
-        """, main_params).fetchdf()
+        """, params).fetchdf()
 
         # Fall back to a name match if the UPC didn't resolve (e.g. a stale link
         # whose UPC isn't on the current edition).

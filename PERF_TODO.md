@@ -1,6 +1,24 @@
 # Performance TODO (resume here)
 
-Prioritized optimizations for the catalog/web app. #1 is the long-standing ask.
+Prioritized optimizations for the catalog/web app.
+
+## REQUIRED BASELINE (a fast web app just has these — NOT optional)
+These are table stakes; do them regardless of the page-specific work below.
+- **Response compression (gzip/brotli)** — add `GZipMiddleware` (FastAPI). Grid
+  responses are 79–180 KB JSON → ~25 KB on the wire. Affects every response.
+- **HTTP `Cache-Control` + `ETag` on user-independent GETs** (`/search`, `/facets`,
+  boards) + a CDN in front — repeat requests served at the edge, zero server hit.
+  Bigger than the in-process memo for real traffic.
+- **Index the pricing cache** — see #1 below.
+- **Multi-threaded query execution** — DROP the artificial `SET threads TO 1`
+  (`backend/db.py`); a single big query should use all cores. Keep deterministic
+  row order with a TOTAL `ORDER BY` tiebreaker instead. Cold grid/board sorts are
+  CPU-bound → 2–4× faster. (threads=1 was only for determinism, never concurrency.)
+- **Frontend bundle code-splitting** — the JS bundle is ~1.95 MB (531 KB gz; Vite
+  warns). Lazy-load routes/heavy components for a faster first paint.
+- **Cap the connection-pool overflow** — see #3 below (safety, not optional).
+
+The page-specific precompute/index work follows. #1 is the long-standing ask.
 
 ## 1. Index the pricing cache (PRIORITY — "make the query cheap so millions can query")
 The pricing data is a DuckDB cache file (`backend/pricing_cache.py` builds native
@@ -44,11 +62,14 @@ back to UNBOUNDED temporary connections — a 300-user burst could open hundreds
 blow memory. Cap it (hard max of N extra, or just block/queue), and size the pool
 to the box (`POOL_SIZE = max(8, cpu_count*2)`).
 
-## 4. Optional follow-ups
-- HTTP `Cache-Control` on the user-independent GET endpoints (`/search`, `/facets`,
-  boards) so browser/CDN absorbs repeat load (they're already memoized server-side).
+## 4. Deeper / situational (after the baseline above)
+- Precompute the default-grid **image-sort rank** + denormalize enrichment
+  (image_url, sku, best_qd, price_3mo) into `cpl_enriched` so per-request Python
+  `_attach_*` loops + the ~9s `images_first` sort over 134k rows go away.
+- **Virtualize** the 60-card grid (render only visible cards).
+- Trim/shape response payloads; load the cache into an in-memory DuckDB per worker.
 - Confirm group_by_rip cold cost after indexing; if still heavy, precompute the RIP
-  cluster membership into a cache table (was deferred — the cost is wide-row fan-out).
+  cluster membership into a cache table (the cost is wide-row fan-out).
 
 ## Context / decisions already shipped (don't redo)
 - catalog `/search` + `/facets` memoized (cache_util, keyed on params + ET date +

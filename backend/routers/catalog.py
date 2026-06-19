@@ -33,6 +33,22 @@ def _next_yyyy_mm() -> str:
     return _pricing.next_yyyy_mm()
 
 
+def _opt_col(con, col: str, *, table: str = "cpl_enriched",
+             sqltype: str = "VARCHAR", prefix: str = "") -> str:
+    """SELECT-expression for `col` that survives a store predating it.
+
+    Returns the (optionally table-qualified) column when it exists, else a typed
+    NULL aliased to the column name. Guards against schema drift between the
+    deployed code and an older parquet/Postgres — e.g. a stale local
+    cpl_enriched that lacks `dist_item_no` would otherwise 500 the whole grid.
+    Mirrors the existing `rip_windows` information_schema guard."""
+    present = bool(con.execute(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = ? AND column_name = ?",
+        [table, col]).fetchone())
+    return f"{prefix}{col}" if present else f"CAST(NULL AS {sqltype}) AS {col}"
+
+
 def _clean_record(rec: dict) -> dict:
     """Replace NaN with None and convert non-serializable types to strings."""
     out = {}
@@ -1553,7 +1569,7 @@ def search_products(
                    unit_qty, unit_volume, unit_type, vintage, frontline_case_price, frontline_unit_price,
                    best_case_price, best_unit_price, effective_case_price,
                    has_discount, has_rip, has_closeout, discount_pct,
-                   total_savings_per_case, rip_code, combo_code, dist_item_no,
+                   total_savings_per_case, rip_code, combo_code, {_opt_col(con, 'dist_item_no')},
                    discount_1_qty, discount_1_amt,
                    discount_2_qty, discount_2_amt,
                    discount_3_qty, discount_3_amt,
@@ -2049,7 +2065,7 @@ def new_items(
                    e.best_case_price, e.best_unit_price, e.effective_case_price,
                    e.rip_savings, e.rip_windows,
                    e.has_discount, e.has_rip, e.has_closeout, e.discount_pct,
-                   e.total_savings_per_case, e.rip_code, e.combo_code, e.dist_item_no, e.brand,
+                   e.total_savings_per_case, e.rip_code, e.combo_code, {_opt_col(con, 'dist_item_no', prefix='e.')}, e.brand,
                    e.discount_1_qty, e.discount_1_amt,
                    e.discount_2_qty, e.discount_2_amt,
                    e.discount_3_qty, e.discount_3_amt,
@@ -4035,7 +4051,7 @@ def get_rip_siblings(
                    best_case_price, best_unit_price,
                    effective_case_price, rip_savings, {rip_windows_expr}, total_savings_per_case,
                    has_discount, has_rip, has_closeout, discount_pct,
-                   rip_code, combo_code, dist_item_no
+                   rip_code, combo_code, {_opt_col(con, 'dist_item_no')}
             FROM {src}
             WHERE wholesaler = $w AND edition = $e
               AND ({' OR '.join(member_clauses)})

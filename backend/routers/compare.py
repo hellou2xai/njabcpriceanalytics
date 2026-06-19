@@ -704,10 +704,21 @@ def compare_products(
         # RIP layer: at-volume needs the volume-aware tier ladder; best-deal uses
         # the cheap precomputed rip_windows overlay (no per-product RIP queries,
         # so a big allied-vs-fedway grid stays fast).
+        # Evaluate live deals (QD/RIP windows) at the EDITION being compared, not
+        # today: in Next-month mode pick mid-next-month so a next-month full-month
+        # rebate window counts as live. Today is in the current month and would
+        # drop every next-month RIP (e.g. an Allied July rebate vanished from the
+        # Jul grid). Current mode keeps ref_date=None (=today) so partial-month
+        # deals still reflect what's live right now.
+        ref_date = None
+        if month_mode == "next" and eds:
+            _nxt = max(eds.values())
+            if _nxt and len(_nxt) == 7:
+                ref_date = f"{_nxt}-15"
         if n_cases:
-            _pricing.attach_tiers(con, raw)
+            _pricing.attach_tiers(con, raw, ref_date=ref_date)
         else:
-            _pricing.attach_live_rip(con, raw)
+            _pricing.attach_live_rip(con, raw, ref_date=ref_date)
         for d in raw:
             pack = float(d.get("uqd") or 0)
             tiers = d.get("tiers") or []
@@ -1033,21 +1044,31 @@ def compare_export(
     cases: float = Query(0, ge=0),
     sort: str = Query("spread"),
     order: str = Query("desc"),
+    month_mode: str = Query("cur", description="match the page: 'next' exports the next-month comparison."),
+    confidence: str = Query("high"),
+    sizes: str = Query("", description="comma-separated unit_volume_std buckets to keep (mirrors the page Size filter)."),
     user: Optional[dict] = Depends(get_optional_user),
 ):
     """The current comparison grid as an .xlsx download. Reuses the exact
-    /products logic (same filters, volume basis, winners) so the spreadsheet
-    matches what's on screen — no separate math."""
+    /products logic (same filters, MONTH, volume basis, winners) so the
+    spreadsheet matches what's on screen — no separate math."""
     import openpyxl
     from openpyxl.styles import Font, Alignment
 
     data = compare_products(
         wholesalers=wholesalers, q=q, product_type=product_type,
         only_differences=only_differences, min_spread=min_spread, cases=cases,
-        sort=sort, order=order, limit=50000, user=user,
+        sort=sort, order=order, limit=50000, month_mode=month_mode,
+        confidence=confidence, user=user,
     )
     slugs = data["wholesalers"]
     eds = data["editions"]
+    # Mirror the page's (client-side) Size filter so the export matches the view.
+    rows_data = data["rows"]
+    _sz = {s.strip() for s in (sizes or "").split(",") if s.strip()}
+    if _sz:
+        rows_data = [r for r in rows_data
+                     if (r.get("unit_volume_std") or r.get("unit_volume") or "").strip() in _sz]
     at_vol = bool(data.get("cases"))
     qd_label = f"QD @{int(data['cases'])}cs" if at_vol else "Best QD"
     net_label = f"Net @{int(data['cases'])}cs" if at_vol else "Best Net"
@@ -1073,7 +1094,7 @@ def compare_export(
     def _upc_txt(v):
         return str(v) if v not in (None, "") else None
 
-    for r in data["rows"]:
+    for r in rows_data:
         prices = r["prices"]
         size = f"{r.get('unit_qty') or ''} x {r.get('unit_volume') or ''}".strip(" x")
         win = r.get("winner_effective")

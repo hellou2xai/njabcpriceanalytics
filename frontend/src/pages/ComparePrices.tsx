@@ -485,6 +485,9 @@ export default function ComparePrices() {
         only_differences: onlyDiff || undefined,
         min_spread: minSpread ? parseFloat(minSpread) : undefined,
         cases: cases && cases !== '0' ? parseFloat(cases) : undefined,
+        month_mode: priceMonths === 'next' ? 'next' : 'cur',
+        confidence,
+        sizes: sizes.length ? sizes.join(',') : undefined,
       });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');

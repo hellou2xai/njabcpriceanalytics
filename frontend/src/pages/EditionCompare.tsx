@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { CalendarClock, ArrowRight, ArrowDownRight, ArrowUpRight, PlusCircle, MinusCircle, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CalendarClock, ArrowRight, ArrowDownRight, ArrowUpRight, PlusCircle, MinusCircle, AlertTriangle, ChevronLeft, ChevronRight, Package, Repeat } from 'lucide-react';
 import { compare } from '../lib/api';
 import type { EditionRow } from '../lib/api';
 import { distributorName, DISTRIBUTOR_NAMES, perUnitAbbr } from '../lib/distributors';
@@ -364,7 +364,9 @@ export default function EditionCompare() {
         <h2><CalendarClock size={20} style={{ verticalAlign: '-3px', marginRight: 8 }} />Edition Comparison</h2>
       </div>
 
-      {/* selectors */}
+      {/* overview: distributor + edition selectors and the month-over-month
+          scoreboard, presented as one cohesive panel */}
+      <div className="ec-overview">
       <div className="ec-selectors">
         <select className="ec-dist" value={wholesaler} onChange={e => { setWholesaler(e.target.value); setOlder(''); setNewer(''); }}>
           {Object.keys(DISTRIBUTOR_NAMES).map(w => <option key={w} value={w}>{distributorName(w)}</option>)}
@@ -385,9 +387,9 @@ export default function EditionCompare() {
       </div>
 
       {opts?.single_edition && (
-        <div className="cmp-empty">
-          {distributorName(wholesaler)} has only one edition on record ({editions[0]}) —
-          nothing to compare yet. Come back after the next month's price file loads.
+        <div className="cmp-empty ec-empty">
+          {distributorName(wholesaler)} has only one edition on record ({editions[0]}).
+          Nothing to compare yet. Come back after the next month's price file loads.
         </div>
       )}
 
@@ -396,21 +398,43 @@ export default function EditionCompare() {
 
       {data && !data.single_edition && (
         <>
-          {/* summary */}
-          <div className="cmp-cards">
-            <div className="cmp-card"><div className="cmp-card-n">{(data.total ?? 0).toLocaleString()}</div><div className="cmp-card-l">products compared</div></div>
-            <div className="cmp-card"><div className="cmp-card-n ec-down-c">{sum?.fell ?? 0}</div><div className="cmp-card-l">net cost fell</div></div>
-            <div className="cmp-card"><div className="cmp-card-n ec-up-c">{sum?.rose ?? 0}</div><div className="cmp-card-l">net cost rose</div></div>
-            <div className="cmp-card"><div className="cmp-card-n">{sum?.added ?? 0}</div><div className="cmp-card-l">new items</div></div>
-            <div className="cmp-card"><div className="cmp-card-n">{sum?.removed ?? 0}</div><div className="cmp-card-l">removed</div></div>
-            <div className="cmp-card"><div className="cmp-card-n">{sum?.rip_changed ?? 0}</div><div className="cmp-card-l">RIP changed</div></div>
+          {/* month-over-month scoreboard */}
+          <div className="ec-stats">
+            <div className="ec-stat">
+              <span className="ec-stat-ico ec-ico-neutral"><Package size={15} /></span>
+              <span className="ec-stat-body"><span className="ec-stat-n">{(data.total ?? 0).toLocaleString()}</span><span className="ec-stat-l">products compared</span></span>
+            </div>
+            <div className="ec-stat">
+              <span className="ec-stat-ico ec-ico-down"><ArrowDownRight size={15} /></span>
+              <span className="ec-stat-body"><span className="ec-stat-n ec-down-c">{sum?.fell ?? 0}</span><span className="ec-stat-l">net cost fell</span></span>
+            </div>
+            <div className="ec-stat">
+              <span className="ec-stat-ico ec-ico-up"><ArrowUpRight size={15} /></span>
+              <span className="ec-stat-body"><span className="ec-stat-n ec-up-c">{sum?.rose ?? 0}</span><span className="ec-stat-l">net cost rose</span></span>
+            </div>
+            <div className="ec-stat">
+              <span className="ec-stat-ico ec-ico-neutral"><PlusCircle size={15} /></span>
+              <span className="ec-stat-body"><span className="ec-stat-n">{sum?.added ?? 0}</span><span className="ec-stat-l">new items</span></span>
+            </div>
+            <div className="ec-stat">
+              <span className="ec-stat-ico ec-ico-neutral"><MinusCircle size={15} /></span>
+              <span className="ec-stat-body"><span className="ec-stat-n">{sum?.removed ?? 0}</span><span className="ec-stat-l">removed</span></span>
+            </div>
+            <div className="ec-stat">
+              <span className="ec-stat-ico ec-ico-neutral"><Repeat size={15} /></span>
+              <span className="ec-stat-body"><span className="ec-stat-n">{sum?.rip_changed ?? 0}</span><span className="ec-stat-l">RIP changed</span></span>
+            </div>
           </div>
 
           <div className="ec-context">
             Comparing <strong>{distributorName(wholesaler)}</strong> {data.older} <ArrowRight size={12} style={{ verticalAlign: '-1px' }} /> {data.newer}.
             Every change is in <strong>effective net cost</strong> (after all discounts + RIP), not list price.
           </div>
+        </>
+      )}
+      </div>{/* /ec-overview */}
 
+      {data && !data.single_edition && (
           <FilterSidebar storageKey="edition-compare-filters" sections={sections} onReset={resetFilters}>
             <div className="ec-results">
               <div className="ec-viewbar">
@@ -489,7 +513,6 @@ export default function EditionCompare() {
               {total > 0 && <Pager where="bottom" />}
             </div>
           </FilterSidebar>
-        </>
       )}
 
       {/* Styled "what changed" breakdown — fixed so the table overflow never

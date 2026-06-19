@@ -67,7 +67,7 @@ const STEPS: Step[] = [
   { route: '/time-sensitive', element: '.deal-cards, .page-header, .orders-header', title: 'Time-Sensitive Deals',
     savings: '⏳ Act before they’re gone',
     body: 'Offers that end this month or aren’t available next month, surfaced with their deadline. <b>Why it helps:</b> grab the discount before it lapses.' },
-  { route: '/edition-compare', element: '.cmp-cards, .cmp-head', title: 'Edition Comparison',
+  { route: '/edition-compare', element: '.ec-stats, .cmp-head', title: 'Edition Comparison',
     body: 'Compare two months for a distributor: what changed in price, and what was added or discontinued. <b>Why it helps:</b> see the month-over-month moves at a glance.' },
   { route: '/price-drops', element: '.pm-compare-banner, .orders-header', title: 'Price Drops',
     savings: '💰 Cheaper this edition, ranked for you',

@@ -12,8 +12,8 @@ const STEPS: ScreenStep[] = [
   { element: '.ec-editions', title: 'Older vs newer edition',
     before: () => scrollIntoView('.ec-editions'),
     body: 'The two dropdowns set the months to compare: <b>Older</b> on the left, <b>Newer</b> on the right. It defaults to the latest two on record. <b>Why it helps:</b> compare any two months, not just consecutive ones.' },
-  { element: '.cmp-cards', title: 'The month in one row',
-    before: () => scrollIntoView('.cmp-cards'),
+  { element: '.ec-stats', title: 'The month in one row',
+    before: () => scrollIntoView('.ec-stats'),
     savings: '💰 See where costs fell at a glance',
     body: 'These cards count products compared, how many net costs <b>fell</b> or <b>rose</b>, new items, removed items, and RIP changes. <b>Why it helps:</b> the shape of the change before you read a single row.' },
   { element: '.ec-context', title: 'Everything is net cost',
@@ -38,10 +38,10 @@ const STEPS: ScreenStep[] = [
   { element: '.cmp-actions', title: 'Act on a row',
     before: () => scrollIntoView('.cmp-actions'),
     body: 'Each row carries the same quick actions as the rest of the app: add to cart, add to a list, take a note. <b>Why it helps:</b> turn a price move into an order without leaving the page.' },
-  { element: '.cmp-cards', title: 'That’s Edition Comparison',
-    before: () => scrollIntoView('.cmp-cards'),
+  { element: '.ec-stats', title: 'That’s Edition Comparison',
+    before: () => scrollIntoView('.ec-stats'),
     body: 'Pick a distributor and two months, read the counts up top, then drill into the rows to see what moved and why. <b>Why it helps:</b> month-over-month price intelligence in one screen.' },
 ];
 
 export const launchEditionCompareTour = (navigate: (p: string) => void) =>
-  launchScreenTour(navigate, '/edition-compare', '.cmp-cards', STEPS);
+  launchScreenTour(navigate, '/edition-compare', '.ec-stats', STEPS);

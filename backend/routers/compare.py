@@ -1188,7 +1188,16 @@ def compare_tiers(
             if cur is None or (eff is not None and (cur_eff is None or eff < cur_eff)):
                 chosen[r["wholesaler"]] = r
         records = list(chosen.values())
-        _pricing.attach_tiers(con, records)
+        # Mirror the grid: in Next-month mode evaluate the tier windows at
+        # mid-next-month so the panel's live QD/Net header (and the active-window
+        # markers) resolve the SAME edition as the row, not today. Current mode
+        # keeps ref_date=None (=today) for partial-month deals.
+        ref_date = None
+        if month_mode == "next" and eds:
+            _nxt = max(eds.values())
+            if _nxt and len(_nxt) == 7:
+                ref_date = f"{_nxt}-15"
+        _pricing.attach_tiers(con, records, ref_date=ref_date)
         # Distributor's own item number (Allied ABG / Fedway SKU) for the panel.
         try:
             _attach_sku_mapping(con, records)

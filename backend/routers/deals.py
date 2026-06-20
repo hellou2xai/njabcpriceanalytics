@@ -4,6 +4,7 @@ Deals API. Discounts, clearance, combos, RIPs.
 Covers: Â§7 Discount/Offer Views
 """
 
+import difflib
 import math
 import re
 import threading
@@ -704,6 +705,12 @@ def get_combos(
                     continue
             items.append({
                 "wholesaler": ws, "combo_code": code, "comments": comments,
+                # The edition this combo's components were read from (current
+                # slot if present, else next). compute_combo_economics resolves
+                # each component's individual price against THIS edition's CPL —
+                # never the calendar-month default — so a July combo prices off
+                # July and June prices off June (edition-specific, per CLAUDE.md).
+                "_edition": cur_ed.get(ws) if curr else nxt_ed.get(ws),
                 "product_name": comments or f"Combo {code}", "upc": base.get("upc"),
                 "combo_pack_price": combo_price, "total_savings": savings,
                 "components": comps, "item_count": len(comps),
@@ -784,13 +791,108 @@ def _combo_one_case_disc(qa_pairs):
     return None
 
 
+def _combo_name_norm(s) -> str:
+    """Loose normaliser for fuzzy product-name matching (strip punctuation,
+    collapse whitespace, lowercase)."""
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]", " ", str(s or "").lower())).strip()
+
+
+def _combo_name_sim(a, b) -> float:
+    a, b = _combo_name_norm(a), _combo_name_norm(b)
+    if not a or not b:
+        return 0.0
+    return difflib.SequenceMatcher(None, a, b).ratio()
+
+
+def _combo_price_sim(feed_each, fcase, uq) -> float:
+    """How well a CPL member's case price reconciles to the combo feed's
+    per-unit frontline. The feed's frontline_price_each can be quoted per case
+    or per bottle, so we accept whichever (case price, or case/bottles) lands
+    closest. 1.0 = exact, 0.0 = no signal / off by >=100%."""
+    try:
+        fe = float(feed_each)
+        fc = float(fcase)
+    except (TypeError, ValueError):
+        return 0.0
+    if not (fe > 0 and fc > 0):
+        return 0.0
+    cands = [fc]
+    try:
+        q = float(uq)
+        if q > 0:
+            cands.append(fc / q)
+    except (TypeError, ValueError):
+        pass
+    err = min(abs(fe - x) / fe for x in cands)
+    return max(0.0, 1.0 - err)
+
+
+def _match_combo_components(components, members):
+    """Resolve each combo component to the authoritative CPL row that carries
+    the SAME combo_code (`members`), returning {component_index: member}.
+
+    THE RULE (mirrors the name-resolution join in get_combos): a component is
+    the CPL row whose combo_code AND upc both match. One barcode can still span
+    vintages/pack sizes under one code, so we disambiguate by price. Placeholder
+    ('0') components have no usable barcode, so we match them by ITEM — product
+    name similarity + price reconciliation — among the members sharing the code.
+    Assignment is one-to-one (greedy, best score first) so two components never
+    borrow the same member."""
+    out: dict = {}
+    used: set = set()
+    by_un: dict = {}
+    for m in members:
+        if m.get("un"):
+            by_un.setdefault(m["un"], []).append(m)
+
+    # 1) Real-barcode components: pin by combo_code+upc, disambiguating a
+    #    multi-vintage barcode by the feed's own per-unit frontline.
+    pending = []
+    for i, comp in enumerate(components):
+        un = str(comp.get("upc") or "").lstrip("0")
+        feed_each = comp.get("frontline_price_each")
+        if un and un in by_un:
+            cands = [m for m in by_un[un] if id(m) not in used]
+            if cands:
+                best = max(cands, key=lambda m: _combo_price_sim(feed_each, m.get("fcase"), m.get("unit_qty")))
+                out[i] = best
+                used.add(id(best))
+                continue
+        pending.append((i, comp, feed_each))
+
+    # 2) Placeholder ('0') / un-tagged components: item-match against the
+    #    remaining members by name + price, strongest pair first.
+    scored = []
+    for (i, comp, feed_each) in pending:
+        for m in members:
+            if id(m) in used:
+                continue
+            s = (0.55 * _combo_price_sim(feed_each, m.get("fcase"), m.get("unit_qty"))
+                 + 0.45 * _combo_name_sim(comp.get("product_name"), m.get("product_name")))
+            scored.append((s, i, m))
+    scored.sort(key=lambda t: t[0], reverse=True)
+    for s, i, m in scored:
+        if i in out or id(m) in used or s < 0.35:
+            continue
+        out[i] = m
+        used.add(id(m))
+    return out
+
+
 def compute_combo_economics(con, combos, cym=None):
     """Attach an ``economics`` dict to each combo: combo pack price vs (a) the
     individual LIST price and (b) the realistic ONE-CASE price (list - 1-case
-    discount), priced BY UPC from the catalog and summed per combo. The pricing
+    discount), priced from the catalog and summed per combo. The pricing
     unit (per bottle vs per case) is detected by reconciling to the pack price.
     Bulk-RIP max prices are deliberately ignored (an unreachable 'trap'). Shared
-    by the combo page and the assistant's combo_analyzer so both agree."""
+    by the combo page and the assistant's combo_analyzer so both agree.
+
+    Each component is resolved against the CPL row that carries the SAME
+    combo_code (per the combo's own edition) — the distributor's authoritative
+    link to the exact SKU bundled — so the separate price uses the right vintage
+    and pack size, not a guessed row off a recycled barcode. A bare-UPC heuristic
+    is used only as a fallback when a combo_code isn't tagged in the CPL at all.
+    See _match_combo_components."""
     from backend import pricing as _pricing
     cym = cym or _pricing.current_yyyy_mm()
 
@@ -812,31 +914,88 @@ def compute_combo_economics(con, combos, cym=None):
                               "is_volume_ladder": True,
                               "min_save_pct": best, "max_save_pct": top}
     fixed = [c for c in combos if not c.get("is_volume_ladder")]
-    keys = sorted({(c.get("wholesaler"), str(comp.get("upc") or "").lstrip("0"))
-                   for c in fixed for comp in (c.get("components") or [])
-                   if c.get("wholesaler") and str(comp.get("upc") or "").lstrip("0")})
+    src = read_parquet(con, "cpl_enriched")
+
+    def _member_dict(d):
+        """Shape a CPL row into the meta dict the per-component math expects."""
+        m = {
+            "un": str(d.get("un") or ""),
+            "product_name": d.get("product_name"),
+            "unit_volume": d.get("unit_volume"),
+            "unit_qty": d.get("unit_qty"),
+            "vintage": d.get("vintage"),
+            "fcase": d.get("fcase"),
+        }
+        m["one_case_disc"] = _combo_one_case_disc([
+            (d.get("d1q"), d.get("d1a")), (d.get("d2q"), d.get("d2a")),
+            (d.get("d3q"), d.get("d3a")), (d.get("d4q"), d.get("d4a")),
+            (d.get("d5q"), d.get("d5a")),
+        ]) or 0.0
+        return m
+
+    _CPL_COLS = (
+        "LTRIM(CAST(c.upc AS VARCHAR),'0') un, c.product_name, c.unit_volume, "
+        "c.unit_qty, c.vintage, c.frontline_case_price fcase, "
+        "c.discount_1_qty d1q, c.discount_1_amt d1a, c.discount_2_qty d2q, c.discount_2_amt d2a, "
+        "c.discount_3_qty d3q, c.discount_3_amt d3a, c.discount_4_qty d4q, c.discount_4_amt d4a, "
+        "c.discount_5_qty d5q, c.discount_5_amt d5a"
+    )
+
+    # PRIMARY resolution: the authoritative CPL rows that carry the SAME
+    # combo_code (per (wholesaler, edition)). This is the distributor's own link
+    # between a combo and the exact SKUs it bundles — correct vintage, pack size,
+    # frontline and discount ladder — so we never guess the wrong vintage of a
+    # recycled barcode, and placeholder ('0') components still resolve by item.
+    members_by_combo: dict = {}
+    triples = sorted({(c.get("wholesaler"), c.get("_edition"), str(c.get("combo_code") or ""))
+                      for c in fixed
+                      if c.get("wholesaler") and c.get("_edition") and c.get("combo_code")})
+    if triples:
+        tp: dict = {}
+        rowlits = []
+        for i, (w, e, code) in enumerate(triples):
+            tp[f"w{i}"], tp[f"e{i}"], tp[f"c{i}"] = w, e, code
+            rowlits.append(f"($w{i}, $e{i}, $c{i})")
+        try:
+            df = con.execute(
+                f"SELECT c.wholesaler ws, c.edition ed, CAST(c.combo_code AS VARCHAR) code, {_CPL_COLS} "
+                f"FROM {src} c "
+                f"WHERE (c.wholesaler, c.edition, CAST(c.combo_code AS VARCHAR)) IN ({', '.join(rowlits)})",
+                tp).fetchdf()
+            seen: dict = {}
+            for _, r in df.iterrows():
+                d = r.to_dict()
+                key = (d["ws"], d["ed"], d["code"])
+                # Dedup identical SKU rows so two components can't each grab a
+                # duplicate of the same physical row.
+                sig = (str(d.get("un") or ""), str(d.get("product_name") or ""),
+                       str(d.get("unit_qty") or ""), str(d.get("vintage") or ""),
+                       d.get("fcase"))
+                if sig in seen.setdefault(key, set()):
+                    continue
+                seen[key].add(sig)
+                members_by_combo.setdefault(key, []).append(_member_dict(d))
+        except Exception:
+            pass
+
+    # FALLBACK resolution (upc-only heuristic, current edition): only used for a
+    # component whose combo_code isn't tagged in the CPL at all. One UPC can map
+    # to several catalog rows (the individual SKU AND a bundle), so pick ONE
+    # coherent row per UPC — a non-bundle with a sane case (2–120 bottles).
     info: dict = {}
-    if keys:
-        src = read_parquet(con, "cpl_enriched")
-        ph = ", ".join(f"($w{i}, $u{i})" for i in range(len(keys)))
+    fb_keys = sorted({(c.get("wholesaler"), str(comp.get("upc") or "").lstrip("0"))
+                      for c in fixed for comp in (c.get("components") or [])
+                      if c.get("wholesaler") and str(comp.get("upc") or "").lstrip("0")})
+    if fb_keys:
+        ph = ", ".join(f"($w{i}, $u{i})" for i in range(len(fb_keys)))
         kp: dict = {}
-        for i, (w, u) in enumerate(keys):
+        for i, (w, u) in enumerate(fb_keys):
             kp[f"w{i}"], kp[f"u{i}"] = w, u
         try:
-            # One UPC can map to SEVERAL catalog rows — the individual SKU AND a
-            # bundle (e.g. Angeline '...VCOMBO', unit_qty 240, alongside the real
-            # 750ML 12-pack). Aggregating across them mixes a bundle's pack size
-            # with another row's price. So pick ONE coherent row per UPC: prefer a
-            # NON-bundle product with a sane case (2–120 bottles), all fields from
-            # that single row. Pack-price reconciliation downstream validates it.
             df = con.execute(
                 f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM {src} WHERE edition<='{cym}' GROUP BY wholesaler), "
                 "ranked AS ( "
-                "  SELECT c.wholesaler ws, LTRIM(CAST(c.upc AS VARCHAR),'0') un, "
-                "         c.product_name, c.unit_volume, c.unit_qty, c.vintage, c.frontline_case_price fcase, "
-                "         c.discount_1_qty d1q, c.discount_1_amt d1a, c.discount_2_qty d2q, c.discount_2_amt d2a, "
-                "         c.discount_3_qty d3q, c.discount_3_amt d3a, c.discount_4_qty d4q, c.discount_4_amt d4a, "
-                "         c.discount_5_qty d5q, c.discount_5_amt d5a, "
+                f"  SELECT c.wholesaler ws, {_CPL_COLS}, "
                 "         ROW_NUMBER() OVER ( "
                 "           PARTITION BY c.wholesaler, LTRIM(CAST(c.upc AS VARCHAR),'0') "
                 "           ORDER BY "
@@ -845,10 +1004,6 @@ def compute_combo_economics(con, combos, cym=None):
                 "                    OR UPPER(COALESCE(c.product_name,'')) LIKE '%VARIETY%' "
                 "                    OR UPPER(COALESCE(c.product_name,'')) LIKE '%COMBO%' THEN 1 ELSE 0 END ASC, "
                 "             CASE WHEN TRY_CAST(c.unit_qty AS DOUBLE) BETWEEN 2 AND 120 THEN 0 ELSE 1 END ASC, "
-                # Same UPC often spans VINTAGES (the barcode is reused year to year) —
-                # prefer the LATEST vintage, the one a combo almost always features.
-                # (If a vintage also differs in pack size, pack-price reconciliation
-                # downstream still self-corrects: a wrong pick just won't reconcile.)
                 "             TRY_CAST(c.vintage AS INTEGER) DESC NULLS LAST, "
                 "             TRY_CAST(c.unit_qty AS DOUBLE) DESC NULLS LAST, "
                 "             c.frontline_case_price ASC NULLS LAST "
@@ -859,24 +1014,29 @@ def compute_combo_economics(con, combos, cym=None):
                 "SELECT * FROM ranked WHERE rn = 1", kp).fetchdf()
             for _, r in df.iterrows():
                 d = r.to_dict()
-                d["one_case_disc"] = _combo_one_case_disc([
-                    (d.get("d1q"), d.get("d1a")), (d.get("d2q"), d.get("d2a")),
-                    (d.get("d3q"), d.get("d3a")), (d.get("d4q"), d.get("d4a")),
-                    (d.get("d5q"), d.get("d5a")),
-                ]) or 0.0
-                info[(r["ws"], r["un"])] = d
+                info[(d["ws"], str(d.get("un") or ""))] = _member_dict(d)
         except Exception:
             pass
 
     for c in fixed:
         ws = c.get("wholesaler")
+        ed = c.get("_edition")
+        code = str(c.get("combo_code") or "")
+        comps = c.get("components") or []
+        members = members_by_combo.get((ws, ed, code), [])
+        matched = _match_combo_components(comps, members)
         pack = _ff(c.get("combo_pack_price"))
         rc = []
-        for comp in c.get("components") or []:
-            un = str(comp.get("upc") or "").lstrip("0")
-            if not un:
+        for i, comp in enumerate(comps):
+            meta = matched.get(i)
+            if meta is None:
+                # combo_code not tagged in the CPL → fall back to the upc-only
+                # heuristic (real barcodes only; '0' placeholders stay unresolved).
+                un0 = str(comp.get("upc") or "").lstrip("0")
+                meta = info.get((ws, un0)) if un0 else None
+            if not meta:
                 continue
-            meta = info.get((ws, un), {})
+            un = meta.get("un") or str(comp.get("upc") or "").lstrip("0")
             bpc = _ff(meta.get("unit_qty"))
             cases, bottles = _combo_qty_bottles(comp.get("qty_per_pack"), bpc)
             cases_req = cases if cases is not None else ((bottles / bpc) if (bottles and bpc) else None)

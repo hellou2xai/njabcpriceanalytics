@@ -832,10 +832,20 @@ def _combo_name_norm(s) -> str:
 
 
 def _combo_name_sim(a, b) -> float:
-    a, b = _combo_name_norm(a), _combo_name_norm(b)
-    if not a or not b:
+    """Brand-aware name similarity. Plain character overlap (difflib) wrongly
+    rewards the GENERIC shared words — 'NOBLE OAK BOURBON 6P' vs 'HEMINGWAY
+    BOURBON 6P' scores 0.65 purely on 'BOURBON 6P', though the brands differ.
+    The leading token is the brand/identity, so a brand-lead mismatch is heavily
+    penalised: generic-suffix overlap alone can't pass, while same-brand variants
+    (different vintage/expression) and exact names still score high."""
+    na, nb = _combo_name_norm(a), _combo_name_norm(b)
+    if not na or not nb:
         return 0.0
-    return difflib.SequenceMatcher(None, a, b).ratio()
+    seq = difflib.SequenceMatcher(None, na, nb).ratio()
+    ta, tb = na.split(), nb.split()
+    if ta and tb and ta[0] != tb[0]:
+        seq *= 0.6
+    return seq
 
 
 def _combo_price_sim(feed_each, fcase, uq) -> float:
@@ -1109,30 +1119,29 @@ def compute_combo_economics(con, combos, cym=None):
             fe_each = _ff(comp.get("frontline_price_each"))
             meta = matched.get(i)
             avail = [m for m in (cat_by_un.get((ws, ed, un0)) or []) if id(m) not in cat_used] if un0 else []
-            # UPC FIRST: a clean barcode match against the edition catalog. If the
-            # barcode maps to ONE product, trust it. If it's reused across products
-            # (Piper HD Brut / Marilyn / Sonoma all on 877397005266), keep only the
-            # row whose price reconciles to the feed frontline; a unique survivor
-            # wins. Anything still ambiguous falls through to name+price below.
-            if meta is None and avail:
-                if len(avail) == 1:
-                    meta = avail[0]
-                elif fe_each:
-                    pm = [m for m in avail
-                          if _combo_price_sim(fe_each, m.get("fcase"), m.get("unit_qty")) >= 0.97]
-                    if len(pm) == 1:
-                        meta = pm[0]
-                if meta is not None:
-                    cat_used.add(id(meta))
-            # UPC ambiguous/placeholder/absent → NAME + PRICE (both must agree).
+            # Resolution order: ITEM (barcode) → SEMANTIC (brand-aware name) →
+            # PRICE. We never blindly attach a row: a name match must agree on the
+            # BRAND, and price is only ever a confirmation/disambiguation, never the
+            # thing that picks an unrelated product.
+            #
+            # 1) ITEM: the barcode maps to exactly ONE product in the edition — it
+            #    IS that item, no further proof needed.
+            if meta is None and len(avail) == 1:
+                meta = avail[0]
+                cat_used.add(id(meta))
+            # 2) SEMANTIC: barcode reused / placeholder / absent → match the catalog
+            #    by name (brand-aware) AND price; both must agree (see
+            #    _combo_catalog_match). This is what picks the right one among
+            #    Piper HD Brut / Marilyn / Sonoma.
             if meta is None and cat_rows:
                 meta = _combo_catalog_match(
                     cat_rows, comp.get("feed_product_name") or comp.get("product_name"),
                     fe_each, cat_used)
                 if meta is not None:
                     cat_used.add(id(meta))
-            # Last resort — barcode known but name is unusable (numeric code) and
-            # price didn't uniquely disambiguate: price-ranked pick among its rows.
+            # 3) PRICE: last resort, ONLY among rows on the SAME barcode (same item
+            #    identity) when the feed name is unusable (a numeric code). Price
+            #    disambiguates same-item variants — it never reaches across products.
             if meta is None and avail:
                 meta = _combo_upc_fallback(avail, fe_each)
                 if meta is not None:

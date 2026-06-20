@@ -615,16 +615,29 @@ def get_combos(
             # Include qty in the real-UPC key: one recycled barcode can carry
             # DISTINCT products in a combo at different quantities (Allied Phantom
             # bundles a 3L Red Blend '20 at 1C and a 750ML Red Blend '21 at 3C on
-            # the same barcode). Same (upc, qty) still collapses true duplicates
-            # ($0 variety halves, repeated flavors at one tier), keeping the
-            # higher combo_each. Volume ladders (same upc, many qtys) are detected
+            # the same barcode). Volume ladders (same upc, many qtys) are detected
             # separately via _qkey, so this split doesn't disturb them.
             key = (comp["upc"], comp["qty_per_pack"]) if _real else (
                 "_noupc", comp["feed_product_name"], comp["qty_per_pack"], comp["combo_price_each"])
             bucket = g["comp_curr"] if slot == "curr" else g["comp_next"]
             prev = bucket.get(key)
-            if prev is None or (comp["combo_price_each"] or 0) > (prev["combo_price_each"] or 0):
+            if prev is None:
                 bucket[key] = comp
+            else:
+                # Clash on (upc, qty). One barcode can also carry two DIFFERENT
+                # SIZES at the same qty (Cointreau 750ML + 375ML on 87236565206,
+                # 3 btl each). If both rows are real-priced (>$0) with DIFFERENT
+                # frontlines, they're distinct products — keep both under a
+                # frontline-qualified key. Otherwise it's a true duplicate / $0
+                # variety half — keep the row with the higher combo_each.
+                pce = prev["combo_price_each"] or 0
+                nce = comp["combo_price_each"] or 0
+                pfe, nfe = prev.get("frontline_price_each"), comp.get("frontline_price_each")
+                if (_real and pce > 0 and nce > 0 and pfe and nfe
+                        and abs(pfe - nfe) > 0.01):
+                    bucket[(comp["upc"], comp["qty_per_pack"], nfe)] = comp
+                elif nce > pce:
+                    bucket[key] = comp
 
         from backend.search_aliases import expansion_for
         qtokens = [t for t in q.strip().lower().split() if t]

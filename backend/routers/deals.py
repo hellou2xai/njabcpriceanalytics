@@ -510,6 +510,7 @@ def get_combos(
             SELECT c.wholesaler, c.edition, c.combo_code, c.upc,
                    COALESCE(NULLIF(cc.product_name, ''),
                             NULLIF(cpl.product_name, ''), c.product_name) AS product_name,
+                   c.product_name AS feed_product_name,
                    COALESCE(cc.unit_volume, cpl.unit_volume) AS unit_volume,
                    c.combo_pack_price, c.qty_per_pack, c.frontline_price_each,
                    c.combo_price_each, c.total_savings,
@@ -565,7 +566,11 @@ def get_combos(
                      # (qty, combo_each, list_each, name) rows. A fixed bundle
                      # has ONE qty per UPC; a mix-and-match VOLUME ladder repeats
                      # the same UPC at several qty tiers (2/10/52/104 ...).
-                     "tier_rows": [], "qtys_by_upc": {}}
+                     # Tracked PER SLOT so a ladder that exists only in the NEXT
+                     # edition (e.g. a July deal viewed in June) is still detected
+                     # — otherwise its mixed tiers reconcile to a garbage bundle.
+                     "tier_rows": {"curr": [], "next": []},
+                     "qtys_by_upc": {"curr": {}, "next": {}}}
                 combos[(ws, code)] = g
             if not g["comments"]:
                 g["comments"] = _s(r.get("comments"))
@@ -577,7 +582,15 @@ def get_combos(
                     "unit_volume": _s(r.get("unit_volume")),
                     "qty_per_pack": _s(r.get("qty_per_pack")),
                     "frontline_price_each": _f(r.get("frontline_price_each")),
-                    "combo_price_each": _f(r.get("combo_price_each"))}
+                    "combo_price_each": _f(r.get("combo_price_each")),
+                    # Raw distributor name. The displayed product_name is resolved
+                    # against the CPL (ANY_VALUE per combo_code+upc), which COLLAPSES
+                    # to one name when several distinct products share a placeholder
+                    # ('0') barcode under one combo_code (e.g. Allied's 3 Yellowstone
+                    # flavors). The feed name stays distinct per row, so we dedup on
+                    # it to keep those members separate; the economics matcher then
+                    # re-resolves each to its own CPL row (by name + price).
+                    "feed_product_name": _s(r.get("feed_product_name"))}
             # Track every (qty, prices) row for the CURRENT slot so a volume
             # ladder can be detected and rebuilt later.
             # Key by UPC only when it's a REAL barcode — a placeholder ('0')
@@ -590,18 +603,24 @@ def get_combos(
             # multiple qty tiers): a real barcode, else the product name — never
             # the shared stub, which would falsely read unrelated '0'-UPC
             # components as one ladder.
-            _qkey = comp["upc"] if _real else ("_noupc", comp["product_name"])
-            if slot == "curr":
+            _qkey = comp["upc"] if _real else ("_noupc", comp["feed_product_name"])
+            qn = None
+            try:
+                qn = int(float(comp["qty_per_pack"])) if comp["qty_per_pack"] else None
+            except (TypeError, ValueError):
                 qn = None
-                try:
-                    qn = int(float(comp["qty_per_pack"])) if comp["qty_per_pack"] else None
-                except (TypeError, ValueError):
-                    qn = None
-                if qn:
-                    g["tier_rows"].append({**comp, "qty_n": qn})
-                    g["qtys_by_upc"].setdefault(_qkey, set()).add(qn)
-            key = comp["upc"] if _real else ("_noupc", comp["product_name"],
-                                             comp["qty_per_pack"], comp["combo_price_each"])
+            if qn:
+                g["tier_rows"][slot].append({**comp, "qty_n": qn})
+                g["qtys_by_upc"][slot].setdefault(_qkey, set()).add(qn)
+            # Include qty in the real-UPC key: one recycled barcode can carry
+            # DISTINCT products in a combo at different quantities (Allied Phantom
+            # bundles a 3L Red Blend '20 at 1C and a 750ML Red Blend '21 at 3C on
+            # the same barcode). Same (upc, qty) still collapses true duplicates
+            # ($0 variety halves, repeated flavors at one tier), keeping the
+            # higher combo_each. Volume ladders (same upc, many qtys) are detected
+            # separately via _qkey, so this split doesn't disturb them.
+            key = (comp["upc"], comp["qty_per_pack"]) if _real else (
+                "_noupc", comp["feed_product_name"], comp["qty_per_pack"], comp["combo_price_each"])
             bucket = g["comp_curr"] if slot == "curr" else g["comp_next"]
             prev = bucket.get(key)
             if prev is None or (comp["combo_price_each"] or 0) > (prev["combo_price_each"] or 0):
@@ -615,6 +634,7 @@ def get_combos(
             base = curr or nxt
             if base is None:
                 continue
+            bslot = "curr" if curr else "next"
             comps = list((g["comp_curr"] if curr else g["comp_next"]).values())
             savings, combo_price = base["total_savings"], base["combo_pack_price"]
 
@@ -623,22 +643,23 @@ def get_combos(
             # tiers (the per-case price drops as you buy more). The fixed-bundle
             # math is wrong for these: the headline pack price would be one
             # tier's LIST extension while the component table shows another
-            # tier. Rebuild as a clean tier ladder instead.
-            is_ladder = curr is not None and any(
-                len(qs) > 1 for qs in g["qtys_by_upc"].values())
+            # tier. Rebuild as a clean tier ladder instead. Use the BASE slot's
+            # tiers so a ladder present only in the next edition is still caught.
+            tier_rows = g["tier_rows"][bslot]
+            is_ladder = any(len(qs) > 1 for qs in g["qtys_by_upc"][bslot].values())
             volume_members = None
             volume_tiers = None
             if is_ladder:
                 # Distinct flavors (members you may mix).
                 seen_u, volume_members = set(), []
-                for tr in g["tier_rows"]:
+                for tr in tier_rows:
                     if tr["upc"] and tr["upc"] not in seen_u:
                         seen_u.add(tr["upc"])
                         volume_members.append({"product_name": tr["product_name"], "upc": tr["upc"]})
                 # One ladder rung per distinct qty: per-case combo price (these
                 # are consistent across flavors at a given qty), list, saving.
                 by_qty: dict = {}
-                for tr in g["tier_rows"]:
+                for tr in tier_rows:
                     q = tr["qty_n"]
                     ce, le = tr["combo_price_each"], tr["frontline_price_each"]
                     if q is None or ce is None:
@@ -864,11 +885,14 @@ def _match_combo_components(components, members):
     #    remaining members by name + price, strongest pair first.
     scored = []
     for (i, comp, feed_each) in pending:
+        # The raw feed name is distinct per member even when the CPL-resolved name
+        # collapsed (several products on one placeholder barcode), so match on it.
+        cname = comp.get("feed_product_name") or comp.get("product_name")
         for m in members:
             if id(m) in used:
                 continue
             s = (0.55 * _combo_price_sim(feed_each, m.get("fcase"), m.get("unit_qty"))
-                 + 0.45 * _combo_name_sim(comp.get("product_name"), m.get("product_name")))
+                 + 0.45 * _combo_name_sim(cname, m.get("product_name")))
             scored.append((s, i, m))
     scored.sort(key=lambda t: t[0], reverse=True)
     for s, i, m in scored:
@@ -1038,39 +1062,81 @@ def compute_combo_economics(con, combos, cym=None):
                 continue
             un = meta.get("un") or str(comp.get("upc") or "").lstrip("0")
             bpc = _ff(meta.get("unit_qty"))
+            fcase = _ff(meta.get("fcase"))
+            fe_each = _ff(comp.get("frontline_price_each"))
             cases, bottles = _combo_qty_bottles(comp.get("qty_per_pack"), bpc)
             cases_req = cases if cases is not None else ((bottles / bpc) if (bottles and bpc) else None)
-            fcase = _ff(meta.get("fcase"))
-            one_disc = _ff(meta.get("one_case_disc")) or 0.0
+            # A bare integer qty ('1', '5') carries no case/bottle suffix — some
+            # distributors (e.g. Shore Point) mean CASES, which _combo_qty_bottles
+            # would otherwise read as bottles (n/bpc of a case), collapsing the
+            # quantity. Disambiguate by the feed's per-unit frontline: if it
+            # matches the CPL CASE price better than the per-bottle price, the
+            # integer is a case count.
+            _qpp = str(comp.get("qty_per_pack") or "").strip().lower()
+            _explicit = ("c" in _qpp) or ("b" in _qpp)
+            if (not _explicit and bottles is not None and bpc and fcase
+                    and fe_each and abs(fe_each - fcase) <= abs(fe_each - fcase / bpc)):
+                cases_req = bottles
+            one_disc_raw = _ff(meta.get("one_case_disc")) or 0.0
+            # A "buy 1 case" CPL discount only applies if the combo actually
+            # includes at least one FULL case of this component — you can't claim
+            # a case break on a half-case (e.g. 3 bottles of a 6-pack) slice. Below
+            # a case the realistic separate price is the plain frontline, otherwise
+            # the combo looks falsely overpriced versus an unobtainable discount.
+            one_disc = one_disc_raw if (cases_req is not None and cases_req >= 0.999) else 0.0
             _vint = meta.get("vintage")
             _vint = str(_vint).strip() if _vint is not None and str(_vint).strip() not in ("", "0", "None", "nan") else None
             rc.append({
                 "un": un, "name": (meta.get("product_name") or comp.get("product_name")),
                 "unit_volume": meta.get("unit_volume") or comp.get("unit_volume"), "vintage": _vint,
-                "bpc": bpc, "fcase": fcase, "one_disc": one_disc,
+                "bpc": bpc, "fcase": fcase, "fe": fe_each, "one_disc": one_disc,
                 "sep_case": (fcase - one_disc) if fcase is not None else None,
                 "ce": _ff(comp.get("combo_price_each")), "cases_req": cases_req,
             })
 
-        def _tot(unit):
+        def _tot(unit, key):
             s = 0.0
             for r in rc:
-                if r["ce"] is None or r["cases_req"] is None:
+                v = r.get(key)
+                if v is None or r["cases_req"] is None:
                     return None
                 if unit == "bottle":
                     if not r["bpc"]:
                         return None
-                    s += r["ce"] * r["cases_req"] * r["bpc"]
+                    s += v * r["cases_req"] * r["bpc"]
                 else:
-                    s += r["ce"] * r["cases_req"]
+                    s += v * r["cases_req"]
             return s
-        tb, tc = _tot("bottle"), _tot("case")
+        # Detect the pricing unit (per bottle vs per case) AND what
+        # combo_pack_price represents, by reconciling to it. Most feeds put
+        # what-you-PAY in combo_pack_price (Σ combo_each×qty); some (Shore Point)
+        # put the FRONTLINE extension (Σ frontline_each×qty) and you actually pay
+        # pack − savings. Trying both price bases finds the unit either way. What
+        # you PAY is always Σ combo_each×qty, so combo_cost is read from that — not
+        # from pack, whose meaning differs by distributor.
         unit = None
+        basis = None
+        best_err = 0.05
         if pack and pack > 0:
-            eb = abs(tb - pack) / pack if tb is not None else 9.0
-            ec = abs(tc - pack) / pack if tc is not None else 9.0
-            if min(eb, ec) <= 0.05:
-                unit = "bottle" if eb <= ec else "case"
+            for u in ("bottle", "case"):
+                for key in ("ce", "fe"):
+                    t = _tot(u, key)
+                    if t is None:
+                        continue
+                    err = abs(t - pack) / pack
+                    if err <= best_err:
+                        best_err, unit, basis = err, u, key
+        pay_total = _tot(unit, "ce") if unit else None
+        # If pack already equals the pay total (basis 'ce'), keep pack so the
+        # bundle feeds are unchanged; if pack is the frontline extension
+        # (basis 'fe'), the real pay is Σ combo_each×qty.
+        combo_pay = pack if basis == "ce" else pay_total
+        # A frontline-extension combo must imply you PAY no more than that
+        # frontline — a combo is a discount. If Σ combo_each×qty exceeds the pack,
+        # the feed is self-contradictory ($0 or inverted prices, negative
+        # advertised savings), so don't emit a confident (huge-negative) verdict.
+        if basis == "fe" and (pay_total is None or pack is None or pay_total > pack + 0.01):
+            unit = combo_pay = None
 
         comps_out, sep_total, front_total, missing = [], 0.0, 0.0, False
         combo_clean = bool(rc) and unit is not None
@@ -1102,8 +1168,8 @@ def compute_combo_economics(con, combos, cym=None):
                 "combo_cost": ccost, "best_separate_cost": scost, "frontline_cost": fcost,
             })
         sep_t = sep_total or None
-        save_vs_sep = (sep_t - pack) if (sep_t is not None and pack is not None) else None
-        save_vs_front = (front_total - pack) if (front_total and pack is not None) else None
+        save_vs_sep = (sep_t - combo_pay) if (sep_t is not None and combo_pay is not None) else None
+        save_vs_front = (front_total - combo_pay) if (front_total and combo_pay is not None) else None
         pct_sep = (save_vs_sep / sep_t * 100) if (save_vs_sep is not None and sep_t) else None
         if not combo_clean or save_vs_sep is None:
             verdict = "unknown"
@@ -1143,7 +1209,7 @@ def compute_combo_economics(con, combos, cym=None):
             "combo_code": str(c.get("combo_code")), "wholesaler": ws,
             "contents": (c.get("comments") or c.get("product_name")),
             "unit": unit,
-            "combo_cost": round(pack, 2) if pack is not None else None,
+            "combo_cost": round(combo_pay, 2) if combo_pay is not None else None,
             "advertised_savings": round(advertised, 2) if advertised is not None else None,
             "separate_best_total": round(sep_t, 2) if sep_t is not None else None,
             "frontline_total": round(front_total, 2) if front_total else None,

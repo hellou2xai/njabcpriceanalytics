@@ -427,6 +427,15 @@ function ComboDetailModal({ c, onClose }: { c: Combo; onClose: () => void }) {
                             {vintage ? <span className="text-muted"> · '{String(vintage).slice(-2)}</span> : null}
                           </div>
                           {comp.upc && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{comp.upc}{abgSku(c.wholesaler, comp.abg_sku) ? ` · ${skuLabel(c.wholesaler)} ${comp.abg_sku}` : ''}</div>}
+                          {/* Combo sheet is the ground truth for the item; when we
+                              priced it against a differently-named catalog row, say
+                              so — transparent, never a silent substitution. */}
+                          {comp.priced_as && (
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}
+                                 title="The combo sheet lists this item; we matched a catalog row with a different name to price it.">
+                              priced against {comp.priced_as}
+                            </div>
+                          )}
                           {/* The per-line contribution to the bundle totals, so
                               a per-bottle price against a case qty is unambiguous. */}
                           {lineList != null && lineCombo != null && (

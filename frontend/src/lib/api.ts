@@ -2282,6 +2282,9 @@ export interface ComboComponent {
   qty_per_pack: string | null;
   frontline_price_each: number | null;
   combo_price_each: number | null;
+  // GROUND TRUTH: product_name is the combo SHEET's item. priced_as names the
+  // catalog row we priced against when it differs (transparent, never a swap).
+  priced_as?: string | null;
 }
 // Worth-it economics computed server-side (deals.compute_combo_economics):
 // combo pack price vs the individual LIST price and the realistic ONE-CASE
@@ -2295,6 +2298,11 @@ export interface ComboEconomicsComponent {
   combo_each?: number | null; best_separate_each?: number | null;
   has_separate_deal?: boolean;
   combo_cost?: number | null; best_separate_cost?: number | null; frontline_cost?: number | null;
+  // GROUND TRUTH: product_name is the COMBO SHEET's item. When we priced it
+  // against a catalog row with a different name, priced_as names that row (so
+  // pricing is transparent, never a silent substitution).
+  sheet_name?: string | null; sheet_frontline_each?: number | null;
+  priced_as?: string | null;
 }
 export interface ComboEconomics {
   unit?: 'bottle' | 'case' | null;

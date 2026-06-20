@@ -872,57 +872,39 @@ def _combo_price_sim(feed_each, fcase, uq) -> float:
 
 
 def _match_combo_components(components, members):
-    """Resolve each combo component to the authoritative CPL row that carries
-    the SAME combo_code (`members`), returning {component_index: member}.
+    """FIRST PASS — match the combo SHEET's components against the CPL rows that
+    carry the SAME combo_code (`members`), returning {component_index: member}.
 
-    THE RULE (mirrors the name-resolution join in get_combos): a component is
-    the CPL row whose combo_code AND upc both match. One barcode can still span
-    vintages/pack sizes under one code, so we disambiguate by price. Placeholder
-    ('0') components have no usable barcode, so we match them by ITEM — product
-    name similarity + price reconciliation — among the members sharing the code.
-    Assignment is one-to-one (greedy, best score first) so two components never
-    borrow the same member."""
-    out: dict = {}
-    used: set = set()
-    by_un: dict = {}
-    for m in members:
-        if m.get("un"):
-            by_un.setdefault(m["un"], []).append(m)
-
-    # 1) Real-barcode components: pin by combo_code+upc, disambiguating a
-    #    multi-vintage barcode by the feed's own per-unit frontline.
-    pending = []
+    Every (component, member) pair is scored and assigned ONE-TO-ONE, best first.
+    A UPC match is a strong signal but is never trusted blindly: it must be
+    CONFIRMED by price. This is what stops two products that share one barcode
+    (Madre RED Ensamble + ESPADIN on 816136022980) from grabbing each other's
+    row — the wrong one fails price reconciliation and is left for the broader
+    catalog match. Placeholder ('0') members carry no barcode, so they're matched
+    by price too (with name as a tiebreak, since some feed names are numeric
+    codes). PRICE is the confirmation throughout; name only orders ties."""
+    PRICE_OK = 0.97
+    pairs = []
     for i, comp in enumerate(components):
         un = str(comp.get("upc") or "").lstrip("0")
-        feed_each = comp.get("frontline_price_each")
-        if un and un in by_un:
-            cands = [m for m in by_un[un] if id(m) not in used]
-            if cands:
-                best = max(cands, key=lambda m: _combo_price_sim(feed_each, m.get("fcase"), m.get("unit_qty")))
-                out[i] = best
-                used.add(id(best))
-                continue
-        pending.append((i, comp, feed_each))
-
-    # 2) Placeholder ('0') / un-tagged components: item-match against the
-    #    remaining members by name + price, strongest pair first.
-    scored = []
-    for (i, comp, feed_each) in pending:
-        # The raw feed name is distinct per member even when the CPL-resolved name
-        # collapsed (several products on one placeholder barcode), so match on it.
+        fe = comp.get("frontline_price_each")
         cname = comp.get("feed_product_name") or comp.get("product_name")
-        for m in members:
-            if id(m) in used:
-                continue
-            s = (0.55 * _combo_price_sim(feed_each, m.get("fcase"), m.get("unit_qty"))
-                 + 0.45 * _combo_name_sim(cname, m.get("product_name")))
-            scored.append((s, i, m))
-    scored.sort(key=lambda t: t[0], reverse=True)
-    for s, i, m in scored:
-        if i in out or id(m) in used or s < 0.35:
+        for j, m in enumerate(members):
+            ps = _combo_price_sim(fe, m.get("fcase"), m.get("unit_qty"))
+            if ps < PRICE_OK:
+                continue                       # price must reconcile, always
+            ns = _combo_name_sim(cname, m.get("product_name"))
+            upc_ok = bool(un and un == m.get("un"))
+            # confirmed barcode ranks above a name/price-only match
+            pairs.append(((2.0 if upc_ok else 0.0) + ps + ns, i, j))
+    pairs.sort(key=lambda t: t[0], reverse=True)
+    out: dict = {}
+    used_m: set = set()
+    for _s, i, j in pairs:
+        if i in out or j in used_m:
             continue
-        out[i] = m
-        used.add(id(m))
+        out[i] = members[j]
+        used_m.add(j)
     return out
 
 

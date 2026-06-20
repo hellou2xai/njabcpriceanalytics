@@ -514,6 +514,17 @@ def build_pricing_cache() -> Path:
             ]
             for _name, _tbl, _cols in _INDEXES:
                 _try(f"CREATE INDEX {_name} ON {_tbl} ({_cols})")
+
+            # sku_offer: the precomputed cross-distributor offer grid (smart cart
+            # + Compare + Price 360). Built LAST, after cpl_enriched is finalised
+            # (price_trend rebuild + upc_norm + enr_name) because it CALLS the
+            # canonical compare._common_rows, which reads those columns. Best-
+            # effort — a failure here must never break the pricing cache.
+            try:
+                from backend.precompute_offers import build_sku_offer
+                build_sku_offer(con)
+            except Exception as _exc:
+                print(f"[pricing_cache] sku_offer build skipped: {_exc}")
         finally:
             con.close()
         old = _current_path

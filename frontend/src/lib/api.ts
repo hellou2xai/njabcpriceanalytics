@@ -1378,6 +1378,58 @@ export interface CartItem {
   batch_id?: string | null;
   batch_label?: string | null;
   batch_source?: string | null;
+  // Smart cart: the full per-distributor comparison (every house that carries
+  // this SKU in its edition, incl each one's own RIP), cheapest-net first, from
+  // the precomputed sku_offer grid. Drives the in-place distributor dropdown.
+  comparison?: OfferRow[];
+  // Ranked, stacked money-saving suggestions for THIS line. One row each in the
+  // UI; Apply fires `action`.
+  suggestions?: LineSuggestion[];
+}
+
+// One distributor's offer for a SKU within an edition (precomputed sku_offer).
+export interface OfferRow {
+  edition: string;
+  wholesaler: string;
+  upc?: string | null;
+  display_name?: string | null;
+  product_name?: string | null;
+  unit_volume?: string | null;
+  unit_qty?: string | null;
+  item_no?: string | null;
+  frontline_case_price?: number | null;
+  after_qd_case_price?: number | null;
+  effective_case_price?: number | null;
+  btl_effective?: number | null;
+  qd_save_per_case?: number | null;
+  rip_savings?: number | null;
+  has_discount?: boolean;
+  has_rip?: boolean;
+  rip_code?: string | null;
+  net_rank?: number;
+  is_cheapest_net?: boolean;
+  n_distributors?: number;
+  spread_net?: number | null;
+}
+
+// A normalized, one-click money-saving suggestion attached to a cart line.
+export interface LineSuggestion {
+  kind: 'alt_distributor' | 'qd_tier' | 'rip_tier' | 'rip_program' | 'case_mix' | 'buy_before';
+  headline: string;
+  detail?: string | null;
+  delta_per_case?: number | null;
+  delta_total?: number | null;
+  expires_on?: string | null;
+  rank?: number;
+  line_ids?: number[];
+  // The exact call the UI fires on Apply. null = informational only.
+  action?: { endpoint: string; method: 'PUT' | 'POST'; payload: Record<string, unknown> } | null;
+}
+
+export interface CartPayload {
+  items: CartItem[];
+  group_notes: Record<string, string>;
+  savings?: { captured_total: number; opportunity_total: number; protection_total: number };
 }
 
 export interface CartBatchItemIn {
@@ -1512,11 +1564,22 @@ export const lists = {
 };
 
 export const cart = {
-  get: () => request<{ items: CartItem[]; group_notes: Record<string, string> }>('/api/cart'),
+  get: () => request<CartPayload>('/api/cart'),
   analyze: () => request<SavingsAnalysis>('/api/cart/analyze'),
   groupNote: (wholesaler: string, note: string) =>
     request('/api/cart/group-note', { method: 'POST', body: JSON.stringify({ wholesaler, note }) }),
-  add: (item: Partial<CartItem>) => request('/api/cart', { method: 'POST', body: JSON.stringify(item) }),
+  // Returns the freshly enriched cart so the caller can show per-line
+  // comparison + suggestions immediately, no follow-up fetch.
+  add: (item: Partial<CartItem>) =>
+    request<{ status: string; cart: CartPayload }>('/api/cart', { method: 'POST', body: JSON.stringify(item) }),
+  // Move ONE line to another distributor IN PLACE (same row, new house),
+  // preserving quantity. Returns the enriched cart.
+  switchDistributor: (id: number, wholesaler: string) =>
+    request<{ status: string; line_id: number; cart: CartPayload }>(
+      `/api/cart/${id}/switch-distributor`, { method: 'POST', body: JSON.stringify({ wholesaler }) }),
+  // Apply a normalized LineSuggestion.action verbatim (PUT/POST to its endpoint).
+  applySuggestion: (action: { endpoint: string; method: 'PUT' | 'POST'; payload: Record<string, unknown> }) =>
+    request(action.endpoint, { method: action.method, body: JSON.stringify(action.payload) }),
   // Add N items as ONE labelled batch. They stay grouped in the cart (a
   // second send of the same cluster produces a separate batch instead of
   // merging into the first). Returns the generated batch_id.

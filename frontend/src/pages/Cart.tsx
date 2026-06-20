@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Trash2, Clock, Send, ShoppingCart, Plus, Search, ArrowUpFromLine, Eraser, Sparkles } from 'lucide-react';
-import { cart as cartApi, salesReps as repsApi, catalog, type CartItem, type Product, type SavingsRec } from '../lib/api';
+import { cart as cartApi, salesReps as repsApi, catalog, type CartItem, type Product, type SavingsRec, type LineSuggestion } from '../lib/api';
 import ProductThumb from '../components/ProductThumb';
 import SavingsAnalysis from '../components/SavingsAnalysis';
 import DealSparkline from '../components/DealSparkline';
@@ -112,6 +112,93 @@ function RipBadge({ code }: { code: string }) {
     <span className="cart-rip-group-badge" title={`RIP rebate ${code} — buy these together to qualify`} style={{
       background: `hsl(${h} 75% 93%)`, color: `hsl(${h} 65% 28%)`, borderColor: `hsl(${h} 60% 78%)`,
     }}>🔗 RIP {code}</span>
+  );
+}
+
+// --- Smart cart: in-place distributor picker + stacked suggestions ----------
+
+const SUG_LABEL: Record<LineSuggestion['kind'], string> = {
+  alt_distributor: 'Distributor',
+  qd_tier: 'Quantity discount',
+  rip_tier: 'RIP tier',
+  rip_program: 'Better RIP',
+  case_mix: 'Case mix',
+  buy_before: 'Buy before rise',
+};
+const SUG_HUE: Record<LineSuggestion['kind'], number> = {
+  alt_distributor: 205, qd_tier: 145, rip_tier: 275, rip_program: 275,
+  case_mix: 30, buy_before: 0,
+};
+
+// The distributor cell becomes a dropdown of EVERY distributor carrying the same
+// SKU in this edition, each with its own net price + RIP flag (from the
+// precomputed comparison). Picking a different one switches the line IN PLACE.
+function DistributorPicker({ it, onSwitch, busy }: {
+  it: CartItem; onSwitch: (ws: string) => void; busy?: boolean;
+}) {
+  const cmp = it.comparison ?? [];
+  if (cmp.length < 2) return <>{distributorName(it.wholesaler)}</>;
+  return (
+    <select
+      value={it.wholesaler}
+      disabled={busy}
+      title="Switch this line to another distributor that carries the same product. Net/case includes that distributor's own RIP rebate."
+      style={{ fontSize: 11, padding: '1px 4px', maxWidth: '100%', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--surface)' }}
+      onChange={e => { if (e.target.value && e.target.value !== it.wholesaler) onSwitch(e.target.value); }}
+    >
+      {cmp.map(c => {
+        const net = c.effective_case_price;
+        const cur = c.wholesaler === it.wholesaler;
+        return (
+          <option key={c.wholesaler} value={c.wholesaler}>
+            {distributorName(c.wholesaler)} · {net != null ? `$${net.toFixed(2)}` : '—'}/cs
+            {c.has_rip ? ' +RIP' : ''}
+            {!cur && c.is_cheapest_net ? ' ◆ cheapest' : ''}
+            {cur ? ' (current)' : ''}
+          </option>
+        );
+      })}
+    </select>
+  );
+}
+
+// One row per money-saving suggestion, ranked by dollar impact. Apply fires the
+// suggestion's own action endpoint; the cart refetches so the stack recomputes.
+function SuggestionStack({ it, onApply, busy }: {
+  it: CartItem;
+  onApply: (a: NonNullable<LineSuggestion['action']>) => void;
+  busy?: boolean;
+}) {
+  const sugs = it.suggestions ?? [];
+  if (!sugs.length) return null;
+  return (
+    <div style={{ marginLeft: 56, marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {sugs.map((s, i) => {
+        const h = SUG_HUE[s.kind] ?? 210;
+        return (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, flexWrap: 'wrap' }}>
+            <span style={{
+              fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 9, whiteSpace: 'nowrap',
+              background: `hsl(${h} 75% 94%)`, color: `hsl(${h} 60% 30%)`, border: `1px solid hsl(${h} 55% 82%)`,
+            }}>{SUG_LABEL[s.kind]}</span>
+            <span style={{ fontWeight: 600 }}>{s.headline}</span>
+            {s.detail && <span style={{ color: 'var(--text-muted)' }}>{s.detail}</span>}
+            {s.delta_total ? (
+              <span className="hl-best" style={{ padding: '0 6px', borderRadius: 8, fontWeight: 700 }}>
+                +{money(s.delta_total)}
+              </span>
+            ) : null}
+            {s.expires_on && (
+              <span className="win-badge win-partial" title="Time-sensitive deal window">ends {s.expires_on}</span>
+            )}
+            {s.action && (
+              <button type="button" className="btn btn-primary btn-sm" disabled={busy}
+                onClick={() => onApply(s.action!)}>Apply</button>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -357,13 +444,28 @@ export default function Cart() {
     onSuccess: invalidate,
   });
   const del = useMutation({ mutationFn: (id: number) => cartApi.remove(id), onSuccess: invalidate });
+  // In-place distributor switch (the line keeps its quantity). The endpoint
+  // returns the freshly enriched cart, so seed the query cache for an instant
+  // re-render with the new price + recomputed suggestions.
+  const switchDist = useMutation({
+    mutationFn: (v: { id: number; ws: string }) => cartApi.switchDistributor(v.id, v.ws),
+    onSuccess: (r) => { if (r?.cart) qc.setQueryData(['cart'], r.cart); else invalidate(); },
+  });
+  // Apply any normalized suggestion's action (qty bump, RIP switch, etc.).
+  // Recompute-on-apply: refetch so the line's stack re-ranks.
+  const applySug = useMutation({
+    mutationFn: (a: NonNullable<LineSuggestion['action']>) => cartApi.applySuggestion(a),
+    onSuccess: invalidate,
+  });
   const { open } = useProductQuickView();  // product-name → price-detail modal
   const add = useMutation({
     mutationFn: (p: Product) => cartApi.add({
       product_name: p.product_name, wholesaler: p.wholesaler,
       upc: p.upc ?? undefined, unit_volume: p.unit_volume ?? undefined, qty_cases: 1, qty_units: 0,
     }),
-    onSuccess: invalidate,
+    // POST returns the enriched cart; seed it so suggestions show the instant the
+    // item lands (no follow-up fetch). Fall back to a refetch if absent.
+    onSuccess: (r) => { if (r?.cart) qc.setQueryData(['cart'], r.cart); else invalidate(); },
   });
   const assign = useMutation({
     mutationFn: (v: { wholesaler: string; repId: number | null }) => cartApi.assignRep(v.wholesaler, v.repId),
@@ -479,8 +581,9 @@ export default function Cart() {
               </span>
               {showCombo && <ComboBadge code={it.combo_code!} />}
             </div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-              {distributorName(it.wholesaler)}{it.upc ? ` · ${it.upc}` : ''}
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <DistributorPicker it={it} onSwitch={ws => switchDist.mutate({ id: it.id, ws })} busy={switchDist.isPending} />
+              {it.upc ? <span>· {it.upc}</span> : null}
             </div>
           </div>
           <span className="cart-cell-code" title={abgSku(it.wholesaler, it.abg_sku) ? `${skuLabel(it.wholesaler)} item number` : undefined}>
@@ -551,6 +654,15 @@ export default function Cart() {
               everyDay={everyDayFromTiers(it.tiers, it.frontline_case_price)} />
           )}
         </div>
+
+        {/* Smart-cart: ranked, stacked money-saving suggestions for this line
+            (alternate distributor incl its RIP, next QD/RIP tier, better RIP
+            program, case-mix pooling, buy-before-a-rise). One row each; Apply
+            executes and the cart refetches so the stack recomputes. */}
+        {!saving && (
+          <SuggestionStack it={it} busy={applySug.isPending || switchDist.isPending}
+            onApply={a => applySug.mutate(a)} />
+        )}
 
         {/* eBiz-style per-line RIP eligibility: how far this line (and its RIP
             cluster) is from the next rebate, or which tier it already earns.

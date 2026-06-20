@@ -539,6 +539,21 @@ source of math. Only worth doing if profiling shows the tier path dominates afte
 
 ## 11. `_case_mix_sizes` / `_cpn_for_upcs` per-board joins (compare)
 
+**STATUS: cross-distributor offer GRID now precomputed as `sku_offer`** (backend/
+precompute_offers.py, built last in pricing_cache.py). One row per (edition,
+identity, distributor) with frontline/after-QD/RIP/net + cross-distributor
+`net_rank`, built by CALLING `compare._common_rows` (no forked math). Grouped on a
+cpn-aware `group_key` (cpn + size/pack/vintage) so it MERGES the same product
+under different barcodes AND SPLITS a barcode two products share; falls back to the
+barcode `match_key` when no cpn. RIP is stored PER DISTRIBUTOR (1,605 SKUs locally
+where RIP presence differs across houses). Built in ~5s for 140k rows (DataFrame
+bulk insert; row-by-row executemany was 157s). Consumed by the smart cart
+(`attach_line_suggestions`) for the per-line comparison + in-place
+switch-distributor. NOT YET: repointing the compare BOARDS + `_case_mix_sizes` to
+read it (they still recompute live); that's the remaining half of this item.
+
+### Original analysis
+
 **What.** Compare boards (`best_rips`, `compare_rips`, Price 360) compute "mix to
 qualify" cluster sizes (`_case_mix_sizes`) and CELR family numbers
 (`_cpn_for_upcs`) per board.

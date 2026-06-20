@@ -101,6 +101,12 @@ class AddByRipIn(BaseModel):
     qty_cases_per_item: int = 0   # 0 = add at zero, let the user step them up
 
 
+class SwitchDistributorIn(BaseModel):
+    """Move ONE existing line to another distributor IN PLACE (same line, new
+    house), keeping its quantity. The target must carry the same SKU."""
+    wholesaler: str
+
+
 def _default_rep_for(con, user_id: int, wholesaler: str):
     """Return the rep id when the distributor has exactly one rep, else None."""
     reps = con.execute(
@@ -324,33 +330,9 @@ def _attach_combo_pricing(dcon, items):
 @router.get("")
 def get_cart(user: dict = Depends(get_current_user)):
     """All cart items (active + saved-for-later) with image, rep name, catalogue
-    pricing + deal tiers, plus per-distributor header notes."""
-    with get_pg() as con:
-        items = [dict(r) for r in con.execute(
-            "SELECT * FROM cart_items WHERE user_id=%s ORDER BY created_at", (user["id"],)
-        ).fetchall()]
-        reps = {r["id"]: dict(r) for r in con.execute(
-            "SELECT id, name, distributor, division, email FROM sales_reps WHERE user_id=%s",
-            (user["id"],),
-        ).fetchall()}
-        group_notes = {r["wholesaler"]: r["note"] for r in con.execute(
-            "SELECT wholesaler, note FROM cart_group_notes WHERE user_id=%s", (user["id"],)
-        ).fetchall()}
-    if items:
-        with get_duckdb() as dcon:
-            try:
-                attach_enrichment_image(dcon, items)
-                attach_sku_mapping(dcon, items)
-            except Exception:
-                pass
-            try:
-                _attach_cart_pricing(dcon, items)   # never let pricing break the cart load
-            except Exception:
-                pass
-    for it in items:
-        rep = reps.get(it.get("sales_rep_id"))
-        it["sales_rep_name"] = rep["name"] if rep else None
-    return {"items": items, "group_notes": group_notes}
+    pricing + deal tiers, the per-distributor comparison (incl each distributor's
+    RIP), a stacked suggestion list per line, and per-distributor header notes."""
+    return _load_enriched_cart(user)
 
 
 def _fnum(v):
@@ -761,12 +743,226 @@ def analyze_lines(items: list[dict]) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Smart-cart suggestions: one normalized shape per actionable money-saver, plus
+# the full per-distributor comparison (incl each distributor's own RIP) on every
+# line. The frontend renders a STACKED list under each line and fires the
+# `action` endpoint on Apply. All numbers come from analyze_lines (canonical
+# pricing) + the precomputed sku_offer grid — no new math here.
+# ---------------------------------------------------------------------------
+
+def _dist_label(slug: str) -> str:
+    return (slug or "").replace("_", " ").title() or "another distributor"
+
+
+def _normalize_rec(rec: dict) -> list[tuple]:
+    """Convert one analyze_lines recommendation into (line_id, suggestion) pairs.
+    A suggestion is {kind, headline, delta_per_case, delta_total, expires_on,
+    action}. `swap` is intentionally dropped — the richer alt_distributor
+    suggestion (built from sku_offer, carrying every distributor's RIP) replaces
+    it."""
+    t = rec.get("type")
+    out: list[tuple] = []
+    if t == "tier_gap":
+        is_qd = rec.get("kind") == "qd"
+        lid = rec.get("line_id")
+        exp = (rec.get("partial") or {}).get("to_date")
+        out.append((lid, {
+            "kind": "qd_tier" if is_qd else "rip_tier",
+            "headline": (f"Buy {rec['target_qty']} cs to reach the "
+                         f"${rec['new_case_price']:.2f} {'QD' if is_qd else 'RIP'} tier"),
+            "detail": f"+${rec['save_per_case']:.2f}/cs vs your current quantity",
+            "delta_per_case": rec.get("save_per_case"),
+            "delta_total": rec.get("extra_savings", 0.0),
+            "expires_on": exp,
+            "action": {"endpoint": f"/api/cart/{lid}", "method": "PUT",
+                       "payload": {"qty_cases": rec["target_qty"]}},
+        }))
+    elif t == "better_rip":
+        lid = rec.get("line_id")
+        out.append((lid, {
+            "kind": "rip_program",
+            "headline": (f"Switch to RIP {rec['better_rip_code']}: "
+                         f"${rec['save_per_case_better']:.2f}/cs at {rec['target_qty']} cs"),
+            "detail": f"your current RIP pays ${rec['save_per_case_current']:.2f}/cs here",
+            "delta_per_case": round(rec["save_per_case_better"] - rec["save_per_case_current"], 2),
+            "delta_total": rec.get("extra_savings", 0.0),
+            "expires_on": None,
+            "action": {"endpoint": f"/api/cart/{lid}", "method": "PUT",
+                       "payload": {"rip_choice": rec["better_rip_code"]}},
+        }))
+    elif t == "case_mix":
+        exp = (rec.get("partial") or {}).get("to_date")
+        sug = {
+            "kind": "case_mix",
+            "headline": (f"Pool {rec['add_cases']} more cs across "
+                         f"{len(rec.get('members') or [])} items for the next RIP tier"),
+            "detail": rec.get("description"),
+            "delta_per_case": None,
+            "delta_total": rec.get("extra_savings", 0.0),
+            "expires_on": exp,
+            "action": None,           # cross-line; the buyer chooses which line to grow
+            "line_ids": rec.get("line_ids"),
+        }
+        for lid in (rec.get("line_ids") or []):
+            out.append((lid, dict(sug)))
+    elif t == "buy_before":
+        lid = rec.get("line_id")
+        out.append((lid, {
+            "kind": "buy_before",
+            "headline": f"Price rises ${rec['rise_per_case']:.2f}/cs next month",
+            "detail": f"buy now to lock ${rec['current_price']:.2f}/cs before ${rec['next_price']:.2f}",
+            "delta_per_case": rec.get("rise_per_case"),
+            "delta_total": rec.get("total_rise", 0.0),
+            "expires_on": None,
+            "action": None,           # informational protection, not a one-click change
+        }))
+    return out
+
+
+def attach_line_suggestions(items: list[dict]) -> dict:
+    """Price every line, attach `comparison` (full per-distributor grid incl RIP)
+    and a ranked, stacked `suggestions` list to each, and return the cart-level
+    roll-up totals. Reuses analyze_lines (canonical) + the precomputed sku_offer
+    grid. Best-effort: never raises into the cart load."""
+    for it in items:
+        it.setdefault("suggestions", [])
+        it.setdefault("comparison", [])
+    if not items:
+        return {"captured_total": 0.0, "opportunity_total": 0.0,
+                "protection_total": 0.0, "recommendations": []}
+
+    try:
+        analysis = analyze_lines(items)   # prices items in place + returns recs
+    except Exception:
+        return {"captured_total": 0.0, "opportunity_total": 0.0,
+                "protection_total": 0.0, "recommendations": []}
+
+    by_id = {it.get("id"): it for it in items if it.get("id") is not None}
+    per_line: dict = {lid: [] for lid in by_id}
+
+    # 1) Normalize the analyze_lines recommendations into per-line suggestions.
+    for rec in analysis.get("recommendations", []):
+        if rec.get("type") == "swap":
+            continue   # replaced by alt_distributor (richer, carries RIP)
+        for lid, sug in _normalize_rec(rec):
+            if lid in per_line:
+                per_line[lid].append(sug)
+
+    # 2) Per-line cross-distributor comparison from the precomputed grid, plus
+    #    an alt_distributor suggestion when a cheaper house carries the SKU.
+    from backend.precompute_offers import offer_grid
+    with get_duckdb() as dcon:
+        for it in items:
+            un = str(it.get("upc") or "").lstrip("0")
+            ed = it.get("edition")
+            ws = it.get("wholesaler")
+            if not (un and ed and ws):
+                continue
+            try:
+                grid = offer_grid(dcon, edition=ed, wholesaler=ws, upc_norm=un,
+                                  unit_qty=it.get("unit_qty"))
+            except Exception:
+                grid = []
+            if not grid:
+                continue
+            it["comparison"] = grid
+            cur = next((g for g in grid if g.get("wholesaler") == ws), None)
+            cur_net = (_fnum(cur.get("effective_case_price")) if cur else None) \
+                or _fnum(it.get("effective_case_price"))
+            cheapest = grid[0]   # net_rank 0
+            ch_net = _fnum(cheapest.get("effective_case_price"))
+            # Plausibility floor: a "deal" more than ~50% cheaper across houses is
+            # almost always a shared/mis-keyed barcode welding two different
+            # products (e.g. Penfolds Bin 28 vs Bin 98 under one barcode + cpn),
+            # not a real price gap (real cross-distributor diffs are frontline +
+            # QD, rarely past ~30-50%). Still SHOW the comparison table so the
+            # buyer can see both names; just don't push a one-click switch on it.
+            plausible = (ch_net is not None and cur_net is not None
+                         and ch_net >= cur_net * 0.5)
+            if (cheapest.get("wholesaler") != ws and cur_net is not None
+                    and ch_net is not None and ch_net < cur_net - 2.0 and plausible):
+                C = int(it.get("qty_cases") or 0)
+                dpc = round(cur_net - ch_net, 2)
+                lid = it.get("id")
+                per_line.setdefault(lid, []).append({
+                    "kind": "alt_distributor",
+                    "headline": (f"{_dist_label(cheapest.get('wholesaler'))} is "
+                                 f"${dpc:.2f}/cs cheaper"),
+                    "detail": (f"net ${ch_net:.2f}/cs vs ${cur_net:.2f}/cs"
+                               + (" (incl. its RIP)" if cheapest.get("has_rip") else "")),
+                    "delta_per_case": dpc,
+                    "delta_total": round(dpc * max(C, 1), 2),
+                    "expires_on": None,
+                    "action": {"endpoint": f"/api/cart/{lid}/switch-distributor",
+                               "method": "POST",
+                               "payload": {"wholesaler": cheapest.get("wholesaler")}},
+                })
+
+    # 3) Rank each line's stack by dollar impact and stamp it on the item.
+    for lid, sugs in per_line.items():
+        sugs.sort(key=lambda s: s.get("delta_total") or 0.0, reverse=True)
+        for i, s in enumerate(sugs):
+            s["rank"] = i
+        if lid in by_id:
+            by_id[lid]["suggestions"] = sugs
+
+    return {
+        "captured_total": analysis.get("captured_total", 0.0),
+        "opportunity_total": analysis.get("opportunity_total", 0.0),
+        "protection_total": analysis.get("protection_total", 0.0),
+        "recommendations": analysis.get("recommendations", []),
+    }
+
+
+def _load_enriched_cart(user: dict) -> dict:
+    """Full cart payload: items with image, rep name, catalogue pricing + deal
+    tiers, the per-distributor comparison, a stacked suggestion list per line,
+    plus per-distributor header notes and the savings roll-up."""
+    with get_pg() as con:
+        items = [dict(r) for r in con.execute(
+            "SELECT * FROM cart_items WHERE user_id=%s ORDER BY created_at", (user["id"],)
+        ).fetchall()]
+        reps = {r["id"]: dict(r) for r in con.execute(
+            "SELECT id, name, distributor, division, email FROM sales_reps WHERE user_id=%s",
+            (user["id"],),
+        ).fetchall()}
+        group_notes = {r["wholesaler"]: r["note"] for r in con.execute(
+            "SELECT wholesaler, note FROM cart_group_notes WHERE user_id=%s", (user["id"],)
+        ).fetchall()}
+    summary = {"captured_total": 0.0, "opportunity_total": 0.0, "protection_total": 0.0}
+    if items:
+        with get_duckdb() as dcon:
+            try:
+                attach_enrichment_image(dcon, items)
+                attach_sku_mapping(dcon, items)
+            except Exception:
+                pass
+            try:
+                _attach_cart_pricing(dcon, items)   # never let pricing break the cart load
+            except Exception:
+                pass
+        try:
+            roll = attach_line_suggestions(items)   # comparison + stacked suggestions
+            summary = {k: roll.get(k, 0.0) for k in
+                       ("captured_total", "opportunity_total", "protection_total")}
+        except Exception:
+            pass
+    for it in items:
+        rep = reps.get(it.get("sales_rep_id"))
+        it["sales_rep_name"] = rep["name"] if rep else None
+    return {"items": items, "group_notes": group_notes, "savings": summary}
+
+
 @router.post("")
 def add_to_cart(body: CartItemIn, user: dict = Depends(get_current_user)):
+    """Add a product and return the freshly enriched cart (with per-line
+    comparison + suggestions) so the UI shows savings the instant it lands —
+    one round trip, no follow-up fetch."""
     with get_pg() as con:
         rep_id = _default_rep_for(con, user["id"], body.wholesaler)
         _insert_cart_item(con, user["id"], body.model_dump(), rep_id)
-    return {"status": "added"}
+    return {"status": "added", "cart": _load_enriched_cart(user)}
 
 
 @router.post("/add-batch")
@@ -892,6 +1088,98 @@ def update_cart_item(item_id: int, body: CartItemPatch, user: dict = Depends(get
     with get_pg() as con:
         con.execute(f"UPDATE cart_items SET {', '.join(fields)} WHERE id=%s AND user_id=%s", params)
     return {"status": "updated"}
+
+
+@router.post("/{item_id}/switch-distributor")
+def switch_distributor_inline(item_id: int, body: SwitchDistributorIn,
+                              user: dict = Depends(get_current_user)):
+    """Move ONE line to another distributor IN PLACE (the same row, restyled to
+    the target house), preserving its quantity. Resolves the SAME SKU at the
+    target from the precomputed sku_offer grid (same edition, same identity), so
+    it can only switch to a distributor that actually carries the product. Reps
+    are per distributor, so the rep is re-assigned. If a line for the target house
+    already exists (same product + batch), the quantities MERGE and this line is
+    removed. Returns the freshly enriched cart so the line re-renders with the
+    target's price and a fresh suggestion stack."""
+    target = (body.wholesaler or "").strip()
+    if not target:
+        raise HTTPException(400, "wholesaler is required")
+
+    with get_pg() as con:
+        row = con.execute(
+            "SELECT id, product_name, wholesaler, upc, unit_volume, combo_code, "
+            "       qty_cases, qty_units, batch_id, saved_for_later "
+            "FROM cart_items WHERE id=%s AND user_id=%s", (item_id, user["id"])
+        ).fetchone()
+    if not row:
+        raise HTTPException(404, "Line not found")
+    line = dict(row)
+    if line["wholesaler"].lower() == target.lower():
+        return {"status": "noop", "cart": _load_enriched_cart(user)}
+
+    un = str(line.get("upc") or "").lstrip("0")
+    if not un:
+        raise HTTPException(400, "This line has no barcode to match across distributors")
+
+    # Resolve the line's identity + the target distributor's matching offer row
+    # within the SAME edition, straight from the precomputed grid.
+    with get_duckdb() as dcon:
+        try:
+            ident = dcon.execute(
+                "SELECT edition, group_key FROM sku_offer "
+                "WHERE wholesaler=? AND upc_norm=? "
+                "ORDER BY (CASE WHEN COALESCE(unit_volume,'')=? THEN 0 ELSE 1 END), edition DESC "
+                "LIMIT 1",
+                [line["wholesaler"], un, line.get("unit_volume") or ""],
+            ).fetchone()
+        except Exception:
+            ident = None
+        tgt = None
+        if ident:
+            ed, gk = ident
+            tgt = dcon.execute(
+                "SELECT product_name, upc, unit_volume FROM sku_offer "
+                "WHERE edition=? AND group_key=? AND wholesaler=? LIMIT 1",
+                [ed, gk, target],
+            ).fetchone()
+    if not tgt:
+        raise HTTPException(
+            409, f"{_dist_label(target)} does not carry this product in the compared edition")
+    tgt_name, tgt_upc, tgt_uv = tgt[0], (tgt[1] or line.get("upc")), (tgt[2] or line.get("unit_volume"))
+
+    with get_pg() as con:
+        rep_id = _default_rep_for(con, user["id"], target)
+        # Does a line for the target house already exist (same product + batch)?
+        # The unique key is (user, product_name, wholesaler, unit_volume, batch).
+        existing = con.execute(
+            "SELECT id, qty_cases, qty_units FROM cart_items "
+            "WHERE user_id=%s AND product_name=%s AND wholesaler=%s "
+            "AND COALESCE(unit_volume,'')=%s AND COALESCE(batch_id,'')=%s AND id<>%s",
+            (user["id"], tgt_name, target, tgt_uv or "",
+             line.get("batch_id") or "", item_id),
+        ).fetchone()
+        if existing:
+            con.execute(
+                f"UPDATE cart_items SET qty_cases=qty_cases+%s, qty_units=qty_units+%s, "
+                f"saved_for_later=0, updated_at={NOW_UTC} WHERE id=%s AND user_id=%s",
+                (line["qty_cases"] or 0, line["qty_units"] or 0,
+                 existing["id"], user["id"]),
+            )
+            con.execute("DELETE FROM cart_items WHERE id=%s AND user_id=%s",
+                        (item_id, user["id"]))
+            new_id = existing["id"]
+        else:
+            # Rewrite the line in place. rip_choice is cleared: RIP codes are
+            # per (distributor, edition), so the source pick can't carry over.
+            con.execute(
+                f"UPDATE cart_items SET wholesaler=%s, product_name=%s, upc=%s, "
+                f"unit_volume=%s, sales_rep_id=%s, rip_choice=NULL, updated_at={NOW_UTC} "
+                f"WHERE id=%s AND user_id=%s",
+                (target, tgt_name, tgt_upc, tgt_uv, rep_id, item_id, user["id"]),
+            )
+            new_id = item_id
+
+    return {"status": "switched", "line_id": new_id, "cart": _load_enriched_cart(user)}
 
 
 @router.delete("/{item_id}")

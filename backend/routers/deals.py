@@ -941,6 +941,26 @@ def _combo_catalog_match(rows, feed_name, feed_each, used):
     return best
 
 
+def _combo_upc_fallback(rows, feed_each):
+    """Last-resort pick among the catalog rows that share a component's barcode,
+    used only when combo_code, a clean UPC, and name+price all fail (e.g. Opici
+    combos whose feed product_name is just a numeric code, on a barcode reused
+    across same-priced varietals). PRICE-driven, not the old 'biggest pack' guess:
+    prefer the row whose price reconciles to the feed frontline, then a sane case
+    (2–120 bottles), then the larger pack."""
+    if not rows:
+        return None
+
+    def _score(m):
+        ps = _combo_price_sim(feed_each, m.get("fcase"), m.get("unit_qty"))
+        try:
+            uq = float(m.get("unit_qty"))
+        except (TypeError, ValueError):
+            uq = 0.0
+        return (ps, 1 if 2 <= uq <= 120 else 0, uq)
+    return max(rows, key=_score)
+
+
 def compute_combo_economics(con, combos, cym=None):
     """Attach an ``economics`` dict to each combo: combo pack price vs (a) the
     individual LIST price and (b) the realistic ONE-CASE price (list - 1-case
@@ -1040,75 +1060,36 @@ def compute_combo_economics(con, combos, cym=None):
         except Exception:
             pass
 
-    # FALLBACK resolution (upc-only heuristic, current edition): only used for a
-    # component whose combo_code isn't tagged in the CPL at all. One UPC can map
-    # to several catalog rows (the individual SKU AND a bundle), so pick ONE
-    # coherent row per UPC — a non-bundle with a sane case (2–120 bottles).
-    info: dict = {}
-    fb_keys = sorted({(c.get("wholesaler"), str(comp.get("upc") or "").lstrip("0"))
-                      for c in fixed for comp in (c.get("components") or [])
-                      if c.get("wholesaler") and str(comp.get("upc") or "").lstrip("0")})
-    if fb_keys:
-        ph = ", ".join(f"($w{i}, $u{i})" for i in range(len(fb_keys)))
-        kp: dict = {}
-        for i, (w, u) in enumerate(fb_keys):
-            kp[f"w{i}"], kp[f"u{i}"] = w, u
-        try:
-            df = con.execute(
-                f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM {src} WHERE edition<='{cym}' GROUP BY wholesaler), "
-                "ranked AS ( "
-                f"  SELECT c.wholesaler ws, {_CPL_COLS}, "
-                "         ROW_NUMBER() OVER ( "
-                "           PARTITION BY c.wholesaler, LTRIM(CAST(c.upc AS VARCHAR),'0') "
-                "           ORDER BY "
-                "             CASE WHEN COALESCE(TRY_CAST(c.unit_qty AS DOUBLE),0) > 120 "
-                "                    OR UPPER(COALESCE(c.product_name,'')) LIKE '%VCOMBO%' "
-                "                    OR UPPER(COALESCE(c.product_name,'')) LIKE '%VARIETY%' "
-                "                    OR UPPER(COALESCE(c.product_name,'')) LIKE '%COMBO%' THEN 1 ELSE 0 END ASC, "
-                "             CASE WHEN TRY_CAST(c.unit_qty AS DOUBLE) BETWEEN 2 AND 120 THEN 0 ELSE 1 END ASC, "
-                "             TRY_CAST(c.vintage AS INTEGER) DESC NULLS LAST, "
-                "             TRY_CAST(c.unit_qty AS DOUBLE) DESC NULLS LAST, "
-                "             c.frontline_case_price ASC NULLS LAST "
-                "         ) rn "
-                f"  FROM {src} c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
-                f"  WHERE (c.wholesaler, LTRIM(CAST(c.upc AS VARCHAR),'0')) IN ({ph}) "
-                ") "
-                "SELECT * FROM ranked WHERE rn = 1", kp).fetchdf()
-            for _, r in df.iterrows():
-                d = r.to_dict()
-                info[(d["ws"], str(d.get("un") or ""))] = _member_dict(d)
-        except Exception:
-            pass
-
-    # CATALOG name+price fallback pool: the full edition catalog per (wholesaler,
-    # edition), used to resolve members the combo_code join missed (the combo
-    # sheet is the leader for membership; CPL combo_code is lossy). Built only for
-    # (ws, edition) pairs that actually have an unresolvable-by-code member
-    # (placeholder '0' upc), to bound the load. See _combo_catalog_match.
+    # CATALOG pool per (wholesaler, edition): the whole edition catalog, indexed
+    # by barcode (cat_by_un, for the UPC-first match) and kept as a flat list for
+    # the NAME+PRICE fallback (catalog). Loaded via records (NOT iterrows) so
+    # pulling the full catalog stays fast.
     catalog: dict = {}
+    cat_by_un: dict = {}
     cat_wsed = sorted({(c.get("wholesaler"), c.get("_edition")) for c in fixed
-                       if c.get("wholesaler") and c.get("_edition")
-                       and any(not str(comp.get("upc") or "").lstrip("0")
-                               for comp in (c.get("components") or []))})
+                       if c.get("wholesaler") and c.get("_edition")})
     if cat_wsed:
         ph3 = ", ".join(f"($w{i}, $e{i})" for i in range(len(cat_wsed)))
         cp3: dict = {}
         for i, (w, e) in enumerate(cat_wsed):
             cp3[f"w{i}"], cp3[f"e{i}"] = w, e
         try:
-            dfc = con.execute(
+            recs = con.execute(
                 f"SELECT c.wholesaler ws, c.edition ed, {_CPL_COLS} FROM {src} c "
-                f"WHERE (c.wholesaler, c.edition) IN ({ph3})", cp3).fetchdf()
+                f"WHERE (c.wholesaler, c.edition) IN ({ph3})", cp3).fetchdf().to_dict("records")
             seen_cat: dict = {}
-            for _, r in dfc.iterrows():
-                d = r.to_dict()
+            for d in recs:
                 k = (d["ws"], d["ed"])
                 sig = (str(d.get("un") or ""), str(d.get("product_name") or ""),
                        str(d.get("unit_qty") or ""), str(d.get("vintage") or ""), d.get("fcase"))
-                if sig in seen_cat.setdefault(k, set()):
+                s = seen_cat.setdefault(k, set())
+                if sig in s:
                     continue
-                seen_cat[k].add(sig)
-                catalog.setdefault(k, []).append(_member_dict(d))
+                s.add(sig)
+                m = _member_dict(d)
+                catalog.setdefault(k, []).append(m)
+                if m["un"]:
+                    cat_by_un.setdefault((d["ws"], d["ed"], m["un"]), []).append(m)
         except Exception:
             pass
 
@@ -1124,27 +1105,43 @@ def compute_combo_economics(con, combos, cym=None):
         cat_used: set = set()
         rc = []
         for i, comp in enumerate(comps):
+            un0 = str(comp.get("upc") or "").lstrip("0")
+            fe_each = _ff(comp.get("frontline_price_each"))
             meta = matched.get(i)
-            if meta is None:
-                # combo_code not tagged in the CPL → fall back to the upc-only
-                # heuristic (real barcodes only; '0' placeholders stay unresolved).
-                un0 = str(comp.get("upc") or "").lstrip("0")
-                meta = info.get((ws, un0)) if un0 else None
+            avail = [m for m in (cat_by_un.get((ws, ed, un0)) or []) if id(m) not in cat_used] if un0 else []
+            # UPC FIRST: a clean barcode match against the edition catalog. If the
+            # barcode maps to ONE product, trust it. If it's reused across products
+            # (Piper HD Brut / Marilyn / Sonoma all on 877397005266), keep only the
+            # row whose price reconciles to the feed frontline; a unique survivor
+            # wins. Anything still ambiguous falls through to name+price below.
+            if meta is None and avail:
+                if len(avail) == 1:
+                    meta = avail[0]
+                elif fe_each:
+                    pm = [m for m in avail
+                          if _combo_price_sim(fe_each, m.get("fcase"), m.get("unit_qty")) >= 0.97]
+                    if len(pm) == 1:
+                        meta = pm[0]
+                if meta is not None:
+                    cat_used.add(id(meta))
+            # UPC ambiguous/placeholder/absent → NAME + PRICE (both must agree).
             if meta is None and cat_rows:
-                # Still unresolved (placeholder member, or barcode tagged under a
-                # DIFFERENT combo_code): the combo sheet says it's in this bundle,
-                # so include it by matching the edition catalog on NAME + PRICE.
                 meta = _combo_catalog_match(
                     cat_rows, comp.get("feed_product_name") or comp.get("product_name"),
-                    comp.get("frontline_price_each"), cat_used)
+                    fe_each, cat_used)
+                if meta is not None:
+                    cat_used.add(id(meta))
+            # Last resort — barcode known but name is unusable (numeric code) and
+            # price didn't uniquely disambiguate: price-ranked pick among its rows.
+            if meta is None and avail:
+                meta = _combo_upc_fallback(avail, fe_each)
                 if meta is not None:
                     cat_used.add(id(meta))
             if not meta:
                 continue
-            un = meta.get("un") or str(comp.get("upc") or "").lstrip("0")
+            un = meta.get("un") or un0
             bpc = _ff(meta.get("unit_qty"))
             fcase = _ff(meta.get("fcase"))
-            fe_each = _ff(comp.get("frontline_price_each"))
             cases, bottles = _combo_qty_bottles(comp.get("qty_per_pack"), bpc)
             cases_req = cases if cases is not None else ((bottles / bpc) if (bottles and bpc) else None)
             # A bare integer qty ('1', '5') carries no case/bottle suffix — some

@@ -825,6 +825,14 @@ def _combo_one_case_disc(qa_pairs):
     return None
 
 
+def _combo_is_code_name(s) -> bool:
+    """True when a combo-feed product_name is really a numeric/brand-reg CODE
+    (Fedway, Opici) rather than a real product name — the only case where we may
+    substitute the CPL-resolved name, since the sheet gave no real name to honour."""
+    t = re.sub(r"[^a-z0-9]", "", str(s or "").lower())
+    return bool(t) and sum(ch.isdigit() for ch in t) / len(t) > 0.6
+
+
 def _combo_name_norm(s) -> str:
     """Loose normaliser for fuzzy product-name matching (strip punctuation,
     collapse whitespace, lowercase)."""
@@ -989,6 +997,18 @@ def compute_combo_economics(con, combos, cym=None):
                               "min_save_pct": best, "max_save_pct": top}
     fixed = [c for c in combos if not c.get("is_volume_ladder")]
     src = read_parquet(con, "cpl_enriched")
+
+    # A combo-feed product_name reused across MANY combos is a placeholder label
+    # (Fedway repeats one product's name on every '0' line), not a real per-item
+    # name — treat it like a code so the displayed item falls back to the
+    # combo_code-confirmed CPL name rather than a knowingly-wrong sheet label.
+    _name_combos: dict = {}
+    for c in fixed:
+        for comp in (c.get("components") or []):
+            nm = comp.get("feed_product_name") or comp.get("product_name")
+            if nm:
+                _name_combos.setdefault(nm, set()).add(str(c.get("combo_code") or ""))
+    placeholder_names = {nm for nm, s in _name_combos.items() if len(s) >= 4}
 
     def _member_dict(d):
         """Shape a CPL row into the meta dict the per-component math expects."""
@@ -1233,8 +1253,17 @@ def compute_combo_economics(con, combos, cym=None):
             if not (sep_case is not None and cases_req is not None and not suspect and ce and ce > 0):
                 missing = True
                 combo_clean = False
+            # GROUND RULE: the combo SHEET is the ground truth for WHICH item this
+            # is — the buyer makes the purchase decision off it. We resolve to a CPL
+            # row only to PRICE the item, NEVER to relabel or substitute it. So the
+            # displayed name is the sheet's; we adopt the CPL-resolved name only when
+            # the sheet gave a numeric CODE (no real name to honour). `priced_as`
+            # exposes the catalog row used, so pricing is transparent, never a swap.
+            _sheet_nm = r.get("sheet_name")
+            _sheet_bad = (not _sheet_nm) or _combo_is_code_name(_sheet_nm) or (_sheet_nm in placeholder_names)
+            _display_nm = r["name"] if _sheet_bad else _sheet_nm
             comps_out.append({
-                "product_name": r["name"], "upc": r["un"], "unit_volume": r["unit_volume"],
+                "product_name": _display_nm, "upc": r["un"], "unit_volume": r["unit_volume"],
                 "vintage": r["vintage"],
                 "bottles_per_case": bpc, "cases": cases_req, "price_unit": unit,
                 "combo_each": ce, "best_separate_each": sep_each,
@@ -1244,6 +1273,9 @@ def compute_combo_economics(con, combos, cym=None):
                 # matched item can be compared against what the sheet listed.
                 "sheet_name": r["sheet_name"], "sheet_upc": r["sheet_upc"],
                 "sheet_qty": r["sheet_qty"], "sheet_frontline_each": r["fe"],
+                # The catalog row we PRICED against, shown only when its name differs
+                # from the displayed (sheet) item — full transparency, never a swap.
+                "priced_as": (r["name"] if (r["name"] and r["name"] != _display_nm) else None),
             })
         sep_t = sep_total or None
         save_vs_sep = (sep_t - combo_pay) if (sep_t is not None and combo_pay is not None) else None

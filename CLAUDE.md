@@ -2,6 +2,29 @@
 
 Instructions for Claude Code (and human contributors) working in this repo.
 
+## The COMBO SHEET is ground truth — price items, never replace them
+- A distributor's combo sheet is the OFFER the retailer buys from; the buyer
+  refers to it to make the purchase decision. The items it lists ARE the combo.
+- We resolve each combo component to a CPL row ONLY to attach economics (price,
+  pack size, savings). We MUST NOT relabel or substitute the item the sheet
+  lists. Showing a different product than the sheet (e.g. the sheet says "Jack
+  Daniels McLaren Year 3" and we display "Tennessee Blackberry" because they
+  share a barcode) is a CREDIBILITY failure even when the price happens to match.
+- The displayed product name is the SHEET's name. The CPL-resolved name is
+  adopted ONLY when the sheet gave a numeric CODE / placeholder (no real name to
+  honour). When we price against a catalog row whose name differs, expose it via
+  `priced_as` — pricing is transparent, never a silent swap.
+- Match order is ITEM (barcode) → SEMANTIC (brand-aware name) → PRICE, and we
+  NEVER blindly attach: a name match must agree on the brand, and price is only
+  ever a confirmation. If the exact sheet item can't be confidently priced, keep
+  the sheet item and leave it unconfirmed (`unknown`) — do not borrow a sibling
+  product's number. The matching/economics live in
+  `backend/routers/deals.py:compute_combo_economics`.
+- The combo sheet's advertised savings (`advertised_savings`) is the buyer-facing
+  ground-truth number; our computed `save_vs_*` is a validation/cross-check shown
+  alongside it, not a replacement. A large gap is a data-quality flag to surface,
+  not a reason to override the sheet.
+
 ## Caching: load once per page, don't refetch on scroll
 - A list/analysis page caches its FULL result set on load and paginates/filters
   client-side. Scrolling must NEVER trigger a refetch (no lazy per-scroll loads

@@ -120,7 +120,10 @@ def main() -> None:
                 sheet_upc = _norm_upc(comp.get("sheet_upc"))
                 sheet_qty = str(comp.get("sheet_qty") or "")
                 resolved_keys.add((sheet_name, sheet_upc, sheet_qty))
-                matched_name = comp.get("product_name")
+                # GROUND RULE: product_name now shows the SHEET item; the catalog
+                # row we PRICED against is in priced_as (set only when it differs).
+                # Audit the PRICED item vs the sheet item to surface substitutions.
+                matched_name = comp.get("priced_as") or comp.get("product_name")
                 matched_upc = _norm_upc(comp.get("upc"))
                 sheet_fe = comp.get("sheet_frontline_each")
                 our_fe = comp.get("best_separate_each")  # our frontline-ish per unit

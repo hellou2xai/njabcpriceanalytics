@@ -903,6 +903,31 @@ def _match_combo_components(components, members):
     return out
 
 
+def _combo_catalog_match(rows, feed_name, feed_each, used):
+    """Resolve a combo member the combo_code join missed, against the WHOLE
+    edition catalog by NAME + PRICE. The combo sheet is authoritative for which
+    products a bundle contains, but the CPL's combo_code is a lossy back-reference
+    (a product in several combos carries only ONE combo's code), so a real member
+    is often tagged under a different combo or a placeholder UPC. Require a STRONG
+    price reconciliation (feed frontline matches the row's case or per-bottle
+    price) AND a decent name match before accepting — both must agree, so this
+    includes the item only when it's unambiguous, never a guess."""
+    best, best_s = None, 0.0
+    for m in rows:
+        if id(m) in used:
+            continue
+        ps = _combo_price_sim(feed_each, m.get("fcase"), m.get("unit_qty"))
+        if ps < 0.97:                      # price must reconcile within ~3%
+            continue
+        ns = _combo_name_sim(feed_name, m.get("product_name"))
+        if ns < 0.6:                       # and the name must plausibly agree
+            continue
+        s = 0.5 * ps + 0.5 * ns
+        if s > best_s:
+            best_s, best = s, m
+    return best
+
+
 def compute_combo_economics(con, combos, cym=None):
     """Attach an ``economics`` dict to each combo: combo pack price vs (a) the
     individual LIST price and (b) the realistic ONE-CASE price (list - 1-case
@@ -1042,6 +1067,38 @@ def compute_combo_economics(con, combos, cym=None):
         except Exception:
             pass
 
+    # CATALOG name+price fallback pool: the full edition catalog per (wholesaler,
+    # edition), used to resolve members the combo_code join missed (the combo
+    # sheet is the leader for membership; CPL combo_code is lossy). Built only for
+    # (ws, edition) pairs that actually have an unresolvable-by-code member
+    # (placeholder '0' upc), to bound the load. See _combo_catalog_match.
+    catalog: dict = {}
+    cat_wsed = sorted({(c.get("wholesaler"), c.get("_edition")) for c in fixed
+                       if c.get("wholesaler") and c.get("_edition")
+                       and any(not str(comp.get("upc") or "").lstrip("0")
+                               for comp in (c.get("components") or []))})
+    if cat_wsed:
+        ph3 = ", ".join(f"($w{i}, $e{i})" for i in range(len(cat_wsed)))
+        cp3: dict = {}
+        for i, (w, e) in enumerate(cat_wsed):
+            cp3[f"w{i}"], cp3[f"e{i}"] = w, e
+        try:
+            dfc = con.execute(
+                f"SELECT c.wholesaler ws, c.edition ed, {_CPL_COLS} FROM {src} c "
+                f"WHERE (c.wholesaler, c.edition) IN ({ph3})", cp3).fetchdf()
+            seen_cat: dict = {}
+            for _, r in dfc.iterrows():
+                d = r.to_dict()
+                k = (d["ws"], d["ed"])
+                sig = (str(d.get("un") or ""), str(d.get("product_name") or ""),
+                       str(d.get("unit_qty") or ""), str(d.get("vintage") or ""), d.get("fcase"))
+                if sig in seen_cat.setdefault(k, set()):
+                    continue
+                seen_cat[k].add(sig)
+                catalog.setdefault(k, []).append(_member_dict(d))
+        except Exception:
+            pass
+
     for c in fixed:
         ws = c.get("wholesaler")
         ed = c.get("_edition")
@@ -1050,6 +1107,8 @@ def compute_combo_economics(con, combos, cym=None):
         members = members_by_combo.get((ws, ed, code), [])
         matched = _match_combo_components(comps, members)
         pack = _ff(c.get("combo_pack_price"))
+        cat_rows = catalog.get((ws, ed))
+        cat_used: set = set()
         rc = []
         for i, comp in enumerate(comps):
             meta = matched.get(i)
@@ -1058,6 +1117,15 @@ def compute_combo_economics(con, combos, cym=None):
                 # heuristic (real barcodes only; '0' placeholders stay unresolved).
                 un0 = str(comp.get("upc") or "").lstrip("0")
                 meta = info.get((ws, un0)) if un0 else None
+            if meta is None and cat_rows:
+                # Still unresolved (placeholder member, or barcode tagged under a
+                # DIFFERENT combo_code): the combo sheet says it's in this bundle,
+                # so include it by matching the edition catalog on NAME + PRICE.
+                meta = _combo_catalog_match(
+                    cat_rows, comp.get("feed_product_name") or comp.get("product_name"),
+                    comp.get("frontline_price_each"), cat_used)
+                if meta is not None:
+                    cat_used.add(id(meta))
             if not meta:
                 continue
             un = meta.get("un") or str(comp.get("upc") or "").lstrip("0")

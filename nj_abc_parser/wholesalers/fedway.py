@@ -7,7 +7,11 @@ Notes:
   - Standard 3 discount tiers (but often sparse — many items have no discounts)
   - Header row at row 5
   - Product types: Spirits (capitalized differently from Allied)
-  - Has TERMS sheet (skip it)
+  - The "TERMS and CONDITIONS" sheet is NOT just terms text: it also carries a
+    block of ~270 priced Value-Added Pack (VAP) SKUs (gift packs, e.g. "LAPHROAIG
+    10YR W/WELLIE BT", barcode 80686007326) in the SAME column layout as the CPL
+    sheet but with no header row. We ingest those via extra_cpl_sheets so the
+    product (and Fedway as a carrying distributor) shows up.
   - Some items have $40,000 case price (single-bottle luxury items)
   - COMBO sheet quirk: the "Individual Products in Combo Pack" column carries
     internal item codes (e.g. "19240"), not names; and the "Comments" column
@@ -109,6 +113,12 @@ CONFIG = {
         "COMBO PACKS": "Combo",
     },
     "skip_sheets": ["terms"],
+    # The TERMS sheet doubles as a second CPL block for Value-Added Packs (gift
+    # packs) — fully priced, same column layout, no header row. Parse it with the
+    # CPL sheet's positional map and union into the CPL frame (see base_parser
+    # extra_cpl_sheets / _extract_cpl_like). Without this ~270 Fedway SKUs (and
+    # their distributor presence) are dropped from the catalogue.
+    "extra_cpl_sheets": ["TERMS and CONDITIONS"],
     "file_pattern": "Fedway Associates*CPL*.xlsx",
     "post_process": _post_process_combo,
     # Fedway carries its internal item number in an unnamed CPL column right of

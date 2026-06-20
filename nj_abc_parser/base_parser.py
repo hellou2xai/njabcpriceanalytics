@@ -160,6 +160,36 @@ class NJABCParser:
                 else:
                     logger.debug(f"[{self.slug}] {sheet_type}: no data rows")
 
+            # Extra CPL-format sheets (config: extra_cpl_sheets). Some wholesalers
+            # publish a block of priced products on a sheet whose NAME isn't "CPL"
+            # — e.g. Fedway lists ~270 Value-Added Packs (gift packs) on the
+            # "TERMS and CONDITIONS" sheet, fully priced, in the SAME column layout
+            # as the CPL sheet but with NO header row of their own. Those rows were
+            # silently dropped, so the product (and its distributor) never showed.
+            # Parse them with the MAIN CPL sheet's positional column map and union
+            # them into the CPL frame. Done before wb.close() so the workbook is
+            # still open; before post_process so hooks (combo repair) see them.
+            extra_sheets = self.config.get("extra_cpl_sheets") or []
+            if extra_sheets and "cpl" in result:
+                main_name = _find_sheet(wb, "cpl")
+                hr = self._find_header_row(wb[main_name], self.cpl_header_map, min_matches=5) if main_name else None
+                if hr:
+                    col_map = self._build_column_mapping(wb[main_name], hr, self.cpl_header_map)
+                    if col_map and self.config.get("cpl_dist_item_after_headers"):
+                        col_map.setdefault(max(col_map.keys()) + 1, "dist_item_no")
+                    extra_frames = []
+                    for want in extra_sheets:
+                        real = (want if want in wb.sheetnames
+                                else next((n for n in wb.sheetnames if want.lower() in n.lower()), None))
+                        if real is None:
+                            continue
+                        edf = self._extract_cpl_like(wb[real], col_map)
+                        if edf is not None and len(edf) > 0:
+                            logger.info(f"[{self.slug}] extra CPL sheet '{real}': {len(edf)} rows parsed")
+                            extra_frames.append(edf)
+                    if extra_frames:
+                        result["cpl"] = pd.concat([result["cpl"], *extra_frames], ignore_index=True)
+
             wb.close()
             if self.post_process and result:
                 replaced = self.post_process(self, result)
@@ -268,6 +298,48 @@ class NJABCParser:
 
         df = self._clean_cpl(df)
         return df
+
+    def _extract_cpl_like(self, ws, col_map: dict[int, str]) -> Optional[pd.DataFrame]:
+        """Extract product rows from a sheet that shares the CPL column LAYOUT but
+        has no header row of its own (e.g. Fedway's VAP block on the TERMS sheet).
+        Uses the supplied CPL column map (derived from the real CPL sheet) and
+        keeps only rows whose UPC column holds a real >=8-digit barcode, so the
+        sheet's terms/notes text rows are skipped. Cleaned via _clean_cpl (which
+        also drops nameless rows), so the output is identical in shape to a normal
+        CPL parse."""
+        upc_idx = next((i for i, c in col_map.items() if c == "upc"), 0)
+        records = []
+        for row in ws.iter_rows(values_only=True):
+            raw = row[upc_idx] if upc_idx < len(row) else None
+            upc = _to_upc_string(raw)
+            if not (upc and upc.isdigit() and len(upc) >= 8):
+                continue
+            rec = {}
+            for ci, canonical in col_map.items():
+                v = row[ci] if ci < len(row) else None
+                # Number-formatted code cells (rip_code, brand_reg_no, unit_qty)
+                # arrive as int/float here; a numeric column that also has None
+                # is promoted by pandas to float64, so an int 10168 surfaces as
+                # "10168.0" and breaks the RIP join. Stringify integer values so
+                # the assembled column stays object dtype (matching the main CPL
+                # sheet, whose code cells are text). True decimal prices like
+                # 294.54 stay numeric; _clean_cpl re-coerces price columns anyway.
+                if isinstance(v, bool):
+                    pass
+                elif isinstance(v, int):
+                    v = str(v)
+                elif isinstance(v, float) and v.is_integer():
+                    v = str(int(v))
+                rec[canonical] = v
+            records.append(rec)
+        if not records:
+            return None
+        df = pd.DataFrame(records)
+        for col in CPL_COLUMNS:
+            if col not in df.columns:
+                df[col] = None
+        df = df[[c for c in CPL_COLUMNS if c in df.columns]]
+        return self._clean_cpl(df)
 
     def _parse_rip(self, ws) -> Optional[pd.DataFrame]:
         """Parse RIP sheet."""

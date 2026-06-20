@@ -2319,6 +2319,11 @@ export interface ComboEconomics {
   any_component_missing_price?: boolean;
   components_total?: number; components_priced?: number;
   unverified_reason?: string | null;
+  // Trust signal: every combo-sheet item must be confirmable in the CPL by
+  // semantic name + price. needs_verify is true (with the offending item names in
+  // unverified_items) when one or more could not be confirmed.
+  needs_verify?: boolean;
+  unverified_items?: string[];
   components?: ComboEconomicsComponent[];
 }
 export interface Combo {

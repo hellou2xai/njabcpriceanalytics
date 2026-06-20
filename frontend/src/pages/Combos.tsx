@@ -6,7 +6,7 @@ import SortableTable from '../components/SortableTable';
 import RowLimitSelect from '../components/RowLimitSelect';
 import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
 import { distributorName, ALL_DISTRIBUTORS, abgSku, skuLabel } from '../lib/distributors';
-import { X, ShoppingCart, Check } from 'lucide-react';
+import { X, ShoppingCart, Check, AlertTriangle } from 'lucide-react';
 import { QtyStepper } from '../components/CatalogTable';
 import AddToListButton from '../components/AddToListButton';
 import { ErrorState, EmptyState } from '../components/DataState';
@@ -55,6 +55,28 @@ function breakdown(c: Combo) {
   // savings) the distributor's source figures are almost certainly off.
   const reliable = savings > 0 && combo > 0 && pctOff < 85;
   return { combo, savings, regularValue, pctOff, reliable };
+}
+
+// "Need to Verify" sticker — shown when one or more combo items could not be
+// confirmed in the CPL by semantic name + price (the combo sheet is the combo;
+// the CPL must confirm each item exists). Lists the unconfirmed items.
+function VerifyBadge({ c, full }: { c: Combo; full?: boolean }) {
+  const e = c.economics;
+  if (!e?.needs_verify) return null;
+  const items = e.unverified_items ?? [];
+  const title = items.length
+    ? `Couldn't confirm in the price sheet (by name + price): ${items.join('; ')}. Verify before ordering.`
+    : "Couldn't confirm every item in the price sheet — verify before ordering.";
+  return (
+    <span title={title} style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700,
+      color: '#b45309', background: '#fef3c7', border: '1px solid #fcd34d',
+      borderRadius: 4, padding: '1px 6px', whiteSpace: 'nowrap', verticalAlign: 'middle',
+    }}>
+      <AlertTriangle size={12} /> Need to Verify
+      {full && items.length ? <span style={{ fontWeight: 500 }}> — {items.join(', ')}</span> : null}
+    </span>
+  );
 }
 
 // Worth-it verdict from the server-computed economics (combo vs one-case price).
@@ -340,6 +362,7 @@ function ComboDetailModal({ c, onClose }: { c: Combo; onClose: () => void }) {
         <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '4px 0 0' }}>
           {distributorName(c.wholesaler)} · Combo #{c.combo_code} · {items} {ladder ? 'flavor' : 'product'}{items === 1 ? '' : 's'}
         </p>
+        <div style={{ marginTop: 6 }}><VerifyBadge c={c} full /></div>
         {contents && <p className="combo-detail-contents">{contents}</p>}
 
         {/* Mix-and-match VOLUME deal: tier ladder, not a fixed bundle. */}
@@ -427,15 +450,6 @@ function ComboDetailModal({ c, onClose }: { c: Combo; onClose: () => void }) {
                             {vintage ? <span className="text-muted"> · '{String(vintage).slice(-2)}</span> : null}
                           </div>
                           {comp.upc && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{comp.upc}{abgSku(c.wholesaler, comp.abg_sku) ? ` · ${skuLabel(c.wholesaler)} ${comp.abg_sku}` : ''}</div>}
-                          {/* Combo sheet is the ground truth for the item; when we
-                              priced it against a differently-named catalog row, say
-                              so — transparent, never a silent substitution. */}
-                          {comp.priced_as && (
-                            <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}
-                                 title="The combo sheet lists this item; we matched a catalog row with a different name to price it.">
-                              priced against {comp.priced_as}
-                            </div>
-                          )}
                           {/* The per-line contribution to the bundle totals, so
                               a per-bottle price against a case qty is unambiguous. */}
                           {lineList != null && lineCombo != null && (
@@ -638,7 +652,7 @@ export default function Combos() {
                 return (
                   <div className="combo-product-cell">
                     <div className="combo-product-name" title={r.comments ?? r.product_name}>
-                      📦 {contents ?? r.product_name}
+                      📦 {contents ?? r.product_name} <VerifyBadge c={r} />
                     </div>
                     <div className="combo-contains combo-contains-muted">
                       Combo #{r.combo_code}{r.item_count ? ` · ${r.item_count} item${r.item_count !== 1 ? 's' : ''}` : ''}

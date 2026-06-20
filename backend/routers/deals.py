@@ -941,6 +941,38 @@ def _combo_catalog_match(rows, feed_name, feed_each, used):
     return best
 
 
+def _combo_verify_item(price_idx, name, fe):
+    """Confirm a combo-sheet item EXISTS in the edition catalog by SEMANTIC NAME +
+    PRICE (combo_code ignored). price_idx is (prices, rows) — two parallel arrays
+    sorted by unit price, where each catalog row appears at BOTH its case price and
+    its per-bottle price. We bisect the ±3% price window and brand-name-match only
+    those few candidates, so verifying every item stays cheap."""
+    import bisect
+    try:
+        fe = float(fe)
+    except (TypeError, ValueError):
+        return False
+    prices, rows = price_idx
+    if not (prices and fe > 0):
+        return False
+    toks = _combo_name_norm(name).split()
+    if not toks:
+        return False
+    first = toks[0]
+    lo = bisect.bisect_left(prices, fe * 0.97)
+    hi = bisect.bisect_right(prices, fe * 1.03)
+    for j in range(lo, hi):
+        m = rows[j]
+        # Brand pre-filter: a passing name match needs the brand (leading token)
+        # to agree (the score halves otherwise), so skip other brands before the
+        # costlier difflib comparison.
+        if m.get("_first") != first:
+            continue
+        if _combo_name_sim(name, m.get("product_name")) >= 0.6:
+            return True
+    return False
+
+
 def _combo_upc_fallback(rows, feed_each):
     """Last-resort pick among the catalog rows that share a component's barcode,
     used only when combo_code, a clean UPC, and name+price all fail (e.g. Opici
@@ -1099,11 +1131,37 @@ def compute_combo_economics(con, combos, cym=None):
                     continue
                 s.add(sig)
                 m = _member_dict(d)
+                _toks = _combo_name_norm(m.get("product_name")).split()
+                m["_first"] = _toks[0] if _toks else ""   # brand token, for fast verify
                 catalog.setdefault(k, []).append(m)
                 if m["un"]:
                     cat_by_un.setdefault((d["ws"], d["ed"], m["un"]), []).append(m)
         except Exception:
             pass
+
+    # Price index per (wholesaler, edition) for fast item VERIFICATION: each
+    # catalog row indexed at BOTH its case price and its per-bottle price, then
+    # sorted, so _combo_verify_item can bisect a ±3% window instead of scanning.
+    price_index: dict = {}
+    for k, rowlist in catalog.items():
+        pairs = []
+        for m in rowlist:
+            fc = m.get("fcase")
+            try:
+                fc = float(fc)
+            except (TypeError, ValueError):
+                continue
+            if fc <= 0:
+                continue
+            pairs.append((fc, m))
+            try:
+                uq = float(m.get("unit_qty"))
+                if uq > 0:
+                    pairs.append((fc / uq, m))
+            except (TypeError, ValueError):
+                pass
+        pairs.sort(key=lambda t: t[0])
+        price_index[k] = ([p for p, _ in pairs], [r for _, r in pairs])
 
     for c in fixed:
         ws = c.get("wholesaler")
@@ -1113,8 +1171,21 @@ def compute_combo_economics(con, combos, cym=None):
         members = members_by_combo.get((ws, ed, code), [])
         matched = _match_combo_components(comps, members)
         pack = _ff(c.get("combo_pack_price"))
-        cat_rows = catalog.get((ws, ed))
+        cat_rows = catalog.get((ws, ed)) or []
         cat_used: set = set()
+        # VERIFICATION — the combo SHEET defines the combo (items, prices,
+        # savings); the CPL must INDEPENDENTLY confirm each item EXISTS, by
+        # semantic NAME + PRICE (combo_code is ignored — it may or may not be
+        # tagged). An item is confirmed when the row we resolved agrees on price
+        # AND name, OR its barcode maps to exactly one product (a unique UPC).
+        # Anything else flags the whole combo "Need to Verify" — never substitute.
+        _pidx = price_index.get((ws, ed), ([], []))
+        unverified_items = []
+        for comp in comps:
+            nm = comp.get("feed_product_name") or comp.get("product_name")
+            if not _combo_verify_item(_pidx, nm, _ff(comp.get("frontline_price_each"))):
+                unverified_items.append(nm)
+        needs_verify = len(unverified_items) > 0
         rc = []
         for i, comp in enumerate(comps):
             un0 = str(comp.get("upc") or "").lstrip("0")
@@ -1141,13 +1212,9 @@ def compute_combo_economics(con, combos, cym=None):
                     fe_each, cat_used)
                 if meta is not None:
                     cat_used.add(id(meta))
-            # 3) PRICE: last resort, ONLY among rows on the SAME barcode (same item
-            #    identity) when the feed name is unusable (a numeric code). Price
-            #    disambiguates same-item variants — it never reaches across products.
-            if meta is None and avail:
-                meta = _combo_upc_fallback(avail, fe_each)
-                if meta is not None:
-                    cat_used.add(id(meta))
+            # NO surrogate fallback: we never price an item off a different product
+            # that merely shares its barcode. If it didn't resolve, leave it out;
+            # the combo is flagged Need-to-Verify by the verification pass.
             if not meta:
                 continue
             un = meta.get("un") or un0
@@ -1175,24 +1242,16 @@ def compute_combo_economics(con, combos, cym=None):
             one_disc = one_disc_raw if (cases_req is not None and cases_req >= 0.999) else 0.0
             _vint = meta.get("vintage")
             _vint = str(_vint).strip() if _vint is not None and str(_vint).strip() not in ("", "0", "None", "nan") else None
-            # GROUND TRUTH: the combo SHEET names the item; we resolve a CPL row
-            # only to PRICE it, never to relabel it. Display the sheet's name;
-            # adopt the CPL-resolved name only when the sheet gave a numeric code
-            # or a repeated placeholder label. priced_as = the row we priced
-            # against, shown only when it differs — transparent, never a swap.
+            # GROUND TRUTH: the combo SHEET names the item; the CPL row only
+            # confirms/enriches it. Display the sheet's name; adopt the CPL name
+            # only when the sheet gave a numeric code or a repeated placeholder.
             _matched_nm = meta.get("product_name")
             _sheet_nm = comp.get("feed_product_name") or comp.get("product_name")
             _sheet_bad = (not _sheet_nm) or _combo_is_code_name(_sheet_nm) or (_sheet_nm in placeholder_names)
             _display_nm = _matched_nm if (_sheet_bad and _matched_nm) else _sheet_nm
-            _priced_as = _matched_nm if (_matched_nm and _matched_nm != _display_nm) else None
-            # Write the ground-truth item + priced_as back onto the combo component
-            # so the bundle table (which renders c.components) shows it too — not
-            # the old SQL-resolved name.
             comp["product_name"] = _display_nm or comp.get("product_name")
-            comp["priced_as"] = _priced_as
             rc.append({
                 "un": un, "name": _display_nm or _matched_nm or comp.get("product_name"),
-                "priced_as": _priced_as,
                 "unit_volume": meta.get("unit_volume") or comp.get("unit_volume"), "vintage": _vint,
                 "bpc": bpc, "fcase": fcase, "fe": fe_each, "one_disc": one_disc,
                 "sep_case": (fcase - one_disc) if fcase is not None else None,
@@ -1269,8 +1328,7 @@ def compute_combo_economics(con, combos, cym=None):
             if not (sep_case is not None and cases_req is not None and not suspect and ce and ce > 0):
                 missing = True
                 combo_clean = False
-            # product_name is the ground-truth (combo-sheet) item; priced_as is the
-            # catalog row we priced against when it differs — both computed above.
+            # product_name is the ground-truth (combo-sheet) item.
             comps_out.append({
                 "product_name": r["name"], "upc": r["un"], "unit_volume": r["unit_volume"],
                 "vintage": r["vintage"],
@@ -1278,11 +1336,8 @@ def compute_combo_economics(con, combos, cym=None):
                 "combo_each": ce, "best_separate_each": sep_each,
                 "has_separate_deal": bool(one_disc and one_disc > 0),
                 "combo_cost": ccost, "best_separate_cost": scost, "frontline_cost": fcost,
-                # Combo-sheet source line + the frontline the SHEET stated, so the
-                # matched item can be compared against what the sheet listed.
                 "sheet_name": r["sheet_name"], "sheet_upc": r["sheet_upc"],
                 "sheet_qty": r["sheet_qty"], "sheet_frontline_each": r["fe"],
-                "priced_as": r["priced_as"],
             })
         sep_t = sep_total or None
         save_vs_sep = (sep_t - combo_pay) if (sep_t is not None and combo_pay is not None) else None
@@ -1322,6 +1377,7 @@ def compute_combo_economics(con, combos, cym=None):
         # EFFECTIVE savings (vs the realistic one-case price) so the buyer sees
         # advertised-vs-effective — the advertised number is often inflated.
         advertised = _ff(c.get("total_savings"))
+        needs_verify = len(unverified_items) > 0
         c["economics"] = {
             "combo_code": str(c.get("combo_code")), "wholesaler": ws,
             "contents": (c.get("comments") or c.get("product_name")),
@@ -1336,6 +1392,12 @@ def compute_combo_economics(con, combos, cym=None):
             "verdict": verdict, "any_component_missing_price": missing,
             "components_total": total_comp, "components_priced": priced,
             "unverified_reason": reason,
+            # Trust signal: every combo-sheet item must be confirmable in the CPL
+            # by semantic name + price. needs_verify is True (and unverified_items
+            # lists the offenders) when one or more could not be confirmed — the UI
+            # stamps a "Need to Verify ⚠" sticker so the buyer double-checks.
+            "needs_verify": needs_verify,
+            "unverified_items": unverified_items,
             "components": comps_out,
         }
     return combos

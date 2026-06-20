@@ -1161,6 +1161,11 @@ def compute_combo_economics(con, combos, cym=None):
                 "bpc": bpc, "fcase": fcase, "fe": fe_each, "one_disc": one_disc,
                 "sep_case": (fcase - one_disc) if fcase is not None else None,
                 "ce": _ff(comp.get("combo_price_each")), "cases_req": cases_req,
+                # The combo SHEET line this resolved from (so callers can compare
+                # the sheet item to the matched catalog item).
+                "sheet_name": comp.get("feed_product_name") or comp.get("product_name"),
+                "sheet_upc": str(comp.get("upc") or ""),
+                "sheet_qty": comp.get("qty_per_pack"),
             })
 
         def _tot(unit, key):
@@ -1235,6 +1240,10 @@ def compute_combo_economics(con, combos, cym=None):
                 "combo_each": ce, "best_separate_each": sep_each,
                 "has_separate_deal": bool(one_disc and one_disc > 0),
                 "combo_cost": ccost, "best_separate_cost": scost, "frontline_cost": fcost,
+                # Combo-sheet source line + the frontline the SHEET stated, so the
+                # matched item can be compared against what the sheet listed.
+                "sheet_name": r["sheet_name"], "sheet_upc": r["sheet_upc"],
+                "sheet_qty": r["sheet_qty"], "sheet_frontline_each": r["fe"],
             })
         sep_t = sep_total or None
         save_vs_sep = (sep_t - combo_pay) if (sep_t is not None and combo_pay is not None) else None

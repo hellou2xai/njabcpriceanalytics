@@ -235,6 +235,7 @@ def _attach_rip_code_for_list_items(dcon, items):
     request: lists were "name only", too little data to act on). Reads
     precomputed columns only. Failures here must never break the page."""
     from backend.db import read_parquet
+    from backend.routers.cart import _cur_ed
     import math as _m
 
     def _clean(v):
@@ -252,7 +253,7 @@ def _attach_rip_code_for_list_items(dcon, items):
         ph = ", ".join(f"$p{i}" for i in range(len(norms)))
         prm = {f"p{i}": u for i, u in enumerate(norms)}
         df = dcon.execute(f"""
-            WITH latest AS (SELECT wholesaler, MAX(edition) AS ed FROM {src} GROUP BY wholesaler)
+            WITH latest AS (SELECT wholesaler, {_cur_ed()} AS ed FROM {src} GROUP BY wholesaler)
             SELECT e.wholesaler AS w, LTRIM(e.upc,'0') AS un, CAST(e.rip_code AS VARCHAR) AS rc,
                    e.unit_volume AS uv, e.unit_qty AS uq, e.unit_type AS ut,
                    e.frontline_case_price AS fc, e.frontline_unit_price AS fu,

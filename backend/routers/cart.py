@@ -22,6 +22,20 @@ from backend.enrichment_join import attach_enrichment_image, attach_sku_mapping
 router = APIRouter(prefix="/api/cart", tags=["cart"])
 
 
+def _cur_ed(col: str = "edition") -> str:
+    """SQL expr for the CURRENT edition: the latest edition that is NOT in the
+    future (edition <= today's YYYY-MM), falling back to the latest loaded only if
+    every edition is future. THE CART ALWAYS PRICES THE CURRENT EDITION — a
+    published-but-future file (next month's preview, e.g. July seen in June) must
+    never be priced, no matter how many future months are loaded. Future editions
+    feed buy-or-wait SUGGESTIONS only, never the price.
+
+    `col` is the edition column reference (e.g. "edition" or "e.edition")."""
+    from backend import pricing as _pricing
+    cym = _pricing.current_yyyy_mm()
+    return f"COALESCE(MAX({col}) FILTER (WHERE {col} <= '{cym}'), MAX({col}))"
+
+
 class CartItemIn(BaseModel):
     product_name: str
     wholesaler: str
@@ -161,7 +175,7 @@ def _attach_cart_pricing(dcon, items):
         prm = {f"p{i}": u for i, u in enumerate(norms)}
         try:
             df = dcon.execute(f"""
-                WITH latest AS (SELECT wholesaler, MAX(edition) AS ed FROM {src} GROUP BY wholesaler)
+                WITH latest AS (SELECT wholesaler, {_cur_ed()} AS ed FROM {src} GROUP BY wholesaler)
                 SELECT e.wholesaler AS w, LTRIM(e.upc,'0') AS un, e.product_name AS pn, e.unit_volume AS uv,
                        e.frontline_case_price AS fcp, e.frontline_unit_price AS fup,
                        e.effective_case_price AS ecp, e.unit_qty AS uq, e.unit_type AS ut,
@@ -279,7 +293,7 @@ def _attach_combo_pricing(dcon, items):
         ph = ", ".join(f"$c{i}" for i in range(len(codes)))
         prm = {f"c{i}": c for i, c in enumerate(codes)}
         df = dcon.execute(f"""
-            WITH latest AS (SELECT wholesaler, combo_code, MAX(edition) AS ed
+            WITH latest AS (SELECT wholesaler, combo_code, {_cur_ed()} AS ed
                             FROM {combo_src} GROUP BY wholesaler, combo_code)
             SELECT DISTINCT c.wholesaler AS w, CAST(c.combo_code AS VARCHAR) AS cc,
                    LTRIM(c.upc,'0') AS un, c.combo_price_each AS cpe, c.frontline_price_each AS fpe
@@ -661,7 +675,7 @@ def _mix_rip_codes(dcon, src, items) -> set:
     prm = {f"c{i}": c for i, c in enumerate(codes)}
     try:
         df = dcon.execute(f"""
-            WITH latest AS (SELECT wholesaler, MAX(edition) AS ed FROM {src} GROUP BY wholesaler)
+            WITH latest AS (SELECT wholesaler, {_cur_ed()} AS ed FROM {src} GROUP BY wholesaler)
             SELECT e.wholesaler AS w, CAST(e.rip_code AS VARCHAR) AS rc,
                    COUNT(DISTINCT LTRIM(CAST(e.upc AS VARCHAR), '0')) AS n
             FROM {src} e JOIN latest l ON e.wholesaler = l.wholesaler AND e.edition = l.ed
@@ -685,7 +699,7 @@ def _cross_distributor(dcon, src, items) -> dict:
     prm = {f"u{i}": u for i, u in enumerate(norms)}
     try:
         df = dcon.execute(f"""
-            WITH latest AS (SELECT wholesaler, MAX(edition) AS ed FROM {src} GROUP BY wholesaler)
+            WITH latest AS (SELECT wholesaler, {_cur_ed()} AS ed FROM {src} GROUP BY wholesaler)
             SELECT e.wholesaler AS w, LTRIM(CAST(e.upc AS VARCHAR), '0') AS un,
                    e.unit_volume AS uv, e.effective_case_price AS ecp, e.product_name AS pn
             FROM {src} e JOIN latest l ON e.wholesaler = l.wholesaler AND e.edition = l.ed
@@ -781,7 +795,7 @@ def _attach_comparison_by_name(dcon, items):
     prm = [f"%{t}%" for t in tokens]
     try:
         df = dcon.execute(f"""
-            WITH latest AS (SELECT wholesaler, MAX(edition) AS ed FROM {src} GROUP BY wholesaler)
+            WITH latest AS (SELECT wholesaler, {_cur_ed()} AS ed FROM {src} GROUP BY wholesaler)
             SELECT e.wholesaler AS w, e.product_name AS pn, e.unit_volume AS uv,
                    e.unit_qty AS uq, e.vintage AS vtg,
                    LTRIM(CAST(e.upc AS VARCHAR),'0') AS un, CAST(e.upc AS VARCHAR) AS upc,
@@ -836,7 +850,7 @@ def _attach_comparison_by_upc(dcon, items):
     ph = ", ".join("?" for _ in norms)
     try:
         rows = dcon.execute(f"""
-            WITH latest AS (SELECT wholesaler, MAX(edition) AS ed FROM {src} GROUP BY wholesaler)
+            WITH latest AS (SELECT wholesaler, {_cur_ed()} AS ed FROM {src} GROUP BY wholesaler)
             SELECT e.wholesaler AS w, e.product_name AS pn, e.unit_volume AS uv,
                    e.unit_qty AS uq, e.vintage AS vtg,
                    LTRIM(CAST(e.upc AS VARCHAR),'0') AS un, CAST(e.upc AS VARCHAR) AS upc,
@@ -894,7 +908,7 @@ def _resolve_switch_by_name(dcon, product_name: str, unit_volume, target: str,
         return None
     try:
         rows = dcon.execute(f"""
-            WITH latest AS (SELECT MAX(edition) AS ed FROM {src} WHERE wholesaler=?)
+            WITH latest AS (SELECT {_cur_ed()} AS ed FROM {src} WHERE wholesaler=?)
             SELECT product_name, CAST(upc AS VARCHAR) upc, unit_volume, unit_qty, vintage,
                    effective_case_price ecp
             FROM {src} WHERE wholesaler=? AND edition=(SELECT ed FROM latest)
@@ -924,7 +938,7 @@ def _resolve_switch_target(dcon, src_ws, upc, unit_volume, product_name, target)
     uq = vtg = None
     try:
         me = dcon.execute(
-            f"WITH latest AS (SELECT MAX(edition) ed FROM {s} WHERE wholesaler=?) "
+            f"WITH latest AS (SELECT {_cur_ed()} ed FROM {s} WHERE wholesaler=?)"
             f"SELECT unit_qty, vintage FROM {s} WHERE wholesaler=? AND product_name=? "
             f"AND COALESCE(unit_volume,'')=? AND edition=(SELECT ed FROM latest) LIMIT 1",
             [src_ws, src_ws, product_name or "", unit_volume or ""]).fetchone()
@@ -941,7 +955,7 @@ def _resolve_switch_target(dcon, src_ws, upc, unit_volume, product_name, target)
         # BOURBON). Then pin size+pack+vintage so a 6P can't become a 3P.
         try:
             rows = dcon.execute(
-                f"WITH latest AS (SELECT MAX(edition) ed FROM {s} WHERE wholesaler=?) "
+                f"WITH latest AS (SELECT {_cur_ed()} ed FROM {s} WHERE wholesaler=?)"
                 f"SELECT product_name, CAST(upc AS VARCHAR) upc, unit_volume, unit_qty, vintage, "
                 f"effective_case_price ecp FROM {s} "
                 f"WHERE wholesaler=? AND LTRIM(CAST(upc AS VARCHAR),'0')=? "
@@ -1729,7 +1743,7 @@ def swap_distributor(body: SwapDistributorIn, user: dict = Depends(get_current_u
         with get_duckdb() as dcon:
             ph = ", ".join("?" for _ in upcs)
             df = dcon.execute(
-                "WITH latest AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched GROUP BY wholesaler) "
+                f"WITH latest AS (SELECT wholesaler, {_cur_ed()} ed FROM cpl_enriched GROUP BY wholesaler) "
                 "SELECT LTRIM(CAST(c.upc AS VARCHAR),'0') un, c.product_name, c.wholesaler, "
                 "CAST(c.upc AS VARCHAR) upc, c.unit_volume "
                 "FROM cpl_enriched c JOIN latest l ON c.wholesaler=l.wholesaler AND c.edition=l.ed "
@@ -1883,7 +1897,7 @@ def add_from_combo(body: FromComboIn, user: dict = Depends(get_current_user)):
         # repeats components across editions, which would otherwise double-add.
         rows = duck.execute(
             f"""WITH latest AS (
-                  SELECT MAX(edition) AS ed FROM {src}
+                  SELECT {_cur_ed()} AS ed FROM {src}
                   WHERE wholesaler = $ws AND combo_code = $code
                 )
                 SELECT product_name, ANY_VALUE(upc) AS upc, ANY_VALUE(qty_per_pack) AS qty_per_pack

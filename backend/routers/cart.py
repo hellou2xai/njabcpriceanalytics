@@ -165,6 +165,7 @@ def _attach_cart_pricing(dcon, items):
                 SELECT e.wholesaler AS w, LTRIM(e.upc,'0') AS un, e.product_name AS pn, e.unit_volume AS uv,
                        e.frontline_case_price AS fcp, e.frontline_unit_price AS fup,
                        e.effective_case_price AS ecp, e.unit_qty AS uq, e.unit_type AS ut,
+                       e.vintage AS vtg,
                        e.has_discount AS hd, e.has_rip AS hr, e.has_closeout AS hc,
                        e.discount_pct AS dp, e.total_savings_per_case AS ts,
                        CAST(e.rip_code AS VARCHAR) AS rc,
@@ -218,6 +219,12 @@ def _attach_cart_pricing(dcon, items):
             except Exception:
                 uq = None
             it["unit_qty"] = uq
+            vtg = r.get("vtg")
+            if vtg is None or (isinstance(vtg, float) and _m.isnan(vtg)):
+                it["vintage"] = None
+            else:
+                vs = str(vtg).strip()
+                it["vintage"] = vs if vs and vs.lower() not in ("none", "nan", "0", "") else None
             it["unit_type"] = r.get("ut")   # container (bottle/can/keg) for the UI
             it["effective_unit_price"] = round(ecp / uq, 2) if (ecp and uq) else cl(r["fup"])
             it["has_discount"] = bool(r["hd"])
@@ -483,6 +490,73 @@ def _attach_size_swap(dcon, items):
         }
 
 
+def _attach_wait_reason(dcon, items):
+    """Explain WHY next month is better/worse for a buy-or-wait line, split into
+    the two drivers the buyer thinks in: the BUY PRICE (after the 1-case QD =
+    best_case_price) and the RIP rebate. Attaches it['wait_reason'] like
+    "$15/cs bigger RIP" or "$10/cs lower buy price · $5/cs bigger RIP"."""
+    from backend.db import read_parquet
+    src = read_parquet(dcon, "cpl_enriched")
+    need = set()
+    for it in items:
+        if not it.get("best_buy_window"):
+            continue
+        un = str(it.get("upc") or "").lstrip("0")
+        ws = it.get("wholesaler")
+        if not (ws and un and len(un) >= 8):
+            continue
+        for ed in (it.get("current_edition"), it.get("next_edition")):
+            if ed:
+                need.add((ws, ed, un))
+    if not need:
+        return
+    keys = sorted(need)
+    rl = ", ".join("(?, ?, ?)" for _ in keys)
+    try:
+        rows = dcon.execute(
+            f"SELECT wholesaler ws, edition ed, LTRIM(CAST(upc AS VARCHAR),'0') un, "
+            f"MAX(frontline_case_price) front, MIN(best_case_price) best, "
+            f"MIN(effective_case_price) eff "
+            f"FROM {src} WHERE (wholesaler, edition, LTRIM(CAST(upc AS VARCHAR),'0')) IN ({rl}) "
+            f"GROUP BY 1, 2, 3", [x for k in keys for x in k]).fetchdf().to_dict("records")
+    except Exception:
+        return
+    idx = {(r["ws"], r["ed"], r["un"]): r for r in rows}
+
+    def _parts(r):
+        front = r.get("front") or 0.0
+        best = r.get("best") if r.get("best") else front       # buy price (after QD)
+        eff = r.get("eff") if r.get("eff") is not None else best
+        return float(best), float(best - eff)                  # (buy_price, rip)
+
+    for it in items:
+        w = it.get("best_buy_window")
+        if not w:
+            continue
+        un = str(it.get("upc") or "").lstrip("0")
+        ws = it.get("wholesaler")
+        cur = idx.get((ws, it.get("current_edition"), un))
+        nxt = idx.get((ws, it.get("next_edition"), un))
+        if not cur or not nxt:
+            continue
+        buy_c, rip_c = _parts(cur)
+        buy_n, rip_n = _parts(nxt)
+        wait = w.lower().startswith("wait")
+        parts = []
+        if wait:                                    # next month is BETTER
+            if buy_c - buy_n > 0.5:
+                parts.append(f"${buy_c - buy_n:.0f}/cs lower buy price")
+            if rip_n - rip_c > 0.5:
+                parts.append(f"${rip_n - rip_c:.0f}/cs bigger RIP")
+        else:                                       # next month is WORSE (buy now)
+            if buy_n - buy_c > 0.5:
+                parts.append(f"${buy_n - buy_c:.0f}/cs higher buy price")
+            if rip_c - rip_n > 0.5:
+                parts.append(f"${rip_c - rip_n:.0f}/cs smaller RIP")
+        if parts:
+            it["wait_reason"] = " · ".join(parts)
+
+
 @router.get("")
 def get_cart(user: dict = Depends(get_current_user)):
     """All cart items (active + saved-for-later) with image, rep name, catalogue
@@ -625,6 +699,206 @@ def _cross_distributor(dcon, src, items) -> dict:
             "w": r["w"], "uv": r["uv"] or "", "ecp": _fnum(r["ecp"]), "pn": r["pn"] or "",
         })
     return out
+
+
+def _norm_prod_name(s: str) -> str:
+    """Brand-aware name key for cross-distributor matching when no usable barcode
+    exists. Uppercase, drop size/pack tokens (1.75L, 750ML, 6PK, 12P, OZ, CANS…)
+    and punctuation, collapse spaces. Two houses that name the SAME bottle slightly
+    differently still won't collide unless the cleaned names are identical, so this
+    only ever links clearly-the-same products (we never silently weld two SKUs)."""
+    s = re.sub(r"[^A-Z0-9 ]", " ", (s or "").upper())
+    s = re.sub(r"\b\d+(?:\.\d+)?\s?(?:ML|L|LTR|LITER|LITRE|OZ|PK|P|CT|CANS?|BTLS?|BTL|GAL)\b", " ", s)
+    s = re.sub(r"\b(?:GIFT|GFT|VAP|W|WITH|AND)\b", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _comparison_row(m: dict, rank: int, n_dist: int) -> dict:
+    """Shape a cpl_enriched row into the same comparison-grid record the
+    precomputed offer_grid emits, so the picker UI is source-agnostic."""
+    front = _fnum(m.get("fcp")); after = _fnum(m.get("bcp")); eff = _fnum(m.get("ecp"))
+    return {
+        "wholesaler": m.get("w"), "product_name": m.get("pn"),
+        "display_name": m.get("pn"), "unit_volume": m.get("uv"),
+        "upc": m.get("upc"), "upc_norm": m.get("un"),
+        "frontline_case_price": front, "after_qd_case_price": after,
+        "effective_case_price": eff,
+        "has_rip": bool(m.get("hr")), "has_discount": bool(m.get("hd")),
+        "rip_code": (str(m["rc"]) if m.get("rc") not in (None, "", "0") else None),
+        "net_rank": rank, "is_cheapest_net": (rank == 0 and eff is not None),
+        "n_distributors": n_dist, "_by_name": True,
+    }
+
+
+def _vtg_key(v) -> str:
+    """Normalize a vintage to a comparable token; NV/blank collapse to ''."""
+    s = str(v or "").strip().lower()
+    return "" if s in ("", "none", "nan", "0", "nv") else s
+
+
+def _ident_key(name, unit_volume, unit_qty, vintage) -> tuple:
+    """Full no-barcode identity: product + bottle size + pack size + vintage. The
+    user's rule — when there's no UPC to trust, ALL of these must agree, so a 6P
+    never matches a 3P and a '17 never matches a '20."""
+    try:
+        uq = str(int(float(unit_qty))) if unit_qty not in (None, "") else ""
+    except Exception:
+        uq = str(unit_qty or "")
+    return (_norm_prod_name(name), str(unit_volume or "").strip().upper(), uq, _vtg_key(vintage))
+
+
+def _attach_comparison_by_name(dcon, items):
+    """Fallback cross-distributor grid for lines with NO usable barcode (combos,
+    placeholder UPCs). Matches the SAME item at other houses by the FULL identity —
+    product name + bottle size + pack size (unit_qty) + vintage — in each house's
+    latest edition. Conservative on purpose: every dimension must agree, so we never
+    weld a 6P to a 3P, a 750ML to a 1.75L, or a '17 to a '20."""
+    from backend.db import read_parquet
+    src = read_parquet(dcon, "cpl_enriched")
+    targets = [it for it in items
+               if (it.get("product_name") and it.get("wholesaler") and not it.get("comparison"))]
+    if not targets:
+        return
+    # One broad pull per distinct brand token keeps this cheap even for many lines.
+    tokens = sorted({_norm_prod_name(it["product_name"]).split(" ")[0]
+                     for it in targets if _norm_prod_name(it["product_name"])})
+    tokens = [t for t in tokens if len(t) >= 3]
+    if not tokens:
+        return
+    like = " OR ".join("UPPER(e.product_name) LIKE ?" for _ in tokens)
+    prm = [f"%{t}%" for t in tokens]
+    try:
+        df = dcon.execute(f"""
+            WITH latest AS (SELECT wholesaler, MAX(edition) AS ed FROM {src} GROUP BY wholesaler)
+            SELECT e.wholesaler AS w, e.product_name AS pn, e.unit_volume AS uv,
+                   e.unit_qty AS uq, e.vintage AS vtg,
+                   LTRIM(CAST(e.upc AS VARCHAR),'0') AS un, CAST(e.upc AS VARCHAR) AS upc,
+                   e.frontline_case_price AS fcp, e.best_case_price AS bcp,
+                   e.effective_case_price AS ecp, e.has_rip AS hr, e.has_discount AS hd,
+                   CAST(e.rip_code AS VARCHAR) AS rc
+            FROM {src} e JOIN latest l ON e.wholesaler=l.wholesaler AND e.edition=l.ed
+            WHERE {like}
+        """, prm).fetchdf().to_dict("records")
+    except Exception:
+        return
+    # Bucket candidates by the full identity; best (lowest net) per distributor.
+    buckets: dict = {}
+    for r in df:
+        key = _ident_key(r["pn"], r["uv"], r["uq"], r["vtg"])
+        buckets.setdefault(key, {})
+        cur = buckets[key].get(r["w"])
+        if cur is None or (_fnum(r["ecp"]) or 1e9) < (_fnum(cur["ecp"]) or 1e9):
+            buckets[key][r["w"]] = r
+    # The line's OWN pack/vintage come from its exact catalog row (its stored name
+    # is the exact catalogue name), not from _attach_cart_pricing — that only
+    # enriches UPC-bearing lines, and these are precisely the UPC-less ones.
+    selfrow: dict = {}
+    for r in df:
+        selfrow.setdefault((r["w"], r["pn"], str(r["uv"] or "")), r)
+    for it in targets:
+        me = selfrow.get((it["wholesaler"], it["product_name"], str(it.get("unit_volume") or "")))
+        uq = me["uq"] if me else it.get("unit_qty")
+        vtg = me["vtg"] if me else it.get("vintage")
+        key = _ident_key(it["product_name"], it.get("unit_volume"), uq, vtg)
+        houses = buckets.get(key)
+        if not houses or it["wholesaler"] not in houses or len(houses) < 2:
+            continue
+        members = sorted(houses.values(), key=lambda m: (_fnum(m["ecp"]) is None, _fnum(m["ecp"]) or 1e9))
+        it["comparison"] = [_comparison_row(m, i, len(members)) for i, m in enumerate(members)]
+
+
+def _attach_comparison(dcon, items):
+    """Attach it['comparison'] — every distributor that carries the SAME item with
+    its net/case price + RIP flag — used by the inline distributor picker in the
+    cart AND lists. UPC-driven via the precomputed offer_grid; falls back to a
+    name+size match across houses when the line has no usable barcode. Requires
+    `edition`/`unit_qty` (set by _attach_cart_pricing) on each item first."""
+    from backend.precompute_offers import offer_grid
+    for it in items:
+        un = str(it.get("upc") or "").lstrip("0")
+        ed = it.get("edition"); ws = it.get("wholesaler")
+        if not (ed and ws and len(un) >= 8):
+            continue
+        try:
+            grid = offer_grid(dcon, edition=ed, wholesaler=ws, upc_norm=un,
+                              unit_qty=it.get("unit_qty"))
+        except Exception:
+            grid = []
+        if grid and len({g.get("wholesaler") for g in grid}) >= 2:
+            it["comparison"] = grid
+    _attach_comparison_by_name(dcon, items)   # name fallback for the rest
+
+
+def _resolve_switch_by_name(dcon, product_name: str, unit_volume, target: str,
+                            unit_qty=None, vintage=None):
+    """Find the target distributor's row for the SAME item by the FULL identity —
+    product + bottle size + pack size + vintage (latest edition) — for switching a
+    UPC-less line. Returns (product_name, upc, unit_volume) or None. Every dimension
+    must agree, so we never switch onto a different pack/size/vintage."""
+    from backend.db import read_parquet
+    src = read_parquet(dcon, "cpl_enriched")
+    tok = _norm_prod_name(product_name).split(" ")[0] if _norm_prod_name(product_name) else ""
+    if len(tok) < 3:
+        return None
+    try:
+        rows = dcon.execute(f"""
+            WITH latest AS (SELECT MAX(edition) AS ed FROM {src} WHERE wholesaler=?)
+            SELECT product_name, CAST(upc AS VARCHAR) upc, unit_volume, unit_qty, vintage,
+                   effective_case_price ecp
+            FROM {src} WHERE wholesaler=? AND edition=(SELECT ed FROM latest)
+              AND UPPER(product_name) LIKE ?
+        """, [target, target, f"%{tok}%"]).fetchdf().to_dict("records")
+    except Exception:
+        return None
+    want = _ident_key(product_name, unit_volume, unit_qty, vintage)
+    cands = [r for r in rows
+             if _ident_key(r["product_name"], r["unit_volume"], r["unit_qty"], r["vintage"]) == want]
+    if not cands:
+        return None
+    best = min(cands, key=lambda r: (_fnum(r["ecp"]) is None, _fnum(r["ecp"]) or 1e9))
+    return (best["product_name"], best["upc"], best["unit_volume"])
+
+
+def _resolve_switch_target(dcon, src_ws, upc, unit_volume, product_name, target):
+    """Resolve the target distributor's row for the SAME item when switching a
+    line in place. UPC-driven via the precomputed sku_offer grid; name+size
+    fallback for UPC-less lines. Returns (product_name, upc, unit_volume) or None.
+    Shared by the cart and the lists switch endpoints."""
+    un = str(upc or "").lstrip("0")
+    if len(un) >= 8:
+        try:
+            ident = dcon.execute(
+                "SELECT edition, group_key FROM sku_offer WHERE wholesaler=? AND upc_norm=? "
+                "ORDER BY (CASE WHEN COALESCE(unit_volume,'')=? THEN 0 ELSE 1 END), edition DESC LIMIT 1",
+                [src_ws, un, unit_volume or ""]).fetchone()
+        except Exception:
+            ident = None
+        if ident:
+            ed, gk = ident
+            tgt = dcon.execute(
+                "SELECT product_name, upc, unit_volume FROM sku_offer "
+                "WHERE edition=? AND group_key=? AND wholesaler=? LIMIT 1",
+                [ed, gk, target]).fetchone()
+            if tgt:
+                return (tgt[0], tgt[1] or upc, tgt[2] or unit_volume)
+    if product_name:
+        # Derive the source line's pack + vintage from its own exact catalog row so
+        # the name match enforces the full identity (product+size+pack+vintage).
+        uq = vtg = None
+        try:
+            from backend.db import read_parquet
+            s = read_parquet(dcon, "cpl_enriched")
+            me = dcon.execute(
+                f"WITH latest AS (SELECT MAX(edition) ed FROM {s} WHERE wholesaler=?) "
+                f"SELECT unit_qty, vintage FROM {s} WHERE wholesaler=? AND product_name=? "
+                f"AND COALESCE(unit_volume,'')=? AND edition=(SELECT ed FROM latest) LIMIT 1",
+                [src_ws, src_ws, product_name, unit_volume or ""]).fetchone()
+            if me:
+                uq, vtg = me[0], me[1]
+        except Exception:
+            pass
+        return _resolve_switch_by_name(dcon, product_name, unit_volume, target, uq, vtg)
+    return None
 
 
 @router.get("/analyze")
@@ -1005,24 +1279,15 @@ def attach_line_suggestions(items: list[dict]) -> dict:
             if lid in per_line:
                 per_line[lid].append(sug)
 
-    # 2) Per-line cross-distributor comparison from the precomputed grid, plus
-    #    an alt_distributor suggestion when a cheaper house carries the SKU.
-    from backend.precompute_offers import offer_grid
+    # 2) Per-line cross-distributor comparison (UPC grid + name fallback), plus an
+    #    alt_distributor suggestion when a cheaper house carries the SAME item.
     with get_duckdb() as dcon:
+        _attach_comparison(dcon, items)
         for it in items:
-            un = str(it.get("upc") or "").lstrip("0")
-            ed = it.get("edition")
             ws = it.get("wholesaler")
-            if not (un and ed and ws):
+            grid = it.get("comparison") or []
+            if len(grid) < 2:
                 continue
-            try:
-                grid = offer_grid(dcon, edition=ed, wholesaler=ws, upc_norm=un,
-                                  unit_qty=it.get("unit_qty"))
-            except Exception:
-                grid = []
-            if not grid:
-                continue
-            it["comparison"] = grid
             cur = next((g for g in grid if g.get("wholesaler") == ws), None)
             cur_net = (_fnum(cur.get("effective_case_price")) if cur else None) \
                 or _fnum(it.get("effective_case_price"))
@@ -1105,6 +1370,8 @@ def _load_enriched_cart(user: dict) -> dict:
                 # it goes up. RIP is back-pocket-later, so timing compares the net.
                 from backend.deal_compare import deal_compare
                 deal_compare(dcon, items)
+                # Explain the buy-or-wait driver (buy price vs RIP, next vs now).
+                _attach_wait_reason(dcon, items)
             except Exception:
                 pass
             try:
@@ -1293,31 +1560,11 @@ def switch_distributor_inline(item_id: int, body: SwitchDistributorIn,
     if line["wholesaler"].lower() == target.lower():
         return {"status": "noop", "cart": _load_enriched_cart(user)}
 
-    un = str(line.get("upc") or "").lstrip("0")
-    if not un:
-        raise HTTPException(400, "This line has no barcode to match across distributors")
-
-    # Resolve the line's identity + the target distributor's matching offer row
-    # within the SAME edition, straight from the precomputed grid.
+    # Resolve the target distributor's matching offer for the SAME item — UPC grid
+    # first, name+size fallback for UPC-less lines (combo / placeholder barcode).
     with get_duckdb() as dcon:
-        try:
-            ident = dcon.execute(
-                "SELECT edition, group_key FROM sku_offer "
-                "WHERE wholesaler=? AND upc_norm=? "
-                "ORDER BY (CASE WHEN COALESCE(unit_volume,'')=? THEN 0 ELSE 1 END), edition DESC "
-                "LIMIT 1",
-                [line["wholesaler"], un, line.get("unit_volume") or ""],
-            ).fetchone()
-        except Exception:
-            ident = None
-        tgt = None
-        if ident:
-            ed, gk = ident
-            tgt = dcon.execute(
-                "SELECT product_name, upc, unit_volume FROM sku_offer "
-                "WHERE edition=? AND group_key=? AND wholesaler=? LIMIT 1",
-                [ed, gk, target],
-            ).fetchone()
+        tgt = _resolve_switch_target(dcon, line["wholesaler"], line.get("upc"),
+                                     line.get("unit_volume"), line.get("product_name"), target)
     if not tgt:
         raise HTTPException(
             409, f"{_dist_label(target)} does not carry this product in the compared edition")

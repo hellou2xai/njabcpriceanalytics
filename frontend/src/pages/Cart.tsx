@@ -7,6 +7,7 @@ import SavingsAnalysis from '../components/SavingsAnalysis';
 import DealSparkline from '../components/DealSparkline';
 import DealTimingSticker, { everyDayFromTiers } from '../components/DealTimingSticker';
 import { windowBadge, fmtDateRange } from '../lib/dealDates';
+import { DistributorPicker } from '../components/DistributorPicker';
 import { useProductQuickView } from '../components/ProductQuickView';
 import { useDialog } from '../components/Dialog';
 import { shortUnit } from '../components/CatalogTable';
@@ -129,38 +130,6 @@ const SUG_HUE: Record<LineSuggestion['kind'], number> = {
   alt_distributor: 205, qd_tier: 145, rip_tier: 275, rip_program: 275,
   case_mix: 30, buy_before: 0,
 };
-
-// The distributor cell becomes a dropdown of EVERY distributor carrying the same
-// SKU in this edition, each with its own net price + RIP flag (from the
-// precomputed comparison). Picking a different one switches the line IN PLACE.
-function DistributorPicker({ it, onSwitch, busy }: {
-  it: CartItem; onSwitch: (ws: string) => void; busy?: boolean;
-}) {
-  const cmp = it.comparison ?? [];
-  if (cmp.length < 2) return <>{distributorName(it.wholesaler)}</>;
-  return (
-    <select
-      value={it.wholesaler}
-      disabled={busy}
-      title="Switch this line to another distributor that carries the same product. Net/case includes that distributor's own RIP rebate."
-      style={{ fontSize: 11, padding: '1px 4px', maxWidth: '100%', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--surface)' }}
-      onChange={e => { if (e.target.value && e.target.value !== it.wholesaler) onSwitch(e.target.value); }}
-    >
-      {cmp.map(c => {
-        const net = c.effective_case_price;
-        const cur = c.wholesaler === it.wholesaler;
-        return (
-          <option key={c.wholesaler} value={c.wholesaler}>
-            {distributorName(c.wholesaler)} · {net != null ? `$${net.toFixed(2)}` : '—'}/cs
-            {c.has_rip ? ' +RIP' : ''}
-            {!cur && c.is_cheapest_net ? ' ◆ cheapest' : ''}
-            {cur ? ' (current)' : ''}
-          </option>
-        );
-      })}
-    </select>
-  );
-}
 
 // One row per money-saving suggestion, ranked by dollar impact. Apply fires the
 // suggestion's own action endpoint; the cart refetches so the stack recomputes.
@@ -582,7 +551,7 @@ export default function Cart() {
               {showCombo && <ComboBadge code={it.combo_code!} />}
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              <DistributorPicker it={it} onSwitch={ws => switchDist.mutate({ id: it.id, ws })} busy={switchDist.isPending} />
+              <DistributorPicker wholesaler={it.wholesaler} comparison={it.comparison} onSwitch={ws => switchDist.mutate({ id: it.id, ws })} busy={switchDist.isPending} />
               {it.upc ? <span>· {it.upc}</span> : null}
             </div>
           </div>

@@ -9,6 +9,7 @@ import { useProductQuickView } from '../components/ProductQuickView';
 import ProductThumb from '../components/ProductThumb';
 import DealSparkline from '../components/DealSparkline';
 import { distributorName, abgSku, skuLabel, isKegUnit, priceUnit, perUnitAbbr } from '../lib/distributors';
+import { DistributorPicker } from '../components/DistributorPicker';
 import { ripPrograms, effectiveRipCode, programSummary, normTierUnit } from '../lib/ripPrograms';
 import { useDialog } from '../components/Dialog';
 import { ErrorState, EmptyState } from '../components/DataState';
@@ -309,6 +310,13 @@ function ListRow({ it, selected, toggle, onRemove }: {
     mutationFn: (code: string | null) => listsApi.updateItem(it.list_id, it.id, { rip_choice: code }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['list', it.list_id] }),
   });
+  const switchDist = useMutation({
+    mutationFn: (ws: string) => listsApi.switchDistributor(it.list_id, it.id, ws),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['list', it.list_id] });
+      qc.invalidateQueries({ queryKey: ['list-analyze', it.list_id] });
+    },
+  });
   const programs = ripPrograms(it.tiers);
   const effRip = effectiveRipCode(it, programs);
   const keg = isKegUnit(it.unit_volume, it.unit_type);
@@ -375,7 +383,10 @@ function ListRow({ it, selected, toggle, onRemove }: {
       <td className="cart-cell-code" title={abgSku(it.wholesaler, it.abg_sku) ? `${skuLabel(it.wholesaler)} item number` : undefined}>
         {abgSku(it.wholesaler, it.abg_sku) ? it.abg_sku : '–'}
       </td>
-      <td>{distributorName(it.wholesaler)}</td>
+      <td onClick={e => e.stopPropagation()}>
+        <DistributorPicker wholesaler={it.wholesaler} comparison={it.comparison}
+          onSwitch={ws => switchDist.mutate(ws)} busy={switchDist.isPending} />
+      </td>
       <td>{it.unit_volume}</td>
       <td title="Bottles per case">{pack ? `${pack}/cs` : '–'}</td>
       {/* PAY-NOW at 1 case: list minus any QD a single case already earns

@@ -131,9 +131,18 @@ def get_list(list_id: int, user: dict = Depends(get_current_user)):
             except Exception:
                 pass
             try:
+                # Cross-distributor offer grid (UPC + name fallback) so each list
+                # line gets the same inline "change distributor" picker as the cart.
+                from backend.routers.cart import _attach_comparison
+                _attach_comparison(dcon, items)
+            except Exception:
+                pass
+            try:
                 _pricing.attach_rip_gaps(dcon, items)   # no-RIP "avoid these days" windows
             except Exception:
                 pass
+    for it in items:
+        it.setdefault("comparison", [])
     return {**dict(lst), "items": items}
 
 
@@ -141,6 +150,58 @@ class ListItemPatch(BaseModel):
     notes: Optional[str] = None
     # Chosen RIP program for the line; null/'' resets to the default.
     rip_choice: Optional[str] = None
+
+
+class SwitchDistributorIn(BaseModel):
+    """Move ONE list item to another distributor that carries the SAME product."""
+    wholesaler: str
+
+
+@router.post("/{list_id}/items/{item_id}/switch-distributor")
+def switch_list_item_distributor(list_id: int, item_id: int, body: SwitchDistributorIn,
+                                 user: dict = Depends(get_current_user)):
+    """Switch a list line to another distributor IN PLACE, resolving the SAME item
+    at the target (UPC grid + name fallback, shared with the cart). rip_choice is
+    cleared — RIP codes are per (distributor, edition). Returns the refreshed list."""
+    target = (body.wholesaler or "").strip()
+    if not target:
+        raise HTTPException(400, "wholesaler is required")
+    with get_pg() as con:
+        _owned(con, list_id, user["id"])
+        row = con.execute(
+            "SELECT id, product_name, wholesaler, upc, unit_volume "
+            "FROM list_items WHERE id=%s AND list_id=%s", (item_id, list_id)).fetchone()
+    if not row:
+        raise HTTPException(404, "Item not found")
+    line = dict(row)
+    if line["wholesaler"].lower() == target.lower():
+        return {"status": "noop"}
+
+    from backend.routers.cart import _resolve_switch_target, _dist_label
+    with get_duckdb() as dcon:
+        tgt = _resolve_switch_target(dcon, line["wholesaler"], line.get("upc"),
+                                     line.get("unit_volume"), line.get("product_name"), target)
+    if not tgt:
+        raise HTTPException(
+            409, f"{_dist_label(target)} does not carry this product in the compared edition")
+    tgt_name, tgt_upc, tgt_uv = tgt[0], (tgt[1] or line.get("upc")), (tgt[2] or line.get("unit_volume"))
+
+    with get_pg() as con:
+        # The list unique key is (list_id, product_name, wholesaler, unit_volume).
+        # If the target row already exists, drop this line; else rewrite in place.
+        existing = con.execute(
+            "SELECT id FROM list_items WHERE list_id=%s AND product_name=%s AND wholesaler=%s "
+            "AND COALESCE(unit_volume,'')=%s AND id<>%s",
+            (list_id, tgt_name, target, tgt_uv or "", item_id)).fetchone()
+        if existing:
+            con.execute("DELETE FROM list_items WHERE id=%s AND list_id=%s", (item_id, list_id))
+        else:
+            con.execute(
+                "UPDATE list_items SET wholesaler=%s, product_name=%s, upc=%s, "
+                "unit_volume=%s, rip_choice=NULL WHERE id=%s AND list_id=%s",
+                (target, tgt_name, tgt_upc, tgt_uv, item_id, list_id))
+        con.execute(f"UPDATE lists SET updated_at={NOW_UTC} WHERE id=%s", (list_id,))
+    return get_list(list_id, user)
 
 
 @router.put("/{list_id}/items/{item_id}")

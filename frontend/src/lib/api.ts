@@ -1341,6 +1341,9 @@ export interface ListItem {
   // No-RIP "avoid these days" windows between dated RIP windows.
   rip_gaps?: { from: string; to: string; days: number }[];
   deal_windows?: { kind: 'QD' | 'RIP'; qty?: number | null; unit?: string | null; from: string; to: string; eff: number | null; save: number | null }[];
+  // Every distributor carrying the SAME item (UPC grid + name fallback) for the
+  // inline "change distributor" picker — same shape the cart lines carry.
+  comparison?: OfferRow[];
 }
 export interface ListDetail { id: number; name: string; created_at: string; updated_at: string; items: ListItem[]; }
 
@@ -1587,6 +1590,11 @@ export const lists = {
     request(`/api/lists/${id}/items/${itemId}`, { method: 'PUT', body: JSON.stringify(data) }),
   removeItems: (id: number, itemIds: number[]) =>
     request(`/api/lists/${id}/items/delete`, { method: 'POST', body: JSON.stringify({ item_ids: itemIds }) }),
+  // Switch a list line to another distributor carrying the same item; returns the
+  // refreshed list so the row re-renders at the target's price.
+  switchDistributor: (id: number, itemId: number, wholesaler: string) =>
+    request<ListDetail>(`/api/lists/${id}/items/${itemId}/switch-distributor`,
+      { method: 'POST', body: JSON.stringify({ wholesaler }) }),
 };
 
 export const cart = {

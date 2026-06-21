@@ -358,6 +358,14 @@ function ListRow({ it, selected, toggle, onRemove }: {
                 upc: it.upc ?? undefined, unitVolume: it.unit_volume ?? undefined }); }}
             >
               {it.product_name}
+              {(() => {
+                // Vintage is part of the SKU identity (a shared barcode can be a
+                // '23 and a '24), so show which year is on the line.
+                const v = it.vintage == null ? '' : String(it.vintage).trim();
+                return v && !['0', 'nv', 'none', 'nan'].includes(v.toLowerCase())
+                  ? <span className="tag tag-blue" style={{ fontSize: 10, fontWeight: 700, marginLeft: 6 }}>Vintage {v}</span>
+                  : null;
+              })()}
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{it.upc}</div>
             {(it.rip_gaps?.length ?? 0) > 0 && (

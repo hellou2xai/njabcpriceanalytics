@@ -557,6 +557,14 @@ export default function Cart() {
               >
                 {it.product_name}
               </span>
+              {(() => {
+                // Vintage is part of the SKU identity — a shared barcode can be a
+                // '23 and a '24, so the buyer must see which year is on the line.
+                const v = it.vintage == null ? '' : String(it.vintage).trim();
+                return v && !['0', 'nv', 'none', 'nan'].includes(v.toLowerCase())
+                  ? <span className="tag tag-blue" style={{ fontSize: 10, fontWeight: 700 }}>Vintage {v}</span>
+                  : null;
+              })()}
               {showCombo && <ComboBadge code={it.combo_code!} />}
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>

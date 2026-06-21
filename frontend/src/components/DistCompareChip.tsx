@@ -65,14 +65,24 @@ function buildOffer(w: string, rows: Product[]): DistOffer {
   return { wholesaler: w, frontline, oneCsQD, best: finalBest, bestBtl, pack, qd, rip };
 }
 
-// Group the product's size rows by physical size; return the offers for the size
-// that gives the most useful comparison (most distributors, then widest spread),
-// but only sizes where the best landed price actually DIFFERS across distributors.
+// A vintage is part of the SKU identity — a shared barcode can be a '23 AND a
+// '24, and they are NOT the same offer. NV/blank/0 collapse to one bucket.
+const vintageKey = (v: unknown) => {
+  const s = v == null ? '' : String(v).trim().toLowerCase();
+  return ['', '0', 'nv', 'none', 'nan'].includes(s) ? '' : s;
+};
+
+// Group the product's size rows by full SKU identity — size + pack + VINTAGE —
+// then return the offers for the group that gives the most useful comparison
+// (most distributors, then widest spread), but only where the best landed price
+// actually DIFFERS across distributors. Grouping by vintage stops a cross-vintage
+// "cheaper" claim (e.g. Allied's '23 time-sensitive deal vs Opici's '24).
 function pickComparison(sizes: Product[]): { sizeLabel: string; offers: DistOffer[] } | null {
-  const groups = new Map<number, Product[]>();
+  const groups = new Map<string, Product[]>();
   for (const s of sizes) {
     const ml = sizeToMl(s.unit_volume) || 0;
-    const k = Math.round(ml / 5) * 5;
+    const pack = bottlesPerCase(s.product_name, s.unit_qty) || 0;
+    const k = `${Math.round(ml / 5) * 5}|${pack}|${vintageKey(s.vintage)}`;
     (groups.get(k) ?? groups.set(k, []).get(k)!).push(s);
   }
   let pick: { sizeLabel: string; offers: DistOffer[]; spread: number } | null = null;

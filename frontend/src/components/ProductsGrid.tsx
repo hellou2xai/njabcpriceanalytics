@@ -501,9 +501,18 @@ function SizeRow({ size, cart, updateQty, primaryName, showDeals = true, hideDis
   // deals can never disagree with the chart (the row's flat `tiers` array can
   // be dropped on the multi-UPC variant search while price_3mo survives).
   const months = buildMonths(size);
-  // Same-size rows across distributors (from the card's cross-distributor fetch),
-  // for the per-item cheaper-distributor chip. Empty for sizes not in that fetch.
-  const sizeSibs = (crossDist ?? []).filter(p => sizeToMl(p.unit_volume) === sizeToMl(size.unit_volume));
+  // Same-SKU rows across distributors (from the card's cross-distributor fetch),
+  // for the per-item cheaper-distributor chip. Matched on the FULL identity —
+  // size + pack + vintage — so the chip never compares a '24 against another
+  // house's '23 (a shared barcode can carry both). Empty for sizes not in the fetch.
+  const vKey = (v: unknown) => {
+    const s = v == null ? '' : String(v).trim().toLowerCase();
+    return ['', '0', 'nv', 'none', 'nan'].includes(s) ? '' : s;
+  };
+  const sizeSibs = (crossDist ?? []).filter(p =>
+    sizeToMl(p.unit_volume) === sizeToMl(size.unit_volume)
+    && bottlesPerCase(p.product_name, p.unit_qty) === bottlesPerCase(size.product_name, size.unit_qty)
+    && vKey(p.vintage) === vKey(size.vintage));
   return (
     <div className="prod-size-row">
       <Link to={detailUrl(size.wholesaler, size.product_name, size.upc, size.unit_volume)} className="prod-size-id"

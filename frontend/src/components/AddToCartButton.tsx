@@ -24,11 +24,16 @@ export default function AddToCartButton({ productName, wholesaler, upc, unitVolu
   const qc = useQueryClient();
   const [added, setAdded] = useState(false);
   const add = useMutation({
-    mutationFn: () => cartApi.add({
-      product_name: productName, wholesaler, upc, unit_volume: unitVolume,
-      unit_qty: unitQty, vintage,
-      qty_cases: qtyCases, qty_units: qtyUnits,
-    }),
+    // Default to 1 case when the caller hasn't set any quantity — adding a line
+    // with 0 cases / 0 bottles is never intended (the buyer wants the product).
+    mutationFn: () => {
+      const cs = qtyCases || 0, un = qtyUnits || 0;
+      return cartApi.add({
+        product_name: productName, wholesaler, upc, unit_volume: unitVolume,
+        unit_qty: unitQty, vintage,
+        qty_cases: cs === 0 && un === 0 ? 1 : cs, qty_units: un,
+      });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['cart'] });
       setAdded(true);

@@ -559,7 +559,9 @@ function RipTable({ rows, selected, accent, cases, expanded, setExpanded, openRi
 export default function CompareRips() {
   const [params, setSearchParams] = useSearchParams();
   const [selected, setSelected] = useState<string[]>(params.get('d')?.split(',').filter(Boolean) ?? DEFAULT);
-  const [cases, setCases] = useState(parseInt(params.get('cases') ?? '5', 10) || 5);
+  // Comparison volume — fixed at 5 cases (the buy-quantity slider was removed);
+  // still overridable via ?cases= for power users / shared links.
+  const [cases] = useState(parseInt(params.get('cases') ?? '5', 10) || 5);
   const [q, setQ] = useState(params.get('q') ?? '');
   const [ptype, setPtype] = useState(params.get('type') ?? '');
   const [size, setSize] = useState(params.get('size') ?? '');
@@ -666,9 +668,8 @@ export default function CompareRips() {
         <h2><Layers size={20} style={{ verticalAlign: '-3px', marginRight: 8 }} />Compare RIPs</h2>
         <p className="rip2-lede">
           A RIP is a buy-more-save-more discount. The same bottle can RIP
-          very differently at each distributor. Pick how many cases you plan to buy and
-          see who actually costs less, when the RIP starts, how big it gets, and how
-          long it lasts.
+          very differently at each distributor. See who actually costs less, when the
+          RIP starts, how big it gets, and how long it lasts.
         </p>
       </div>
 
@@ -725,16 +726,6 @@ export default function CompareRips() {
                   </button>
                 ))}
               </div>
-            </div>
-
-            <div className="rip2-rail-sect">
-              <div className="rip2-rail-label">How many cases will you buy?</div>
-              <div className="rip2-vol">
-                <input type="range" min={1} max={50} value={cases}
-                  onChange={e => { setCases(parseInt(e.target.value, 10)); setShown(40); }} />
-                <span className="rip2-vol-n">{cases} case{cases !== 1 ? 's' : ''}</span>
-              </div>
-              <div className="rip2-rail-help">Everything below is judged at this amount.</div>
             </div>
 
             <div className="rip2-rail-sect">

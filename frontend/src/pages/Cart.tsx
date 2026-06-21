@@ -12,7 +12,7 @@ import { useProductQuickView } from '../components/ProductQuickView';
 import { useDialog } from '../components/Dialog';
 import { shortUnit } from '../components/CatalogTable';
 import { distributorName, abgSku, skuLabel, priceUnit, perUnitAbbr, isKegUnit } from '../lib/distributors';
-import { ripPrograms, effectiveRipCode, betterProgram, programSummary, fmtAmt, creditWord } from '../lib/ripPrograms';
+import { ripPrograms, effectiveRipCode, betterProgram, programSummary, fmtAmt, creditWord, normTierUnit } from '../lib/ripPrograms';
 import { ErrorState, EmptyState } from '../components/DataState';
 import DataLoading from '../components/DataLoading';
 
@@ -324,7 +324,7 @@ function AddToCartSearch({ onAdd, adding }: { onAdd: (p: Product) => void; addin
   const [q, setQ] = useState('');
   const { data } = useQuery({
     queryKey: ['cart-add-search', q],
-    queryFn: () => catalog.search({ q, limit: 50 }),
+    queryFn: () => catalog.search({ q, limit: 50, include_tiers: true }),
     enabled: q.trim().length >= 2,
   });
   const results = data?.items ?? [];
@@ -340,15 +340,34 @@ function AddToCartSearch({ onAdd, adding }: { onAdd: (p: Product) => void; addin
         <div style={{ marginTop: 8, border: '1px solid var(--border)', borderRadius: 'var(--radius)', maxWidth: 640, overflow: 'hidden' }}>
           {results.length === 0 && <div style={{ padding: 10, fontSize: 13, color: 'var(--text-muted)' }}>No matches.</div>}
           {results.map((p, i) => {
-            const price = p.effective_case_price ?? p.frontline_case_price;
+            // Show the BUY price after the 1-case QD (cash today), not list and not
+            // the RIP-inclusive effective (money later) — same rule as the cart
+            // line + Lists. Best 1-case discount per case off the frontline.
+            let qd1 = 0;
+            for (const t of p.tiers ?? []) {
+              if (t.source !== 'discount' || normTierUnit(t.unit) === 'btl') continue;
+              if (t.qty <= 1 && (t.save_per_case ?? 0) > qd1) qd1 = t.save_per_case ?? 0;
+            }
+            const price = p.frontline_case_price != null
+              ? Math.max(p.frontline_case_price - qd1, 0)
+              : (p.effective_case_price ?? p.frontline_case_price);
+            // Pack size + vintage make near-identical rows distinguishable (two
+            // 1L ABSOLUT GRAPEFRUIT at different packs/prices look the same without
+            // them). Drop NV/blank vintages so spirits don't show a junk year.
+            const packN = p.unit_qty != null ? parseInt(String(p.unit_qty), 10) : NaN;
+            const pack = Number.isFinite(packN) && packN > 0 ? `${packN}/cs` : '';
+            const vtgRaw = p.vintage == null ? '' : String(p.vintage).trim();
+            const vtg = vtgRaw && !['0', 'nv'].includes(vtgRaw.toLowerCase()) ? vtgRaw : '';
+            const meta = [distributorName(p.wholesaler), p.unit_volume, pack, vtg]
+              .filter(Boolean).join(' · ');
             return (
-              <div key={`${p.product_name}|${p.wholesaler}|${i}`}
+              <div key={`${p.product_name}|${p.wholesaler}|${p.unit_volume ?? ''}|${p.unit_qty ?? ''}|${vtg}|${i}`}
                 style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', borderTop: i ? '1px solid var(--border)' : undefined }}>
                 <ProductThumb src={p.image_url} alt={p.product_name} size={36} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 600 }}>{p.product_name}</div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                    {distributorName(p.wholesaler)}{p.unit_volume ? ` · ${p.unit_volume}` : ''} · Case {money(price)}
+                    {meta} · Case {money(price)}
                   </div>
                 </div>
                 <button className="btn btn-secondary btn-sm" disabled={adding}

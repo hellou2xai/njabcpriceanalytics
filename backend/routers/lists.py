@@ -181,14 +181,17 @@ def switch_list_item_distributor(list_id: int, item_id: int, body: SwitchDistrib
     if line["wholesaler"].lower() == target.lower():
         return {"status": "noop"}
 
-    from backend.routers.cart import _resolve_switch_target, _dist_label
+    from backend.routers.cart import _resolve_switch_target, _dist_label, _best_rip_choice
     with get_duckdb() as dcon:
         tgt = _resolve_switch_target(dcon, line["wholesaler"], line.get("upc"),
                                      line.get("unit_volume"), line.get("product_name"), target)
-    if not tgt:
-        raise HTTPException(
-            409, f"{_dist_label(target)} does not carry this product in the compared edition")
-    tgt_name, tgt_upc, tgt_uv = tgt[0], (tgt[1] or line.get("upc")), (tgt[2] or line.get("unit_volume"))
+        if not tgt:
+            raise HTTPException(
+                409, f"{_dist_label(target)} does not carry this product in the compared edition")
+        tgt_name, tgt_upc, tgt_uv = tgt[0], (tgt[1] or line.get("upc")), (tgt[2] or line.get("unit_volume"))
+        # Auto-assign the BEST RIP at the target distributor (per distributor+edition).
+        best_rip = _best_rip_choice(dcon, target, tgt_upc, tgt_uv, tgt_name,
+                                    line.get("qty_cases"))
 
     with get_pg() as con:
         # The list unique key is (list_id, product_name, wholesaler, unit_volume).
@@ -202,8 +205,8 @@ def switch_list_item_distributor(list_id: int, item_id: int, body: SwitchDistrib
         else:
             con.execute(
                 "UPDATE list_items SET wholesaler=%s, product_name=%s, upc=%s, "
-                "unit_volume=%s, rip_choice=NULL WHERE id=%s AND list_id=%s",
-                (target, tgt_name, tgt_upc, tgt_uv, item_id, list_id))
+                "unit_volume=%s, rip_choice=%s WHERE id=%s AND list_id=%s",
+                (target, tgt_name, tgt_upc, tgt_uv, best_rip, item_id, list_id))
         con.execute(f"UPDATE lists SET updated_at={NOW_UTC} WHERE id=%s", (list_id,))
     return get_list(list_id, user)
 

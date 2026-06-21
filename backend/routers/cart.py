@@ -345,6 +345,58 @@ def _attach_rip_back_later(items):
         }
 
 
+def _rip_payout_at(rip_tiers, qty_cases, qty_units, credit):
+    """Best total RIP $ a set of one program's tiers pays at a given quantity —
+    per-case rebate of the highest qualified tier × that line's units. Mirrors the
+    frontend programPayAt so auto-assign agrees with the 'better RIP' badge."""
+    have_c = (qty_cases or 1) * (credit or 1.0)   # default 1 case for ranking
+    have_b = (qty_units or 0)
+    best = 0.0
+    for t in rip_tiers:
+        is_case = not str(t.get("unit") or "").lower().startswith("b")
+        have = have_c if is_case else have_b if have_b else have_c
+        if t.get("qty", 0) <= have + 1e-9:
+            pc = float(t.get("rip_only_save_per_case") or 0)
+            payout = pc * (qty_cases or 1)
+            best = max(best, payout)
+    return best
+
+
+def _best_rip_choice(dcon, ws, upc, unit_volume, product_name, qty_cases=1):
+    """The RIP program code that pays the MOST for this item at this distributor in
+    the current edition, at the given quantity — used to auto-assign the best RIP
+    after a distributor switch (RIP codes are per distributor+edition). Returns the
+    code or None when the item has no RIP. Pricing stays current-edition via
+    _attach_cart_pricing's edition cap."""
+    probe = [{"wholesaler": ws, "upc": upc, "unit_volume": unit_volume,
+              "product_name": product_name, "qty_cases": qty_cases or 1, "qty_units": 0}]
+    try:
+        _attach_cart_pricing(dcon, probe)
+    except Exception:
+        return None
+    rip_tiers = [t for t in (probe[0].get("tiers") or []) if t.get("source") == "rip"]
+    if not rip_tiers:
+        return None
+    credit = 1.0
+    for t in rip_tiers:
+        if t.get("case_credit"):
+            try:
+                credit = float(t["case_credit"]); break
+            except Exception:
+                pass
+    by_code: dict = {}
+    for t in rip_tiers:
+        by_code.setdefault(t.get("code"), []).append(t)
+    best_code, best_pay = None, -1.0
+    for code, ts in by_code.items():
+        if not code:
+            continue
+        pay = _rip_payout_at(ts, qty_cases, 0, credit)
+        if pay > best_pay + 1e-9:
+            best_pay, best_code = pay, code
+    return best_code
+
+
 def _attach_combo_pricing(dcon, items):
     """Price bundle lines at the combo price ONLY while the whole combo is still in
     the cart. When a member is removed the remaining lines fall back to their regular
@@ -1711,10 +1763,14 @@ def switch_distributor_inline(item_id: int, body: SwitchDistributorIn,
     with get_duckdb() as dcon:
         tgt = _resolve_switch_target(dcon, line["wholesaler"], line.get("upc"),
                                      line.get("unit_volume"), line.get("product_name"), target)
-    if not tgt:
-        raise HTTPException(
-            409, f"{_dist_label(target)} does not carry this product in the compared edition")
-    tgt_name, tgt_upc, tgt_uv = tgt[0], (tgt[1] or line.get("upc")), (tgt[2] or line.get("unit_volume"))
+        if not tgt:
+            raise HTTPException(
+                409, f"{_dist_label(target)} does not carry this product in the compared edition")
+        tgt_name, tgt_upc, tgt_uv = tgt[0], (tgt[1] or line.get("upc")), (tgt[2] or line.get("unit_volume"))
+        # Auto-assign the BEST RIP at the target (RIP codes are per distributor +
+        # edition, so the source pick can't carry over — pick the richest instead).
+        best_rip = _best_rip_choice(dcon, target, tgt_upc, tgt_uv, tgt_name,
+                                    line.get("qty_cases"))
 
     with get_pg() as con:
         rep_id = _default_rep_for(con, user["id"], target)
@@ -1738,13 +1794,14 @@ def switch_distributor_inline(item_id: int, body: SwitchDistributorIn,
                         (item_id, user["id"]))
             new_id = existing["id"]
         else:
-            # Rewrite the line in place. rip_choice is cleared: RIP codes are
-            # per (distributor, edition), so the source pick can't carry over.
+            # Rewrite the line in place. rip_choice is re-assigned to the BEST RIP
+            # at the target (the source pick can't carry over — RIP codes are per
+            # distributor + edition); None falls back to the target's default.
             con.execute(
                 f"UPDATE cart_items SET wholesaler=%s, product_name=%s, upc=%s, "
-                f"unit_volume=%s, sales_rep_id=%s, rip_choice=NULL, updated_at={NOW_UTC} "
+                f"unit_volume=%s, sales_rep_id=%s, rip_choice=%s, updated_at={NOW_UTC} "
                 f"WHERE id=%s AND user_id=%s",
-                (target, tgt_name, tgt_upc, tgt_uv, rep_id, item_id, user["id"]),
+                (target, tgt_name, tgt_upc, tgt_uv, rep_id, best_rip, item_id, user["id"]),
             )
             new_id = item_id
 

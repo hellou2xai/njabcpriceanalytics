@@ -65,6 +65,15 @@
 .qd2-toggle { display: flex; align-items: center; gap: 7px; font-size: 0.8rem; padding: 3px 0; cursor: pointer; }
 .qd2-toggle input { accent-color: var(--accent); }
 
+/* dense multi-select checkbox list (Category / Size) */
+.qd2-checklist {
+  display: flex; flex-direction: column; gap: 2px;
+  max-height: 168px; overflow-y: auto;
+  border: 1px solid var(--border); border-radius: 7px; padding: 4px 6px; background: var(--surface);
+}
+.qd2-check { display: flex; align-items: center; gap: 7px; font-size: 0.8rem; padding: 2px 0; cursor: pointer; }
+.qd2-check input { accent-color: var(--accent); flex-shrink: 0; }
+
 .qd2-mindiff { display: flex; align-items: center; gap: 6px; }
 .qd2-mindiff-cur { font-weight: 600; color: var(--text-muted); }
 .qd2-mindiff-in {
@@ -143,7 +152,15 @@
 }
 .qd2-tier-chip strong { font-weight: 700; }
 .qd2-tier-chip.is-ts { background: hsl(40 90% 94%); color: hsl(35 70% 32%); border-color: hsl(40 80% 82%); }
-.qd2-tier-win { font-weight: 600; opacity: 0.85; }
+/* a tier + its (optional) time-sensitive validity sticker, kept as one unit when wrapping */
+.qd2-tier-wrap { display: inline-flex; align-items: center; gap: 3px; }
+/* time-sensitive validity sticker: a distinct amber pill, NOT blended into the chip text */
+.qd2-tier-validity {
+  display: inline-flex; align-items: center; gap: 2px;
+  font-size: 0.66rem; font-weight: 700; white-space: nowrap;
+  color: #b45309; background: #fff3cd; border: 1px solid #f0c14b;
+  border-radius: var(--radius-pill); padding: 1px 5px; cursor: help;
+}
 /* QD DIFFERENCE: a tier not shared by every distributor — yellow bg, red font */
 .qd2-tier-chip.is-diff { background: #fff8c5; color: #d1242f; border-color: #e3b341; font-weight: 700; }
 .qd2-tier-chip.is-diff strong { color: #d1242f; }

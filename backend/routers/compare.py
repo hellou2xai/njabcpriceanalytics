@@ -1871,7 +1871,6 @@ def _rip_verdict(row: dict, slugs: list[str], n: float) -> dict:
     """Plain-language recommendation over the structured break-even data — which
     distributor's RIP is the better buy and why. Deterministic (no LLM): every
     row gets one instantly, derived from spread, thresholds, flips and combos."""
-    ni = int(n)
     d = row["dists"]
     w, sp = row["winner_at_n"], row["spread_at_n"]
     mins = {x: d[x]["min_cases"] for x in slugs if d[x]["min_cases"]}
@@ -1879,13 +1878,13 @@ def _rip_verdict(row: dict, slugs: list[str], n: float) -> dict:
     parts, pick = [], w
 
     if w and w != "tie" and sp:
-        parts.append(f"{w.title()} is the better RIP at {ni} case(s): "
+        parts.append(f"{w.title()} is the better RIP: "
                      f"${sp:.2f}/case lower landed cost.")
     elif w == "tie":
-        parts.append(f"Landed cost ties at {ni} case(s).")
+        parts.append("Landed cost ties.")
         pick = "tie"
     else:
-        parts.append(f"No clear RIP edge at {ni} case(s).")
+        parts.append("No clear RIP edge.")
 
     # When the price is a tie/near-tie, the RIP TERMS are the tiebreaker: who needs
     # the least cash down to unlock the rebate.
@@ -2372,7 +2371,7 @@ def compare_rips(
         lead = max(wins, key=lambda w: wins[w])
         if wins[lead]:
             insights.append(
-                f"At {int(n)} case(s), {lead} has the lowest price per case on "
+                f"{lead} has the lowest landed cost per case on "
                 f"{wins[lead]} of {total} shared-RIP products.")
         lm = max(least_money, key=lambda w: least_money[w])
         if least_money[lm]:
@@ -2434,7 +2433,6 @@ def _qd_verdict(row: dict, slugs: list[str], n: float) -> dict:
     distributor's QUANTITY DISCOUNT is the better buy and why. Deterministic
     (no LLM); the QD analogue of _rip_verdict (no cash-to-unlock / mix logic —
     a QD has no rebate-return economics, the discount is the price you pay)."""
-    ni = int(n)
     d = row["dists"]
     w, sp = row["winner_at_n"], row["spread_at_n"]
     mins = {x: d[x]["min_cases"] for x in slugs if d[x]["min_cases"]}
@@ -2442,13 +2440,13 @@ def _qd_verdict(row: dict, slugs: list[str], n: float) -> dict:
     parts, pick = [], w
 
     if w and w != "tie" and sp:
-        parts.append(f"{w.title()} is the better quantity discount at {ni} case(s): "
+        parts.append(f"{w.title()} is the better quantity discount: "
                      f"${sp:.2f}/case lower buy price.")
     elif w == "tie":
-        parts.append(f"Buy price ties at {ni} case(s).")
+        parts.append("Buy price ties.")
         pick = "tie"
     else:
-        parts.append(f"No clear quantity-discount edge at {ni} case(s).")
+        parts.append("No clear quantity-discount edge.")
 
     if soonest and len(set(mins.values())) > 1:
         c = mins[soonest]
@@ -2819,7 +2817,7 @@ def compare_qds(
         lead = max(wins, key=lambda w: wins[w])
         if wins[lead]:
             insights.append(
-                f"At {int(n)} case(s), {lead} has the lowest buy price per case on "
+                f"{lead} has the lowest buy price per case on "
                 f"{wins[lead]} of {total} shared-QD products.")
         lm = max(least_money, key=lambda w: least_money[w])
         if least_money[lm]:

@@ -139,20 +139,20 @@ function DistPanel({ w, d, row, cases, accent, isWinner, edition, onRipClick }: 
   const isDiffTier = (t: typeof d.rip_tiers[number]) =>
     allDists.length > 1 && !commonTierKeys.has(tierKey(t));
 
-  // total cash you actually outlay at this volume, here vs the competition
-  const myTotal = d.landed_at_n != null ? d.landed_at_n * cases : null;
+  // landed cost per case here vs the competition
+  const myNet = d.landed_at_n;
   const rivals = Object.entries(row.dists)
     .filter(([k, dd]) => k !== w && dd.landed_at_n != null)
-    .map(([k, dd]) => ({ name: distributorName(k), total: (dd.landed_at_n as number) * cases }));
-  const cheapestRival = rivals.length ? rivals.reduce((a, b) => (a.total <= b.total ? a : b)) : null;
-  const vsText = myTotal != null
+    .map(([k, dd]) => ({ name: distributorName(k), net: dd.landed_at_n as number }));
+  const cheapestRival = rivals.length ? rivals.reduce((a, b) => (a.net <= b.net ? a : b)) : null;
+  const vsText = myNet != null
     ? (cheapestRival
-        ? `Total to buy ${cases} case${cases !== 1 ? 's' : ''} here: ${money(myTotal)}. ` +
-          `Cheapest rival (${cheapestRival.name}): ${money(cheapestRival.total)}. ` +
-          (myTotal <= cheapestRival.total
-            ? `You save ${money(cheapestRival.total - myTotal)} overall by going here.`
-            : `You'd pay ${money(myTotal - cheapestRival.total)} more here.`)
-        : `Total to buy ${cases} case${cases !== 1 ? 's' : ''} here: ${money(myTotal)}.`)
+        ? `Landed cost here: ${money(myNet)}/case. ` +
+          `Cheapest rival (${cheapestRival.name}): ${money(cheapestRival.net)}/case. ` +
+          (myNet <= cheapestRival.net
+            ? `You save ${money(cheapestRival.net - myNet)}/case by going here.`
+            : `You'd pay ${money(myNet - cheapestRival.net)}/case more here.`)
+        : `Landed cost here: ${money(myNet)}/case.`)
     : '';
   // Front headline = CASH buy price after a single-case QD (list − 1-case QD,
   // before any RIP). landed_at_1 is after QD + RIP at 1 case, so add the 1-case
@@ -163,10 +163,9 @@ function DistPanel({ w, d, row, cases, accent, isWinner, edition, onRipClick }: 
     (d.frontline != null ? ` (list ${money(d.frontline)}/case)` : '') +
     `. The RIP is money back LATER — see the tiers and the net landed cost below.`;
   const priceHint =
-    `Your landed cost per case after the best RIP you qualify for at ${cases} case${cases !== 1 ? 's' : ''}. ` +
+    `Your landed cost per case after the best RIP you qualify for. ` +
     (d.frontline != null ? `List is ${money(d.frontline)}/case` : '') +
-    (d.rip_at_n ? `; the RIP takes off ${money(d.rip_at_n)}/case.` : '.') +
-    (myTotal != null ? ` That is ${money(myTotal)} total for ${cases} case${cases !== 1 ? 's' : ''}.` : '');
+    (d.rip_at_n ? `; the RIP takes off ${money(d.rip_at_n)}/case.` : '.');
 
   return (
     <div className={`rip2-dist${isWinner ? ' is-winner' : ''}`} style={{ borderTopColor: accent }}>
@@ -180,7 +179,7 @@ function DistPanel({ w, d, row, cases, accent, isWinner, edition, onRipClick }: 
         )}
         {isWinner && (
           <span className="rip2-best-tag" title={vsText}>
-            <Trophy size={11} /> lowest price at {cases} cs <HelpCircle size={10} className="rip2-tip-ico" />
+            <Trophy size={11} /> lowest landed cost <HelpCircle size={10} className="rip2-tip-ico" />
           </span>
         )}
       </div>
@@ -230,7 +229,7 @@ function DistPanel({ w, d, row, cases, accent, isWinner, edition, onRipClick }: 
         buy price after 1-case QD
         {d.landed_at_n != null && (
           <span className="rip2-dist-total" title={priceHint}>
-            {' · '}net {money(d.landed_at_n)}/cs at {cases} cs{myTotal != null ? ` (${money(myTotal)} total)` : ''}
+            {' · '}net {money(d.landed_at_n)}/cs
           </span>
         )}
       </div>
@@ -271,11 +270,17 @@ function DistPanel({ w, d, row, cases, accent, isWinner, edition, onRipClick }: 
                       const win = t.is_time_sensitive && t.from_date && t.to_date
                         ? `${t.from_date.slice(5)}–${t.to_date.slice(5)}` : null;
                       return (
-                        <span key={i} className={`rip2-tier-chip${t.is_time_sensitive ? ' is-ts' : ''}${diff ? ' is-diff' : ''}`}
-                          title={`RIP ${code}: buy ${t.buy_label ?? `${t.raw_qty} ${t.unit ?? ''}`} → ${money(totalBack)} back total (${money(t.rebate_per_case)}/cs)${t.price_after != null ? ` · net ${money(t.price_after)}/cs` : ''}${t.is_time_sensitive ? ` · time-limited${win ? ` (valid ${win})` : ''}` : ' · valid all month'}${diff ? ' · differs from the other distributor' : ''}`}>
-                          {t.buy_label ?? `${t.raw_qty}${(t.unit ?? '').toLowerCase().startsWith('b') ? 'btl' : 'cs'}`}
-                          {' → '}<strong>{money(totalBack)}</strong>
-                          {win && <span className="rip2-tier-win"> · {win}</span>}
+                        <span key={i} className="rip2-tier-wrap">
+                          <span className={`rip2-tier-chip${t.is_time_sensitive ? ' is-ts' : ''}${diff ? ' is-diff' : ''}`}
+                            title={`RIP ${code}: buy ${t.buy_label ?? `${t.raw_qty} ${t.unit ?? ''}`} → ${money(totalBack)} back total (${money(t.rebate_per_case)}/cs)${t.price_after != null ? ` · net ${money(t.price_after)}/cs` : ''}${t.is_time_sensitive ? ` · time-limited${win ? ` (valid ${win})` : ''}` : ' · valid all month'}${diff ? ' · differs from the other distributor' : ''}`}>
+                            {t.buy_label ?? `${t.raw_qty}${(t.unit ?? '').toLowerCase().startsWith('b') ? 'btl' : 'cs'}`}
+                            {' → '}<strong>{money(totalBack)}</strong>
+                          </span>
+                          {win && (
+                            <span className="rip2-tier-validity" title={`This tier is only live ${win}, not all month.`}>
+                              <CalendarClock size={10} /> {win}
+                            </span>
+                          )}
                         </span>
                       );
                     })}
@@ -302,7 +307,7 @@ function DistPanel({ w, d, row, cases, accent, isWinner, edition, onRipClick }: 
           `List (sticker) price ${money(d.frontline)}/case (${pb(d.frontline)})` +
           (qdPart > 0.005 ? `. After the ${money(qdPart)}/case quantity discount: ${money(afterQD)}/case (${pb(afterQD)})` : '') +
           (ripPart > 0.005 ? `. After the ${money(ripPart)}/case RIP on top: ${money(net)}/case (${pb(net)})` : '') +
-          (net != null ? ` (what you pay buying ${cases} case${cases !== 1 ? 's' : ''}).` : '.');
+          (net != null ? ` (what you pay per case).` : '.');
         return (
           <div className="rip2-dist-breakdown" title={bdHint}>
             <Tag size={11} />
@@ -490,11 +495,11 @@ function RipTable({ rows, selected, accent, cases, expanded, setExpanded, openRi
             {selected.map(w => (
               <th key={w} className="rip2-th-dist" style={{ borderBottomColor: accent[w] }}>
                 <span style={{ color: accent[w] }}>{distributorName(w)}</span>
-                <span className="rip2-th-sub">$/cs at {cases}cs · RIP unlock</span>
+                <span className="rip2-th-sub">net $/cs · RIP unlock</span>
               </th>
             ))}
             <th className="rip2-th-num">Gap/cs</th>
-            <th className="rip2-th-num">Save @{cases}cs</th>
+            <th className="rip2-th-num">Total saving</th>
             <th>What differs</th>
             <th></th>
           </tr>
@@ -515,7 +520,6 @@ function RipTable({ rows, selected, accent, cases, expanded, setExpanded, openRi
             if (r.quantity_differs) diffs.push(<span key="q" className="rip2-tchip" title="Distributors differ on how many cases unlock the RIP."><Layers size={10} /> unlock qty</span>);
             if (r.better_terms_tie) diffs.push(<span key="b" className="rip2-tchip" title="Same price, but the RIP terms differ: less cash to unlock, a wider product mix, or fewer cases."><Scale size={10} /> better terms</span>);
             if (anyHalfCase) diffs.push(<span key="h" className="rip2-tchip" title="Half-case RIP: the rebate is filed on a fraction-of-a-case pack, so each case counts less than one toward the tier.">½ case</span>);
-            if (!r.proof_match) diffs.push(<span key="p" className="rip2-tchip rip2-tchip-warn" title="The distributors list different proof/ABV for this barcode. Check it's the same item."><AlertTriangle size={10} /> proof differs</span>);
             const actW = win && win !== 'tie' ? win : selected[0];
             return (
               <Fragment key={r.match_key}>
@@ -571,8 +575,10 @@ export default function CompareRips() {
   // still overridable via ?cases= for power users / shared links.
   const [cases] = useState(parseInt(params.get('cases') ?? '5', 10) || 5);
   const [q, setQ] = useState(params.get('q') ?? '');
-  const [ptype, setPtype] = useState(params.get('type') ?? '');
-  const [size, setSize] = useState(params.get('size') ?? '');
+  // Category + Size are MULTI-select, filtered entirely client-side from the
+  // already-loaded board rows (the board returns the full shared-RIP set).
+  const [ptype, setPtype] = useState<string[]>(params.get('type')?.split(',').filter(Boolean) ?? []);
+  const [size, setSize] = useState<string[]>(params.get('size')?.split(',').filter(Boolean) ?? []);
   const [brand, setBrand] = useState(params.get('brand') ?? '');
   // "RIP Difference" is the headline filter and ON by default: only show
   // products where the RIP itself differs between distributors (timing,
@@ -607,8 +613,8 @@ export default function CompareRips() {
     if (selected.length) next.set('d', selected.join(','));
     if (cases !== 5) next.set('cases', String(cases));
     if (q) next.set('q', q);
-    if (ptype) next.set('type', ptype);
-    if (size) next.set('size', size);
+    if (ptype.length) next.set('type', ptype.join(','));
+    if (size.length) next.set('size', size.join(','));
     if (brand) next.set('brand', brand);
     if (!ripDiff) next.set('ripdiff', '0');
     if (view === 'table') next.set('view', 'table');
@@ -628,10 +634,10 @@ export default function CompareRips() {
   const { data: options } = useQuery({ queryKey: ['compare-options'], queryFn: compare.options });
   const ready = selected.length >= 2 && selected.length <= 3;
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['compare-rips', selected, cases, q, ptype, brand, ripDiff, minDiff, tsOnly, comboOnly, expiringOnly, timingDiff, qtyDiff, betterTerms, showAnomalies, sort, monthMode],
+    queryKey: ['compare-rips', selected, cases, q, brand, ripDiff, minDiff, tsOnly, comboOnly, expiringOnly, timingDiff, qtyDiff, betterTerms, showAnomalies, sort, monthMode],
     queryFn: () => compare.rips({
       wholesalers: selected.join(','), cases, q: q || undefined,
-      product_type: ptype || undefined, brand: brand || undefined,
+      brand: brand || undefined,
       rip_diff_only: ripDiff || undefined, min_diff: minDiff,
       time_sensitive_only: tsOnly || undefined,
       combo_only: comboOnly || undefined, expiring_only: expiringOnly || undefined,
@@ -666,8 +672,10 @@ export default function CompareRips() {
   }, [data]);
 
   const rows = useMemo(
-    () => (data?.rows ?? []).filter(r => !size || (r.unit_volume ?? '') === size),
-    [data, size]);
+    () => (data?.rows ?? []).filter(r =>
+      (ptype.length === 0 || ptype.includes(r.product_type ?? '')) &&
+      (size.length === 0 || size.includes(r.unit_volume ?? ''))),
+    [data, ptype, size]);
   const sum = data?.summary;
 
   return (
@@ -744,19 +752,37 @@ export default function CompareRips() {
             </div>
 
             <div className="rip2-rail-sect">
-              <div className="rip2-rail-label">Category</div>
-              <select value={ptype} onChange={e => setPtype(e.target.value)} className="rip2-select">
-                <option value="">All categories</option>
-                {types.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
+              <div className="rip2-rail-label">Category{ptype.length > 0 ? ` (${ptype.length})` : ''}</div>
+              <div className="rip2-checklist">
+                {types.length === 0 && <div className="rip2-rail-help">All categories</div>}
+                {types.map(t => (
+                  <label key={t} className="rip2-check">
+                    <input type="checkbox" checked={ptype.includes(t)}
+                      onChange={e => {
+                        setPtype(p => e.target.checked ? [...p, t] : p.filter(x => x !== t));
+                        setShown(40);
+                      }} />
+                    {t}
+                  </label>
+                ))}
+              </div>
             </div>
 
             <div className="rip2-rail-sect">
-              <div className="rip2-rail-label">Size</div>
-              <select value={size} onChange={e => { setSize(e.target.value); setShown(40); }} className="rip2-select">
-                <option value="">All sizes</option>
-                {sizes.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
+              <div className="rip2-rail-label">Size{size.length > 0 ? ` (${size.length})` : ''}</div>
+              <div className="rip2-checklist">
+                {sizes.length === 0 && <div className="rip2-rail-help">All sizes</div>}
+                {sizes.map(s => (
+                  <label key={s} className="rip2-check">
+                    <input type="checkbox" checked={size.includes(s)}
+                      onChange={e => {
+                        setSize(z => e.target.checked ? [...z, s] : z.filter(x => x !== s));
+                        setShown(40);
+                      }} />
+                    {s}
+                  </label>
+                ))}
+              </div>
             </div>
 
             <div className="rip2-rail-sect">
@@ -775,7 +801,7 @@ export default function CompareRips() {
               </div>
               <div className="rip2-rail-help">
                 Only show products where the lowest-price distributor beats the rest by at
-                least this much per case at {cases} case{cases !== 1 ? 's' : ''}. Set to $0 to show every match.
+                least this much per case. Set to $0 to show every match.
               </div>
             </div>
 
@@ -845,7 +871,7 @@ export default function CompareRips() {
                 {selected.map(w => (
                   <div className="rip2-scard" key={w} style={{ borderTop: `3px solid ${accent[w]}` }}>
                     <div className="rip2-scard-n">{sum?.wins_at_n[w] ?? 0}</div>
-                    <div className="rip2-scard-l">{distributorName(w)} has the lowest price/case at {cases} cs</div>
+                    <div className="rip2-scard-l">{distributorName(w)} has the lowest landed cost/case</div>
                   </div>
                 ))}
                 <div className="rip2-scard">
@@ -900,7 +926,6 @@ export default function CompareRips() {
                     .filter((v): v is number => v != null)
                     .sort((a, b) => a - b);
                   const gapPerCase = landeds.length >= 2 ? +(landeds[1] - landeds[0]).toFixed(2) : 0;
-                  const lessTotal = +(gapPerCase * cases).toFixed(2);
                   const runnerName = winName
                     ? distributorName(selected.find(w => r.dists[w]?.landed_at_n === landeds[1]) ?? '')
                     : '';
@@ -925,11 +950,6 @@ export default function CompareRips() {
                               {anyHalfCase && (
                                 <span className="rip2-halfcase-chip" title="Half-case RIP: the rebate is filed on a fraction-of-a-case pack (375ML or a 6-pack), so each physical case counts less than one toward the qualifying tier. Per-distributor detail is on each card.">
                                   ½ Case RIP
-                                </span>
-                              )}
-                              {!r.proof_match && (
-                                <span className="rip2-warn" title="The distributors list different proof/ABV for this barcode. Double-check it's the same item before comparing.">
-                                  <AlertTriangle size={11} /> proof differs
                                 </span>
                               )}
                               {r.flips && (
@@ -957,17 +977,16 @@ export default function CompareRips() {
                         </div>
                         <div className="rip2-verdict-banner"
                           title={winName && gapPerCase > 0
-                            ? `${winName} has the lowest price per case at ${cases} cases, ${money(gapPerCase)}/case below the next-cheapest (${runnerName}). Over ${cases} case${cases !== 1 ? 's' : ''} that is ${money(lessTotal)} less to spend (${money((landeds[1]) * cases)} at ${runnerName} vs ${money(landeds[0] * cases)} here).`
+                            ? `${winName} has the lowest landed cost per case, ${money(gapPerCase)}/case below the next-cheapest (${runnerName}).`
                             : undefined}>
                           {winName ? (
                             <>
                               <Trophy size={14} style={{ color: accent[win!] }} />
-                              <span><strong style={{ color: accent[win!] }}>{winName}</strong> has the lowest price at {cases} cases
-                                {gapPerCase > 0 ? <>: {money(gapPerCase)}/case lower price</> : null}
-                                {lessTotal > 0 ? <span className="rip2-stake"> · {money(lessTotal)} less to spend in total</span> : null}
+                              <span><strong style={{ color: accent[win!] }}>{winName}</strong> has the lowest landed cost
+                                {gapPerCase > 0 ? <>: {money(gapPerCase)}/case lower</> : null}
                               </span>
                             </>
-                          ) : <span className="text-muted">Same cost at {cases} cases</span>}
+                          ) : <span className="text-muted">Same landed cost</span>}
                         </div>
                         <div onClick={e => e.stopPropagation()}>
                           <RowActions
@@ -1007,7 +1026,7 @@ export default function CompareRips() {
                   {data.total_common === 0
                     ? <>These distributors share no product that all of them offer a RIP on. Try Allied / Fedway / Opici, or just two of them.</>
                     : ripDiff
-                      ? <>No products where the RIP <strong>differs</strong> between these distributors at {cases} case{cases !== 1 ? 's' : ''}. Turn off <strong>Only show RIP differences</strong> in the filters to see every product they all carry a RIP on.</>
+                      ? <>No products where the RIP <strong>differs</strong> between these distributors. Turn off <strong>Only show RIP differences</strong> in the filters to see every product they all carry a RIP on.</>
                       : <>No products match your filters. Try turning some off in the left panel.</>}
                 </div>
               )}

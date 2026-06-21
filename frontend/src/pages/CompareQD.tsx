@@ -137,20 +137,20 @@ function DistPanel({ w, d, row, cases, accent, isWinner }: {
   const isDiffTier = (t: typeof d.qd_tiers[number]) =>
     allDists.length > 1 && !commonTierKeys.has(tierKey(t));
 
-  // total cash you actually outlay at this volume, here vs the competition
-  const myTotal = d.landed_at_n != null ? d.landed_at_n * cases : null;
+  // buy cost per case here vs the competition
+  const myNet = d.landed_at_n;
   const rivals = Object.entries(row.dists)
     .filter(([k, dd]) => k !== w && dd.landed_at_n != null)
-    .map(([k, dd]) => ({ name: distributorName(k), total: (dd.landed_at_n as number) * cases }));
-  const cheapestRival = rivals.length ? rivals.reduce((a, b) => (a.total <= b.total ? a : b)) : null;
-  const vsText = myTotal != null
+    .map(([k, dd]) => ({ name: distributorName(k), net: dd.landed_at_n as number }));
+  const cheapestRival = rivals.length ? rivals.reduce((a, b) => (a.net <= b.net ? a : b)) : null;
+  const vsText = myNet != null
     ? (cheapestRival
-        ? `Total to buy ${cases} case${cases !== 1 ? 's' : ''} here: ${money(myTotal)}. ` +
-          `Cheapest rival (${cheapestRival.name}): ${money(cheapestRival.total)}. ` +
-          (myTotal <= cheapestRival.total
-            ? `You save ${money(cheapestRival.total - myTotal)} overall by going here.`
-            : `You'd pay ${money(myTotal - cheapestRival.total)} more here.`)
-        : `Total to buy ${cases} case${cases !== 1 ? 's' : ''} here: ${money(myTotal)}.`)
+        ? `Buy cost here: ${money(myNet)}/case. ` +
+          `Cheapest rival (${cheapestRival.name}): ${money(cheapestRival.net)}/case. ` +
+          (myNet <= cheapestRival.net
+            ? `You save ${money(cheapestRival.net - myNet)}/case by going here.`
+            : `You'd pay ${money(myNet - cheapestRival.net)}/case more here.`)
+        : `Buy cost here: ${money(myNet)}/case.`)
     : '';
   // Front headline = the discounted CASH buy price after a single-case QD.
   // For a pure-QD board this is just landed_at_1 (no RIP to strip out).
@@ -160,10 +160,9 @@ function DistPanel({ w, d, row, cases, accent, isWinner }: {
     (d.frontline != null ? ` (list ${money(d.frontline)}/case)` : '') +
     `. The discount is cash off TODAY — see the tier ladder and the net buy price below.`;
   const priceHint =
-    `Your buy cost per case after the best quantity discount you qualify for at ${cases} case${cases !== 1 ? 's' : ''}. ` +
+    `Your buy cost per case after the best quantity discount you qualify for. ` +
     (d.frontline != null ? `List is ${money(d.frontline)}/case` : '') +
-    (d.qd_at_n ? `; the QD takes off ${money(d.qd_at_n)}/case.` : '.') +
-    (myTotal != null ? ` That is ${money(myTotal)} total for ${cases} case${cases !== 1 ? 's' : ''}.` : '');
+    (d.qd_at_n ? `; the QD takes off ${money(d.qd_at_n)}/case.` : '.');
 
   return (
     <div className={`qd2-dist${isWinner ? ' is-winner' : ''}`} style={{ borderTopColor: accent }}>
@@ -171,7 +170,7 @@ function DistPanel({ w, d, row, cases, accent, isWinner }: {
         <span className="qd2-dist-name">{distributorName(w)}</span>
         {isWinner && (
           <span className="qd2-best-tag" title={vsText}>
-            <Trophy size={11} /> lowest price at {cases} cs <HelpCircle size={10} className="qd2-tip-ico" />
+            <Trophy size={11} /> lowest landed cost <HelpCircle size={10} className="qd2-tip-ico" />
           </span>
         )}
       </div>
@@ -218,7 +217,7 @@ function DistPanel({ w, d, row, cases, accent, isWinner }: {
         buy price after 1-case QD
         {d.landed_at_n != null && (
           <span className="qd2-dist-total" title={priceHint}>
-            {' · '}net {money(d.landed_at_n)}/cs at {cases} cs{myTotal != null ? ` (${money(myTotal)} total)` : ''}
+            {' · '}net {money(d.landed_at_n)}/cs
           </span>
         )}
       </div>
@@ -238,11 +237,17 @@ function DistPanel({ w, d, row, cases, accent, isWinner }: {
               const win = t.is_time_sensitive && t.from_date && t.to_date
                 ? `${t.from_date.slice(5)}–${t.to_date.slice(5)}` : null;
               return (
-                <span key={i} className={`qd2-tier-chip${t.is_time_sensitive ? ' is-ts' : ''}${diff ? ' is-diff' : ''}`}
-                  title={`Buy ${t.buy_label ?? `${t.raw_qty} ${t.unit ?? ''}`} → ${money(totalOff)} off total (${money(t.rebate_per_case)}/cs)${t.price_after != null ? ` · net ${money(t.price_after)}/cs` : ''}${t.is_time_sensitive ? ` · time-limited${win ? ` (valid ${win})` : ''}` : ' · valid all month'}${diff ? ' · differs from the other distributor' : ''}`}>
-                  {t.buy_label ?? `${t.raw_qty}${(t.unit ?? '').toLowerCase().startsWith('b') ? 'btl' : 'cs'}`}
-                  {' → '}<strong>{money(totalOff)}</strong>
-                  {win && <span className="qd2-tier-win"> · {win}</span>}
+                <span key={i} className="qd2-tier-wrap">
+                  <span className={`qd2-tier-chip${t.is_time_sensitive ? ' is-ts' : ''}${diff ? ' is-diff' : ''}`}
+                    title={`Buy ${t.buy_label ?? `${t.raw_qty} ${t.unit ?? ''}`} → ${money(totalOff)} off total (${money(t.rebate_per_case)}/cs)${t.price_after != null ? ` · net ${money(t.price_after)}/cs` : ''}${t.is_time_sensitive ? ` · time-limited${win ? ` (valid ${win})` : ''}` : ' · valid all month'}${diff ? ' · differs from the other distributor' : ''}`}>
+                    {t.buy_label ?? `${t.raw_qty}${(t.unit ?? '').toLowerCase().startsWith('b') ? 'btl' : 'cs'}`}
+                    {' → '}<strong>{money(totalOff)}</strong>
+                  </span>
+                  {win && (
+                    <span className="qd2-tier-validity" title={`This tier is only live ${win}, not all month.`}>
+                      <CalendarClock size={10} /> {win}
+                    </span>
+                  )}
                 </span>
               );
             })}
@@ -259,7 +264,7 @@ function DistPanel({ w, d, row, cases, accent, isWinner }: {
         const bdHint =
           `List (sticker) price ${money(d.frontline)}/case (${pb(d.frontline)})` +
           (off != null && off > 0.005 ? `. After the ${money(off)}/case quantity discount: ${money(net)}/case (${pb(net)})` : '') +
-          (net != null ? ` (what you pay buying ${cases} case${cases !== 1 ? 's' : ''}).` : '.');
+          (net != null ? ` (what you pay per case).` : '.');
         return (
           <div className="qd2-dist-breakdown" title={bdHint}>
             <Tag size={11} />
@@ -392,11 +397,11 @@ function QDTable({ rows, selected, accent, cases, expanded, setExpanded, goToPro
             {selected.map(w => (
               <th key={w} className="qd2-th-dist" style={{ borderBottomColor: accent[w] }}>
                 <span style={{ color: accent[w] }}>{distributorName(w)}</span>
-                <span className="qd2-th-sub">$/cs at {cases}cs · QD unlock</span>
+                <span className="qd2-th-sub">net $/cs · QD unlock</span>
               </th>
             ))}
             <th className="qd2-th-num">Gap/cs</th>
-            <th className="qd2-th-num">Save @{cases}cs</th>
+            <th className="qd2-th-num">Total saving</th>
             <th>What differs</th>
             <th></th>
           </tr>
@@ -413,7 +418,6 @@ function QDTable({ rows, selected, accent, cases, expanded, setExpanded, goToPro
             if (r.flips) diffs.push(<span key="f" className="qd2-tchip qd2-tchip-flip" title="Which distributor is cheapest changes with how many cases you buy."><Zap size={10} /> winner flips</span>);
             if (r.timing_differs) diffs.push(<span key="t" className="qd2-tchip" title="One runs the discount all month, the other only on certain dates."><CalendarClock size={10} /> timing</span>);
             if (r.quantity_differs) diffs.push(<span key="q" className="qd2-tchip" title="Distributors differ on how many cases unlock the discount."><Layers size={10} /> unlock qty</span>);
-            if (!r.proof_match) diffs.push(<span key="p" className="qd2-tchip qd2-tchip-warn" title="The distributors list different proof/ABV for this barcode. Check it's the same item."><AlertTriangle size={10} /> proof differs</span>);
             const actW = win && win !== 'tie' ? win : selected[0];
             return (
               <Fragment key={r.match_key}>
@@ -468,8 +472,10 @@ export default function CompareQD() {
   // Comparison volume — fixed at 5 cases; overridable via ?cases= for power users.
   const [cases] = useState(parseInt(params.get('cases') ?? '5', 10) || 5);
   const [q, setQ] = useState(params.get('q') ?? '');
-  const [ptype, setPtype] = useState(params.get('type') ?? '');
-  const [size, setSize] = useState(params.get('size') ?? '');
+  // Category + Size are MULTI-select, filtered entirely client-side from the
+  // already-loaded board rows (the board returns the full shared-QD set).
+  const [ptype, setPtype] = useState<string[]>(params.get('type')?.split(',').filter(Boolean) ?? []);
+  const [size, setSize] = useState<string[]>(params.get('size')?.split(',').filter(Boolean) ?? []);
   const [brand, setBrand] = useState(params.get('brand') ?? '');
   // "QD Difference" is the headline filter and ON by default: only show products
   // where the discount itself differs between distributors (timing, cases-to-
@@ -495,8 +501,8 @@ export default function CompareQD() {
     if (selected.length) next.set('d', selected.join(','));
     if (cases !== 5) next.set('cases', String(cases));
     if (q) next.set('q', q);
-    if (ptype) next.set('type', ptype);
-    if (size) next.set('size', size);
+    if (ptype.length) next.set('type', ptype.join(','));
+    if (size.length) next.set('size', size.join(','));
     if (brand) next.set('brand', brand);
     if (!qdDiff) next.set('qddiff', '0');
     if (view === 'table') next.set('view', 'table');
@@ -513,10 +519,10 @@ export default function CompareQD() {
   const { data: options } = useQuery({ queryKey: ['compare-options'], queryFn: compare.options });
   const ready = selected.length >= 2 && selected.length <= 3;
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['compare-qds', selected, cases, q, ptype, brand, qdDiff, minDiff, tsOnly, expiringOnly, timingDiff, showAnomalies, sort, monthMode],
+    queryKey: ['compare-qds', selected, cases, q, brand, qdDiff, minDiff, tsOnly, expiringOnly, timingDiff, showAnomalies, sort, monthMode],
     queryFn: () => compare.qds({
       wholesalers: selected.join(','), cases, q: q || undefined,
-      product_type: ptype || undefined, brand: brand || undefined,
+      brand: brand || undefined,
       qd_diff_only: qdDiff || undefined, min_diff: minDiff,
       time_sensitive_only: tsOnly || undefined,
       expiring_only: expiringOnly || undefined,
@@ -548,8 +554,10 @@ export default function CompareQD() {
   }, [data]);
 
   const rows = useMemo(
-    () => (data?.rows ?? []).filter(r => !size || (r.unit_volume ?? '') === size),
-    [data, size]);
+    () => (data?.rows ?? []).filter(r =>
+      (ptype.length === 0 || ptype.includes(r.product_type ?? '')) &&
+      (size.length === 0 || size.includes(r.unit_volume ?? ''))),
+    [data, ptype, size]);
   const sum = data?.summary;
 
   return (
@@ -625,19 +633,37 @@ export default function CompareQD() {
             </div>
 
             <div className="qd2-rail-sect">
-              <div className="qd2-rail-label">Category</div>
-              <select value={ptype} onChange={e => setPtype(e.target.value)} className="qd2-select">
-                <option value="">All categories</option>
-                {types.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
+              <div className="qd2-rail-label">Category{ptype.length > 0 ? ` (${ptype.length})` : ''}</div>
+              <div className="qd2-checklist">
+                {types.length === 0 && <div className="qd2-rail-help">All categories</div>}
+                {types.map(t => (
+                  <label key={t} className="qd2-check">
+                    <input type="checkbox" checked={ptype.includes(t)}
+                      onChange={e => {
+                        setPtype(p => e.target.checked ? [...p, t] : p.filter(x => x !== t));
+                        setShown(40);
+                      }} />
+                    {t}
+                  </label>
+                ))}
+              </div>
             </div>
 
             <div className="qd2-rail-sect">
-              <div className="qd2-rail-label">Size</div>
-              <select value={size} onChange={e => { setSize(e.target.value); setShown(40); }} className="qd2-select">
-                <option value="">All sizes</option>
-                {sizes.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
+              <div className="qd2-rail-label">Size{size.length > 0 ? ` (${size.length})` : ''}</div>
+              <div className="qd2-checklist">
+                {sizes.length === 0 && <div className="qd2-rail-help">All sizes</div>}
+                {sizes.map(s => (
+                  <label key={s} className="qd2-check">
+                    <input type="checkbox" checked={size.includes(s)}
+                      onChange={e => {
+                        setSize(z => e.target.checked ? [...z, s] : z.filter(x => x !== s));
+                        setShown(40);
+                      }} />
+                    {s}
+                  </label>
+                ))}
+              </div>
             </div>
 
             <div className="qd2-rail-sect">
@@ -656,7 +682,7 @@ export default function CompareQD() {
               </div>
               <div className="qd2-rail-help">
                 Only show products where the lowest-price distributor beats the rest by at
-                least this much per case at {cases} case{cases !== 1 ? 's' : ''}. Set to $0 to show every match.
+                least this much per case. Set to $0 to show every match.
               </div>
             </div>
 
@@ -716,7 +742,7 @@ export default function CompareQD() {
                 {selected.map(w => (
                   <div className="qd2-scard" key={w} style={{ borderTop: `3px solid ${accent[w]}` }}>
                     <div className="qd2-scard-n">{sum?.wins_at_n[w] ?? 0}</div>
-                    <div className="qd2-scard-l">{distributorName(w)} has the lowest price/case at {cases} cs</div>
+                    <div className="qd2-scard-l">{distributorName(w)} has the lowest landed cost/case</div>
                   </div>
                 ))}
                 <div className="qd2-scard">
@@ -763,7 +789,6 @@ export default function CompareQD() {
                     .filter((v): v is number => v != null)
                     .sort((a, b) => a - b);
                   const gapPerCase = landeds.length >= 2 ? +(landeds[1] - landeds[0]).toFixed(2) : 0;
-                  const lessTotal = +(gapPerCase * cases).toFixed(2);
                   const runnerName = winName
                     ? distributorName(selected.find(w => r.dists[w]?.landed_at_n === landeds[1]) ?? '')
                     : '';
@@ -783,11 +808,6 @@ export default function CompareQD() {
                               {wineVintage(r.product_type, r.vintage) && (
                                 <span className="qd2-vintage" title="Vintage. Wine is matched by vintage as well, so both distributors are the same year.">
                                   {wineVintage(r.product_type, r.vintage)}
-                                </span>
-                              )}
-                              {!r.proof_match && (
-                                <span className="qd2-warn" title="The distributors list different proof/ABV for this barcode. Double-check it's the same item before comparing.">
-                                  <AlertTriangle size={11} /> proof differs
                                 </span>
                               )}
                               {r.flips && (
@@ -810,17 +830,16 @@ export default function CompareQD() {
                         </div>
                         <div className="qd2-verdict-banner"
                           title={winName && gapPerCase > 0
-                            ? `${winName} has the lowest price per case at ${cases} cases, ${money(gapPerCase)}/case below the next-cheapest (${runnerName}). Over ${cases} case${cases !== 1 ? 's' : ''} that is ${money(lessTotal)} less to spend (${money((landeds[1]) * cases)} at ${runnerName} vs ${money(landeds[0] * cases)} here).`
+                            ? `${winName} has the lowest landed cost per case, ${money(gapPerCase)}/case below the next-cheapest (${runnerName}).`
                             : undefined}>
                           {winName ? (
                             <>
                               <Trophy size={14} style={{ color: accent[win!] }} />
-                              <span><strong style={{ color: accent[win!] }}>{winName}</strong> has the lowest price at {cases} cases
-                                {gapPerCase > 0 ? <>: {money(gapPerCase)}/case lower price</> : null}
-                                {lessTotal > 0 ? <span className="qd2-stake"> · {money(lessTotal)} less to spend in total</span> : null}
+                              <span><strong style={{ color: accent[win!] }}>{winName}</strong> has the lowest landed cost
+                                {gapPerCase > 0 ? <>: {money(gapPerCase)}/case lower</> : null}
                               </span>
                             </>
-                          ) : <span className="text-muted">Same cost at {cases} cases</span>}
+                          ) : <span className="text-muted">Same landed cost</span>}
                         </div>
                         <div onClick={e => e.stopPropagation()}>
                           <RowActions
@@ -859,7 +878,7 @@ export default function CompareQD() {
                   {data.total_common === 0
                     ? <>These distributors share no product that all of them offer a QD on. Try Allied / Fedway / Opici, or just two of them.</>
                     : qdDiff
-                      ? <>No products where the QD <strong>differs</strong> between these distributors at {cases} case{cases !== 1 ? 's' : ''}. Turn off <strong>Only show QD differences</strong> in the filters to see every product they all carry a QD on.</>
+                      ? <>No products where the QD <strong>differs</strong> between these distributors. Turn off <strong>Only show QD differences</strong> in the filters to see every product they all carry a QD on.</>
                       : <>No products match your filters. Try turning some off in the left panel.</>}
                 </div>
               )}

@@ -144,3 +144,36 @@ them too.
    loads fast; analyze_next_month/mix/cross only when the panel is opened.
 3. Phase 3 (threads>1 for uncacheable paths) + Phase 4 (more CPU) — 2 cores
    cannot serve dozens of concurrent multi-second cart queries regardless.
+
+## 100 users x 25s — 2026-06-21 21:45 UTC
+
+- Logins: 100/100 ok | login p50=7446ms p95=9067ms max=9131ms
+- Requests: 436 in 36.8s = 11.8 req/s | errors: 254 (58.3%) | 304 cache-hits: 129 (29.6%)
+- Latency drift: first-half p95=4699ms -> second-half p95=21583ms
+- Error statuses: {'502': 254}
+
+```
+endpoint                       n     p50     p95     p99     max   304%   err%
+search(text)                 109    1500   22757   23026   23294    65%  17.4%
+search(include_tiers)        109    1665   21276   21583   21956    42%  39.4%
+cart                         109    9017   19869   20806   22032     0%  87.2%
+facets                       109     746    1965    3364    4443    11%  89.0%
+```
+
+## 100 users (warm) — capacity exceeded
+
+| metric | 50 users (warm) | 100 users (warm) |
+|---|---|---|
+| errors | 0% | **58% (502)** |
+| login p50 | ~4 s | **7.4 s** (p95 9 s) |
+| search(text) p95 | 0.8 s* | 22.8 s |
+| cart p95 | 28 s | 19.9 s (87% err) |
+| 304 cache-hits | ~42% | 30% |
+
+(*best fully-warm 50-user run.) At 100 concurrent the 2-CPU instance is saturated:
+the 100-way bcrypt login burst alone takes ~7-9 s each, the uncacheable cart +
+sheer request volume pin both cores, and ~58% of requests 502. Caching still
+serves ~30% as 304s but can't offset the CPU wall. Conclusion: 100 concurrent
+needs Phase 4 (more CPU / horizontal scale behind a load balancer) — software
+tuning alone won't get 2 cores there. Login bcrypt cost is also a real factor at
+this concurrency.

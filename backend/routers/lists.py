@@ -150,6 +150,10 @@ class ListItemPatch(BaseModel):
     notes: Optional[str] = None
     # Chosen RIP program for the line; null/'' resets to the default.
     rip_choice: Optional[str] = None
+    # Planned quantity on the list line (lists carry qty too, like the cart), so
+    # the line can show eligible RIP / pricing at the intended buy quantity.
+    qty_cases: Optional[int] = None
+    qty_units: Optional[int] = None
 
 
 class SwitchDistributorIn(BaseModel):
@@ -216,6 +220,10 @@ def update_list_item(list_id: int, item_id: int, body: ListItemPatch,
     if "notes" in data:
         fields.append("notes=%s")
         params.append(data["notes"])
+    for col in ("qty_cases", "qty_units"):
+        if col in data:
+            fields.append(f"{col}=%s")
+            params.append(max(0, int(data[col] or 0)))
     if not fields:
         return {"status": "noop"}
     params.extend([item_id, list_id])

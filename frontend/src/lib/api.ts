@@ -1603,7 +1603,7 @@ export const lists = {
     request(`/api/lists/${id}/items`, { method: 'POST', body: JSON.stringify(item) }),
   removeItem: (id: number, itemId: number) =>
     request(`/api/lists/${id}/items/${itemId}`, { method: 'DELETE' }),
-  updateItem: (id: number, itemId: number, data: { notes?: string; rip_choice?: string | null }) =>
+  updateItem: (id: number, itemId: number, data: { notes?: string; rip_choice?: string | null; qty_cases?: number; qty_units?: number }) =>
     request(`/api/lists/${id}/items/${itemId}`, { method: 'PUT', body: JSON.stringify(data) }),
   removeItems: (id: number, itemIds: number[]) =>
     request(`/api/lists/${id}/items/delete`, { method: 'POST', body: JSON.stringify({ item_ids: itemIds }) }),

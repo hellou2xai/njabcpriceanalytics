@@ -196,11 +196,16 @@ export default function PriceMovers({ direction }: Props) {
     { type: 'pills', key: 'wholesaler', title: 'Distributor', options: ALL_DISTRIBUTORS, value: wholesaler, onChange: setWholesaler },
     { type: 'pills', key: 'validity', title: 'Months compared',
       options: [
-        { value: 'current_only', label: 'Last 2 months loaded' },
+        // Label each pill with the actual month names it compares, so the user
+        // sees "May → Jun" rather than a generic "last 2 months". Falls back to
+        // wording when editions haven't loaded yet.
+        { value: 'current_only',
+          label: eds.curEd ? `${fmtEdShort(eds.prevEd)} → ${fmtEdShort(eds.curEd)}` : 'Last 2 months loaded' },
         { value: 'both',         label: 'Show all' },
         // Only offer the next-month projection when a future edition is loaded;
         // otherwise it would silently show nothing.
-        ...(eds.hasNext ? [{ value: 'next_only', label: 'Next month (vs this)' }] : []),
+        ...(eds.hasNext ? [{ value: 'next_only',
+          label: `${fmtEdShort(eds.curEd)} → ${fmtEdShort(eds.nextEd)}` }] : []),
       ],
       value: validity, onChange: (v) => setValidity(v as 'current_only' | 'next_only' | 'both') },
     { type: 'select', key: 'product_type', title: 'Category', placeholder: 'All categories',

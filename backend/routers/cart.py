@@ -893,12 +893,28 @@ def _qty_key(unit_qty) -> str:
         return str(unit_qty or "")
 
 
+def _size_ml_key(unit_volume) -> str:
+    """Normalize a bottle size to its millilitres so distributors that spell the
+    SAME size differently still match — Allied 'LITER' vs Fedway '1L' are both
+    1000 ml, '750ML' vs '750' both 750. Falls back to the cleaned raw string when
+    unparseable."""
+    try:
+        from backend.size_std import _to_ml
+        ml, _fam = _to_ml(str(unit_volume or ""))
+    except Exception:
+        ml = None
+    if ml:
+        return f"ML{int(round(ml))}"
+    return str(unit_volume or "").strip().upper()
+
+
 def _spv(unit_volume, unit_qty, vintage) -> tuple:
     """Bottle size + pack size + vintage — the dimensions that must ALWAYS agree
-    for two rows to be the same item, on top of the barcode/name. A barcode can be
-    shared across pack sizes (HIGH WEST 6P / 3P), so this is required even with a
-    UPC match."""
-    return (str(unit_volume or "").strip().upper(), _qty_key(unit_qty), _vtg_key(vintage))
+    for two rows to be the same item, on top of the barcode/name. Size is compared
+    by NORMALIZED millilitres (LITER == 1L), pack is the bottles/case, and a barcode
+    can be shared across pack sizes (HIGH WEST 6P / 3P), so this is required even
+    with a UPC match."""
+    return (_size_ml_key(unit_volume), _qty_key(unit_qty), _vtg_key(vintage))
 
 
 def _ident_key(name, unit_volume, unit_qty, vintage) -> tuple:
@@ -1010,7 +1026,7 @@ def _attach_comparison_by_upc(dcon, items):
         cur = buckets[key].get(r["w"])
         if cur is None or (_fnum(r["ecp"]) or 1e9) < (_fnum(cur["ecp"]) or 1e9):
             buckets[key][r["w"]] = r
-        rk = (r["un"], str(r["uv"] or "").strip().upper(), _qty_key(r["uq"]))
+        rk = (r["un"], _size_ml_key(r["uv"]), _qty_key(r["uq"]))
         relaxed.setdefault(rk, {}).setdefault(r["w"], r)
     for it in items:
         un = str(it.get("upc") or "").lstrip("0")
@@ -1024,7 +1040,7 @@ def _attach_comparison_by_upc(dcon, items):
             it["comparison"] = [_comparison_row(m, i, len(members)) for i, m in enumerate(members)]
             continue
         # No same-vintage match at 2+ houses — explain why for the always-on picker.
-        rk = (un, str(it.get("unit_volume") or "").strip().upper(), _qty_key(it.get("unit_qty")))
+        rk = (un, _size_ml_key(it.get("unit_volume")), _qty_key(it.get("unit_qty")))
         others = [w for w in relaxed.get(rk, {}) if w != it["wholesaler"]]
         if others:
             it["alt_status"] = {

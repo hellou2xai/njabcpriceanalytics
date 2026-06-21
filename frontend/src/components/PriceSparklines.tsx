@@ -111,6 +111,32 @@ function priceCB(caseVal: number | null | undefined, pack: number | null, size?:
   return `$${caseVal.toFixed(2)}/cs${btl}`;
 }
 
+// One block per EDITION. A product can carry >1 CPL row in a month — a duplicate
+// listing, a sub-window deal, or (the real culprit) two DIFFERENT products sharing
+// one reused/placeholder UPC. Without this the same month renders twice. Keep the
+// best (lowest net, then lowest list) row per edition, preserving input order.
+function dedupByEdition(raw: MonthBreakdown[]): MonthBreakdown[] {
+  const score = (x: MonthBreakdown) => x.bestEff ?? x.disc1 ?? x.frontline ?? Infinity;
+  const bestByEd = new Map<string, MonthBreakdown>();
+  for (const m of raw) {
+    const ed = m.edition || '';
+    const c = bestByEd.get(ed);
+    if (!c || score(m) < score(c)
+        || (score(m) === score(c) && (m.frontline ?? Infinity) < (c.frontline ?? Infinity))) {
+      bestByEd.set(ed, m);
+    }
+  }
+  const seen = new Set<string>();
+  const out: MonthBreakdown[] = [];
+  for (const m of raw) {
+    const ed = m.edition || '';
+    if (seen.has(ed)) continue;
+    seen.add(ed);
+    out.push(bestByEd.get(ed)!);
+  }
+  return out;
+}
+
 // Rich month block (from price_3mo): list headline + quantity deals.
 function RichMonth({ b, pack, current }: { b: MonthBreakdown; pack: number | null; current: boolean }) {
   // Window-first ordering, same convention as DealLadder.
@@ -289,27 +315,7 @@ export default function PriceSparklines({ wholesaler, productName, upc, unitVolu
   let lightBlocks: PricePoint[] = [];
   if (hasOwn) {
     const raw = months!.filter(m => m.bestEff != null || m.disc1 != null || m.frontline != null);
-    // One block per EDITION: a product can have >1 CPL row in a month (a duplicate
-    // listing or a sub-window), which would render the same month twice. Keep the
-    // best (lowest net, then lowest list) row per edition, preserving order.
-    const _score = (x: MonthBreakdown) => x.bestEff ?? x.disc1 ?? x.frontline ?? Infinity;
-    const bestByEd = new Map<string, MonthBreakdown>();
-    for (const m of raw) {
-      const ed = m.edition || '';
-      const c = bestByEd.get(ed);
-      if (!c || _score(m) < _score(c)
-          || (_score(m) === _score(c) && (m.frontline ?? Infinity) < (c.frontline ?? Infinity))) {
-        bestByEd.set(ed, m);
-      }
-    }
-    const seen = new Set<string>();
-    const blocks: MonthBreakdown[] = [];
-    for (const m of raw) {
-      const ed = m.edition || '';
-      if (seen.has(ed)) continue;
-      seen.add(ed);
-      blocks.push(bestByEd.get(ed)!);
-    }
+    const blocks = dedupByEdition(raw);
     discSeries = blocks.map(m => m.disc1 ?? m.frontline);
     ripSeries = ripTrajectory(blocks.map(m => m.bestEff), blocks.map(m => m.disc1 ?? m.frontline));
     richBlocks = [...blocks].reverse().slice(0, 3);
@@ -320,7 +326,7 @@ export default function PriceSparklines({ wholesaler, productName, upc, unitVolu
     const base = (p: PricePoint) => (p.best_case_price && p.best_case_price > 0 ? p.best_case_price : p.frontline_case_price);
     discSeries = h.map(base);
     ripSeries = ripTrajectory(h.map(p => p.effective_case_price), h.map(base));
-    richBlocks = [...hoverMonths].reverse().slice(0, 3);
+    richBlocks = [...dedupByEdition(hoverMonths)].reverse().slice(0, 3);
   } else {
     const h = hist?.history ?? [];
     const base = (p: PricePoint) => (p.best_case_price && p.best_case_price > 0 ? p.best_case_price : p.frontline_case_price);

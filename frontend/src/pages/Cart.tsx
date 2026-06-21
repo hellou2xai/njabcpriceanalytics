@@ -9,11 +9,12 @@ import DealTimingSticker, { everyDayFromTiers } from '../components/DealTimingSt
 import { windowBadge, fmtDateRange } from '../lib/dealDates';
 import { DistributorPicker } from '../components/DistributorPicker';
 import { QtyStepper } from '../components/QtyStepper';
+import { RipPicker } from '../components/RipPicker';
 import { useProductQuickView } from '../components/ProductQuickView';
 import { useDialog } from '../components/Dialog';
 import { shortUnit } from '../components/CatalogTable';
 import { distributorName, abgSku, skuLabel, priceUnit, perUnitAbbr, isKegUnit } from '../lib/distributors';
-import { ripPrograms, effectiveRipCode, betterProgram, programSummary, fmtAmt, creditWord, normTierUnit } from '../lib/ripPrograms';
+import { ripPrograms, effectiveRipCode, creditWord, normTierUnit } from '../lib/ripPrograms';
 import { ErrorState, EmptyState } from '../components/DataState';
 import DataLoading from '../components/DataLoading';
 
@@ -560,6 +561,8 @@ export default function Cart() {
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
               <DistributorPicker wholesaler={it.wholesaler} comparison={it.comparison} onSwitch={ws => switchDist.mutate({ id: it.id, ws })} busy={switchDist.isPending} />
+              <RipPicker line={it} qtyCases={it.qty_cases || 0}
+                onChoose={code => upd.mutate({ id: it.id, patch: { rip_choice: code } })} busy={upd.isPending} />
               {it.upc ? <span>· {it.upc}</span> : null}
             </div>
           </div>
@@ -648,10 +651,6 @@ export default function Cart() {
             when a different program pays more at the same commitment. */}
         {!saving && (() => {
           const elig = lineRipEligibility(it, active);
-          const programs = ripPrograms(it.tiers);
-          const eff = effectiveRipCode(it, programs);
-          const sug = betterProgram(programs, eff, it.qty_cases || 0);
-          const sugUw = sug?.program.tiers[0]?.unit === 'btl' ? 'bottle' : 'case';
           return (
             <>
               {elig && <div className={`cart-rip-elig tone-${elig.tone}`}>{elig.text}</div>}
@@ -664,31 +663,6 @@ export default function Cart() {
                       ? `${it.qty_cases} cs × $${it.rip_back_later.per_case.toFixed(2)}/cs`
                       : `${it.qty_units} btl × $${(it.rip_back_later.per_bottle ?? 0).toFixed(2)}/btl`})
                   </span>
-                </div>
-              )}
-              {programs.length > 1 && (
-                <div className="cart-rip-pick">
-                  <label title="This product qualifies under more than one RIP program. Programs don't stack — the line earns the one selected here.">
-                    RIP program:{' '}
-                    <select value={eff ?? ''}
-                      onChange={e => upd.mutate({ id: it.id, patch: { rip_choice: e.target.value || null } })}>
-                      {programs.map(p => (
-                        <option key={p.code ?? ''} value={p.code ?? ''}>
-                          RIP {p.code ?? '—'} · {programSummary(p)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {sug && (
-                    <span className="cart-rip-sug">
-                      RIP {sug.program.code} pays {fmtAmt(sug.pays)} at {sug.atQty} {sugUw}{sug.atQty === 1 ? '' : 's'}
-                      {' '}(vs {fmtAmt(sug.currentPays)} on RIP {eff}).{' '}
-                      <button type="button" className="cart-rip-sug-btn"
-                        onClick={() => upd.mutate({ id: it.id, patch: { rip_choice: sug.program.code } })}>
-                        Switch
-                      </button>
-                    </span>
-                  )}
                 </div>
               )}
             </>

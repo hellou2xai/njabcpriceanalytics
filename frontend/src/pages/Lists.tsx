@@ -11,7 +11,8 @@ import DealSparkline from '../components/DealSparkline';
 import { distributorName, abgSku, skuLabel, isKegUnit, priceUnit, perUnitAbbr } from '../lib/distributors';
 import { DistributorPicker } from '../components/DistributorPicker';
 import { QtyStepper } from '../components/QtyStepper';
-import { ripPrograms, effectiveRipCode, programSummary, normTierUnit } from '../lib/ripPrograms';
+import { RipPicker } from '../components/RipPicker';
+import { normTierUnit } from '../lib/ripPrograms';
 import { useDialog } from '../components/Dialog';
 import { ErrorState, EmptyState } from '../components/DataState';
 import DataLoading from '../components/DataLoading';
@@ -33,6 +34,7 @@ function ListHead({ check }: { check?: ReactNode }) {
         <th>Size</th>
         <th>Pack</th>
         <th title="Planned quantity. Sets the eligible RIP rebate (money back later) at the quantity you intend to buy.">Qty</th>
+        <th title="The RIP program this line earns. An item can sit under several programs (they don't stack) — pick the best; ★ flags a richer one.">RIP</th>
         <th style={{ textAlign: 'right' }}
           title="What you'd pay NOW for 1 case: list price minus any quantity discount a single case already earns. The list price shows beneath when a QD applies.">$ Case</th>
         <th style={{ textAlign: 'right' }}
@@ -286,7 +288,7 @@ export default function Lists() {
                     <ListHead check={<input type="checkbox" checked={allChecked} onChange={toggleAll} />} />
                     <tbody>
                       {items.map(it => <ListRow key={it.id} it={it} selected={selected} toggle={toggle} onRemove={() => removeItems.mutate([it.id])} />)}
-                      {items.length === 0 && <tr><td colSpan={12} className="empty">No items. Add products from anywhere with right-click → Add to List.</td></tr>}
+                      {items.length === 0 && <tr><td colSpan={13} className="empty">No items. Add products from anywhere with right-click → Add to List.</td></tr>}
                     </tbody>
                   </table>
                 )}
@@ -324,8 +326,6 @@ function ListRow({ it, selected, toggle, onRemove }: {
       listsApi.updateItem(it.list_id, it.id, { qty_cases: v.cases, qty_units: v.units }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['list', it.list_id] }),
   });
-  const programs = ripPrograms(it.tiers);
-  const effRip = effectiveRipCode(it, programs);
   const keg = isKegUnit(it.unit_volume, it.unit_type);
   const pack = (() => { const n = Number(it.unit_qty); return Number.isFinite(n) && n > 0 ? Math.round(n) : null; })();
   const effCase = it.effective_case_price ?? null;
@@ -365,25 +365,6 @@ function ListRow({ it, selected, toggle, onRemove }: {
                 <DealTimingSticker deals={[]} gaps={it.rip_gaps} />
               </div>
             )}
-            {/* The UPC qualifies under several RIP programs (they don't
-                stack): pick the one this line should earn. Carried into the
-                cart with the item. */}
-            {programs.length > 1 && (
-              <div className="cart-rip-pick" style={{ margin: '4px 0 0' }}
-                onClick={e => e.stopPropagation()}>
-                <label title="This product qualifies under more than one RIP program. Programs don't stack — pick the one this line should earn; the choice carries into the cart.">
-                  RIP program:{' '}
-                  <select value={effRip ?? ''}
-                    onChange={e => pickRip.mutate(e.target.value || null)}>
-                    {programs.map(p => (
-                      <option key={p.code ?? ''} value={p.code ?? ''}>
-                        RIP {p.code ?? '—'} · {programSummary(p)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-            )}
           </div>
         </div>
       </td>
@@ -409,6 +390,11 @@ function ListRow({ it, selected, toggle, onRemove }: {
             </span>
           </div>
         )}
+      </td>
+      {/* Which RIP the line earns — editable when several programs apply. */}
+      <td onClick={e => e.stopPropagation()}>
+        <RipPicker line={it} qtyCases={it.qty_cases ?? 0}
+          onChoose={code => pickRip.mutate(code)} busy={pickRip.isPending} />
       </td>
       {/* PAY-NOW at 1 case: list minus any QD a single case already earns
           (RIP rebates come later — they live in Best buy at the end). */}

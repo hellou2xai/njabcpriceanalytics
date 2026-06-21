@@ -736,15 +736,27 @@ def _vtg_key(v) -> str:
     return "" if s in ("", "none", "nan", "0", "nv") else s
 
 
+def _qty_key(unit_qty) -> str:
+    """Normalize a pack size (bottles/case) to a comparable token: 6, 6.0 -> '6'."""
+    try:
+        return str(int(float(unit_qty))) if unit_qty not in (None, "") else ""
+    except Exception:
+        return str(unit_qty or "")
+
+
+def _spv(unit_volume, unit_qty, vintage) -> tuple:
+    """Bottle size + pack size + vintage — the dimensions that must ALWAYS agree
+    for two rows to be the same item, on top of the barcode/name. A barcode can be
+    shared across pack sizes (HIGH WEST 6P / 3P), so this is required even with a
+    UPC match."""
+    return (str(unit_volume or "").strip().upper(), _qty_key(unit_qty), _vtg_key(vintage))
+
+
 def _ident_key(name, unit_volume, unit_qty, vintage) -> tuple:
     """Full no-barcode identity: product + bottle size + pack size + vintage. The
     user's rule — when there's no UPC to trust, ALL of these must agree, so a 6P
     never matches a 3P and a '17 never matches a '20."""
-    try:
-        uq = str(int(float(unit_qty))) if unit_qty not in (None, "") else ""
-    except Exception:
-        uq = str(unit_qty or "")
-    return (_norm_prod_name(name), str(unit_volume or "").strip().upper(), uq, _vtg_key(vintage))
+    return (_norm_prod_name(name),) + _spv(unit_volume, unit_qty, vintage)
 
 
 def _attach_comparison_by_name(dcon, items):
@@ -807,57 +819,65 @@ def _attach_comparison_by_name(dcon, items):
         it["comparison"] = [_comparison_row(m, i, len(members)) for i, m in enumerate(members)]
 
 
-def _dedup_comparison(grid, it):
-    """Collapse the offer grid to ONE row per distributor. A shared/placeholder
-    barcode welds several products (Absolut flavors) under one cpn, and Fedway
-    repeats rows, so the raw grid lists a house many times. Per house keep the row
-    that matches THIS line's identity (product+size+pack+vintage); absent a match,
-    the cheapest. Re-rank so the picker shows unique houses + a correct cheapest."""
-    want = _ident_key(it.get("product_name"), it.get("unit_volume"),
-                      it.get("unit_qty"), it.get("vintage"))
-    best: dict = {}
-    for g in grid:
-        ws = g.get("wholesaler")
-        gk = _ident_key(g.get("product_name"), g.get("unit_volume"),
-                        g.get("unit_qty"), g.get("vintage"))
-        match = (gk == want)
-        net = _fnum(g.get("effective_case_price"))
-        cur = best.get(ws)
-        if cur is None:
-            best[ws] = (g, match, net); continue
-        _, cmatch, cnet = cur
-        # Prefer an identity match; otherwise the lower net price.
-        if (match and not cmatch) or (match == cmatch and (net or 1e9) < (cnet or 1e9)):
-            best[ws] = (g, match, net)
-    rows = [g for g, _, _ in best.values()]
-    rows.sort(key=lambda g: (_fnum(g.get("effective_case_price")) is None,
-                             _fnum(g.get("effective_case_price")) or 1e9))
-    for i, g in enumerate(rows):
-        g["net_rank"] = i
-        g["is_cheapest_net"] = (i == 0 and _fnum(g.get("effective_case_price")) is not None)
-        g["n_distributors"] = len(rows)
-    return rows
+def _attach_comparison_by_upc(dcon, items):
+    """Build the cross-distributor grid DIRECTLY from the barcode — the SAME real
+    UPC + same bottle size + pack + vintage across each house's latest edition. We
+    deliberately do NOT use the precomputed cpn/offer_grid here: the CELR family
+    welds distinct products (every Absolut flavor shares one cpn), which is exactly
+    what made the picker show a house many times. Matching on the manufacturer
+    barcode can never weld two different products, and one row per house falls out
+    naturally — no post-hoc de-dup."""
+    from backend.db import read_parquet
+    src = read_parquet(dcon, "cpl_enriched")
+    norms = sorted({str(it.get("upc") or "").lstrip("0") for it in items
+                    if len(str(it.get("upc") or "").lstrip("0")) >= 8})
+    if not norms:
+        return
+    ph = ", ".join("?" for _ in norms)
+    try:
+        rows = dcon.execute(f"""
+            WITH latest AS (SELECT wholesaler, MAX(edition) AS ed FROM {src} GROUP BY wholesaler)
+            SELECT e.wholesaler AS w, e.product_name AS pn, e.unit_volume AS uv,
+                   e.unit_qty AS uq, e.vintage AS vtg,
+                   LTRIM(CAST(e.upc AS VARCHAR),'0') AS un, CAST(e.upc AS VARCHAR) AS upc,
+                   e.frontline_case_price AS fcp, e.best_case_price AS bcp,
+                   e.effective_case_price AS ecp, e.has_rip AS hr, e.has_discount AS hd,
+                   CAST(e.rip_code AS VARCHAR) AS rc
+            FROM {src} e JOIN latest l ON e.wholesaler=l.wholesaler AND e.edition=l.ed
+            WHERE LTRIM(CAST(e.upc AS VARCHAR),'0') IN ({ph})
+        """, norms).fetchdf().to_dict("records")
+    except Exception:
+        return
+    # Bucket by (barcode, size, pack, vintage); best (lowest net) per distributor.
+    # This collapses the source-row multiplicity (Fedway's duplicate CPL rows,
+    # sub-month windows, multi-tier rows) to one offer per house automatically.
+    buckets: dict = {}
+    for r in rows:
+        key = (r["un"], _spv(r["uv"], r["uq"], r["vtg"]))
+        buckets.setdefault(key, {})
+        cur = buckets[key].get(r["w"])
+        if cur is None or (_fnum(r["ecp"]) or 1e9) < (_fnum(cur["ecp"]) or 1e9):
+            buckets[key][r["w"]] = r
+    for it in items:
+        un = str(it.get("upc") or "").lstrip("0")
+        if len(un) < 8:
+            continue
+        key = (un, _spv(it.get("unit_volume"), it.get("unit_qty"), it.get("vintage")))
+        houses = buckets.get(key)
+        if not houses or it["wholesaler"] not in houses or len(houses) < 2:
+            continue
+        members = sorted(houses.values(),
+                         key=lambda m: (_fnum(m["ecp"]) is None, _fnum(m["ecp"]) or 1e9))
+        it["comparison"] = [_comparison_row(m, i, len(members)) for i, m in enumerate(members)]
 
 
 def _attach_comparison(dcon, items):
     """Attach it['comparison'] — every distributor that carries the SAME item with
-    its net/case price + RIP flag — used by the inline distributor picker in the
-    cart AND lists. UPC-driven via the precomputed offer_grid; falls back to a
-    name+size match across houses when the line has no usable barcode. Requires
-    `edition`/`unit_qty` (set by _attach_cart_pricing) on each item first."""
-    from backend.precompute_offers import offer_grid
-    for it in items:
-        un = str(it.get("upc") or "").lstrip("0")
-        ed = it.get("edition"); ws = it.get("wholesaler")
-        if not (ed and ws and len(un) >= 8):
-            continue
-        try:
-            grid = offer_grid(dcon, edition=ed, wholesaler=ws, upc_norm=un,
-                              unit_qty=it.get("unit_qty"))
-        except Exception:
-            grid = []
-        if grid and len({g.get("wholesaler") for g in grid}) >= 2:
-            it["comparison"] = _dedup_comparison(grid, it)
+    its net/case price + RIP flag — for the inline distributor picker in the cart
+    AND lists. Barcode-driven (same UPC + size + pack + vintage); falls back to a
+    full-identity name match for lines with no usable barcode. Requires `unit_qty`
+    / `vintage` (set by _attach_cart_pricing) on each item first."""
+    _attach_comparison_by_upc(dcon, items)
     _attach_comparison_by_name(dcon, items)   # name fallback for the rest
 
 
@@ -897,38 +917,43 @@ def _resolve_switch_target(dcon, src_ws, upc, unit_volume, product_name, target)
     fallback for UPC-less lines. Returns (product_name, upc, unit_volume) or None.
     Shared by the cart and the lists switch endpoints."""
     un = str(upc or "").lstrip("0")
+    from backend.db import read_parquet
+    s = read_parquet(dcon, "cpl_enriched")
+    # Derive the source line's own pack + vintage from its exact catalog row, so the
+    # match below can enforce size+pack+vintage (a barcode is shared across packs).
+    uq = vtg = None
+    try:
+        me = dcon.execute(
+            f"WITH latest AS (SELECT MAX(edition) ed FROM {s} WHERE wholesaler=?) "
+            f"SELECT unit_qty, vintage FROM {s} WHERE wholesaler=? AND product_name=? "
+            f"AND COALESCE(unit_volume,'')=? AND edition=(SELECT ed FROM latest) LIMIT 1",
+            [src_ws, src_ws, product_name or "", unit_volume or ""]).fetchone()
+        if me:
+            uq, vtg = me[0], me[1]
+    except Exception:
+        pass
+    src_spv = _spv(unit_volume, uq, vtg)
+
     if len(un) >= 8:
+        # EXACT barcode at the target — NOT the cpn group_key, which welds distinct
+        # products (GRAPEFRUIT/LIME/CITRON share a cpn). Same real barcode = same
+        # product, and it holds even when houses name it differently (BBN vs
+        # BOURBON). Then pin size+pack+vintage so a 6P can't become a 3P.
         try:
-            ident = dcon.execute(
-                "SELECT edition, group_key FROM sku_offer WHERE wholesaler=? AND upc_norm=? "
-                "ORDER BY (CASE WHEN COALESCE(unit_volume,'')=? THEN 0 ELSE 1 END), edition DESC LIMIT 1",
-                [src_ws, un, unit_volume or ""]).fetchone()
-        except Exception:
-            ident = None
-        if ident:
-            ed, gk = ident
-            tgt = dcon.execute(
-                "SELECT product_name, upc, unit_volume FROM sku_offer "
-                "WHERE edition=? AND group_key=? AND wholesaler=? LIMIT 1",
-                [ed, gk, target]).fetchone()
-            if tgt:
-                return (tgt[0], tgt[1] or upc, tgt[2] or unit_volume)
-    if product_name:
-        # Derive the source line's pack + vintage from its own exact catalog row so
-        # the name match enforces the full identity (product+size+pack+vintage).
-        uq = vtg = None
-        try:
-            from backend.db import read_parquet
-            s = read_parquet(dcon, "cpl_enriched")
-            me = dcon.execute(
+            rows = dcon.execute(
                 f"WITH latest AS (SELECT MAX(edition) ed FROM {s} WHERE wholesaler=?) "
-                f"SELECT unit_qty, vintage FROM {s} WHERE wholesaler=? AND product_name=? "
-                f"AND COALESCE(unit_volume,'')=? AND edition=(SELECT ed FROM latest) LIMIT 1",
-                [src_ws, src_ws, product_name, unit_volume or ""]).fetchone()
-            if me:
-                uq, vtg = me[0], me[1]
+                f"SELECT product_name, CAST(upc AS VARCHAR) upc, unit_volume, unit_qty, vintage, "
+                f"effective_case_price ecp FROM {s} "
+                f"WHERE wholesaler=? AND LTRIM(CAST(upc AS VARCHAR),'0')=? "
+                f"AND edition=(SELECT ed FROM latest)",
+                [target, target, un]).fetchdf().to_dict("records")
         except Exception:
-            pass
+            rows = []
+        cands = [r for r in rows if _spv(r["unit_volume"], r["unit_qty"], r["vintage"]) == src_spv]
+        if cands:
+            best = min(cands, key=lambda r: (_fnum(r["ecp"]) is None, _fnum(r["ecp"]) or 1e9))
+            return (best["product_name"], best["upc"] or upc, best["unit_volume"] or unit_volume)
+    if product_name:
         return _resolve_switch_by_name(dcon, product_name, unit_volume, target, uq, vtg)
     return None
 

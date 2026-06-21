@@ -7,6 +7,7 @@ parks an item in the "Save for later" section below the active cart. The
 "send to all reps" step (turns each rep group into a submitted order) is added in
 the Phase 3 order cutover.
 """
+import re
 import uuid
 from typing import Optional
 
@@ -325,6 +326,60 @@ def _attach_combo_pricing(dcon, items):
         it["tiers"] = []            # the bundle is the deal; don't also show tier rows
         it["has_discount"] = False
         it["has_rip"] = False
+
+
+def _attach_combo_suggestion(dcon, items):
+    """For a NORMAL line (not already a combo), surface a combo the product is a
+    member of: the bundle's pack price + the sheet's own total_savings, and a
+    'great' flag. The combo SHEET is the source of the savings (we never recompute
+    it). Lets the buyer discover 'this item is in a combo that saves $X'."""
+    from backend.db import read_parquet
+    src = read_parquet(dcon, "combo")
+    keys = sorted({(it.get("wholesaler"), it.get("edition"), str(it.get("upc") or "").lstrip("0"))
+                   for it in items
+                   if not (it.get("combo_code") and str(it.get("combo_code")) not in ("", "0"))
+                   and it.get("wholesaler") and it.get("edition")
+                   and len(str(it.get("upc") or "").lstrip("0")) >= 8})
+    if not keys:
+        return
+    rowlits = ", ".join("(?, ?, ?)" for _ in keys)
+    params = [x for k in keys for x in k]
+    try:
+        rows = dcon.execute(
+            f"SELECT wholesaler ws, edition ed, LTRIM(CAST(upc AS VARCHAR),'0') un, "
+            f"CAST(combo_code AS VARCHAR) code, MAX(combo_pack_price) pack, MAX(total_savings) sav, "
+            f"ANY_VALUE(comments) cmt "
+            f"FROM {src} "
+            f"WHERE (wholesaler, edition, LTRIM(CAST(upc AS VARCHAR),'0')) IN ({rowlits}) "
+            f"  AND CAST(combo_code AS VARCHAR) NOT IN ('', '0', 'None', 'nan') "
+            f"GROUP BY 1, 2, 3, 4", params).fetchdf().to_dict("records")
+    except Exception:
+        return
+    best: dict = {}
+    for r in rows:
+        sav, pack = r.get("sav"), r.get("pack")
+        try:
+            sav = float(sav)
+        except (TypeError, ValueError):
+            continue
+        if sav <= 0:
+            continue
+        k = (r["ws"], r["ed"], r["un"])
+        prev = best.get(k)
+        if prev is None or sav > prev["savings"]:
+            regular = (float(pack) if pack else 0.0) + sav
+            pct = round(sav / regular * 100, 1) if regular > 0 else 0.0
+            cmt = str(r.get("cmt") or "")
+            cmt = re.sub(r"^\s*contains:\s*", "", cmt, flags=re.I).strip()
+            best[k] = {"combo_code": r["code"],
+                       "pack_price": round(float(pack), 2) if pack else None,
+                       "savings": round(sav, 2), "pct": pct, "great": pct >= 10,
+                       "label": cmt[:70] or None}
+    for it in items:
+        un = str(it.get("upc") or "").lstrip("0")
+        sug = best.get((it.get("wholesaler"), it.get("edition"), un))
+        if sug:
+            it["combo_suggestion"] = sug
 
 
 @router.get("")
@@ -949,6 +1004,12 @@ def _load_enriched_cart(user: dict) -> dict:
                 # it goes up. RIP is back-pocket-later, so timing compares the net.
                 from backend.deal_compare import deal_compare
                 deal_compare(dcon, items)
+            except Exception:
+                pass
+            try:
+                # COMBO suggestion: if a normal line's product is a member of a
+                # combo, surface the bundle + the sheet's own savings (great?).
+                _attach_combo_suggestion(dcon, items)
             except Exception:
                 pass
         try:

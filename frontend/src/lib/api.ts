@@ -1373,6 +1373,12 @@ export interface CartItem {
   best_buy_window?: string | null;
   best_buy_saving?: number | null;
   next_edition?: string | null;
+  // Combo discovery: this product is a member of a combo. savings/pct come from
+  // the combo SHEET's own total_savings (not recomputed); great = pct >= 10%.
+  combo_suggestion?: {
+    combo_code: string; pack_price?: number | null; savings: number;
+    pct: number; great: boolean; label?: string | null;
+  } | null;
   // RIP rebate code this line currently rolls up under (enriched from the
   // catalogue at GET time; null when the product has no RIP).
   rip_code?: string | null;

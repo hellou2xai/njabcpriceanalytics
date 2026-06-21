@@ -737,6 +737,22 @@ export default function Cart() {
           return null;
         })()}
 
+        {/* Combo discovery: this product is in a combo (savings from the combo
+            sheet's own total_savings). "Great" when ≥10% off. */}
+        {it.combo_suggestion && it.combo_suggestion.savings > 0 && (
+          <div style={{ marginLeft: 56, marginTop: 6 }}>
+            <a href={`/combos?code=${encodeURIComponent(it.combo_suggestion.combo_code)}`}
+              style={{ fontSize: 11, fontWeight: 700, textDecoration: 'none',
+                color: it.combo_suggestion.great ? '#166534' : '#3f6212',
+                background: it.combo_suggestion.great ? '#dcfce7' : '#ecfccb',
+                border: `1px solid ${it.combo_suggestion.great ? '#86efac' : '#bef264'}`,
+                borderRadius: 4, padding: '1px 6px' }}
+              title={it.combo_suggestion.label ?? 'This product is part of a combo bundle.'}>
+              📦 {it.combo_suggestion.great ? 'Great combo' : 'In a combo'}: save ${it.combo_suggestion.savings.toFixed(2)} ({it.combo_suggestion.pct.toFixed(0)}% off)
+            </a>
+          </div>
+        )}
+
         {/* Deal tiers, same info as the catalogue, to tweak qty last minute. Combo
             lines hide these (the bundle is the deal). */}
         {tiers.length > 0 && (

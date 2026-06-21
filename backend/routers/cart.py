@@ -165,7 +165,7 @@ def _attach_cart_pricing(dcon, items):
                 SELECT e.wholesaler AS w, LTRIM(e.upc,'0') AS un, e.product_name AS pn, e.unit_volume AS uv,
                        e.frontline_case_price AS fcp, e.frontline_unit_price AS fup,
                        e.effective_case_price AS ecp, e.unit_qty AS uq, e.unit_type AS ut,
-                       e.has_discount AS hd, e.has_rip AS hr,
+                       e.has_discount AS hd, e.has_rip AS hr, e.has_closeout AS hc,
                        e.discount_pct AS dp, e.total_savings_per_case AS ts,
                        CAST(e.rip_code AS VARCHAR) AS rc,
                        e.edition AS ed,
@@ -222,6 +222,7 @@ def _attach_cart_pricing(dcon, items):
             it["effective_unit_price"] = round(ecp / uq, 2) if (ecp and uq) else cl(r["fup"])
             it["has_discount"] = bool(r["hd"])
             it["has_rip"] = bool(r["hr"])
+            it["has_closeout"] = bool(r["hc"])
             it["discount_pct"] = cl(r["dp"])
             it["total_savings_per_case"] = cl(r["ts"])
             # rip_code: surface the RIP this line belongs to so the cart UI can

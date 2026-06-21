@@ -1355,6 +1355,9 @@ export interface CartItem {
   effective_case_price?: number | null; effective_unit_price?: number | null;
   unit_qty?: number | string | null;
   has_discount?: boolean; has_rip?: boolean;
+  // Closeout/clearance: a one-time deep cut on a product being discontinued —
+  // buy now, it won't be offered again.
+  has_closeout?: boolean;
   discount_pct?: number | null; total_savings_per_case?: number | null;
   // Date-aware "live now" RIP overlay (see Product). On a cart/order line the
   // reference date is the needed-by date when set, else today.

@@ -737,6 +737,17 @@ export default function Cart() {
           return null;
         })()}
 
+        {/* Closeout: one-time clearance on a discontinued product — buy now. */}
+        {it.has_closeout && !it.combo_intact && (
+          <div style={{ marginLeft: 56, marginTop: 6 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#9f1239', background: '#ffe4e6',
+              border: '1px solid #fda4af', borderRadius: 4, padding: '1px 6px' }}
+              title="This is a closeout/clearance item — a one-time deep cut on a product being discontinued. It won't be offered again.">
+              🏷 Closeout — buy now, won't last
+            </span>
+          </div>
+        )}
+
         {/* Combo discovery: this product is in a combo (savings from the combo
             sheet's own total_savings). "Great" when ≥10% off. */}
         {it.combo_suggestion && it.combo_suggestion.savings > 0 && (

@@ -963,6 +963,15 @@ def build_cross_source_links(parquet_dir: str | Path, output_dir: Path):
             ROUND(jaro_winkler_similarity(
                 UPPER(a.product_name), UPPER(b.product_name)
             ), 3) AS name_similarity,
+            -- Cross-distributor matching priority: Allied<->Fedway is the PRIMARY
+            -- pair (both carry the full standard catalogue), each-with-Opici is
+            -- SECONDARY. Consumers weight the primary pair's agreement most when
+            -- deciding product identity / flagging reused-barcode welds.
+            CASE
+                WHEN a.wholesaler = 'allied' AND b.wholesaler = 'fedway' THEN 'primary'
+                WHEN a.wholesaler = 'opici' OR b.wholesaler = 'opici' THEN 'secondary'
+                ELSE 'other'
+            END AS pair_tier,
             ROUND(b.frontline_case_price - a.frontline_case_price, 2) AS price_delta,
             CASE WHEN (
                      (a.upc IS NOT NULL AND a.upc != '' AND a.upc != '0' AND NOT regexp_matches(a.upc,'^(0+|9+|1+)$') AND NOT a.upc LIKE '999999%' AND LENGTH(a.upc) >= 8)

@@ -807,6 +807,38 @@ def _attach_comparison_by_name(dcon, items):
         it["comparison"] = [_comparison_row(m, i, len(members)) for i, m in enumerate(members)]
 
 
+def _dedup_comparison(grid, it):
+    """Collapse the offer grid to ONE row per distributor. A shared/placeholder
+    barcode welds several products (Absolut flavors) under one cpn, and Fedway
+    repeats rows, so the raw grid lists a house many times. Per house keep the row
+    that matches THIS line's identity (product+size+pack+vintage); absent a match,
+    the cheapest. Re-rank so the picker shows unique houses + a correct cheapest."""
+    want = _ident_key(it.get("product_name"), it.get("unit_volume"),
+                      it.get("unit_qty"), it.get("vintage"))
+    best: dict = {}
+    for g in grid:
+        ws = g.get("wholesaler")
+        gk = _ident_key(g.get("product_name"), g.get("unit_volume"),
+                        g.get("unit_qty"), g.get("vintage"))
+        match = (gk == want)
+        net = _fnum(g.get("effective_case_price"))
+        cur = best.get(ws)
+        if cur is None:
+            best[ws] = (g, match, net); continue
+        _, cmatch, cnet = cur
+        # Prefer an identity match; otherwise the lower net price.
+        if (match and not cmatch) or (match == cmatch and (net or 1e9) < (cnet or 1e9)):
+            best[ws] = (g, match, net)
+    rows = [g for g, _, _ in best.values()]
+    rows.sort(key=lambda g: (_fnum(g.get("effective_case_price")) is None,
+                             _fnum(g.get("effective_case_price")) or 1e9))
+    for i, g in enumerate(rows):
+        g["net_rank"] = i
+        g["is_cheapest_net"] = (i == 0 and _fnum(g.get("effective_case_price")) is not None)
+        g["n_distributors"] = len(rows)
+    return rows
+
+
 def _attach_comparison(dcon, items):
     """Attach it['comparison'] — every distributor that carries the SAME item with
     its net/case price + RIP flag — used by the inline distributor picker in the
@@ -825,7 +857,7 @@ def _attach_comparison(dcon, items):
         except Exception:
             grid = []
         if grid and len({g.get("wholesaler") for g in grid}) >= 2:
-            it["comparison"] = grid
+            it["comparison"] = _dedup_comparison(grid, it)
     _attach_comparison_by_name(dcon, items)   # name fallback for the rest
 
 

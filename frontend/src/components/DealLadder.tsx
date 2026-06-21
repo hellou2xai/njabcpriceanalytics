@@ -272,13 +272,34 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
         {disc.map((t, i) => Row('qd', t, i))}
         {ripGroups.map((g, gi) => {
           const hoist = hoistedFlag(g);
+          // Headline for THIS program, shown on its header row: the tier that
+          // pays the most total rebate (cases x RIP-per-case) — its case tier and
+          // total RIP $. Mirrors the card's green "RIP $X/cs back · $Y total RIP"
+          // summary, but per program, so the buyer sees each program's best deal
+          // without reading every row.
+          let grpTot: { label: string; total: number } | null = null;
+          for (const t of g.tiers) {
+            const per = t.ripOnlySave ?? 0;
+            if (per <= 0.005) continue;
+            const q = t.qualifiedCases ?? caseQty(t);
+            const total = Math.round(q * per * 100) / 100;
+            if (!grpTot || total > grpTot.total) grpTot = { label: buyLabel(t), total };
+          }
           return (
             <Fragment key={`rg${gi}`}>
               {(multiProgram || hoist) && (
                 <tr className="prod-deal-grouphdr">
                   <td colSpan={6}
                     title="A separate RIP program for this product — pick the one matching how much you buy. These do not stack.">
-                    RIP{g.code ? ` ${g.code}` : ''}{hoist && <PartialFlag t={hoist} />}
+                    RIP{g.code ? ` ${g.code}` : ''}
+                    {grpTot && (
+                      <span className="prod-deal-grouphdr-tot"
+                        style={{ fontWeight: 400, color: 'var(--text-muted)' }}
+                        title="This program's best tier: the case quantity and the total RIP rebate it pays (cases x rebate per case).">
+                        {' · '}{grpTot.label} / <strong style={{ color: 'var(--green)' }}>${grpTot.total.toFixed(2)}</strong> total RIP
+                      </span>
+                    )}
+                    {hoist && <PartialFlag t={hoist} />}
                   </td>
                 </tr>
               )}

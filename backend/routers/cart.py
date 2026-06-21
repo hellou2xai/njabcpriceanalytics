@@ -1544,7 +1544,7 @@ def _load_enriched_cart(user: dict) -> dict:
     plus per-distributor header notes and the savings roll-up."""
     with get_pg() as con:
         items = [dict(r) for r in con.execute(
-            "SELECT * FROM cart_items WHERE user_id=%s ORDER BY created_at", (user["id"],)
+            "SELECT * FROM cart_items WHERE user_id=%s ORDER BY created_at DESC, id DESC", (user["id"],)
         ).fetchall()]
         reps = {r["id"]: dict(r) for r in con.execute(
             "SELECT id, name, distributor, division, email FROM sales_reps WHERE user_id=%s",

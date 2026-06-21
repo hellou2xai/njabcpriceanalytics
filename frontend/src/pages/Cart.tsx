@@ -937,10 +937,10 @@ export default function Cart() {
                   if (!batchMap.has(bid)) batchMap.set(bid, []);
                   batchMap.get(bid)!.push(it);
                 }
-                // Preserve original add order via created_at on the first line.
+                // Newest send on top: sort by the first line's created_at DESCENDING.
                 const batches = [...batchMap.entries()].sort((a, b) =>
-                  ((a[1][0] as unknown as { created_at?: string }).created_at ?? '')
-                    .localeCompare((b[1][0] as unknown as { created_at?: string }).created_at ?? '')
+                  ((b[1][0] as unknown as { created_at?: string }).created_at ?? '')
+                    .localeCompare((a[1][0] as unknown as { created_at?: string }).created_at ?? '')
                 );
                 return (
                   <>
@@ -1138,8 +1138,8 @@ export default function Cart() {
                 batchMap.get(bid)!.push(it);
               }
               const batches = [...batchMap.entries()].sort((a, b) =>
-                ((a[1][0] as unknown as { created_at?: string }).created_at ?? '')
-                  .localeCompare((b[1][0] as unknown as { created_at?: string }).created_at ?? '')
+                ((b[1][0] as unknown as { created_at?: string }).created_at ?? '')
+                  .localeCompare((a[1][0] as unknown as { created_at?: string }).created_at ?? '')
               );
               return (
                 <>

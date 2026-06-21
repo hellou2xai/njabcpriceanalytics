@@ -288,7 +288,28 @@ export default function PriceSparklines({ wholesaler, productName, upc, unitVolu
   let richBlocks: MonthBreakdown[] = [];
   let lightBlocks: PricePoint[] = [];
   if (hasOwn) {
-    const blocks = months!.filter(m => m.bestEff != null || m.disc1 != null || m.frontline != null);
+    const raw = months!.filter(m => m.bestEff != null || m.disc1 != null || m.frontline != null);
+    // One block per EDITION: a product can have >1 CPL row in a month (a duplicate
+    // listing or a sub-window), which would render the same month twice. Keep the
+    // best (lowest net, then lowest list) row per edition, preserving order.
+    const _score = (x: MonthBreakdown) => x.bestEff ?? x.disc1 ?? x.frontline ?? Infinity;
+    const bestByEd = new Map<string, MonthBreakdown>();
+    for (const m of raw) {
+      const ed = m.edition || '';
+      const c = bestByEd.get(ed);
+      if (!c || _score(m) < _score(c)
+          || (_score(m) === _score(c) && (m.frontline ?? Infinity) < (c.frontline ?? Infinity))) {
+        bestByEd.set(ed, m);
+      }
+    }
+    const seen = new Set<string>();
+    const blocks: MonthBreakdown[] = [];
+    for (const m of raw) {
+      const ed = m.edition || '';
+      if (seen.has(ed)) continue;
+      seen.add(ed);
+      blocks.push(bestByEd.get(ed)!);
+    }
     discSeries = blocks.map(m => m.disc1 ?? m.frontline);
     ripSeries = ripTrajectory(blocks.map(m => m.bestEff), blocks.map(m => m.disc1 ?? m.frontline));
     richBlocks = [...blocks].reverse().slice(0, 3);

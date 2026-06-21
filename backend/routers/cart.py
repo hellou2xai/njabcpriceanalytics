@@ -137,11 +137,12 @@ def _insert_cart_item(con, user_id, item: dict, rep_id):
     # NULL-batch rows still upsert into the single "no batch" slot per product.
     con.execute(
         f"""INSERT INTO cart_items
-              (user_id, product_name, wholesaler, upc, unit_volume, combo_code,
-               qty_cases, qty_units, sales_rep_id, saved_for_later,
+              (user_id, product_name, wholesaler, upc, unit_volume, unit_qty, vintage,
+               combo_code, qty_cases, qty_units, sales_rep_id, saved_for_later,
                batch_id, batch_label, batch_source, rip_choice)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,0,%s,%s,%s,%s)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,0,%s,%s,%s,%s)
             ON CONFLICT (user_id, product_name, wholesaler, unit_volume,
+                         COALESCE(unit_qty,''), COALESCE(vintage,''),
                          COALESCE(batch_id, '')) DO UPDATE SET
               qty_cases = cart_items.qty_cases + EXCLUDED.qty_cases,
               qty_units = cart_items.qty_units + EXCLUDED.qty_units,
@@ -149,7 +150,8 @@ def _insert_cart_item(con, user_id, item: dict, rep_id):
               saved_for_later = 0,
               updated_at = {NOW_UTC}""",
         (user_id, item["product_name"], item["wholesaler"], item.get("upc"),
-         item.get("unit_volume"), item.get("combo_code"),
+         item.get("unit_volume"), _ident_text(item.get("unit_qty")),
+         _ident_text(item.get("vintage")), item.get("combo_code"),
          item.get("qty_cases", 0) or 0, item.get("qty_units", 0) or 0, rep_id,
          item.get("batch_id"), item.get("batch_label"), item.get("batch_source"),
          item.get("rip_choice")),
@@ -167,6 +169,7 @@ def _attach_cart_pricing(dcon, items):
     from backend.routers.catalog import _attach_discount_rip_tiers
     src = read_parquet(dcon, "cpl_enriched")
     norms = sorted({str(it.get("upc") or "").lstrip("0") for it in items if it.get("upc")})
+    vpmap = {}  # SKU-exact key (wholesaler, upc, name, ml-size, pack, vintage) -> row
     pmap = {}   # full key (wholesaler, upc, name, volume) -> catalogue row
     nmap = {}   # (wholesaler, upc, name) -> row: a barcode can map to several products,
     umap = {}   # (wholesaler, upc) -> row: last-resort match on barcode alone
@@ -193,6 +196,8 @@ def _attach_cart_pricing(dcon, items):
                 WHERE e.upc_norm IN ({ph})
             """, prm).fetchdf()
             for _, r in df.iterrows():
+                vpmap[(r["w"], str(r["un"]), r["pn"] or "", _size_ml_key(r["uv"]),
+                       _qty_key(r["uq"]), _vtg_key(r["vtg"]))] = r
                 pmap[(r["w"], str(r["un"]), r["pn"] or "", r["uv"] or "")] = r
                 nmap.setdefault((r["w"], str(r["un"]), r["pn"] or ""), r)
                 # Barcode-alone fallback ONLY for real barcodes: a placeholder
@@ -201,7 +206,7 @@ def _attach_cart_pricing(dcon, items):
                 if len(str(r["un"])) >= 8:
                     umap.setdefault((r["w"], str(r["un"])), r)
         except Exception:
-            pmap = {}; nmap = {}; umap = {}
+            vpmap = {}; pmap = {}; nmap = {}; umap = {}
 
     def cl(v):
         if v is None or (isinstance(v, float) and _m.isnan(v)):
@@ -210,7 +215,16 @@ def _attach_cart_pricing(dcon, items):
 
     for it in items:
         un = str(it.get("upc") or "").lstrip("0")
-        r = pmap.get((it["wholesaler"], un, it.get("product_name") or "", it.get("unit_volume") or ""))
+        # SKU-exact first: when the line carries its stored pack + vintage, price
+        # the row that agrees on size+pack+vintage so a shared barcode never
+        # resolves to a different vintage/pack sibling (e.g. ABSOLUT '23 vs '24).
+        r = None
+        if it.get("vintage") not in (None, "") or it.get("unit_qty") not in (None, ""):
+            r = vpmap.get((it["wholesaler"], un, it.get("product_name") or "",
+                           _size_ml_key(it.get("unit_volume")),
+                           _qty_key(it.get("unit_qty")), _vtg_key(it.get("vintage"))))
+        if r is None:
+            r = pmap.get((it["wholesaler"], un, it.get("product_name") or "", it.get("unit_volume") or ""))
         if r is None:
             r = nmap.get((it["wholesaler"], un, it.get("product_name") or ""))  # name match, any size
         if r is None:
@@ -893,6 +907,22 @@ def _qty_key(unit_qty) -> str:
         return str(unit_qty or "")
 
 
+def _ident_text(v):
+    """Normalize a pack/vintage value for STORAGE as part of the line's SKU
+    identity. Blank, 'none'/'nan', and the NV/0 vintage placeholder all collapse
+    to NULL so they compare equal under the COALESCE(...,'') unique-key, and a
+    pack like 6.0 stores as '6' to match the catalogue's text column."""
+    if v is None:
+        return None
+    s = str(v).strip()
+    if s == "" or s.lower() in ("none", "nan", "0", "nv"):
+        return None
+    try:
+        return str(int(float(s)))   # 6.0 -> '6' (pack); harmless for year-like vintages
+    except Exception:
+        return s
+
+
 def _size_ml_key(unit_volume) -> str:
     """Normalize a bottle size to its millilitres so distributors that spell the
     SAME size differently still match — Allied 'LITER' vs Fedway '1L' are both
@@ -1091,27 +1121,33 @@ def _resolve_switch_by_name(dcon, product_name: str, unit_volume, target: str,
     return (best["product_name"], best["upc"], best["unit_volume"])
 
 
-def _resolve_switch_target(dcon, src_ws, upc, unit_volume, product_name, target):
+def _resolve_switch_target(dcon, src_ws, upc, unit_volume, product_name, target,
+                           unit_qty=None, vintage=None):
     """Resolve the target distributor's row for the SAME item when switching a
     line in place. UPC-driven via the precomputed sku_offer grid; name+size
     fallback for UPC-less lines. Returns (product_name, upc, unit_volume) or None.
-    Shared by the cart and the lists switch endpoints."""
+    Shared by the cart and the lists switch endpoints.
+
+    The caller passes the line's STORED pack + vintage (SKU identity), so the
+    target match enforces size+pack+vintage exactly. Only when they're absent
+    (legacy rows added before we stored them) do we fall back to deriving them
+    from the source catalog row — an ambiguous LIMIT 1 that can pick the wrong
+    vintage, hence why the stored values are preferred."""
     un = str(upc or "").lstrip("0")
     from backend.db import read_parquet
     s = read_parquet(dcon, "cpl_enriched")
-    # Derive the source line's own pack + vintage from its exact catalog row, so the
-    # match below can enforce size+pack+vintage (a barcode is shared across packs).
-    uq = vtg = None
-    try:
-        me = dcon.execute(
-            f"WITH latest AS (SELECT {_cur_ed()} ed FROM {s} WHERE wholesaler=?)"
-            f"SELECT unit_qty, vintage FROM {s} WHERE wholesaler=? AND product_name=? "
-            f"AND COALESCE(unit_volume,'')=? AND edition=(SELECT ed FROM latest) LIMIT 1",
-            [src_ws, src_ws, product_name or "", unit_volume or ""]).fetchone()
-        if me:
-            uq, vtg = me[0], me[1]
-    except Exception:
-        pass
+    uq, vtg = unit_qty, vintage
+    if uq in (None, "") and vtg in (None, ""):
+        try:
+            me = dcon.execute(
+                f"WITH latest AS (SELECT {_cur_ed()} ed FROM {s} WHERE wholesaler=?)"
+                f"SELECT unit_qty, vintage FROM {s} WHERE wholesaler=? AND product_name=? "
+                f"AND COALESCE(unit_volume,'')=? AND edition=(SELECT ed FROM latest) LIMIT 1",
+                [src_ws, src_ws, product_name or "", unit_volume or ""]).fetchone()
+            if me:
+                uq, vtg = me[0], me[1]
+        except Exception:
+            pass
     src_spv = _spv(unit_volume, uq, vtg)
 
     if len(un) >= 8:
@@ -1787,8 +1823,8 @@ def switch_distributor_inline(item_id: int, body: SwitchDistributorIn,
 
     with get_pg() as con:
         row = con.execute(
-            "SELECT id, product_name, wholesaler, upc, unit_volume, combo_code, "
-            "       qty_cases, qty_units, batch_id, saved_for_later "
+            "SELECT id, product_name, wholesaler, upc, unit_volume, unit_qty, vintage, "
+            "       combo_code, qty_cases, qty_units, batch_id, saved_for_later "
             "FROM cart_items WHERE id=%s AND user_id=%s", (item_id, user["id"])
         ).fetchone()
     if not row:
@@ -1801,7 +1837,8 @@ def switch_distributor_inline(item_id: int, body: SwitchDistributorIn,
     # first, name+size fallback for UPC-less lines (combo / placeholder barcode).
     with get_duckdb() as dcon:
         tgt = _resolve_switch_target(dcon, line["wholesaler"], line.get("upc"),
-                                     line.get("unit_volume"), line.get("product_name"), target)
+                                     line.get("unit_volume"), line.get("product_name"), target,
+                                     line.get("unit_qty"), line.get("vintage"))
         if not tgt:
             raise HTTPException(
                 409, f"{_dist_label(target)} does not carry this product in the compared edition")
@@ -1813,13 +1850,17 @@ def switch_distributor_inline(item_id: int, body: SwitchDistributorIn,
 
     with get_pg() as con:
         rep_id = _default_rep_for(con, user["id"], target)
-        # Does a line for the target house already exist (same product + batch)?
-        # The unique key is (user, product_name, wholesaler, unit_volume, batch).
+        # Does a line for the target house already exist (same SKU + batch)? The
+        # unique key is (user, product_name, wholesaler, unit_volume, unit_qty,
+        # vintage, batch) — pack + vintage are preserved across a same-SKU switch,
+        # so we match the line's own stored values.
         existing = con.execute(
             "SELECT id, qty_cases, qty_units FROM cart_items "
             "WHERE user_id=%s AND product_name=%s AND wholesaler=%s "
-            "AND COALESCE(unit_volume,'')=%s AND COALESCE(batch_id,'')=%s AND id<>%s",
+            "AND COALESCE(unit_volume,'')=%s AND COALESCE(unit_qty,'')=%s "
+            "AND COALESCE(vintage,'')=%s AND COALESCE(batch_id,'')=%s AND id<>%s",
             (user["id"], tgt_name, target, tgt_uv or "",
+             _ident_text(line.get("unit_qty")) or "", _ident_text(line.get("vintage")) or "",
              line.get("batch_id") or "", item_id),
         ).fetchone()
         if existing:

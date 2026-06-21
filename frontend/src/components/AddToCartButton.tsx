@@ -8,6 +8,10 @@ interface Props {
   wholesaler: string;
   upc?: string;
   unitVolume?: string;
+  // Pack (bottles/case) + vintage complete the SKU identity, so the cart prices
+  // the exact item the buyer clicked — never a same-barcode pack/vintage sibling.
+  unitQty?: string;
+  vintage?: string;
   qtyCases?: number;
   qtyUnits?: number;
 }
@@ -16,12 +20,13 @@ interface Props {
  * The "+" in the catalogue Order column: adds the product to the server cart
  * with the row's current quantities. The cart groups items by sales rep.
  */
-export default function AddToCartButton({ productName, wholesaler, upc, unitVolume, qtyCases = 0, qtyUnits = 0 }: Props) {
+export default function AddToCartButton({ productName, wholesaler, upc, unitVolume, unitQty, vintage, qtyCases = 0, qtyUnits = 0 }: Props) {
   const qc = useQueryClient();
   const [added, setAdded] = useState(false);
   const add = useMutation({
     mutationFn: () => cartApi.add({
       product_name: productName, wholesaler, upc, unit_volume: unitVolume,
+      unit_qty: unitQty, vintage,
       qty_cases: qtyCases, qty_units: qtyUnits,
     }),
     onSuccess: () => {

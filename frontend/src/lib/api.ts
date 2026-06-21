@@ -1433,7 +1433,7 @@ export interface ListItem {
   notes?: string | null; image_url?: string | null;
   // Catalogue pricing attached server-side from the latest CPL (same data the
   // cart lines carry), so Lists can show real price columns.
-  unit_qty?: number | string | null; unit_type?: string | null;
+  unit_qty?: number | string | null; unit_type?: string | null; vintage?: number | string | null;
   frontline_case_price?: number | null; frontline_unit_price?: number | null;
   effective_case_price?: number | null; effective_unit_price?: number | null;
   total_savings_per_case?: number | null;
@@ -1477,7 +1477,7 @@ export interface CartItem {
   // Catalogue pricing + deal tiers (so the cart shows the same deal info).
   frontline_case_price?: number | null; frontline_unit_price?: number | null;
   effective_case_price?: number | null; effective_unit_price?: number | null;
-  unit_qty?: number | string | null;
+  unit_qty?: number | string | null; vintage?: number | string | null;
   has_discount?: boolean; has_rip?: boolean;
   // Closeout/clearance: a one-time deep cut on a product being discontinued —
   // buy now, it won't be offered again.

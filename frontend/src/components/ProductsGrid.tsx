@@ -609,9 +609,13 @@ function SizeRow({ size, cart, updateQty, primaryName, showDeals = true, hideDis
         <div className="prod-size-actions">
           <AddToCartButton productName={size.product_name} wholesaler={size.wholesaler}
             upc={size.upc} unitVolume={size.unit_volume}
+            unitQty={size.unit_qty != null ? String(size.unit_qty) : undefined}
+            vintage={size.vintage != null ? String(size.vintage) : undefined}
             qtyCases={qty.cases} qtyUnits={qty.units} />
           <AddToListButton productName={size.product_name} wholesaler={size.wholesaler}
-            upc={size.upc} unitVolume={size.unit_volume} />
+            upc={size.upc} unitVolume={size.unit_volume}
+            unitQty={size.unit_qty != null ? String(size.unit_qty) : undefined}
+            vintage={size.vintage != null ? String(size.vintage) : undefined} />
         </div>
       </div>
     </div>

@@ -9,6 +9,10 @@ interface Props {
   wholesaler: string;
   upc?: string;
   unitVolume?: string;
+  // Pack (bottles/case) + vintage complete the SKU identity, so the list line
+  // prices the exact item the buyer clicked — never a same-barcode sibling.
+  unitQty?: string;
+  vintage?: string;
   comboCode?: string;
 }
 
@@ -18,7 +22,7 @@ interface Props {
  * The menu is fixed-positioned off the button's rect so it never gets clipped
  * inside a scrolling table.
  */
-export default function AddToListButton({ productName, wholesaler, upc, unitVolume, comboCode }: Props) {
+export default function AddToListButton({ productName, wholesaler, upc, unitVolume, unitQty, vintage, comboCode }: Props) {
   const qc = useQueryClient();
   const { promptText } = useDialog();
   const [open, setOpen] = useState(false);
@@ -40,7 +44,7 @@ export default function AddToListButton({ productName, wholesaler, upc, unitVolu
     try {
       await lists.addItem(listId, {
         product_name: productName, wholesaler, upc,
-        unit_volume: unitVolume, combo_code: comboCode,
+        unit_volume: unitVolume, unit_qty: unitQty, vintage, combo_code: comboCode,
       });
       qc.invalidateQueries({ queryKey: ['lists'] });
       setOpen(false);

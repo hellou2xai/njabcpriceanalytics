@@ -26,6 +26,10 @@ class ListItemIn(BaseModel):
     wholesaler: str
     upc: Optional[str] = None
     unit_volume: Optional[str] = None
+    # Pack (bottles/case) + vintage complete the SKU identity, so a list line
+    # prices the exact item clicked — never a same-barcode pack/vintage sibling.
+    unit_qty: Optional[str] = None
+    vintage: Optional[str] = None
     combo_code: Optional[str] = None
     notes: Optional[str] = None
     list_id: Optional[int] = None  # used by the "add to list" convenience endpoint
@@ -173,7 +177,7 @@ def switch_list_item_distributor(list_id: int, item_id: int, body: SwitchDistrib
     with get_pg() as con:
         _owned(con, list_id, user["id"])
         row = con.execute(
-            "SELECT id, product_name, wholesaler, upc, unit_volume "
+            "SELECT id, product_name, wholesaler, upc, unit_volume, unit_qty, vintage "
             "FROM list_items WHERE id=%s AND list_id=%s", (item_id, list_id)).fetchone()
     if not row:
         raise HTTPException(404, "Item not found")
@@ -181,10 +185,11 @@ def switch_list_item_distributor(list_id: int, item_id: int, body: SwitchDistrib
     if line["wholesaler"].lower() == target.lower():
         return {"status": "noop"}
 
-    from backend.routers.cart import _resolve_switch_target, _dist_label, _best_rip_choice
+    from backend.routers.cart import _resolve_switch_target, _dist_label, _best_rip_choice, _ident_text
     with get_duckdb() as dcon:
         tgt = _resolve_switch_target(dcon, line["wholesaler"], line.get("upc"),
-                                     line.get("unit_volume"), line.get("product_name"), target)
+                                     line.get("unit_volume"), line.get("product_name"), target,
+                                     line.get("unit_qty"), line.get("vintage"))
         if not tgt:
             raise HTTPException(
                 409, f"{_dist_label(target)} does not carry this product in the compared edition")
@@ -194,12 +199,16 @@ def switch_list_item_distributor(list_id: int, item_id: int, body: SwitchDistrib
                                     line.get("qty_cases"))
 
     with get_pg() as con:
-        # The list unique key is (list_id, product_name, wholesaler, unit_volume).
-        # If the target row already exists, drop this line; else rewrite in place.
+        # Unique key is (list_id, product_name, wholesaler, unit_volume, unit_qty,
+        # vintage). Pack + vintage are preserved across a same-SKU switch, so match
+        # the line's own values. If the target row already exists, drop this line.
         existing = con.execute(
             "SELECT id FROM list_items WHERE list_id=%s AND product_name=%s AND wholesaler=%s "
-            "AND COALESCE(unit_volume,'')=%s AND id<>%s",
-            (list_id, tgt_name, target, tgt_uv or "", item_id)).fetchone()
+            "AND COALESCE(unit_volume,'')=%s AND COALESCE(unit_qty,'')=%s "
+            "AND COALESCE(vintage,'')=%s AND id<>%s",
+            (list_id, tgt_name, target, tgt_uv or "",
+             _ident_text(line.get("unit_qty")) or "", _ident_text(line.get("vintage")) or "",
+             item_id)).fetchone()
         if existing:
             con.execute("DELETE FROM list_items WHERE id=%s AND list_id=%s", (item_id, list_id))
         else:
@@ -266,13 +275,15 @@ def _attach_rip_code_for_list_items(dcon, items):
         df = dcon.execute(f"""
             WITH latest AS (SELECT wholesaler, {_cur_ed()} AS ed FROM {src} GROUP BY wholesaler)
             SELECT e.wholesaler AS w, LTRIM(e.upc,'0') AS un, CAST(e.rip_code AS VARCHAR) AS rc,
-                   e.unit_volume AS uv, e.unit_qty AS uq, e.unit_type AS ut,
+                   e.unit_volume AS uv, e.unit_qty AS uq, e.unit_type AS ut, e.vintage AS vtg,
                    e.frontline_case_price AS fc, e.frontline_unit_price AS fu,
                    e.effective_case_price AS ec, e.total_savings_per_case AS sv
             FROM {src} e JOIN latest l ON e.wholesaler=l.wholesaler AND e.edition=l.ed
             WHERE e.upc_norm IN ({ph})
         """, prm).fetchdf()
+        from backend.routers.cart import _size_ml_key, _qty_key, _vtg_key
         lookup = {}
+        price_by_full = {}   # (w, un, ml-size, pack, vintage) -> rec : SKU-exact
         price_by_size = {}
         price_any = {}
         for _, r in df.iterrows():
@@ -291,13 +302,20 @@ def _attach_rip_code_for_list_items(dcon, items):
             uv = str(_clean(r["uv"]) or "").strip().lower()
             if uv:
                 price_by_size[(r["w"], str(r["un"]), uv)] = rec
+            price_by_full[(r["w"], str(r["un"]), _size_ml_key(r["uv"]),
+                           _qty_key(r["uq"]), _vtg_key(r["vtg"]))] = rec
         for it in items:
             un = str(it.get("upc") or "").lstrip("0")
             it["rip_code"] = lookup.get((it.get("wholesaler"), un))
-            # Exact (wholesaler, UPC, size) match first; UPC-only fallback so a
+            # SKU-exact (size+pack+vintage) first so a shared barcode never prices
+            # off a different vintage/pack; then (UPC, size); then UPC-only so a
             # size-string drift still prices the line rather than blanking it.
             uv = str(it.get("unit_volume") or "").strip().lower()
-            rec = price_by_size.get((it.get("wholesaler"), un, uv)) or price_any.get((it.get("wholesaler"), un))
+            rec = None
+            if it.get("vintage") not in (None, "") or it.get("unit_qty") not in (None, ""):
+                rec = price_by_full.get((it.get("wholesaler"), un, _size_ml_key(it.get("unit_volume")),
+                                         _qty_key(it.get("unit_qty")), _vtg_key(it.get("vintage"))))
+            rec = rec or price_by_size.get((it.get("wholesaler"), un, uv)) or price_any.get((it.get("wholesaler"), un))
             if rec:
                 it.update(rec)
                 ec, uq = rec.get("effective_case_price"), rec.get("unit_qty")
@@ -317,13 +335,17 @@ def _attach_rip_code_for_list_items(dcon, items):
 def add_item(list_id: int, body: ListItemIn, user: dict = Depends(get_current_user)):
     with get_pg() as con:
         _owned(con, list_id, user["id"])
+        from backend.routers.cart import _ident_text
         con.execute(
             """INSERT INTO list_items
-                 (list_id, product_name, wholesaler, upc, unit_volume, combo_code, notes)
-               VALUES (%s,%s,%s,%s,%s,%s,%s)
-               ON CONFLICT (list_id, product_name, wholesaler, unit_volume) DO NOTHING""",
+                 (list_id, product_name, wholesaler, upc, unit_volume, unit_qty, vintage,
+                  combo_code, notes)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               ON CONFLICT (list_id, product_name, wholesaler, unit_volume,
+                            COALESCE(unit_qty,''), COALESCE(vintage,'')) DO NOTHING""",
             (list_id, body.product_name, body.wholesaler, body.upc,
-             body.unit_volume, body.combo_code, body.notes),
+             body.unit_volume, _ident_text(body.unit_qty), _ident_text(body.vintage),
+             body.combo_code, body.notes),
         )
         con.execute(f"UPDATE lists SET updated_at={NOW_UTC} WHERE id=%s", (list_id,))
     return {"status": "added"}

@@ -885,15 +885,34 @@ def init_user_db():
             # list carries the choice into the cart.
             "ALTER TABLE cart_items ADD COLUMN IF NOT EXISTS rip_choice text",
             "ALTER TABLE list_items ADD COLUMN IF NOT EXISTS rip_choice text",
+            # Pack size (bottles/case) and vintage are part of the SKU identity:
+            # one UPC can carry two case packs (6P / 12P) or two vintages ('23 /
+            # '24) that share name + bottle size. Storing them on the cart/list
+            # line means the exact item the buyer clicked is the one priced —
+            # never a same-barcode sibling of a different pack or vintage.
+            "ALTER TABLE cart_items ADD COLUMN IF NOT EXISTS unit_qty text",
+            "ALTER TABLE cart_items ADD COLUMN IF NOT EXISTS vintage text",
+            "ALTER TABLE list_items ADD COLUMN IF NOT EXISTS unit_qty text",
+            "ALTER TABLE list_items ADD COLUMN IF NOT EXISTS vintage text",
         ):
             con.execute(ddl)
         # Swap the unique index so two SEPARATE batched sends of the same
         # product stay as two rows (the user explicitly wants no mixing on
         # send). NULL batch_id rows still collapse together via the COALESCE,
-        # preserving the upsert behaviour for single-product adds.
+        # preserving the upsert behaviour for single-product adds. Pack + vintage
+        # are part of the key so a 6P and a 12P (or a '23 and a '24) of the same
+        # UPC stay as distinct lines instead of merging.
         con.execute("DROP INDEX IF EXISTS idx_cart_user_item")
+        con.execute("DROP INDEX IF EXISTS idx_cart_user_item_batch")
         con.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_cart_user_item_batch "
             "ON cart_items(user_id, product_name, wholesaler, unit_volume, "
-            "COALESCE(batch_id, ''))"
+            "COALESCE(unit_qty,''), COALESCE(vintage,''), COALESCE(batch_id, ''))"
+        )
+        # Same full-identity key for lists.
+        con.execute("DROP INDEX IF EXISTS idx_list_items_item")
+        con.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_list_items_item "
+            "ON list_items(list_id, product_name, wholesaler, unit_volume, "
+            "COALESCE(unit_qty,''), COALESCE(vintage,''))"
         )

@@ -926,6 +926,7 @@ export interface RipTierRow {
   raw_qty: number | null;
   unit: string | null;
   rebate_per_case: number | null;
+  total_rebate: number | null;   // the SHEET's total rebate $ at this tier (whole, authoritative)
   price_after: number | null;
   window_status: string | null;
   is_time_sensitive: boolean;

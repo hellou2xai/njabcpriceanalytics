@@ -1493,6 +1493,10 @@ def _rip_tier_rows(tiers: list, pack: float) -> list[dict]:
             "unit": t.get("unit"),
             "rebate_per_case": t.get("rip_only_save_per_case")
                 if t.get("rip_only_save_per_case") is not None else t.get("save_per_case"),
+            # The SHEET's total rebate at this tier (whole dollars). Use this for
+            # display — reconstructing total from the ROUNDED per-case re-introduces
+            # cents (e.g. $10 at 3 cs → $3.33/cs → $9.99). amount is the source of truth.
+            "total_rebate": t.get("amount"),
             "price_after": t.get("price_after"),
             "window_status": t.get("window_status"),
             "is_time_sensitive": bool(t.get("is_time_sensitive")),

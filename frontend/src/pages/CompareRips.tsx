@@ -124,9 +124,9 @@ function DistPanel({ w, d, row, cases, accent, isWinner, edition, onRipClick }: 
   // RIP DIFFERENCE highlight: a tier is "common" when EVERY distributor has the
   // same buy-in + unit + per-case rebate. Tiers NOT common to all are the actual
   // RIP difference — flagged so the card can paint them (yellow bg / red font).
-  const tierKey = (t: { cases_to_unlock: number | null; unit: string | null; rebate_per_case: number | null }) =>
+  const tierKey = (t: { cases_to_unlock: number | null; unit: string | null; total_rebate: number | null }) =>
     `${t.cases_to_unlock ?? ''}|${(t.unit ?? '').toLowerCase().startsWith('b') ? 'b' : 'c'}|` +
-    `${t.rebate_per_case != null ? Math.round(t.rebate_per_case * 100) : ''}`;
+    `${t.total_rebate != null ? Math.round(t.total_rebate * 100) : ''}`;
   const allDists = Object.values(row.dists);
   const commonTierKeys = allDists.length > 1
     ? allDists
@@ -258,10 +258,10 @@ function DistPanel({ w, d, row, cases, accent, isWinner, edition, onRipClick }: 
                   {byCode.get(code)!
                     .slice().sort((a, b) => (a.cases_to_unlock ?? 1e9) - (b.cases_to_unlock ?? 1e9))
                     .map((t, i) => {
-                      // Total rebate at the tier = per-case × cases to unlock it
-                      // (buyers think in total dollars back, not $/case).
-                      const totalBack = (t.rebate_per_case != null && t.cases_to_unlock != null)
-                        ? t.rebate_per_case * t.cases_to_unlock : t.rebate_per_case;
+                      // Total rebate = the SHEET's amount (whole dollars), NOT
+                      // per-case × cases (rounding the per-case re-introduces cents:
+                      // $10 at 3 cs → $3.33/cs → $9.99). Use the source value.
+                      const totalBack = t.total_rebate;
                       const diff = isDiffTier(t);
                       return (
                         <span key={i} className={`rip2-tier-chip${t.is_time_sensitive ? ' is-ts' : ''}${diff ? ' is-diff' : ''}`}

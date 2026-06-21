@@ -73,3 +73,74 @@ cart loads on 2 CPU (threads=1) these serialize → p95 28 s, degrading over the
    DuckDB connection per cart load).
 Plus the still-pending Phase 0 (cap pool overflow) and the threads=1 → multi-core
 change for the uncacheable paths.
+
+## 50 users x 25s — 2026-06-21 21:35 UTC
+
+- Logins: 50/50 ok | login p50=3974ms p95=4779ms max=4797ms
+- Requests: 804 in 31.4s = 25.6 req/s | errors: 755 (93.9%) | 304 cache-hits: 49 (6.1%)
+- Latency drift: first-half p95=3819ms -> second-half p95=1448ms
+- Error statuses: {'502': 755}
+
+```
+endpoint                       n     p50     p95     p99     max   304%   err%
+search(text)                 201     814    4406    5227    5621    16%  84.1%
+search(include_tiers)        201     889    3132    3631    4203     8%  91.5%
+cart                         201     909    2398    2780    3041     0% 100.0%
+facets                       201     804    1371    1657    1923     0% 100.0%
+```
+
+## 50 users x 25s — 2026-06-21 21:37 UTC
+
+- Logins: 50/50 ok | login p50=3870ms p95=4856ms max=5166ms
+- Requests: 748 in 30.3s = 24.6 req/s | errors: 716 (95.7%) | 304 cache-hits: 32 (4.3%)
+- Latency drift: first-half p95=5367ms -> second-half p95=1371ms
+- Error statuses: {'502': 716}
+
+```
+endpoint                       n     p50     p95     p99     max   304%   err%
+search(text)                 187     951    5947    6350    6555    11%  89.3%
+search(include_tiers)        187     831    1527    3958    5060     6%  93.6%
+cart                         187     903    2537    3675    7224     0% 100.0%
+facets                       187     819    1350    1477    1902     0% 100.0%
+```
+
+## 50 users x 25s — 2026-06-21 21:41 UTC
+
+- Logins: 50/50 ok | login p50=3952ms p95=4630ms max=4648ms
+- Requests: 340 in 38.9s = 8.7 req/s | errors: 0 (0.0%) | 304 cache-hits: 142 (41.8%)
+- Latency drift: first-half p95=7696ms -> second-half p95=24285ms
+
+```
+endpoint                       n     p50     p95     p99     max   304%   err%
+search(text)                  85     491   12007   18136   19694    49%   0.0%
+search(include_tiers)         85     214   17294   18919   19747    59%   0.0%
+cart                          85    4370   28720   29611   29624     0%   0.0%
+facets                        85     167    4377   14327   18019    59%   0.0%
+```
+
+## Cart optimization result (offer_grid memoized + no double-pricing)
+
+50 users, warm, post-deploy: **0 errors (no crash)**.
+
+| metric | before cart-opt | after cart-opt |
+|---|---|---|
+| cart p50 | 12.3 s | **4.4 s** |
+| cart p95 | 28.2 s | 28.7 s |
+
+So the cart-opt cut the typical (p50) cart load ~2.8x, but the tail (p95) under
+50 concurrent is still ~28 s and the whole instance degrades over the run
+(first-half p95 7.7 s -> second-half 24.3 s = arrival rate > service rate).
+
+**Why the tail persists:** GET /api/cart still runs, per load, the CPU-heavy
+attach_tiers pricing + attach_next_month_prices + mix-RIP + cross-distributor
+queries, single-threaded (threads=1) on 2 cores. 50 concurrent cart loads + the
+50-way bcrypt login burst saturate the CPUs; cached/304 reads then queue behind
+them too.
+
+**Remaining cart levers:**
+1. Precompute/cache the tier ladder (attach_tiers is user-independent per
+   edition+UPC+pack -> PRECOMPUTE #10 sku_tiers) so cart pricing is a lookup.
+2. Compute suggestions lazily (separate endpoint / on expand) so the base cart
+   loads fast; analyze_next_month/mix/cross only when the panel is opened.
+3. Phase 3 (threads>1 for uncacheable paths) + Phase 4 (more CPU) — 2 cores
+   cannot serve dozens of concurrent multi-second cart queries regardless.

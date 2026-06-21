@@ -1229,7 +1229,8 @@ def search_products(
         dedup_extra = ", COALESCE(rm.membership_code, '')" if group_by_rip else ""
         dedup = (
             "QUALIFY ROW_NUMBER() OVER (PARTITION BY wholesaler, LTRIM(COALESCE(upc,''),'0'), "
-            "product_name, unit_volume, COALESCE(CAST(vintage AS VARCHAR),''), "
+            "product_name, unit_volume, COALESCE(CAST(unit_qty AS VARCHAR),''), "
+            "COALESCE(CAST(vintage AS VARCHAR),''), "
             "COALESCE(frontline_case_price,-1), COALESCE(effective_case_price,-1), "
             "COALESCE(total_savings_per_case,-1), has_discount, has_rip"
             f"{dedup_extra} "

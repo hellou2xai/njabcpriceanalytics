@@ -985,6 +985,13 @@ def build_cross_source_links(parquet_dir: str | Path, output_dir: Path):
         CROSS JOIN products b
         WHERE a.wholesaler < b.wholesaler
           AND a.unit_volume = b.unit_volume
+          -- Pack (bottles/case) is part of the SKU identity: a 6P at one house
+          -- is NOT the same item as a 12P at another, even at the same size +
+          -- barcode/name. Require equal pack so the cross-distributor link can't
+          -- weld different case packs. (Vintage stays free here on purpose — the
+          -- link is family-level; the consumer comparison re-checks vintage.)
+          AND COALESCE(TRY_CAST(a.unit_qty AS INTEGER), -1)
+              = COALESCE(TRY_CAST(b.unit_qty AS INTEGER), -1)
           AND (
               (
                   (a.upc IS NOT NULL AND a.upc != '' AND a.upc != '0' AND NOT regexp_matches(a.upc,'^(0+|9+|1+)$') AND NOT a.upc LIKE '999999%' AND LENGTH(a.upc) >= 8)

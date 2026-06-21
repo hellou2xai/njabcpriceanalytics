@@ -1486,8 +1486,12 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
                        ROW_NUMBER() OVER (
                            -- product_name is in the key so placeholder upcs
                            -- (Fedway has upc='0' rows) don't collapse distinct
-                           -- products that share the same window.
+                           -- products that share the same window. unit_qty +
+                           -- vintage complete the SKU identity so a 6P/12P or a
+                           -- '23/'24 in the same window don't collapse either.
                            PARTITION BY wholesaler, edition, CAST(upc AS VARCHAR), product_name,
+                                        unit_volume, COALESCE(CAST(unit_qty AS VARCHAR),''),
+                                        COALESCE(CAST(vintage AS VARCHAR),''),
                                         CAST(from_date AS DATE), CAST(to_date AS DATE)
                            ORDER BY COALESCE(best_case_price, frontline_case_price) ASC NULLS LAST
                        ) AS rn

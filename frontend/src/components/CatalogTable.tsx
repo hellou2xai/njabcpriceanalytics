@@ -14,6 +14,16 @@ import { distributorName, abgSku, skuLabel, packLabel, perUnitAbbr } from '../li
 import { cart as cartApi } from '../lib/api';
 import type { Product, CatalogTier } from '../lib/api';
 
+// Pack + vintage are part of the SKU identity, so a 6P/12P or a '23/'24 of the
+// SAME barcode never collapse into one cart-state / stepper entry. A shared
+// barcode (one UPC for both vintages) is exactly the case where UPC alone is
+// not enough. NV/blank/0 vintage and ".0" pack suffixes normalize away.
+const normPack = (uq: unknown): string => String(uq ?? '').replace(/\.0+$/, '').trim();
+const normVtg = (v: unknown): string => {
+  const s = v == null ? '' : String(v).trim().toLowerCase();
+  return ['', '0', 'nv', 'none', 'nan'].includes(s) ? '' : s;
+};
+
 // ---- shared cart state (localStorage) ----
 export type CartQty = { cases: number; units: number };
 export type CartState = Record<string, CartQty>;
@@ -150,7 +160,7 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
     const m = new Map<string, { cases: number; units: number }>();
     for (const it of (cartData?.items ?? [])) {
       const upc = (it.upc ?? '').toString().replace(/^0+/, '');
-      const k = `${it.wholesaler}|${upc}|${(it.unit_volume ?? '').toString()}`;
+      const k = `${it.wholesaler}|${upc}|${(it.unit_volume ?? '').toString()}|${normPack(it.unit_qty)}|${normVtg(it.vintage)}`;
       const prev = m.get(k) ?? { cases: 0, units: 0 };
       m.set(k, { cases: prev.cases + (it.qty_cases || 0), units: prev.units + (it.qty_units || 0) });
     }
@@ -285,14 +295,14 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
         // SKU don't collapse to one entry in the popup or the running
         // total. Same shape as the cartKey computed in the row render
         // below, so cart[stepperKey] is a direct lookup.
-        const pKey = `${it.product_name}|${it.wholesaler}|${it.upc ?? ''}|${it.unit_volume ?? ''}`;
+        const pKey = `${it.product_name}|${it.wholesaler}|${it.upc ?? ''}|${it.unit_volume ?? ''}|${normPack(it.unit_qty)}|${normVtg(it.vintage)}`;
         if (!productMap.has(pKey)) {
           productMap.set(pKey, {
             product_name: it.product_name,
             wholesaler: it.wholesaler,
             upc: it.upc ?? undefined,
             unit_volume: it.unit_volume ?? undefined,
-            cartKey: `${it.wholesaler}|${upc}|${(it.unit_volume ?? '').toString()}`,
+            cartKey: `${it.wholesaler}|${upc}|${(it.unit_volume ?? '').toString()}|${normPack(it.unit_qty)}|${normVtg(it.vintage)}`,
             stepperKey: pKey,
           });
         }
@@ -475,7 +485,7 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
             // dedupes downstream via its UNIQUE (name, wholesaler,
             // unit_volume) index, so multiple POSTs for the same SKU
             // get summed server-side.
-            const cartKey = `${item.product_name}|${item.wholesaler}|${item.upc ?? ''}|${item.unit_volume ?? ''}`;
+            const cartKey = `${item.product_name}|${item.wholesaler}|${item.upc ?? ''}|${item.unit_volume ?? ''}|${normPack(item.unit_qty)}|${normVtg(item.vintage)}`;
             const reactKey = `${cartKey}|${rowIdx}`;
             const qty = cart[cartKey] ?? { cases: 0, units: 0 };
             const tiers: CatalogTier[] = item.tiers ?? [];
@@ -786,9 +796,13 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                             <div className="catalog-order-actions">
                               <AddToCartButton productName={item.product_name} wholesaler={item.wholesaler}
                                 upc={item.upc} unitVolume={item.unit_volume}
+                                unitQty={item.unit_qty != null ? String(item.unit_qty) : undefined}
+                                vintage={item.vintage != null ? String(item.vintage) : undefined}
                                 qtyCases={qty.cases} qtyUnits={qty.units} />
                               <AddToListButton productName={item.product_name} wholesaler={item.wholesaler}
-                                upc={item.upc} unitVolume={item.unit_volume} />
+                                upc={item.upc} unitVolume={item.unit_volume}
+                                unitQty={item.unit_qty != null ? String(item.unit_qty) : undefined}
+                                vintage={item.vintage != null ? String(item.vintage) : undefined} />
                             </div>
                           </div>
                         )}
@@ -943,9 +957,13 @@ export default function CatalogTable({ items, open, cart, updateQty, sortControl
                               <div className="catalog-order-actions">
                                 <AddToCartButton productName={item.product_name} wholesaler={item.wholesaler}
                                   upc={item.upc} unitVolume={item.unit_volume}
+                                  unitQty={item.unit_qty != null ? String(item.unit_qty) : undefined}
+                                  vintage={item.vintage != null ? String(item.vintage) : undefined}
                                   qtyCases={qty.cases} qtyUnits={qty.units} />
                                 <AddToListButton productName={item.product_name} wholesaler={item.wholesaler}
-                                  upc={item.upc} unitVolume={item.unit_volume} />
+                                  upc={item.upc} unitVolume={item.unit_volume}
+                                  unitQty={item.unit_qty != null ? String(item.unit_qty) : undefined}
+                                  vintage={item.vintage != null ? String(item.vintage) : undefined} />
                               </div>
                               <span className="catalog-order-hint"
                                     title="Type any quantity. The best applicable tier from the ladder on the right is applied automatically.">

@@ -99,6 +99,13 @@ function normPack(uq: unknown): string {
   return String(uq ?? '').replace(/\.0+$/, '').trim();
 }
 
+// Normalise a vintage for keying — part of the SKU identity, so a '23 and a '24
+// of the same barcode never collapse into one listing. NV/blank/0 -> ''.
+function normVtg(v: unknown): string {
+  const s = v == null ? '' : String(v).trim().toLowerCase();
+  return ['', '0', 'nv', 'none', 'nan'].includes(s) ? '' : s;
+}
+
 // Pick the representative listing when collapsing several UPCs at one
 // (distributor, size, pack): prefer a NON-bundle, then the cheapest effective
 // price (what the buyer actually pays), then the latest vintage. Mirrors the
@@ -170,7 +177,7 @@ function groupByProduct(items: Product[], grouped = true): ProductGroup[] {
     // OFF and each distributor's listing of each size stands on its own.
     const key = grouped
       ? fam
-      : `${it.wholesaler}|${fam}|${it.unit_volume ?? ''}|${normPack(it.unit_qty)}`;
+      : `${it.wholesaler}|${fam}|${it.unit_volume ?? ''}|${normPack(it.unit_qty)}|${normVtg(it.vintage)}`;
     let g = map.get(key);
     if (!g) {
       g = {
@@ -973,7 +980,7 @@ export function countProductGroups(items: Product[], grouped = false): number {
   const seen = new Set<string>();
   for (const it of items) {
     const fam = (it.product_group && it.product_group.trim()) ? it.product_group : it.product_name;
-    seen.add(grouped ? fam : `${it.wholesaler}|${fam}|${it.unit_volume ?? ''}|${normPack(it.unit_qty)}`);
+    seen.add(grouped ? fam : `${it.wholesaler}|${fam}|${it.unit_volume ?? ''}|${normPack(it.unit_qty)}|${normVtg(it.vintage)}`);
   }
   return seen.size;
 }

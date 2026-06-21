@@ -1453,12 +1453,20 @@ export interface ListItem {
   // Every distributor carrying the SAME item (UPC grid + name fallback) for the
   // inline "change distributor" picker — same shape the cart lines carry.
   comparison?: OfferRow[];
+  alt_status?: AltStatus | null;
   // Quantity on the list line (lists carry qty too), drives eligible RIP.
   qty_cases?: number | null; qty_units?: number | null;
   // Eligible RIP rebate at the line's current quantity (money back later).
   rip_back_later?: RipBackLater | null;
 }
 export interface ListDetail { id: number; name: string; created_at: string; updated_at: string; items: ListItem[]; }
+
+// Why a line has no switchable distributor (drives the always-on picker's note):
+// the same UPC is carried elsewhere only at a DIFFERENT vintage, or not at all.
+export interface AltStatus {
+  kind: 'vintage_mismatch' | 'none';
+  houses?: { wholesaler: string; vintage?: string | null }[];
+}
 
 export interface CartItem {
   id: number; product_name: string; wholesaler: string;
@@ -1524,6 +1532,9 @@ export interface CartItem {
   // this SKU in its edition, incl each one's own RIP), cheapest-net first, from
   // the precomputed sku_offer grid. Drives the in-place distributor dropdown.
   comparison?: OfferRow[];
+  // When there's no switchable house: why (carried elsewhere only at a different
+  // vintage, or not at all) — drives the always-on picker's note.
+  alt_status?: AltStatus | null;
   // Ranked, stacked money-saving suggestions for THIS line. One row each in the
   // UI; Apply fires `action`.
   suggestions?: LineSuggestion[];

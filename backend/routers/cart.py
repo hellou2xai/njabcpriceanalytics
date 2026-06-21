@@ -865,13 +865,17 @@ def _comparison_row(m: dict, rank: int, n_dist: int) -> dict:
     return {
         "wholesaler": m.get("w"), "product_name": m.get("pn"),
         "display_name": m.get("pn"), "unit_volume": m.get("uv"),
-        "upc": m.get("upc"), "upc_norm": m.get("un"),
+        "upc": m.get("upc"), "upc_norm": m.get("un"), "vintage": m.get("vtg"),
         "frontline_case_price": front, "after_qd_case_price": after,
         "effective_case_price": eff, "rip_per_case": rip_pc,
         "has_rip": bool(m.get("hr")), "has_discount": bool(m.get("hd")),
         "rip_code": (str(m["rc"]) if m.get("rc") not in (None, "", "0") else None),
         "net_rank": rank, "is_cheapest_net": (rank == 0 and eff is not None),
         "n_distributors": n_dist, "_by_name": True,
+        # True when this is the SAME wine at another house but a DIFFERENT vintage
+        # (set by the caller). The picker shows the vintage and flags it; the
+        # auto-suggestion ignores cross-vintage rows so we never silently re-weld.
+        "cross_vintage": False,
     }
 
 
@@ -993,27 +997,42 @@ def _attach_comparison_by_upc(dcon, items):
         """, norms).fetchdf().to_dict("records")
     except Exception:
         return
-    # Bucket by (barcode, size, pack, vintage); best (lowest net) per distributor.
-    # This collapses the source-row multiplicity (Fedway's duplicate CPL rows,
-    # sub-month windows, multi-tier rows) to one offer per house automatically.
+    # Strict bucket (barcode, size, pack, VINTAGE) — the switchable like-for-like
+    # set. Relaxed bucket (barcode, size, pack, ANY vintage) — used only to explain
+    # WHY there's no switch (the wine exists elsewhere but a different vintage), so
+    # the picker can say "vintage not found at other distributors" without ever
+    # offering a vintage swap.
     buckets: dict = {}
+    relaxed: dict = {}
     for r in rows:
         key = (r["un"], _spv(r["uv"], r["uq"], r["vtg"]))
         buckets.setdefault(key, {})
         cur = buckets[key].get(r["w"])
         if cur is None or (_fnum(r["ecp"]) or 1e9) < (_fnum(cur["ecp"]) or 1e9):
             buckets[key][r["w"]] = r
+        rk = (r["un"], str(r["uv"] or "").strip().upper(), _qty_key(r["uq"]))
+        relaxed.setdefault(rk, {}).setdefault(r["w"], r)
     for it in items:
         un = str(it.get("upc") or "").lstrip("0")
         if len(un) < 8:
             continue
         key = (un, _spv(it.get("unit_volume"), it.get("unit_qty"), it.get("vintage")))
         houses = buckets.get(key)
-        if not houses or it["wholesaler"] not in houses or len(houses) < 2:
+        if houses and it["wholesaler"] in houses and len(houses) >= 2:
+            members = sorted(houses.values(),
+                             key=lambda m: (_fnum(m["ecp"]) is None, _fnum(m["ecp"]) or 1e9))
+            it["comparison"] = [_comparison_row(m, i, len(members)) for i, m in enumerate(members)]
             continue
-        members = sorted(houses.values(),
-                         key=lambda m: (_fnum(m["ecp"]) is None, _fnum(m["ecp"]) or 1e9))
-        it["comparison"] = [_comparison_row(m, i, len(members)) for i, m in enumerate(members)]
+        # No same-vintage match at 2+ houses — explain why for the always-on picker.
+        rk = (un, str(it.get("unit_volume") or "").strip().upper(), _qty_key(it.get("unit_qty")))
+        others = [w for w in relaxed.get(rk, {}) if w != it["wholesaler"]]
+        if others:
+            it["alt_status"] = {
+                "kind": "vintage_mismatch",
+                "houses": [{"wholesaler": w, "vintage": relaxed[rk][w].get("vtg")} for w in others],
+            }
+        else:
+            it["alt_status"] = {"kind": "none"}
 
 
 def _attach_comparison(dcon, items):

@@ -560,7 +560,7 @@ export default function Cart() {
               {showCombo && <ComboBadge code={it.combo_code!} />}
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              <DistributorPicker wholesaler={it.wholesaler} comparison={it.comparison} onSwitch={ws => switchDist.mutate({ id: it.id, ws })} busy={switchDist.isPending} />
+              <DistributorPicker wholesaler={it.wholesaler} comparison={it.comparison} altStatus={it.alt_status} onSwitch={ws => switchDist.mutate({ id: it.id, ws })} busy={switchDist.isPending} />
               <RipPicker line={it} qtyCases={it.qty_cases || 0}
                 onChoose={code => upd.mutate({ id: it.id, patch: { rip_choice: code } })} busy={upd.isPending} />
               {it.upc ? <span>· {it.upc}</span> : null}

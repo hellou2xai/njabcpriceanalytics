@@ -372,7 +372,7 @@ function ListRow({ it, selected, toggle, onRemove }: {
         {abgSku(it.wholesaler, it.abg_sku) ? it.abg_sku : '–'}
       </td>
       <td onClick={e => e.stopPropagation()}>
-        <DistributorPicker wholesaler={it.wholesaler} comparison={it.comparison}
+        <DistributorPicker wholesaler={it.wholesaler} comparison={it.comparison} altStatus={it.alt_status}
           onSwitch={ws => switchDist.mutate(ws)} busy={switchDist.isPending} />
       </td>
       <td>{it.unit_volume}</td>

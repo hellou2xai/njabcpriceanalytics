@@ -1,19 +1,41 @@
-import type { OfferRow } from '../lib/api';
+import type { OfferRow, AltStatus } from '../lib/api';
 import { distributorName } from '../lib/distributors';
 
-// The distributor cell becomes a dropdown of EVERY distributor carrying the same
-// item in this edition, each with its own net price + RIP flag (from the
-// precomputed comparison grid, UPC-driven with a name fallback). Picking a
-// different one switches the line IN PLACE. Shared by the Cart and Lists.
-export function DistributorPicker({ wholesaler, comparison, onSwitch, busy }: {
+// The distributor cell is ALWAYS a dropdown: it lists every distributor carrying
+// the same item (UPC + size + pack + vintage), each with its net price + RIP flag;
+// picking a different one switches the line IN PLACE. When no other house carries
+// the EXACT item (e.g. they stock a different vintage of the same wine, or nobody
+// else carries it), the dropdown still shows — current-only — with a note saying
+// why, so the control is consistent on every line. Shared by Cart and Lists.
+export function DistributorPicker({ wholesaler, comparison, altStatus, onSwitch, busy }: {
   wholesaler: string;
   comparison?: OfferRow[] | null;
+  altStatus?: AltStatus | null;
   onSwitch: (ws: string) => void;
   busy?: boolean;
 }) {
   const cmp = comparison ?? [];
-  // Fewer than two houses carry it → nothing to switch to; render plain text.
-  if (cmp.length < 2) return <>{distributorName(wholesaler)}</>;
+  // No switchable house: keep the dropdown active (current only) + explain why.
+  if (cmp.length < 2) {
+    const houses = altStatus?.houses ?? [];
+    const note = altStatus?.kind === 'vintage_mismatch'
+      ? `Same item at ${houses.map(h => distributorName(h.wholesaler)).join(', ')}, but a different vintage${houses.find(h => h.vintage) ? ` (they carry ${[...new Set(houses.map(h => h.vintage).filter(Boolean))].join(', ')})` : ''} — vintage not found at other distributors.`
+      : altStatus?.kind === 'none'
+        ? 'Not carried by any other distributor.'
+        : '';
+    const short = altStatus?.kind === 'vintage_mismatch'
+      ? 'Vintage not at other distributors'
+      : altStatus?.kind === 'none' ? 'Only this distributor' : '';
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }} onClick={e => e.stopPropagation()}>
+        <select value={wholesaler} disabled title={note || undefined}
+          style={{ fontSize: 11, padding: '1px 4px', maxWidth: '100%', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--surface)', color: 'var(--text)' }}>
+          <option value={wholesaler}>{distributorName(wholesaler)} (current)</option>
+        </select>
+        {short && <span style={{ fontSize: 10, color: 'var(--text-muted)' }} title={note}>{short}</span>}
+      </div>
+    );
+  }
   // Cross-distributor RIP check: does another house pay a bigger RIP than the
   // current line's? (Switching there auto-assigns its best RIP.)
   const mine = cmp.find(c => c.wholesaler === wholesaler);

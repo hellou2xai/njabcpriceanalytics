@@ -10,13 +10,19 @@ databases:
   - name: njabc-db
     databaseName: celr
     user: celr
-    plan: free            # 1 GB; note: free Postgres is removed after 90 days
+    # VERIFY against the live Render dashboard before any blueprint sync — this
+    # was drifted (the running services are PAID). If the DB is a paid plan, set
+    # the matching slug here; a stale 'free' could downgrade prod on a sync.
+    plan: free            # <-- CONFIRM: live DB plan (do not sync until verified)
 
 services:
   - type: web
     name: njabc-price-analytics
     runtime: docker
-    plan: free            # spins down when idle; first hit after idle is a cold start
+    # Live plan is Pro (2 CPU / 4 GB), confirmed in the dashboard. This previously
+    # read 'free' (blueprint drift) — a sync would have downgraded prod to a
+    # 512 MB free dyno. Keep this matching the dashboard.
+    plan: pro             # Pro: 2 CPU / 4 GB
     dockerfilePath: ./Dockerfile
     # Readiness probe (returns 503 until the pricing cache is built). Render
     # waits for this to return 200 before routing traffic to a newly deployed

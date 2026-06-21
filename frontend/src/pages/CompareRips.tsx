@@ -837,7 +837,7 @@ export default function CompareRips() {
               <label className="rip2-toggle" title="Same price either way, but the RIP terms differ: one needs less cash down to unlock, lets you mix more products, or unlocks at fewer cases.">
                 <input type="checkbox" checked={betterTerms} onChange={e => setBetterTerms(e.target.checked)} /> Same price, better RIP terms
               </label>
-              <label className="rip2-toggle" title="Show rows flagged as likely data issues: the same barcode priced very differently at each distributor, usually a pack-size mismatch.">
+              <label className="rip2-toggle" title="Show rows flagged as likely data issues: a pack-size mismatch (same barcode priced very differently), or a reused barcode listing DIFFERENT products at each distributor (names don't match).">
                 <input type="checkbox" checked={showAnomalies} onChange={e => setShowAnomalies(e.target.checked)} /> Show possible data issues
               </label>
             </div>

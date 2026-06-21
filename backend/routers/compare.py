@@ -264,6 +264,56 @@ def _size_key(raw) -> str:
     return f"M{round(ml / 5) * 5}"  # bottles/cans: bucket to 5 ml
 
 
+# Below this PREDETERMINED cross-distributor name similarity, two products sharing
+# one barcode are almost certainly DIFFERENT products (a reused/placeholder barcode)
+# — e.g. RAMPUR BARREL vs RAMPUR ASAVA = 0.627, while real same-product matches sit
+# at ~0.83+ and obvious welds at <=0.46. Tunable in one place.
+_NAME_DIFF_THRESHOLD = 0.65
+
+
+def _name_sim_lookup(con, slugs: list[str]) -> dict:
+    """Predetermined cross-distributor product-name similarity, read straight from
+    the precomputed cross_source_links table (NOT computed live). Returns
+    {(wholesaler, name, other_wholesaler, other_name): similarity} in both
+    directions for the selected distributors, so a compare row can check whether two
+    houses' same-barcode products are actually the SAME product."""
+    if len(slugs) < 2:
+        return {}
+    ph = ", ".join("?" for _ in slugs)
+    try:
+        rows = con.execute(
+            f"SELECT wholesaler_a, product_name_a, wholesaler_b, product_name_b, name_similarity "
+            f"FROM cross_source_links WHERE upc_match "
+            f"AND wholesaler_a IN ({ph}) AND wholesaler_b IN ({ph})",
+            slugs + slugs).fetchall()
+    except Exception:
+        return {}
+    out: dict = {}
+    for wa, na, wb, nb, sim in rows:
+        if sim is None:
+            continue
+        out[(wa, na, wb, nb)] = float(sim)
+        out[(wb, nb, wa, na)] = float(sim)
+    return out
+
+
+def _different_products(name_sim: dict, slugs: list[str], dists: dict):
+    """(True, reason) when some cross-distributor pair's PREDETERMINED name
+    similarity is below the threshold — i.e. the two houses list DIFFERENT products
+    under the same barcode, so the comparison isn't like-for-like."""
+    for i in range(len(slugs)):
+        for j in range(i + 1, len(slugs)):
+            wi, wj = slugs[i], slugs[j]
+            ni = dists.get(wi, {}).get("product_name")
+            nj = dists.get(wj, {}).get("product_name")
+            sim = name_sim.get((wi, ni, wj, nj))
+            if sim is not None and sim < _NAME_DIFF_THRESHOLD:
+                return True, (f"Different products under the same barcode: '{ni}' vs "
+                              f"'{nj}' (name match {round(sim * 100)}%) — likely a reused "
+                              f"barcode, not a like-for-like comparison.")
+    return False, ""
+
+
 def _cpn_for_upcs(con, upc_norms) -> dict[str, int]:
     """Map normalised UPCs to their CELR product-family number (cpn). Lets the
     discovery boards MERGE the same product filed under different barcodes by
@@ -2013,6 +2063,9 @@ def compare_rips(
         except Exception:
             pass
         mix = _case_mix_sizes(con, src, slugs, eds)
+        # Predetermined cross-distributor name similarity (precomputed table), so a
+        # row can detect when two houses list DIFFERENT products under one barcode.
+        name_sim = _name_sim_lookup(con, slugs)
 
     n = float(cases)
     rows = []
@@ -2228,6 +2281,12 @@ def compare_rips(
                               f"price (${f:,.2f}). Double-check the pack size before "
                               f"trusting the net.")
                     break
+        if not anomaly:
+            # Predetermined name match: two houses listing DIFFERENT products under
+            # one barcode (reused barcode) — flag so it's hidden by default.
+            dp, dp_reason = _different_products(name_sim, slugs, dists)
+            if dp:
+                anomaly, reason = True, dp_reason
         rows.append({
             "match_key": key,
             "upc_norm": key.split("|")[0],
@@ -2539,6 +2598,9 @@ def compare_qds(
 
         flat = [by_key[k][w] for k in keys for w in slugs]
         _pricing.attach_tiers(con, flat)
+        # Predetermined cross-distributor name similarity (precomputed table), so a
+        # row can detect when two houses list DIFFERENT products under one barcode.
+        name_sim = _name_sim_lookup(con, slugs)
 
     n = float(cases)
     rows = []
@@ -2705,6 +2767,11 @@ def compare_qds(
                               f"price (${f:,.2f}). Double-check the pack size before "
                               f"trusting the net.")
                     break
+        if not anomaly:
+            # Predetermined name match: different products under one barcode.
+            dp, dp_reason = _different_products(name_sim, slugs, dists)
+            if dp:
+                anomaly, reason = True, dp_reason
         rows.append({
             "match_key": key,
             "upc_norm": key.split("|")[0],

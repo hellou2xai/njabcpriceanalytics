@@ -709,7 +709,7 @@ export default function CompareQD() {
               <label className="qd2-toggle" title="Only products where the distributors differ on QD timing: one runs all month, the other is a dated/limited deal.">
                 <input type="checkbox" checked={timingDiff} onChange={e => setTimingDiff(e.target.checked)} /> QD timing differs
               </label>
-              <label className="qd2-toggle" title="Show rows flagged as likely data issues: the same barcode priced very differently at each distributor, usually a pack-size mismatch.">
+              <label className="qd2-toggle" title="Show rows flagged as likely data issues: a pack-size mismatch (same barcode priced very differently), or a reused barcode listing DIFFERENT products at each distributor (names don't match).">
                 <input type="checkbox" checked={showAnomalies} onChange={e => setShowAnomalies(e.target.checked)} /> Show possible data issues
               </label>
             </div>

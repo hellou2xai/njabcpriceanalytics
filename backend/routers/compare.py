@@ -2402,7 +2402,10 @@ def compare_rips(
                         or rip_diff_only)
     if only_differences and not attribute_filter:
         rows = [r for r in rows if r["has_difference"]]
-    if min_diff and min_diff > 0 and not attribute_filter:
+    # Minimum price gap is an EXPLICIT user choice — always honour it, even when an
+    # attribute filter (timing / qty / diff) is also on. A 4-cent gap is below $1, so
+    # the row is hidden regardless of the QD/RIP technically differing.
+    if min_diff and min_diff > 0:
         rows = [r for r in rows if (r["spread_at_n"] or 0) >= min_diff]
 
     keymap = {
@@ -2860,7 +2863,10 @@ def compare_qds(
                         or qd_diff_only)
     if only_differences and not attribute_filter:
         rows = [r for r in rows if r["has_difference"]]
-    if min_diff and min_diff > 0 and not attribute_filter:
+    # Minimum price gap is an EXPLICIT user choice — always honour it, even when an
+    # attribute filter (timing / qty / diff) is also on. A 4-cent gap is below $1, so
+    # the row is hidden regardless of the QD/RIP technically differing.
+    if min_diff and min_diff > 0:
         rows = [r for r in rows if (r["spread_at_n"] or 0) >= min_diff]
 
     keymap = {

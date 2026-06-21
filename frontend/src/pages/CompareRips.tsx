@@ -587,7 +587,7 @@ export default function CompareRips() {
   const [ripDiff, setRipDiff] = useState(params.get('ripdiff') !== '0');
   // Card vs table layout for the results.
   const [view, setView] = useState<'cards' | 'table'>(params.get('view') === 'table' ? 'table' : 'cards');
-  const [minDiff, setMinDiff] = useState(params.get('min_diff') != null ? Math.max(0, parseFloat(params.get('min_diff')!) || 0) : 0);
+  const [minDiff, setMinDiff] = useState(params.get('min_diff') != null ? Math.max(0, parseFloat(params.get('min_diff')!) || 0) : 1);
   const [tsOnly, setTsOnly] = useState(params.get('ts') === '1');
   const [comboOnly, setComboOnly] = useState(params.get('combo') === '1');
   const [expiringOnly, setExpiringOnly] = useState(params.get('exp') === '1');
@@ -618,7 +618,7 @@ export default function CompareRips() {
     if (brand) next.set('brand', brand);
     if (!ripDiff) next.set('ripdiff', '0');
     if (view === 'table') next.set('view', 'table');
-    if (minDiff > 0) next.set('min_diff', String(minDiff));
+    if (minDiff !== 1) next.set('min_diff', String(minDiff));
     if (tsOnly) next.set('ts', '1');
     if (comboOnly) next.set('combo', '1');
     if (expiringOnly) next.set('exp', '1');

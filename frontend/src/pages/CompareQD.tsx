@@ -482,7 +482,7 @@ export default function CompareQD() {
   // unlock, or the per-case discount), not just the price. (URL: qddiff=0 = off.)
   const [qdDiff, setQdDiff] = useState(params.get('qddiff') !== '0');
   const [view, setView] = useState<'cards' | 'table'>(params.get('view') === 'table' ? 'table' : 'cards');
-  const [minDiff, setMinDiff] = useState(params.get('min_diff') != null ? Math.max(0, parseFloat(params.get('min_diff')!) || 0) : 0);
+  const [minDiff, setMinDiff] = useState(params.get('min_diff') != null ? Math.max(0, parseFloat(params.get('min_diff')!) || 0) : 1);
   const [tsOnly, setTsOnly] = useState(params.get('ts') === '1');
   const [expiringOnly, setExpiringOnly] = useState(params.get('exp') === '1');
   const [timingDiff, setTimingDiff] = useState(params.get('timing') === '1');
@@ -506,7 +506,7 @@ export default function CompareQD() {
     if (brand) next.set('brand', brand);
     if (!qdDiff) next.set('qddiff', '0');
     if (view === 'table') next.set('view', 'table');
-    if (minDiff > 0) next.set('min_diff', String(minDiff));
+    if (minDiff !== 1) next.set('min_diff', String(minDiff));
     if (tsOnly) next.set('ts', '1');
     if (expiringOnly) next.set('exp', '1');
     if (timingDiff) next.set('timing', '1');

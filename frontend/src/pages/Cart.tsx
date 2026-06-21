@@ -683,6 +683,17 @@ export default function Cart() {
           return (
             <>
               {elig && <div className={`cart-rip-elig tone-${elig.tone}`}>{elig.text}</div>}
+              {it.rip_back_later && it.rip_back_later.total > 0 && (
+                <div style={{ marginTop: 3, fontSize: 12, fontWeight: 700, color: 'hsl(150 55% 32%)' }}
+                  title="Eligible RIP rebate at your current quantity — paid back later as a credit, NOT off today's invoice. Scales with the quantity you buy.">
+                  💰 RIP back later: ${it.rip_back_later.total.toFixed(2)}
+                  <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>
+                    {' '}({(it.qty_cases || 0) > 0
+                      ? `${it.qty_cases} cs × $${it.rip_back_later.per_case.toFixed(2)}/cs`
+                      : `${it.qty_units} btl × $${(it.rip_back_later.per_bottle ?? 0).toFixed(2)}/btl`})
+                  </span>
+                </div>
+              )}
               {programs.length > 1 && (
                 <div className="cart-rip-pick">
                   <label title="This product qualifies under more than one RIP program. Programs don't stack — the line earns the one selected here.">

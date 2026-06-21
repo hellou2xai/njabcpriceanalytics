@@ -1344,6 +1344,10 @@ export interface ListItem {
   // Every distributor carrying the SAME item (UPC grid + name fallback) for the
   // inline "change distributor" picker — same shape the cart lines carry.
   comparison?: OfferRow[];
+  // Quantity on the list line (lists carry qty too), drives eligible RIP.
+  qty_cases?: number | null; qty_units?: number | null;
+  // Eligible RIP rebate at the line's current quantity (money back later).
+  rip_back_later?: RipBackLater | null;
 }
 export interface ListDetail { id: number; name: string; created_at: string; updated_at: string; items: ListItem[]; }
 
@@ -1414,6 +1418,19 @@ export interface CartItem {
   // Ranked, stacked money-saving suggestions for THIS line. One row each in the
   // UI; Apply fires `action`.
   suggestions?: LineSuggestion[];
+  // Eligible RIP rebate ("money back later") at the line's CURRENT quantity —
+  // per-case rate of the highest tier the qty qualifies for × the line's cases.
+  rip_back_later?: RipBackLater | null;
+}
+
+// Eligible RIP rebate for a line at its chosen quantity (money back later).
+export interface RipBackLater {
+  per_case: number;
+  per_bottle?: number | null;
+  total: number;          // per_case × cases (+ per_bottle × loose bottles)
+  tier_qty: number;       // qualifying quantity of the tier that's been reached
+  tier_unit: 'case' | 'btl' | string;
+  code: string;           // RIP program code
 }
 
 // One distributor's offer for a SKU within an edition (precomputed sku_offer).

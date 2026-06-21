@@ -265,9 +265,84 @@ def _attach_cart_pricing(dcon, items):
     except Exception:
         pass
     try:
+        _attach_rip_back_later(items)             # eligible RIP $ at the line's qty
+    except Exception:
+        pass
+    try:
         _attach_combo_pricing(dcon, items)        # bundle pricing must never break the cart
     except Exception:
         pass
+
+
+def _attach_rip_back_later(items):
+    """Per-line eligible RIP rebate ('money back later') at the line's CURRENT
+    quantity. RIP is a PER-CASE rebate (FOUNDATION 3.4.1: (amount/qty)*case_credit)
+    earned on EVERY case once the quantity qualifies for a tier; tiers qualify
+    CLUSTER-wide across lines sharing a (distributor, rip_code). So: sum the
+    cluster's case-credits -> the highest tier reached -> its per-case rate * THIS
+    line's cases = eligible back later. Attaches it['rip_back_later'] (or None).
+
+    Pricing stays current-edition (the tiers came from the current edition); this
+    only scales the already-current per-case rebate by the chosen quantity."""
+    from collections import defaultdict
+
+    def _is_case(t):
+        return not str(t.get("unit") or "").lower().startswith("b")
+
+    def _line_credit(it):
+        for t in (it.get("tiers") or []):
+            if t.get("source") == "rip" and t.get("case_credit"):
+                try:
+                    return float(t["case_credit"])
+                except Exception:
+                    pass
+        return 1.0
+
+    cl_cases: dict = defaultdict(float)   # cluster case-credits per (ws, rip_code)
+    cl_btls: dict = defaultdict(float)
+    for it in items:
+        code = it.get("rip_code")
+        if not code:
+            continue
+        key = (it.get("wholesaler"), str(code))
+        cl_cases[key] += (it.get("qty_cases") or 0) * _line_credit(it)
+        cl_btls[key] += (it.get("qty_units") or 0)
+
+    for it in items:
+        it["rip_back_later"] = None
+        code = it.get("rip_code")
+        cases = it.get("qty_cases") or 0
+        btls = it.get("qty_units") or 0
+        if not code or (cases <= 0 and btls <= 0):
+            continue
+        rip_tiers = [t for t in (it.get("tiers") or []) if t.get("source") == "rip"]
+        if not rip_tiers:
+            continue
+        key = (it.get("wholesaler"), str(code))
+        have_cases = cl_cases.get(key, 0.0)
+        have_btls = cl_btls.get(key, 0.0)
+        reached = [t for t in rip_tiers
+                   if (t.get("qty", 0) <= have_cases + 1e-9) if _is_case(t)] \
+            + [t for t in rip_tiers
+               if (t.get("qty", 0) <= have_btls + 1e-9) if not _is_case(t)]
+        if not reached:
+            continue
+        # Richest reached tier by per-case rebate (programs don't stack).
+        top = max(reached, key=lambda t: (t.get("rip_only_save_per_case") or 0))
+        per_case = float(top.get("rip_only_save_per_case") or 0)
+        if per_case <= 0:
+            continue
+        pack = it.get("unit_qty") or 0
+        per_btl = (per_case / pack) if pack else 0.0
+        total = round(per_case * cases + per_btl * btls, 2)
+        it["rip_back_later"] = {
+            "per_case": round(per_case, 2),
+            "per_bottle": round(per_btl, 2) if per_btl else None,
+            "total": total,
+            "tier_qty": top.get("qty"),
+            "tier_unit": "case" if _is_case(top) else "btl",
+            "code": str(code),
+        }
 
 
 def _attach_combo_pricing(dcon, items):

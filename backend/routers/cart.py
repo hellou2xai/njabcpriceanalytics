@@ -383,6 +383,89 @@ def _attach_combo_suggestion(dcon, items):
             it["combo_suggestion"] = sug
 
 
+def _attach_size_swap(dcon, items):
+    """If another SIZE of the same product (same CELR family, same distributor +
+    edition) is cheaper PER LITRE, surface it — the buyer can swap if size-flexible.
+    Uses the QD buy price (cash today), skips minis (<200ml), and only fires when
+    a real retail size is meaningfully cheaper per litre."""
+    from backend.db import read_parquet
+    from backend.size_std import _to_ml
+    e_src = read_parquet(dcon, "cpl_enriched")
+    celr_src = read_parquet(dcon, "celr_products")
+    lines = [(it.get("wholesaler"), it.get("edition"), str(it.get("upc") or "").lstrip("0"), it)
+             for it in items
+             if not (it.get("combo_code") and str(it.get("combo_code")) not in ("", "0"))
+             and it.get("wholesaler") and it.get("edition")
+             and len(str(it.get("upc") or "").lstrip("0")) >= 8]
+    if not lines:
+        return
+    keys = sorted({(w, ed, un) for w, ed, un, _ in lines})
+    rl = ", ".join("(?, ?, ?)" for _ in keys)
+    try:
+        cpn_rows = dcon.execute(
+            f"SELECT ct.ws ws, ct.ed ed, ct.un un, c.cpn cpn "
+            f"FROM (VALUES {rl}) ct(ws, ed, un) JOIN {celr_src} c ON c.upc_norm = ct.un",
+            [x for k in keys for x in k]).fetchdf().to_dict("records")
+    except Exception:
+        return
+    cpn_of = {(r["ws"], r["ed"], r["un"]): r["cpn"] for r in cpn_rows}
+    cpns = sorted({(r["ws"], r["ed"], r["cpn"]) for r in cpn_rows})
+    if not cpns:
+        return
+    rl2 = ", ".join("(?, ?, ?)" for _ in cpns)
+    try:
+        sib = dcon.execute(
+            f"SELECT cp.ws ws, cp.ed ed, cp.cpn cpn, e.product_name pn, "
+            f"LTRIM(CAST(e.upc AS VARCHAR),'0') un, e.unit_volume uv, e.unit_qty uq, "
+            f"e.best_case_price bcp, e.frontline_case_price fcp "
+            f"FROM (VALUES {rl2}) cp(ws, ed, cpn) JOIN {celr_src} c2 ON c2.cpn = cp.cpn "
+            f"JOIN {e_src} e ON LTRIM(CAST(e.upc AS VARCHAR),'0') = c2.upc_norm "
+            f"  AND e.wholesaler = cp.ws AND e.edition = cp.ed",
+            [x for k in cpns for x in k]).fetchdf().to_dict("records")
+    except Exception:
+        return
+
+    def _per_l(uv, uq, bcp, fcp):
+        ml, _f = _to_ml(uv or "")
+        try:
+            q = float(uq)
+        except (TypeError, ValueError):
+            return None
+        if not ml or q <= 0 or ml < 200:        # skip minis (<200ml)
+            return None
+        bp = bcp if bcp else fcp
+        try:
+            bp = float(bp)
+        except (TypeError, ValueError):
+            return None
+        liters = q * ml / 1000.0
+        return round(bp / liters, 2) if (bp > 0 and liters > 0) else None
+
+    pool: dict = {}
+    for r in sib:
+        pl = _per_l(r["uv"], r["uq"], r["bcp"], r["fcp"])
+        if pl is None:
+            continue
+        pool.setdefault((r["ws"], r["ed"], r["cpn"]), []).append(
+            {"un": r["un"], "uv": r["uv"], "per_l": pl})
+    for w, ed, un, it in lines:
+        cpn = cpn_of.get((w, ed, un))
+        sibs = pool.get((w, ed, cpn)) if cpn is not None else None
+        if not sibs:
+            continue
+        mine = next((s for s in sibs if s["un"] == un), None)
+        if not mine:
+            continue
+        cheapest = min(sibs, key=lambda s: s["per_l"])
+        if cheapest["un"] == un or cheapest["per_l"] >= mine["per_l"] * 0.92:
+            continue                            # already cheapest, or <8% gain
+        it["size_swap"] = {
+            "size": cheapest["uv"], "per_l": cheapest["per_l"],
+            "this_per_l": mine["per_l"], "upc": cheapest["un"],
+            "pct": round((1 - cheapest["per_l"] / mine["per_l"]) * 100),
+        }
+
+
 @router.get("")
 def get_cart(user: dict = Depends(get_current_user)):
     """All cart items (active + saved-for-later) with image, rep name, catalogue
@@ -1011,6 +1094,11 @@ def _load_enriched_cart(user: dict) -> dict:
                 # COMBO suggestion: if a normal line's product is a member of a
                 # combo, surface the bundle + the sheet's own savings (great?).
                 _attach_combo_suggestion(dcon, items)
+            except Exception:
+                pass
+            try:
+                # SIZE swap: another size of the same product cheaper per litre.
+                _attach_size_swap(dcon, items)
             except Exception:
                 pass
         try:

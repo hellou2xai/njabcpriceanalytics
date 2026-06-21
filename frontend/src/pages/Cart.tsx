@@ -737,6 +737,17 @@ export default function Cart() {
           return null;
         })()}
 
+        {/* Size swap: another size of the same product is cheaper per litre. */}
+        {it.size_swap && !it.combo_intact && (
+          <div style={{ marginLeft: 56, marginTop: 6 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#5b21b6', background: '#ede9fe',
+              border: '1px solid #c4b5fd', borderRadius: 4, padding: '1px 6px' }}
+              title={`If you're size-flexible: the ${it.size_swap.size} works out $${it.size_swap.per_l.toFixed(2)}/L vs $${it.size_swap.this_per_l.toFixed(2)}/L on this size.`}>
+              💡 {it.size_swap.size} is {it.size_swap.pct}% cheaper per litre (${it.size_swap.per_l.toFixed(2)}/L vs ${it.size_swap.this_per_l.toFixed(2)}/L)
+            </span>
+          </div>
+        )}
+
         {/* Closeout: one-time clearance on a discontinued product — buy now. */}
         {it.has_closeout && !it.combo_intact && (
           <div style={{ marginLeft: 56, marginTop: 6 }}>

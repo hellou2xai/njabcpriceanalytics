@@ -1382,6 +1382,10 @@ export interface CartItem {
     combo_code: string; pack_price?: number | null; savings: number;
     pct: number; great: boolean; label?: string | null;
   } | null;
+  // Another SIZE of the same product (same CELR family) is cheaper per litre.
+  size_swap?: {
+    size?: string | null; per_l: number; this_per_l: number; upc: string; pct: number;
+  } | null;
   // RIP rebate code this line currently rolls up under (enriched from the
   // catalogue at GET time; null when the product has no RIP).
   rip_code?: string | null;

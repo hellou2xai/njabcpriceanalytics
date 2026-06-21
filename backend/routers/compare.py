@@ -1447,11 +1447,34 @@ def _landed_at(tiers: list, frontline: Optional[float], n_cases: float, pack: fl
     return round(best, 2) if best is not None else None
 
 
-def _rip_rebate_at(tiers: list, n_cases: float, pack: float) -> float:
-    """Best RIP-only rebate $/case at n_cases (source == 'rip')."""
+def _landed_at_qd(tiers: list, frontline: Optional[float], n_cases: float, pack: float) -> Optional[float]:
+    """Best QD-only buy $/case at n_cases = list − the deepest DISCOUNT save_per_case
+    unlocked at n_cases. Deliberately ignores RIP tiers (and any RIP-stacked
+    price_after) so a pure-QD board shows the cash buy price today, never a
+    rebate-net. Falls back to frontline when no discount is unlocked yet."""
+    if frontline is None:
+        return None
+    best_save = 0.0
+    for t in tiers:
+        if t.get("source") != "discount":
+            continue
+        thr = _cases_threshold(t, pack)
+        if thr is None or n_cases + 1e-9 < thr:
+            continue
+        save = t.get("save_per_case") or 0.0
+        if save > best_save:
+            best_save = save
+    return round(frontline - best_save, 2)
+
+
+def _rip_rebate_at(tiers: list, n_cases: float, pack: float, source: str = "rip") -> float:
+    """Best ``source``-only save $/case at n_cases. Defaults to RIP rebates
+    (source='rip'); Compare QD passes source='discount' for the per-case
+    quantity discount. RIP-only-save falls back to save_per_case (discount
+    tiers carry their cut directly in save_per_case)."""
     best = 0.0
     for t in tiers:
-        if t.get("source") != "rip":
+        if t.get("source") != source:
             continue
         thr = _cases_threshold(t, pack)
         if thr is None or n_cases + 1e-9 < thr:
@@ -1464,12 +1487,13 @@ def _rip_rebate_at(tiers: list, n_cases: float, pack: float) -> float:
     return round(best, 2)
 
 
-def _min_cases_to_rip(tiers: list, pack: float) -> Optional[int]:
-    """Fewest cases that unlock ANY RIP rebate (the 'less money required' metric)."""
+def _min_cases_to_rip(tiers: list, pack: float, source: str = "rip") -> Optional[int]:
+    """Fewest cases that unlock ANY ``source`` save (the 'less money required'
+    metric). Defaults to RIP; Compare QD passes source='discount'."""
     import math as _m
     mins = []
     for t in tiers:
-        if t.get("source") != "rip":
+        if t.get("source") != source:
             continue
         thr = _cases_threshold(t, pack)
         if thr is not None and thr > 0:
@@ -1477,12 +1501,14 @@ def _min_cases_to_rip(tiers: list, pack: float) -> Optional[int]:
     return min(mins) if mins else None
 
 
-def _rip_tier_rows(tiers: list, pack: float) -> list[dict]:
-    """Normalised RIP tiers for the side-by-side table."""
+def _rip_tier_rows(tiers: list, pack: float, source: str = "rip") -> list[dict]:
+    """Normalised ``source`` tiers for the side-by-side table. Defaults to RIP;
+    Compare QD passes source='discount'. rebate_per_case / total_rebate carry the
+    per-case save and the SHEET's per-tier amount respectively, exactly as RIP."""
     import math as _m
     rows = []
     for t in tiers:
-        if t.get("source") != "rip":
+        if t.get("source") != source:
             continue
         thr = _cases_threshold(t, pack)
         rows.append({
@@ -1635,9 +1661,10 @@ def _rip_has_time_sensitive(tiers: list, source: str = "rip") -> bool:
                for t in tiers)
 
 
-def _rip_has_upcoming(tiers: list) -> bool:
-    """A deeper RIP that hasn't started yet this month (plan ahead)."""
-    return any(t.get("source") == "rip" and t.get("window_status") == "upcoming"
+def _rip_has_upcoming(tiers: list, source: str = "rip") -> bool:
+    """A deeper deal that hasn't started yet this month (plan ahead). Defaults to
+    RIP; Compare QD passes source='discount'."""
+    return any(t.get("source") == source and t.get("window_status") == "upcoming"
                for t in tiers)
 
 
@@ -2385,6 +2412,450 @@ def compare_rips(
             "least_money": least_money,
             "most_active_days": most_days,
             "most_case_mix": most_mix,
+            "anomalies_hidden": anomalies_hidden,
+            "insights": insights,
+        },
+    }
+    _board_cache_put(cache_key, result)
+    return result
+
+
+# ===========================================================================
+# Compare QD — a faithful PARALLEL of Compare RIPs, but comparing QUANTITY
+# DISCOUNTS (cash off the buy price TODAY) instead of RIP rebates (money back
+# LATER). A QD has ONE discount ladder per product (no RIP code grouping, no
+# mix-to-qualify, no combination logic). Everything else mirrors /rips. All
+# tier/unit math comes from the canonical pricing.attach_tiers + the shared
+# source='discount' helpers — nothing re-implemented here.
+# ===========================================================================
+
+def _qd_verdict(row: dict, slugs: list[str], n: float) -> dict:
+    """Plain-language recommendation over the structured break-even data — which
+    distributor's QUANTITY DISCOUNT is the better buy and why. Deterministic
+    (no LLM); the QD analogue of _rip_verdict (no cash-to-unlock / mix logic —
+    a QD has no rebate-return economics, the discount is the price you pay)."""
+    ni = int(n)
+    d = row["dists"]
+    w, sp = row["winner_at_n"], row["spread_at_n"]
+    mins = {x: d[x]["min_cases"] for x in slugs if d[x]["min_cases"]}
+    soonest = min(mins, key=mins.get) if mins else None
+    parts, pick = [], w
+
+    if w and w != "tie" and sp:
+        parts.append(f"{w.title()} is the better quantity discount at {ni} case(s): "
+                     f"${sp:.2f}/case lower buy price.")
+    elif w == "tie":
+        parts.append(f"Buy price ties at {ni} case(s).")
+        pick = "tie"
+    else:
+        parts.append(f"No clear quantity-discount edge at {ni} case(s).")
+
+    if soonest and len(set(mins.values())) > 1:
+        c = mins[soonest]
+        parts.append(f"{soonest.title()} unlocks its discount soonest "
+                     f"({c} case{'s' if c != 1 else ''} down).")
+        if pick in (None, "tie"):
+            pick = soonest
+
+    if row["flips"]:
+        be = "; ".join(
+            f"{r['from']}{('-' + str(r['to'])) if r['to'] else '+'} cs to {r['winner']}"
+            for r in row["breakeven"] if r["winner"])
+        parts.append(f"Best choice shifts with volume: {be}.")
+
+    return {"pick": pick, "text": " ".join(parts)}
+
+
+@router.get("/qds")
+def compare_qds(
+    wholesalers: str = Query("allied,fedway", description="2-3 comma-separated slugs"),
+    cases: float = Query(5, ge=1, description="Cases you plan to buy (drives winner@N)"),
+    q: str = Query(""),
+    product_type: str = Query(""),
+    brand: str = Query("", description="Brand name contains"),
+    only_differences: bool = Query(False),
+    min_diff: float = Query(1.0, ge=0, description="Only show products whose best-vs-rest price gap at the chosen volume is at least this many $/case (0 = show all)"),
+    include_anomalies: bool = Query(False, description="Include rows flagged as likely data issues (same UPC, very different list prices = probable pack mismatch). Hidden by default."),
+    time_sensitive_only: bool = Query(False, description="Only products where some distributor's QD is a dated/time-limited deal"),
+    expiring_only: bool = Query(False, description="Only products with a live QD that ends this month at some distributor"),
+    timing_diff_only: bool = Query(False, description="Only products where distributors differ on discount TIMING (one dated/time-limited, the other all-month)"),
+    qd_diff_only: bool = Query(False, description="Only products where the QD itself differs between distributors (the discount ladder: cases-to-unlock → $/case off, or its validity window) — NOT just the price. This is the page's headline filter: 'where does the QD actually differ?'"),
+    sort: str = Query("spread", description="spread | left_on_table | product | min_cases | best1 | deepest | active_days"),
+    order: str = Query("desc"),
+    limit: int = Query(2000, ge=1, le=50000),
+    month_mode: str = Query("cur", description="cur = compare QDs at the CURRENT month (default); next = compare at the NEXT month when that edition is already loaded (else falls back to current)."),
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    """Compare QUANTITY-DISCOUNT OUTCOMES across 2-3 distributors for every
+    product they ALL offer a QD on. Each distributor's QD is normalised to a
+    discounted-buy-$/case ladder; we report the winner at the chosen volume, the
+    full break-even map, the min cases to unlock a discount, the best 1-case
+    outcome, and what actually differs about the QD. A QD is cash off the price
+    TODAY (no rebate comes back later), so there is one discount ladder per
+    product — no RIP code, no mix-to-qualify, no combination logic."""
+    import math as _m
+    cache_key = ("compare_qds", _cache_tag(), wholesalers, cases, q, product_type,
+                 brand, only_differences, min_diff, include_anomalies,
+                 time_sensitive_only, expiring_only, timing_diff_only,
+                 qd_diff_only, sort, order, limit, month_mode)
+    cached = _board_cache_get(cache_key)
+    if cached is not None:
+        return cached
+    with get_duckdb() as con:
+        src = read_parquet(con, "cpl_enriched")
+        slugs = _parse_wholesalers(wholesalers, con)
+        eds = _editions_for(con, src, slugs, mode=("next" if month_mode == "next" else "cur"))
+        raw = _common_rows(con, src, slugs, eds)
+        try:
+            _attach_sku_mapping(con, raw)
+        except Exception:
+            pass
+
+        by_key: dict[str, dict[str, dict]] = {}
+        for r in raw:
+            by_key.setdefault(r["match_key"], {})[r["wholesaler"]] = r
+
+        # Candidate products: carried by ALL selected distributors, each showing
+        # a QD signal (precomputed has_discount). The precise gate — every
+        # distributor actually has a DISCOUNT tier from the canonical ladder —
+        # is applied after attach_tiers below.
+        keys = [k for k, per in by_key.items()
+                if len(per) == len(slugs) and all(per[w].get("has_discount") for w in slugs)]
+
+        if q or brand or product_type:
+            qq, bb, pt = q.lower(), brand.lower(), product_type.lower()
+            def _match(per):
+                recs = per.values()
+                if pt and not any((r.get("product_type") or "").lower() == pt for r in recs):
+                    return False
+                if bb and not any(bb in (r.get("brand") or "").lower() for r in recs):
+                    return False
+                if qq and not any(
+                    qq in (r.get("product_name") or "").lower()
+                    or qq in (r.get("brand") or "").lower()
+                    or qq in str(r.get("upc") or "").lstrip("0")
+                    for r in recs):
+                    return False
+                return True
+            keys = [k for k in keys if _match(by_key[k])]
+
+        flat = [by_key[k][w] for k in keys for w in slugs]
+        _pricing.attach_tiers(con, flat)
+
+    n = float(cases)
+    rows = []
+    for key in keys:
+        per = by_key[key]
+        any_row = per[slugs[0]]
+        dists, packs, tiers_by_w = {}, {}, {}
+        for w in slugs:
+            rec = per[w]
+            pack = rec.get("uqd") or 1.0
+            tiers = rec.get("tiers", []) or []
+            packs[w] = pack
+            tiers_by_w[w] = tiers
+            qd_n = _rip_rebate_at(tiers, n, pack, source="discount")
+            qd_1 = _rip_rebate_at(tiers, 1, pack, source="discount")
+            front = rec.get("frontline_case_price")
+            deepest_discount, deepest_at = _qd_deepest(tiers, pack, front)
+            qtr = _rip_tier_rows(tiers, pack, source="discount")
+            # First discount you can unlock: the fewest cases that turns on any
+            # QD. For a pure QD the cash you put down to buy those cases is the
+            # discounted price itself (no rebate comes back), and the saving is
+            # the discount × cases.
+            uc = _min_cases_to_qd(tiers, pack)
+            if uc:
+                landed = _landed_at_qd(tiers, front, uc, pack)   # after best QD at uc
+                spc = _rip_rebate_at(tiers, uc, pack, source="discount")  # $/case off
+                unlock_cases = uc
+                unlock_investment = round(uc * landed, 2) if landed is not None else None
+                unlock_savings = round(uc * spc, 2)
+            else:
+                unlock_cases = unlock_investment = unlock_savings = None
+            # QD-only landed price: list − best discount save at the volume, so a
+            # pure-QD board never accidentally inherits a RIP price_after.
+            landed_n = _landed_at_qd(tiers, front, n, pack)
+            landed_1 = _landed_at_qd(tiers, front, 1, pack)
+            dists[w] = {
+                "frontline": front,
+                "edition": rec.get("edition"),
+                "item_no": rec.get("dist_item_no") or rec.get("abg_sku"),
+                "abv_proof": rec.get("abv_proof"),
+                "vintage": rec.get("vintage_norm") or rec.get("vintage"),
+                "landed_at_n": landed_n,
+                "landed_at_1": landed_1,
+                "next_net_case": (round(float(rec["next_effective_case_price"]), 2)
+                                  if rec.get("next_effective_case_price") is not None else None),
+                "qd_at_1": qd_1,
+                "qd_at_n": qd_n,
+                # per-bottle normalisation (discount $ spread over the pack)
+                "qd_btl_at_1": round(qd_1 / pack, 2) if pack else None,
+                "qd_btl_at_n": round(qd_n / pack, 2) if pack else None,
+                "min_cases": _min_cases_to_qd(tiers, pack),
+                # --- richer comparison metrics ---
+                "deepest_discount": deepest_discount,        # best $/cs off at any volume
+                "deepest_at_cases": deepest_at,              # cases to reach it
+                "active_days": _rip_active_days(tiers, source="discount"),
+                "expires_in_days": _rip_expires_in(tiers, source="discount"),
+                "has_time_sensitive": _rip_has_time_sensitive(tiers, source="discount"),
+                "has_upcoming": _rip_has_upcoming(tiers, source="discount"),
+                "total_discount_at_n": round(qd_n * n, 2) if qd_n else 0.0,
+                "effective_pct": (round(qd_n / front * 100, 1)
+                                  if front and qd_n else 0.0),
+                # first unlockable discount: cash down (= discounted price) + saving
+                "unlock_cases": unlock_cases,
+                "unlock_investment": unlock_investment,
+                "unlock_savings": unlock_savings,
+                "qd_tiers": qtr,
+                "product_name": rec.get("product_name"),
+                "upc": rec.get("upc"),
+                "unit_qty": rec.get("unit_qty"),
+                "unit_volume": rec.get("unit_volume"),
+                "unit_type": rec.get("unit_type"),
+            }
+
+        # Precise QD gate: this is a QD-vs-QD comparison, so every selected
+        # distributor must ACTUALLY have a DISCOUNT tier from the canonical ladder.
+        if not all(dists[w]["qd_tiers"] for w in slugs):
+            continue
+
+        # winner at N
+        landed_at_n_map = {w: d["landed_at_n"] for w, d in dists.items() if d["landed_at_n"] is not None}
+        winner_n = None
+        spread_n = None
+        if landed_at_n_map:
+            lo, hi = min(landed_at_n_map.values()), max(landed_at_n_map.values())
+            winners = [w for w, v in landed_at_n_map.items() if abs(v - lo) < _TIE_EPS]
+            winner_n = "tie" if len(winners) > 1 else winners[0]
+            spread_n = round(hi - lo, 2)
+
+        # break-even map + curve: buy price only changes at tier thresholds
+        bpset = {1, int(_m.ceil(n))}
+        for w in slugs:
+            for t in tiers_by_w[w]:
+                if t.get("source") != "discount":
+                    continue
+                thr = _cases_threshold(t, packs[w])
+                if thr is not None:
+                    bpset.add(max(1, int(_m.ceil(thr - 1e-9))))
+        breakpoints = sorted(bpset)[:24]
+        curve = []
+        for b in breakpoints:
+            landed = {w: _landed_at_qd(tiers_by_w[w], per[w].get("frontline_case_price"), b, packs[w])
+                      for w in slugs}
+            vals = {w: v for w, v in landed.items() if v is not None}
+            win = None
+            if vals:
+                lo = min(vals.values())
+                ws = [w for w, v in vals.items() if abs(v - lo) < _TIE_EPS]
+                win = "tie" if len(ws) > 1 else ws[0]
+            curve.append({"cases": b, "landed": landed, "winner": win})
+        ranges = []
+        for pt in curve:
+            if ranges and ranges[-1]["winner"] == pt["winner"]:
+                ranges[-1]["to"] = pt["cases"]
+            else:
+                ranges.append({"from": pt["cases"], "to": pt["cases"], "winner": pt["winner"]})
+        if ranges:
+            ranges[-1]["to"] = None
+
+        proofs = {_norm_proof(d["abv_proof"]) for d in dists.values()
+                  if _norm_proof(d["abv_proof"]) is not None}
+
+        # A QD can differ between distributors on TIMING (one runs all month, the
+        # other is a dated deal that ends soon) and on QUANTITY (one unlocks at 1
+        # case, the other needs 5).
+        ts_set = {dists[x]["has_time_sensitive"] for x in slugs}
+        timing_differs = len(ts_set) > 1
+        qty_set = {dists[x]["min_cases"] for x in slugs}
+        quantity_differs = len(qty_set) > 1
+
+        # Does the QD OUTCOME actually differ? Compare the discount LADDERS — the
+        # cases-to-unlock → $/case-off at each tier AND the validity window. We
+        # DELIBERATELY ignore the price level so a product with identical discount
+        # ladders at a different list price is NOT flagged as a QD difference.
+        def _ladder_sig(dd):
+            return tuple(sorted(
+                (t.get("cases_to_unlock"),
+                 round(float(t.get("rebate_per_case") or 0), 2),
+                 (f"ts:{t.get('from_date') or ''}~{t.get('to_date') or ''}"
+                  if t.get("is_time_sensitive") else "all"))
+                for t in (dd.get("qd_tiers") or [])))
+        qd_outcome_differs = (timing_differs
+                              or len({_ladder_sig(dists[x]) for x in slugs}) > 1)
+
+        # Data-sanity check (same as RIP): the same barcode should be the same
+        # physical pack at every distributor, so the list prices should be in the
+        # same ballpark; and a discount that wipes out > 60% of list is suspect.
+        fronts = [d["frontline"] for d in dists.values() if d.get("frontline")]
+        anomaly, reason = False, ""
+        if len(fronts) >= 2:
+            lo_f, hi_f = min(fronts), max(fronts)
+            if lo_f > 0 and hi_f / lo_f > 2.5:
+                anomaly = True
+                reason = (f"List prices differ a lot for the same barcode "
+                          f"(${lo_f:,.2f} vs ${hi_f:,.2f}). The distributors are "
+                          f"likely selling different pack sizes under one UPC, so "
+                          f"this comparison may not be like-for-like.")
+        if not anomaly:
+            for x in slugs:
+                dd = dists[x]
+                f, dc = dd.get("frontline"), dd.get("qd_at_n")
+                if f and dc and dc / f > 0.6:
+                    anomaly = True
+                    reason = (f"The discount wipes out over 60% of {x.title()}'s list "
+                              f"price (${f:,.2f}). Double-check the pack size before "
+                              f"trusting the net.")
+                    break
+        rows.append({
+            "match_key": key,
+            "upc_norm": key.split("|")[0],
+            "size_key": key.split("|")[1] if "|" in key else "",
+            "product_name": min((d["product_name"] for d in dists.values()), key=len),
+            "product_type": any_row.get("product_type"),
+            "vintage": any_row.get("vintage"),
+            "unit_type": any_row.get("unit_type"),
+            "proof_match": len(proofs) <= 1,
+            "brand": any_row.get("brand"),
+            "unit_qty": any_row.get("unit_qty"),
+            "unit_volume": any_row.get("unit_volume"),
+            "dists": dists,
+            "winner_at_n": winner_n,
+            "spread_at_n": spread_n,
+            "left_on_table": round((spread_n or 0) * n, 2),
+            "breakeven": ranges,
+            "curve": curve,
+            "flips": len({r["winner"] for r in ranges if r["winner"]}) > 1,
+            "has_difference": bool(
+                (spread_n and spread_n > 0)
+                or len({r["winner"] for r in ranges if r["winner"]}) > 1),
+            "data_anomaly": anomaly,
+            "anomaly_reason": reason,
+            "timing_differs": timing_differs,
+            "quantity_differs": quantity_differs,
+            "qd_outcome_differs": qd_outcome_differs,
+        })
+
+    # filters
+    if time_sensitive_only:
+        rows = [r for r in rows if any(
+            d["has_time_sensitive"] for d in r["dists"].values())]
+    if expiring_only:
+        rows = [r for r in rows if any(
+            d["expires_in_days"] is not None for d in r["dists"].values())]
+    if timing_diff_only:
+        rows = [r for r in rows if r["timing_differs"]]
+    # Headline "QD Difference" filter: keep only rows where the QD OUTCOME itself
+    # differs — the discount ladder (cases→$/cs off + validity) or the timing.
+    if qd_diff_only:
+        rows = [r for r in rows if r["qd_outcome_differs"]]
+
+    for r in rows:
+        r["verdict"] = _qd_verdict(r, slugs, n)
+
+    # summary
+    wins = {w: 0 for w in slugs}
+    ties = 0
+    flips = 0
+    least_money = {w: 0 for w in slugs}     # who needs fewest cases to unlock
+    most_days = {w: 0 for w in slugs}       # who keeps a QD live the most days
+    deepest_wins = {w: 0 for w in slugs}    # who has the deepest discount
+    for r in rows:
+        if r["winner_at_n"] == "tie":
+            ties += 1
+        elif r["winner_at_n"] in wins:
+            wins[r["winner_at_n"]] += 1
+        if r["flips"]:
+            flips += 1
+        mins = {w: r["dists"][w]["min_cases"] for w in slugs if r["dists"][w]["min_cases"]}
+        if mins:
+            lo = min(mins.values())
+            for w, v in mins.items():
+                if v == lo:
+                    least_money[w] += 1
+        days = {w: (r["dists"][w]["active_days"] or 0) for w in slugs}
+        if any(days.values()):
+            hi = max(days.values())
+            for w, v in days.items():
+                if v == hi and v > 0:
+                    most_days[w] += 1
+        deep = {w: (r["dists"][w]["deepest_discount"] or 0) for w in slugs}
+        if any(deep.values()):
+            hi = max(deep.values())
+            for w, v in deep.items():
+                if v == hi and v > 0:
+                    deepest_wins[w] += 1
+
+    total = len(rows)
+
+    anomalies_hidden = sum(1 for r in rows if r["data_anomaly"])
+    if not include_anomalies:
+        rows = [r for r in rows if not r["data_anomaly"]]
+    attribute_filter = (time_sensitive_only or expiring_only or timing_diff_only
+                        or qd_diff_only)
+    if only_differences and not attribute_filter:
+        rows = [r for r in rows if r["has_difference"]]
+    if min_diff and min_diff > 0 and not attribute_filter:
+        rows = [r for r in rows if (r["spread_at_n"] or 0) >= min_diff]
+
+    keymap = {
+        "spread": lambda r: r["spread_at_n"] or 0,
+        "left_on_table": lambda r: r["left_on_table"] or 0,
+        "product": lambda r: (r["product_name"] or "").lower(),
+        "min_cases": lambda r: min((d["min_cases"] or 1e9 for d in r["dists"].values()), default=1e9),
+        "best1": lambda r: max((d["qd_at_1"] or 0 for d in r["dists"].values()), default=0),
+        "deepest": lambda r: max((d["deepest_discount"] or 0 for d in r["dists"].values()), default=0),
+        "active_days": lambda r: max((d["active_days"] or 0 for d in r["dists"].values()), default=0),
+        "least_investment": lambda r: min((d["unlock_investment"] for d in r["dists"].values()
+                                           if d["unlock_investment"] is not None), default=1e12),
+    }
+    _ascending = ("product", "min_cases", "least_investment")
+    rows.sort(key=keymap.get(sort, keymap["spread"]),
+              reverse=False if sort in _ascending else (order != "asc"))
+    rows = rows[:limit]
+
+    insights = []
+    if total:
+        lead = max(wins, key=lambda w: wins[w])
+        if wins[lead]:
+            insights.append(
+                f"At {int(n)} case(s), {lead} has the lowest buy price per case on "
+                f"{wins[lead]} of {total} shared-QD products.")
+        lm = max(least_money, key=lambda w: least_money[w])
+        if least_money[lm]:
+            insights.append(
+                f"{lm} requires the fewest cases to unlock a discount on "
+                f"{least_money[lm]} products (least you must buy).")
+        md = max(most_days, key=lambda w: most_days[w])
+        if most_days[md]:
+            insights.append(
+                f"{md} keeps a quantity discount live the most days on "
+                f"{most_days[md]} products.")
+        dp = max(deepest_wins, key=lambda w: deepest_wins[w])
+        if deepest_wins[dp]:
+            insights.append(
+                f"{dp} has the deepest discount per case on {deepest_wins[dp]} products.")
+        if flips:
+            insights.append(
+                f"{flips} product(s) change the best-QD distributor as your "
+                f"volume grows. Check the break-even before you commit.")
+
+    result = {
+        "wholesalers": slugs,
+        "editions": eds,
+        "month_mode": "next" if month_mode == "next" else "cur",
+        "next_available": _next_edition_available(con, src, slugs),
+        "cases": n,
+        "total_common": total,
+        "rows": rows,
+        "summary": {
+            "common_qd_products": total,
+            "wins_at_n": wins,
+            "ties": ties,
+            "flips": flips,
+            "least_money": least_money,
+            "most_active_days": most_days,
+            "most_deepest": deepest_wins,
             "anomalies_hidden": anomalies_hidden,
             "insights": insights,
         },

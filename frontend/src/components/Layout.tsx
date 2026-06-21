@@ -6,7 +6,7 @@ import {
   Sun, Moon, LogOut, BadgeDollarSign, ClipboardList, LayoutGrid,
   ChevronLeft, ChevronRight, ChevronDown, StickyNote, UserCog, Settings, Shield, Sparkles, ListTodo,
   Activity, Clock, Percent, Compass, ArrowDownRight, ArrowUpRight, ThumbsUp,
-  Bot, Database, Settings2, Newspaper, Scale, XCircle, Layers, Target, CalendarClock, ShoppingBag,
+  Bot, Database, Settings2, Newspaper, Scale, XCircle, Layers, Target, CalendarClock, ShoppingBag, Tag,
 } from 'lucide-react';
 import { alerts as alertsApi, orders as ordersApi, cart as cartApi } from '../lib/api';
 import WhatsAppShareButton from './WhatsAppShare';
@@ -48,6 +48,7 @@ const NAV_GROUPS: {
     items: [
       { path: '/compare-prices', label: 'Compare Distributor Price', icon: Scale },
       { path: '/compare-rips', label: 'Compare RIPs', icon: Layers },
+      { path: '/compare-qd', label: 'Compare QD', icon: Tag },
       { path: '/edition-compare', label: 'Monthly Comparison', icon: CalendarClock },
       { path: '/price-drops', label: 'Price Drops', icon: ArrowDownRight },
       { path: '/price-increases', label: 'Price Increases', icon: ArrowUpRight },

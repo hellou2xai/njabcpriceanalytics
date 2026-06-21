@@ -551,6 +551,8 @@ export const compare = {
   },
   rips: (params: Record<string, unknown>) =>
     request<CompareRipResponse>(`/api/compare/rips${qs(params)}`),
+  qds: (params: Record<string, unknown>) =>
+    request<CompareQDResponse>(`/api/compare/qds${qs(params)}`),
   price360: (params: Record<string, unknown>) =>
     request<Price360Response>(`/api/compare/price360${qs(params)}`),
   rateshop: (params: Record<string, unknown>) =>
@@ -1025,6 +1027,109 @@ export interface CompareRipResponse {
     least_money: Record<string, number>;
     most_active_days: Record<string, number>;
     most_case_mix: Record<string, number>;
+    anomalies_hidden: number;
+    insights: string[];
+  };
+}
+
+// ---- Compare QD (quantity-discount outcome across 2-3 distributors) ----
+// A QD is cash off the buy price TODAY (no rebate comes back later), so there's
+// ONE discount ladder per product (no RIP code, no mix-to-qualify, no combo).
+// Mirrors the RIP shapes above with QD-flavoured field names.
+export interface QDTierRow {
+  cases_to_unlock: number | null;
+  buy_label: string | null;
+  code: string | null;
+  raw_qty: number | null;
+  unit: string | null;
+  rebate_per_case: number | null;   // PER-CASE discount $ off list at this tier
+  total_rebate: number | null;      // the SHEET's per-tier amount (== per-case for a 1-tier QD)
+  price_after: number | null;       // list case price after this discount
+  window_status: string | null;
+  is_time_sensitive: boolean;
+  from_date: string | null;
+  to_date: string | null;
+  case_credit?: number | null;
+  split_pack?: number | null;
+  split_credit?: number | null;
+}
+export interface CompareQDDist {
+  frontline: number | null;
+  item_no?: string | null;
+  edition?: string | null;
+  next_net_case?: number | null;
+  abv_proof: string | null;
+  vintage: string | null;
+  landed_at_n: number | null;       // buy price/case after best QD at N cases
+  landed_at_1: number | null;       // buy price/case after a 1-case QD (the headline)
+  qd_at_1: number | null;           // per-case discount at 1 case
+  qd_at_n: number | null;           // per-case discount at N cases
+  qd_btl_at_1: number | null;
+  qd_btl_at_n: number | null;
+  min_cases: number | null;
+  deepest_discount: number | null;  // best $/cs discount at any volume
+  deepest_at_cases: number | null;
+  active_days: number | null;
+  expires_in_days: number | null;
+  has_time_sensitive: boolean;
+  has_upcoming: boolean;
+  total_discount_at_n: number | null;
+  effective_pct: number | null;     // discount as % of list
+  unlock_cases: number | null;      // cases to unlock the first QD tier
+  unlock_investment: number | null; // cash to buy those cases (= discounted price)
+  unlock_savings: number | null;    // $ saved at that first tier
+  qd_tiers: QDTierRow[];
+  product_name: string | null;
+  upc: string | null;
+  unit_qty: string | null;
+  unit_volume: string | null;
+  unit_type: string | null;
+}
+export interface QDBreakeven { from: number; to: number | null; winner: string | null }
+export interface QDCurvePoint { cases: number; landed: Record<string, number | null>; winner: string | null }
+export interface CompareQDRow {
+  match_key: string;
+  upc_norm: string;
+  size_key: string;
+  product_name: string;
+  product_type: string | null;
+  vintage: string | null;
+  brand: string | null;
+  unit_qty: string | null;
+  unit_volume: string | null;
+  unit_type: string | null;
+  proof_match: boolean;
+  dists: Record<string, CompareQDDist>;
+  winner_at_n: string | null;
+  spread_at_n: number | null;
+  left_on_table: number | null;
+  breakeven: QDBreakeven[];
+  curve: QDCurvePoint[];
+  flips: boolean;
+  has_difference: boolean;
+  data_anomaly: boolean;
+  anomaly_reason: string;
+  timing_differs: boolean;
+  quantity_differs: boolean;
+  qd_outcome_differs: boolean;      // the discount ladder (or its timing) differs
+  verdict: { pick: string | null; text: string };
+}
+export interface CompareQDResponse {
+  wholesalers: string[];
+  editions: Record<string, string>;
+  month_mode?: string;
+  next_available?: boolean;
+  cases: number;
+  total_common: number;
+  rows: CompareQDRow[];
+  summary: {
+    common_qd_products: number;
+    wins_at_n: Record<string, number>;
+    ties: number;
+    flips: number;
+    least_money: Record<string, number>;
+    most_active_days: Record<string, number>;
+    most_deepest: Record<string, number>;
     anomalies_hidden: number;
     insights: string[];
   };

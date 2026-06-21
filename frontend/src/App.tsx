@@ -31,6 +31,7 @@ import Todo from './pages/Todo';
 import Discounts from './pages/Discounts';
 import ComparePrices from './pages/ComparePrices';
 import CompareRips from './pages/CompareRips';
+import CompareQD from './pages/CompareQD';
 import BestRips from './pages/BestRips';
 import BestQd from './pages/BestQd';
 import Price360 from './pages/Price360';
@@ -158,6 +159,7 @@ function AuthenticatedApp() {
             <Route path="/discounts" element={<Discounts />} />
             <Route path="/compare-prices" element={<ComparePrices />} />
             <Route path="/compare-rips" element={<CompareRips />} />
+            <Route path="/compare-qd" element={<CompareQD />} />
             <Route path="/best-rips" element={<BestRips />} />
             <Route path="/best-qd" element={<BestQd />} />
             <Route path="/price-360" element={<AdminRoute><Price360 /></AdminRoute>} />

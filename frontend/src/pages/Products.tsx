@@ -292,6 +292,29 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
+  // "Hidden by filters" guard. A typed search that comes back EMPTY under active
+  // filters is the #1 confusion: the deal filters (Dated deal this month, Has
+  // RIP, In QD, In combo), a distributor tab, or region/varietal silently hide a
+  // product the user is searching for by name — e.g. "aspen vodka" while "Dated
+  // deal this month" is on (Aspen has no dated deal), which also suppresses the
+  // hero type-ahead. Rather than a blank grid, probe the SAME query with no
+  // filters and, when it would match, tell the user and offer a one-click clear.
+  const constraintsActive = countActiveFilters(filters) > 0
+    || !!wholesaler || !!region || !!varietal || trackedOnly;
+  const gridEmpty = showGrid && !isLoading && !!data && total === 0;
+  const { data: unfilteredProbe } = useQuery({
+    enabled: gridEmpty && constraintsActive && q.trim().length > 0 && !newItems,
+    queryKey: ['products-unfiltered-probe', q],
+    queryFn: () => catalog.search({ q, limit: 1 }),
+    staleTime: 60_000,
+  });
+  const hiddenByFilters = (gridEmpty && constraintsActive) ? (unfilteredProbe?.total ?? 0) : 0;
+  const clearAllConstraints = () => {
+    setFilters({ ...emptyCatalogFilters });
+    setWholesaler(''); setRegion(''); setVarietal(''); setTrackedOnly(false);
+    setPage(0);
+  };
+
   // "View all" from Home lands on /products?categories=X: title the page after
   // the category so it reads as a storefront aisle, not a generic grid.
   const CATEGORY_LABELS: Record<string, string> = {
@@ -491,6 +514,22 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
             </div>
           </div>
 
+          {hiddenByFilters > 0 && (
+            <div className="products-hidden-banner" role="status"
+              style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                margin: '0 0 12px', padding: '10px 14px', borderRadius: 8,
+                border: '1px solid color-mix(in srgb, var(--accent) 35%, var(--bg))',
+                background: 'color-mix(in srgb, var(--accent) 10%, var(--bg))', fontSize: 13 }}>
+              <span>
+                <strong>{hiddenByFilters.toLocaleString()}</strong> product{hiddenByFilters === 1 ? '' : 's'} match
+                {' '}"<strong>{q.trim()}</strong>" but {hiddenByFilters === 1 ? 'is' : 'are'} hidden by your active filters
+                {' '}(e.g. Dated deal / Has RIP / distributor).
+              </span>
+              <button type="button" className="btn btn-primary btn-sm" onClick={clearAllConstraints}>
+                Clear filters &amp; show {hiddenByFilters === 1 ? 'it' : 'them'}
+              </button>
+            </div>
+          )}
           {isLoading ? <p>Loading…</p> : (
             <ProductsGrid items={items} cart={cart} updateQty={updateQty} showDeals={priceDetails} grouped={effGrouped} expandAll={!newItems && !!q.trim()} dealMonth={dealMonth} />
           )}

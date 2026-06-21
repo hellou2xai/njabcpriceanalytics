@@ -1934,6 +1934,12 @@ def compare_rips(
         slugs = _parse_wholesalers(wholesalers, con)
         eds = _editions_for(con, src, slugs)
         raw = _common_rows(con, src, slugs, eds)
+        # Allied has no dist_item_no on the CPL — its catalogue number is the ABG
+        # SKU from sku_mapping. Attach it so the card can show both houses' numbers.
+        try:
+            _attach_sku_mapping(con, raw)
+        except Exception:
+            pass
 
         by_key: dict[str, dict[str, dict]] = {}
         for r in raw:
@@ -2024,6 +2030,9 @@ def compare_rips(
             dists[w] = {
                 "frontline": front,
                 "edition": rec.get("edition"),
+                # Distributor's own catalogue number (Fedway dist_item_no on the CPL
+                # row; Allied ABG SKU), shown on the card front for ordering.
+                "item_no": rec.get("dist_item_no") or rec.get("abg_sku"),
                 "abv_proof": rec.get("abv_proof"),
                 # this distributor's OWN vintage (normalised 4-digit), so the card
                 # can show it per side and the buyer sees both years are the same.

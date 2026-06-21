@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { compare } from '../lib/api';
 import type { CompareRipRow, CompareRipDist } from '../lib/api';
-import { distributorName, perUnitNoun, priceUnitWord } from '../lib/distributors';
+import { distributorName, perUnitNoun, priceUnitWord, skuLabel } from '../lib/distributors';
 import ProductSearchBox from '../components/ProductSearchBox';
 import NextMonthChip from '../components/NextMonthChip';
 import RowActions from '../components/RowActions';
@@ -136,6 +136,14 @@ function DistPanel({ w, d, row, cases, accent, isWinner, edition, onRipClick }: 
             : `You'd pay ${money(myTotal - cheapestRival.total)} more here.`)
         : `Total to buy ${cases} case${cases !== 1 ? 's' : ''} here: ${money(myTotal)}.`)
     : '';
+  // Front headline = CASH buy price after a single-case QD (list − 1-case QD,
+  // before any RIP). landed_at_1 is after QD + RIP at 1 case, so add the 1-case
+  // RIP back to strip it out. RIP itself shows as the tier ladder / landed cost.
+  const buy1cs = d.landed_at_1 != null ? d.landed_at_1 + (d.rip_at_1 ?? 0) : d.frontline;
+  const buy1csHint =
+    `Cash buy price per case after a single-case quantity discount` +
+    (d.frontline != null ? ` (list ${money(d.frontline)}/case)` : '') +
+    `. The RIP is money back LATER — see the tiers and the net landed cost below.`;
   const priceHint =
     `Your landed cost per case after the best RIP you qualify for at ${cases} case${cases !== 1 ? 's' : ''}. ` +
     (d.frontline != null ? `List is ${money(d.frontline)}/case` : '') +
@@ -169,6 +177,11 @@ function DistPanel({ w, d, row, cases, accent, isWinner, edition, onRipClick }: 
           </span>
         )}
         {d.upc && <span className="rip2-dist-upc"> · UPC {d.upc}</span>}
+        {d.item_no && (
+          <span className="rip2-dist-itemno" title={`${distributorName(w)} ${skuLabel(w)}`}>
+            {' · '}{skuLabel(w)} {d.item_no}
+          </span>
+        )}
       </div>
       {/* open this distributor's exact product to verify the price and the facts */}
       {d.product_name && (
@@ -188,16 +201,34 @@ function DistPanel({ w, d, row, cases, accent, isWinner, edition, onRipClick }: 
           unitQty={d.unit_qty ?? row.unit_qty} vintage={d.vintage ?? row.vintage} />
       </div>
 
-      {/* the headline: what a case actually costs you at the volume you chose */}
-      <div className="rip2-dist-price" title={priceHint}>
-        {money(d.landed_at_n)}<span className="rip2-per">/{caseWord}</span>
-        {btl(d.landed_at_n) && <span className="rip2-dist-btl">{btl(d.landed_at_n)}</span>}
-        <Info text={priceHint} />
+      {/* the headline: the CASH buy price after a 1-case quantity discount (RIP is
+          money back later — shown as the tier ladder + landed cost below). */}
+      <div className="rip2-dist-price" title={buy1csHint}>
+        {money(buy1cs)}<span className="rip2-per">/{caseWord}</span>
+        {btl(buy1cs) && <span className="rip2-dist-btl">{btl(buy1cs)}</span>}
+        <Info text={buy1csHint} />
       </div>
       <div className="rip2-dist-pricenote">
-        price per case when buying {cases} case{cases !== 1 ? 's' : ''}
-        {myTotal != null && <span className="rip2-dist-total"> · {money(myTotal)} total outlay</span>}
+        buy price after 1-case QD
+        {d.landed_at_n != null && (
+          <span className="rip2-dist-total" title={priceHint}>
+            {' · '}net {money(d.landed_at_n)}/cs at {cases} cs{myTotal != null ? ` (${money(myTotal)} total)` : ''}
+          </span>
+        )}
       </div>
+      {/* ALL RIP tiers up front, so the buyer can compare the rebate ladders side
+          by side without expanding. Each: buy-in → $ back per case. */}
+      {(d.rip_tiers ?? []).length > 0 && (
+        <div className="rip2-dist-tiers" title="Every RIP tier for this distributor: cases to buy → rebate per case (money back later).">
+          {d.rip_tiers.map((t, i) => (
+            <span key={i} className={`rip2-tier-chip${t.is_time_sensitive ? ' is-ts' : ''}`}
+              title={`Buy ${t.buy_label ?? `${t.raw_qty} ${t.unit ?? ''}`} → ${money(t.rebate_per_case)}/cs back${t.price_after != null ? ` (net ${money(t.price_after)}/cs)` : ''}${t.is_time_sensitive ? ' · time-limited' : ''}`}>
+              {t.buy_label ?? `${t.raw_qty}${(t.unit ?? '').toLowerCase().startsWith('b') ? 'btl' : 'cs'}`}
+              {' → '}<strong>{money(t.rebate_per_case)}</strong>
+            </span>
+          ))}
+        </div>
+      )}
       <NextMonthChip current={d.landed_at_n} next={d.next_net_case} edition={d.edition} />
       {/* Two price layers: List, then the price AFTER the quantity discount, then
           the price AFTER the RIP (= what you pay). Each step shows the running
@@ -483,6 +514,7 @@ export default function CompareRips() {
   const [cases, setCases] = useState(parseInt(params.get('cases') ?? '5', 10) || 5);
   const [q, setQ] = useState(params.get('q') ?? '');
   const [ptype, setPtype] = useState(params.get('type') ?? '');
+  const [size, setSize] = useState(params.get('size') ?? '');
   const [brand, setBrand] = useState(params.get('brand') ?? '');
   // "RIP Difference" is the headline filter and ON by default: only show
   // products where the RIP itself differs between distributors (timing,
@@ -516,6 +548,7 @@ export default function CompareRips() {
     if (cases !== 5) next.set('cases', String(cases));
     if (q) next.set('q', q);
     if (ptype) next.set('type', ptype);
+    if (size) next.set('size', size);
     if (brand) next.set('brand', brand);
     if (!ripDiff) next.set('ripdiff', '0');
     if (view === 'table') next.set('view', 'table');
@@ -529,7 +562,7 @@ export default function CompareRips() {
     if (showAnomalies) next.set('anom', '1');
     if (sort !== 'spread') next.set('sort', sort);
     if (next.toString() !== params.toString()) setSearchParams(next, { replace: true });
-  }, [selected, cases, q, ptype, brand, ripDiff, view, minDiff, tsOnly, comboOnly, expiringOnly, timingDiff, qtyDiff, betterTerms, showAnomalies, sort]);
+  }, [selected, cases, q, ptype, size, brand, ripDiff, view, minDiff, tsOnly, comboOnly, expiringOnly, timingDiff, qtyDiff, betterTerms, showAnomalies, sort]);
 
   const { data: options } = useQuery({ queryKey: ['compare-options'], queryFn: compare.options });
   const ready = selected.length >= 2 && selected.length <= 3;
@@ -562,8 +595,17 @@ export default function CompareRips() {
     (data?.rows ?? []).forEach(r => { if (r.product_type) set.add(r.product_type); });
     return [...set].sort();
   }, [data]);
+  // Distinct bottle sizes present, for the Size filter (client-side — /rips has
+  // no size param, and the identity already matches like-for-like sizes).
+  const sizes = useMemo(() => {
+    const set = new Set<string>();
+    (data?.rows ?? []).forEach(r => { if (r.unit_volume) set.add(r.unit_volume); });
+    return [...set].sort();
+  }, [data]);
 
-  const rows = data?.rows ?? [];
+  const rows = useMemo(
+    () => (data?.rows ?? []).filter(r => !size || (r.unit_volume ?? '') === size),
+    [data, size]);
   const sum = data?.summary;
 
   return (
@@ -585,6 +627,22 @@ export default function CompareRips() {
             <div className="rip2-rail-head">
               <span><SlidersHorizontal size={15} /> Filters</span>
               <button className="rip2-rail-x" onClick={() => setRailOpen(false)} title="Hide filters"><X size={15} /></button>
+            </div>
+
+            {/* Sort lives at the TOP so it's reachable without scrolling the rail. */}
+            <div className="rip2-rail-sect">
+              <div className="rip2-rail-label">Sort by</div>
+              <select value={sort} onChange={e => setSort(e.target.value)} className="rip2-select">
+                <option value="spread">Biggest price gap</option>
+                <option value="left_on_table">Biggest total saving</option>
+                <option value="min_cases">Easiest to unlock (fewest cases)</option>
+                <option value="least_investment">Least cash to unlock</option>
+                <option value="best_mix">Widest product mix</option>
+                <option value="best1">Best 1-case deal</option>
+                <option value="deepest">Biggest RIP</option>
+                <option value="active_days">Most days available</option>
+                <option value="product">Product name</option>
+              </select>
             </div>
 
             <div className="rip2-rail-sect">
@@ -624,6 +682,14 @@ export default function CompareRips() {
               <select value={ptype} onChange={e => setPtype(e.target.value)} className="rip2-select">
                 <option value="">All categories</option>
                 {types.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+
+            <div className="rip2-rail-sect">
+              <div className="rip2-rail-label">Size</div>
+              <select value={size} onChange={e => { setSize(e.target.value); setShown(40); }} className="rip2-select">
+                <option value="">All sizes</option>
+                {sizes.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
 
@@ -684,20 +750,6 @@ export default function CompareRips() {
               </label>
             </div>
 
-            <div className="rip2-rail-sect">
-              <div className="rip2-rail-label">Sort by</div>
-              <select value={sort} onChange={e => setSort(e.target.value)} className="rip2-select">
-                <option value="spread">Biggest price gap</option>
-                <option value="left_on_table">Biggest total saving</option>
-                <option value="min_cases">Easiest to unlock (fewest cases)</option>
-                <option value="least_investment">Least cash to unlock</option>
-                <option value="best_mix">Widest product mix</option>
-                <option value="best1">Best 1-case deal</option>
-                <option value="deepest">Biggest RIP</option>
-                <option value="active_days">Most days available</option>
-                <option value="product">Product name</option>
-              </select>
-            </div>
           </aside>
         ) : (
           <button className="rip2-rail-open" onClick={() => setRailOpen(true)} title="Show filters">

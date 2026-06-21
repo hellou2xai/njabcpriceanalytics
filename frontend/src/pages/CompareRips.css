@@ -38,10 +38,10 @@
 .rip2-rail-open span { writing-mode: vertical-rl; text-orientation: mixed; }
 .rip2-rail-open:hover { color: var(--accent); border-color: var(--accent); }
 
-.rip2-rail-sect { padding: 12px 0; border-bottom: 1px solid var(--border); }
+.rip2-rail-sect { padding: 7px 0; border-bottom: 1px solid var(--border); }
 .rip2-rail-sect:last-child { border-bottom: none; }
-.rip2-rail-label { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 9px; }
-.rip2-rail-help { font-size: 0.74rem; color: var(--text-muted); margin-top: 6px; line-height: 1.4; }
+.rip2-rail-label { font-size: 12.5px; font-weight: 600; color: var(--text); margin-bottom: 5px; }
+.rip2-rail-help { font-size: 0.7rem; color: var(--text-muted); margin-top: 4px; line-height: 1.35; }
 
 .rip2-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .rip2-chip {
@@ -56,10 +56,10 @@
 .rip2-vol-n { font-weight: 650; font-size: 0.85rem; white-space: nowrap; min-width: 62px; text-align: right; }
 
 .rip2-select, .rip2-input {
-  width: 100%; padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px;
-  font-size: 0.84rem; background: var(--surface); color: var(--text);
+  width: 100%; padding: 5px 8px; border: 1px solid var(--border); border-radius: 7px;
+  font-size: 0.82rem; background: var(--surface); color: var(--text);
 }
-.rip2-toggle { display: flex; align-items: center; gap: 8px; font-size: 0.83rem; padding: 5px 0; cursor: pointer; }
+.rip2-toggle { display: flex; align-items: center; gap: 7px; font-size: 0.8rem; padding: 3px 0; cursor: pointer; }
 .rip2-toggle input { accent-color: var(--accent); }
 
 .rip2-mindiff { display: flex; align-items: center; gap: 6px; }
@@ -134,6 +134,15 @@
 
 .rip2-dist-size { font-size: 0.72rem; color: var(--text-muted); margin: -2px 0 8px; cursor: help; }
 .rip2-dist-upc { opacity: 0.8; }
+.rip2-dist-itemno { opacity: 0.9; font-weight: 600; color: var(--text); }
+/* all RIP tiers, shown on the card front for side-by-side comparison */
+.rip2-dist-tiers { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 8px; }
+.rip2-tier-chip {
+  font-size: 0.72rem; padding: 1px 6px; border-radius: 6px; white-space: nowrap;
+  background: hsl(150 60% 95%); color: hsl(150 45% 28%); border: 1px solid hsl(150 50% 85%); cursor: help;
+}
+.rip2-tier-chip strong { font-weight: 700; }
+.rip2-tier-chip.is-ts { background: hsl(40 90% 94%); color: hsl(35 70% 32%); border-color: hsl(40 80% 82%); }
 .rip2-dist-price { font-size: 1.55rem; font-weight: 700; line-height: 1.1; display: flex; align-items: baseline; gap: 0; flex-wrap: wrap; }
 .rip2-per { font-size: 0.78rem; font-weight: 500; color: var(--text-muted); margin-left: 3px; }
 /* bottle price sits next to the case price and must read at the SAME size */

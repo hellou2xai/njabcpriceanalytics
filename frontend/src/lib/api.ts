@@ -941,6 +941,7 @@ export interface RipTierRow {
 }
 export interface CompareRipDist {
   frontline: number | null;
+  item_no?: string | null;          // distributor's own catalogue number (Fedway / Allied ABG)
   edition?: string | null;          // source edition (for the next-month label)
   next_net_case?: number | null;    // next month's effective case price, when loaded
   abv_proof: string | null;

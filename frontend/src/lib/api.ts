@@ -1011,6 +1011,8 @@ export interface CompareRipRow {
 export interface CompareRipResponse {
   wholesalers: string[];
   editions: Record<string, string>;
+  month_mode?: string;              // 'cur' | 'next' — which month the board compared at
+  next_available?: boolean;         // a next-month edition is loaded for some distributor
   cases: number;
   total_common: number;
   rows: CompareRipRow[];

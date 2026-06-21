@@ -538,6 +538,8 @@ export default function CompareRips() {
   const [betterTerms, setBetterTerms] = useState(params.get('bt') === '1');
   const [showAnomalies, setShowAnomalies] = useState(params.get('anom') === '1');
   const [sort, setSort] = useState(params.get('sort') ?? 'spread');
+  // Compare RIPs at the current month (default) or the next month when loaded.
+  const [monthMode, setMonthMode] = useState(params.get('month') === 'next' ? 'next' : 'cur');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [shown, setShown] = useState(40);
   const [railOpen, setRailOpen] = useState(true);
@@ -567,13 +569,14 @@ export default function CompareRips() {
     if (betterTerms) next.set('bt', '1');
     if (showAnomalies) next.set('anom', '1');
     if (sort !== 'spread') next.set('sort', sort);
+    if (monthMode === 'next') next.set('month', 'next');
     if (next.toString() !== params.toString()) setSearchParams(next, { replace: true });
-  }, [selected, cases, q, ptype, size, brand, ripDiff, view, minDiff, tsOnly, comboOnly, expiringOnly, timingDiff, qtyDiff, betterTerms, showAnomalies, sort]);
+  }, [selected, cases, q, ptype, size, brand, ripDiff, view, minDiff, tsOnly, comboOnly, expiringOnly, timingDiff, qtyDiff, betterTerms, showAnomalies, sort, monthMode]);
 
   const { data: options } = useQuery({ queryKey: ['compare-options'], queryFn: compare.options });
   const ready = selected.length >= 2 && selected.length <= 3;
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['compare-rips', selected, cases, q, ptype, brand, ripDiff, minDiff, tsOnly, comboOnly, expiringOnly, timingDiff, qtyDiff, betterTerms, showAnomalies, sort],
+    queryKey: ['compare-rips', selected, cases, q, ptype, brand, ripDiff, minDiff, tsOnly, comboOnly, expiringOnly, timingDiff, qtyDiff, betterTerms, showAnomalies, sort, monthMode],
     queryFn: () => compare.rips({
       wholesalers: selected.join(','), cases, q: q || undefined,
       product_type: ptype || undefined, brand: brand || undefined,
@@ -583,6 +586,7 @@ export default function CompareRips() {
       timing_diff_only: timingDiff || undefined, qty_diff_only: qtyDiff || undefined,
       better_terms_only: betterTerms || undefined,
       include_anomalies: showAnomalies || undefined, sort,
+      month_mode: monthMode,
     }),
     enabled: ready,
   });
@@ -649,6 +653,21 @@ export default function CompareRips() {
                 <option value="active_days">Most days available</option>
                 <option value="product">Product name</option>
               </select>
+            </div>
+
+            <div className="rip2-rail-sect">
+              <div className="rip2-rail-label">Month</div>
+              <div className="rip2-monthtoggle">
+                <button className={`rip2-monthbtn${monthMode === 'cur' ? ' on' : ''}`}
+                  onClick={() => { setMonthMode('cur'); setShown(40); }}>This month</button>
+                <button className={`rip2-monthbtn${monthMode === 'next' ? ' on' : ''}`}
+                  disabled={!data?.next_available && monthMode !== 'next'}
+                  title={data?.next_available === false ? 'Next month’s prices are not loaded yet.' : 'Compare RIPs at next month’s edition.'}
+                  onClick={() => { setMonthMode('next'); setShown(40); }}>Next month</button>
+              </div>
+              {monthMode === 'next' && (
+                <div className="rip2-rail-help">Comparing NEXT month’s RIPs where that edition is loaded (else this month).</div>
+              )}
             </div>
 
             <div className="rip2-rail-sect">

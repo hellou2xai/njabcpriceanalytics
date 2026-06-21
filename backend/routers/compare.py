@@ -1914,6 +1914,7 @@ def compare_rips(
     sort: str = Query("spread", description="spread | left_on_table | product | min_cases | best1 | deepest | active_days"),
     order: str = Query("desc"),
     limit: int = Query(2000, ge=1, le=50000),
+    month_mode: str = Query("cur", description="cur = compare RIPs at the CURRENT month (default); next = compare at the NEXT month when that edition is already loaded (else falls back to current)."),
     user: Optional[dict] = Depends(get_optional_user),
 ):
     """Compare RIP OUTCOMES across 2-3 distributors for every product they ALL
@@ -1925,14 +1926,15 @@ def compare_rips(
     cache_key = ("compare_rips", _cache_tag(), wholesalers, cases, q, product_type,
                  brand, only_differences, min_diff, include_anomalies,
                  time_sensitive_only, combo_only, expiring_only, timing_diff_only,
-                 qty_diff_only, better_terms_only, rip_diff_only, sort, order, limit)
+                 qty_diff_only, better_terms_only, rip_diff_only, sort, order, limit,
+                 month_mode)
     cached = _board_cache_get(cache_key)
     if cached is not None:
         return cached
     with get_duckdb() as con:
         src = read_parquet(con, "cpl_enriched")
         slugs = _parse_wholesalers(wholesalers, con)
-        eds = _editions_for(con, src, slugs)
+        eds = _editions_for(con, src, slugs, mode=("next" if month_mode == "next" else "cur"))
         raw = _common_rows(con, src, slugs, eds)
         # Allied has no dist_item_no on the CPL — its catalogue number is the ABG
         # SKU from sku_mapping. Attach it so the card can show both houses' numbers.
@@ -2364,6 +2366,10 @@ def compare_rips(
     result = {
         "wholesalers": slugs,
         "editions": eds,
+        # Which month this comparison used, and whether a NEXT-month edition is
+        # loaded for any selected distributor (so the UI can offer/enable it).
+        "month_mode": "next" if month_mode == "next" else "cur",
+        "next_available": _next_edition_available(con, src, slugs),
         "cases": n,
         "total_common": total,
         "rows": rows,

@@ -51,6 +51,15 @@
 .rip2-chip.on { font-weight: 650; background: var(--surface-hover); }
 .rip2-chip:disabled { opacity: 0.5; cursor: not-allowed; }
 
+.rip2-monthtoggle { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; width: 100%; }
+.rip2-monthbtn {
+  flex: 1; padding: 5px 8px; font-size: 0.8rem; background: var(--surface); color: var(--text);
+  border: none; cursor: pointer; font-weight: 500; border-left: 1px solid var(--border);
+}
+.rip2-monthbtn:first-child { border-left: none; }
+.rip2-monthbtn.on { background: var(--accent); color: #fff; font-weight: 650; }
+.rip2-monthbtn:disabled { opacity: 0.45; cursor: not-allowed; }
+
 .rip2-vol { display: flex; align-items: center; gap: 10px; }
 .rip2-vol input[type="range"] { flex: 1; accent-color: var(--accent); }
 .rip2-vol-n { font-weight: 650; font-size: 0.85rem; white-space: nowrap; min-width: 62px; text-align: right; }

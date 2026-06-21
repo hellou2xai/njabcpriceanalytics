@@ -2142,6 +2142,19 @@ def compare_rips(
         qty_set = {dists[x]["min_cases"] for x in slugs}
         quantity_differs = len(qty_set) > 1         # different cases to unlock
 
+        # Does the RIP OUTCOME actually differ? Compare the rebate LADDERS — the
+        # cases-to-unlock → $/case-back at each tier. This is the buyer's real
+        # "is the RIP different here?" question. We DELIBERATELY ignore the
+        # cash-to-unlock (= cases × case price → a PRICE difference in disguise)
+        # and the mix breadth, so a product with identical rebate ladders at a
+        # different price is NOT flagged as a RIP difference.
+        def _ladder_sig(dd):
+            return tuple(sorted(
+                (t.get("cases_to_unlock"), round(float(t.get("rebate_per_case") or 0), 2))
+                for t in (dd.get("rip_tiers") or [])))
+        rip_outcome_differs = (timing_differs
+                               or len({_ladder_sig(dists[x]) for x in slugs}) > 1)
+
         # "Same price, better RIP terms": the per-case landed cost is a tie (within
         # $1) yet the RIP TERMS differ. The buyer pays the same either way, so the
         # better choice is whoever needs less cash down to unlock the rebate, lets
@@ -2216,6 +2229,7 @@ def compare_rips(
             "timing_differs": timing_differs,
             "quantity_differs": quantity_differs,
             "rip_terms_differ": rip_terms_differ,
+            "rip_outcome_differs": rip_outcome_differs,
             "better_terms_tie": better_terms_tie,
         })
 
@@ -2236,13 +2250,13 @@ def compare_rips(
         rows = [r for r in rows if r["quantity_differs"]]
     if better_terms_only:
         rows = [r for r in rows if r["better_terms_tie"]]
-    # Headline "RIP Difference" filter: keep only rows where the RIP itself
-    # differs between distributors (timing, cases-to-unlock, cash-to-unlock, or
-    # mix breadth). rip_terms_differ already folds in quantity_differs; timing is
-    # the other axis. Deliberately ignores pure price gaps (those are frontline /
-    # QD differences, not the RIP).
+    # Headline "RIP Difference" filter: keep only rows where the RIP OUTCOME
+    # itself differs — the rebate ladder (cases→$/cs back) or the timing. It
+    # deliberately ignores PRICE-driven signals (the cash-to-unlock is just
+    # cases × case price) and mix breadth, so two houses with the SAME rebate
+    # ladder at different prices are NOT shown here (that's the Price page's job).
     if rip_diff_only:
-        rows = [r for r in rows if r["timing_differs"] or r["rip_terms_differ"]]
+        rows = [r for r in rows if r["rip_outcome_differs"]]
 
     # AI verdict per row (deterministic, over the break-even data)
     for r in rows:

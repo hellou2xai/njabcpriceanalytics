@@ -217,16 +217,22 @@ function DistPanel({ w, d, row, cases, accent, isWinner, edition, onRipClick }: 
         )}
       </div>
       {/* ALL RIP tiers up front, so the buyer can compare the rebate ladders side
-          by side without expanding. Each: buy-in → $ back per case. */}
+          by side without expanding. Each: buy-in → TOTAL $ back at that tier. */}
       {(d.rip_tiers ?? []).length > 0 && (
-        <div className="rip2-dist-tiers" title="Every RIP tier for this distributor: cases to buy → rebate per case (money back later).">
-          {d.rip_tiers.map((t, i) => (
+        <div className="rip2-dist-tiers" title="Every RIP tier for this distributor: cases to buy → total rebate at that tier (money back later).">
+          {d.rip_tiers.map((t, i) => {
+            // Total rebate at the tier = per-case rebate × the cases you buy to
+            // unlock it (the buyer thinks in total dollars back, not $/case).
+            const totalBack = (t.rebate_per_case != null && t.cases_to_unlock != null)
+              ? t.rebate_per_case * t.cases_to_unlock : t.rebate_per_case;
+            return (
             <span key={i} className={`rip2-tier-chip${t.is_time_sensitive ? ' is-ts' : ''}`}
-              title={`Buy ${t.buy_label ?? `${t.raw_qty} ${t.unit ?? ''}`} → ${money(t.rebate_per_case)}/cs back${t.price_after != null ? ` (net ${money(t.price_after)}/cs)` : ''}${t.is_time_sensitive ? ' · time-limited' : ''}`}>
+              title={`Buy ${t.buy_label ?? `${t.raw_qty} ${t.unit ?? ''}`} → ${money(totalBack)} back total (${money(t.rebate_per_case)}/cs)${t.price_after != null ? ` · net ${money(t.price_after)}/cs` : ''}${t.is_time_sensitive ? ' · time-limited' : ''}`}>
               {t.buy_label ?? `${t.raw_qty}${(t.unit ?? '').toLowerCase().startsWith('b') ? 'btl' : 'cs'}`}
-              {' → '}<strong>{money(t.rebate_per_case)}</strong>
+              {' → '}<strong>{money(totalBack)}</strong>
             </span>
-          ))}
+          );
+          })}
         </div>
       )}
       <NextMonthChip current={d.landed_at_n} next={d.next_net_case} edition={d.edition} />

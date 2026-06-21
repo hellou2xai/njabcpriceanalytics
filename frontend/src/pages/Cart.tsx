@@ -714,10 +714,24 @@ export default function Cart() {
             {tiers.map((t, i) => (
               <span key={i} className={`source-badge source-${t.source}`} style={{ fontSize: 11 }}
                 title={t.description || undefined}>
-                {/* Half-case rule: show the REAL physical buy-in (same
-                    convention as the deal ladder), not the printed qty. */}
-                {t.source === 'discount' ? 'DISC' : 'RIP'} · Buy {t.qualified_cases ?? t.qty} {shortUnit(t.unit)} = <strong>${t.amount.toFixed(2)}</strong>
-                {t.save_per_case != null ? ` (save $${t.save_per_case.toFixed(2)}/cs)` : ''}
+                {/* QD vs RIP are different KINDS of money and must read that way:
+                    QD lowers what you PAY TODAY (the buy price); a RIP is a rebate
+                    that lands LATER (money in your back pocket). Never blend them
+                    into one "save/cs". Half-case rule: show the REAL physical
+                    buy-in (qualified_cases), not the printed qty. */}
+                {t.source === 'discount' ? (
+                  <>QD · Buy {t.qualified_cases ?? t.qty} {shortUnit(t.unit)} → pay{' '}
+                    <strong>${(t.price_after ?? (it.frontline_case_price ?? 0) - t.amount).toFixed(2)}</strong>/cs
+                    {t.btl_price_after != null ? <> · ${t.btl_price_after.toFixed(2)}/btl</> : null}
+                    <span style={{ color: 'var(--text-muted)' }}> (−${(t.save_per_case ?? t.amount).toFixed(2)}/cs, today)</span>
+                  </>
+                ) : (
+                  <>RIP · Buy {t.qualified_cases ?? t.qty} {shortUnit(t.unit)} →{' '}
+                    <strong>${t.amount.toFixed(2)}</strong> back later
+                    {t.rip_only_save_per_case != null ? <> (${t.rip_only_save_per_case.toFixed(2)}/cs)</> : null}
+                    {t.price_after != null ? <span style={{ color: 'var(--text-muted)' }}> · net ${t.price_after.toFixed(2)}/cs</span> : null}
+                  </>
+                )}
                 {(() => {
                   const wb = windowBadge(t);
                   if (!t.is_time_sensitive && !wb) return null;

@@ -320,10 +320,24 @@ export default function MonthEffectiveSparkline({ months }: Props) {
 
   const closePinned = () => { setPinned(false); setPos(null); dragRef.current = null; };
 
+  // The two chips read from their OWN tier type so each is honest: the QD chip
+  // is the best quantity-discount price (deepest non-time-sensitive discount
+  // tier), the RIP chip is the best RIP price (deepest RIP tier). On a product
+  // with no RIP the RIP chip is empty rather than echoing the QD-driven
+  // effective price (which read as a wrong/"hardcoded" RIP number).
+  const qdOf = (m: MonthBreakdown): number | null => {
+    const ds = (m.discountTiers ?? []).filter(t => !t.ts && t.eff > 0);
+    return ds.length ? Math.min(...ds.map(t => t.eff)) : null;
+  };
+  const ripOf = (m: MonthBreakdown): number | null => {
+    const rs = (m.ripTiers ?? []).filter(t => t.eff > 0);
+    return rs.length ? Math.min(...rs.map(t => t.eff)) : null;
+  };
+
   // Backend feeds oldest -> newest. The CHART reads left -> right in time
   // (Apr, May, Jun) like any price chart; the POPOVER lists newest first
   // (Jun, May, Apr) so the current month is the first thing the buyer reads.
-  const chrono = (months ?? []).filter(m => m.bestEff != null || m.disc1 != null || m.frontline != null);
+  const chrono = (months ?? []).filter(m => qdOf(m) != null || ripOf(m) != null || m.frontline != null);
   const blocks = [...chrono].reverse();   // newest-first, popover + summary
   if (blocks.length === 0) return null;
 
@@ -345,8 +359,8 @@ export default function MonthEffectiveSparkline({ months }: Props) {
     <span className={`mes-wrap${placeBelow ? ' mes-wrap-below' : ''}${pinned ? ' mes-wrap-pinned' : ''}`}
           ref={wrapRef} onMouseEnter={onWrapEnter}>
       <span className="mes-chips2">
-        <Chip values={chrono.map(m => m.disc1)} futures={chrono.map(m => !!m.future)} label="1cs" title="Price after the 1-case discount, last 3 months" />
-        <Chip values={chrono.map(m => m.bestEff)} futures={chrono.map(m => !!m.future)} label="RIP" title="Best effective price (best RIP), last 3 months" />
+        <Chip values={chrono.map(qdOf)} futures={chrono.map(m => !!m.future)} label="QD" title="Best price after quantity discount, last 3 months" />
+        <Chip values={chrono.map(ripOf)} futures={chrono.map(m => !!m.future)} label="RIP" title="Best price after RIP rebate, last 3 months" />
         {/* Month-name stickers under the chips, chronological (Apr, May, Jun)
             to match the chip points, so the buyer can read which point is which. */}
         <span className="mes-months">

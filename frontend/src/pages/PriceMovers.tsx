@@ -3,7 +3,7 @@ import { useSearchParams, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowDownRight, ArrowUpRight } from 'lucide-react';
 import { useResultCount } from '../lib/resultCount';
-import { analytics, watchlist, type PriceMover } from '../lib/api';
+import { analytics, watchlist, type PriceMover, type CatalogTier } from '../lib/api';
 import { ContextMenuProvider, RowMenuButton } from '../components/ContextMenu';
 import FavoriteButton from '../components/FavoriteButton';
 import AddToCartButton from '../components/AddToCartButton';
@@ -18,7 +18,7 @@ import { buildSparkProps } from '../lib/promotionsSparkline';
 import { AI_EXPLAINERS_ENABLED } from '../lib/flags';
 import VintageSticker from '../components/VintageSticker';
 import { useProductQuickView } from '../components/ProductQuickView';
-import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
+import { distributorName, ALL_DISTRIBUTORS, packLabel, perUnitAbbr } from '../lib/distributors';
 import { ErrorState, EmptyState } from '../components/DataState';
 import DataLoading from '../components/DataLoading';
 
@@ -348,21 +348,29 @@ function MoverCard({ d, isDrop, open }: { d: PriceMover; isDrop: boolean; open: 
   })();
   const delta = d.case_delta ?? null;
   const deltaPct = d.case_delta_pct ?? null;
-  // Frontline (list) story for the same headline transition, shown as a small
-  // secondary line so the user sees when a list-price spike is masked by RIP.
-  const flWas = headline === 'next' ? (d.frontline_case_price ?? null) : (d.frontline_prev_case_price ?? null);
+  // Frontline (list) case price for the "to" month of the headline transition.
   const flNow = headline === 'next' ? (d.frontline_next_case_price ?? null) : (d.frontline_case_price ?? null);
-  const flDelta = headline === 'next' ? (d.frontline_next_delta ?? null) : (d.frontline_cur_delta ?? null);
-  const flDeltaPct = headline === 'next' ? (d.frontline_next_delta_pct ?? null) : (d.frontline_cur_delta_pct ?? null);
-  // "List" line is worth showing only when it disagrees materially with the
-  // effective story (e.g. list up 27% but effective up 0.5%).
-  const showListLine = flDeltaPct != null && deltaPct != null && Math.abs(flDeltaPct - deltaPct) >= 1.0;
 
   const eff = d.effective_case_price ?? null;
   const uq = Number(d.unit_qty) || 0;
-  const effBtl = eff != null && uq > 1 ? eff / uq : null;
   const colour = isDrop ? '#16a34a' : '#dc2626';
   const bgClass = isDrop ? 'mover-card--drop' : 'mover-card--rise';
+
+  // Price stack for the destination (headline) edition, broken into three
+  // clearly labelled rows: front line, best QD, best RIP. Tiers belong to the
+  // headline edition (next_tiers when the headline transition is cur->next).
+  // "Best" = the deepest tier (lowest price_after). Each row also carries the
+  // per-bottle price (same prominence as the case price) and the buy-in detail.
+  const btlAbbr = perUnitAbbr(d.unit_volume, d.unit_type);
+  const perBtl = (cs?: number | null) => (cs != null && uq > 1 ? cs / uq : null);
+  const tierList: CatalogTier[] = (headline === 'next' ? d.next_tiers : d.tiers) ?? [];
+  const deepest = (ts: CatalogTier[]) =>
+    ts.filter(t => t.price_after != null)
+      .reduce<CatalogTier | null>((a, b) => (a == null || (b.price_after! < a.price_after!) ? b : a), null);
+  const bestQd = deepest(tierList.filter(t => t.source === 'discount' && !t.is_time_sensitive));
+  const bestRip = deepest(tierList.filter(t => t.source === 'rip'));
+  const frontNow = flNow ?? (eff ?? null);   // front line (list) case price for the "to" month
+  const tierQty = (t: CatalogTier) => t.qualified_cases ?? t.qty;
 
   return (
     <div className={`deal-card mover-card ${bgClass}`} role="button" tabIndex={0}
@@ -386,6 +394,9 @@ function MoverCard({ d, isDrop, open }: { d: PriceMover; isDrop: boolean; open: 
           <div className="deal-card-sub">
             {d.brand && <span>{d.brand}</span>}
             {d.unit_volume && <span>· {d.unit_volume}</span>}
+            {packLabel(d.unit_volume, d.unit_qty, d.unit_type) && (
+              <span>· {packLabel(d.unit_volume, d.unit_qty, d.unit_type)}</span>
+            )}
             <span className="cell-distributor-badge">{distributorName(d.wholesaler)}</span>
           </div>
         </div>
@@ -414,20 +425,47 @@ function MoverCard({ d, isDrop, open }: { d: PriceMover; isDrop: boolean; open: 
           </span>
         )}
       </div>
-      {showListLine && flWas != null && flNow != null && (
-        <div className="deal-card-listline text-muted" style={{ fontSize: 11, marginTop: -4, marginBottom: 4 }}>
-          List: {money(flWas)} → <strong>{money(flNow)}</strong>
-          {flDelta != null && (
-            <span className="pm-diff"> ({flDelta > 0 ? '+' : ''}{money(flDelta)}
-            {flDeltaPct != null && ` · ${pct(flDeltaPct, true)}`})</span>
-          )}{' '}
-          <span title="Effective price hides most of this list change because the RIP rebate offsets it.">· RIP absorbs</span>
-        </div>
-      )}
-
-      {effBtl != null && (
-        <div className="deal-btl-now">{money(effBtl)}<span className="deal-unit">/btl</span><span className="deal-btl-tag">net</span></div>
-      )}
+      {/* Price stack: front line on top, then the price after the best QD, then
+          the price after the best RIP. Each row shows the per-case AND per-bottle
+          price, plus the buy-in (QD qualified-tier quantity; RIP total rebate +
+          cases). Replaces the old single "List:" sub-line for clarity. */}
+      <div className="pm-stack">
+        {frontNow != null && (
+          <div className="pm-row">
+            <span className="pm-row-label">Front Line Case Price</span>
+            <span className="pm-row-vals">
+              <span className="pm-cs">{money(frontNow)}<span className="deal-unit">/cs</span></span>
+              {perBtl(frontNow) != null && (
+                <span className="pm-btl">{money(perBtl(frontNow))}<span className="deal-unit">/{btlAbbr}</span></span>
+              )}
+            </span>
+          </div>
+        )}
+        {bestQd && (
+          <div className="pm-row">
+            <span className="pm-row-label">Price after best QD</span>
+            <span className="pm-row-vals">
+              <span className="pm-cs">{money(bestQd.price_after)}<span className="deal-unit">/cs</span></span>
+              {perBtl(bestQd.btl_price_after ?? bestQd.price_after) != null && (
+                <span className="pm-btl">{money(perBtl(bestQd.btl_price_after ?? bestQd.price_after))}<span className="deal-unit">/{btlAbbr}</span></span>
+              )}
+              <span className="pm-detail">at {tierQty(bestQd)} cs</span>
+            </span>
+          </div>
+        )}
+        {bestRip && (
+          <div className="pm-row pm-row--rip">
+            <span className="pm-row-label">Price after best RIP</span>
+            <span className="pm-row-vals">
+              <span className="pm-cs">{money(bestRip.price_after)}<span className="deal-unit">/cs</span></span>
+              {perBtl(bestRip.btl_price_after ?? bestRip.price_after) != null && (
+                <span className="pm-btl">{money(perBtl(bestRip.btl_price_after ?? bestRip.price_after))}<span className="deal-unit">/{btlAbbr}</span></span>
+              )}
+              <span className="pm-detail">RIP {money(bestRip.amount)} at {tierQty(bestRip)} cs</span>
+            </span>
+          </div>
+        )}
+      </div>
 
       <div className="deal-card-meta">
         {eff != null && <span>Net {money(eff)}/cs (after deals)</span>}

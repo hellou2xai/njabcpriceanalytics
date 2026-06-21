@@ -216,25 +216,51 @@ function DistPanel({ w, d, row, cases, accent, isWinner, edition, onRipClick }: 
           </span>
         )}
       </div>
-      {/* ALL RIP tiers up front, so the buyer can compare the rebate ladders side
-          by side without expanding. Each: buy-in → TOTAL $ back at that tier. */}
-      {(d.rip_tiers ?? []).length > 0 && (
-        <div className="rip2-dist-tiers" title="Every RIP tier for this distributor: cases to buy → total rebate at that tier (money back later).">
-          {d.rip_tiers.map((t, i) => {
-            // Total rebate at the tier = per-case rebate × the cases you buy to
-            // unlock it (the buyer thinks in total dollars back, not $/case).
-            const totalBack = (t.rebate_per_case != null && t.cases_to_unlock != null)
-              ? t.rebate_per_case * t.cases_to_unlock : t.rebate_per_case;
-            return (
-            <span key={i} className={`rip2-tier-chip${t.is_time_sensitive ? ' is-ts' : ''}`}
-              title={`Buy ${t.buy_label ?? `${t.raw_qty} ${t.unit ?? ''}`} → ${money(totalBack)} back total (${money(t.rebate_per_case)}/cs)${t.price_after != null ? ` · net ${money(t.price_after)}/cs` : ''}${t.is_time_sensitive ? ' · time-limited' : ''}`}>
-              {t.buy_label ?? `${t.raw_qty}${(t.unit ?? '').toLowerCase().startsWith('b') ? 'btl' : 'cs'}`}
-              {' → '}<strong>{money(totalBack)}</strong>
-            </span>
-          );
-          })}
-        </div>
-      )}
+      {/* ALL RIP tiers up front, GROUPED BY RIP CODE so a distributor running two
+          programs (e.g. a case ladder + a bottle-mix RIP) reads clearly. Each
+          group is labelled with its RIP number; each chip is buy-in → TOTAL $ back. */}
+      {(() => {
+        const tiers = d.rip_tiers ?? [];
+        if (!tiers.length) return null;
+        // Group by RIP code (preserve first-seen order); sort tiers within a group.
+        const order: string[] = [];
+        const byCode = new Map<string, typeof tiers>();
+        for (const t of tiers) {
+          const c = t.code ?? '—';
+          if (!byCode.has(c)) { byCode.set(c, []); order.push(c); }
+          byCode.get(c)!.push(t);
+        }
+        return (
+          <div className="rip2-dist-tiergroups">
+            {order.map(code => (
+              <div key={code} className="rip2-tiergroup">
+                <button type="button" className="rip2-tier-code"
+                  title={`Open the products on RIP ${code}`}
+                  onClick={() => onRipClick(w, code, d.edition ?? edition)}>
+                  RIP {code}
+                </button>
+                <div className="rip2-dist-tiers">
+                  {byCode.get(code)!
+                    .slice().sort((a, b) => (a.cases_to_unlock ?? 1e9) - (b.cases_to_unlock ?? 1e9))
+                    .map((t, i) => {
+                      // Total rebate at the tier = per-case × cases to unlock it
+                      // (buyers think in total dollars back, not $/case).
+                      const totalBack = (t.rebate_per_case != null && t.cases_to_unlock != null)
+                        ? t.rebate_per_case * t.cases_to_unlock : t.rebate_per_case;
+                      return (
+                        <span key={i} className={`rip2-tier-chip${t.is_time_sensitive ? ' is-ts' : ''}`}
+                          title={`RIP ${code}: buy ${t.buy_label ?? `${t.raw_qty} ${t.unit ?? ''}`} → ${money(totalBack)} back total (${money(t.rebate_per_case)}/cs)${t.price_after != null ? ` · net ${money(t.price_after)}/cs` : ''}${t.is_time_sensitive ? ' · time-limited' : ''}`}>
+                          {t.buy_label ?? `${t.raw_qty}${(t.unit ?? '').toLowerCase().startsWith('b') ? 'btl' : 'cs'}`}
+                          {' → '}<strong>{money(totalBack)}</strong>
+                        </span>
+                      );
+                    })}
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
       <NextMonthChip current={d.landed_at_n} next={d.next_net_case} edition={d.edition} />
       {/* Two price layers: List, then the price AFTER the quantity discount, then
           the price AFTER the RIP (= what you pay). Each step shows the running

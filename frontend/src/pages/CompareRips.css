@@ -144,8 +144,15 @@
 .rip2-dist-size { font-size: 0.72rem; color: var(--text-muted); margin: -2px 0 8px; cursor: help; }
 .rip2-dist-upc { opacity: 0.8; }
 .rip2-dist-itemno { opacity: 0.9; font-weight: 600; color: var(--text); }
-/* all RIP tiers, shown on the card front for side-by-side comparison */
-.rip2-dist-tiers { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 8px; }
+/* all RIP tiers, shown on the card front (grouped by RIP code) for comparison */
+.rip2-dist-tiergroups { display: flex; flex-direction: column; gap: 5px; margin: 2px 0 8px; }
+.rip2-tiergroup { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rip2-tier-code {
+  font-size: 0.68rem; font-weight: 700; color: var(--accent); background: none;
+  border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; cursor: pointer; white-space: nowrap;
+}
+.rip2-tier-code:hover { border-color: var(--accent); background: var(--surface-hover); }
+.rip2-dist-tiers { display: flex; flex-wrap: wrap; gap: 4px; }
 .rip2-tier-chip {
   font-size: 0.72rem; padding: 1px 6px; border-radius: 6px; white-space: nowrap;
   background: hsl(150 60% 95%); color: hsl(150 45% 28%); border: 1px solid hsl(150 50% 85%); cursor: help;

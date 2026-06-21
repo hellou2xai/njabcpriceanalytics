@@ -277,8 +277,21 @@ def _resolve_group_key(con, edition: str, wholesaler: str, upc_norm: str,
 def offer_grid(con, *, edition: str, wholesaler: str, upc_norm: str,
                unit_qty=None) -> list[dict]:
     """The full per-distributor comparison for one SKU within its edition,
-    cheapest-net first. Empty list when the table is absent or the SKU isn't
-    found (caller falls back to a live compute)."""
+    cheapest-net first. USER-INDEPENDENT, so memoize it (cache_util auto-keys on
+    the pricing version, invalidating on reload). This is the cart's hot path —
+    every cart load called it per line with 2 SQL each; under concurrency that
+    serialized on the single-threaded DuckDB pool. The cached list is shared and
+    READ-ONLY (callers must not mutate it)."""
+    from backend import cache_util
+    params = (edition, wholesaler, upc_norm, str(unit_qty) if unit_qty is not None else None)
+    return cache_util.cached_response(
+        "offer_grid", params,
+        lambda: _offer_grid_build(con, edition=edition, wholesaler=wholesaler,
+                                  upc_norm=upc_norm, unit_qty=unit_qty))
+
+
+def _offer_grid_build(con, *, edition: str, wholesaler: str, upc_norm: str,
+                      unit_qty=None) -> list[dict]:
     gk = _resolve_group_key(con, edition, wholesaler, upc_norm, unit_qty)
     if not gk:
         return []

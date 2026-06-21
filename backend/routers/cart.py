@@ -1184,14 +1184,19 @@ def analyze_cart(user: dict = Depends(get_current_user)):
     return analyze_lines(items)
 
 
-def analyze_lines(items: list[dict]) -> dict:
+def analyze_lines(items: list[dict], prepriced: bool = False) -> dict:
     """'Analyze for Savings' engine over a set of order lines — each a dict with
     wholesaler / upc / unit_volume / product_name / qty_cases. Shared by the cart
     AND the lists page. Reuses the canonical pricing (discount/RIP tier ladder),
     next-month prices, and cross-distributor prices to surface tier-gap nudges,
     case-mix qualification, buy-before-a-rise, and distributor swaps — returning
     recommendations + headline totals. No new pricing math: every number comes
-    from the same engines the catalog and cart already use."""
+    from the same engines the catalog and cart already use.
+
+    ``prepriced=True`` skips the (re)pricing pass when the caller already ran
+    _attach_cart_pricing + attach_sku_mapping on the items — the cart load did,
+    so re-pricing here was duplicate DB work on every cart GET (a load-test
+    bottleneck)."""
     if not items:
         return {"captured_total": 0.0, "opportunity_total": 0.0,
                 "protection_total": 0.0, "line_count": 0, "recommendations": []}
@@ -1199,14 +1204,15 @@ def analyze_lines(items: list[dict]) -> dict:
     from backend.db import read_parquet
     from backend import pricing as _pricing
     with get_duckdb() as dcon:
-        try:
-            _attach_cart_pricing(dcon, items)        # canonical tiers + prices + rip_code
-        except Exception:
-            pass
-        try:
-            attach_sku_mapping(dcon, items)          # abg_sku (vendor item code)
-        except Exception:
-            pass
+        if not prepriced:
+            try:
+                _attach_cart_pricing(dcon, items)    # canonical tiers + prices + rip_code
+            except Exception:
+                pass
+            try:
+                attach_sku_mapping(dcon, items)      # abg_sku (vendor item code)
+            except Exception:
+                pass
         src = read_parquet(dcon, "cpl_enriched")
         try:
             _pricing.attach_next_month_prices(dcon, src, items)
@@ -1536,7 +1542,10 @@ def attach_line_suggestions(items: list[dict]) -> dict:
                 "protection_total": 0.0, "recommendations": []}
 
     try:
-        analysis = analyze_lines(items)   # prices items in place + returns recs
+        # _load_enriched_cart already priced + sku-mapped these items, so skip the
+        # duplicate pricing pass (prepriced=True) — it was redundant DB work on
+        # every cart GET.
+        analysis = analyze_lines(items, prepriced=True)   # returns recs
     except Exception:
         return {"captured_total": 0.0, "opportunity_total": 0.0,
                 "protection_total": 0.0, "recommendations": []}

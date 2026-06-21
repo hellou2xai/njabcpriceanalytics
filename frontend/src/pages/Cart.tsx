@@ -750,47 +750,77 @@ export default function Cart() {
           </div>
         )}
 
-        {/* Deal tiers, same info as the catalogue, to tweak qty last minute. Combo
-            lines hide these (the bundle is the deal). */}
-        {tiers.length > 0 && (
-          <div style={{ marginLeft: 56, marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: '4px 8px' }}>
-            {tiers.map((t, i) => (
-              <span key={i} className={`source-badge source-${t.source}`} style={{ fontSize: 11 }}
-                title={t.description || undefined}>
-                {/* QD vs RIP are different KINDS of money and must read that way:
-                    QD lowers what you PAY TODAY (the buy price); a RIP is a rebate
-                    that lands LATER (money in your back pocket). Never blend them
-                    into one "save/cs". Half-case rule: show the REAL physical
-                    buy-in (qualified_cases), not the printed qty. */}
-                {t.source === 'discount' ? (
-                  <>QD · Buy {t.qualified_cases ?? t.qty} {shortUnit(t.unit)} → pay{' '}
-                    <strong>${(t.price_after ?? (it.frontline_case_price ?? 0) - t.amount).toFixed(2)}</strong>/cs
-                    {t.btl_price_after != null ? <> · ${t.btl_price_after.toFixed(2)}/btl</> : null}
-                    <span style={{ color: 'var(--text-muted)' }}> (−${(t.save_per_case ?? t.amount).toFixed(2)}/cs, today)</span>
-                  </>
-                ) : (
-                  <>RIP · Buy {t.qualified_cases ?? t.qty} {shortUnit(t.unit)} →{' '}
-                    <strong>${t.amount.toFixed(2)}</strong> back later
-                    {t.rip_only_save_per_case != null ? <> (${t.rip_only_save_per_case.toFixed(2)}/cs)</> : null}
-                    {t.price_after != null ? <span style={{ color: 'var(--text-muted)' }}> · net ${t.price_after.toFixed(2)}/cs</span> : null}
-                  </>
-                )}
-                {(() => {
-                  const wb = windowBadge(t);
-                  if (!t.is_time_sensitive && !wb) return null;
-                  const range = fmtDateRange(t.from_date, t.to_date);
-                  const cls = t.is_time_sensitive ? (wb?.urgent ? 'win-partial urgent' : 'win-partial') : (wb?.cls ?? 'win-partial');
-                  return (
-                    <span className={`win-badge ${cls}`}
-                      style={{ marginLeft: 5 }} title={`Partial-month — only valid ${range || 'limited dates'}`}>
-                      {t.is_time_sensitive ? `⏱ Partial · ${range || 'limited'}` : wb?.label}{t.is_time_sensitive && wb ? ` · ${wb.label}` : ''}
-                    </span>
-                  );
-                })()}
+        {/* Deal tiers, consolidated: ALL quantity discounts in one box, ALL RIP
+            rebates in another (was a sprawling flat row of chips). QD lowers what
+            you PAY TODAY; a RIP is a rebate paid LATER, so they are never blended.
+            The tier the current quantity already earns is highlighted ("now").
+            Half-case rule: rows show the real physical buy-in (qualified_cases).
+            Combo lines hide these (the bundle is the deal). */}
+        {tiers.length > 0 && (() => {
+          type Tier = (typeof tiers)[number];
+          const qd = tiers.filter(t => t.source === 'discount');
+          const rip = tiers.filter(t => t.source === 'rip');
+          const curCases = it.qty_cases || 0;
+          const winBadge = (t: Tier) => {
+            const wb = windowBadge(t);
+            if (!t.is_time_sensitive && !wb) return null;
+            const range = fmtDateRange(t.from_date, t.to_date);
+            const cls = t.is_time_sensitive ? (wb?.urgent ? 'win-partial urgent' : 'win-partial') : (wb?.cls ?? 'win-partial');
+            return (
+              <span className={`win-badge ${cls}`} style={{ marginLeft: 'auto' }}
+                title={`Partial-month deal, only valid ${range || 'limited dates'}`}>
+                {t.is_time_sensitive ? `⏱ ${range || 'limited'}` : wb?.label}
               </span>
-            ))}
-          </div>
-        )}
+            );
+          };
+          const box = (label: string, kind: 'discount' | 'rip', list: Tier[], cvar: string) => (
+            <div style={{ flex: '1 1 320px', minWidth: 250, alignSelf: 'flex-start',
+              border: `1px solid color-mix(in srgb, ${cvar} 35%, var(--bg))`,
+              borderRadius: 8, overflow: 'hidden', background: 'var(--surface)' }}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase',
+                color: cvar, background: `color-mix(in srgb, ${cvar} 14%, var(--bg))`,
+                padding: '3px 8px', display: 'flex', justifyContent: 'space-between', gap: 6 }}>
+                <span>{label}</span>
+                <span style={{ fontWeight: 600, textTransform: 'none', opacity: .85 }}>
+                  {kind === 'discount' ? 'pay less today' : 'rebate later'} · {list.length} tier{list.length === 1 ? '' : 's'}
+                </span>
+              </div>
+              {list.map((t, i) => {
+                const thr = t.qualified_cases ?? t.qty;
+                const next = list[i + 1];
+                const here = curCases >= thr && (!next || curCases < (next.qualified_cases ?? next.qty));
+                return (
+                  <div key={i} title={t.description || undefined}
+                    style={{ fontSize: 11, padding: '3px 8px', display: 'flex', alignItems: 'baseline',
+                      gap: 6, flexWrap: 'wrap',
+                      borderTop: `1px solid color-mix(in srgb, ${cvar} 16%, var(--bg))`,
+                      background: here ? `color-mix(in srgb, ${cvar} 10%, var(--bg))` : 'transparent' }}>
+                    <span style={{ color: 'var(--text-muted)', minWidth: 56 }}>Buy {thr} {shortUnit(t.unit)}</span>
+                    {kind === 'discount' ? (
+                      <span>pay <strong>${(t.price_after ?? (it.frontline_case_price ?? 0) - t.amount).toFixed(2)}</strong>/cs
+                        {t.btl_price_after != null ? <> · ${t.btl_price_after.toFixed(2)}/btl</> : null}
+                        <span style={{ color: 'var(--text-muted)' }}> (−${(t.save_per_case ?? t.amount).toFixed(2)}/cs)</span>
+                      </span>
+                    ) : (
+                      <span><strong>${t.amount.toFixed(2)}</strong> back
+                        {t.rip_only_save_per_case != null ? <> (${t.rip_only_save_per_case.toFixed(2)}/cs)</> : null}
+                        {t.price_after != null ? <span style={{ color: 'var(--text-muted)' }}> · net ${t.price_after.toFixed(2)}/cs</span> : null}
+                      </span>
+                    )}
+                    {here && <span style={{ fontSize: 9, fontWeight: 700, color: cvar }}>● now</span>}
+                    {winBadge(t)}
+                  </div>
+                );
+              })}
+            </div>
+          );
+          return (
+            <div style={{ marginLeft: 56, marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+              {qd.length > 0 && box('Quantity discount', 'discount', qd, 'var(--accent)')}
+              {rip.length > 0 && box('RIP rebate', 'rip', rip, 'var(--green)')}
+            </div>
+          );
+        })()}
 
         <input
           defaultValue={it.notes ?? ''}

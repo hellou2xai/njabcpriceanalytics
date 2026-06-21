@@ -51,6 +51,18 @@ _POOL: "queue.Queue | None" = None
 _POOL_PATH: str | None = None
 POOL_SIZE = 8
 
+# Cap EACH pooled DuckDB connection's memory. DuckDB defaults memory_limit to
+# ~80% of system RAM PER connection (e.g. ~3.2 GB on a 4 GB box), and we open
+# POOL_SIZE connections per worker × N workers — all individually believing they
+# can use ~3.2 GB. A few concurrent heavy queries (the grid sort, an include_tiers
+# burst) then overcommit far past the box and OOM the container. Cap each
+# connection to a bounded budget and give it a spill directory so an over-limit
+# query spills to disk instead of growing unbounded. Generous default (1 GB) so a
+# single heavy query still runs in memory; tune with DUCKDB_MEMORY_LIMIT /
+# DUCKDB_TEMP_DIR without a code change.
+_DUCKDB_MEM_LIMIT = os.getenv("DUCKDB_MEMORY_LIMIT", "1GB")
+_DUCKDB_TEMP_DIR = os.getenv("DUCKDB_TEMP_DIR") or str(Path(USER_DATA_DIR) / "duckdb_spill")
+
 
 def _new_pricing_con(path: str):
     """Open one read-only connection at `path`, retrying once if a reload swept
@@ -63,6 +75,14 @@ def _new_pricing_con(path: str):
         path = str(_pc.get_pricing_path())
         con = duckdb.connect(path, read_only=True)
     con.execute("SET threads TO 1")
+    # Bound per-connection memory + allow spill so no one connection can run away
+    # to ~80% of RAM (the DuckDB default) and OOM the box under concurrency.
+    try:
+        os.makedirs(_DUCKDB_TEMP_DIR, exist_ok=True)
+        con.execute(f"SET temp_directory='{_DUCKDB_TEMP_DIR}'")
+        con.execute(f"SET memory_limit='{_DUCKDB_MEM_LIMIT}'")
+    except Exception:
+        pass
     return con
 
 

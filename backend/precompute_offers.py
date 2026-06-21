@@ -38,10 +38,11 @@ _TIE_EPS = 0.005
 
 # How many editions to materialise. The cart buys the CURRENT month (and the NEXT
 # month once its sheet loads); board-sourced adds are recent. Building every
-# historical edition multiplies build time for data no cart line reaches, so we
-# cap to the most recent N (plus any future/next edition). Override with
-# SKU_OFFER_EDITIONS=0 to build ALL editions.
-_RECENT_EDITIONS = int(os.getenv("SKU_OFFER_EDITIONS", "6"))
+# historical edition multiplies build time AND boot memory for data no cart line
+# reaches, so we cap to the most recent N (plus any future/next edition). Kept
+# small because the boot cache build runs on a memory-constrained instance.
+# Override with SKU_OFFER_EDITIONS (0 = ALL editions).
+_RECENT_EDITIONS = int(os.getenv("SKU_OFFER_EDITIONS", "3"))
 
 # Per-row columns written to the sku_offer table, in order.
 _OFFER_COLS = [
@@ -199,6 +200,9 @@ def build_sku_offer(con, *, log=print) -> int:
     row count. Best-effort: the caller wraps this so a failure never breaks the
     cache build. Must run AFTER cpl_enriched is finalised (price_trend rebuild +
     upc_norm + enr_name columns), since _common_rows reads them."""
+    if os.getenv("BUILD_SKU_OFFER", "1").strip().lower() not in ("1", "true", "yes", "on"):
+        log("[sku_offer] skipped (BUILD_SKU_OFFER disabled)")
+        return 0
     src = "cpl_enriched"
     t0 = time.time()
     con.execute("DROP TABLE IF EXISTS sku_offer")
@@ -208,21 +212,25 @@ def build_sku_offer(con, *, log=print) -> int:
     )
     con.execute(f"CREATE TABLE sku_offer ({col_defs})")
 
-    all_rows: list[dict] = []
+    cols = ", ".join(_OFFER_COLS)
+    total = 0
     for ed in _editions(con, src):
         try:
             rows = _grid_rows_for_edition(con, src, ed)
         except Exception as exc:  # one bad edition must not sink the rest
             log(f"[sku_offer] edition {ed} failed: {exc}")
             continue
-        all_rows.extend(rows)
-
-    total = len(all_rows)
-    if all_rows:
-        # One bulk insert from a DataFrame is far faster than row-by-row
-        # executemany for ~100k+ rows. Project to the column order explicitly.
-        _df = pd.DataFrame(all_rows, columns=_OFFER_COLS)  # noqa: F841 (used by SQL)
-        con.execute(f"INSERT INTO sku_offer SELECT {', '.join(_OFFER_COLS)} FROM _df")
+        if not rows:
+            continue
+        # Insert per-edition and FREE immediately. Accumulating EVERY edition's
+        # rows (~140k) plus a DataFrame copy peaked ~350MB of Python at boot,
+        # which OOM'd the memory-constrained instance — and each uvicorn worker
+        # builds the cache independently, so it doubled. Streaming the insert
+        # caps the peak to a single edition.
+        _df = pd.DataFrame(rows, columns=_OFFER_COLS)  # noqa: F841 (used by SQL)
+        con.execute(f"INSERT INTO sku_offer SELECT {cols} FROM _df")
+        total += len(rows)
+        del rows, _df
 
     # Indexes for the two hot lookups: resolve a line's identity, then fetch the
     # whole grid by (edition, group_key).

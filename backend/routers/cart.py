@@ -858,12 +858,16 @@ def _comparison_row(m: dict, rank: int, n_dist: int) -> dict:
     """Shape a cpl_enriched row into the same comparison-grid record the
     precomputed offer_grid emits, so the picker UI is source-agnostic."""
     front = _fnum(m.get("fcp")); after = _fnum(m.get("bcp")); eff = _fnum(m.get("ecp"))
+    # Per-case RIP rebate at this house = post-QD price minus the post-QD+RIP
+    # effective price, so the picker can show "+$X/cs RIP" cross-distributor.
+    base = after if after is not None else front
+    rip_pc = round(base - eff, 2) if (base is not None and eff is not None and base - eff > 0.005) else 0.0
     return {
         "wholesaler": m.get("w"), "product_name": m.get("pn"),
         "display_name": m.get("pn"), "unit_volume": m.get("uv"),
         "upc": m.get("upc"), "upc_norm": m.get("un"),
         "frontline_case_price": front, "after_qd_case_price": after,
-        "effective_case_price": eff,
+        "effective_case_price": eff, "rip_per_case": rip_pc,
         "has_rip": bool(m.get("hr")), "has_discount": bool(m.get("hd")),
         "rip_code": (str(m["rc"]) if m.get("rc") not in (None, "", "0") else None),
         "net_rank": rank, "is_cheapest_net": (rank == 0 and eff is not None),

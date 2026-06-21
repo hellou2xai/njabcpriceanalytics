@@ -1449,6 +1449,9 @@ export interface OfferRow {
   btl_effective?: number | null;
   qd_save_per_case?: number | null;
   rip_savings?: number | null;
+  // Per-case RIP rebate at this distributor (post-QD price − net), for the
+  // cross-distributor RIP comparison shown in the picker.
+  rip_per_case?: number | null;
   has_discount?: boolean;
   has_rip?: boolean;
   rip_code?: string | null;

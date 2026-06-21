@@ -27,15 +27,21 @@ dimensions. Partial keys silently weld distinct SKUs — the recurring bug class
 - [x] Products-page Add-to-cart / Add-to-list pass `unit_qty` + `vintage`.
 - [x] Add-to-cart defaults to 1 case when no qty set; cart + lists show "Vintage NNNN".
 
-## Remaining (operational — do from the other PC)
-- [ ] **Rebuild derived tables** so the `cross_source_links` pack fix hits real data:
-      `python run_etl.py --derive-only`  (then commit the rebuilt parquet if tracked).
-- [ ] **Deploy / restart** backend + frontend; the live-query + UI fixes need the new
-      build serving (Render serves the old build ~5–8 min).
-- [ ] **Verify on prod** (per CLAUDE.md): on the Opici Castiglioni Chianti card the
-      "Best price: Allied" chip should be GONE (Opici '24 vs Allied '24 are tied $104);
-      the Allied '23 5cs Active-now $100 deal stays on the '23 row only. In the cart,
-      the Opici line should offer the distributor switch (Opici/Allied/Fedway).
+## Remaining (operational) — DONE 2026-06-21 from office PC
+- [x] **Rebuild derived tables** so the `cross_source_links` pack fix hits real data:
+      re-derived locally (`build_all`) and re-ingested to prod Postgres. The equal-pack
+      filter dropped the pack-mismatched welds: `cross_source_links` 7333 -> 5504.
+      Verified prod Postgres matches the freshly-built local signature.
+- [x] **Deploy / restart**: SKU-identity code is on `main` (`21bb88f`); empty-commit
+      redeploy (`de0fb3d`) rebuilt the prod cache from the updated Postgres.
+- [~] **Verify on prod** (per CLAUDE.md):
+      - Data layer VERIFIED: catalog search returns Allied '23 (CHIAN23) and '24
+        (CHIAN24) as SEPARATE rows; Opici '24 and Allied '24 both $104 (tied), so the
+        grid no longer has a cheaper Allied to flag. `cross_source_links` corrected.
+      - Frontend acceptance (eyeball in browser): the Opici Castiglioni Chianti card's
+        "Best price: Allied" chip should be GONE, and the cart Opici line should offer
+        the distributor switch. DistCompareChip computes client-side from the grid's
+        size rows (no endpoint), so it follows from the verified data + deployed code.
 
 ## Intentional — DO NOT "fix" (detectors whose job is to find partial-key collisions)
 - `catalog.py:3276/3399/3639` ambiguous-barcode finders, `:3430` stub+real,

@@ -140,6 +140,13 @@ function RichMonth({ b, pack, current }: { b: MonthBreakdown; pack: number | nul
     const c = _csOf(t);
     return off > 0.005 ? `${_fmtCs(c)} cs / $${(c * off).toFixed(2)}` : null;
   }).filter(Boolean) as string[];
+  // The 1-case quantity discount is the everyday BUY PRICE (what you pay for any
+  // order >= 1 case), not an incremental quantity deal. Promote it to the headline
+  // and drop it from the deal rows so it isn't shown twice.
+  const _isOneCs = (t: RipTier) => Math.abs(_csOf(t) - 1) < 0.001;
+  const oneCsQd = disc.find(t => _isOneCs(t) && b.frontline != null && t.eff < b.frontline - 0.005);
+  const buyPrice = oneCsQd ? oneCsQd.eff : null;
+  const discDeals = disc.filter(t => !_isOneCs(t));   // deeper-quantity QD only
   const tierLine = (t: RipTier, kind: 'disc' | 'rip', i: number) => {
     // RIP rows show the rebate ALONE (the RIP-sheet number) — DealLadder rule.
     const off = kind === 'rip'
@@ -168,7 +175,15 @@ function RichMonth({ b, pack, current }: { b: MonthBreakdown; pack: number | nul
   return (
     <span className="psk-pop-block">
       <span className="psk-pop-month">{fmtMonth(b.edition)}{b.future ? ' · next' : current ? ' · current' : ''}</span>
-      <span className="psk-pop-line"><em>List</em>{priceCB(b.frontline, pack, b.size)}</span>
+      {buyPrice != null ? (
+        <span className="psk-pop-line"><em>Buy</em>{priceCB(buyPrice, pack, b.size)}
+          <span style={{ marginLeft: 6, color: 'var(--text-muted)', textDecoration: 'line-through' }}
+            title="List (frontline) price before the 1-case quantity discount">
+            {priceCB(b.frontline, pack, b.size)}</span>
+        </span>
+      ) : (
+        <span className="psk-pop-line"><em>List</em>{priceCB(b.frontline, pack, b.size)}</span>
+      )}
       {(qdTotals.length > 0 || ripTotals.length > 0) && (
         <span className="psk-pop-totals">
           {qdTotals.length > 0 && (
@@ -179,10 +194,10 @@ function RichMonth({ b, pack, current }: { b: MonthBreakdown; pack: number | nul
           )}
         </span>
       )}
-      {(disc.length > 0 || rip.length > 0) && (
+      {(discDeals.length > 0 || rip.length > 0) && (
         <span className="psk-pop-deals">
           <span className="psk-pop-deals-h">Quantity deals</span>
-          {disc.map((t, i) => tierLine(t, 'disc', i))}
+          {discDeals.map((t, i) => tierLine(t, 'disc', i))}
           {rip.map((t, i) => tierLine(t, 'rip', i))}
         </span>
       )}

@@ -121,6 +121,21 @@ function DistPanel({ w, d, row, cases, accent, isWinner, edition, onRipClick }: 
     t => t.case_credit != null && t.case_credit < 1);
   const halfCaseCredit = halfCaseTier?.case_credit ?? null;
 
+  // RIP DIFFERENCE highlight: a tier is "common" when EVERY distributor has the
+  // same buy-in + unit + per-case rebate. Tiers NOT common to all are the actual
+  // RIP difference — flagged so the card can paint them (yellow bg / red font).
+  const tierKey = (t: { cases_to_unlock: number | null; unit: string | null; rebate_per_case: number | null }) =>
+    `${t.cases_to_unlock ?? ''}|${(t.unit ?? '').toLowerCase().startsWith('b') ? 'b' : 'c'}|` +
+    `${t.rebate_per_case != null ? Math.round(t.rebate_per_case * 100) : ''}`;
+  const allDists = Object.values(row.dists);
+  const commonTierKeys = allDists.length > 1
+    ? allDists
+        .map(dd => new Set((dd.rip_tiers ?? []).map(tierKey)))
+        .reduce((acc, s) => new Set([...acc].filter(k => s.has(k))))
+    : new Set<string>();
+  const isDiffTier = (t: typeof d.rip_tiers[number]) =>
+    allDists.length > 1 && !commonTierKeys.has(tierKey(t));
+
   // total cash you actually outlay at this volume, here vs the competition
   const myTotal = d.landed_at_n != null ? d.landed_at_n * cases : null;
   const rivals = Object.entries(row.dists)
@@ -247,9 +262,10 @@ function DistPanel({ w, d, row, cases, accent, isWinner, edition, onRipClick }: 
                       // (buyers think in total dollars back, not $/case).
                       const totalBack = (t.rebate_per_case != null && t.cases_to_unlock != null)
                         ? t.rebate_per_case * t.cases_to_unlock : t.rebate_per_case;
+                      const diff = isDiffTier(t);
                       return (
-                        <span key={i} className={`rip2-tier-chip${t.is_time_sensitive ? ' is-ts' : ''}`}
-                          title={`RIP ${code}: buy ${t.buy_label ?? `${t.raw_qty} ${t.unit ?? ''}`} → ${money(totalBack)} back total (${money(t.rebate_per_case)}/cs)${t.price_after != null ? ` · net ${money(t.price_after)}/cs` : ''}${t.is_time_sensitive ? ' · time-limited' : ''}`}>
+                        <span key={i} className={`rip2-tier-chip${t.is_time_sensitive ? ' is-ts' : ''}${diff ? ' is-diff' : ''}`}
+                          title={`RIP ${code}: buy ${t.buy_label ?? `${t.raw_qty} ${t.unit ?? ''}`} → ${money(totalBack)} back total (${money(t.rebate_per_case)}/cs)${t.price_after != null ? ` · net ${money(t.price_after)}/cs` : ''}${t.is_time_sensitive ? ' · time-limited' : ''}${diff ? ' · differs from the other distributor' : ''}`}>
                           {t.buy_label ?? `${t.raw_qty}${(t.unit ?? '').toLowerCase().startsWith('b') ? 'btl' : 'cs'}`}
                           {' → '}<strong>{money(totalBack)}</strong>
                         </span>

@@ -159,6 +159,9 @@
 }
 .rip2-tier-chip strong { font-weight: 700; }
 .rip2-tier-chip.is-ts { background: hsl(40 90% 94%); color: hsl(35 70% 32%); border-color: hsl(40 80% 82%); }
+/* RIP DIFFERENCE: a tier not shared by every distributor — yellow bg, red font */
+.rip2-tier-chip.is-diff { background: #fff8c5; color: #d1242f; border-color: #e3b341; font-weight: 700; }
+.rip2-tier-chip.is-diff strong { color: #d1242f; }
 .rip2-dist-price { font-size: 1.55rem; font-weight: 700; line-height: 1.1; display: flex; align-items: baseline; gap: 0; flex-wrap: wrap; }
 .rip2-per { font-size: 0.78rem; font-weight: 500; color: var(--text-muted); margin-left: 3px; }
 /* bottle price sits next to the case price and must read at the SAME size */

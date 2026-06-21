@@ -245,7 +245,8 @@ def _q_clause(q: str, extra_aliases: dict | None = None,
               name_col: str = "product_name", brand_col: str = "brand",
               upc_col: str = "upc", enrich_table: str | None = None,
               enrich_upc_expr: str | None = None,
-              enrich_cols: bool = False) -> tuple[str, dict, str]:
+              enrich_cols: bool = False,
+              include_description: bool = False) -> tuple[str, dict, str]:
     """Build the search predicate for a free-text query: returns (clause, params,
     relevance_expr).
 
@@ -322,6 +323,22 @@ def _q_clause(q: str, extra_aliases: dict | None = None,
                     f"OR UPPER(COALESCE(_pe.category_path,'')) LIKE UPPER(${k}) "
                     f"OR UPPER(COALESCE(_pe.region,'')) LIKE UPPER(${k}) "
                     f"OR REPLACE(UPPER(COALESCE(_pe.name,'')), '''', '') LIKE UPPER(${k})))")
+            # Fallback widening (opt-in): also let a token QUALIFY a row via the
+            # Go-UPC DESCRIPTION and the distributor item number. Both are kept
+            # OUT of the strict default — description because a stray name in
+            # tasting notes shouldn't qualify a product, item number because it
+            # is handled by the numeric/identifier path — but when the strict
+            # search finds nothing they are the safety net that still surfaces
+            # the product. (UPC + ABG item number + RIP code stay covered by the
+            # numeric branch / identifier_clause below.)
+            if include_description:
+                sub += (f" OR UPPER(COALESCE(CAST(dist_item_no AS VARCHAR),'')) LIKE UPPER(${k})")
+                if enrich_cols:
+                    sub += f" OR UPPER(COALESCE(enr_description,'')) LIKE UPPER(${k})"
+                elif enrich_table:
+                    sub += (f" OR EXISTS (SELECT 1 FROM {enrich_table} _ped "
+                            f"WHERE _ped.upc = LTRIM(CAST({_outer_upc} AS VARCHAR), '0') "
+                            f"AND UPPER(COALESCE(_ped.description,'')) LIKE UPPER(${k}))")
             subs.append(f"({sub})")
         token_clauses.append("(" + " OR ".join(subs) + ")")
         # Relevance: NAME match scores 1.0 per token. Description match
@@ -1482,11 +1499,11 @@ def search_products(
         # rows, and restore the original otherwise.
         if (q and count < 5 and offset == 0 and q_clause_idx is not None
                 and any(ch.isalpha() for ch in q)):
-            def _retry(fixed_q):
+            def _retry(fixed_q, incl_desc: bool = False):
                 nonlocal where_clause, rel_expr
                 clause2, qp2, rel2 = _q_clause(fixed_q, _brand_initialisms(con, src),
                                                enrich_table=_enr, enrich_upc_expr=_enr_upc,
-                                               enrich_cols=_enr_cols)
+                                               enrich_cols=_enr_cols, include_description=incl_desc)
                 where[q_clause_idx] = clause2
                 rel_expr = rel2
                 # Drop the previous query params so none are left bound but unused
@@ -1523,6 +1540,23 @@ def search_products(
                         n = _retry(ai_q)
                         if n > 0:
                             count, corrected_query = n, ai_q
+                except Exception:
+                    pass
+
+            # 3) Enrichment-description fallback: when the strict search (name /
+            #    brand / category / region / UPC / item number) AND the spell-fix
+            #    and AI rewrites all came back empty, widen to the Go-UPC
+            #    DESCRIPTION + distributor item number so a real product still
+            #    surfaces instead of "no results". Kept last so it never dilutes a
+            #    search that already matched. Restores the strict clause if it
+            #    still finds nothing (result is empty either way).
+            if count == 0:
+                try:
+                    n = _retry(corrected_query or q, incl_desc=True)
+                    if n > 0:
+                        count = n
+                    else:
+                        _retry(q)
                 except Exception:
                     pass
 

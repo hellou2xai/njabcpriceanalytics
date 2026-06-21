@@ -177,3 +177,37 @@ serves ~30% as 304s but can't offset the CPU wall. Conclusion: 100 concurrent
 needs Phase 4 (more CPU / horizontal scale behind a load balancer) — software
 tuning alone won't get 2 cores there. Login bcrypt cost is also a real factor at
 this concurrency.
+
+## 100 users x 25s — 2026-06-21 21:53 UTC
+
+- Logins: 100/100 ok | login p50=7252ms p95=8667ms max=8981ms
+- Requests: 532 in 41.3s = 12.9 req/s | errors: 0 (0.0%) | 304 cache-hits: 234 (44.0%)
+- Latency drift: first-half p95=2522ms -> second-half p95=27061ms
+
+```
+endpoint                       n     p50     p95     p99     max   304%   err%
+search(text)                 133    1019    2222   10687   11230    53%   0.0%
+search(include_tiers)        133     406    2419    9790   11280    64%   0.0%
+cart                         133   14993   28796   29689   29994     0%   0.0%
+facets                       133     183    6180   12791   14203    59%   0.0%
+```
+
+## 100 users (properly warmed) — 0 errors
+
+The earlier "58% errors at 100" run was COLD (the pre-warm helper had a bug). With
+the server warm, 100 concurrent users completes with **0 errors** — the service
+stays up and the cached reads are fast:
+
+| endpoint | p50 | p95 | 304% | err% |
+|---|---|---|---|---|
+| search(text) | 1.0 s | 2.2 s | 53% | 0% |
+| search(include_tiers) | 0.4 s | 2.4 s | 64% | 0% |
+| facets | 0.18 s | 6.2 s | 59% | 0% |
+| **cart** | **15.0 s** | **28.8 s** | 0% | 0% |
+| login (burst) | 7.3 s | 8.7 s | — | — |
+
+44% of all reads served as cheap 304s. Remaining bottlenecks at 100 concurrent:
+(1) **cart** — uncacheable + CPU-heavy (p50 15 s), drags the tail and the
+second-half drift (p95 2.5 s -> 27 s); (2) **login** — 100-way bcrypt on 2 cores
+(~7 s). Caching (Phase 1) is what makes 100 users survivable; cart precompute +
+lazy suggestions and login-cost tuning are the next ceilings, then CPU for headroom.

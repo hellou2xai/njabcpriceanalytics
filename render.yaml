@@ -10,10 +10,10 @@ databases:
   - name: njabc-db
     databaseName: celr
     user: celr
-    # VERIFY against the live Render dashboard before any blueprint sync — this
-    # was drifted (the running services are PAID). If the DB is a paid plan, set
-    # the matching slug here; a stale 'free' could downgrade prod on a sync.
-    plan: free            # <-- CONFIRM: live DB plan (do not sync until verified)
+    # Live plan is Pro 4 GB (4 GB RAM / 1 CPU), confirmed in the dashboard. This
+    # previously read 'free' (blueprint drift) — a sync would have downgraded the
+    # production database. Keep matching the dashboard.
+    plan: pro_4gb         # Pro 4 GB RAM / 1 CPU
 
 services:
   - type: web

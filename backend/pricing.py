@@ -1018,9 +1018,23 @@ def attach_tiers(con, records, ref_date=None) -> None:
                       else round(p_front - best_amt, 2))
             if p_best is None or p_best >= p_front - 0.005:
                 continue
-            # Skip if a full-month tier at this qty already beats it.
+            p_from, p_to = _iso(pr["from_date"]), _iso(pr["to_date"])
+            # Skip when a FULL-MONTH (evergreen) tier at this qty already beats it
+            # — a dated deal no better than the everyday price is noise. Gate on
+            # `not is_time_sensitive` so we only compare against full-month tiers:
+            # a DATED window must NOT be suppressed just because ANOTHER dated
+            # window has the same qty/price. The same QD offered in two windows
+            # (e.g. Jun 3-4 AND Jun 23-24) are distinct deals and both belong in
+            # the ladder — the same multi-window rule the RIP tiers use below.
             if any(d["qty"] == best_qty and (d["unit"] or "").lower() == best_unit.lower()
+                   and not d.get("is_time_sensitive")
                    and (d.get("price_after") or 1e9) <= p_best + 0.005 for d in disc):
+                continue
+            # Collapse only EXACT duplicates: same qty + unit + SAME dates (a
+            # repeated raw sub-month row), keeping the one already added.
+            if any(d.get("is_time_sensitive") and d["qty"] == best_qty
+                   and (d["unit"] or "").lower() == best_unit.lower()
+                   and d.get("from_date") == p_from and d.get("to_date") == p_to for d in disc):
                 continue
             p_win = window_status(pr["from_date"], pr["to_date"], ref_date)
             disc.append({

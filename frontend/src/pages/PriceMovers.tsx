@@ -3,7 +3,7 @@ import { useSearchParams, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowDownRight, ArrowUpRight } from 'lucide-react';
 import { useResultCount } from '../lib/resultCount';
-import { analytics, watchlist, type PriceMover, type CatalogTier } from '../lib/api';
+import { analytics, watchlist, type PriceMover, type CatalogTier, type Price3moBlock } from '../lib/api';
 import { ContextMenuProvider, RowMenuButton } from '../components/ContextMenu';
 import FavoriteButton from '../components/FavoriteButton';
 import AddToCartButton from '../components/AddToCartButton';
@@ -72,7 +72,7 @@ export default function PriceMovers({ direction }: Props) {
   useEffect(() => { const u = params.get('q'); if (u !== null) setQ(u); }, [params]);
   const [productType, setProductType] = useState('');
   const [minChange, setMinChange] = useState('');     // min ABS % change
-  const [minDollar, setMinDollar] = useState('');     // min ABS $ change per case
+  const [minDollar, setMinDollar] = useState('1');    // min ABS $ change per case (default $1: hide rounding noise)
   const [hasRip, setHasRip] = useState<'' | 'yes' | 'no'>('');
   const [sizes, setSizes] = useState<string[]>([]);
   const [trackedOnly, setTrackedOnly] = useState(false);
@@ -218,8 +218,8 @@ export default function PriceMovers({ direction }: Props) {
       ] },
     { type: 'pills', key: 'min_dollar', title: 'Min change / case', value: minDollar, onChange: setMinDollar,
       options: [
-        { value: '', label: 'Any' }, { value: '5', label: '$5+' }, { value: '10', label: '$10+' },
-        { value: '25', label: '$25+' }, { value: '50', label: '$50+' },
+        { value: '', label: 'Any' }, { value: '1', label: '$1+' }, { value: '5', label: '$5+' },
+        { value: '10', label: '$10+' }, { value: '25', label: '$25+' }, { value: '50', label: '$50+' },
       ] },
     { type: 'pills', key: 'has_rip', title: 'Has RIP rebate', value: hasRip, onChange: v => setHasRip(v as '' | 'yes' | 'no'),
       options: [{ value: '', label: 'Any' }, { value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }] },
@@ -348,29 +348,41 @@ function MoverCard({ d, isDrop, open }: { d: PriceMover; isDrop: boolean; open: 
   })();
   const delta = d.case_delta ?? null;
   const deltaPct = d.case_delta_pct ?? null;
-  // Frontline (list) case price for the "to" month of the headline transition.
-  const flNow = headline === 'next' ? (d.frontline_next_case_price ?? null) : (d.frontline_case_price ?? null);
 
   const eff = d.effective_case_price ?? null;
   const uq = Number(d.unit_qty) || 0;
   const colour = isDrop ? '#16a34a' : '#dc2626';
   const bgClass = isDrop ? 'mover-card--drop' : 'mover-card--rise';
 
-  // Price stack for the destination (headline) edition, broken into three
-  // clearly labelled rows: front line, best QD, best RIP. Tiers belong to the
-  // headline edition (next_tiers when the headline transition is cur->next).
-  // "Best" = the deepest tier (lowest price_after). Each row also carries the
-  // per-bottle price (same prominence as the case price) and the buy-in detail.
+  // Monthly comparison stack: each row shows the From -> To change for the
+  // headline transition. Per-edition figures come from price_3mo (each block
+  // carries that edition's frontline, 1cs-QD price and full tier ladder). We
+  // only ever show the BEST (deepest) QD tier and the BEST RIP tier.
   const btlAbbr = perUnitAbbr(d.unit_volume, d.unit_type);
   const perBtl = (cs?: number | null) => (cs != null && uq > 1 ? cs / uq : null);
-  const tierList: CatalogTier[] = (headline === 'next' ? d.next_tiers : d.tiers) ?? [];
-  const deepest = (ts: CatalogTier[]) =>
-    ts.filter(t => t.price_after != null)
-      .reduce<CatalogTier | null>((a, b) => (a == null || (b.price_after! < a.price_after!) ? b : a), null);
-  const bestQd = deepest(tierList.filter(t => t.source === 'discount' && !t.is_time_sensitive));
-  const bestRip = deepest(tierList.filter(t => t.source === 'rip'));
-  const frontNow = flNow ?? (eff ?? null);   // front line (list) case price for the "to" month
-  const tierQty = (t: CatalogTier) => t.qualified_cases ?? t.qty;
+  const blocks = d.price_3mo ?? [];
+  const curEd = d.cur_edition ?? d.edition ?? null;
+  const toEd = headline === 'next' ? (d.next_edition ?? null) : curEd;
+  const fromEd = headline === 'next' ? curEd : prevEdition(curEd);
+  const byEd = (ed?: string | null) => (ed ? blocks.find(b => b.edition === ed) ?? null : null);
+  let toBlk = byEd(toEd);
+  let fromBlk = byEd(fromEd);
+  if ((!toBlk || !fromBlk) && blocks.length >= 2) {
+    const s = [...blocks].sort((a, b) => ((a.edition ?? '') < (b.edition ?? '') ? -1 : 1));
+    toBlk = toBlk ?? s[s.length - 1];
+    fromBlk = fromBlk ?? s[s.length - 2];
+  }
+  const fl1Of = (b?: Price3moBlock | null) => b?.disc1_price ?? b?.frontline ?? null;
+  const bestOf = (b: Price3moBlock | null | undefined, src: 'discount' | 'rip') => {
+    const ts = (b?.tiers ?? []).filter(t => t.source === src && t.price_after != null
+      && (src === 'rip' || !t.is_time_sensitive));
+    return ts.length ? Math.min(...ts.map(t => t.price_after!)) : null;
+  };
+  const cmpRows = [
+    { key: 'fl',  label: 'Front line (after 1cs QD)', from: fl1Of(fromBlk),               to: fl1Of(toBlk) },
+    { key: 'qd',  label: 'QD change',                 from: bestOf(fromBlk, 'discount'),   to: bestOf(toBlk, 'discount') },
+    { key: 'rip', label: 'RIP change', rip: true,     from: bestOf(fromBlk, 'rip'),        to: bestOf(toBlk, 'rip') },
+  ].filter(r => r.from != null || r.to != null);
 
   return (
     <div className={`deal-card mover-card ${bgClass}`} role="button" tabIndex={0}
@@ -425,46 +437,33 @@ function MoverCard({ d, isDrop, open }: { d: PriceMover; isDrop: boolean; open: 
           </span>
         )}
       </div>
-      {/* Price stack: front line on top, then the price after the best QD, then
-          the price after the best RIP. Each row shows the per-case AND per-bottle
-          price, plus the buy-in (QD qualified-tier quantity; RIP total rebate +
-          cases). Replaces the old single "List:" sub-line for clarity. */}
+      {/* Monthly comparison: three rows (front line after 1cs QD, best-QD change,
+          best-RIP change), each showing the From -> To change in case AND bottle
+          price (same size, parity rule). Only the best QD / best RIP tier. */}
       <div className="pm-stack">
-        {frontNow != null && (
-          <div className="pm-row">
-            <span className="pm-row-label">Front Line Case Price</span>
-            <span className="pm-row-vals">
-              <span className="pm-cs">{money(frontNow)}<span className="deal-unit">/cs</span></span>
-              {perBtl(frontNow) != null && (
-                <span className="pm-btl">{money(perBtl(frontNow))}<span className="deal-unit">/{btlAbbr}</span></span>
-              )}
-            </span>
-          </div>
-        )}
-        {bestQd && (
-          <div className="pm-row">
-            <span className="pm-row-label">Price after best QD</span>
-            <span className="pm-row-vals">
-              <span className="pm-cs">{money(bestQd.price_after)}<span className="deal-unit">/cs</span></span>
-              {perBtl(bestQd.btl_price_after ?? bestQd.price_after) != null && (
-                <span className="pm-btl">{money(perBtl(bestQd.btl_price_after ?? bestQd.price_after))}<span className="deal-unit">/{btlAbbr}</span></span>
-              )}
-              <span className="pm-detail">at {tierQty(bestQd)} cs</span>
-            </span>
-          </div>
-        )}
-        {bestRip && (
-          <div className="pm-row pm-row--rip">
-            <span className="pm-row-label">Price after best RIP</span>
-            <span className="pm-row-vals">
-              <span className="pm-cs">{money(bestRip.price_after)}<span className="deal-unit">/cs</span></span>
-              {perBtl(bestRip.btl_price_after ?? bestRip.price_after) != null && (
-                <span className="pm-btl">{money(perBtl(bestRip.btl_price_after ?? bestRip.price_after))}<span className="deal-unit">/{btlAbbr}</span></span>
-              )}
-              <span className="pm-detail">RIP {money(bestRip.amount)} at {tierQty(bestRip)} cs</span>
-            </span>
-          </div>
-        )}
+        {cmpRows.map(r => {
+          const changed = r.from != null && r.to != null && Math.abs(r.from - r.to) >= 0.005;
+          const toStyle = changed ? { color: colour } : undefined;
+          return (
+            <div key={r.key} className={`pm-row${r.rip ? ' pm-row--rip' : ''}`}>
+              <span className="pm-row-label">{r.label}</span>
+              <span className="pm-row-vals">
+                <span className="pm-cmp">
+                  {r.from != null && <span className="pm-from">{money(r.from)}</span>}
+                  <span className="pm-arrow">→</span>
+                  <span className="pm-cs" style={toStyle}>{money(r.to)}<span className="deal-unit">/cs</span></span>
+                </span>
+                {(perBtl(r.from) != null || perBtl(r.to) != null) && (
+                  <span className="pm-cmp">
+                    {perBtl(r.from) != null && <span className="pm-from">{money(perBtl(r.from))}</span>}
+                    <span className="pm-arrow">→</span>
+                    <span className="pm-btl" style={toStyle}>{money(perBtl(r.to))}<span className="deal-unit">/{btlAbbr}</span></span>
+                  </span>
+                )}
+              </span>
+            </div>
+          );
+        })}
       </div>
 
       <div className="deal-card-meta">

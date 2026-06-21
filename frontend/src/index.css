@@ -4380,19 +4380,18 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 .deal-save { font-size: 12px; color: var(--green, #16a34a); }
 .deal-save strong { color: var(--green, #16a34a); }
 
-/* Price stack: front line / best QD / best RIP, each on its own labelled row.
-   Per-case and per-bottle prices share the SAME font size (bottle-price
-   parity rule) so neither reads as secondary. */
-.pm-stack { display: flex; flex-direction: column; gap: 3px; padding: 6px 0 2px; }
-.pm-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-.pm-row-label { font-size: 11.5px; color: var(--text-muted); font-weight: 600; flex: 0 0 auto; }
-.pm-row-vals { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
+/* Monthly comparison stack: front line (1cs QD) / QD change / RIP change, each
+   showing From -> To for case AND bottle. Per-case and per-bottle prices share
+   the SAME font size (bottle-price parity rule). */
+.pm-stack { display: flex; flex-direction: column; gap: 5px; padding: 7px 0 3px; }
+.pm-row { display: flex; flex-direction: column; gap: 1px; }
+.pm-row-label { font-size: 11px; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; }
+.pm-row-vals { display: flex; align-items: baseline; gap: 6px 16px; flex-wrap: wrap; }
+.pm-cmp { display: inline-flex; align-items: baseline; gap: 5px; }
+.pm-from { font-size: 13px; color: var(--text-muted); font-weight: 600; }
+.pm-arrow { font-size: 12px; color: var(--text-muted); }
 .pm-cs, .pm-btl { font-size: 15px; font-weight: 800; color: var(--text); letter-spacing: -0.01em; }
-.pm-btl { color: var(--text-muted); }
 .pm-row-vals .deal-unit { font-size: 11px; color: var(--text-muted); font-weight: 600; margin-left: 1px; }
-.pm-detail { font-size: 11px; color: var(--text-muted); font-weight: 600; }
-.pm-row--rip .pm-cs { color: var(--green, #16a34a); }
-.pm-row--rip .pm-detail { color: var(--green, #16a34a); }
 
 /* Bottom pager under the card grid — mirrors the top toolbar's Prev/Next so the
    buyer can page on without scrolling back up. */

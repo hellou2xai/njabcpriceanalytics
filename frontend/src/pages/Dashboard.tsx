@@ -168,10 +168,16 @@ export default function Dashboard() {
                    to="/discounts" title="Open the Discounts ranker" />
           <KPICard label="Clearance Items" value={kpis.clearance_items} color="#dc2626" icon={<TrendingDown size={20} />}
                    to="/clearance" title="Open the Clearance / Closeout list" />
-          <KPICard label="Price Drops" value={priceCmp ? cmpDrops : '…'} color="#16a34a" icon={<ArrowDownRight size={20} />}
-                   to="/price-drops" title="Open Price Drops" />
-          <KPICard label="Price Increases" value={priceCmp ? cmpHikes : '…'} color="#ea580c" icon={<ArrowUpRight size={20} />}
-                   to="/price-increases" title="Open Price Increases" />
+          {/* Price Drops / Increases are admin-only pages, so their KPI cards
+              (which link there) only show for admins. */}
+          {isAdmin && (
+            <KPICard label="Price Drops" value={priceCmp ? cmpDrops : '…'} color="#16a34a" icon={<ArrowDownRight size={20} />}
+                     to="/price-drops" title="Open Price Drops" />
+          )}
+          {isAdmin && (
+            <KPICard label="Price Increases" value={priceCmp ? cmpHikes : '…'} color="#ea580c" icon={<ArrowUpRight size={20} />}
+                     to="/price-increases" title="Open Price Increases" />
+          )}
           <KPICard label="Active RIPs" value={kpis.active_rips} color="#7c3aed" icon={<Zap size={20} />}
                    to="/catalog?hasRip=1" title="Open Catalog filtered to products with a RIP rebate" />
         </div>

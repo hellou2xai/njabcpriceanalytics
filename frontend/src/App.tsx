@@ -153,8 +153,8 @@ function AuthenticatedApp() {
             <Route path="/how-to-guide" element={<HowToGuide />} />
             <Route path="/tours" element={<Tours />} />
             <Route path="/time-sensitive" element={<TimeSensitive />} />
-            <Route path="/price-drops" element={<PriceMovers direction="down" />} />
-            <Route path="/price-increases" element={<PriceMovers direction="up" />} />
+            <Route path="/price-drops" element={<AdminRoute><PriceMovers direction="down" /></AdminRoute>} />
+            <Route path="/price-increases" element={<AdminRoute><PriceMovers direction="up" /></AdminRoute>} />
             <Route path="/major-discounts" element={<MajorDiscounts />} />
             <Route path="/discounts" element={<Discounts />} />
             <Route path="/compare-prices" element={<ComparePrices />} />

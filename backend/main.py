@@ -80,6 +80,19 @@ app.add_middleware(
 # this is transparent to any caller that doesn't send it.
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
+
+# Long-lived caching for the hashed, immutable JS/CSS bundle (PERF_TODO baseline).
+# Vite emits content-hashed filenames under /assets, so each build's files are
+# immutable and can be cached forever; a new deploy changes the hash and
+# index.html stays no-cache (see serve_spa), so users still pick up new builds.
+# Without this the ~2 MB bundle is re-fetched (or revalidated) on every visit.
+@app.middleware("http")
+async def _immutable_assets(request, call_next):
+    resp = await call_next(request)
+    if request.url.path.startswith("/assets/"):
+        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return resp
+
 # Register routers
 app.include_router(auth_router)
 app.include_router(stores.router)

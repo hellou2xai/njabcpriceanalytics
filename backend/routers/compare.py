@@ -24,7 +24,7 @@ import math
 import re
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -752,6 +752,8 @@ def compare_products(
     confidence: str = Query("high", description="high = hide admin-commented rows (default); commented = only commented rows (admin review); all = everything."),
     verified: str = Query("all", description="Admin-only review filter: all | yes (verified matches) | no (not-yet-verified). Ignored for the public."),
     user: Optional[dict] = Depends(get_optional_user),
+    request: Request = None,
+    response: Response = None,
 ):
     """The comparison grid: products common to ALL selected distributors with
     the three price layers per distributor, per-layer winners, and a smart
@@ -764,6 +766,15 @@ def compare_products(
     never a re-implemented formula."""
     cache_key = ("compare_products", _cache_tag(), wholesalers, q, product_type,
                  only_differences, min_spread, cases, sort, order, limit, months, month_mode)
+    # Public (non-admin) responses never include admin comments and ignore the
+    # confidence/verified review filters, so they are user-independent and safe to
+    # mark Cache-Control: public + ETag (304 on revalidation). Admin requests are
+    # post-processed per user, so they skip the public cache.
+    if request is not None and response is not None and not (user and user.get("is_admin")):
+        from backend.http_cache import public_conditional
+        _nm = public_conditional(request, response, cache_key)
+        if _nm is not None:
+            return _nm
     cached = _board_cache_get(cache_key)
     if cached is not None:
         return _apply_row_comments(cached, user, confidence, verified)
@@ -1996,6 +2007,8 @@ def compare_rips(
     limit: int = Query(2000, ge=1, le=50000),
     month_mode: str = Query("cur", description="cur = compare RIPs at the CURRENT month (default); next = compare at the NEXT month when that edition is already loaded (else falls back to current)."),
     user: Optional[dict] = Depends(get_optional_user),
+    request: Request = None,
+    response: Response = None,
 ):
     """Compare RIP OUTCOMES across 2-3 distributors for every product they ALL
     carry a RIP on. Each distributor's RIP is normalised to a landed-$/case
@@ -2008,6 +2021,11 @@ def compare_rips(
                  time_sensitive_only, combo_only, expiring_only, timing_diff_only,
                  qty_diff_only, better_terms_only, rip_diff_only, sort, order, limit,
                  month_mode)
+    if request is not None and response is not None and not (user and user.get("is_admin")):
+        from backend.http_cache import public_conditional
+        _nm = public_conditional(request, response, cache_key)
+        if _nm is not None:
+            return _nm
     cached = _board_cache_get(cache_key)
     if cached is not None:
         return cached
@@ -2545,6 +2563,8 @@ def compare_qds(
     limit: int = Query(2000, ge=1, le=50000),
     month_mode: str = Query("cur", description="cur = compare QDs at the CURRENT month (default); next = compare at the NEXT month when that edition is already loaded (else falls back to current)."),
     user: Optional[dict] = Depends(get_optional_user),
+    request: Request = None,
+    response: Response = None,
 ):
     """Compare QUANTITY-DISCOUNT OUTCOMES across 2-3 distributors for every
     product they ALL offer a QD on. Each distributor's QD is normalised to a
@@ -2558,6 +2578,11 @@ def compare_qds(
                  brand, only_differences, min_diff, include_anomalies,
                  time_sensitive_only, expiring_only, timing_diff_only,
                  qd_diff_only, sort, order, limit, month_mode)
+    if request is not None and response is not None and not (user and user.get("is_admin")):
+        from backend.http_cache import public_conditional
+        _nm = public_conditional(request, response, cache_key)
+        if _nm is not None:
+            return _nm
     cached = _board_cache_get(cache_key)
     if cached is not None:
         return cached
@@ -2963,6 +2988,8 @@ def best_rips(
     order: str = Query("desc"),
     limit: int = Query(2000, ge=1, le=50000),
     user: Optional[dict] = Depends(get_optional_user),
+    request: Request = None,
+    response: Response = None,
 ):
     """Best RIPs board: EVERY RIP across Allied, Fedway and Opici. One card per
     product that ANY of the three files a RIP on — including products only one of
@@ -2977,6 +3004,11 @@ def best_rips(
     cache_key = ("best_rips", _cache_tag(), q, product_type, brand, wholesalers,
                  months, only_differences, min_profit, cases, time_sensitive_only,
                  hide_expired, sort, order, limit)
+    if request is not None and response is not None and not (user and user.get("is_admin")):
+        from backend.http_cache import public_conditional
+        _nm = public_conditional(request, response, cache_key)
+        if _nm is not None:
+            return _nm
     cached = _board_cache_get(cache_key)
     if cached is not None:
         return cached
@@ -3341,6 +3373,8 @@ def best_qd(
     order: str = Query("desc"),
     limit: int = Query(2000, ge=1, le=50000),
     user: Optional[dict] = Depends(get_optional_user),
+    request: Request = None,
+    response: Response = None,
 ):
     """Best QD board: the standout QUANTITY DISCOUNTS across Allied, Fedway and
     Opici. One card per product that ANY of the three files a quantity discount
@@ -3358,6 +3392,11 @@ def best_qd(
     cache_key = ("best_qd", _cache_tag(), q, product_type, brand, wholesalers,
                  months, only_differences, min_discount, cases, exclude_single_cs,
                  time_sensitive_only, hide_expired, sort, order, limit)
+    if request is not None and response is not None and not (user and user.get("is_admin")):
+        from backend.http_cache import public_conditional
+        _nm = public_conditional(request, response, cache_key)
+        if _nm is not None:
+            return _nm
     cached = _board_cache_get(cache_key)
     if cached is not None:
         return cached

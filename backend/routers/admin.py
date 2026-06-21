@@ -211,6 +211,87 @@ def reload_pricing_admin(user: dict = Depends(require_admin)):
     return {"status": "reloaded", "counts": counts}
 
 
+# --- Go-UPC enrichment backfill -------------------------------------------------
+# Runs ON the server (which holds GO_UPC_API_KEY + the R2_* secrets, which aren't
+# in a local checkout), in a background thread so the request returns at once.
+# Poll /enrich-status; when done, POST /reload-pricing so the new rows surface.
+import threading as _ethreading
+
+_enrich_state = {"running": False, "total": 0, "msg": "", "started": None, "finished": None}
+_enrich_lock = _ethreading.Lock()
+
+
+def _run_enrich_bg(limit, refetch, workers, max_rps):
+    import datetime as _dt
+    import importlib.util
+    from pathlib import Path
+    from types import SimpleNamespace
+    try:
+        from backend import goupc
+        if not getattr(goupc, "GO_UPC_ENABLED", False):
+            with _enrich_lock:
+                _enrich_state["msg"] = "GO_UPC_API_KEY not set on this server"
+            return
+        sp = Path(__file__).resolve().parents[2] / "scripts" / "enrich_products.py"
+        spec = importlib.util.spec_from_file_location("enrich_products", sp)
+        ep = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ep)
+        ep.init_user_db()
+        todo = [u for u in ep.catalogue_upcs() if u not in ep.already_done(refetch)]
+        if limit:
+            todo = todo[:limit]
+        with _enrich_lock:
+            _enrich_state.update(total=len(todo), msg=f"processing {len(todo)} UPCs")
+        args = SimpleNamespace(workers=max(2, workers), max_rps=max_rps, retries=3,
+                               sleep=0.5, limit=limit or 0, refetch=refetch, dry_run=False)
+
+        def emit(m):
+            with _enrich_lock:
+                _enrich_state["msg"] = str(m)
+        ep._run_threaded(todo, args, emit)
+        try:
+            ep.close_pool()
+        except Exception:
+            pass
+    except Exception as e:  # noqa: BLE001
+        with _enrich_lock:
+            _enrich_state["msg"] = f"failed: {type(e).__name__}: {e}"
+    finally:
+        import datetime as _dt2
+        with _enrich_lock:
+            _enrich_state["running"] = False
+            _enrich_state["finished"] = _dt2.datetime.utcnow().isoformat()
+
+
+@router.post("/enrich-missing")
+def enrich_missing(limit: int = Body(0, embed=True),
+                   refetch: Optional[str] = Body(None, embed=True),
+                   workers: int = Body(6, embed=True),
+                   max_rps: float = Body(8.0, embed=True),
+                   user: dict = Depends(require_admin)):
+    """Backfill Go-UPC enrichment (name/specs/image -> R2) for catalogue UPCs that
+    don't have it yet, in a background thread on THIS server. Returns at once; poll
+    /api/admin/enrich-status, then POST /api/admin/reload-pricing when done so the
+    new rows surface. refetch in {null,'not_found','error','all'} to re-process
+    those states too. Only one run at a time."""
+    import datetime as _dt
+    with _enrich_lock:
+        if _enrich_state["running"]:
+            return {"status": "already_running", **_enrich_state}
+        _enrich_state.update(running=True, total=0, msg="starting",
+                             started=_dt.datetime.utcnow().isoformat(), finished=None)
+    _ethreading.Thread(target=_run_enrich_bg, args=(limit, refetch, workers, max_rps),
+                       daemon=True).start()
+    return {"status": "started"}
+
+
+@router.get("/enrich-status")
+def enrich_status(user: dict = Depends(require_admin)):
+    """Progress of the Go-UPC backfill started by POST /api/admin/enrich-missing."""
+    with _enrich_lock:
+        return dict(_enrich_state)
+
+
 @router.get("/ai-usage")
 def ai_usage(
     from_date: Optional[str] = Query(None, description="YYYY-MM-DD inclusive"),

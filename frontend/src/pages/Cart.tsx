@@ -541,7 +541,7 @@ export default function Cart() {
     const pack = packOf(it);
     const showCombo = !!it.combo_code && !!it.combo_intact;
     return (
-      <div key={it.id} data-tour="cart-line" style={{ padding: '8px 0', borderTop: '1px solid var(--border)' }}>
+      <div key={it.id} data-tour="cart-line" style={{ padding: '12px 0', borderTop: '2px solid color-mix(in srgb, var(--text-muted) 38%, var(--bg))' }}>
         <div className="cart-row-grid">
           <ProductThumb src={it.image_url} alt={it.product_name} size={44} />
           <div style={{ minWidth: 0 }}>

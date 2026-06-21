@@ -129,8 +129,11 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
   // "5 cs / $50.00 · 10 cs / $150.00 · 20 cs / $400.00", ascending, best in the
   // red-on-yellow highlight. The detailed per-tier ladder stays in the table.
   const sortQty = (t: RipTier) => (t.qualifiedCases ?? caseQty(t));
+  // Each tier summary carries: q (cases), per (the per-case $ — discount off for
+  // QD, rebate for RIP), total (cases x per), and the representative tier so the
+  // line can show its date window when the deal is time-sensitive.
   const tierTotals = (tiers: RipTier[], perOf: (t: RipTier) => number | null) => {
-    const m = new Map<string, { q: number; total: number }>();
+    const m = new Map<string, { q: number; total: number; per: number; tier: RipTier }>();
     for (const t of tiers) {
       const per = perOf(t);
       if (per == null || per <= 0.005) continue;
@@ -138,7 +141,7 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
       const total = Math.round(q * per * 100) / 100;
       const label = buyLabel(t);
       const prev = m.get(label);
-      if (!prev || total > prev.total) m.set(label, { q, total });
+      if (!prev || total > prev.total) m.set(label, { q, total, per, tier: t });
     }
     const list = [...m.entries()].map(([label, v]) => ({ label, ...v })).sort((a, b) => a.q - b.q);
     const best = list.length ? Math.max(...list.map(s => s.total)) : null;
@@ -226,7 +229,8 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
               <span className="prod-deal-tot-vals">
                 {qdTotals.list.map((s, i) => (
                   <span key={i} className={qdTotals.best != null && s.total >= qdTotals.best - 1e-9 ? 'prod-deal-tot-best' : undefined}>
-                    {s.label} / <strong>${s.total.toFixed(2)}</strong>
+                    {s.label} / ${s.per.toFixed(2)}/{csWord} / <strong>${s.total.toFixed(2)}</strong>
+                    <PartialFlag t={s.tier} />
                   </span>
                 ))}
               </span>
@@ -239,7 +243,8 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
               <span className="prod-deal-tot-vals">
                 {ripTotals.list.map((s, i) => (
                   <span key={i} className={ripTotals.best != null && s.total >= ripTotals.best - 1e-9 ? 'prod-deal-tot-best' : undefined}>
-                    {s.label} / <strong>${s.total.toFixed(2)}</strong>
+                    {s.label} / ${s.per.toFixed(2)}/{csWord} / <strong>${s.total.toFixed(2)}</strong>
+                    <PartialFlag t={s.tier} />
                   </span>
                 ))}
               </span>
@@ -272,19 +277,12 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
         {disc.map((t, i) => Row('qd', t, i))}
         {ripGroups.map((g, gi) => {
           const hoist = hoistedFlag(g);
-          // Headline for THIS program, shown on its header row: the tier that
-          // pays the most total rebate (cases x RIP-per-case) — its case tier and
-          // total RIP $. Mirrors the card's green "RIP $X/cs back · $Y total RIP"
-          // summary, but per program, so the buyer sees each program's best deal
-          // without reading every row.
-          let grpTot: { label: string; total: number } | null = null;
-          for (const t of g.tiers) {
-            const per = t.ripOnlySave ?? 0;
-            if (per <= 0.005) continue;
-            const q = t.qualifiedCases ?? caseQty(t);
-            const total = Math.round(q * per * 100) / 100;
-            if (!grpTot || total > grpTot.total) grpTot = { label: buyLabel(t), total };
-          }
+          // List EVERY tier in this program on its header row, each as
+          // "case qty / rebate per case / total rebate" (cases x per-case) — the
+          // same format as the top RIP Tier summary, scoped to this program, so
+          // the buyer sees ALL of a program's tiers (not just the best) without
+          // reading the rows.
+          const grpList = tierTotals(g.tiers, t => t.ripOnlySave ?? null).list;
           return (
             <Fragment key={`rg${gi}`}>
               {(multiProgram || hoist) && (
@@ -292,11 +290,16 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
                   <td colSpan={6}
                     title="A separate RIP program for this product — pick the one matching how much you buy. These do not stack.">
                     RIP{g.code ? ` ${g.code}` : ''}
-                    {grpTot && (
+                    {grpList.length > 0 && (
                       <span className="prod-deal-grouphdr-tot"
                         style={{ fontWeight: 400, color: 'var(--text-muted)' }}
-                        title="This program's best tier: the case quantity and the total RIP rebate it pays (cases x rebate per case).">
-                        {' · '}{grpTot.label} / <strong style={{ color: 'var(--green)' }}>${grpTot.total.toFixed(2)}</strong> total RIP
+                        title="Every tier in this program: case quantity / rebate per case / total rebate (cases x rebate per case).">
+                        {grpList.map((s, i) => (
+                          <Fragment key={i}>
+                            {' · '}{s.label} / ${s.per.toFixed(2)}/{csWord} / <strong style={{ color: 'var(--green)' }}>${s.total.toFixed(2)}</strong>
+                          </Fragment>
+                        ))}
+                        {' total RIP'}
                       </span>
                     )}
                     {hoist && <PartialFlag t={hoist} />}

@@ -159,6 +159,7 @@
 }
 .rip2-tier-chip strong { font-weight: 700; }
 .rip2-tier-chip.is-ts { background: hsl(40 90% 94%); color: hsl(35 70% 32%); border-color: hsl(40 80% 82%); }
+.rip2-tier-win { font-weight: 600; opacity: 0.85; }
 /* RIP DIFFERENCE: a tier not shared by every distributor — yellow bg, red font */
 .rip2-tier-chip.is-diff { background: #fff8c5; color: #d1242f; border-color: #e3b341; font-weight: 700; }
 .rip2-tier-chip.is-diff strong { color: #d1242f; }

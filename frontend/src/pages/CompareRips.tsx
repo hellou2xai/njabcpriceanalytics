@@ -122,11 +122,14 @@ function DistPanel({ w, d, row, cases, accent, isWinner, edition, onRipClick }: 
   const halfCaseCredit = halfCaseTier?.case_credit ?? null;
 
   // RIP DIFFERENCE highlight: a tier is "common" when EVERY distributor has the
-  // same buy-in + unit + per-case rebate. Tiers NOT common to all are the actual
-  // RIP difference — flagged so the card can paint them (yellow bg / red font).
-  const tierKey = (t: { cases_to_unlock: number | null; unit: string | null; total_rebate: number | null }) =>
+  // same buy-in + unit + total rebate AND the same VALIDITY (a tier that runs all
+  // month is NOT the same as the same rebate only live for 2 days). Tiers NOT
+  // common to all are the actual RIP difference — painted yellow bg / red font.
+  const tierKey = (t: { cases_to_unlock: number | null; unit: string | null; total_rebate: number | null;
+    is_time_sensitive?: boolean; from_date?: string | null; to_date?: string | null }) =>
     `${t.cases_to_unlock ?? ''}|${(t.unit ?? '').toLowerCase().startsWith('b') ? 'b' : 'c'}|` +
-    `${t.total_rebate != null ? Math.round(t.total_rebate * 100) : ''}`;
+    `${t.total_rebate != null ? Math.round(t.total_rebate * 100) : ''}|` +
+    `${t.is_time_sensitive ? `ts:${t.from_date ?? ''}~${t.to_date ?? ''}` : 'all'}`;
   const allDists = Object.values(row.dists);
   const commonTierKeys = allDists.length > 1
     ? allDists
@@ -263,11 +266,16 @@ function DistPanel({ w, d, row, cases, accent, isWinner, edition, onRipClick }: 
                       // $10 at 3 cs → $3.33/cs → $9.99). Use the source value.
                       const totalBack = t.total_rebate;
                       const diff = isDiffTier(t);
+                      // A time-limited tier shows its validity window so the buyer
+                      // sees it's only live for those days (not all month).
+                      const win = t.is_time_sensitive && t.from_date && t.to_date
+                        ? `${t.from_date.slice(5)}–${t.to_date.slice(5)}` : null;
                       return (
                         <span key={i} className={`rip2-tier-chip${t.is_time_sensitive ? ' is-ts' : ''}${diff ? ' is-diff' : ''}`}
-                          title={`RIP ${code}: buy ${t.buy_label ?? `${t.raw_qty} ${t.unit ?? ''}`} → ${money(totalBack)} back total (${money(t.rebate_per_case)}/cs)${t.price_after != null ? ` · net ${money(t.price_after)}/cs` : ''}${t.is_time_sensitive ? ' · time-limited' : ''}${diff ? ' · differs from the other distributor' : ''}`}>
+                          title={`RIP ${code}: buy ${t.buy_label ?? `${t.raw_qty} ${t.unit ?? ''}`} → ${money(totalBack)} back total (${money(t.rebate_per_case)}/cs)${t.price_after != null ? ` · net ${money(t.price_after)}/cs` : ''}${t.is_time_sensitive ? ` · time-limited${win ? ` (valid ${win})` : ''}` : ' · valid all month'}${diff ? ' · differs from the other distributor' : ''}`}>
                           {t.buy_label ?? `${t.raw_qty}${(t.unit ?? '').toLowerCase().startsWith('b') ? 'btl' : 'cs'}`}
                           {' → '}<strong>{money(totalBack)}</strong>
+                          {win && <span className="rip2-tier-win"> · {win}</span>}
                         </span>
                       );
                     })}

@@ -222,35 +222,26 @@ _enrich_lock = _ethreading.Lock()
 
 
 def _run_enrich_bg(limit, refetch, workers, max_rps):
-    import datetime as _dt
-    import importlib.util
-    from pathlib import Path
+    # Core lives in backend/ (shipped in the image), NOT scripts/, which is in
+    # .dockerignore and isn't present in the container.
     from types import SimpleNamespace
+    from backend import enrich_backfill as eb
     try:
-        from backend import goupc
-        if not getattr(goupc, "GO_UPC_ENABLED", False):
+        if not getattr(eb.goupc, "GO_UPC_ENABLED", False):
             with _enrich_lock:
                 _enrich_state["msg"] = "GO_UPC_API_KEY not set on this server"
             return
-        sp = Path(__file__).resolve().parents[2] / "scripts" / "enrich_products.py"
-        spec = importlib.util.spec_from_file_location("enrich_products", sp)
-        ep = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(ep)
-        ep.init_user_db()
-        todo = [u for u in ep.catalogue_upcs() if u not in ep.already_done(refetch)]
-        if limit:
-            todo = todo[:limit]
+        todo = eb.compute_todo(refetch, limit)
         with _enrich_lock:
             _enrich_state.update(total=len(todo), msg=f"processing {len(todo)} UPCs")
-        args = SimpleNamespace(workers=max(2, workers), max_rps=max_rps, retries=3,
-                               sleep=0.5, limit=limit or 0, refetch=refetch, dry_run=False)
+        args = SimpleNamespace(workers=max(2, workers), max_rps=max_rps, retries=3)
 
         def emit(m):
             with _enrich_lock:
                 _enrich_state["msg"] = str(m)
-        ep._run_threaded(todo, args, emit)
+        eb.run_threaded(todo, args, emit)
         try:
-            ep.close_pool()
+            eb.close_pool()
         except Exception:
             pass
     except Exception as e:  # noqa: BLE001

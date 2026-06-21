@@ -32,10 +32,6 @@ COPY backend/ ./backend/
 # backend.main (procurement_agents.api) and the seed/ingest tooling.
 COPY procurement_agents/ ./procurement_agents/
 COPY pos_feed/ ./pos_feed/
-# scripts/ holds server-runnable maintenance tasks (e.g. the Go-UPC enrichment
-# backfill triggered by POST /api/admin/enrich-missing, which needs the GO_UPC +
-# R2 secrets that only exist on the deployed instance).
-COPY scripts/ ./scripts/
 COPY --from=frontend /app/frontend/dist ./frontend/dist
 
 # Render injects $PORT. Shell form so it expands.

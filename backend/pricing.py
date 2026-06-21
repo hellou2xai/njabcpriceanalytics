@@ -306,6 +306,14 @@ def _iso(v) -> Optional[str]:
     return d.isoformat() if d else None
 
 
+def _pack_key(v) -> str:
+    """Normalize a pack count ('12', '12.0') so a SKU's split CPL rows match by pack."""
+    try:
+        return str(int(float(v))) if v not in (None, "") else ""
+    except (TypeError, ValueError):
+        return str(v or "")
+
+
 def window_status(from_date, to_date, ref_date=None) -> dict:
     """Classify a RIP / discount validity window relative to a reference date.
 
@@ -703,11 +711,18 @@ def attach_tiers(con, records, ref_date=None) -> None:
     # full-month). Knowing the truly-full-month qtys lets us flag the rest as
     # partial from the authoritative raw windows.
     full_qty: dict = {}
+    # FULL-MONTH discount tiers WITH amounts, keyed by (ws, ed, upc, pack). NJ ABC
+    # splits one SKU's QD ladder across several CPL rows (base 1/2/5-cs tiers on one
+    # row, the deep 10/20-cs tier on a SEPARATE full-month row). cpl_enriched keeps
+    # only ONE row per SKU, so the ladder built from that single row's columns drops
+    # the tiers on the other rows. We re-collect every full-month tier here and merge
+    # the missing ones back into each record's ladder below.
+    full_disc: dict = {}   # (ws, ed, un, pack) -> {qty: (amount, unit)}
     if p_ws and p_ed and p_un:
         try:
             craw = read_parquet(con, "cpl")
             fq = con.execute(f"""
-                SELECT wholesaler, edition, upc_norm AS un,
+                SELECT wholesaler, edition, upc_norm AS un, CAST(unit_qty AS VARCHAR) AS uq,
                        discount_1_qty AS d1q, discount_1_amt AS d1a,
                        discount_2_qty AS d2q, discount_2_amt AS d2a,
                        discount_3_qty AS d3q, discount_3_amt AS d3a,
@@ -722,6 +737,8 @@ def attach_tiers(con, records, ref_date=None) -> None:
             """, pp).fetchdf()
             for r in fq.to_dict("records"):
                 s = full_qty.setdefault((r["wholesaler"], r["edition"], str(r["un"])), set())
+                dd = full_disc.setdefault(
+                    (r["wholesaler"], r["edition"], str(r["un"]), _pack_key(r.get("uq"))), {})
                 for j in range(1, 6):
                     a = r.get(f"d{j}a")
                     try:
@@ -730,11 +747,18 @@ def attach_tiers(con, records, ref_date=None) -> None:
                         af = 0.0
                     if af <= 0 or math.isnan(af):
                         continue
-                    mm = re.match(r"^\s*(\d+(?:\.\d+)?)", str(r.get(f"d{j}q") or ""))
-                    if mm:
-                        s.add(int(float(mm.group(1))))
+                    mm = re.match(r"^\s*(\d+(?:\.\d+)?)\s*(.*)$", str(r.get(f"d{j}q") or ""))
+                    if not mm:
+                        continue
+                    qn = int(float(mm.group(1)))
+                    s.add(qn)
+                    unit = "Bottles" if _norm_unit(mm.group(2) or "") == "bottle" else "Cases"
+                    # Keep the BEST (largest) amount per (qty, unit) across rows.
+                    if (qn, unit) not in dd or af > dd[(qn, unit)]:
+                        dd[(qn, unit)] = af
         except Exception:
             full_qty = {}
+            full_disc = {}
 
     # All RIP windows + TIERS per UPC across EVERY code. The cpl row's rip_code
     # names only ONE code, but the SAME product UPC can be listed under several
@@ -946,12 +970,33 @@ def attach_tiers(con, records, ref_date=None) -> None:
                 "days_to_expire": cpl_win["days_to_expire"],
             })
 
+        un_key = str(rec.get("upc") or "").lstrip("0")
+        # Merge FULL-MONTH discount tiers that live on OTHER raw cpl rows for this
+        # exact SKU (same pack). NJ ABC splits a ladder across rows — base tiers on
+        # one row, the deep 10/20-cs tier on a separate full-month row — but
+        # cpl_enriched keeps only ONE row, so without this the deep tier vanishes.
+        _have_full = {(t["qty"], t["unit"]) for t in disc if not t.get("is_time_sensitive")}
+        for (qn, q_unit), amt_f in sorted(
+                full_disc.get((rec["wholesaler"], rec["edition"], un_key,
+                               _pack_key(rec.get("unit_qty"))), {}).items()):
+            if (qn, q_unit) in _have_full:
+                continue
+            disc.append({
+                "source": "discount", "qty": qn, "unit": q_unit,
+                "amount": amt_f, "save_per_case": amt_f,
+                "price_after": round(cp - amt_f, 2) if cp > 0 else None,
+                "btl_price_after": _btl_after(round(cp - amt_f, 2) if cp > 0 else None, uq),
+                "save_per_bottle": round(amt_f / uq, 2) if uq > 0 else None,
+                "roi_pct": round(amt_f / cp * 100, 2) if cp > 0 else 0.0,
+                "is_time_sensitive": False, "from_date": None, "to_date": None,
+                "window_status": "active", "days_to_expire": None,
+            })
+
         # Partial-window QD tiers from the raw sub-month rows (see batch above).
         # Each sub-month row contributes its BEST quantity discount (the qty with
         # the largest amount, priced at the row's best_case_price — only the best
         # QD applies on a date, never stacked), flagged time-sensitive with the
         # date window so the UI shows it as a PARTIAL QD.
-        un_key = str(rec.get("upc") or "").lstrip("0")
         for pr in part_rows.get((rec["wholesaler"], rec["edition"], un_key), []):
             # Best discount tier on this sub-month row.
             best_qty, best_amt, best_unit = None, 0.0, "Cases"

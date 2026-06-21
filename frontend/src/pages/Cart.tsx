@@ -737,13 +737,18 @@ export default function Cart() {
           return null;
         })()}
 
-        {/* Size swap: another size of the same product is cheaper per litre. */}
+        {/* Size swap: a bigger bottle at ~same price per bottle (upgrade), or a
+            size that's cheaper per litre. Both use the QD buy price (cash today). */}
         {it.size_swap && !it.combo_intact && (
           <div style={{ marginLeft: 56, marginTop: 6 }}>
             <span style={{ fontSize: 11, fontWeight: 700, color: '#5b21b6', background: '#ede9fe',
               border: '1px solid #c4b5fd', borderRadius: 4, padding: '1px 6px' }}
-              title={`If you're size-flexible: the ${it.size_swap.size} works out $${it.size_swap.per_l.toFixed(2)}/L vs $${it.size_swap.this_per_l.toFixed(2)}/L on this size.`}>
-              💡 {it.size_swap.size} is {it.size_swap.pct}% cheaper per litre (${it.size_swap.per_l.toFixed(2)}/L vs ${it.size_swap.this_per_l.toFixed(2)}/L)
+              title={it.size_swap.kind === 'upgrade'
+                ? `The ${it.size_swap.size} is $${(it.size_swap.per_btl ?? 0).toFixed(2)}/btl vs $${(it.size_swap.this_per_btl ?? 0).toFixed(2)}/btl on this size — nearly the same money for ${it.size_swap.vol_pct}% more liquid ($${it.size_swap.per_l.toFixed(2)}/L vs $${it.size_swap.this_per_l.toFixed(2)}/L).`
+                : `If you're size-flexible: the ${it.size_swap.size} works out $${it.size_swap.per_l.toFixed(2)}/L vs $${it.size_swap.this_per_l.toFixed(2)}/L on this size.`}>
+              {it.size_swap.kind === 'upgrade'
+                ? <>💡 {it.size_swap.size}: ~same per bottle (${(it.size_swap.per_btl ?? 0).toFixed(2)} vs ${(it.size_swap.this_per_btl ?? 0).toFixed(2)}) — {it.size_swap.vol_pct}% more volume</>
+                : <>💡 {it.size_swap.size} is {it.size_swap.pct}% cheaper per litre (${it.size_swap.per_l.toFixed(2)}/L vs ${it.size_swap.this_per_l.toFixed(2)}/L)</>}
             </span>
           </div>
         )}

@@ -1382,9 +1382,15 @@ export interface CartItem {
     combo_code: string; pack_price?: number | null; savings: number;
     pct: number; great: boolean; label?: string | null;
   } | null;
-  // Another SIZE of the same product (same CELR family) is cheaper per litre.
+  // Another SIZE of the same product (same CELR family) is a better buy.
+  //  - 'upgrade'       : a bigger bottle at ~the same QD price per bottle — more
+  //                      volume for nearly the same money (per_btl vs this_per_btl,
+  //                      vol_pct more volume).
+  //  - 'cheaper_per_l' : a size that's cheaper per litre (pct cheaper).
   size_swap?: {
-    size?: string | null; per_l: number; this_per_l: number; upc: string; pct: number;
+    kind: 'upgrade' | 'cheaper_per_l';
+    size?: string | null; upc: string; per_l: number; this_per_l: number;
+    per_btl?: number; this_per_btl?: number; vol_pct?: number; pct?: number;
   } | null;
   // RIP rebate code this line currently rolls up under (enriched from the
   // catalogue at GET time; null when the product has no RIP).

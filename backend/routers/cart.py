@@ -425,7 +425,7 @@ def _attach_size_swap(dcon, items):
     except Exception:
         return
 
-    def _per_l(uv, uq, bcp, fcp):
+    def _per_unit(uv, uq, bcp, fcp):
         ml, _f = _to_ml(uv or "")
         try:
             q = float(uq)
@@ -438,16 +438,18 @@ def _attach_size_swap(dcon, items):
             bp = float(bp)
         except (TypeError, ValueError):
             return None
-        liters = q * ml / 1000.0
-        return round(bp / liters, 2) if (bp > 0 and liters > 0) else None
+        if bp <= 0:
+            return None
+        per_btl = round(bp / q, 2)               # QD buy price per bottle
+        return {"ml": ml, "per_btl": per_btl, "per_l": round(per_btl / (ml / 1000.0), 2)}
 
     pool: dict = {}
     for r in sib:
-        pl = _per_l(r["uv"], r["uq"], r["bcp"], r["fcp"])
-        if pl is None:
+        pu = _per_unit(r["uv"], r["uq"], r["bcp"], r["fcp"])
+        if pu is None:
             continue
         pool.setdefault((r["ws"], r["ed"], r["cpn"]), []).append(
-            {"un": r["un"], "uv": r["uv"], "per_l": pl})
+            {"un": r["un"], "uv": r["uv"], **pu})
     for w, ed, un, it in lines:
         cpn = cpn_of.get((w, ed, un))
         sibs = pool.get((w, ed, cpn)) if cpn is not None else None
@@ -456,12 +458,27 @@ def _attach_size_swap(dcon, items):
         mine = next((s for s in sibs if s["un"] == un), None)
         if not mine:
             continue
+        # 1) UPGRADE: a meaningfully BIGGER bottle (>=20% more volume) that costs
+        #    almost the SAME per bottle after QD (within 10%) — get more liquid for
+        #    nearly the same money. Prefer the biggest such bottle.
+        ups = [s for s in sibs if s["ml"] >= mine["ml"] * 1.2
+               and s["per_btl"] <= mine["per_btl"] * 1.10 and s["un"] != un]
+        if ups:
+            b = max(ups, key=lambda s: s["ml"])
+            it["size_swap"] = {
+                "kind": "upgrade", "size": b["uv"], "upc": b["un"],
+                "per_btl": b["per_btl"], "this_per_btl": mine["per_btl"],
+                "per_l": b["per_l"], "this_per_l": mine["per_l"],
+                "vol_pct": round((b["ml"] / mine["ml"] - 1) * 100),
+            }
+            continue
+        # 2) cheaper PER LITRE (size-flexible buyers) — only if >=8% cheaper.
         cheapest = min(sibs, key=lambda s: s["per_l"])
         if cheapest["un"] == un or cheapest["per_l"] >= mine["per_l"] * 0.92:
-            continue                            # already cheapest, or <8% gain
+            continue
         it["size_swap"] = {
-            "size": cheapest["uv"], "per_l": cheapest["per_l"],
-            "this_per_l": mine["per_l"], "upc": cheapest["un"],
+            "kind": "cheaper_per_l", "size": cheapest["uv"], "upc": cheapest["un"],
+            "per_l": cheapest["per_l"], "this_per_l": mine["per_l"],
             "pct": round((1 - cheapest["per_l"] / mine["per_l"]) * 100),
         }
 

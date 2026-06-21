@@ -942,6 +942,15 @@ def _load_enriched_cart(user: dict) -> dict:
                 _attach_cart_pricing(dcon, items)   # never let pricing break the cart load
             except Exception:
                 pass
+            try:
+                # BUY-OR-WAIT timing: attach best_buy_window / best_buy_saving and
+                # eff_cur/eff_prior per line — "wait → next month" when the effective
+                # (net) price drops next edition, "buy now" (+how much it rises) when
+                # it goes up. RIP is back-pocket-later, so timing compares the net.
+                from backend.deal_compare import deal_compare
+                deal_compare(dcon, items)
+            except Exception:
+                pass
         try:
             roll = attach_line_suggestions(items)   # comparison + stacked suggestions
             summary = {k: roll.get(k, 0.0) for k in

@@ -1366,6 +1366,13 @@ export interface CartItem {
   deal_windows?: { kind: 'QD' | 'RIP'; qty?: number | null; unit?: string | null; from: string; to: string; eff: number | null; save: number | null }[];
   // True only while the whole bundle is still in the cart (combo pricing applies).
   combo_intact?: boolean;
+  // Buy-or-Wait timing (from deal_compare): the EFFECTIVE (net) price now vs the
+  // next edition. best_buy_window starts with "wait → <month>" when next month is
+  // cheaper (best_buy_saving = $/cs you'd save by waiting), or "now" when it's the
+  // best time (best_buy_saving = $/cs the price RISES next month, so buy now).
+  best_buy_window?: string | null;
+  best_buy_saving?: number | null;
+  next_edition?: string | null;
   // RIP rebate code this line currently rolls up under (enriched from the
   // catalogue at GET time; null when the product has no RIP).
   rip_code?: string | null;

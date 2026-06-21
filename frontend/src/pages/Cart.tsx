@@ -707,6 +707,36 @@ export default function Cart() {
           );
         })()}
 
+        {/* Buy-or-Wait: compares the EFFECTIVE (net) price now vs next edition. */}
+        {(() => {
+          const w = it.best_buy_window; const s = it.best_buy_saving;
+          if (!w) return null;
+          const wait = w.toLowerCase().startsWith('wait');
+          if (wait && s != null && s > 0) {
+            return (
+              <div style={{ marginLeft: 56, marginTop: 6 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: '#1d4ed8', background: '#dbeafe',
+                  border: '1px solid #93c5fd', borderRadius: 4, padding: '1px 6px' }}
+                  title="The net price (after QD + RIP) is lower next edition.">
+                  ⏳ Wait → {w.replace(/^wait\s*→\s*/i, '')}: ${s.toFixed(2)}/cs cheaper next month
+                </span>
+              </div>
+            );
+          }
+          if (!wait && s != null && s > 0) {
+            return (
+              <div style={{ marginLeft: 56, marginTop: 6 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: '#b45309', background: '#fef3c7',
+                  border: '1px solid #fcd34d', borderRadius: 4, padding: '1px 6px' }}
+                  title="The net price rises next edition — lock in this month.">
+                  ↑ Buy now: ${s.toFixed(2)}/cs more next month
+                </span>
+              </div>
+            );
+          }
+          return null;
+        })()}
+
         {/* Deal tiers, same info as the catalogue, to tweak qty last minute. Combo
             lines hide these (the bundle is the deal). */}
         {tiers.length > 0 && (

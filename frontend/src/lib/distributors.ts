@@ -17,6 +17,7 @@ export const DISTRIBUTOR_NAMES: Record<string, string> = {
   wilson_daniels: 'Wilson Daniels',
   banville: 'Banville Wine',
   david_bowler: 'David Bowler Wine',
+  douglas_polaner: 'Douglas Polaner',
 };
 
 export function distributorName(code: string): string {

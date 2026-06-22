@@ -31,11 +31,12 @@ from nj_abc_parser.wholesalers.monsieur import CONFIG as MONSIEUR
 from nj_abc_parser.wholesalers.wilson_daniels import CONFIG as WILSON_DANIELS
 from nj_abc_parser.wholesalers.banville import CONFIG as BANVILLE
 from nj_abc_parser.wholesalers.david_bowler import CONFIG as DAVID_BOWLER
+from nj_abc_parser.wholesalers.douglas_polaner import CONFIG as DOUGLAS_POLANER
 
 REGISTRY = [ALLIED, FEDWAY, OPICI, PEERLESS, HIGH_GRADE, KRAMER, SHORE_POINT,
             JERSEY_BEVERAGE, OTHER_BROTHERS, WINEBOW, GALLO, REGAL_WINE,
             WINE_ENTERPRISES, TRIVIN, MONSIEUR, WILSON_DANIELS, BANVILLE,
-            DAVID_BOWLER]
+            DAVID_BOWLER, DOUGLAS_POLANER]
 
 
 def list_wholesalers() -> list[dict]:
@@ -157,10 +158,14 @@ def parse_edition_from_filename(filepath: Path) -> dict:
         # wins over the submission date (which can be the PRIOR month).
         if month is None:
             m_dash = re.search(r"(?<!\d)(\d{1,2})-(\d{2})(?!\d)", name)
+            m_dot = re.search(r"(?<!\d)(\d{1,2})\.(\d{4})(?!\d)", name)   # "6.2026"
             m_mmyy = re.search(r"(?<!\d)(\d{2})(\d{2})(?!\d)", name)
             if m_dash and 1 <= int(m_dash.group(1)) <= 12 and 20 <= int(m_dash.group(2)) <= 39:
                 month = f"{int(m_dash.group(1)):02d}"
                 year = year or str(2000 + int(m_dash.group(2)))
+            elif m_dot and 1 <= int(m_dot.group(1)) <= 12:
+                month = f"{int(m_dot.group(1)):02d}"
+                year = year or m_dot.group(2)
             elif m_mmyy and 1 <= int(m_mmyy.group(1)) <= 12 and 20 <= int(m_mmyy.group(2)) <= 39:
                 month = m_mmyy.group(1)
                 year = year or str(2000 + int(m_mmyy.group(2)))

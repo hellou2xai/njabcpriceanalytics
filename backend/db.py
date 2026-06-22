@@ -49,7 +49,12 @@ import queue
 _POOL_LOCK = threading.Lock()
 _POOL: "queue.Queue | None" = None
 _POOL_PATH: str | None = None
-POOL_SIZE = 8
+# Per-worker pool size. On a 4-CPU box, 8 single-threaded query connections
+# already oversubscribe the cores, so the read throughput ceiling is CPU-bound
+# (raising this further mostly adds memory, not throughput). With multiple
+# workers the TOTAL connection count is POOL_SIZE × WEB workers, so this is the
+# main lever on resident memory under load — tune via DUCKDB_POOL_SIZE.
+POOL_SIZE = int(os.getenv("DUCKDB_POOL_SIZE", "8"))
 
 # Cap EACH pooled DuckDB connection's memory. DuckDB defaults memory_limit to
 # ~80% of system RAM PER connection (e.g. ~3.2 GB on a 4 GB box), and we open
@@ -57,10 +62,11 @@ POOL_SIZE = 8
 # can use ~3.2 GB. A few concurrent heavy queries (the grid sort, an include_tiers
 # burst) then overcommit far past the box and OOM the container. Cap each
 # connection to a bounded budget and give it a spill directory so an over-limit
-# query spills to disk instead of growing unbounded. Generous default (1 GB) so a
-# single heavy query still runs in memory; tune with DUCKDB_MEMORY_LIMIT /
-# DUCKDB_TEMP_DIR without a code change.
-_DUCKDB_MEM_LIMIT = os.getenv("DUCKDB_MEMORY_LIMIT", "512MB")
+# query spills to disk instead of growing unbounded. Default 256 MB: with up to
+# POOL_SIZE × N-workers connections (e.g. 8 × 3 = 24) the worst-case ceiling
+# stays well under the 8 GB box, and an over-budget query spills rather than
+# OOMs. Tune with DUCKDB_MEMORY_LIMIT / DUCKDB_TEMP_DIR without a code change.
+_DUCKDB_MEM_LIMIT = os.getenv("DUCKDB_MEMORY_LIMIT", "256MB")
 _DUCKDB_TEMP_DIR = os.getenv("DUCKDB_TEMP_DIR") or str(Path(USER_DATA_DIR) / "duckdb_spill")
 
 

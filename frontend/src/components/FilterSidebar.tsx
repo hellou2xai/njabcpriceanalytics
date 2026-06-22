@@ -7,7 +7,10 @@ export type FilterOption = { label: string; value: string; count?: number };
 // primary thing the user should notice. Highlighted sections render with an
 // accent tint and PIN to the TOP of the rail, so a key toggle like
 // "Group by Case Mix RIP" is the first thing seen and stays put.
-type CommonSectionProps = { highlight?: boolean };
+// `defaultCollapsed` starts a section closed (e.g. the Distributors list, which
+// is long now that there are many distributors); the head still shows an
+// active-count badge so a collapsed-but-applied filter stays visible.
+type CommonSectionProps = { highlight?: boolean; defaultCollapsed?: boolean };
 export type FilterSection = CommonSectionProps & (
   | {
       type: 'pills';
@@ -155,11 +158,17 @@ export default function FilterSidebar({ storageKey, sections, onReset, children 
 /** One collapsible rail section: an accordion head (the section title) over the
     control body. Highlighted sections render with the accent tint. */
 function FilterRailSection({ section: s }: { section: FilterSection }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(!s.defaultCollapsed);
+  // Number of active selections, surfaced as a head badge so a collapsed filter
+  // still shows it's applied (multi-pills = how many picked; pills/select = 1
+  // when a non-empty value is chosen).
+  const badge = s.type === 'multi-pills' ? s.values.length
+    : (s.type === 'pills' || s.type === 'select') ? (s.value ? 1 : 0)
+    : 0;
   return (
     <div className={`prod-filter-sect${open ? '' : ' is-collapsed'}${s.highlight ? ' is-highlight' : ''}`}>
       <button type="button" className="prod-filter-sect-head" onClick={() => setOpen(o => !o)} aria-expanded={open}>
-        <span>{s.title}</span>
+        <span>{s.title}{badge ? <span className="prod-filter-sect-badge">{badge}</span> : null}</span>
         <ChevronUp size={15} className={`prod-filter-chev${open ? '' : ' is-collapsed'}`} />
       </button>
       {open && (

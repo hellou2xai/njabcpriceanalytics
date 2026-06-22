@@ -58,7 +58,7 @@ export default function Clearance() {
       value: q, onChange: setQ,
     },
     {
-      type: 'pills', key: 'wholesaler', title: 'Distributor',
+      type: 'pills', key: 'wholesaler', title: 'Distributor', defaultCollapsed: true,
       options: ALL_DISTRIBUTORS,
       value: wholesaler, onChange: setWholesaler,
     },

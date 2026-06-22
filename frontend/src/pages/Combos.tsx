@@ -577,7 +577,7 @@ export default function Combos() {
     { type: 'select', key: 'combo_month', title: 'Combo month', placeholder: 'Current month',
       value: comboMonth, onChange: setComboMonth,
       options: monthOpts.map(ed => ({ value: ed, label: monthLabel(ed) })) },
-    { type: 'pills', key: 'wholesaler', title: 'Distributor', options: ALL_DISTRIBUTORS, value: wholesaler, onChange: setWholesaler },
+    { type: 'pills', key: 'wholesaler', title: 'Distributor', defaultCollapsed: true, options: ALL_DISTRIBUTORS, value: wholesaler, onChange: setWholesaler },
     {
       type: 'pills', key: 'min_savings', title: 'Min Savings',
       options: [

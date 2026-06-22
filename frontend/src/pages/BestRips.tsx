@@ -399,7 +399,7 @@ export default function BestRips() {
           onSelect={(p) => setQuery(p.product_name)}
           placeholder="Product, brand or barcode…" />
       ) },
-    { type: 'multi-pills', key: 'dist', title: 'Distributors',
+    { type: 'multi-pills', key: 'dist', title: 'Distributors', defaultCollapsed: true,
       options: DIST_OPTS.map(w => ({ label: distributorName(w), value: w })),
       values: dists,
       onChange: (vals) => setDists(vals.length ? DIST_OPTS.filter(d => vals.includes(d)) : dists) },

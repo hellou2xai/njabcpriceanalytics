@@ -34,12 +34,12 @@ function toMap(arr?: { key: string; count: number }[]): Map<string, number> {
   return m;
 }
 
-function Section({ title, children, defaultOpen = true }: { title: string; children: ReactNode; defaultOpen?: boolean }) {
+function Section({ title, children, defaultOpen = true, badge }: { title: string; children: ReactNode; defaultOpen?: boolean; badge?: number }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div className={`prod-filter-sect${open ? '' : ' is-collapsed'}`}>
       <button type="button" className="prod-filter-sect-head" onClick={() => setOpen(o => !o)} aria-expanded={open}>
-        <span>{title}</span>
+        <span>{title}{badge ? <span className="prod-filter-sect-badge">{badge}</span> : null}</span>
         <ChevronUp size={15} className={`prod-filter-chev${open ? '' : ' is-collapsed'}`} />
       </button>
       {open && <div className="prod-filter-sect-body">{children}</div>}
@@ -176,7 +176,10 @@ export default function ProductsFilterRail({ filters, onChange, items, facets, t
         </label>
       </Section>
 
-      <Section title="Distributor">
+      {/* Many distributors (24+): collapse by default so the long list doesn't
+          dominate the rail. The badge shows how many are selected so the filter
+          still advertises itself while collapsed. */}
+      <Section title="Distributor" defaultOpen={false} badge={filters.divisions.length}>
         <div className="prod-filter-list">
           {[...divisionFacet.entries()].map(([div, count]) => (
             <label key={div} className="prod-filter-check">

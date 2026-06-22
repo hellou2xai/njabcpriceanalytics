@@ -193,7 +193,7 @@ export default function PriceMovers({ direction }: Props) {
 
   const sections: FilterSection[] = [
     { type: 'text', key: 'q', title: 'Search', placeholder: 'Product or brand', value: q, onChange: setQ },
-    { type: 'pills', key: 'wholesaler', title: 'Distributor', options: ALL_DISTRIBUTORS, value: wholesaler, onChange: setWholesaler },
+    { type: 'pills', key: 'wholesaler', title: 'Distributor', defaultCollapsed: true, options: ALL_DISTRIBUTORS, value: wholesaler, onChange: setWholesaler },
     { type: 'pills', key: 'validity', title: 'Months compared',
       options: [
         // Label each pill with the actual month names it compares, so the user

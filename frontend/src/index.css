@@ -5657,6 +5657,14 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 }
 .prod-filter-chev { transition: transform .15s; color: var(--text-muted); }
 .prod-filter-chev.is-collapsed { transform: rotate(180deg); }
+/* Active-selection count shown on a section head (e.g. Distributor) so a filter
+   that is collapsed still advertises that it is applied. */
+.prod-filter-sect-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px; margin-left: 7px;
+  border-radius: 9px; background: var(--accent); color: #fff;
+  font-size: 11px; font-weight: 700; line-height: 1; vertical-align: middle;
+}
 .prod-filter-sect-body { padding: 0 14px 12px; }
 .prod-filter-tracked { margin-bottom: 8px; }
 /* Two-option month toggle (RIP / QD month): a small segmented control. */

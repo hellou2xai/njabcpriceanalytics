@@ -132,7 +132,7 @@ function MajorDiscountsImpl() {
 
   const sections: FilterSection[] = [
     { type: 'text', key: 'q', title: 'Search', placeholder: 'Product or brand', value: q, onChange: setQ },
-    { type: 'pills', key: 'wholesaler', title: 'Distributor', options: ALL_DISTRIBUTORS, value: wholesaler, onChange: setWholesaler },
+    { type: 'pills', key: 'wholesaler', title: 'Distributor', defaultCollapsed: true, options: ALL_DISTRIBUTORS, value: wholesaler, onChange: setWholesaler },
     { type: 'select', key: 'product_type', title: 'Category', placeholder: 'All categories',
       options: (cats ?? []).map(c => ({ value: c.product_type, label: c.product_type, count: c.count })),
       value: productType, onChange: setProductType },

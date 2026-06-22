@@ -492,6 +492,9 @@ export default function CompareQD() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [shown, setShown] = useState(40);
   const [railOpen, setRailOpen] = useState(true);
+  // Distributor chooser is collapsible (24+ distributors). Open by default since
+  // picking is the primary action, but it can be tucked away once chosen.
+  const [distOpen, setDistOpen] = useState(true);
   const navigate = useNavigate();
   const goToProduct = (name: string, wholesaler?: string) =>
     navigate(`/products?q=${encodeURIComponent(name)}${wholesaler ? `&wholesaler=${wholesaler}` : ''}`);
@@ -611,18 +614,24 @@ export default function CompareQD() {
             </div>
 
             <div className="qd2-rail-sect">
-              <div className="qd2-rail-label">Distributors to compare (2-3)</div>
-              <div className="qd2-chips">
-                {(options ?? []).map(o => (
-                  <button key={o.wholesaler}
-                    className={`qd2-chip${selected.includes(o.wholesaler) ? ' on' : ''}`}
-                    style={selected.includes(o.wholesaler) ? { borderColor: accent[o.wholesaler], color: accent[o.wholesaler] } : undefined}
-                    onClick={() => toggle(o.wholesaler)}
-                    disabled={!selected.includes(o.wholesaler) && selected.length >= 3}>
-                    {distributorName(o.wholesaler)}
-                  </button>
-                ))}
-              </div>
+              <button type="button" className="qd2-rail-label qd2-rail-label--toggle"
+                onClick={() => setDistOpen(o => !o)} aria-expanded={distOpen}>
+                <span>Distributors to compare (2-3){selected.length ? ` · ${selected.length}` : ''}</span>
+                {distOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </button>
+              {distOpen && (
+                <div className="qd2-chips">
+                  {(options ?? []).map(o => (
+                    <button key={o.wholesaler}
+                      className={`qd2-chip${selected.includes(o.wholesaler) ? ' on' : ''}`}
+                      style={selected.includes(o.wholesaler) ? { borderColor: accent[o.wholesaler], color: accent[o.wholesaler] } : undefined}
+                      onClick={() => toggle(o.wholesaler)}
+                      disabled={!selected.includes(o.wholesaler) && selected.length >= 3}>
+                      {distributorName(o.wholesaler)}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="qd2-rail-sect">

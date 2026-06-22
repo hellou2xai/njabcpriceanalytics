@@ -601,6 +601,9 @@ export default function CompareRips() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [shown, setShown] = useState(40);
   const [railOpen, setRailOpen] = useState(true);
+  // Distributor chooser is collapsible (24+ distributors). Open by default since
+  // picking is the primary action, but it can be tucked away once chosen.
+  const [distOpen, setDistOpen] = useState(true);
   const [ripModal, setRipModal] = useState<{ wholesaler: string; ripCode: string; edition?: string } | null>(null);
   const openRip = (wholesaler: string, ripCode: string, edition?: string) =>
     setRipModal({ wholesaler, ripCode, edition });
@@ -730,18 +733,24 @@ export default function CompareRips() {
             </div>
 
             <div className="rip2-rail-sect">
-              <div className="rip2-rail-label">Distributors to compare (2-3)</div>
-              <div className="rip2-chips">
-                {(options ?? []).map(o => (
-                  <button key={o.wholesaler}
-                    className={`rip2-chip${selected.includes(o.wholesaler) ? ' on' : ''}`}
-                    style={selected.includes(o.wholesaler) ? { borderColor: accent[o.wholesaler], color: accent[o.wholesaler] } : undefined}
-                    onClick={() => toggle(o.wholesaler)}
-                    disabled={!selected.includes(o.wholesaler) && selected.length >= 3}>
-                    {distributorName(o.wholesaler)}
-                  </button>
-                ))}
-              </div>
+              <button type="button" className="rip2-rail-label rip2-rail-label--toggle"
+                onClick={() => setDistOpen(o => !o)} aria-expanded={distOpen}>
+                <span>Distributors to compare (2-3){selected.length ? ` · ${selected.length}` : ''}</span>
+                {distOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </button>
+              {distOpen && (
+                <div className="rip2-chips">
+                  {(options ?? []).map(o => (
+                    <button key={o.wholesaler}
+                      className={`rip2-chip${selected.includes(o.wholesaler) ? ' on' : ''}`}
+                      style={selected.includes(o.wholesaler) ? { borderColor: accent[o.wholesaler], color: accent[o.wholesaler] } : undefined}
+                      onClick={() => toggle(o.wholesaler)}
+                      disabled={!selected.includes(o.wholesaler) && selected.length >= 3}>
+                      {distributorName(o.wholesaler)}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="rip2-rail-sect">

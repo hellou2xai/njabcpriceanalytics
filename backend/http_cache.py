@@ -26,15 +26,31 @@ from fastapi import Request, Response
 from backend import cache_util
 
 
+# Shared-cache (Cloudflare) lifetime, distinct from the short browser lifetime:
+#   max-age   — how long a BROWSER may reuse without revalidating
+#   s-maxage  — how long a SHARED cache (Cloudflare) may serve from the edge
+#               WITHOUT touching the origin — this is the actual offload
+#   stale-while-revalidate — serve a stale board at the edge while refreshing it
+# A reload changes pricing_tag -> the ETag changes -> the next edge revalidation
+# refetches, so correctness is preserved; the worst case is a few minutes of
+# edge staleness after a monthly reload (acceptable, and on par with deploy lag).
+EDGE_S_MAXAGE = 300
+EDGE_SWR = 900
+
+
 def public_conditional(request: Request, response: Response, ckey,
-                       max_age: int = 120) -> Optional[Response]:
-    """Set `ETag` + `Cache-Control: public` for a user-independent response keyed
-    by ``ckey`` (the same key the endpoint memoizes on). Returns a 304 Response to
-    return EARLY when the client's `If-None-Match` already holds this version,
-    else None (caller proceeds to build/return the body)."""
+                       max_age: int = 120,
+                       s_maxage: int = EDGE_S_MAXAGE,
+                       swr: int = EDGE_SWR) -> Optional[Response]:
+    """Set `ETag` + `Cache-Control: public` (with a shared-cache s-maxage so
+    Cloudflare can serve repeat hits from the edge) for a user-independent
+    response keyed by ``ckey`` (the same key the endpoint memoizes on). Returns
+    a 304 Response to return EARLY when the client's `If-None-Match` already
+    holds this version, else None (caller proceeds to build/return the body)."""
     raw = repr((cache_util.pricing_tag(), ckey))
     etag = 'W/"' + hashlib.md5(raw.encode()).hexdigest() + '"'
-    cc = f"public, max-age={max_age}"
+    cc = (f"public, max-age={max_age}, s-maxage={s_maxage}, "
+          f"stale-while-revalidate={swr}")
     inm = request.headers.get("if-none-match", "")
     if etag and any(etag == t.strip() for t in inm.split(",")):
         return Response(status_code=304, headers={"ETag": etag, "Cache-Control": cc})

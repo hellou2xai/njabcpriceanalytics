@@ -89,8 +89,19 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 @app.middleware("http")
 async def _immutable_assets(request, call_next):
     resp = await call_next(request)
-    if request.url.path.startswith("/assets/"):
+    path = request.url.path
+    if path.startswith("/assets/"):
         resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif path.startswith("/api/"):
+        # CDN safety net (default-deny). The user-independent boards opt INTO
+        # edge caching by setting `Cache-Control: public` themselves (via
+        # http_cache.public_conditional). EVERY other /api response — auth,
+        # cart, lists, watchlist, orders, the assistant — must never be cached
+        # by a shared cache, or a Cloudflare "Cache Everything" rule could serve
+        # one tenant's data to another. Mark anything not already opted in
+        # `private, no-store` so the edge is forced to skip it.
+        if "cache-control" not in (k.lower() for k in resp.headers.keys()):
+            resp.headers["Cache-Control"] = "private, no-store"
     return resp
 
 # Register routers
@@ -243,7 +254,7 @@ def reload_pricing(user: dict = Depends(get_current_user)):
     Auth-guarded; a signed-in owner can refresh without a redeploy."""
     from backend.pricing_cache import build_pricing_cache, ALL_TABLES
     from backend.db import get_duckdb
-    build_pricing_cache()
+    build_pricing_cache(force=True)  # always rebuild + republish from new data
     # Rebuild the RIP tier cache against the new data, in the background.
     import threading
     from backend.routers.deals import (

@@ -198,7 +198,10 @@ def reload_pricing_admin(user: dict = Depends(require_admin)):
     Mirrors the top-level endpoint so it is reachable from the admin page."""
     from backend.pricing_cache import build_pricing_cache, ALL_TABLES
     from backend.db import get_duckdb
-    build_pricing_cache()
+    # force=True: always build a fresh file from the new data and republish the
+    # pointer (don't adopt the existing stale one). Other workers pick up the
+    # new file via the pointer within get_pricing_path's check interval.
+    build_pricing_cache(force=True)
     # Re-warm the default Products grid memo (perf #2) against the new data.
     try:
         import threading

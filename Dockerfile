@@ -35,4 +35,10 @@ COPY pos_feed/ ./pos_feed/
 COPY --from=frontend /app/frontend/dist ./frontend/dist
 
 # Render injects $PORT. Shell form so it expands.
-CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Single worker by default: each worker builds + holds its OWN in-memory pricing
+# cache at boot (the build isn't shared across forked processes), so N workers =
+# N concurrent multi-GB cache builds. That OOMed the box even at idle once the
+# catalogue grew (a 4-CPU instance defaulting WEB_CONCURRENCY to 4 meant 4
+# simultaneous builds). Passing --workers explicitly also makes uvicorn ignore
+# WEB_CONCURRENCY. Raise UVICORN_WORKERS only after the shared/lazy cache lands.
+CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers ${UVICORN_WORKERS:-1}"]

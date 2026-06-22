@@ -60,7 +60,7 @@ POOL_SIZE = 8
 # query spills to disk instead of growing unbounded. Generous default (1 GB) so a
 # single heavy query still runs in memory; tune with DUCKDB_MEMORY_LIMIT /
 # DUCKDB_TEMP_DIR without a code change.
-_DUCKDB_MEM_LIMIT = os.getenv("DUCKDB_MEMORY_LIMIT", "1GB")
+_DUCKDB_MEM_LIMIT = os.getenv("DUCKDB_MEMORY_LIMIT", "512MB")
 _DUCKDB_TEMP_DIR = os.getenv("DUCKDB_TEMP_DIR") or str(Path(USER_DATA_DIR) / "duckdb_spill")
 
 

@@ -1,31 +1,52 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useSearchParams, useLocation } from 'react-router-dom';
-import { Search, SlidersHorizontal, Store, ChevronRight, ArrowLeft } from 'lucide-react';
+import { useSearchParams, useLocation, Link } from 'react-router-dom';
+import { Search, SlidersHorizontal, Store, ChevronRight, ArrowLeft, ArrowUp, ArrowDown } from 'lucide-react';
 import { catalog } from '../lib/api';
 import type { Product } from '../lib/api';
 import RowLimitSelect from '../components/RowLimitSelect';
 import { useResultCount } from '../lib/resultCount';
-import { loadCart, saveCart, type CartState } from '../components/CatalogTable';
 import ProductsFilterRail from '../components/ProductsFilterRail';
-import ProductsGrid, { countProductGroups } from '../components/ProductsGrid';
 import { useCachedQuery } from '../hooks/useCachedQuery';
 import { emptyCatalogFilters } from '../components/CatalogFilterPanel';
 import type { CatalogFilters } from '../components/CatalogFilterPanel';
 import { distributorName } from '../lib/distributors';
+import { bottlesPerCase } from '../lib/productSizes';
 
 /**
- * Distributor Price List — pick a distributor from the LOV and browse that
- * distributor's ENTIRE catalogue. It reuses the same machinery as the Products
- * page (smart/semantic `/catalog/search`, the faceted filter rail, the grid,
- * the cart) but locks the result set to ONE distributor chosen up front. No
- * grid shows until a distributor is selected — the distributor is the gate.
+ * Distributor Price List — pick a distributor, then see that distributor's full
+ * catalogue as a TWO-MONTH price list: the current edition's price beside the
+ * adjacent month (the NEXT edition when it's loaded, otherwise the PREVIOUS
+ * one), with the month-over-month change. Smart search + the faceted filter rail
+ * behave exactly as on the Products page; the distributor is the gate.
  */
 const _MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** 'YYYY-MM' -> 'Mon YYYY' (e.g. '2026-07' -> 'Jul 2026'). */
-function monthLabel(ed: string): string {
+function monthLabel(ed?: string): string {
+  if (!ed) return '';
   const m = /^(\d{4})-(\d{1,2})/.exec(ed);
   return m ? `${_MONTHS[parseInt(m[2], 10) - 1] ?? ''} ${m[1]}`.trim() : ed;
+}
+/** 'YYYY-MM' -> 'Mon' (short, for tight column heads). */
+function monthShort(ed?: string): string {
+  if (!ed) return '';
+  const m = /^(\d{4})-(\d{1,2})/.exec(ed);
+  return m ? (_MONTHS[parseInt(m[2], 10) - 1] ?? ed) : ed;
+}
+const money = (n?: number | null) => (n == null ? '—' : `$${n.toFixed(2)}`);
+const normUpc = (u?: string | null) => (u ?? '').toString().replace(/^0+/, '');
+/** Full SKU identity so a month's price is matched to the SAME item, never a
+ *  sibling size/vintage (barcode + size + pack + vintage; name as a fallback
+ *  when the barcode is a placeholder). Mirrors the app's SKU-identity rule. */
+function skuKey(p: Product): string {
+  const base = normUpc(p.upc) || (p.product_name ?? '').trim().toLowerCase();
+  return `${base}|${(p.unit_volume ?? '').toLowerCase()}|${p.unit_qty ?? ''}|${p.vintage ?? ''}`;
+}
+function detailUrl(p: Product): string {
+  const q = new URLSearchParams({ w: p.wholesaler, n: p.product_name });
+  if (p.upc) q.set('u', String(p.upc));
+  if (p.unit_volume) q.set('s', String(p.unit_volume));
+  return `/product?${q.toString()}`;
 }
 
 export default function DistributorPriceList() {
@@ -34,29 +55,17 @@ export default function DistributorPriceList() {
   const [q, setQ] = useState(params.get('q') ?? '');
   const [page, setPage] = useState(0);
   const [limit, setLimit] = useState(60);
-  const [sort, setSort] = useState<'product_name' | 'frontline_case_price' | 'effective_case_price'>('product_name');
+  const [sort, setSort] = useState<'product_name' | 'frontline_case_price'>('product_name');
   const [order, setOrder] = useState<'asc' | 'desc'>('asc');
   const [filters, setFilters] = useState<CatalogFilters>({ ...emptyCatalogFilters });
-  const [cart, setCartState] = useState<CartState>(loadCart);
-  // A distributor's price list reads as a flat list of every size/SKU it sells,
-  // so default the grouped (cross-distributor family) view OFF; the toggle is
-  // still offered. Persisted.
-  const [grouped, setGroupedState] = useState(() => localStorage.getItem('dpl_grouped') === '1');
-  const setGrouped = (v: boolean) => { setGroupedState(v); localStorage.setItem('dpl_grouped', v ? '1' : '0'); };
-  const [priceDetails, setPriceDetails] = useState(() => localStorage.getItem('dpl_price_details') !== '0');
-  const setDetails = (v: boolean) => { setPriceDetails(v); localStorage.setItem('dpl_price_details', v ? '1' : '0'); };
   const [railCollapsed, setRailCollapsed] = useState(() => localStorage.getItem('dplFiltersCollapsed') === '1');
   const toggleRail = (v: boolean) => { setRailCollapsed(v); localStorage.setItem('dplFiltersCollapsed', v ? '1' : '0'); };
 
-  // Debounce the search box so the list filters without a request per keystroke.
   const [qDebounced, setQDebounced] = useState(q);
   useEffect(() => { const t = setTimeout(() => setQDebounced(q), 300); return () => clearTimeout(t); }, [q]);
-  // Text filter for the distributor PICKER (separate from product search).
   const [distQuery, setDistQuery] = useState('');
 
-  // Every distributor with a loaded price list, enriched with the item count of
-  // their latest edition + how many editions are on file — so the picker shows
-  // real context, not just a name.
+  // Distributor LOV data: item count of the latest edition + edition count.
   const { data: editions } = useQuery({ queryKey: ['dpl-editions'], queryFn: catalog.editions, staleTime: 300_000 });
   const distributors = useMemo(() => {
     const byWs = new Map<string, Map<string, number>>();
@@ -68,10 +77,7 @@ export default function DistributorPriceList() {
     return [...byWs.entries()].map(([slug, itemsByEd]) => {
       const eds = [...itemsByEd.keys()].sort();
       const latest = eds[eds.length - 1];
-      return {
-        slug, name: distributorName(slug), latest,
-        items: itemsByEd.get(latest) ?? 0, editionCount: eds.length,
-      };
+      return { slug, name: distributorName(slug), latest, items: itemsByEd.get(latest) ?? 0 };
     }).sort((a, b) => a.name.localeCompare(b.name));
   }, [editions]);
   const pickList = useMemo(() => {
@@ -80,7 +86,22 @@ export default function DistributorPriceList() {
   }, [distributors, distQuery]);
   const selectedDist = distributors.find(d => d.slug === wholesaler);
 
-  // URL <-> state so a chosen distributor + search is shareable / survives Back.
+  // The two editions to show. current = latest loaded edition on/before this
+  // calendar month (else the earliest loaded); adjacent = the NEXT edition when
+  // one is loaded, otherwise the PREVIOUS one.
+  const cym = useMemo(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }, []);
+  const { currentEd, adjacentEd, adjacentIsNext } = useMemo(() => {
+    const eds = [...new Set((editions ?? []).filter(e => e.wholesaler === wholesaler).map(e => e.edition))].sort();
+    if (!eds.length) return { currentEd: undefined as string | undefined, adjacentEd: undefined as string | undefined, adjacentIsNext: false };
+    let i = -1;
+    for (let k = 0; k < eds.length; k++) if (eds[k] <= cym) i = k;
+    if (i === -1) i = 0;
+    const cur = eds[i], next = eds[i + 1], prev = eds[i - 1];
+    if (next) return { currentEd: cur, adjacentEd: next, adjacentIsNext: true };
+    if (prev) return { currentEd: cur, adjacentEd: prev, adjacentIsNext: false };
+    return { currentEd: cur, adjacentEd: undefined, adjacentIsNext: false };
+  }, [editions, wholesaler, cym]);
+
   useEffect(() => {
     const next = new URLSearchParams();
     if (wholesaler) next.set('wholesaler', wholesaler);
@@ -88,13 +109,6 @@ export default function DistributorPriceList() {
     if (next.toString() !== params.toString()) setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wholesaler, q]);
-
-  const setCart = useCallback((update: CartState | ((p: CartState) => CartState)) => {
-    setCartState(prev => { const n = typeof update === 'function' ? update(prev) : update; saveCart(n); return n; });
-  }, []);
-  const updateQty = useCallback((key: string, field: 'cases' | 'units', value: number) => {
-    setCart(prev => ({ ...prev, [key]: { cases: prev[key]?.cases ?? 0, units: prev[key]?.units ?? 0, [field]: value } }));
-  }, [setCart]);
 
   const filterParams = {
     has_rip: filters.hasRip,
@@ -110,53 +124,68 @@ export default function DistributorPriceList() {
   };
   const filterKey = JSON.stringify(filters);
 
+  // Current-edition page (paginated). One row per size (the catalogue's native
+  // by-size listing) — exactly what a price list is.
   const { data, isLoading } = useCachedQuery(
-    ['distlist', wholesaler, qDebounced, sort, order, page, limit, filterKey],
+    ['dpl', wholesaler, currentEd, qDebounced, sort, order, page, limit, filterKey],
     () => catalog.search({
-      q: qDebounced,
-      wholesaler,                 // locked to the LOV selection
-      sort, order, limit, offset: page * limit,
-      ...filterParams,
-      images_first: sort === 'product_name' ? true : undefined,
+      q: qDebounced, wholesaler, edition: currentEd || undefined,
+      sort, order, limit, offset: page * limit, ...filterParams,
     }),
-    { enabled: !!wholesaler },
+    { enabled: !!wholesaler && !!currentEd },
   );
+  const items = (data?.items ?? []) as Product[];
+  const total = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
 
   const effectiveQ = data?.corrected_query ?? qDebounced;
   const { data: facets } = useCachedQuery(
-    ['distlist-facets', wholesaler, effectiveQ, filterKey],
-    () => catalog.facets({ q: effectiveQ, wholesaler, ...filterParams }),
-    { enabled: !!wholesaler && (!qDebounced.trim() || !!data) },
+    ['dpl-facets', wholesaler, currentEd, effectiveQ, filterKey],
+    () => catalog.facets({ q: effectiveQ, wholesaler, edition: currentEd || undefined, ...filterParams }),
+    { enabled: !!wholesaler && !!currentEd && (!qDebounced.trim() || !!data) },
   );
 
-  const items = (data?.items ?? []) as Product[];
-  const total = data?.total ?? 0;
-  const productCount = countProductGroups(items, grouped);
-  const totalPages = Math.max(1, Math.ceil(total / limit));
+  // Adjacent-month prices for just the UPCs ON THIS PAGE — cheap, and aligned to
+  // the rows actually shown. Merged by full SKU identity.
+  const upcCsv = useMemo(() => {
+    const s = new Set<string>();
+    for (const it of items) { const u = (it.upc ?? '').toString(); if (u) s.add(u); }
+    return [...s].join(',');
+  }, [items]);
+  const { data: adjData } = useCachedQuery(
+    ['dpl-adj', wholesaler, adjacentEd, upcCsv],
+    () => catalog.search({ wholesaler, edition: adjacentEd, upcs: upcCsv, limit: 1000 }),
+    { enabled: !!wholesaler && !!adjacentEd && upcCsv.length > 0 },
+  );
+  const adjMap = useMemo(() => {
+    const m = new Map<string, Product>();
+    // Only this distributor's rows (the UPC fetch could widen across houses).
+    for (const p of (adjData?.items ?? []) as Product[]) {
+      if (p.wholesaler === wholesaler) m.set(skuKey(p), p);
+    }
+    return m;
+  }, [adjData, wholesaler]);
 
   const { report } = useResultCount();
   const { pathname } = useLocation();
   useEffect(() => { if (!isLoading && wholesaler) report(pathname, total); }, [isLoading, total, pathname, report, wholesaler]);
 
   const pickDistributor = (slug: string) => {
-    setWholesaler(slug);
-    setQ(''); setQDebounced('');
-    setFilters({ ...emptyCatalogFilters });
-    setPage(0);
+    setWholesaler(slug); setQ(''); setQDebounced(''); setFilters({ ...emptyCatalogFilters }); setPage(0);
   };
 
-  return (
-    <div className="page products-page">
-      {!wholesaler ? (
-        /* Distributor chooser: a searchable board of distributor cards, each
-           with the item count + latest edition, instead of a bare dropdown. */
+  const casePrice = (p?: Product | null) => p?.frontline_case_price ?? p?.effective_case_price ?? null;
+
+  if (!wholesaler) {
+    return (
+      <div className="page products-page">
         <div className="dpl-pick">
           <header className="dpl-pick-head">
             <p className="dpl-pick-eyebrow"><Store size={13} /> Price List</p>
             <h1>Choose a distributor</h1>
             <p className="dpl-pick-sub">
-              Open any distributor's complete price list, then search and filter
-              every item they carry — same tools as the Products page.
+              Open any distributor's complete price list — each item priced for
+              two months side by side, with smart search and filters.
             </p>
             <div className="dpl-pick-search">
               <Search size={17} />
@@ -177,121 +206,159 @@ export default function DistributorPriceList() {
                 <ChevronRight size={16} className="dpl-card-arrow" />
               </button>
             ))}
-            {pickList.length === 0 && (
-              <p className="dpl-empty">No distributor matches “{distQuery}”.</p>
-            )}
+            {pickList.length === 0 && <p className="dpl-empty">No distributor matches “{distQuery}”.</p>}
           </div>
         </div>
-      ) : (
-        <>
-          <div className="orders-header dpl-topbar">
-            <div className="dpl-topbar-left">
-              <button type="button" className="dpl-back" onClick={() => setWholesaler('')}
-                title="Choose a different distributor">
-                <ArrowLeft size={16} />
-              </button>
-              <div>
-                <div className="dpl-topbar-eyebrow">Distributor Price List</div>
-                <h2 className="dpl-topbar-name">{distributorName(wholesaler)}</h2>
-              </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="page products-page">
+      <div className="orders-header dpl-topbar">
+        <div className="dpl-topbar-left">
+          <button type="button" className="dpl-back" onClick={() => setWholesaler('')} title="Choose a different distributor">
+            <ArrowLeft size={16} />
+          </button>
+          <div>
+            <div className="dpl-topbar-eyebrow">Distributor Price List</div>
+            <h2 className="dpl-topbar-name">{distributorName(wholesaler)}</h2>
+          </div>
+        </div>
+        <button type="button" className="dpl-switch" onClick={() => setWholesaler('')}>
+          <span className="dpl-switch-meta">
+            {selectedDist ? `${selectedDist.items.toLocaleString()} items` : ''}
+            {currentEd ? ` · ${monthLabel(currentEd)}` : ''}
+          </span>
+          <span className="dpl-switch-change">Change</span>
+        </button>
+      </div>
+
+      <div className="products-hero-box products-hero-box--grid">
+        <div className="products-hero-search">
+          <Search size={20} className="products-hero-icon" />
+          <input type="text" className="products-hero-input"
+            placeholder={`Search ${distributorName(wholesaler)}'s items — name, brand, size or barcode…`}
+            value={q} onChange={e => { setQ(e.target.value); setPage(0); }} />
+        </div>
+        <div className="products-hero-count">{isLoading ? 'Loading…' : `${total.toLocaleString()} items`}</div>
+      </div>
+
+      <div className={`products-layout${railCollapsed ? ' products-layout--collapsed' : ''}`}>
+        {railCollapsed ? (
+          <button type="button" className="prod-rail-reopen" onClick={() => toggleRail(false)} title="Show filters">
+            <SlidersHorizontal size={15} />
+            <span className="prod-rail-reopen-label">Filters</span>
+          </button>
+        ) : (
+          <ProductsFilterRail filters={filters} onChange={f => { setFilters(f); setPage(0); }}
+            items={items} facets={facets} onCollapse={() => toggleRail(true)} />
+        )}
+
+        <div className="products-main">
+          <div className="products-toolbar">
+            <span className="products-showing">
+              {isLoading ? 'Loading…' : <>Showing <strong>{items.length}</strong> of {total.toLocaleString()} items</>}
+              {adjacentEd && (
+                <span className="products-showing-sub">
+                  {' '}· comparing {monthLabel(currentEd)} vs {monthLabel(adjacentEd)}
+                </span>
+              )}
+            </span>
+            <div className="products-toolbar-right">
+              <label className="products-sort">
+                <span>Sort by</span>
+                <select value={`${sort}:${order}`}
+                  onChange={e => { const [s, o] = e.target.value.split(':') as [typeof sort, typeof order]; setSort(s); setOrder(o); setPage(0); }}>
+                  <option value="product_name:asc">Name (A–Z)</option>
+                  <option value="product_name:desc">Name (Z–A)</option>
+                  <option value="frontline_case_price:asc">Price (low → high)</option>
+                  <option value="frontline_case_price:desc">Price (high → low)</option>
+                </select>
+              </label>
+              <RowLimitSelect value={limit} onChange={v => { setLimit(v); setPage(0); }} />
             </div>
-            <button type="button" className="dpl-switch" onClick={() => setWholesaler('')}>
-              <span className="dpl-switch-meta">
-                {selectedDist ? `${selectedDist.items.toLocaleString()} items` : ''}
-                {selectedDist?.latest ? ` · ${monthLabel(selectedDist.latest)}` : ''}
-              </span>
-              <span className="dpl-switch-change">Change</span>
-            </button>
           </div>
 
-          <div className="products-hero-box products-hero-box--grid">
-            <div className="products-hero-search">
-              <Search size={20} className="products-hero-icon" />
-              <input type="text" className="products-hero-input"
-                placeholder={`Search ${distributorName(wholesaler)}'s items — name, brand, size or barcode…`}
-                value={q} onChange={e => { setQ(e.target.value); setPage(0); }} />
+          {isLoading ? <p>Loading…</p> : total === 0 ? (
+            <p className="dpl-empty">No items match. Try clearing the search or filters.</p>
+          ) : (
+            <div className="dpl-table-wrap">
+              <table className="dpl-table">
+                <thead>
+                  <tr>
+                    <th className="dpl-th-prod">Product</th>
+                    <th className="dpl-th-num dpl-th-current">
+                      {monthShort(currentEd)} <span className="dpl-th-tag">current</span>
+                    </th>
+                    <th className="dpl-th-num">
+                      {adjacentEd ? monthShort(adjacentEd) : '—'}
+                      {adjacentEd && <span className="dpl-th-tag dpl-th-tag--adj">{adjacentIsNext ? 'next' : 'prev'}</span>}
+                    </th>
+                    <th className="dpl-th-num">Change</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map(row => {
+                    const adj = adjMap.get(skuKey(row));
+                    const curC = casePrice(row);
+                    const adjC = casePrice(adj);
+                    const pack = bottlesPerCase(row.product_name, row.unit_qty);
+                    const curB = curC != null && pack ? curC / pack : null;
+                    const adjB = adjC != null && pack ? adjC / pack : null;
+                    // Change reads chronologically (later − earlier): up = price rose.
+                    const earlier = adjacentIsNext ? curC : adjC;
+                    const later = adjacentIsNext ? adjC : curC;
+                    const delta = earlier != null && later != null ? Math.round((later - earlier) * 100) / 100 : null;
+                    const pct = delta != null && earlier ? (delta / earlier) * 100 : null;
+                    const flat = delta != null && Math.abs(delta) < 0.005;
+                    const dir = delta == null ? null : flat ? 'flat' : delta > 0 ? 'up' : 'down';
+                    const meta = [row.product_type, row.unit_volume, row.brand].filter(Boolean).join(' · ');
+                    return (
+                      <tr key={skuKey(row) + (row.edition ?? '')}>
+                        <td className="dpl-td-prod">
+                          <Link to={detailUrl(row)} className="dpl-prod-name">{row.product_name}</Link>
+                          {meta && <div className="dpl-prod-meta">{meta}</div>}
+                        </td>
+                        <td className="dpl-td-num dpl-td-current">
+                          <span className="dpl-price">{money(curC)}</span>
+                          {curB != null && <span className="dpl-price-btl">{money(curB)}/btl</span>}
+                        </td>
+                        <td className="dpl-td-num">
+                          {adjC != null ? (
+                            <>
+                              <span className="dpl-price">{money(adjC)}</span>
+                              {adjB != null && <span className="dpl-price-btl">{money(adjB)}/btl</span>}
+                            </>
+                          ) : adjacentEd ? (
+                            <span className="dpl-tag-missing">{adjacentIsNext ? 'not in next' : 'new'}</span>
+                          ) : '—'}
+                        </td>
+                        <td className="dpl-td-num">
+                          {delta == null ? <span className="dpl-chg-na">—</span> : flat ? (
+                            <span className="dpl-chg dpl-chg--flat">no change</span>
+                          ) : (
+                            <span className={`dpl-chg dpl-chg--${dir}`}>
+                              {dir === 'up' ? <ArrowUp size={13} /> : <ArrowDown size={13} />}
+                              {money(Math.abs(delta))}{pct != null && <> ({Math.abs(pct).toFixed(1)}%)</>}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-            <div className="products-hero-count">{isLoading ? 'Loading…' : `${total.toLocaleString()} items`}</div>
-          </div>
-          {data?.corrected_query && data.corrected_query.toLowerCase() !== qDebounced.trim().toLowerCase() && (
-            <p className="search-correction" style={{ fontSize: 13, color: 'var(--text-muted)', margin: '-4px 0 12px' }}>
-              No exact match for "{qDebounced.trim()}". Showing results for{' '}
-              <button type="button" className="link-btn" onClick={() => { setQ(data.corrected_query!); setPage(0); }}
-                style={{ background: 'none', border: 0, padding: 0, color: 'var(--accent)', fontWeight: 600, cursor: 'pointer' }}>
-                "{data.corrected_query}"
-              </button>.
-            </p>
           )}
 
-          <div className={`products-layout${railCollapsed ? ' products-layout--collapsed' : ''}`}>
-            {railCollapsed ? (
-              <button type="button" className="prod-rail-reopen" onClick={() => toggleRail(false)} title="Show filters">
-                <SlidersHorizontal size={15} />
-                <span className="prod-rail-reopen-label">Filters</span>
-              </button>
-            ) : (
-              <ProductsFilterRail
-                filters={filters}
-                onChange={f => { setFilters(f); setPage(0); }}
-                items={items}
-                facets={facets}
-                onCollapse={() => toggleRail(true)}
-              />
-            )}
-
-            <div className="products-main">
-              <div className="products-toolbar">
-                <span className="products-showing">
-                  {isLoading ? 'Loading…' : grouped ? (
-                    <>Showing <strong>{productCount}</strong> product{productCount === 1 ? '' : 's'}
-                      {' '}<span className="products-showing-sub">({total.toLocaleString()} sizes)</span></>
-                  ) : (
-                    <>Showing <strong>{productCount}</strong> listing{productCount === 1 ? '' : 's'}
-                      {' '}<span className="products-showing-sub">by size</span></>
-                  )}
-                </span>
-                <div className="products-toolbar-right">
-                  <label className="products-group-toggle"
-                    title="OFF (default): one row per size. ON: combine a product's sizes into one family card.">
-                    <input type="checkbox" checked={grouped} onChange={e => { setGrouped(e.target.checked); setPage(0); }} />
-                    Group products
-                  </label>
-                  <div className="products-detail-toggle" role="group" aria-label="Deal detail level"
-                    title="Price details shows every QD/RIP tier on the cards; Summary keeps cards compact.">
-                    <button type="button" className={priceDetails ? 'on' : ''} onClick={() => setDetails(true)}>Price details</button>
-                    <button type="button" className={!priceDetails ? 'on' : ''} onClick={() => setDetails(false)}>Summary</button>
-                  </div>
-                  <label className="products-sort">
-                    <span>Sort by</span>
-                    <select value={`${sort}:${order}`}
-                      onChange={e => { const [s, o] = e.target.value.split(':') as [typeof sort, typeof order]; setSort(s); setOrder(o); setPage(0); }}>
-                      <option value="product_name:asc">Name (A–Z)</option>
-                      <option value="product_name:desc">Name (Z–A)</option>
-                      <option value="frontline_case_price:asc">Price (low → high)</option>
-                      <option value="frontline_case_price:desc">Price (high → low)</option>
-                      <option value="effective_case_price:asc">Best price (low → high)</option>
-                    </select>
-                  </label>
-                  <RowLimitSelect value={limit} onChange={v => { setLimit(v); setPage(0); }} />
-                </div>
-              </div>
-
-              {isLoading ? <p>Loading…</p> : total === 0 ? (
-                <p className="dpl-empty">No items match. Try clearing the search or filters.</p>
-              ) : (
-                <ProductsGrid items={items} cart={cart} updateQty={updateQty}
-                  showDeals={priceDetails} grouped={grouped} expandAll={!!qDebounced.trim()} dealMonth="current" />
-              )}
-
-              <div className="pagination">
-                <button disabled={page === 0} onClick={() => setPage(p => p - 1)}>Prev</button>
-                <span>Page {page + 1} of {totalPages}</span>
-                <button disabled={(page + 1) * limit >= total} onClick={() => setPage(p => p + 1)}>Next</button>
-              </div>
-            </div>
+          <div className="pagination">
+            <button disabled={page === 0} onClick={() => setPage(p => p - 1)}>Prev</button>
+            <span>Page {page + 1} of {totalPages}</span>
+            <button disabled={(page + 1) * limit >= total} onClick={() => setPage(p => p + 1)}>Next</button>
           </div>
-        </>
-      )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -5762,6 +5762,42 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 .dpl-switch-change { color: var(--accent); font-weight: 700; font-size: 13px; }
 .dpl-empty { color: var(--text-muted); font-size: 14px; padding: 24px 2px; grid-column: 1 / -1; }
 
+/* Two-month price table: current edition beside the adjacent month + the
+   change. A price list reads best as a dense, scannable table. */
+.dpl-table-wrap { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--surface, #fff); container-type: inline-size; }
+.dpl-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.dpl-table thead th {
+  position: sticky; top: 0; z-index: 1; background: var(--surface-hover, #f6f7f9);
+  text-align: right; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--text-muted); padding: 10px 16px; border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+.dpl-th-prod { text-align: left; }
+.dpl-th-current { color: var(--text); }
+.dpl-th-tag {
+  display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 999px;
+  font-size: 9px; font-weight: 800; letter-spacing: .03em;
+  background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent);
+}
+.dpl-th-tag--adj { background: var(--surface, #fff); color: var(--text-muted); border: 1px solid var(--border); }
+.dpl-table tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+.dpl-table tbody tr:last-child { border-bottom: 0; }
+.dpl-table tbody tr:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.dpl-td-prod { padding: 10px 16px; }
+.dpl-prod-name { font-weight: 600; color: var(--text); text-decoration: none; }
+.dpl-prod-name:hover { color: var(--accent); text-decoration: underline; }
+.dpl-prod-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.dpl-td-num { padding: 10px 16px; text-align: right; vertical-align: top; white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* Current month column gently tinted so the eye lands on "today's" price. */
+.dpl-th-current, .dpl-td-current { background: color-mix(in srgb, var(--accent) 4%, transparent); }
+.dpl-price { display: block; font-weight: 700; color: var(--text); }
+.dpl-price-btl { display: block; font-size: 11.5px; color: var(--text-muted); font-weight: 500; margin-top: 1px; }
+.dpl-tag-missing { font-size: 11px; color: var(--text-muted); font-style: italic; }
+.dpl-chg { display: inline-flex; align-items: center; gap: 3px; font-weight: 700; font-size: 13px; justify-content: flex-end; }
+.dpl-chg--up { color: #dc2626; }       /* price rose */
+.dpl-chg--down { color: #16a34a; }      /* price fell */
+.dpl-chg--flat, .dpl-chg-na { color: var(--text-muted); font-weight: 500; font-size: 12px; }
+@container (max-width: 620px) { .dpl-price-btl { display: none; } .dpl-td-num, .dpl-table thead th { padding-left: 10px; padding-right: 10px; } }
+
 /* ---- Shared filter-rail layout (FilterSidebar) ----
    Clones the Catalog/Products .products-layout grid so every page that uses the
    shared FilterSidebar rail lines up identically: a 248px sticky rail + fluid

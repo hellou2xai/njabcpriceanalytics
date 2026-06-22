@@ -199,6 +199,7 @@ export default function EditionCompare() {
   const [layersSel, setLayersSel] = useState<string[]>([]);
   const [minPrice, setMinPrice] = useState('');
   const [maxPrice, setMaxPrice] = useState('');
+  const [minChange, setMinChange] = useState('1');   // min ABS net-cost change $ (default $1: hide rounding noise)
   const [onlyChanged, setOnlyChanged] = useState(false);
   const [page, setPage] = useState(0);
   const [limit, setLimit] = useState(500);
@@ -288,12 +289,18 @@ export default function EditionCompare() {
       return true;
     });
     if (onlyChanged) rs = rs.filter(r => r.status !== 'both' || (r.net_delta_case != null && Math.abs(r.net_delta_case) >= 0.005));
+    // Min net-cost change: drop tiny moves (added/removed items have no delta,
+    // so they always pass — this only thresholds the changed rows).
+    if (minChange) {
+      const mc = parseFloat(minChange);
+      rs = rs.filter(r => r.status !== 'both' || (r.net_delta_case != null && Math.abs(r.net_delta_case) >= mc));
+    }
     return rs;
-  }, [rows, productType, sizes, layersSel, minPrice, maxPrice, onlyChanged]);
+  }, [rows, productType, sizes, layersSel, minPrice, maxPrice, minChange, onlyChanged]);
 
   // Reset to the first page whenever the filtered set or page size changes.
   useEffect(() => { setPage(0); },
-    [wholesaler, older, newer, q, change, sort, productType, sizes, layersSel, minPrice, maxPrice, onlyChanged, limit]);
+    [wholesaler, older, newer, q, change, sort, productType, sizes, layersSel, minPrice, maxPrice, minChange, onlyChanged, limit]);
 
   const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / limit));
@@ -317,7 +324,7 @@ export default function EditionCompare() {
 
   const resetFilters = () => {
     setQ(''); setChange(''); setProductType(''); setSizes([]); setLayersSel([]);
-    setMinPrice(''); setMaxPrice(''); setOnlyChanged(false); setSort('inc_dollar');
+    setMinPrice(''); setMaxPrice(''); setMinChange('1'); setOnlyChanged(false); setSort('inc_dollar');
   };
 
   const sections: FilterSection[] = [
@@ -335,6 +342,11 @@ export default function EditionCompare() {
       value: productType, onChange: setProductType, options: catOptions },
     { type: 'multi-pills', key: 'size', title: 'Size', values: sizes, onChange: setSizes, options: sizeOptions },
     { type: 'multi-pills', key: 'layers', title: 'What moved', values: layersSel, onChange: setLayersSel, options: layerOptions },
+    { type: 'pills', key: 'min_change', title: 'Min change / case', value: minChange, onChange: setMinChange,
+      options: [
+        { value: '', label: 'Any' }, { value: '1', label: '$1+' }, { value: '5', label: '$5+' },
+        { value: '10', label: '$10+' }, { value: '25', label: '$25+' }, { value: '50', label: '$50+' },
+      ] },
     { type: 'range', key: 'price', title: 'Net price / case', min: minPrice, max: maxPrice,
       onMinChange: setMinPrice, onMaxChange: setMaxPrice, minPlaceholder: 'Min $', maxPlaceholder: 'Max $' },
     { type: 'toggle', key: 'changed', title: 'Only changed', value: onlyChanged, onChange: setOnlyChanged, label: 'Hide unchanged rows' },

@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, Fragment } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   BadgeDollarSign, Trophy, AlertTriangle, Clock, Layers,
-  TrendingUp, TrendingDown, Tag, CalendarClock,
+  TrendingUp, TrendingDown, Tag, CalendarClock, ChevronDown, ChevronRight,
 } from 'lucide-react';
 import { compare } from '../lib/api';
 import type { BestRipRow, BestRipDist, BestRipTier, BestRipTrend } from '../lib/api';
@@ -231,6 +231,95 @@ function Card({ row, slugs, onRipClick, isTop }: { row: BestRipRow; slugs: strin
   );
 }
 
+/** Dense tabular view: one row per product, one column per distributor (its best
+ *  RIP tier — profit % + rebate), plus the headline best profit, the month-trend
+ *  and the differs flag. Clicking a row expands the full per-distributor ladders
+ *  (the same DistBlocks the card uses), so the table loses no detail. */
+function BestRipsTable({ rows, slugs, topPct, onRipClick, expanded, setExpanded }: {
+  rows: BestRipRow[]; slugs: string[]; topPct: number;
+  onRipClick: (w: string, c: string, edition: string) => void;
+  expanded: string | null; setExpanded: (k: string | null) => void;
+}) {
+  const ncols = slugs.length + 4;
+  return (
+    <div className="table-container">
+      <table className="dense-table br-table">
+        <thead>
+          <tr>
+            <th>Product</th>
+            {slugs.map(w => (
+              <th key={w} className="br-num" style={{ color: ACCENTS[w] || '#64748b' }}>
+                {distributorName(w)}
+                <span className="br-th-sub">best RIP · profit</span>
+              </th>
+            ))}
+            <th className="br-num">Best profit</th>
+            <th>When</th>
+            <th>Differs</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(row => {
+            const present = slugs.filter(w => row.dists[w]);
+            const withRip = present.filter(w => row.dists[w]?.has_rip);
+            const isOpen = expanded === row.match_key;
+            const vint = wineVintage(row.product_type, row.vintage);
+            const size = [row.unit_qty, row.unit_volume].filter(Boolean).join(' × ');
+            const isTop = (row.best_profit_pct ?? 0) > 0 && row.best_profit_pct === topPct;
+            return (
+              <Fragment key={row.match_key}>
+                <tr className={`br-trow${isOpen ? ' is-open' : ''}${isTop ? ' br-trow--top' : ''}`}
+                  onClick={() => setExpanded(isOpen ? null : row.match_key)}>
+                  <td>
+                    <span className="br-td-prod">
+                      {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      <span>
+                        <span className="br-td-name">{row.product_name}</span>
+                        <span className="br-td-sub">{monthLabel(row.edition)}{size ? ` · ${size}` : ''}{vint ? ` · ${vint}` : ''}</span>
+                      </span>
+                    </span>
+                  </td>
+                  {slugs.map(w => {
+                    const d = row.dists[w];
+                    if (!d || !d.carried) return <td key={w} className="br-num"><span className="text-muted">—</span></td>;
+                    if (!d.has_rip) return <td key={w} className="br-num"><span className="text-muted">no RIP</span></td>;
+                    const best = d.tiers.reduce((a, b) => ((b.rip_profit_pct ?? -1) > (a.rip_profit_pct ?? -1) ? b : a), d.tiers[0]);
+                    const win = row.best_distributor === w && withRip.length > 1;
+                    return (
+                      <td key={w} className="br-num">
+                        <span className={win ? 'hl-best' : ''} style={{ fontWeight: 700 }}>{pct(best?.rip_profit_pct)}</span>
+                        <span className="br-td-cellsub">{money(best?.total_rebate)}{best?.buy_label ? ` · ${best.buy_label}` : ''}</span>
+                      </td>
+                    );
+                  })}
+                  <td className="br-num"><span style={{ fontWeight: 700, color: '#16a34a' }}>{pct(row.best_profit_pct)}</span></td>
+                  <td><TrendSticker t={row.rip_trend} /></td>
+                  <td>{row.differs
+                    ? <span className="br-differs" title="The distributors differ on RIP terms (missing, timing, quantity or profit)"><AlertTriangle size={12} /> Differs</span>
+                    : <span className="text-muted">—</span>}</td>
+                </tr>
+                {isOpen && (
+                  <tr className="br-trow-detail">
+                    <td colSpan={ncols}>
+                      <div className="br-dists">
+                        {present.map(w => (
+                          <DistBlock key={w} w={w} d={row.dists[w]} row={row}
+                            isWinner={row.best_distributor === w && withRip.length > 1}
+                            onRipClick={onRipClick} />
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function BestRips() {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<Sort>('best_profit');
@@ -245,6 +334,11 @@ export default function BestRips() {
   const [sizes, setSizes] = useState<string[]>([]);  // size (client-side on returned rows)
   const [cases, setCases] = useState(0);         // best deal reachable at N cases (0 = any)
   const [modal, setModal] = useState<{ w: string; code: string; edition: string } | null>(null);
+  // Card (default) vs dense table. Persisted, like the Edition/Compare boards.
+  const [view, setView] = useState<'cards' | 'table'>(
+    () => (localStorage.getItem('best-rips-view') as 'cards' | 'table') || 'cards');
+  useEffect(() => { localStorage.setItem('best-rips-view', view); }, [view]);
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   const params = useMemo(() => ({
     q: query || undefined,
@@ -381,14 +475,24 @@ export default function BestRips() {
       {data && !isLoading && (
         <>
           <div className="br-count">
-            Showing {rows.length} of {data.total.toLocaleString()} RIPs
-            {cases > 0 ? ` reachable at ${cases} cs` : ''}
-            {onlyDiff ? ' where the distributors differ' : ` across ${data.wholesalers.map(distributorName).join(', ')}`}
-            {data.total > rows.length && ' — refine with search or sort to narrow'}
-            {isFetching && <span className="br-updating"> · updating…</span>}
+            <span>
+              Showing {rows.length} of {data.total.toLocaleString()} RIPs
+              {cases > 0 ? ` reachable at ${cases} cs` : ''}
+              {onlyDiff ? ' where the distributors differ' : ` across ${data.wholesalers.map(distributorName).join(', ')}`}
+              {data.total > rows.length && ' — refine with search or sort to narrow'}
+              {isFetching && <span className="br-updating"> · updating…</span>}
+            </span>
+            <span className="br-viewtoggle" role="group" aria-label="Layout">
+              <button type="button" className={view === 'cards' ? 'on' : ''} onClick={() => setView('cards')}>Card view</button>
+              <button type="button" className={view === 'table' ? 'on' : ''} onClick={() => setView('table')}>Table view</button>
+            </span>
           </div>
           {rows.length === 0 ? (
             <div className="br-empty">No RIPs match these filters.</div>
+          ) : view === 'table' ? (
+            <BestRipsTable rows={rows} slugs={data.wholesalers} topPct={topPct}
+              expanded={expanded} setExpanded={setExpanded}
+              onRipClick={(w, code, edition) => setModal({ w, code, edition })} />
           ) : (
             <div className="br-grid">
               {rows.map((row: BestRipRow) => (

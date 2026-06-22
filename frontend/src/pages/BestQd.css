@@ -39,7 +39,29 @@
 .bq-range input { accent-color: #2563eb; }
 .bq-range b { color: #2563eb; }
 
-.bq-count { font-size: 12.5px; color: #334155; margin-bottom: 10px; }
+.bq-count { font-size: 12.5px; color: #334155; margin-bottom: 10px; display: flex;
+  align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+
+/* Card / Table layout toggle (mirrors the Compare boards). */
+.bq-viewtoggle { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; flex-shrink: 0; }
+.bq-viewtoggle button { background: var(--surface); border: none; padding: 4px 12px; font-size: 12px; font-weight: 600; color: var(--text-muted); cursor: pointer; }
+.bq-viewtoggle button + button { border-left: 1px solid var(--border); }
+.bq-viewtoggle button.on { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--accent); }
+.bq-viewtoggle button:hover:not(.on) { background: var(--bg); }
+
+/* Tabular view: one row per product, one column per distributor. */
+.bq-table { width: 100%; }
+.bq-table th.bq-num, .bq-table td.bq-num { text-align: right; }
+.bq-th-sub { display: block; font-size: 10px; font-weight: 400; color: var(--text-muted); text-transform: none; }
+.bq-trow { cursor: pointer; }
+.bq-trow:hover { background: var(--bg); }
+.bq-trow.is-open { background: color-mix(in srgb, var(--accent) 6%, var(--surface)); }
+.bq-trow--top { background: hsl(48 100% 96%); }
+.bq-td-prod { display: flex; align-items: center; gap: 6px; }
+.bq-td-name { font-weight: 600; }
+.bq-td-sub { display: block; font-size: 11px; color: var(--text-muted); }
+.bq-td-cellsub { display: block; font-size: 11px; color: var(--text-muted); font-weight: 400; }
+.bq-trow-detail > td { background: var(--bg); padding: 8px; }
 .bq-updating { color: #2563eb; font-weight: 600; }
 .bq-empty { padding: 40px; text-align: center; color: #334155; background: #f8fafc; border-radius: 12px; }
 

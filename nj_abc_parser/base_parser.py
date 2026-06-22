@@ -76,6 +76,10 @@ def _find_sheet(wb: openpyxl.Workbook, sheet_type: str) -> Optional[str]:
     for name in wb.sheetnames:
         if sheet_type.replace("_", " ") in name.lower():
             return name
+    # Single-sheet workbook: the only sheet IS the CPL (some distributors submit
+    # a bare price list with no RIP/COMBO/TERMS tabs, sometimes named "Sheet1").
+    if sheet_type == "cpl" and len(wb.sheetnames) == 1:
+        return wb.sheetnames[0]
     return None
 
 

@@ -153,20 +153,29 @@ function CardBreakdown({ r, blocks, older, newer }: { r: EditionRow; blocks?: Pr
     ? `Price after best RIP (Best RIP ${qty(ripT)} CS, ${money(ripT.amount)} Total RIP)`
     : 'Price after best RIP';
   const rows = [
-    { lab: 'Frontline Case Price', a: flA, b: flB, aB: btl(flA), bB: btl(flB) },
-    { lab: qdLab, a: r.invoice_a, b: r.invoice_b, aB: btl(r.invoice_a), bB: btl(r.invoice_b) },
-    { lab: ripLab, a: r.net_a_case, b: r.net_b_case, aB: r.net_a_btl, bB: r.net_b_btl, rip: true },
+    { lab: 'Frontline Case Price', a: flA, b: flB, aB: btl(flA), bB: btl(flB), layer: 'frontline' },
+    { lab: qdLab, a: r.invoice_a, b: r.invoice_b, aB: btl(r.invoice_a), bB: btl(r.invoice_b), layer: 'discount' },
+    { lab: ripLab, a: r.net_a_case, b: r.net_b_case, aB: r.net_a_btl, bB: r.net_b_btl, rip: true, layer: 'rip' },
   ];
+  // Which cost line actually DROVE the net change — from r.layers (frontline /
+  // discount / rip_*). When the list price moves, the change cascades into the
+  // after-QD and after-RIP lines too, so colouring every changed line hides the
+  // cause. The driver line gets the amber accent + tag; cascaded lines keep only
+  // the red value colour.
+  const moved = new Set(r.layers ?? []);
+  const isDriver = (layer: string) =>
+    layer === 'rip' ? [...moved].some(l => l.startsWith('rip')) : moved.has(layer);
   return (
     <div className="ec-bd3">
       {rows.map(row => {
         if (row.a == null && row.b == null) return null;
         const changed = row.a != null && row.b != null && Math.abs(row.a - row.b) > 0.005;
+        const driver = changed && isDriver(row.layer);
         const cs = span(row.a, row.b);
         const bt = span(row.aB, row.bB, `/${abbr}`);
         return (
-          <div key={row.lab} className={`ec-bd3-row${changed ? ' ec-bd3-changed' : ''}${row.rip ? ' ec-bd3-rip' : ''}`}>
-            <span className="ec-bd3-lab">{row.lab}</span>
+          <div key={row.lab} className={`ec-bd3-row${changed ? ' ec-bd3-changed' : ''}${row.rip ? ' ec-bd3-rip' : ''}${driver ? ' ec-bd3-driver' : ''}`}>
+            <span className="ec-bd3-lab">{row.lab}{driver && <span className="ec-bd3-drivertag">drives change</span>}</span>
             <div className="ec-bd3-data">
               <span className="ec-bd3-cs">{cs}</span>
               {bt && <span className="ec-bd3-btl">{bt}</span>}
@@ -175,6 +184,62 @@ function CardBreakdown({ r, blocks, older, newer }: { r: EditionRow; blocks?: Pr
         );
       })}
     </div>
+  );
+}
+
+// Deterministic "what drove the price" explainer for the card footer. Net cost =
+// frontline − QD savings − RIP rebate, so the net change decomposes EXACTLY into
+// three component effects that SUM to it (verified algebraically): the list move,
+// the change in QD savings, and the change in RIP rebate. We surface each
+// non-trivial component with its signed effect on net cost (+ pushes cost up, −
+// pulls it down), led by the dominant one. Pure arithmetic off the edition's own
+// price layers — no heuristics, same numbers every time.
+function ChangeExplanation({ r }: { r: EditionRow }) {
+  if (r.status === 'added')
+    return <p className="ec-card-why ec-why-added">New listing this edition — no prior edition to compare.</p>;
+  if (r.status === 'removed')
+    return <p className="ec-card-why ec-why-removed">Removed this edition{r.net_a_case != null ? ` — was ${money(r.net_a_case)}/cs` : ''}.</p>;
+  if (!r.comparable)
+    return <p className="ec-card-why ec-why-flat">Size/pack identity differs — not directly comparable.</p>;
+  const dNet = r.net_delta_case;
+  if (dNet == null || Math.abs(dNet) < 0.005)
+    return <p className="ec-card-why ec-why-flat">No change in net cost this edition.</p>;
+
+  const fa = r.frontline_a, fb = r.frontline_b, ia = r.invoice_a, ib = r.invoice_b,
+        na = r.net_a_case, nb = r.net_b_case;
+  const parts: { key: string; label: string; amt: number; note?: string }[] = [];
+  if (fa != null && fb != null && Math.abs(fb - fa) > 0.005)
+    parts.push({ key: 'frontline', label: 'List price', amt: fb - fa });
+  if (fa != null && fb != null && ia != null && ib != null) {
+    const dSave = (fb - ib) - (fa - ia);                 // change in QD savings
+    if (Math.abs(dSave) > 0.005)
+      parts.push({ key: 'discount', label: 'Quantity discount', amt: -dSave, note: dSave > 0 ? 'deeper' : 'smaller' });
+  }
+  if (ia != null && ib != null && na != null && nb != null) {
+    const dReb = (ib - nb) - (ia - na);                  // change in RIP rebate
+    if (Math.abs(dReb) > 0.005) {
+      const note = r.layers.includes('rip_gained') ? 'new rebate'
+        : r.layers.includes('rip_lost') ? 'rebate ended'
+        : r.layers.includes('rip_modified') ? 'rebate changed' : undefined;
+      parts.push({ key: 'rip', label: 'RIP rebate', amt: -dReb, note });
+    }
+  }
+  parts.sort((a, b) => Math.abs(b.amt) - Math.abs(a.amt));
+  const up = dNet > 0;
+  const sgn = (a: number) => `${a > 0 ? '+' : '−'}$${Math.abs(a).toFixed(2)}`;
+  return (
+    <p className="ec-card-why">
+      <span className={`ec-why-net ${up ? 'ec-why-up' : 'ec-why-down'}`}>
+        Net cost {up ? 'rose' : 'fell'} {signed(dNet)}/cs{r.net_delta_pct != null ? ` (${pct(r.net_delta_pct)})` : ''}
+      </span>
+      {parts.length > 0 && (
+        <span className="ec-why-parts">{' — '}{parts.map((p, i) => (
+          <span key={p.key} className="ec-why-part">
+            {i > 0 ? '; ' : ''}{p.label} <b>{sgn(p.amt)}</b>/cs{p.note ? ` (${p.note})` : ''}
+          </span>
+        ))}</span>
+      )}
+    </p>
   );
 }
 
@@ -199,11 +264,13 @@ function EditionCard({ r, older, newer, wholesaler, onOpen, price3mo }: {
         <ProductThumb src={r.image_url ?? undefined} alt={r.product_name} size={48} expandable />
         <div className="ec-card-id">
           <span className="ec-card-name" onClick={() => onOpen(r.product_name)} title={r.product_name}>{r.product_name}</span>
+          {(r.upc || r.dist_item_no) && (
+            <span className="ec-card-ids">
+              {r.upc && <span>UPC {r.upc}</span>}
+              {r.dist_item_no && <span>· Item {r.dist_item_no}</span>}
+            </span>
+          )}
           <span className="ec-card-sub">{r.unit_qty} × {r.unit_volume}</span>
-          <span className="ec-card-ids">
-            {r.upc && <span>UPC {r.upc}</span>}
-            {r.dist_item_no && <span>· Item {r.dist_item_no}</span>}
-          </span>
         </div>
         <DeltaPill r={r} />
       </div>
@@ -240,6 +307,9 @@ function EditionCard({ r, older, newer, wholesaler, onOpen, price3mo }: {
           <MonthEffectiveSparkline {...buildSparkProps({ unit_qty: r.unit_qty, unit_volume: r.unit_volume, price_3mo: price3mo })} />
         </div>
       )}
+
+      {/* Deterministic footer: what drove the net cost change this edition. */}
+      <ChangeExplanation r={r} />
 
       {r.status !== 'removed' && (
         <div className="ec-card-actions">

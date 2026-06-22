@@ -127,6 +127,18 @@
 .ec-bd3-det { color: var(--text-muted); font-style: italic; }
 .ec-bd3-changed .ec-bd3-cs { color: #dc2626; }
 .ec-bd3-rip .ec-bd3-cs { color: #16a34a; }
+/* The row that DROVE the net change (its layer is in r.layers) — amber accent +
+   tag, so it stands out from the cascaded rows that only moved as a knock-on. */
+.ec-bd3-driver { border-left: 3px solid #f59e0b; background: #fffbeb; border-radius: 4px; padding: 2px 0 2px 6px; margin-left: -2px; }
+.ec-bd3-drivertag { display: inline-block; margin-left: 6px; font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: #92400e; background: #fde68a; border-radius: 3px; padding: 0 4px; vertical-align: 1px; }
+/* Card footer: deterministic "what drove the price" sentence. */
+.ec-card-why { margin: 6px 0 0; padding: 6px 8px; font-size: 11px; line-height: 1.45; background: var(--surface-2, #f8fafc); border: 1px solid var(--border); border-radius: 6px; color: var(--text); }
+.ec-why-net { font-weight: 800; }
+.ec-why-up { color: #dc2626; }
+.ec-why-down { color: #16a34a; }
+.ec-why-parts { color: var(--text-muted); }
+.ec-why-part b { color: var(--text); }
+.ec-why-added, .ec-why-removed, .ec-why-flat { color: var(--text-muted); font-weight: 600; }
 /* The changed net value in the grid itself: red font on a yellow highlight. */
 .ec-num.ec-changed-val { color: #dc2626; background: #fef9c3; border-radius: 5px; padding: 0 4px; }
 .ec-num.ec-changed-val .cmp-sub { color: #b45309; }
@@ -156,8 +168,10 @@
 .ec-card-id { flex: 1 1 auto; min-width: 0; }
 .ec-card-name { display: block; font-weight: 700; font-size: 14px; color: var(--text); cursor: pointer; }
 .ec-card-name:hover { color: var(--accent); text-decoration: underline; }
-.ec-card-sub { font-size: 12px; color: var(--text-muted); }
-.ec-card-ids { display: flex; flex-wrap: wrap; gap: 2px 6px; font-size: 10.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; margin-top: 1px; }
+.ec-card-sub { display: block; font-size: 12px; color: var(--text-muted); margin-top: 1px; }
+/* IDs sit directly under the product name, UPC + item on ONE line (no wrap). */
+.ec-card-ids { display: flex; flex-wrap: nowrap; white-space: nowrap; gap: 2px 6px; font-size: 10.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; margin-top: 1px; }
+.ec-card-ids span { white-space: nowrap; }
 .ec-card-pcap { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); margin-bottom: 2px; }
 .ec-card-prices { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .ec-card-pcol { display: flex; flex-direction: column; gap: 1px; }

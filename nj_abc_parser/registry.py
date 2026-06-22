@@ -27,10 +27,11 @@ from nj_abc_parser.wholesalers.gallo import CONFIG as GALLO
 from nj_abc_parser.wholesalers.regal_wine import CONFIG as REGAL_WINE
 from nj_abc_parser.wholesalers.wine_enterprises import CONFIG as WINE_ENTERPRISES
 from nj_abc_parser.wholesalers.trivin import CONFIG as TRIVIN
+from nj_abc_parser.wholesalers.monsieur import CONFIG as MONSIEUR
 
 REGISTRY = [ALLIED, FEDWAY, OPICI, PEERLESS, HIGH_GRADE, KRAMER, SHORE_POINT,
             JERSEY_BEVERAGE, OTHER_BROTHERS, WINEBOW, GALLO, REGAL_WINE,
-            WINE_ENTERPRISES, TRIVIN]
+            WINE_ENTERPRISES, TRIVIN, MONSIEUR]
 
 
 def list_wholesalers() -> list[dict]:
@@ -144,6 +145,21 @@ def parse_edition_from_filename(filepath: Path) -> dict:
             if month_name in name_lower:
                 month = month_num
                 break
+
+        # Numeric edition tokens when there's no month NAME: "MM-YY" (Royal
+        # "6-26") or "MMYY" (Monsieur "0626"). Guarded so a real year (2026) or
+        # a day-month pair isn't misread: first part must be a month (1-12) and
+        # the 2-digit year in the plausible 2020-2039 range. The filename month
+        # wins over the submission date (which can be the PRIOR month).
+        if month is None:
+            m_dash = re.search(r"(?<!\d)(\d{1,2})-(\d{2})(?!\d)", name)
+            m_mmyy = re.search(r"(?<!\d)(\d{2})(\d{2})(?!\d)", name)
+            if m_dash and 1 <= int(m_dash.group(1)) <= 12 and 20 <= int(m_dash.group(2)) <= 39:
+                month = f"{int(m_dash.group(1)):02d}"
+                year = year or str(2000 + int(m_dash.group(2)))
+            elif m_mmyy and 1 <= int(m_mmyy.group(1)) <= 12 and 20 <= int(m_mmyy.group(2)) <= 39:
+                month = m_mmyy.group(1)
+                year = year or str(2000 + int(m_mmyy.group(2)))
 
     return {
         "year": int(year) if year else None,

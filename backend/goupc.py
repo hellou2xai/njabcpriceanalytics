@@ -47,6 +47,13 @@ def lookup(upc: str, timeout: float = 20.0) -> dict | None:
         raise GoUpcAuthError(f"auth/quota problem ({r.status_code}): {r.text[:200]}")
     if r.status_code == 429:
         raise GoUpcError("rate limited (429)")
+    # A 400 "not in a recognized format" means the code isn't a real barcode
+    # (e.g. a 9/10/11-digit internal code that slipped into `upc`). Go-UPC will
+    # never have it, so treat it like 404/not-found — cache it and move on,
+    # rather than raising an error that trips the consecutive-error abort and
+    # burns retries on a code that can't succeed.
+    if r.status_code == 400 and "not in a recognized format" in r.text.lower():
+        return None
     if r.status_code >= 400:
         raise GoUpcError(f"unexpected status {r.status_code}: {r.text[:200]}")
 

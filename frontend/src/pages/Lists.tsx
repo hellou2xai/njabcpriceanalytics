@@ -385,19 +385,12 @@ function ListRow({ it, selected, toggle, onRemove }: {
       </td>
       <td>{it.unit_volume}</td>
       <td title="Bottles per case">{pack ? `${pack}/cs` : '–'}</td>
-      {/* Planned quantity → drives the eligible RIP rebate at that volume. */}
+      {/* Planned quantity. A RIP rebate is the tier's TOTAL at its case
+          threshold, not a per-case rate that scales with qty, so we don't show a
+          "qty × per-case" rebate line here (it was misleading). */}
       <td onClick={e => e.stopPropagation()}>
         <QtyStepper value={it.qty_cases ?? 0}
           onChange={n => setQty.mutate({ cases: n })} disabled={setQty.isPending} />
-        {it.rip_back_later && it.rip_back_later.total > 0 && (
-          <div style={{ marginTop: 3, fontSize: 11, fontWeight: 700, color: 'hsl(150 55% 32%)' }}
-            title="Eligible RIP rebate at this quantity — paid back later as a credit, not off today's invoice.">
-            💰 ${it.rip_back_later.total.toFixed(2)} back
-            <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>
-              {' '}({it.qty_cases} cs × ${it.rip_back_later.per_case.toFixed(2)})
-            </span>
-          </div>
-        )}
       </td>
       {/* Which RIP the line earns — editable when several programs apply. */}
       <td onClick={e => e.stopPropagation()}>

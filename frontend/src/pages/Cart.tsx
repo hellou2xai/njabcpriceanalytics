@@ -658,97 +658,63 @@ export default function Cart() {
             a selector lets the buyer pick the program, and a hint points out
             when a different program pays more at the same commitment. */}
         {!saving && (() => {
+          // A RIP rebate is the tier's TOTAL amount earned once you reach the
+          // tier's case threshold — it is NOT a per-case rate that scales with
+          // quantity. So we show the eligibility line (which states the tier
+          // total, e.g. "qualified for the 2 case $40 RIP") and do NOT multiply
+          // a per-case figure by the cart qty.
           const elig = lineRipEligibility(it, active);
+          return elig ? <div className={`cart-rip-elig tone-${elig.tone}`}>{elig.text}</div> : null;
+        })()}
+
+        {/* Compact insights — alternatives + timing collapsed onto ONE wrapping
+            line of plain, lightly-tinted text (no chunky pill stacks): buy-or-wait
+            vs next edition, a cheaper/bigger size, a closeout, and a combo. */}
+        {(() => {
+          const txt = { fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' as const };
+          const items: React.ReactNode[] = [];
+          const w = it.best_buy_window, s = it.best_buy_saving;
+          if (w && s != null && s > 0) {
+            const wait = w.toLowerCase().startsWith('wait');
+            items.push(wait
+              ? <span key="bw" style={{ ...txt, color: '#1d4ed8' }}
+                  title="The net price (after QD + RIP) is lower next edition.">⏳ Wait → {w.replace(/^wait\s*→\s*/i, '')}: ${s.toFixed(2)}/cs cheaper</span>
+              : <span key="bw" style={{ ...txt, color: '#b45309' }}
+                  title="The net price rises next edition — lock in this month.">↑ Buy now: ${s.toFixed(2)}/cs more next month</span>);
+          }
+          if (it.size_swap && !it.combo_intact) {
+            const sw = it.size_swap;
+            items.push(<span key="sz" style={{ ...txt, color: '#5b21b6' }}
+              title={sw.kind === 'upgrade'
+                ? `The ${sw.size} is $${(sw.per_btl ?? 0).toFixed(2)}/btl vs $${(sw.this_per_btl ?? 0).toFixed(2)}/btl on this size — nearly the same money for ${sw.vol_pct}% more liquid ($${sw.per_l.toFixed(2)}/L vs $${sw.this_per_l.toFixed(2)}/L).`
+                : `If you're size-flexible: the ${sw.size} works out $${sw.per_l.toFixed(2)}/L vs $${sw.this_per_l.toFixed(2)}/L on this size.`}>
+              {sw.kind === 'upgrade'
+                ? <>💡 {sw.size}: ~same/btl, {sw.vol_pct}% more volume</>
+                : <>💡 {sw.size} {sw.pct}% cheaper/L (${sw.per_l.toFixed(2)} vs ${sw.this_per_l.toFixed(2)})</>}
+            </span>);
+          }
+          if (it.has_closeout && !it.combo_intact)
+            items.push(<span key="co" style={{ ...txt, color: '#9f1239' }}
+              title="A closeout/clearance item — a one-time deep cut on a product being discontinued. It won't be offered again.">🏷 Closeout — won't last</span>);
+          if (it.combo_suggestion && it.combo_suggestion.savings > 0) {
+            const cs = it.combo_suggestion;
+            items.push(<a key="cb" href={`/combos?code=${encodeURIComponent(cs.combo_code)}`}
+              style={{ ...txt, textDecoration: 'none', color: cs.great ? '#166534' : '#3f6212' }}
+              title={cs.label ?? 'This product is part of a combo bundle.'}>
+              📦 {cs.great ? 'Great combo' : 'In a combo'}: save ${cs.savings.toFixed(2)} ({cs.pct.toFixed(0)}% off)</a>);
+          }
+          if (!items.length) return null;
           return (
-            <>
-              {elig && <div className={`cart-rip-elig tone-${elig.tone}`}>{elig.text}</div>}
-              {it.rip_back_later && it.rip_back_later.total > 0 && (
-                <div style={{ marginTop: 3, fontSize: 12, fontWeight: 700, color: 'hsl(150 55% 32%)' }}
-                  title="Eligible RIP rebate at your current quantity — paid back later as a credit, NOT off today's invoice. Scales with the quantity you buy.">
-                  💰 RIP back later: ${it.rip_back_later.total.toFixed(2)}
-                  <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>
-                    {' '}({(it.qty_cases || 0) > 0
-                      ? `${it.qty_cases} cs × $${it.rip_back_later.per_case.toFixed(2)}/cs`
-                      : `${it.qty_units} btl × $${(it.rip_back_later.per_bottle ?? 0).toFixed(2)}/btl`})
-                  </span>
-                </div>
-              )}
-            </>
+            <div style={{ marginLeft: 56, marginTop: 5, display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '2px 4px' }}>
+              {items.map((node, i) => (
+                <span key={i} style={{ display: 'inline-flex', alignItems: 'baseline' }}>
+                  {i > 0 && <span style={{ color: 'var(--border)', margin: '0 6px' }}>·</span>}
+                  {node}
+                </span>
+              ))}
+            </div>
           );
         })()}
-
-        {/* Buy-or-Wait: compares the EFFECTIVE (net) price now vs next edition. */}
-        {(() => {
-          const w = it.best_buy_window; const s = it.best_buy_saving;
-          if (!w) return null;
-          const wait = w.toLowerCase().startsWith('wait');
-          if (wait && s != null && s > 0) {
-            return (
-              <div style={{ marginLeft: 56, marginTop: 6 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: '#1d4ed8', background: '#dbeafe',
-                  border: '1px solid #93c5fd', borderRadius: 4, padding: '1px 6px' }}
-                  title="The net price (after QD + RIP) is lower next edition.">
-                  ⏳ Wait → {w.replace(/^wait\s*→\s*/i, '')}: ${s.toFixed(2)}/cs cheaper next month
-                </span>
-              </div>
-            );
-          }
-          if (!wait && s != null && s > 0) {
-            return (
-              <div style={{ marginLeft: 56, marginTop: 6 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: '#b45309', background: '#fef3c7',
-                  border: '1px solid #fcd34d', borderRadius: 4, padding: '1px 6px' }}
-                  title="The net price rises next edition — lock in this month.">
-                  ↑ Buy now: ${s.toFixed(2)}/cs more next month
-                </span>
-              </div>
-            );
-          }
-          return null;
-        })()}
-
-        {/* Size swap: a bigger bottle at ~same price per bottle (upgrade), or a
-            size that's cheaper per litre. Both use the QD buy price (cash today). */}
-        {it.size_swap && !it.combo_intact && (
-          <div style={{ marginLeft: 56, marginTop: 6 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#5b21b6', background: '#ede9fe',
-              border: '1px solid #c4b5fd', borderRadius: 4, padding: '1px 6px' }}
-              title={it.size_swap.kind === 'upgrade'
-                ? `The ${it.size_swap.size} is $${(it.size_swap.per_btl ?? 0).toFixed(2)}/btl vs $${(it.size_swap.this_per_btl ?? 0).toFixed(2)}/btl on this size — nearly the same money for ${it.size_swap.vol_pct}% more liquid ($${it.size_swap.per_l.toFixed(2)}/L vs $${it.size_swap.this_per_l.toFixed(2)}/L).`
-                : `If you're size-flexible: the ${it.size_swap.size} works out $${it.size_swap.per_l.toFixed(2)}/L vs $${it.size_swap.this_per_l.toFixed(2)}/L on this size.`}>
-              {it.size_swap.kind === 'upgrade'
-                ? <>💡 {it.size_swap.size}: ~same per bottle (${(it.size_swap.per_btl ?? 0).toFixed(2)} vs ${(it.size_swap.this_per_btl ?? 0).toFixed(2)}) — {it.size_swap.vol_pct}% more volume</>
-                : <>💡 {it.size_swap.size} is {it.size_swap.pct}% cheaper per litre (${it.size_swap.per_l.toFixed(2)}/L vs ${it.size_swap.this_per_l.toFixed(2)}/L)</>}
-            </span>
-          </div>
-        )}
-
-        {/* Closeout: one-time clearance on a discontinued product — buy now. */}
-        {it.has_closeout && !it.combo_intact && (
-          <div style={{ marginLeft: 56, marginTop: 6 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#9f1239', background: '#ffe4e6',
-              border: '1px solid #fda4af', borderRadius: 4, padding: '1px 6px' }}
-              title="This is a closeout/clearance item — a one-time deep cut on a product being discontinued. It won't be offered again.">
-              🏷 Closeout — buy now, won't last
-            </span>
-          </div>
-        )}
-
-        {/* Combo discovery: this product is in a combo (savings from the combo
-            sheet's own total_savings). "Great" when ≥10% off. */}
-        {it.combo_suggestion && it.combo_suggestion.savings > 0 && (
-          <div style={{ marginLeft: 56, marginTop: 6 }}>
-            <a href={`/combos?code=${encodeURIComponent(it.combo_suggestion.combo_code)}`}
-              style={{ fontSize: 11, fontWeight: 700, textDecoration: 'none',
-                color: it.combo_suggestion.great ? '#166534' : '#3f6212',
-                background: it.combo_suggestion.great ? '#dcfce7' : '#ecfccb',
-                border: `1px solid ${it.combo_suggestion.great ? '#86efac' : '#bef264'}`,
-                borderRadius: 4, padding: '1px 6px' }}
-              title={it.combo_suggestion.label ?? 'This product is part of a combo bundle.'}>
-              📦 {it.combo_suggestion.great ? 'Great combo' : 'In a combo'}: save ${it.combo_suggestion.savings.toFixed(2)} ({it.combo_suggestion.pct.toFixed(0)}% off)
-            </a>
-          </div>
-        )}
 
         {/* Deal tiers, consolidated: ALL quantity discounts in one box, ALL RIP
             rebates in another (was a sprawling flat row of chips). QD lowers what
@@ -787,8 +753,18 @@ export default function Cart() {
               </div>
               {list.map((t, i) => {
                 const thr = t.qualified_cases ?? t.qty;
-                const next = list[i + 1];
-                const here = curCases >= thr && (!next || curCases < (next.qualified_cases ?? next.qty));
+                // "● now" = the tier your CURRENT quantity earns AND that is
+                // claimable TODAY. A time-sensitive tier whose dated window does
+                // not contain today is NOT "now" (it's upcoming or expired), so a
+                // future window can never be flagged active. Among the tiers live
+                // today, the highest threshold the qty clears is the one earned.
+                const live = !t.is_time_sensitive
+                  || ['active', 'whole_month', 'evergreen'].includes(t.window_status ?? '');
+                const earnedThr = Math.max(-1, ...list
+                  .filter(x => (!x.is_time_sensitive || ['active', 'whole_month', 'evergreen'].includes(x.window_status ?? ''))
+                    && curCases >= (x.qualified_cases ?? x.qty))
+                  .map(x => x.qualified_cases ?? x.qty));
+                const here = live && curCases >= thr && thr === earnedThr;
                 return (
                   <div key={i} title={t.description || undefined}
                     style={{ fontSize: 11, padding: '3px 8px', display: 'flex', alignItems: 'baseline',

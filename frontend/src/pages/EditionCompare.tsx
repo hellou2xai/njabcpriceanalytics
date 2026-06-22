@@ -11,7 +11,7 @@ import RowActions from '../components/RowActions';
 import ProductThumb from '../components/ProductThumb';
 import MonthEffectiveSparkline from '../components/MonthEffectiveSparkline';
 import { buildSparkProps } from '../lib/promotionsSparkline';
-import type { Price3moBlock } from '../lib/api';
+import type { Price3moBlock, CatalogTier } from '../lib/api';
 import { ErrorState } from '../components/DataState';
 import DataLoading from '../components/DataLoading';
 import './ComparePrices.css';
@@ -82,9 +82,9 @@ function bdRows(r: EditionRow): BdLine[] {
   // Three rows, each older -> newer: the price after the 1-case QD (front line),
   // after the best QD, and after RIP (the net cost). Bottle cost on every line.
   return [
-    { label: 'Frontline (after 1cs QD)', a: r.frontline_a, b: r.frontline_b, aBtl: btl(r.frontline_a), bBtl: btl(r.frontline_b) },
-    { label: 'QD', a: r.invoice_a, b: r.invoice_b, aBtl: btl(r.invoice_a), bBtl: btl(r.invoice_b) },
-    { label: 'RIP', a: r.net_a_case, b: r.net_b_case, d: r.net_delta_case, p: r.net_delta_pct, aBtl: r.net_a_btl, bBtl: r.net_b_btl },
+    { label: 'Frontline Case Price', a: r.frontline_a, b: r.frontline_b, aBtl: btl(r.frontline_a), bBtl: btl(r.frontline_b) },
+    { label: 'Price after best QD', a: r.invoice_a, b: r.invoice_b, aBtl: btl(r.invoice_a), bBtl: btl(r.invoice_b) },
+    { label: 'Price after best RIP', a: r.net_a_case, b: r.net_b_case, d: r.net_delta_case, p: r.net_delta_pct, aBtl: r.net_a_btl, bBtl: r.net_b_btl },
   ];
 }
 function BreakdownBody({ r }: { r: EditionRow }) {
@@ -112,6 +112,65 @@ function BreakdownBody({ r }: { r: EditionRow }) {
   );
 }
 
+// Card breakdown: three human-labelled rows, each on ONE line — Frontline Case
+// Price, Price after best QD, Price after best RIP — showing older -> newer for
+// case AND bottle, plus the best-QD / best-RIP buy-in detail (qualified cases,
+// rebate total). Tier detail comes from the newer edition's ladder (price_3mo).
+function CardBreakdown({ r, blocks, older, newer }: { r: EditionRow; blocks?: Price3moBlock[] | null; older?: string; newer?: string }) {
+  const pack = Number(r.unit_qty) || 0;
+  const abbr = perUnitAbbr(r.unit_volume, r.unit_type);
+  const btl = (v?: number | null) => (v != null && pack > 1 ? v / pack : null);
+  const blkA = blocks?.find(b => b.edition === older) ?? null;
+  const blkB = blocks?.find(b => b.edition === newer) ?? null;
+  const deepest = (src: 'discount' | 'rip'): CatalogTier | null => {
+    const ts = (blkB?.tiers ?? []).filter(t => t.source === src && t.price_after != null
+      && (src === 'rip' || !t.is_time_sensitive));
+    return ts.length ? ts.reduce((x, y) => (y.price_after! < x.price_after! ? y : x)) : null;
+  };
+  const qdT = deepest('discount');
+  const ripT = deepest('rip');
+  const qty = (t: CatalogTier) => t.qualified_cases ?? t.qty;
+  // Frontline AFTER the 1-case QD where one exists (disc1_price = frontline -
+  // best 1cs discount; equals frontline when there's no 1cs discount). Falls
+  // back to the raw frontline if the per-edition block is missing.
+  const flA = blkA?.disc1_price ?? r.frontline_a ?? null;
+  const flB = blkB?.disc1_price ?? r.frontline_b ?? null;
+  // older -> newer; collapse to a single figure when nothing changed (a human
+  // reads "$198.00", not "$198.00 -> $198.00").
+  const span = (a?: number | null, b?: number | null, suffix = '') => {
+    if (a == null && b == null) return null;
+    const changed = a != null && b != null && Math.abs(a - b) > 0.005;
+    return changed ? `${money(a)} → ${money(b)}${suffix}` : `${money(b ?? a)}${suffix}`;
+  };
+  const rows = [
+    { lab: 'Frontline Case Price', a: flA, b: flB, aB: btl(flA), bB: btl(flB), det: null as string | null },
+    { lab: 'Price after best QD', a: r.invoice_a, b: r.invoice_b, aB: btl(r.invoice_a), bB: btl(r.invoice_b),
+      det: qdT ? `best @ ${qty(qdT)} cs` : null },
+    { lab: 'Price after best RIP', a: r.net_a_case, b: r.net_b_case, aB: r.net_a_btl, bB: r.net_b_btl, rip: true,
+      det: ripT ? `rebate ${money(ripT.amount)} @ ${qty(ripT)} cs` : null },
+  ];
+  return (
+    <div className="ec-bd3">
+      {rows.map(row => {
+        if (row.a == null && row.b == null) return null;
+        const changed = row.a != null && row.b != null && Math.abs(row.a - row.b) > 0.005;
+        const cs = span(row.a, row.b);
+        const bt = span(row.aB, row.bB, `/${abbr}`);
+        return (
+          <div key={row.lab} className={`ec-bd3-row${changed ? ' ec-bd3-changed' : ''}${row.rip ? ' ec-bd3-rip' : ''}`}>
+            <span className="ec-bd3-lab">{row.lab}</span>
+            <div className="ec-bd3-data">
+              <span className="ec-bd3-cs">{cs}</span>
+              {bt && <span className="ec-bd3-btl">{bt}</span>}
+              {row.det && <span className="ec-bd3-det">{row.det}</span>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // Card-view row: every datum the table row carries (product + size, net price
 // for BOTH editions per case AND per unit, the change pill, what-moved layers,
 // the full cost breakdown, and row actions). Changed values keep the red-on-
@@ -130,7 +189,7 @@ function EditionCard({ r, older, newer, wholesaler, onOpen, price3mo }: {
   return (
     <div className={`ec-card ${cls}`}>
       <div className="ec-card-head">
-        <ProductThumb src={r.image_url ?? undefined} alt={r.product_name} size={48} />
+        <ProductThumb src={r.image_url ?? undefined} alt={r.product_name} size={48} expandable />
         <div className="ec-card-id">
           <span className="ec-card-name" onClick={() => onOpen(r.product_name)} title={r.product_name}>{r.product_name}</span>
           <span className="ec-card-sub">{r.unit_qty} × {r.unit_volume}</span>
@@ -161,7 +220,7 @@ function EditionCard({ r, older, newer, wholesaler, onOpen, price3mo }: {
       )}
 
       {r.status === 'both' && (
-        <table className="ec-bd-table ec-card-bd"><BreakdownBody r={r} /></table>
+        <CardBreakdown r={r} blocks={price3mo} older={older} newer={newer} />
       )}
 
       {hasSpark && (

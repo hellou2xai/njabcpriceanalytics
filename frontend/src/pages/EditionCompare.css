@@ -115,6 +115,18 @@
 /* Per-bottle older -> newer under each breakdown row's case figure. */
 .ec-bd-btl { color: var(--text-muted); font-variant-numeric: tabular-nums; font-size: 12.5px; }
 .ec-bd-changed .ec-bd-btl { color: #b45309; }
+
+/* Card breakdown: label on its own line, the figures on ONE line below it. The
+   data line (case -> case, bottle -> bottle, buy-in detail) never wraps. */
+.ec-bd3 { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 2px; }
+.ec-bd3-row { display: flex; flex-direction: column; gap: 1px; }
+.ec-bd3-lab { color: var(--text-muted); font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: 0.02em; }
+.ec-bd3-data { display: flex; align-items: baseline; gap: 10px; white-space: nowrap; font-size: 11.5px; }
+.ec-bd3-cs { font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text); }
+.ec-bd3-btl { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.ec-bd3-det { color: var(--text-muted); font-style: italic; }
+.ec-bd3-changed .ec-bd3-cs { color: #dc2626; }
+.ec-bd3-rip .ec-bd3-cs { color: #16a34a; }
 /* The changed net value in the grid itself: red font on a yellow highlight. */
 .ec-num.ec-changed-val { color: #dc2626; background: #fef9c3; border-radius: 5px; padding: 0 4px; }
 .ec-num.ec-changed-val .cmp-sub { color: #b45309; }

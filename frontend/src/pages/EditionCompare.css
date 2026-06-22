@@ -112,6 +112,9 @@
 .ec-bd-changed td { color: #dc2626; background: #fef9c3; font-weight: 700; }
 .ec-bd-changed .ec-bd-lab { color: #dc2626; }
 .ec-bd-d { font-weight: 700; }
+/* Per-bottle older -> newer under each breakdown row's case figure. */
+.ec-bd-btl { color: var(--text-muted); font-variant-numeric: tabular-nums; font-size: 12.5px; }
+.ec-bd-changed .ec-bd-btl { color: #b45309; }
 /* The changed net value in the grid itself: red font on a yellow highlight. */
 .ec-num.ec-changed-val { color: #dc2626; background: #fef9c3; border-radius: 5px; padding: 0 4px; }
 .ec-num.ec-changed-val .cmp-sub { color: #b45309; }

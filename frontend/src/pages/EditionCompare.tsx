@@ -75,26 +75,34 @@ function DeltaPill({ r }: { r: EditionRow }) {
 // rebate) shared by the table's hover popover AND the card view, so the two can
 // never drift. Each line shows older → newer; a changed line renders red on
 // yellow (the .ec-bd-changed convention).
-type BdLine = { label: string; a?: number | null; b?: number | null; d?: number | null; p?: number | null };
+type BdLine = { label: string; a?: number | null; b?: number | null; d?: number | null; p?: number | null; aBtl?: number | null; bBtl?: number | null };
 function bdRows(r: EditionRow): BdLine[] {
+  const pack = Number(r.unit_qty) || 0;
+  const btl = (v?: number | null) => (v != null && pack > 1 ? v / pack : null);
+  // Three rows, each older -> newer: the price after the 1-case QD (front line),
+  // after the best QD, and after RIP (the net cost). Bottle cost on every line.
   return [
-    { label: 'Net cost', a: r.net_a_case, b: r.net_b_case, d: r.net_delta_case, p: r.net_delta_pct },
-    { label: 'Frontline', a: r.frontline_a, b: r.frontline_b },
-    { label: 'Invoice (after QD)', a: r.invoice_a, b: r.invoice_b },
-    { label: 'RIP rebate', a: r.rip_a, b: r.rip_b },
+    { label: 'Frontline (after 1cs QD)', a: r.frontline_a, b: r.frontline_b, aBtl: btl(r.frontline_a), bBtl: btl(r.frontline_b) },
+    { label: 'QD', a: r.invoice_a, b: r.invoice_b, aBtl: btl(r.invoice_a), bBtl: btl(r.invoice_b) },
+    { label: 'RIP', a: r.net_a_case, b: r.net_b_case, d: r.net_delta_case, p: r.net_delta_pct, aBtl: r.net_a_btl, bBtl: r.net_b_btl },
   ];
 }
 function BreakdownBody({ r }: { r: EditionRow }) {
+  const abbr = perUnitAbbr(r.unit_volume, r.unit_type);
   return (
     <tbody>
       {bdRows(r).map(l => {
         const changed = l.a != null && l.b != null && Math.abs(l.a - l.b) > 0.005;
+        const hasBtl = l.aBtl != null || l.bBtl != null;
         return (
           <tr key={l.label} className={changed ? 'ec-bd-changed' : ''}>
             <td className="ec-bd-lab">{l.label}</td>
             <td className="ec-bd-val">{money(l.a)} → {money(l.b)}
               {l.d != null && Math.abs(l.d) > 0.005 && (
                 <span className="ec-bd-d"> ({l.d > 0 ? '+' : ''}${Math.abs(l.d).toFixed(2)}{l.p != null ? `, ${pct(l.p)}` : ''})</span>
+              )}
+              {hasBtl && (
+                <div className="ec-bd-btl">{money(l.aBtl)} → {money(l.bBtl)}/{abbr}</div>
               )}
             </td>
           </tr>

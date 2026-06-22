@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams, useLocation } from 'react-router-dom';
-import { Search, SlidersHorizontal, Store } from 'lucide-react';
+import { Search, SlidersHorizontal, Store, ChevronRight, ArrowLeft } from 'lucide-react';
 import { catalog } from '../lib/api';
 import type { Product } from '../lib/api';
 import RowLimitSelect from '../components/RowLimitSelect';
@@ -21,6 +21,13 @@ import { distributorName } from '../lib/distributors';
  * the cart) but locks the result set to ONE distributor chosen up front. No
  * grid shows until a distributor is selected — the distributor is the gate.
  */
+const _MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** 'YYYY-MM' -> 'Mon YYYY' (e.g. '2026-07' -> 'Jul 2026'). */
+function monthLabel(ed: string): string {
+  const m = /^(\d{4})-(\d{1,2})/.exec(ed);
+  return m ? `${_MONTHS[parseInt(m[2], 10) - 1] ?? ''} ${m[1]}`.trim() : ed;
+}
+
 export default function DistributorPriceList() {
   const [params, setSearchParams] = useSearchParams();
   const [wholesaler, setWholesaler] = useState(params.get('wholesaler') ?? '');
@@ -44,15 +51,34 @@ export default function DistributorPriceList() {
   // Debounce the search box so the list filters without a request per keystroke.
   const [qDebounced, setQDebounced] = useState(q);
   useEffect(() => { const t = setTimeout(() => setQDebounced(q), 300); return () => clearTimeout(t); }, [q]);
+  // Text filter for the distributor PICKER (separate from product search).
+  const [distQuery, setDistQuery] = useState('');
 
-  // The LOV: every distributor that has a loaded price list, by display name.
+  // Every distributor with a loaded price list, enriched with the item count of
+  // their latest edition + how many editions are on file — so the picker shows
+  // real context, not just a name.
   const { data: editions } = useQuery({ queryKey: ['dpl-editions'], queryFn: catalog.editions, staleTime: 300_000 });
   const distributors = useMemo(() => {
-    const slugs = [...new Set((editions ?? []).map(e => e.wholesaler))];
-    return slugs
-      .map(s => ({ slug: s, name: distributorName(s) }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+    const byWs = new Map<string, Map<string, number>>();
+    for (const e of editions ?? []) {
+      const m = byWs.get(e.wholesaler) ?? new Map<string, number>();
+      m.set(e.edition, e.item_count ?? 0);
+      byWs.set(e.wholesaler, m);
+    }
+    return [...byWs.entries()].map(([slug, itemsByEd]) => {
+      const eds = [...itemsByEd.keys()].sort();
+      const latest = eds[eds.length - 1];
+      return {
+        slug, name: distributorName(slug), latest,
+        items: itemsByEd.get(latest) ?? 0, editionCount: eds.length,
+      };
+    }).sort((a, b) => a.name.localeCompare(b.name));
   }, [editions]);
+  const pickList = useMemo(() => {
+    const t = distQuery.trim().toLowerCase();
+    return t ? distributors.filter(d => d.name.toLowerCase().includes(t)) : distributors;
+  }, [distributors, distQuery]);
+  const selectedDist = distributors.find(d => d.slug === wholesaler);
 
   // URL <-> state so a chosen distributor + search is shareable / survives Back.
   useEffect(() => {
@@ -119,34 +145,63 @@ export default function DistributorPriceList() {
     setPage(0);
   };
 
-  // The LOV control, reused in the empty state (big) and the header (compact).
-  const lov = (
-    <select className="dpl-lov" value={wholesaler} onChange={e => pickDistributor(e.target.value)}>
-      <option value="">Select a distributor…</option>
-      {distributors.map(d => <option key={d.slug} value={d.slug}>{d.name}</option>)}
-    </select>
-  );
-
   return (
     <div className="page products-page">
       {!wholesaler ? (
-        <div className="dpl-gate">
-          <div className="dpl-gate-icon"><Store size={30} /></div>
-          <h1 className="dpl-gate-title">Distributor Price List</h1>
-          <p className="dpl-gate-sub">
-            Choose a distributor to view their complete price list. You can then
-            search and filter their items just like the Products page.
-          </p>
-          <div className="dpl-gate-lov">{lov}</div>
+        /* Distributor chooser: a searchable board of distributor cards, each
+           with the item count + latest edition, instead of a bare dropdown. */
+        <div className="dpl-pick">
+          <header className="dpl-pick-head">
+            <p className="dpl-pick-eyebrow"><Store size={13} /> Price List</p>
+            <h1>Choose a distributor</h1>
+            <p className="dpl-pick-sub">
+              Open any distributor's complete price list, then search and filter
+              every item they carry — same tools as the Products page.
+            </p>
+            <div className="dpl-pick-search">
+              <Search size={17} />
+              <input type="text" autoFocus placeholder="Find a distributor…"
+                value={distQuery} onChange={e => setDistQuery(e.target.value)} />
+            </div>
+          </header>
+          <div className="dpl-grid">
+            {pickList.map((d, i) => (
+              <button key={d.slug} type="button" className="dpl-card"
+                style={{ animationDelay: `${Math.min(i, 14) * 22}ms` }}
+                onClick={() => pickDistributor(d.slug)}>
+                <span className="dpl-card-name">{d.name}</span>
+                <span className="dpl-card-meta">
+                  <strong>{d.items.toLocaleString()}</strong> items
+                  {d.latest ? <> · {monthLabel(d.latest)}</> : null}
+                </span>
+                <ChevronRight size={16} className="dpl-card-arrow" />
+              </button>
+            ))}
+            {pickList.length === 0 && (
+              <p className="dpl-empty">No distributor matches “{distQuery}”.</p>
+            )}
+          </div>
         </div>
       ) : (
         <>
-          <div className="orders-header">
-            <h2>Distributor Price List</h2>
-            <div className="dpl-header-lov">
-              <span className="dpl-header-lov-label">Distributor</span>
-              {lov}
+          <div className="orders-header dpl-topbar">
+            <div className="dpl-topbar-left">
+              <button type="button" className="dpl-back" onClick={() => setWholesaler('')}
+                title="Choose a different distributor">
+                <ArrowLeft size={16} />
+              </button>
+              <div>
+                <div className="dpl-topbar-eyebrow">Distributor Price List</div>
+                <h2 className="dpl-topbar-name">{distributorName(wholesaler)}</h2>
+              </div>
             </div>
+            <button type="button" className="dpl-switch" onClick={() => setWholesaler('')}>
+              <span className="dpl-switch-meta">
+                {selectedDist ? `${selectedDist.items.toLocaleString()} items` : ''}
+                {selectedDist?.latest ? ` · ${monthLabel(selectedDist.latest)}` : ''}
+              </span>
+              <span className="dpl-switch-change">Change</span>
+            </button>
           </div>
 
           <div className="products-hero-box products-hero-box--grid">

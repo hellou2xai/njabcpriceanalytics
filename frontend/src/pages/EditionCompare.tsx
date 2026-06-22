@@ -143,12 +143,19 @@ function CardBreakdown({ r, blocks, older, newer }: { r: EditionRow; blocks?: Pr
     if (b == null) return `${money(a)}${suffix}`;
     return `${money(a)} → ${money(b)}${suffix}`;
   };
+  // The QD / RIP explanation rides in the LABEL, in brackets: the best tier's
+  // case count and the per-case discount / rebate.
+  const qdLab = qdT
+    ? `Price after best QD (Best QD ${qty(qdT)} CS, ${money(qdT.save_per_case)}/CS)`
+    : 'Price after best QD';
+  // Total RIP = the ACTUAL amount on the tier (never computed, so no fractions).
+  const ripLab = ripT
+    ? `Price after best RIP (Best RIP ${qty(ripT)} CS, ${money(ripT.amount)} Total RIP)`
+    : 'Price after best RIP';
   const rows = [
-    { lab: 'Frontline Case Price', a: flA, b: flB, aB: btl(flA), bB: btl(flB), det: null as string | null },
-    { lab: 'Price after best QD', a: r.invoice_a, b: r.invoice_b, aB: btl(r.invoice_a), bB: btl(r.invoice_b),
-      det: qdT ? `−${money(qdT.save_per_case)}/cs at ${qty(qdT)} cs` : null },
-    { lab: 'Price after best RIP', a: r.net_a_case, b: r.net_b_case, aB: r.net_a_btl, bB: r.net_b_btl, rip: true,
-      det: ripT ? `${money(ripT.rip_only_save_per_case ?? ripT.save_per_case)}/cs RIP at ${qty(ripT)} cs` : null },
+    { lab: 'Frontline Case Price', a: flA, b: flB, aB: btl(flA), bB: btl(flB) },
+    { lab: qdLab, a: r.invoice_a, b: r.invoice_b, aB: btl(r.invoice_a), bB: btl(r.invoice_b) },
+    { lab: ripLab, a: r.net_a_case, b: r.net_b_case, aB: r.net_a_btl, bB: r.net_b_btl, rip: true },
   ];
   return (
     <div className="ec-bd3">
@@ -163,7 +170,6 @@ function CardBreakdown({ r, blocks, older, newer }: { r: EditionRow; blocks?: Pr
             <div className="ec-bd3-data">
               <span className="ec-bd3-cs">{cs}</span>
               {bt && <span className="ec-bd3-btl">{bt}</span>}
-              {row.det && <span className="ec-bd3-det">{row.det}</span>}
             </div>
           </div>
         );
@@ -202,6 +208,7 @@ function EditionCard({ r, older, newer, wholesaler, onOpen, price3mo }: {
         <DeltaPill r={r} />
       </div>
 
+      <div className="ec-card-pcap">Best Net Price (after QD/RIP)</div>
       <div className="ec-card-prices">
         <div className="ec-card-pcol">
           <span className="ec-card-mlab">{older}</span>

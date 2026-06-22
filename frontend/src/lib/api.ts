@@ -1566,6 +1566,8 @@ export interface OfferRow {
   item_no?: string | null;
   frontline_case_price?: number | null;
   after_qd_case_price?: number | null;
+  // Realistic single-case price (list − the 1-case QD); what the picker shows.
+  case_1cs_price?: number | null;
   effective_case_price?: number | null;
   btl_effective?: number | null;
   qd_save_per_case?: number | null;

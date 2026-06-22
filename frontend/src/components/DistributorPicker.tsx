@@ -53,7 +53,9 @@ export function DistributorPicker({ wholesaler, comparison, altStatus, onSwitch,
         onChange={e => { if (e.target.value && e.target.value !== wholesaler) onSwitch(e.target.value); }}
       >
         {cmp.map(c => {
-          const net = c.effective_case_price;
+          // Show the realistic single-case price (list − 1cs QD), matching the
+          // line's $ CASE column — not the deepest multi-case net.
+          const net = c.case_1cs_price ?? c.after_qd_case_price ?? c.effective_case_price;
           const cur = c.wholesaler === wholesaler;
           const rip = c.rip_per_case ?? 0;
           return (

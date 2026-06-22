@@ -730,6 +730,41 @@ def _fnum(v):
         return None
 
 
+def _one_case_price(rows, pack):
+    """The realistic SINGLE-CASE price for a house's SKU: the true list (the
+    highest frontline across the SKU's rows) minus the best discount claimable at
+    exactly one case. Aggregates split rows (NJ ABC spreads a ladder + its list
+    across rows), so e.g. ABSOLUT 80 750ML resolves to $205.08 (= $275.88 − the
+    1-case $70.80 QD), not the deepest 20-case net. Falls back to the list price
+    when there is no 1-case discount. Mirrors attach_tiers' qty/unit parsing."""
+    import re
+    from backend.rip_utils import is_bottle_unit
+    fronts = [_fnum(r.get("fcp")) for r in rows]
+    fronts = [f for f in fronts if f is not None]
+    if not fronts:
+        return None
+    front = max(fronts)
+    p = pack if (pack and pack > 0) else None
+    best = 0.0
+    for r in rows:
+        for i in range(1, 6):
+            amt = _fnum(r.get(f"d{i}a"))
+            if not amt or amt <= 0:
+                continue
+            m = re.match(r"^\s*(\d+(?:\.\d+)?)\s*(.*)$", str(r.get(f"d{i}q") or ""))
+            if not m:
+                continue
+            try:
+                qn = float(m.group(1))
+            except ValueError:
+                continue
+            btl = is_bottle_unit(m.group(2) or "")
+            ok = (p is not None and qn <= p) if btl else (qn <= 1)
+            if ok and amt > best:
+                best = amt
+    return round(front - best, 2)
+
+
 def _case_tiers(item: dict, kind: str) -> list[dict]:
     """The case-unit tiers of one kind ('discount'|'rip') for a cart line, sorted
     by qty. Bottle-unit tiers are skipped (the analyzer nudges on whole cases).
@@ -882,6 +917,10 @@ def _comparison_row(m: dict, rank: int, n_dist: int) -> dict:
         "upc": m.get("upc"), "upc_norm": m.get("un"), "vintage": m.get("vtg"),
         "frontline_case_price": front, "after_qd_case_price": after,
         "effective_case_price": eff, "rip_per_case": rip_pc,
+        # The realistic single-case price (list − the 1-case QD) — what the picker
+        # shows so it matches the line's $ CASE column, not the deepest multi-case net.
+        "case_1cs_price": (_fnum(m.get("_case_1cs")) if m.get("_case_1cs") is not None
+                           else (after if after is not None else front)),
         "has_rip": bool(m.get("hr")), "has_discount": bool(m.get("hd")),
         "rip_code": (str(m["rc"]) if m.get("rc") not in (None, "", "0") else None),
         "net_rank": rank, "is_cheapest_net": (rank == 0 and eff is not None),
@@ -1037,7 +1076,12 @@ def _attach_comparison_by_upc(dcon, items):
                    LTRIM(CAST(e.upc AS VARCHAR),'0') AS un, CAST(e.upc AS VARCHAR) AS upc,
                    e.frontline_case_price AS fcp, e.best_case_price AS bcp,
                    e.effective_case_price AS ecp, e.has_rip AS hr, e.has_discount AS hd,
-                   CAST(e.rip_code AS VARCHAR) AS rc
+                   CAST(e.rip_code AS VARCHAR) AS rc,
+                   e.discount_1_qty AS d1q, e.discount_1_amt AS d1a,
+                   e.discount_2_qty AS d2q, e.discount_2_amt AS d2a,
+                   e.discount_3_qty AS d3q, e.discount_3_amt AS d3a,
+                   e.discount_4_qty AS d4q, e.discount_4_amt AS d4a,
+                   e.discount_5_qty AS d5q, e.discount_5_amt AS d5a
             FROM {src} e JOIN latest l ON e.wholesaler=l.wholesaler AND e.edition=l.ed
             WHERE LTRIM(CAST(e.upc AS VARCHAR),'0') IN ({ph})
         """, norms).fetchdf().to_dict("records")
@@ -1049,6 +1093,7 @@ def _attach_comparison_by_upc(dcon, items):
     # the picker can say "vintage not found at other distributors" without ever
     # offering a vintage swap.
     buckets: dict = {}
+    house_rows: dict = {}   # key -> w -> [all rows] : to aggregate the 1-case price across split rows
     relaxed: dict = {}
     for r in rows:
         key = (r["un"], _spv(r["uv"], r["uq"], r["vtg"]))
@@ -1056,6 +1101,7 @@ def _attach_comparison_by_upc(dcon, items):
         cur = buckets[key].get(r["w"])
         if cur is None or (_fnum(r["ecp"]) or 1e9) < (_fnum(cur["ecp"]) or 1e9):
             buckets[key][r["w"]] = r
+        house_rows.setdefault(key, {}).setdefault(r["w"], []).append(r)
         rk = (r["un"], _size_ml_key(r["uv"]), _qty_key(r["uq"]))
         relaxed.setdefault(rk, {}).setdefault(r["w"], r)
     for it in items:
@@ -1067,6 +1113,9 @@ def _attach_comparison_by_upc(dcon, items):
         if houses and it["wholesaler"] in houses and len(houses) >= 2:
             members = sorted(houses.values(),
                              key=lambda m: (_fnum(m["ecp"]) is None, _fnum(m["ecp"]) or 1e9))
+            rmap = house_rows.get(key, {})
+            for m in members:   # realistic single-case price across this house's split rows
+                m["_case_1cs"] = _one_case_price(rmap.get(m["w"], [m]), _fnum(m.get("uq")))
             it["comparison"] = [_comparison_row(m, i, len(members)) for i, m in enumerate(members)]
             continue
         # No same-vintage match at 2+ houses — explain why for the always-on picker.

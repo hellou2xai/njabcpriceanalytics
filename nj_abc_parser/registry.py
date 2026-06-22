@@ -26,10 +26,11 @@ from nj_abc_parser.wholesalers.winebow import CONFIG as WINEBOW
 from nj_abc_parser.wholesalers.gallo import CONFIG as GALLO
 from nj_abc_parser.wholesalers.regal_wine import CONFIG as REGAL_WINE
 from nj_abc_parser.wholesalers.wine_enterprises import CONFIG as WINE_ENTERPRISES
+from nj_abc_parser.wholesalers.trivin import CONFIG as TRIVIN
 
 REGISTRY = [ALLIED, FEDWAY, OPICI, PEERLESS, HIGH_GRADE, KRAMER, SHORE_POINT,
             JERSEY_BEVERAGE, OTHER_BROTHERS, WINEBOW, GALLO, REGAL_WINE,
-            WINE_ENTERPRISES]
+            WINE_ENTERPRISES, TRIVIN]
 
 
 def list_wholesalers() -> list[dict]:

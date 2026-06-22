@@ -5811,13 +5811,20 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 /* ---- Product cards ---- */
 .prod-grid { display: flex; flex-direction: column; gap: 10px; }
 .prod-empty { padding: 40px; text-align: center; color: var(--text-muted); border: 1px dashed var(--border); border-radius: var(--radius); }
-.prod-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); overflow: hidden; transition: border-color .15s, box-shadow .15s; }
+/* container-type lets the card's inner layout (the deal column below) respond to
+   the CARD's own width, not the viewport — the card sits inside the app nav +
+   the 248px filter rail, so the usable width is ~500px narrower than the screen
+   and a viewport media query mis-fires. */
+.prod-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); overflow: hidden; transition: border-color .15s, box-shadow .15s; container-type: inline-size; }
 .prod-card.is-expanded { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-weak); }
 .prod-card-head { display: flex; align-items: center; gap: 12px; padding: 12px 14px; cursor: pointer; }
 .prod-card-head:hover { background: var(--surface-hover); }
 .prod-card-fav { flex-shrink: 0; }
-.prod-card-meta { flex: 1; min-width: 0; }
-.prod-card-name { background: none; border: 0; padding: 0; text-align: left; cursor: pointer; font-size: 16px; font-weight: 700; color: var(--text); }
+/* Name/meta column: basis = content (not 0), with a real floor so it can never
+   collapse to one-word-per-line when the row is tight. The deal column yields
+   first (it is shrinkable below). */
+.prod-card-meta { flex: 0 1 auto; min-width: 240px; }
+.prod-card-name { background: none; border: 0; padding: 0; text-align: left; cursor: pointer; font-size: 16px; font-weight: 700; color: var(--text); line-height: 1.25; }
 .prod-card-name:hover { color: var(--accent); text-decoration: underline; }
 /* CELR family header rendered as plain text (not a link) — drill in via a
    distributor product name below instead. */
@@ -5839,9 +5846,19 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 /* QD/RIP price summary on the collapsed card (rep size). */
 /* Fixed-basis column so EVERY card's deal ladder shares the same left edge
    (shrink-wrapped blocks floated at a different x per row read as ragged). */
-.prod-card-deals { display: flex; flex-direction: column; gap: 3px; flex: 0 0 470px; min-width: 0; align-items: flex-start; margin: 0 16px 0 auto; }
-@media (max-width: 1280px) { .prod-card-deals { flex-basis: 340px; } }
-@media (max-width: 900px) { .prod-card-deals { display: none; } }
+.prod-card-deals { display: flex; flex-direction: column; gap: 3px; flex: 0 1 470px; min-width: 0; align-items: flex-start; margin: 0 16px 0 auto; }
+/* Respond to the CARD width, not the viewport: shrink the deal column as the
+   card narrows, then drop it entirely so the product name + price stay readable
+   (the full ladder is still one click away on expand). */
+@container (max-width: 1080px) { .prod-card-deals { flex-basis: 340px; } }
+@container (max-width: 820px) { .prod-card-deals { display: none; } }
+/* Very narrow card (mobile / split panes): stack the head so the name gets the
+   full width and the price drops below it, instead of the name being squeezed. */
+@container (max-width: 560px) {
+  .prod-card-head { flex-wrap: wrap; }
+  .prod-card-meta { min-width: 0; flex: 1 1 100%; }
+  .prod-card-right { flex-basis: 100%; align-items: flex-start; text-align: left; }
+}
 /* Neutral distributor chip (replaces the Provi accent-lightning "your
    distributor" signal) — a muted pill that matches the app's chip vocabulary. */
 .prod-card-dist { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-muted); margin-top: 5px; font-weight: 600; background: var(--surface-hover); border: 1px solid var(--border); padding: 2px 8px; border-radius: 999px; }

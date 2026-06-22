@@ -105,6 +105,24 @@ def build_pricing_cache() -> Path:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         new_path = CACHE_DIR / f"pricing_{int(time.time() * 1000)}.duckdb"
         con = duckdb.connect(str(new_path))
+        # Bound the BUILD connection's memory. DuckDB defaults memory_limit to
+        # ~80% of system RAM, and EACH uvicorn worker builds its own cache at
+        # boot (the _lock is per-process, so it does NOT serialise across
+        # forked workers). Two concurrent builds each grabbing ~80% of RAM OOMs
+        # the container even with zero users — which is exactly what we hit when
+        # the catalogue grew. Cap each build and give it a spill directory so a
+        # large CREATE TABLE AS SELECT / sku_offer build spills to disk instead
+        # of blowing the box. Tunable via env without a code change.
+        try:
+            _bmem = os.getenv("DUCKDB_BUILD_MEMORY_LIMIT", "2GB")
+            _bthreads = os.getenv("DUCKDB_BUILD_THREADS", "2")
+            _bspill = os.getenv("DUCKDB_TEMP_DIR") or str(CACHE_DIR / "build_spill")
+            os.makedirs(_bspill, exist_ok=True)
+            con.execute(f"SET memory_limit='{_bmem}'")
+            con.execute(f"SET threads TO {_bthreads}")
+            con.execute(f"SET temp_directory='{_bspill}'")
+        except Exception:
+            pass
         try:
             # Enrichment columns surfaced to the catalogue (everything useful
             # Go-UPC returns, minus the raw attributes blob which stays in

@@ -20,7 +20,9 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from nj_abc_parser.base_parser import NJABCParser
-from nj_abc_parser.registry import detect_wholesaler, parse_edition_from_filename
+from nj_abc_parser.registry import (
+    detect_wholesaler, parse_edition_from_filename, edition_year_from_submission,
+)
 
 logger = logging.getLogger("nj_abc_parser")
 
@@ -69,6 +71,18 @@ def run_etl(
 
         # Parse edition from filename
         edition_info = parse_edition_from_filename(filepath)
+        # Year-less filename (month present, no 4-digit year — e.g. Wine
+        # Enterprises): take the YEAR from the file's SUBMISSION DATE, keep the
+        # filename's MONTH (which distinguishes the June vs July file).
+        if edition_info["edition"] is None and edition_info.get("month"):
+            yr = edition_year_from_submission(filepath)
+            if yr:
+                edition_info = {
+                    "year": yr, "month": edition_info["month"],
+                    "edition": f"{yr}-{int(edition_info['month']):02d}",
+                }
+                logger.info(f"  edition year {yr} from submission date "
+                            f"(filename had no year) → {edition_info['edition']}")
         if edition_info["edition"] is None:
             logger.warning(f"SKIP: Cannot parse edition from '{filepath.name}'")
             summary["files_skipped"] += 1

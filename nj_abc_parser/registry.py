@@ -25,9 +25,11 @@ from nj_abc_parser.wholesalers.other_brothers import CONFIG as OTHER_BROTHERS
 from nj_abc_parser.wholesalers.winebow import CONFIG as WINEBOW
 from nj_abc_parser.wholesalers.gallo import CONFIG as GALLO
 from nj_abc_parser.wholesalers.regal_wine import CONFIG as REGAL_WINE
+from nj_abc_parser.wholesalers.wine_enterprises import CONFIG as WINE_ENTERPRISES
 
 REGISTRY = [ALLIED, FEDWAY, OPICI, PEERLESS, HIGH_GRADE, KRAMER, SHORE_POINT,
-            JERSEY_BEVERAGE, OTHER_BROTHERS, WINEBOW, GALLO, REGAL_WINE]
+            JERSEY_BEVERAGE, OTHER_BROTHERS, WINEBOW, GALLO, REGAL_WINE,
+            WINE_ENTERPRISES]
 
 
 def list_wholesalers() -> list[dict]:
@@ -57,6 +59,38 @@ def detect_wholesaler(filepath: Path) -> dict | None:
             if fnmatch(name, pattern):
                 return cfg
     return None
+
+
+def edition_year_from_submission(filepath: Path) -> int | None:
+    """Fallback when a filename gives a MONTH but no 4-digit YEAR (e.g. Wine
+    Enterprises' "Wine Enterprises_June.xlsx"): read the workbook's SUBMISSION
+    DATE and return its year. Cheap header-only scan; failures return None."""
+    import datetime
+    import openpyxl
+    try:
+        wb = openpyxl.load_workbook(filepath, read_only=True, data_only=True)
+    except Exception:
+        return None
+    try:
+        for sn in wb.sheetnames[:3]:
+            ws = wb[sn]
+            for row in ws.iter_rows(min_row=1, max_row=8, values_only=True):
+                cells = list(row or [])
+                for i, cell in enumerate(cells):
+                    if isinstance(cell, str) and "SUBMISSION" in cell.upper():
+                        for v in cells[i + 1:]:
+                            if isinstance(v, datetime.datetime):
+                                return v.year
+                            if isinstance(v, str):
+                                m = re.search(r"\b(20\d{2})\b", v)
+                                if m:
+                                    return int(m.group(1))
+        return None
+    finally:
+        try:
+            wb.close()
+        except Exception:
+            pass
 
 
 def parse_edition_from_filename(filepath: Path) -> dict:

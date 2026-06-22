@@ -748,7 +748,7 @@ export default function Cart() {
                 padding: '3px 8px', display: 'flex', justifyContent: 'space-between', gap: 6 }}>
                 <span>{label}</span>
                 <span style={{ fontWeight: 600, textTransform: 'none', opacity: .85 }}>
-                  {kind === 'discount' ? 'pay less today' : 'rebate later'} · {list.length} tier{list.length === 1 ? '' : 's'}
+                  {list.length} tier{list.length === 1 ? '' : 's'}
                 </span>
               </div>
               {list.map((t, i) => {

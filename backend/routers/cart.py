@@ -1290,6 +1290,14 @@ def analyze_lines(items: list[dict], prepriced: bool = False) -> dict:
             if kind == "rip" and is_mix:
                 continue   # mix RIPs handled by the case-mix block below
             tiers = _case_tiers(it, kind)
+            # Only nudge toward a tier claimable RIGHT NOW. A time-sensitive tier
+            # whose window has EXPIRED can't be reached by buying more, and one
+            # that is UPCOMING isn't live yet — suggesting either ("Buy 30 cs to
+            # reach the $182.28 tier, ends 2026-06-04" when today is past that) is
+            # misleading. The deal ladder below still lists those windows for
+            # awareness; the actionable Apply nudge stays to live deals only.
+            tiers = [t for t in tiers if not t.get("is_time_sensitive")
+                     or t.get("window_status") in ("active", "whole_month", "evergreen")]
             cur_save, nxt = _next_tier(tiers, C)
             if not nxt:
                 continue
@@ -1529,7 +1537,7 @@ def _normalize_rec(rec: dict) -> list[tuple]:
             "kind": "qd_tier" if is_qd else "rip_tier",
             "headline": (f"Buy {rec['target_qty']} cs to reach the "
                          f"${rec['new_case_price']:.2f} {'QD' if is_qd else 'RIP'} tier"),
-            "detail": f"+${rec['save_per_case']:.2f}/cs vs your current quantity",
+            "detail": f"saves ${rec['save_per_case']:.2f}/cs vs your current price",
             "delta_per_case": rec.get("save_per_case"),
             "delta_total": rec.get("extra_savings", 0.0),
             "expires_on": exp,

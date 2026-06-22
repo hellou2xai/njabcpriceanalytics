@@ -148,12 +148,13 @@ function SuggestionStack({ it, onApply, busy }: {
             <span style={{ fontWeight: 600 }}>{s.headline}</span>
             {s.detail && <span style={{ color: 'var(--text-muted)' }}>{s.detail}</span>}
             {s.delta_total ? (
-              <span className="hl-best" style={{ padding: '0 6px', borderRadius: 8, fontWeight: 700 }}>
-                +{money(s.delta_total)}
+              <span className="hl-best" style={{ padding: '0 6px', borderRadius: 8, fontWeight: 700 }}
+                title="Total savings if you act on this suggestion">
+                save {money(s.delta_total)}
               </span>
             ) : null}
             {s.expires_on && (
-              <span className="win-badge win-partial" title="Time-sensitive deal window">ends {s.expires_on}</span>
+              <span className="win-badge win-partial" title="This deal is live now and ends on this date">ends {s.expires_on}</span>
             )}
             {s.action && (
               <button type="button" className="btn btn-primary btn-sm" disabled={busy}

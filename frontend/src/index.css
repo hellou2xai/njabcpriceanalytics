@@ -5690,6 +5690,29 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 .prod-filter-price span { color: var(--text-muted); font-size: 12px; }
 .prod-filter-price .btn { padding: 6px 12px; }
 
+/* ---- Distributor Price List (LOV gate + header picker) ---- */
+.dpl-lov {
+  padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface, #fff); color: var(--text); font-size: 14px; font-weight: 600;
+  min-width: 240px; cursor: pointer;
+}
+.dpl-lov:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.dpl-gate {
+  max-width: 560px; margin: 8vh auto 0; text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+}
+.dpl-gate-icon {
+  width: 64px; height: 64px; border-radius: 16px; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg)); color: var(--accent);
+}
+.dpl-gate-title { font-size: 26px; font-weight: 800; margin: 0; color: var(--text); }
+.dpl-gate-sub { font-size: 14.5px; color: var(--text-muted); margin: 0; line-height: 1.5; }
+.dpl-gate-lov { margin-top: 8px; }
+.dpl-gate-lov .dpl-lov { min-width: 300px; font-size: 15px; padding: 11px 14px; }
+.dpl-header-lov { display: inline-flex; align-items: center; gap: 8px; }
+.dpl-header-lov-label { font-size: 13px; font-weight: 600; color: var(--text-muted); }
+.dpl-empty { color: var(--text-muted); font-size: 14px; padding: 24px 0; }
+
 /* ---- Shared filter-rail layout (FilterSidebar) ----
    Clones the Catalog/Products .products-layout grid so every page that uses the
    shared FilterSidebar rail lines up identically: a 248px sticky rail + fluid

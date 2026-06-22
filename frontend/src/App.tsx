@@ -18,6 +18,7 @@ import Dashboard from './pages/Dashboard';
 import Home from './pages/Home';
 import Catalog from './pages/Catalog';
 import Products from './pages/Products';
+import DistributorPriceList from './pages/DistributorPriceList';
 import WhatsNew from './pages/WhatsNew';
 import ProductDetail from './pages/ProductDetail';
 import CelarAssistant from './pages/CelarAssistant';
@@ -146,6 +147,7 @@ function AuthenticatedApp() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/catalog" element={<AdminRoute><Catalog /></AdminRoute>} />
             <Route path="/products" element={<Products />} />
+            <Route path="/distributor-price-list" element={<DistributorPriceList />} />
             <Route path="/whats-new" element={<WhatsNew />} />
             <Route path="/product" element={<ProductDetail />} />
             <Route path="/assistant" element={<CelarAssistant />} />

@@ -6,7 +6,7 @@ import {
   Sun, Moon, LogOut, BadgeDollarSign, ClipboardList, LayoutGrid,
   ChevronLeft, ChevronRight, ChevronDown, StickyNote, UserCog, Settings, Shield, Sparkles, ListTodo,
   Activity, Clock, Percent, Compass, ArrowDownRight, ArrowUpRight, ThumbsUp,
-  Bot, Database, Settings2, Newspaper, Scale, XCircle, Layers, Target, CalendarClock, ShoppingBag, Tag,
+  Bot, Database, Settings2, Newspaper, Scale, XCircle, Layers, Target, CalendarClock, ShoppingBag, Tag, Store,
 } from 'lucide-react';
 import { alerts as alertsApi, orders as ordersApi, cart as cartApi } from '../lib/api';
 import WhatsAppShareButton from './WhatsAppShare';
@@ -36,6 +36,7 @@ const NAV_GROUPS: {
     items: [
       { path: '/catalog', label: 'Catalog', icon: Package, adminOnly: true },
       { path: '/products', label: 'Products', icon: LayoutGrid },
+      { path: '/distributor-price-list', label: 'Distributor Price List', icon: Store },
       { path: '/best-rips', label: 'RIPs', icon: BadgeDollarSign },
       { path: '/best-qd', label: 'QD', icon: Percent },
       { path: '/combos', label: 'Combos', icon: Combine },

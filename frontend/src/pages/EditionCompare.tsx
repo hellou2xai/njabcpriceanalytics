@@ -146,9 +146,9 @@ function CardBreakdown({ r, blocks, older, newer }: { r: EditionRow; blocks?: Pr
   const rows = [
     { lab: 'Frontline Case Price', a: flA, b: flB, aB: btl(flA), bB: btl(flB), det: null as string | null },
     { lab: 'Price after best QD', a: r.invoice_a, b: r.invoice_b, aB: btl(r.invoice_a), bB: btl(r.invoice_b),
-      det: qdT ? `best @ ${qty(qdT)} cs` : null },
+      det: qdT ? `−${money(qdT.save_per_case)}/cs at ${qty(qdT)} cs` : null },
     { lab: 'Price after best RIP', a: r.net_a_case, b: r.net_b_case, aB: r.net_a_btl, bB: r.net_b_btl, rip: true,
-      det: ripT ? `rebate ${money(ripT.amount)} @ ${qty(ripT)} cs` : null },
+      det: ripT ? `${money(ripT.rip_only_save_per_case ?? ripT.save_per_case)}/cs rebate at ${qty(ripT)} cs` : null },
   ];
   return (
     <div className="ec-bd3">

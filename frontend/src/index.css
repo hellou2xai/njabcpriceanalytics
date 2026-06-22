@@ -6068,6 +6068,10 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .prod-deal-tot-vals { display: inline-flex; flex-wrap: wrap; gap: 2px 6px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .prod-deal-tot-vals > span:not(:first-child)::before { content: '·'; margin-right: 6px; color: var(--border-strong, #9ca3af); }
 .prod-deal-tot-vals strong { color: var(--text); font-weight: 700; }
+/* Per-case figure in parens, de-emphasised so the TOTAL saving reads first
+   (e.g. "2 cs / $20.00 ($10.00/cs)"). */
+.prod-deal-tot-per { color: var(--text-muted); font-size: 0.92em; }
+.prod-deal-tot-best .prod-deal-tot-per { color: #dc2626; }
 /* Best (largest) total in each line: the red-on-yellow highlight convention. */
 .prod-deal-tot-best { background: #fef9c3; border-radius: 3px; padding: 0 4px; }
 .prod-deal-tot-best, .prod-deal-tot-best strong { color: #dc2626; }

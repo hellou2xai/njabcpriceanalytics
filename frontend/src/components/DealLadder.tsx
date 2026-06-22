@@ -229,7 +229,8 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
               <span className="prod-deal-tot-vals">
                 {qdTotals.list.map((s, i) => (
                   <span key={i} className={qdTotals.best != null && s.total >= qdTotals.best - 1e-9 ? 'prod-deal-tot-best' : undefined}>
-                    {s.label} / ${s.per.toFixed(2)}/{csWord} / <strong>${s.total.toFixed(2)}</strong>
+                    {s.label} / <strong>${s.total.toFixed(2)}</strong>{' '}
+                    <span className="prod-deal-tot-per">(${s.per.toFixed(2)}/{csWord})</span>
                     <PartialFlag t={s.tier} />
                   </span>
                 ))}
@@ -243,7 +244,8 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
               <span className="prod-deal-tot-vals">
                 {ripTotals.list.map((s, i) => (
                   <span key={i} className={ripTotals.best != null && s.total >= ripTotals.best - 1e-9 ? 'prod-deal-tot-best' : undefined}>
-                    {s.label} / ${s.per.toFixed(2)}/{csWord} / <strong>${s.total.toFixed(2)}</strong>
+                    {s.label} / <strong>${s.total.toFixed(2)}</strong>{' '}
+                    <span className="prod-deal-tot-per">(${s.per.toFixed(2)}/{csWord})</span>
                     <PartialFlag t={s.tier} />
                   </span>
                 ))}

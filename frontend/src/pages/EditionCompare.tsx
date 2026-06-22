@@ -135,12 +135,13 @@ function CardBreakdown({ r, blocks, older, newer }: { r: EditionRow; blocks?: Pr
   // back to the raw frontline if the per-edition block is missing.
   const flA = blkA?.disc1_price ?? r.frontline_a ?? null;
   const flB = blkB?.disc1_price ?? r.frontline_b ?? null;
-  // older -> newer; collapse to a single figure when nothing changed (a human
-  // reads "$198.00", not "$198.00 -> $198.00").
+  // Always show the older -> newer comparison on every line. Only when one side
+  // is missing entirely (added/removed) do we show the single available figure.
   const span = (a?: number | null, b?: number | null, suffix = '') => {
     if (a == null && b == null) return null;
-    const changed = a != null && b != null && Math.abs(a - b) > 0.005;
-    return changed ? `${money(a)} → ${money(b)}${suffix}` : `${money(b ?? a)}${suffix}`;
+    if (a == null) return `${money(b)}${suffix}`;
+    if (b == null) return `${money(a)}${suffix}`;
+    return `${money(a)} → ${money(b)}${suffix}`;
   };
   const rows = [
     { lab: 'Frontline Case Price', a: flA, b: flB, aB: btl(flA), bB: btl(flB), det: null as string | null },

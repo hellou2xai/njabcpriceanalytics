@@ -42,7 +42,7 @@ function payNowPrices(it: CartItem) {
     return {
       perCase: it.effective_case_price ?? listCase ?? 0,
       perBtl: it.effective_unit_price ?? listBtl ?? 0,
-      listCase, listBtl, qdApplied: false,
+      listCase, listBtl, qdApplied: false, btlQdApplied: false,
     };
   }
   let save = 0;
@@ -53,12 +53,21 @@ function payNowPrices(it: CartItem) {
   }
   const perCase = listCase != null ? Math.max(listCase - save, 0) : (it.effective_case_price ?? 0);
   const pack = packOf(it);
-  // The BOTTLE price is the individual bottle price — a CASE quantity discount
-  // does not apply when you buy loose bottles, so it's the list bottle price
-  // (before the 1-case QD), NOT the discounted case price split by the pack.
-  // Fall back to the case-derived per-bottle only when no list bottle exists.
-  const perBtl = listBtl ?? (pack ? perCase / pack : 0);
-  return { perCase, perBtl, listCase, listBtl, qdApplied: save > 0.005 };
+  // The BOTTLE price is the individual (list) bottle price BEFORE the 1-case QD
+  // — a CASE discount needs a full case, so it never applies to loose bottles.
+  // BUT if a BOTTLE-level QD exists and the loose-bottle quantity qualifies for
+  // it, price the bottle at that discount (per-bottle saving off the list bottle).
+  let btlSave = 0;
+  for (const t of it.tiers ?? []) {
+    if (t.source !== 'discount' || normUnit(t.unit) !== 'btl') continue;
+    if (t.qty <= (it.qty_units || 0)) {
+      const spb = t.save_per_bottle ?? (pack ? (t.save_per_case ?? 0) / pack : 0);
+      if (spb > btlSave) btlSave = spb;
+    }
+  }
+  const perBtl = listBtl != null ? Math.max(listBtl - btlSave, 0)
+    : (pack ? perCase / pack : 0);
+  return { perCase, perBtl, listCase, listBtl, qdApplied: save > 0.005, btlQdApplied: btlSave > 0.005 };
 }
 function lineTotal(it: CartItem): number {
   const { perCase, perBtl } = payNowPrices(it);
@@ -599,9 +608,21 @@ export default function Cart() {
           </span>
           <span className="cart-cell-num">
             {/* Individual bottle price (before the 1-case QD) — what a loose
-                bottle costs, since the case discount needs a full case. */}
+                bottle costs, since the case discount needs a full case. If a
+                BOTTLE-level QD applies at this bottle qty, that discounted price
+                shows with the list bottle beneath. */}
             {!keg ? (
-              <span style={{ fontWeight: 600 }} title="Individual bottle price — before the 1-case quantity discount (a case QD doesn't apply to loose bottles).">{money(pay.perBtl)}</span>
+              <>
+                <span style={{ fontWeight: 600 }}
+                  title={pay.btlQdApplied
+                    ? 'Bottle price after the bottle-level quantity discount you qualify for.'
+                    : "Individual bottle price — before the 1-case QD (a case discount doesn't apply to loose bottles)."}>
+                  {money(pay.perBtl)}
+                </span>
+                {pay.btlQdApplied && pay.listBtl != null && (
+                  <span className="cart-list-sub" title="List price per bottle, before the bottle-level discount">List {money(pay.listBtl)}</span>
+                )}
+              </>
             ) : '–'}
           </span>
           <span className="cart-cell-num" style={{ fontWeight: 700 }}

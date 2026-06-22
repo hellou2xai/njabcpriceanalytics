@@ -647,6 +647,16 @@ def _to_upc_string(val) -> Optional[str]:
                 return str(int(f))
         except (TypeError, ValueError):
             pass
+    # Recover barcodes mangled by formatting: a UPC/EAN is digits only, but some
+    # distributors embed spaces (Monsieur "7 649990 243054") or append an alpha
+    # suffix (Wilson Daniels "100001106024VV"/"...NV"). Strip non-digits; if that
+    # yields a plausible barcode (>=8 digits) keep it, so these stop reading as
+    # "non-numeric" and join/cross-match correctly. Short, non-barcode internal
+    # codes (e.g. M S Walker "183817") are left as-is and stay treated as no-UPC.
+    if not s.isdigit():
+        digits = re.sub(r"\D", "", s)
+        if len(digits) >= 8:
+            return digits
     return s
 
 

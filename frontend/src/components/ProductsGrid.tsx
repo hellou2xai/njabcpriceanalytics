@@ -869,8 +869,11 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
             so keeping it here duplicated every deal on screen. */}
         {showDeals && !expanded && repMonths.length > 0 && (
           <div className="prod-card-deals">
+            {/* Collapsed preview: glance summary only (compact) — the full
+                per-tier table renders on expand, so this column never needs a
+                horizontal scrollbar. */}
             <DealLadder months={repMonths} pack={repPack} monthMode={dealMonth}
-              unitVolume={rep?.unit_volume} unitType={rep?.unit_type} />
+              unitVolume={rep?.unit_volume} unitType={rep?.unit_type} compact />
           </div>
         )}
         <div className="prod-card-right">

@@ -45,7 +45,7 @@ function PartialFlag({ t }: { t: RipTier }) {
   );
 }
 
-export default function DealLadder({ months, pack, emptyText, unitVolume, unitType, monthMode = 'current' }: {
+export default function DealLadder({ months, pack, emptyText, unitVolume, unitType, monthMode = 'current', compact = false }: {
   months: MonthBreakdown[];
   pack: number | null;
   // When set, renders this note if there are no deals; when omitted, renders
@@ -58,6 +58,11 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
   // or 'next' (the early-loaded next edition, when present). Driven by the
   // Products rail "RIP / QD month" filter.
   monthMode?: 'current' | 'next';
+  // Compact: render ONLY the at-a-glance tier summary lines, not the full
+  // per-tier table. Used in the COLLAPSED card's narrow deal column, where the
+  // wide table would otherwise overflow and show a horizontal scrollbar (and add
+  // DOM weight to every card). The full table renders on expand (compact=false).
+  compact?: boolean;
 }) {
   const csWord = priceUnit(unitVolume, unitType);   // 'keg' | 'cs'
   const unitNoun = perUnitAbbr(unitVolume, unitType); // 'keg' | 'can' | 'btl'
@@ -254,6 +259,7 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
           )}
         </div>
       )}
+    {!compact && (
     <table className="prod-deal-table">
       <thead>
         {/* Grouped header: the price columns are the landed price AFTER QD/RIP,
@@ -314,6 +320,7 @@ export default function DealLadder({ months, pack, emptyText, unitVolume, unitTy
         })}
       </tbody>
     </table>
+    )}
     </div>
   );
 }

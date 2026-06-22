@@ -2112,6 +2112,8 @@ def semantic_search(
     q: str = Query(..., description="Free-text descriptive phrase, e.g. 'old vine zinfandel from California', 'single barrel bourbon', 'natural orange wine'."),
     limit: int = Query(24, ge=1, le=100, description="Max product cards returned"),
     product_type: Optional[str] = Query(None, description="Optional product_type narrowing (Wine, Spirits, Beer, ...)"),
+    request: Request = None,
+    response: Response = None,
 ):
     """Long-tail semantic catalog search.
 
@@ -2126,9 +2128,26 @@ def semantic_search(
     API contract."""
     from backend.semantic_search import semantic_search as _ss
     from backend.pg import get_pg
-    with get_pg() as pg, get_duckdb() as con:
-        rows = _ss(pg, con, q, limit=limit, product_type=product_type)
-    return {"q": q, "count": len(rows), "items": rows}
+    from backend.cache_util import cached_response
+    # USER-INDEPENDENT: the result is a pure function of (q, limit, product_type)
+    # and the loaded data, so it is safe to memoize server-side AND mark
+    # `public` for the CDN. The date is in the key so any date-sensitive overlay
+    # rolls over daily; pricing_tag() (inside public_conditional / cached_response)
+    # invalidates everything on a data reload. This offloads the embedding /
+    # vector-search cost — popular phrases are served from the edge.
+    _ckey = (q, limit, product_type, _pricing.eastern_today().isoformat())
+    if request is not None and response is not None:
+        from backend.http_cache import public_conditional
+        _nm = public_conditional(request, response, ("semantic-search", _ckey))
+        if _nm is not None:
+            return _nm
+
+    def _build():
+        with get_pg() as pg, get_duckdb() as con:
+            rows = _ss(pg, con, q, limit=limit, product_type=product_type)
+        return {"q": q, "count": len(rows), "items": rows}
+
+    return cached_response("semantic-search", _ckey, _build)
 
 
 @router.get("/new-items")

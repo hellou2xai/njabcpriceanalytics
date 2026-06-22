@@ -62,7 +62,14 @@ ETag: W/"<hash of pricing-file + query key>"
 Endpoints opted in (all verified user-independent / gated against per-user
 data): `/api/analytics/*` boards (price-movers), `/api/deals/*`
 (discounts, clearance, combos, RIP/time-sensitive), the user-independent
-`/api/catalog` search + facets, and the `/api/compare` boards (non-admin).
+`/api/catalog` search (the non-`tracked_only` path) + facets +
+`/api/catalog/semantic-search`, and the `/api/compare` boards (non-admin).
+
+`semantic-search` is a pure function of `(q, limit, product_type)` + the loaded
+data (no user input), so it is both memoized server-side (`cache_util`) and
+edge-cacheable — popular phrases skip the embedding / vector-search cost. The
+conversational assistant (`/api/assistant`, POST/stream) is per-conversation and
+is NOT cached.
 
 **Default-deny safety net** (`backend/main.py` middleware): every other `/api/*`
 response that did NOT opt in is stamped `Cache-Control: private, no-store`, so a

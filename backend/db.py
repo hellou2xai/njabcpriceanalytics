@@ -62,12 +62,22 @@ POOL_SIZE = int(os.getenv("DUCKDB_POOL_SIZE", "8"))
 # can use ~3.2 GB. A few concurrent heavy queries (the grid sort, an include_tiers
 # burst) then overcommit far past the box and OOM the container. Cap each
 # connection to a bounded budget and give it a spill directory so an over-limit
-# query spills to disk instead of growing unbounded. Default 256 MB: with up to
-# POOL_SIZE × N-workers connections (e.g. 8 × 3 = 24) the worst-case ceiling
-# stays well under the 8 GB box, and an over-budget query spills rather than
-# OOMs. Tune with DUCKDB_MEMORY_LIMIT / DUCKDB_TEMP_DIR without a code change.
-_DUCKDB_MEM_LIMIT = os.getenv("DUCKDB_MEMORY_LIMIT", "256MB")
-_DUCKDB_TEMP_DIR = os.getenv("DUCKDB_TEMP_DIR") or str(Path(USER_DATA_DIR) / "duckdb_spill")
+# query spills to disk instead of growing unbounded. Default 512 MB: NOT every
+# DuckDB allocation can spill (large strings, block pins, some aggregates fail
+# HARD at the limit), and 256 MB proved too low — heavy board/grid queries threw
+# "Out of Memory Error: failed to allocate ... (244 MiB/244 MiB used)" -> 500s
+# under multi-worker load. 512 MB ran clean at 1 worker; resident memory is
+# bounded by how many queries run AT ONCE (≈ the 4 cores), not by POOL_SIZE ×
+# workers, so the higher per-query cap does not multiply into the box. Tune with
+# DUCKDB_MEMORY_LIMIT / DUCKDB_TEMP_DIR without a code change.
+_DUCKDB_MEM_LIMIT = os.getenv("DUCKDB_MEMORY_LIMIT", "512MB")
+# PER-WORKER spill dir. DuckDB names temp files deterministically
+# (duckdb_temp_storage_DEFAULT-N.tmp), so multiple worker PROCESSES sharing one
+# temp_directory collide ("Failed to delete file ... used by another process")
+# -> failed queries. Give every worker its own subdir keyed by PID.
+_DUCKDB_TEMP_DIR = str(
+    Path(os.getenv("DUCKDB_TEMP_DIR") or (Path(USER_DATA_DIR) / "duckdb_spill"))
+    / f"w{os.getpid()}")
 
 
 def _new_pricing_con(path: str):

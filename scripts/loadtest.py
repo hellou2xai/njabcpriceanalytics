@@ -78,6 +78,8 @@ async def user(client, uid):
             lat[label].append(dt)
             status[r.status_code] += 1
             cache[r.headers.get("cf-cache-status", "-")] += 1
+            if r.status_code >= 500 and len(errors) < 20:
+                errors.append(f"{label} [{r.status_code}]: {r.text[:300]}")
         except Exception as e:
             dt = (time.monotonic() - t0) * 1000
             status["ERR"] += 1

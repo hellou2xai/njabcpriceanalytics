@@ -53,7 +53,11 @@ function payNowPrices(it: CartItem) {
   }
   const perCase = listCase != null ? Math.max(listCase - save, 0) : (it.effective_case_price ?? 0);
   const pack = packOf(it);
-  const perBtl = pack ? perCase / pack : (listBtl ?? 0);
+  // The BOTTLE price is the individual bottle price — a CASE quantity discount
+  // does not apply when you buy loose bottles, so it's the list bottle price
+  // (before the 1-case QD), NOT the discounted case price split by the pack.
+  // Fall back to the case-derived per-bottle only when no list bottle exists.
+  const perBtl = listBtl ?? (pack ? perCase / pack : 0);
   return { perCase, perBtl, listCase, listBtl, qdApplied: save > 0.005 };
 }
 function lineTotal(it: CartItem): number {
@@ -594,13 +598,10 @@ export default function Cart() {
             )}
           </span>
           <span className="cart-cell-num">
+            {/* Individual bottle price (before the 1-case QD) — what a loose
+                bottle costs, since the case discount needs a full case. */}
             {!keg ? (
-              <>
-                <span style={{ fontWeight: 600 }}>{money(pay.perBtl)}</span>
-                {pay.qdApplied && pay.listBtl != null && (
-                  <span className="cart-list-sub" title="List price per bottle, before any quantity discount">List {money(pay.listBtl)}</span>
-                )}
-              </>
+              <span style={{ fontWeight: 600 }} title="Individual bottle price — before the 1-case quantity discount (a case QD doesn't apply to loose bottles).">{money(pay.perBtl)}</span>
             ) : '–'}
           </span>
           <span className="cart-cell-num" style={{ fontWeight: 700 }}

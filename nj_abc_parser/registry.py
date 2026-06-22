@@ -22,9 +22,10 @@ from nj_abc_parser.wholesalers.kramer import CONFIG as KRAMER
 from nj_abc_parser.wholesalers.shore_point import CONFIG as SHORE_POINT
 from nj_abc_parser.wholesalers.jersey_beverage import CONFIG as JERSEY_BEVERAGE
 from nj_abc_parser.wholesalers.other_brothers import CONFIG as OTHER_BROTHERS
+from nj_abc_parser.wholesalers.winebow import CONFIG as WINEBOW
 
 REGISTRY = [ALLIED, FEDWAY, OPICI, PEERLESS, HIGH_GRADE, KRAMER, SHORE_POINT,
-            JERSEY_BEVERAGE, OTHER_BROTHERS]
+            JERSEY_BEVERAGE, OTHER_BROTHERS, WINEBOW]
 
 
 def list_wholesalers() -> list[dict]:

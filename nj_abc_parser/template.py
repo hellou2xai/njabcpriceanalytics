@@ -157,6 +157,18 @@ RIP_HEADER_MAP = {
     "rip quantity no.4": "rip_qty_4",
     "rip $ amount no. 4": "rip_amt_4",
     "rip $ amount no.4": "rip_amt_4",
+    # Abbreviated headers (Winebow, Gallo): "RIP UNIT 1" / "RIP QTY 1" /
+    # "RIP $ AMT 1". Normalization keeps the "$" (it strips only quotes/#), so
+    # the amount lands as "rip $ amt 1". Both the $ and no-$ forms are listed.
+    # Additive — the verbose "...no. 1" keys above still match.
+    "rip unit 1": "rip_unit_1", "rip qty 1": "rip_qty_1",
+    "rip $ amt 1": "rip_amt_1", "rip amt 1": "rip_amt_1",
+    "rip unit 2": "rip_unit_2", "rip qty 2": "rip_qty_2",
+    "rip $ amt 2": "rip_amt_2", "rip amt 2": "rip_amt_2",
+    "rip unit 3": "rip_unit_3", "rip qty 3": "rip_qty_3",
+    "rip $ amt 3": "rip_amt_3", "rip amt 3": "rip_amt_3",
+    "rip unit 4": "rip_unit_4", "rip qty 4": "rip_qty_4",
+    "rip $ amt 4": "rip_amt_4", "rip amt 4": "rip_amt_4",
     "comments": "comments",
     "comments instructions": "comments",
 }

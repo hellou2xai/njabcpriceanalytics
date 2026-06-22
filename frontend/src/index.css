@@ -5585,6 +5585,55 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 @media (max-width: 1023px) { .products-layout { grid-template-columns: 1fr; } }
 /* Collapsed filter rail: a slim sticky strip; the grid takes the width. */
 .products-layout--collapsed { grid-template-columns: 40px 1fr; gap: 14px; }
+
+/* ---- Mobile: the filter rail is HIDDEN by default and opens as a slide-over
+   drawer over the content, so filters never eat the small screen. ---- */
+.filter-rail-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,.45);
+  z-index: 1100; animation: railBackdropIn .15s ease;
+}
+@keyframes railBackdropIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes railSlideIn { from { transform: translateX(-100%); } to { transform: none; } }
+@media (max-width: 1023px) {
+  /* Collapsed layouts collapse to ONE column so the "Filters" button sits inline
+     above the results instead of in a vertical side strip. */
+  .products-layout--collapsed,
+  .filter-rail-layout,
+  .filter-rail-layout--collapsed { grid-template-columns: 1fr; }
+
+  /* "Filters" reopen button: a normal horizontal button, not a vertical strip. */
+  .prod-rail-reopen {
+    position: static; flex-direction: row; gap: 8px; align-self: start;
+    width: auto; min-height: 0; padding: 10px 16px;
+    border-radius: 10px; margin-bottom: 14px; font-weight: 600; color: var(--text);
+  }
+  .prod-rail-reopen-label { writing-mode: horizontal-tb; }
+
+  /* The open rail becomes a left slide-over drawer. */
+  .prod-filter-rail {
+    position: fixed; top: 0; left: 0; bottom: 0; z-index: 1200;
+    width: min(86vw, 340px); align-self: stretch;
+    animation: railSlideIn .2s cubic-bezier(.2,.7,.3,1);
+  }
+  .prod-filter-rail-body {
+    max-height: 100vh; height: 100%; border-radius: 0;
+    border-top: 0; border-bottom: 0; border-left: 0;
+    box-shadow: 6px 0 38px rgba(0,0,0,.3);
+  }
+  /* Drawer close handle: a clear tap target at the rail's top-right. */
+  .prod-filter-collapse-handle--drawer {
+    top: 10px; right: 10px; transform: none;
+    width: 34px; height: 34px; border-radius: 8px;
+  }
+}
+
+/* General small-screen tidy-up: let the toolbars + page headers wrap. */
+@media (max-width: 768px) {
+  .products-toolbar { flex-wrap: wrap; gap: 8px; }
+  .products-toolbar-right { flex-wrap: wrap; gap: 8px 10px; }
+  .orders-header, .dpl-topbar { flex-wrap: wrap; gap: 10px; }
+  .products-hero-box--grid { margin-bottom: 12px; }
+}
 .prod-rail-reopen {
   position: sticky; top: 12px;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;

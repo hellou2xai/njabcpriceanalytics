@@ -8,6 +8,7 @@ import RowLimitSelect from '../components/RowLimitSelect';
 import { useResultCount } from '../lib/resultCount';
 import ProductsFilterRail from '../components/ProductsFilterRail';
 import { useCachedQuery } from '../hooks/useCachedQuery';
+import { useIsMobile } from '../hooks/useIsMobile';
 import { emptyCatalogFilters } from '../components/CatalogFilterPanel';
 import type { CatalogFilters } from '../components/CatalogFilterPanel';
 import { distributorName } from '../lib/distributors';
@@ -58,8 +59,13 @@ export default function DistributorPriceList() {
   const [sort, setSort] = useState<'product_name' | 'frontline_case_price'>('product_name');
   const [order, setOrder] = useState<'asc' | 'desc'>('asc');
   const [filters, setFilters] = useState<CatalogFilters>({ ...emptyCatalogFilters });
-  const [railCollapsed, setRailCollapsed] = useState(() => localStorage.getItem('dplFiltersCollapsed') === '1');
-  const toggleRail = (v: boolean) => { setRailCollapsed(v); localStorage.setItem('dplFiltersCollapsed', v ? '1' : '0'); };
+  const isMobile = useIsMobile();
+  const [railCollapsed, setRailCollapsed] = useState(() =>
+    (typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches)
+      ? true : localStorage.getItem('dplFiltersCollapsed') === '1');
+  const toggleRail = (v: boolean) => { setRailCollapsed(v); if (!isMobile) localStorage.setItem('dplFiltersCollapsed', v ? '1' : '0'); };
+  useEffect(() => { if (isMobile) setRailCollapsed(true); }, [isMobile]);
+  const railDrawer = isMobile && !railCollapsed;
 
   const [qDebounced, setQDebounced] = useState(q);
   useEffect(() => { const t = setTimeout(() => setQDebounced(q), 300); return () => clearTimeout(t); }, [q]);
@@ -244,7 +250,8 @@ export default function DistributorPriceList() {
         <div className="products-hero-count">{isLoading ? 'Loading…' : `${total.toLocaleString()} items`}</div>
       </div>
 
-      <div className={`products-layout${railCollapsed ? ' products-layout--collapsed' : ''}`}>
+      <div className={`products-layout${railCollapsed ? ' products-layout--collapsed' : ''}${railDrawer ? ' products-layout--drawer' : ''}`}>
+        {railDrawer && <div className="filter-rail-backdrop" onClick={() => toggleRail(true)} />}
         {railCollapsed ? (
           <button type="button" className="prod-rail-reopen" onClick={() => toggleRail(false)} title="Show filters">
             <SlidersHorizontal size={15} />

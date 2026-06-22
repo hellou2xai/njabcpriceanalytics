@@ -10,6 +10,7 @@ import { loadCart, saveCart, type CartState } from '../components/CatalogTable';
 import ProductsFilterRail from '../components/ProductsFilterRail';
 import ProductsGrid, { countProductGroups } from '../components/ProductsGrid';
 import { useCachedQuery } from '../hooks/useCachedQuery';
+import { useIsMobile } from '../hooks/useIsMobile';
 import { emptyCatalogFilters, countActiveFilters } from '../components/CatalogFilterPanel';
 import type { CatalogFilters } from '../components/CatalogFilterPanel';
 import type { Product } from '../lib/api';
@@ -96,13 +97,18 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
     setGroupedState(v);
     localStorage.setItem('lpb_products_grouped', v ? '1' : '0');
   };
-  // Collapsible filter rail (persisted): collapsed = a slim strip, grid full width.
+  // Collapsible filter rail (persisted on desktop). On MOBILE it starts hidden
+  // and opens as a slide-over drawer, so filters never eat the small screen.
+  const isMobile = useIsMobile();
   const [railCollapsed, setRailCollapsed] = useState(() =>
-    localStorage.getItem('prodFiltersCollapsed') === '1');
+    (typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches)
+      ? true : localStorage.getItem('prodFiltersCollapsed') === '1');
   const toggleRail = (v: boolean) => {
     setRailCollapsed(v);
-    localStorage.setItem('prodFiltersCollapsed', v ? '1' : '0');
+    if (!isMobile) localStorage.setItem('prodFiltersCollapsed', v ? '1' : '0');
   };
+  useEffect(() => { if (isMobile) setRailCollapsed(true); }, [isMobile]);
+  const railDrawer = isMobile && !railCollapsed;
 
   // URL -> state, so deep links (incl. the assistant's) and Back/Forward work.
   useEffect(() => {
@@ -434,7 +440,8 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
         </p>
       )}
 
-      <div className={`products-layout${railCollapsed ? ' products-layout--collapsed' : ''}`}>
+      <div className={`products-layout${railCollapsed ? ' products-layout--collapsed' : ''}${railDrawer ? ' products-layout--drawer' : ''}`}>
+        {railDrawer && <div className="filter-rail-backdrop" onClick={() => toggleRail(true)} />}
         {railCollapsed ? (
           <button type="button" className="prod-rail-reopen" onClick={() => toggleRail(false)}
                   title="Show filters">

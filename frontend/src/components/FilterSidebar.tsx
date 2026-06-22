@@ -1,5 +1,6 @@
 import { useState, useEffect, type ReactNode } from 'react';
-import { ChevronLeft, ChevronUp, SlidersHorizontal, XCircle } from 'lucide-react';
+import { ChevronLeft, ChevronUp, SlidersHorizontal, XCircle, X } from 'lucide-react';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 export type FilterOption = { label: string; value: string; count?: number };
 
@@ -97,8 +98,17 @@ interface FilterSidebarProps {
  */
 export default function FilterSidebar({ storageKey, sections, onReset, children }: FilterSidebarProps) {
   const lsKey = `filter_toolbar_${storageKey}`;
-  const [collapsed, setCollapsed] = useState<boolean>(() => localStorage.getItem(lsKey) === 'true');
-  useEffect(() => { localStorage.setItem(lsKey, String(collapsed)); }, [collapsed, lsKey]);
+  const isMobile = useIsMobile();
+  // On mobile the rail is a slide-over drawer, HIDDEN by default; on desktop it
+  // honours the saved collapse preference.
+  const [collapsed, setCollapsed] = useState<boolean>(() =>
+    (typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches)
+      ? true : localStorage.getItem(lsKey) === 'true');
+  // Persist the preference only on desktop (the drawer's open state is transient).
+  useEffect(() => { if (!isMobile) localStorage.setItem(lsKey, String(collapsed)); }, [collapsed, lsKey, isMobile]);
+  // Collapse the drawer whenever we drop to mobile so it never blocks content.
+  useEffect(() => { if (isMobile) setCollapsed(true); }, [isMobile]);
+  const drawer = isMobile && !collapsed;
 
   // Highlighted sections pin to the TOP of the rail, then everything else keeps
   // its given order.
@@ -123,16 +133,17 @@ export default function FilterSidebar({ storageKey, sections, onReset, children 
   }
 
   return (
-    <div className="filter-rail-layout">
-      <aside className="prod-filter-rail">
+    <div className={`filter-rail-layout${drawer ? ' filter-rail-layout--drawer' : ''}`}>
+      {drawer && <div className="filter-rail-backdrop" onClick={() => setCollapsed(true)} />}
+      <aside className={`prod-filter-rail${drawer ? ' prod-filter-rail--drawer' : ''}`}>
         <button
           type="button"
-          className="prod-filter-collapse-handle"
+          className={`prod-filter-collapse-handle${drawer ? ' prod-filter-collapse-handle--drawer' : ''}`}
           onClick={() => setCollapsed(true)}
           title="Collapse the filter rail"
           aria-label="Collapse the filter rail"
         >
-          <ChevronLeft size={16} />
+          {drawer ? <X size={18} /> : <ChevronLeft size={16} />}
         </button>
         <div className="prod-filter-rail-body">
           <div className="prod-filter-rail-head">

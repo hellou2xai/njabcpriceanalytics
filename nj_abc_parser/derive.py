@@ -770,7 +770,11 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
                 END AS has_discount,
                 CASE WHEN best_rip_amt IS NOT NULL AND best_rip_amt > 0
                      THEN true ELSE false END AS has_rip,
-                CASE WHEN closeout_permit IS NOT NULL AND closeout_permit != ''
+                -- A real closeout has a permit value; some distributors write
+                -- 'NA'/'N/A'/'NONE' to mean "no closeout" — treat those as none
+                -- (else e.g. Massanois' 2,250 'NA' rows falsely flag as closeouts).
+                CASE WHEN closeout_permit IS NOT NULL
+                     AND UPPER(TRIM(closeout_permit)) NOT IN ('', 'NA', 'N/A', 'N.A.', 'NONE', 'NULL')
                      THEN true ELSE false END AS has_closeout,
                 -- Savings percentage (discount tiers only, not RIP). Partial-
                 -- window rows report zero CPL savings.

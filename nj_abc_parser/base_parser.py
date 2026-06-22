@@ -431,6 +431,25 @@ class NJABCParser:
         # UPC: normalize to clean digit string (handles Excel float coercion)
         df["upc"] = df["upc"].apply(_to_upc_string)
 
+        # Keep ONLY real barcodes in `upc`. A short, non-numeric or placeholder
+        # value ('NO UPC', 'TBD', M S Walker's 6-digit '183817', all-same stubs)
+        # is not a barcode — left in `upc` it pollutes product comparison and
+        # discovery (which key on the barcode). Move a MEANINGFUL internal code
+        # to dist_item_no (the distributor's own item number) when that's empty,
+        # and clear `upc`; pure placeholders are just cleared.
+        u = df["upc"].apply(lambda v: "" if v is None else str(v).strip())
+        is_barcode = (u.str.fullmatch(r"\d{8,}").fillna(False)
+                      & ~u.str.fullmatch(r"(\d)\1+").fillna(False)
+                      & ~u.str.startswith("999999"))
+        is_placeholder = (u.str.upper().isin(["", "NO UPC", "TBD", "NA", "N/A", "N.A.", "NONE", "NULL"])
+                          | u.str.fullmatch(r"(\d)\1+").fillna(False))
+        if "dist_item_no" not in df.columns:
+            df["dist_item_no"] = None
+        item = df["dist_item_no"].apply(lambda v: "" if v is None else str(v).strip())
+        move = (~is_barcode) & (~is_placeholder) & (u != "") & (item == "")
+        df.loc[move, "dist_item_no"] = u[move]
+        df.loc[~is_barcode, "upc"] = None
+
         # Dates
         for col in ["from_date", "to_date"]:
             df[col] = pd.to_datetime(df[col], errors="coerce")

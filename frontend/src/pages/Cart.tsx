@@ -22,14 +22,6 @@ const Stepper = QtyStepper;
 
 const money = (v?: number | null) => (v == null ? '$0.00' : `$${v.toFixed(2)}`);
 
-// Best-buy illustration price (deepest net after every QD + RIP tier; combo
-// price when intact). Shown in the trailing "$ Best buy" column ONLY — it is
-// not what the buyer pays at their current quantity.
-function unitPrices(it: CartItem) {
-  const perCase = it.effective_case_price ?? it.frontline_case_price ?? 0;
-  const perBtl = it.effective_unit_price ?? it.frontline_unit_price ?? 0;
-  return { perCase, perBtl };
-}
 // What the buyer PAYS NOW per case/bottle: the LIST price minus only the
 // quantity discounts the line's CURRENT quantity has actually earned (combo
 // price while the bundle is intact). RIP rebates are paid later as credits,
@@ -187,7 +179,7 @@ interface RipTier { qty: number; unit: 'case' | 'btl'; amt: number; }
  *  X-case $Y RIP", flipping to a green qualified note once the threshold is
  *  met. Quantities count across every ACTIVE line sharing this line's RIP code
  *  at the same distributor (mix RIPs qualify cluster-wide, not per product). */
-function lineRipEligibility(it: CartItem, all: CartItem[]): { text: string; tone: 'gap' | 'reached' } | null {
+function lineRipEligibility(it: CartItem, all: CartItem[]): { text: string; tone: 'gap' | 'reached'; short: string } | null {
   // Program-aware: only the line's EFFECTIVE RIP program counts (programs
   // don't stack), and the cluster pools lines running under the SAME program.
   // Case-credit model (FOUNDATION 3.4.1): a half-case qualifier's physical
@@ -233,6 +225,7 @@ function lineRipEligibility(it: CartItem, all: CartItem[]): { text: string; tone
     return {
       tone: 'gap',
       text: `Add ${need} or more ${uw}${need === 1 ? '' : 's'} to qualify for the ${next.qty} ${uw} ${amt(next.amt)} RIP${across}.${qualNote}`,
+      short: `Add ${need} ${uw}${need === 1 ? '' : 's'} → ${amt(next.amt)} RIP`,
     };
   }
   const top = reached[reached.length - 1];
@@ -241,7 +234,7 @@ function lineRipEligibility(it: CartItem, all: CartItem[]): { text: string; tone
     const next = ahead[0];
     text += ` Add ${physNeed(next.qty - have)} more for the ${next.qty} ${uw} ${amt(next.amt)} RIP.`;
   }
-  return { tone: 'reached', text: text + qualNote };
+  return { tone: 'reached', text: text + qualNote, short: `✓ ${amt(top.amt)} RIP (${top.qty} ${uw})` };
 }
 
 /** Reduce a RIP cluster of cart lines to its rebate ladder + a progress
@@ -531,8 +524,8 @@ export default function Cart() {
       </span>
       <span className="cart-cell-num">Total</span>
       <span className="cart-cell-num"
-        title="Illustration only: the deepest possible net after EVERY QD + RIP tier (combo price when the bundle is intact). Not what you pay at your current quantity.">
-        $ Best buy
+        title="RIP eligibility at your current quantity: the RIP rebate this line already qualifies for, or how many more cases to reach the next tier.">
+        RIP eligibility
       </span>
       <span />
     </div>
@@ -548,8 +541,8 @@ export default function Cart() {
 
   const renderItem = (it: CartItem, saving = false) => {
     const tiers = it.tiers ?? [];
-    const { perCase, perBtl } = unitPrices(it);
     const pay = payNowPrices(it);
+    const elig = saving ? null : lineRipEligibility(it, active);
     const keg = isKegUnit(it.unit_volume, it.unit_type);
     const pack = packOf(it);
     const showCombo = !!it.combo_code && !!it.combo_intact;
@@ -629,9 +622,11 @@ export default function Cart() {
             title="Line total at the PAY-NOW price (list minus earned quantity discounts)">
             {money(lineTotal(it))}
           </span>
-          <span className="cart-cell-num cart-bestbuy"
-            title={`Illustration only — ${showCombo ? 'combo bundle price' : 'the deepest net after EVERY QD + RIP tier'} per ${priceUnit(it.unit_volume, it.unit_type)}${keg ? '' : ` / per ${perUnitAbbr(it.unit_volume, it.unit_type)}`}${it.total_savings_per_case ? `. Saves ${money(it.total_savings_per_case)}/${priceUnit(it.unit_volume, it.unit_type)} vs list.` : ''}`}>
-            {money(perCase)}{!keg ? ` / ${money(perBtl)}` : ''}
+          <span className="cart-cell-num cart-rip-elig-cell"
+            title={elig ? elig.text : 'No RIP rebate on this product this edition.'}>
+            {elig
+              ? <span style={{ fontWeight: 700, fontSize: 11, color: elig.tone === 'reached' ? 'hsl(150 55% 32%)' : '#b45309' }}>{elig.short}</span>
+              : <span style={{ color: 'var(--text-muted)' }}>—</span>}
           </span>
           <span style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
             {!saving ? (
@@ -674,20 +669,9 @@ export default function Cart() {
             onApply={a => applySug.mutate(a)} />
         )}
 
-        {/* eBiz-style per-line RIP eligibility: how far this line (and its RIP
-            cluster) is from the next rebate, or which tier it already earns.
-            When the UPC sits under SEVERAL RIP programs (they don't stack),
-            a selector lets the buyer pick the program, and a hint points out
-            when a different program pays more at the same commitment. */}
-        {!saving && (() => {
-          // A RIP rebate is the tier's TOTAL amount earned once you reach the
-          // tier's case threshold — it is NOT a per-case rate that scales with
-          // quantity. So we show the eligibility line (which states the tier
-          // total, e.g. "qualified for the 2 case $40 RIP") and do NOT multiply
-          // a per-case figure by the cart qty.
-          const elig = lineRipEligibility(it, active);
-          return elig ? <div className={`cart-rip-elig tone-${elig.tone}`}>{elig.text}</div> : null;
-        })()}
+        {/* The per-line RIP eligibility now lives in the RIP eligibility column
+            (concise status + full text on hover), so the standalone bar that used
+            to repeat it here is gone — the column is the single source. */}
 
         {/* Compact insights — alternatives + timing collapsed onto ONE wrapping
             line of plain, lightly-tinted text (no chunky pill stacks): buy-or-wait

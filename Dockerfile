@@ -35,12 +35,16 @@ COPY pos_feed/ ./pos_feed/
 COPY --from=frontend /app/frontend/dist ./frontend/dist
 
 # Render injects $PORT. Shell form so it expands.
-# Worker count. The shared pricing cache (backend/pricing_cache.py) means only
-# ONE worker builds the cache at boot and the rest adopt the published file, so
-# multiple workers no longer each do a multi-GB build (the old idle-OOM). 3 is
-# a sane default for the 4-CPU box: enough to overlap Postgres I/O waits, while
-# leaving a core for the build + system. Passing --workers explicitly also makes
-# uvicorn ignore WEB_CONCURRENCY. Throughput is largely CPU-bound at 4 cores, so
-# the bigger capacity lever is Cloudflare edge caching (see docs). Override per
-# instance with UVICORN_WORKERS without a rebuild.
-CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers ${UVICORN_WORKERS:-3}"]
+# Worker count. The shared pricing cache means only ONE worker builds at boot
+# and the rest adopt the published file, so multiple workers no longer each do a
+# multi-GB build (the old idle-OOM). But RUNTIME memory bounds the count: each of
+# the POOL_SIZE DuckDB connections PER WORKER can use up to DUCKDB_MEMORY_LIMIT
+# (512 MB) on a heavy board/grid query, and that does NOT spill reliably. On the
+# 8 GB box, 3 workers × 8 conns × 512 MB ≈ 12 GB -> Render OOM-killed workers
+# (502s) under load. So default to 2 workers × pool 5 (see DUCKDB_POOL_SIZE) ≈
+# 5 GB worst case, leaving headroom for Python + the cache. Throughput is largely
+# CPU-bound at 4 cores anyway, so the bigger capacity lever is Cloudflare edge
+# caching (see docs/CDN_AND_SHARED_CACHE.md). Passing --workers explicitly also
+# makes uvicorn ignore WEB_CONCURRENCY. Override with UVICORN_WORKERS /
+# DUCKDB_POOL_SIZE per instance (raise both only on a bigger box).
+CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers ${UVICORN_WORKERS:-2}"]

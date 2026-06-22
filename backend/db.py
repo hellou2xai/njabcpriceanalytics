@@ -52,9 +52,12 @@ _POOL_PATH: str | None = None
 # Per-worker pool size. On a 4-CPU box, 8 single-threaded query connections
 # already oversubscribe the cores, so the read throughput ceiling is CPU-bound
 # (raising this further mostly adds memory, not throughput). With multiple
-# workers the TOTAL connection count is POOL_SIZE × WEB workers, so this is the
-# main lever on resident memory under load — tune via DUCKDB_POOL_SIZE.
-POOL_SIZE = int(os.getenv("DUCKDB_POOL_SIZE", "8"))
+# workers the TOTAL connection count is POOL_SIZE × WEB workers, and EACH
+# connection can use up to DUCKDB_MEMORY_LIMIT on a heavy query, so this is the
+# main lever on worst-case memory: POOL_SIZE × workers × limit must fit the box.
+# Default 5 pairs with 2 workers (10 × 512 MB ≈ 5 GB) on the 8 GB instance.
+# Raise via DUCKDB_POOL_SIZE only with fewer workers or a bigger box.
+POOL_SIZE = int(os.getenv("DUCKDB_POOL_SIZE", "5"))
 
 # Cap EACH pooled DuckDB connection's memory. DuckDB defaults memory_limit to
 # ~80% of system RAM PER connection (e.g. ~3.2 GB on a 4 GB box), and we open

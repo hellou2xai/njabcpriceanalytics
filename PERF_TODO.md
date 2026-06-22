@@ -62,6 +62,16 @@ back to UNBOUNDED temporary connections — a 300-user burst could open hundreds
 blow memory. Cap it (hard max of N extra, or just block/queue), and size the pool
 to the box (`POOL_SIZE = max(8, cpu_count*2)`).
 
+CONFIRMED by load test (scripts/loadtest.py, 2026-06) and it's the blocker on
+running >1 worker on the 8 GB box: at 400 concurrent with 2-3 workers, the
+overflow spawned enough 512 MB DuckDB connections to exceed 8 GB and Render
+OOM-killed workers (502s). A SINGLE worker (pool 8) was rock-solid: 0 errors
+100→1500 concurrent, ~65 req/s, graceful latency degradation. To safely run
+multiple workers here: cap overflow (semaphore of N, and/or give overflow conns
+a smaller memory_limit, or queue instead of spawn) so total
+`(pool + overflow) × workers × per-query-mem` stays under the box. Until then
+the default is 1 worker (Dockerfile) and the capacity lever is the CDN.
+
 ## 4. Deeper / situational (after the baseline above)
 - Precompute the default-grid **image-sort rank** + denormalize enrichment
   (image_url, sku, best_qd, price_3mo) into `cpl_enriched` so per-request Python

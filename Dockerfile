@@ -47,4 +47,14 @@ COPY --from=frontend /app/frontend/dist ./frontend/dist
 # caching (see docs/CDN_AND_SHARED_CACHE.md). Passing --workers explicitly also
 # makes uvicorn ignore WEB_CONCURRENCY. Override with UVICORN_WORKERS /
 # DUCKDB_POOL_SIZE per instance (raise both only on a bigger box).
-CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers ${UVICORN_WORKERS:-2}"]
+#
+# DEFAULT 1: empirically, multiple workers are NOT safe on this 8 GB box. Each
+# pooled connection (and each UNBOUNDED overflow connection spawned when the
+# pool is exhausted under burst) can use up to 512 MB on a heavy query, and with
+# 2-3 worker processes running queries truly in parallel, sustained high
+# concurrency (≥400) blew past 8 GB and Render OOM-killed workers (502s). One
+# worker was rock-solid: 0 errors from 100 up to 1500 concurrent, ~65 req/s,
+# degrading gracefully (just slower) instead of crashing. The capacity lever
+# that IS safe is Cloudflare edge caching (memory-free; see docs). Raise workers
+# only on a bigger instance, and pair it with the overflow cap work in PERF_TODO.
+CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers ${UVICORN_WORKERS:-1}"]

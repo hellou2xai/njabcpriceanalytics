@@ -748,6 +748,7 @@ export interface EditionRow {
   unit_type: string | null;
   product_type: string | null;
   upc: string | null;
+  dist_item_no?: string | null;
   net_a_case?: number | null;
   net_b_case?: number | null;
   net_a_btl?: number | null;

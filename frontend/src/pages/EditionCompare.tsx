@@ -148,7 +148,7 @@ function CardBreakdown({ r, blocks, older, newer }: { r: EditionRow; blocks?: Pr
     { lab: 'Price after best QD', a: r.invoice_a, b: r.invoice_b, aB: btl(r.invoice_a), bB: btl(r.invoice_b),
       det: qdT ? `−${money(qdT.save_per_case)}/cs at ${qty(qdT)} cs` : null },
     { lab: 'Price after best RIP', a: r.net_a_case, b: r.net_b_case, aB: r.net_a_btl, bB: r.net_b_btl, rip: true,
-      det: ripT ? `${money(ripT.rip_only_save_per_case ?? ripT.save_per_case)}/cs rebate at ${qty(ripT)} cs` : null },
+      det: ripT ? `${money(ripT.rip_only_save_per_case ?? ripT.save_per_case)}/cs RIP at ${qty(ripT)} cs` : null },
   ];
   return (
     <div className="ec-bd3">
@@ -194,6 +194,10 @@ function EditionCard({ r, older, newer, wholesaler, onOpen, price3mo }: {
         <div className="ec-card-id">
           <span className="ec-card-name" onClick={() => onOpen(r.product_name)} title={r.product_name}>{r.product_name}</span>
           <span className="ec-card-sub">{r.unit_qty} × {r.unit_volume}</span>
+          <span className="ec-card-ids">
+            {r.upc && <span>UPC {r.upc}</span>}
+            {r.dist_item_no && <span>· Item {r.dist_item_no}</span>}
+          </span>
         </div>
         <DeltaPill r={r} />
       </div>

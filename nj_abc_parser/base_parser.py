@@ -279,6 +279,29 @@ class NJABCParser:
         """Parse CPL sheet."""
         header_row = self._find_header_row(ws, self.cpl_header_map, min_matches=5)
         if header_row is None:
+            # Some files ship the standard ABC column ORDER but omit the header
+            # row (e.g. Banville's July export). When the config opts in, map
+            # columns positionally to the canonical order (CPL_COLUMNS) and treat
+            # header_row_hint as the blank/absent header line, so data extraction
+            # starts on the row after it.
+            if self.config.get("cpl_assume_standard_order"):
+                # Find the first DATA row (column A is a UPC-like long digit
+                # string); the absent header sits just above it. Column indices
+                # are 0-based to match _build_column_mapping / _extract_rows.
+                data_row = None
+                for r_idx, row in enumerate(ws.iter_rows(min_row=1, max_row=20, values_only=True), start=1):
+                    c0 = row[0] if row else None
+                    if c0 is not None and re.fullmatch(r"0*\d{8,}", str(c0).strip()):
+                        data_row = r_idx
+                        break
+                header_row = (data_row - 1) if data_row else self.header_row_hint
+                col_map = {i: CPL_COLUMNS[i] for i in range(min(len(CPL_COLUMNS), ws.max_column))}
+                logger.info(f"[{self.slug}] CPL: no header row — assuming standard "
+                            f"ABC column order, data from row {header_row + 1}")
+                df = self._extract_rows(ws, header_row, col_map, CPL_COLUMNS)
+                if df is None:
+                    return None
+                return self._clean_cpl(df)
             logger.warning(f"[{self.slug}] CPL: could not find header row")
             return None
 

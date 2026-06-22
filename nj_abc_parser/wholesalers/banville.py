@@ -7,6 +7,10 @@ Sheets: Terms & Conditions, CPL, RIP, COMBO, BEER MIX and MATCH.
 Notes:
   - Standard NJ ABC eCPL template (header row 6; 3 discount tiers, 2 RIP tiers).
     BEST price filled (no post_process). Types WINE / DISTILLED SPIRITS / BEER.
+  - The JULY export omits the CPL header row (data starts row 6, no labels) but
+    keeps the standard ABC column ORDER, so cpl_assume_standard_order maps the
+    columns positionally when no header is found. The June file has a header and
+    parses normally.
 """
 
 CONFIG = {
@@ -32,4 +36,5 @@ CONFIG = {
     },
     "skip_sheets": ["terms"],
     "file_pattern": "BANVILLE*.xlsx",
+    "cpl_assume_standard_order": True,
 }

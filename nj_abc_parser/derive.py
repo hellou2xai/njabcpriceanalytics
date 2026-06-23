@@ -292,6 +292,126 @@ def build_item_lifecycle(parquet_dir: str | Path, output_dir: Path):
     return df
 
 
+_HALF_CASE_PAIR = ("fedway", "allied")
+
+
+def _propagate_half_case_credits(df, rip, cpl):
+    """Share half-case / split RIP credits across Fedway<->Allied by SKU identity.
+
+    A half-case rule is a property of the PRODUCT, not the distributor: if one
+    house's RIP for a given item (UPC + pack + vintage + volume) qualifies on a
+    half (or doubled / quarter) case, the SAME item at the other house qualifies
+    the same way. The RIP CODE differs between houses, so we attach the shared
+    credit to the OTHER house's OWN (edition, rip_code, upc) — only the tier
+    treatment (case_credit / split) is identical. Never overwrites a credit the
+    other house already has (its own parsed rule wins); only fills the gap, and
+    only where that house actually files a RIP for the same item.
+    """
+    import re
+    if df is None or len(df) == 0:
+        return df
+
+    def upcn(u):
+        return re.sub(r"\D", "", str(u or "")).lstrip("0")
+
+    def pk(q):
+        try:
+            return str(int(float(q)))
+        except (TypeError, ValueError):
+            return ""
+
+    def vn(v):
+        s = str(v if v is not None else "").strip().upper()
+        if s in ("", "NAN", "NONE", "NV", "N/A", "NA"):
+            return ""
+        m = re.match(r"^(\d{4})", s)
+        if m:
+            return m.group(1)
+        m2 = re.match(r"^(\d{2})$", s)
+        if m2:
+            n = int(m2.group(1))
+            return ("20" if n <= 30 else "19") + m2.group(1)
+        return ""
+
+    def ml(uv):
+        s = str(uv if uv is not None else "").upper().replace(" ", "")
+        if s in ("LITER", "LIT", "1LITER", "1L"):
+            return 1000
+        m = re.match(r"^([\d.]+)(ML|L|LITER|LIT|OZ|FLOZ|GAL|GALLON)?", s)
+        if not m:
+            return None
+        num = float(m.group(1)); unit = m.group(2) or "ML"
+        if unit == "ML":
+            return round(num)
+        if unit in ("L", "LITER", "LIT"):
+            return round(num * 1000)
+        if unit in ("OZ", "FLOZ"):
+            return round(num * 29.5735)
+        if unit in ("GAL", "GALLON"):
+            return round(num * 3785.41)
+        return round(num)
+
+    # cpl_ident[(ws, ed)][upc_norm] -> set of identities (pack, vintage, size_ml)
+    # b_idents[(ws, ed)] -> set of identities the house carries
+    from collections import defaultdict
+    cpl_ident = defaultdict(lambda: defaultdict(set))
+    b_idents = defaultdict(set)
+    for r in cpl.itertuples(index=False):
+        w = str(getattr(r, "wholesaler", "") or "")
+        if w not in _HALF_CASE_PAIR:
+            continue
+        ed = str(getattr(r, "edition", "") or "")
+        un = upcn(getattr(r, "upc", None))
+        if not un:
+            continue
+        ident = (un, pk(getattr(r, "unit_qty", None)),
+                 vn(getattr(r, "vintage", None)), ml(getattr(r, "unit_volume", None)))
+        cpl_ident[(w, ed)][un].add(ident)
+        b_idents[(w, ed)].add(ident)
+
+    # b_codes[(ws, ed)][upc_norm] -> set of (rip_code, rip_upc_as_filed)
+    b_codes = defaultdict(lambda: defaultdict(set))
+    for r in rip.itertuples(index=False):
+        w = str(getattr(r, "wholesaler", "") or "")
+        if w not in _HALF_CASE_PAIR:
+            continue
+        ed = str(getattr(r, "edition", "") or "")
+        un = upcn(getattr(r, "upc", None))
+        code = getattr(r, "rip_code", None)
+        if not un or code is None or str(code).strip() in ("", "0", "None", "nan"):
+            continue
+        b_codes[(w, ed)][un].add((str(code), str(getattr(r, "upc", "") or "")))
+
+    have = {(str(t.wholesaler), str(t.edition), str(t.rip_code), str(t.upc))
+            for t in df.itertuples(index=False)}
+    new_rows = []
+    for t in df.itertuples(index=False):
+        a = str(t.wholesaler)
+        if a not in _HALF_CASE_PAIR:
+            continue
+        b = "allied" if a == "fedway" else "fedway"
+        ed = str(t.edition)
+        un = upcn(t.upc)
+        for ident in cpl_ident[(a, ed)].get(un, ()):           # A's config(s)
+            if ident not in b_idents[(b, ed)]:                  # B carries same item?
+                continue
+            for code_b, upc_b in b_codes[(b, ed)].get(ident[0], ()):  # B's own code(s)
+                key = (b, ed, code_b, upc_b)
+                if key in have:
+                    continue
+                have.add(key)
+                new_rows.append({
+                    "wholesaler": b, "edition": ed, "rip_code": code_b, "upc": upc_b,
+                    "case_credit": t.case_credit, "split_pack": t.split_pack,
+                    "split_credit": t.split_credit, "rule_kind": t.rule_kind,
+                    "method": "cross-dist", "rule_excerpt": f"shared from {a} {t.rip_code}",
+                })
+    if new_rows:
+        df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
+        print(f"  half-case credits shared across Fedway<->Allied: +{len(new_rows)} rows")
+    return df
+
+
 def build_rip_credits(parquet_dir: str | Path, output_dir: Path):
     """Resolve free-text half-case / must-double RIP rules into per-UPC case
     credits (see nj_abc_parser.rip_rules + backend/FOUNDATION.md).
@@ -310,16 +430,22 @@ def build_rip_credits(parquet_dir: str | Path, output_dir: Path):
                                    hive_partitioning=true, union_by_name=true)
     """).fetchdf()
     cpl = con.execute(f"""
-        SELECT wholesaler, edition, upc, product_name, unit_volume, unit_qty
+        SELECT wholesaler, edition, upc, product_name, unit_volume, unit_qty, vintage
         FROM read_parquet('{pdir}/cpl/**/data.parquet',
                           hive_partitioning=true, union_by_name=true)
     """).fetchdf()
     con.close()
 
     df = compute_rip_credits(rip, cpl)
+    # Capture anomalies BEFORE the cross-distributor propagation: pd.concat in the
+    # propagation drops df.attrs, so read the review artifact off the raw result.
+    anomalies = df.attrs.get("anomalies", [])
+    # Half-case (and split) credits are a property of the PRODUCT, so a rule
+    # identified at one house applies to the SAME item at the other. Propagate
+    # Fedway<->Allied by full SKU identity (UPC + pack + vintage + volume).
+    df = _propagate_half_case_credits(df, rip, cpl)
     # Persist the full-case guard anomalies (fractional credit a clause tried to
     # apply to a >=9L full-case pack, left at 1.0) as a review artifact.
-    anomalies = df.attrs.get("anomalies", [])
     adf = pd.DataFrame(anomalies, columns=[
         "wholesaler", "edition", "rip_code", "upc", "pack_ml",
         "attempted_credit", "rule_excerpt", "reason"]).astype({

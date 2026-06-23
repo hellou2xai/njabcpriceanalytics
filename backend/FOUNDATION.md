@@ -339,6 +339,20 @@ case earns toward that pool:**
   case still counts 1.0 (NEVER double these); the 3-bottle split is
   allowed in at `split_credit` toward the pool.
 
+**Cross-distributor sharing (Fedway ↔ Allied).** A half-case / split /
+must-double credit is a property of the PRODUCT, not the house: if one
+of Fedway/Allied files a fractional credit for an item, the SAME item at
+the other house qualifies the same way. `derive.py`
+(`_propagate_half_case_credits`) copies each such credit to the other
+house's RIP by FULL SKU identity (`upc_norm + pack(unit_qty) + vintage +
+volume(size_ml)`). The RIP CODE differs between houses, so the shared
+credit is attached to the OTHER house's OWN `(edition, rip_code, upc)` —
+only the tier treatment (`case_credit`/`split_*`) is identical
+(`method = 'cross-dist'`). It only FILLS a gap (never overwrites a
+house's own parsed rule) and only where that house actually files a RIP
+for the same item. Because it lands in `rip_credits`, every consumer —
+pricing, Best RIPs, Compare RIPs, the cart — reflects it automatically.
+
 Three derived consequences, applied ONLY to case-unit tiers (a
 bottle-unit tier is an explicit bottle count and never scales):
 

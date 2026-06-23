@@ -535,7 +535,9 @@ function SizeRow({ size, cart, updateQty, primaryName, showDeals = true, hideDis
         )}
         {!hideDist && <div className="prod-size-dist"><Store size={11} /> {distributorName(size.wholesaler)}</div>}
         <div className="prod-size-pack">{packPhrase(pack, size.unit_volume, size.unit_type)}</div>
-        {sku && <div className="prod-size-sku">SKU: {sku}</div>}
+        {sku && <div className="prod-size-sku"
+          title={size.abg_item_name ? `${distributorName(size.wholesaler)}: ${size.abg_item_name}` : undefined}>
+          SKU: {sku}{size.abg_item_name ? <span className="prod-size-skuname"> · {size.abg_item_name}</span> : null}</div>}
         {size.vintage != null && String(size.vintage) !== '0' && String(size.vintage).trim() !== '' && (
           <span className="tag tag-blue prod-size-vintage">Vintage {size.vintage}</span>
         )}

@@ -516,6 +516,7 @@ export interface CompareLadder {
   abv_proof?: string | null;     // proof / ABV — distinguishes e.g. cask-strength SKUs
   product_type?: string | null;
   abg_sku?: string | null;   // distributor's own item number (Allied ABG / Fedway)
+  abg_item_name?: string | null;  // distributor's own item NAME (Allied sheet name)
   frontline: number | null;
   after_qd: number | null;
   effective: number | null;

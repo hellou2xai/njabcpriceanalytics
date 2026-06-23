@@ -133,6 +133,10 @@ def attach_sku_mapping(con, records, upc_key="upc", wholesaler_key="wholesaler",
 
     for rec in records:
         rec["abg_sku"] = None
+        # abg_item_name: the distributor's OWN authoritative product name for the
+        # item, carried alongside the number so the app can use it (Allied's clean
+        # sheet name vs the CPL's abbreviation). Set from dist_item_name below.
+        rec["abg_item_name"] = rec.get("dist_item_name") or None
         w = str(rec.get(wholesaler_key) or "")
         if w not in SKU_DISTRIBUTORS:
             continue

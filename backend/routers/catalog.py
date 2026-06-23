@@ -1702,7 +1702,7 @@ def search_products(
                    unit_qty, unit_volume, unit_type, vintage, frontline_case_price, frontline_unit_price,
                    best_case_price, best_unit_price, effective_case_price,
                    has_discount, has_rip, has_closeout, discount_pct,
-                   total_savings_per_case, rip_code, combo_code, {_opt_col(con, 'dist_item_no')},
+                   total_savings_per_case, rip_code, combo_code, {_opt_col(con, 'dist_item_no')}, {_opt_col(con, 'dist_item_name')},
                    discount_1_qty, discount_1_amt,
                    discount_2_qty, discount_2_amt,
                    discount_3_qty, discount_3_amt,
@@ -2309,7 +2309,7 @@ def new_items(
                    e.best_case_price, e.best_unit_price, e.effective_case_price,
                    e.rip_savings, e.rip_windows,
                    e.has_discount, e.has_rip, e.has_closeout, e.discount_pct,
-                   e.total_savings_per_case, e.rip_code, e.combo_code, {_opt_col(con, 'dist_item_no', prefix='e.')}, e.brand,
+                   e.total_savings_per_case, e.rip_code, e.combo_code, {_opt_col(con, 'dist_item_no', prefix='e.')}, {_opt_col(con, 'dist_item_name', prefix='e.')}, e.brand,
                    e.discount_1_qty, e.discount_1_amt,
                    e.discount_2_qty, e.discount_2_amt,
                    e.discount_3_qty, e.discount_3_amt,
@@ -4322,7 +4322,7 @@ def get_rip_siblings(
                    best_case_price, best_unit_price,
                    effective_case_price, rip_savings, {rip_windows_expr}, total_savings_per_case,
                    has_discount, has_rip, has_closeout, discount_pct,
-                   rip_code, combo_code, {_opt_col(con, 'dist_item_no')}
+                   rip_code, combo_code, {_opt_col(con, 'dist_item_no')}, {_opt_col(con, 'dist_item_name')}
             FROM {src}
             WHERE wholesaler = $w AND edition = $e
               AND ({' OR '.join(member_clauses)})

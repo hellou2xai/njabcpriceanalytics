@@ -136,13 +136,14 @@ def attach_sku_mapping(con, records, upc_key="upc", wholesaler_key="wholesaler",
         w = str(rec.get(wholesaler_key) or "")
         if w not in SKU_DISTRIBUTORS:
             continue
-        # Fedway files its item number on EVERY CPL product row (column Z,
-        # surfaced as dist_item_no in cpl_enriched). Prefer it so every Fedway
-        # product shows its number, not just the handful present in sku_mapping.
+        # Fedway files its item number on EVERY CPL product row (column Z); Allied
+        # gets dist_item_no set at cache build from its authoritative translation
+        # sheet by FULL SKU identity (backend/pricing_cache.py). Prefer dist_item_no
+        # for BOTH so the precise per-item number shows, not a UPC-only guess.
         # Falls through to the sku_mapping lookup when a record doesn't carry
         # dist_item_no (endpoints whose SELECT omits it) — no regression.
         own = rec.get("dist_item_no")
-        if w == "fedway" and own not in (None, "", "None"):
+        if w in ("fedway", "allied") and own not in (None, "", "None", "0"):
             rec["abg_sku"] = _display_sku(w, str(own))
             continue
         c = cand.get((w, str(rec.get(upc_key) or "").lstrip("0")))

@@ -277,6 +277,14 @@ def build_pricing_cache(force: bool = False) -> Path:
                     "distributor VARCHAR, abg_sku VARCHAR, upc VARCHAR, "
                     "upc_norm VARCHAR, brand_reg VARCHAR, item_name VARCHAR)"
                 )
+                # Allied's authoritative SKU translation (scripts/load_allied_translation.py):
+                # the ABG item number per FULL SKU identity (UPC + size_ml + pack +
+                # vintage). Joined onto Allied cpl rows below to set dist_item_no.
+                empty_allied_xref = (
+                    "CREATE TABLE allied_sku_xref ("
+                    "upc_norm VARCHAR, size_ml INTEGER, pack VARCHAR, "
+                    "vintage_norm VARCHAR, sku VARCHAR, product_name VARCHAR)"
+                )
                 # CELR Product Number registry, flattened + alias-resolved (see
                 # docs/CELR_PRODUCT_NUMBER_DESIGN.md; built by
                 # scripts/build_celr_products.py). Maps every clean barcode to its
@@ -312,6 +320,7 @@ def build_pricing_cache(force: bool = False) -> Path:
                     # No enrichment in parquet dev mode; an empty table keeps joins valid.
                     con.execute(empty_enrich)
                     con.execute(empty_sku)
+                    con.execute(empty_allied_xref)
                     con.execute("CREATE TABLE ai_deal_blurbs (wholesaler VARCHAR, upc VARCHAR, edition VARCHAR, blurb VARCHAR)")
                     _celr_pq = PARQUET_DIR / "derived" / "celr_products.parquet"
                     if _celr_pq.exists():
@@ -380,6 +389,10 @@ def build_pricing_cache(force: bool = False) -> Path:
                         """)
                     except Exception:
                         con.execute(empty_celr_keys)
+                    try:
+                        con.execute("CREATE TABLE allied_sku_xref AS SELECT upc_norm, size_ml, pack, vintage_norm, sku, product_name FROM pg.allied_sku_xref")
+                    except Exception:  # not loaded yet
+                        con.execute(empty_allied_xref)
                     con.execute("DETACH pg")
 
                 # Wire the catalogue brand to the Go-UPC enriched brand by UPC. CPL
@@ -512,6 +525,54 @@ def build_pricing_cache(force: bool = False) -> Path:
                 for _t in ("cpl_enriched", "cpl", "rip", "combo"):
                     _try(f"ALTER TABLE {_t} ADD COLUMN upc_norm VARCHAR")
                     _try(f"UPDATE {_t} SET upc_norm = LTRIM(CAST(upc AS VARCHAR), '0')")
+
+                # Allied (ABG) distributor item numbers, set from the authoritative
+                # Allied Translation sheet (allied_sku_xref) by FULL SKU identity
+                # (UPC + size_ml + pack + vintage) — one UPC can carry several SKUs,
+                # so a UPC-only join would attach the wrong number. The xref holds
+                # only UNAMBIGUOUS identities (one SKU each); ambiguous ones are
+                # dropped at load time and stay blank here. The cpl-side size_ml /
+                # pack / vintage normalisation is kept byte-aligned with the Python
+                # in scripts/load_allied_translation.py. Edition-independent and
+                # re-applied every build, so it survives re-ingests. attach_sku_mapping
+                # then prefers this dist_item_no for Allied (same as Fedway).
+                _try("ALTER TABLE cpl_enriched ADD COLUMN dist_item_no VARCHAR")
+                # dist_item_name: the distributor's OWN authoritative product name
+                # for the item (Allied's sheet name, e.g. "Nigori The Blue One"
+                # where the CPL only says "JOTO NIGORI"). New column, Allied-only
+                # for now; surfaced alongside dist_item_no.
+                _try("ALTER TABLE cpl_enriched ADD COLUMN dist_item_name VARCHAR")
+                _ALLIED_SIZE_ML = (
+                    "CAST(ROUND(CASE "
+                    "WHEN unit_volume IS NULL OR unit_volume = '' THEN NULL "
+                    "WHEN UPPER(REPLACE(unit_volume,' ','')) IN ('LITER','LIT','1LITER','1L') THEN 1000 "
+                    "WHEN regexp_extract(UPPER(REPLACE(unit_volume,' ','')), '^([0-9.]+)', 1) = '' THEN NULL "
+                    "ELSE CAST(regexp_extract(UPPER(REPLACE(unit_volume,' ','')), '^([0-9.]+)', 1) AS DOUBLE) * "
+                    "CASE regexp_extract(UPPER(REPLACE(unit_volume,' ','')), '^[0-9.]+(ML|L|LITER|LIT|OZ|FLOZ|GAL|GALLON)', 1) "
+                    "WHEN 'L' THEN 1000 WHEN 'LITER' THEN 1000 WHEN 'LIT' THEN 1000 "
+                    "WHEN 'OZ' THEN 29.5735 WHEN 'FLOZ' THEN 29.5735 "
+                    "WHEN 'GAL' THEN 3785.41 WHEN 'GALLON' THEN 3785.41 ELSE 1 END "
+                    "END) AS INTEGER)"
+                )
+                _ALLIED_PACK = (
+                    "CASE WHEN TRY_CAST(unit_qty AS DOUBLE) IS NULL THEN '' "
+                    "ELSE CAST(CAST(TRY_CAST(unit_qty AS DOUBLE) AS INTEGER) AS VARCHAR) END"
+                )
+                _ALLIED_VTG = f"COALESCE({_VINTAGE_NORM_SQL}, '')"
+                # Overlay the sheet's number/name ONLY on matched Allied rows —
+                # existing values on unmatched rows are left untouched. (Stale '0'
+                # placeholders are never DISPLAYED: enrichment_join.attach_sku_mapping
+                # treats '0' as blank.)
+                _try(f"""
+                    UPDATE cpl_enriched
+                    SET dist_item_no = x.sku, dist_item_name = x.product_name
+                    FROM allied_sku_xref x
+                    WHERE cpl_enriched.wholesaler = 'allied'
+                      AND x.upc_norm = cpl_enriched.upc_norm
+                      AND x.size_ml = {_ALLIED_SIZE_ML}
+                      AND x.pack = {_ALLIED_PACK}
+                      AND x.vintage_norm = {_ALLIED_VTG}
+                """)
 
                 # has_image: precompute the default-grid "images first" sort key
                 # (PERF_TODO #4 / the ~9s sort). The storefront grid floats products

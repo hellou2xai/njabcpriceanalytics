@@ -171,6 +171,19 @@
    individual items from the expanded detail. */
 .cmp-prod-name { font-weight: 600; margin-left: 2px; }
 .cmp-size { display: block; font-size: 11px; color: var(--text-muted); margin-left: 17px; }
+/* Identity line: shared UPC + each distributor's own part number, so the buyer
+   can confirm the match is the same pack/volume across houses. */
+.cmp-ident {
+  display: flex; flex-wrap: wrap; gap: 4px 10px;
+  margin-left: 17px; margin-top: 2px;
+  font-size: 10.5px; color: var(--text-muted);
+}
+.cmp-ident-upc { font-variant-numeric: tabular-nums; }
+.cmp-ident-sku {
+  font-variant-numeric: tabular-nums;
+  padding: 0 5px; border-radius: 4px;
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+}
 .cmp-flip {
   display: inline-flex; align-items: center; gap: 2px; margin-left: 8px;
   font-size: 10.5px; font-weight: 700; color: var(--orange);

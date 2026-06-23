@@ -228,6 +228,21 @@ def _vintage_key(vintage_norm, vintage_sensitive) -> str:
 _YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
 
 
+def _match_key_for(rec) -> str:
+    """THE canonical compare identity for one record: upc_norm | size | pack |
+    vintage. The SINGLE definition shared by `_common_rows` (the grid) and
+    `compare_tiers` (the detail ladder) so a row and its drill-down can NEVER
+    resolve different SKUs under one shared barcode. Expects the record to carry
+    upc_norm, unit_volume, unit_qty, vintage_norm and vintage_sensitive (the same
+    derived columns _common_rows selects)."""
+    return "|".join([
+        str(rec.get("upc_norm") or ""),
+        _size_key(rec.get("unit_volume")),
+        _pack_norm(rec.get("unit_qty")),
+        _vintage_key(rec.get("vintage_norm"), rec.get("vintage_sensitive")),
+    ])
+
+
 def _display_name(name: str, vintages: set, vintage_sensitive: bool) -> str:
     """The row header. Strip the SKU's vintage YEAR so it isn't shown twice (the
     grid already prints the vintage next to the size).
@@ -431,15 +446,11 @@ def _common_rows(con, src: str, slugs: list[str], eds: dict[str, str],
     recs = [_nan_clean(r) for r in df.to_dict(orient="records")]
 
     # Build identity keys in Python (size/pack spellings vary by distributor).
+    # Uses the shared `_match_key_for` so the detail ladder (compare_tiers) and
+    # the item modal resolve the IDENTICAL identity — no fork can drift.
     for r in recs:
-        pack = _pack_norm(r.get("unit_qty"))
-        r["pack_norm"] = pack
-        r["match_key"] = "|".join([
-            r["upc_norm"],
-            _size_key(r.get("unit_volume")),
-            pack,
-            _vintage_key(r.get("vintage_norm"), r.get("vintage_sensitive")),
-        ])
+        r["pack_norm"] = _pack_norm(r.get("unit_qty"))
+        r["match_key"] = _match_key_for(r)
 
     # Drop ambiguous identities: a key mapping to >1 distinct product name
     # within ONE wholesaler is an unreliable barcode (same rule as
@@ -1339,6 +1350,7 @@ def compare_tiers(
     wholesalers: str = Query(...),
     upc_norm: str = Query(...),
     size_key: str = Query("", description="Physical-size bucket from /products rows"),
+    match_key: str = Query("", description="Full compare identity (upc|size|pack|vintage) of the grid row. When given, the ladder is pinned to the SAME SKU — so a 3x750 row can never resolve a 12x750 ladder under one shared barcode. Supersedes size_key."),
     month_mode: str = Query("cur", description="Must match the grid: 'next' resolves the NEXT edition so the ladder shows the SAME month as the row."),
     user: Optional[dict] = Depends(get_optional_user),
 ):
@@ -1352,6 +1364,7 @@ def compare_tiers(
         slugs = _parse_wholesalers(wholesalers, con)
         eds = _editions_for(con, src, slugs, mode=("next" if month_mode == "next" else "cur"))
         ed_pred, ed_params = _edition_pred(slugs, eds)
+        vn = _pricing.vintage_norm_sql("vintage")
         df = con.execute(f"""
             SELECT wholesaler, edition, upc, product_name, product_type,
                    unit_qty, unit_volume, vintage, abv_proof, rip_code, dist_item_no,
@@ -1359,12 +1372,21 @@ def compare_tiers(
                    best_case_price, effective_case_price,
                    discount_1_qty, discount_1_amt, discount_2_qty, discount_2_amt,
                    discount_3_qty, discount_3_amt, discount_4_qty, discount_4_amt,
-                   discount_5_qty, discount_5_amt
+                   discount_5_qty, discount_5_amt,
+                   LTRIM(upc, '0') AS upc_norm,
+                   {vn} AS vintage_norm,
+                   UPPER(product_type) IN ('WINE','SPARKLING','VERMOUTH') AS vintage_sensitive
             FROM {src}
             WHERE {ed_pred} AND upc_norm = ?
         """, ed_params + [upc_norm]).df()
         records = [_nan_clean(r) for r in df.to_dict(orient="records")]
-        if size_key:
+        # Pin the ladder to the row's FULL identity (upc|size|pack|vintage) so a
+        # shared barcode can't resolve a different pack/vintage than the row the
+        # user expanded. `match_key` is the precise key from the grid; size_key is
+        # the older, looser fallback kept for any caller that still sends only it.
+        if match_key:
+            records = [r for r in records if _match_key_for(r) == match_key]
+        elif size_key:
             records = [r for r in records if _size_key(r.get("unit_volume")) == size_key]
         # best (cheapest effective) offer per wholesaler
         chosen: dict[str, dict] = {}

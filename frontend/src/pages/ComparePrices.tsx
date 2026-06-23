@@ -843,6 +843,18 @@ export default function ComparePrices() {
                           <span className="cmp-size">
                             {r.unit_qty} × {r.unit_volume}{r.vintage ? ` · ${r.vintage}` : ''}
                           </span>
+                          {/* The identity this match is keyed on, shown so the
+                              buyer can verify it: shared UPC + each distributor's
+                              own part number, under the case-pack + volume. */}
+                          <span className="cmp-ident">
+                            {r.upc ? <span className="cmp-ident-upc">UPC {r.upc}</span> : null}
+                            {selected.map(w => {
+                              const it = r.prices[w]?.item_no;
+                              return abgSku(w, it)
+                                ? <span key={w} className="cmp-ident-sku">{distributorName(w)} {skuLabel(w)} {it}</span>
+                                : null;
+                            })}
+                          </span>
                           {r.deal_flip && (
                             <span
                               className="cmp-flip"
@@ -948,6 +960,10 @@ export default function ComparePrices() {
                               params={{
                                 wholesalers: selected.join(','),
                                 upc_norm: r.upc_norm,
+                                // pin the ladder to the row's FULL identity
+                                // (upc|size|pack|vintage) so a shared barcode can't
+                                // pull a different pack/vintage into the detail.
+                                match_key: r.match_key,
                                 size_key: r.size_key || undefined,
                                 // ladder MUST resolve the same month as the grid
                                 month_mode: priceMonths === 'next' ? 'next' : 'cur',

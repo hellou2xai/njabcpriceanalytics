@@ -5091,7 +5091,7 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 /* Near full-width conversation (Claude/ChatGPT wide layout): fill the content
    area with comfortable side padding, capped so it stays sane on ultra-wide
    monitors. Was max-width:900px, which left big empty margins. */
-.celar-page { display: flex; flex-direction: column; height: calc(100vh - 16px); width: 100%; max-width: 1600px; margin: 0 auto; padding: 0 clamp(12px, 2vw, 40px); box-sizing: border-box; }
+.celar-page { display: flex; flex-direction: row; height: calc(100vh - 16px); width: 100%; box-sizing: border-box; overflow: hidden; }
 .celar-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 6px 4px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 .celar-head-title { display: flex; gap: 11px; align-items: center; min-width: 0; flex: 1 1 200px; }
 .celar-spark { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 10px; color: #fff; flex-shrink: 0;
@@ -5456,7 +5456,57 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 
 /* The assistant chat fills whatever container holds it (page or dock). */
 .assistant-chat { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.celar-page > .assistant-chat { flex: 1 1 auto; }
+/* Full-page: assistant chat lives inside .celar-main, not directly in .celar-page */
+.celar-main > .assistant-chat { flex: 1 1 auto; }
+
+/* Sidebar layout */
+.celar-sidebar {
+  flex: 0 0 264px; width: 264px; height: 100%; overflow-y: auto; overflow-x: hidden;
+  border-right: 1px solid var(--border); padding: 24px 20px 40px;
+  display: flex; flex-direction: column; gap: 28px; background: var(--surface);
+}
+.celar-main {
+  flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; height: 100%;
+  max-width: 900px; margin: 0 auto; padding: 0 clamp(12px, 2vw, 32px); box-sizing: border-box;
+}
+@media (max-width: 1100px) {
+  .celar-sidebar { display: none; }
+  .celar-main { max-width: 100%; }
+}
+
+/* Sidebar internals */
+.celar-sidebar-brand { display: flex; align-items: center; gap: 12px; }
+.celar-sidebar-spark { width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0; }
+.celar-sidebar-title { font-size: 15px; font-weight: 700; color: var(--text); line-height: 1.2; }
+.celar-sidebar-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.celar-sidebar-section { display: flex; flex-direction: column; gap: 10px; }
+.celar-sidebar-label {
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.5px; color: var(--text-muted);
+}
+.celar-caps { display: flex; flex-direction: column; gap: 10px; }
+.celar-cap { display: flex; align-items: flex-start; gap: 10px; }
+.celar-cap-icon {
+  flex-shrink: 0; width: 28px; height: 28px; border-radius: 8px; margin-top: 1px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg)); color: var(--accent);
+}
+.celar-cap-title { font-size: 12.5px; font-weight: 600; color: var(--text); line-height: 1.3; }
+.celar-cap-desc { font-size: 11.5px; color: var(--text-muted); margin-top: 1px; line-height: 1.4; }
+.celar-sidebar-prompts { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.celar-sidebar-prompt {
+  font-size: 12px; color: var(--text-muted); padding: 7px 10px; border-radius: 8px;
+  border: 1px solid var(--border); line-height: 1.4; background: var(--bg);
+}
+
+/* Constrain bubble width on the dedicated full page for readability */
+.celar-page .celar-msg-assistant .celar-bubble { max-width: 760px; }
+.celar-page .celar-msg-user .celar-bubble { max-width: 580px; }
+
+/* Larger suggestion chips on the standalone page */
+.celar-page .celar-suggestion { font-size: 14px; padding: 13px 16px; }
+.celar-page .celar-suggestion::after { content: '→'; float: right; color: var(--text-muted); }
+.celar-page .celar-suggestion:hover:not(:disabled)::after { color: var(--accent); }
 .celar-head-btn {
   display: inline-flex; align-items: center; justify-content: center;
   width: 30px; height: 30px; border-radius: 7px; cursor: pointer;

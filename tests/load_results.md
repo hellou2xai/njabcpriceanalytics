@@ -211,3 +211,17 @@ stays up and the cached reads are fast:
 second-half drift (p95 2.5 s -> 27 s); (2) **login** — 100-way bcrypt on 2 cores
 (~7 s). Caching (Phase 1) is what makes 100 users survivable; cart precompute +
 lazy suggestions and login-cost tuning are the next ceilings, then CPU for headroom.
+
+## 50 users x 25s — 2026-06-21 21:58 UTC
+
+- Logins: 50/50 ok | login p50=3924ms p95=4529ms max=4550ms
+- Requests: 432 in 33.2s = 13.0 req/s | errors: 0 (0.0%) | 304 cache-hits: 150 (34.7%)
+- Latency drift: first-half p95=7211ms -> second-half p95=13029ms
+
+```
+endpoint                       n     p50     p95     p99     max   304%   err%
+search(text)                 108     386     899    1037    1101    48%   0.0%
+search(include_tiers)        108     194     419     492     584    44%   0.0%
+cart                         108    7916   15183   18890   21610     0%   0.0%
+facets                       108     186    8193   10891   14201    47%   0.0%
+```

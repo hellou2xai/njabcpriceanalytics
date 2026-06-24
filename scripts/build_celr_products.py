@@ -98,7 +98,8 @@ def main() -> None:
     # ---- 1) catalogue rows (every edition) ----
     con = duckdb.connect()
     rows = con.execute(
-        f"""SELECT CAST(upc AS VARCHAR) AS upc, product_name, product_type
+        f"""SELECT CAST(upc AS VARCHAR) AS upc, product_name, product_type,
+                   wholesaler, edition
             FROM '{PARQUET.as_posix()}' WHERE upc IS NOT NULL"""
     ).fetchdf().to_dict("records")
     by_upc: dict[str, list[dict]] = defaultdict(list)
@@ -106,6 +107,29 @@ def main() -> None:
         if is_registry_upc(r["upc"]):
             by_upc[norm_upc(r["upc"])].append(r)
     print(f"registry barcodes in catalogue: {len(by_upc)}")
+
+    # Reused (polysemous) barcodes: ONE distributor lists >=2 DISTINCT
+    # products on the same barcode in the SAME edition — Fedway 82184031735
+    # carries McLaren Year 3 + Year 4 + Tennessee Blackberry 375ML; Allied
+    # 739958057209 carries Coppola Chard + Pinot. Such a barcode identifies
+    # nothing by itself, so it is NOT an identity node: it must not union
+    # name components, its enrichment (which describes only ONE of the
+    # products) must not bridge, and its rows join families by NAME KEY at
+    # serving — nothing hidden. Cross-distributor abbreviation variants
+    # (Glenlivet) and cross-edition renames (Highgrade) keep one core per
+    # (distributor, edition) and still stitch as before.
+    poly: set[str] = set()
+    for un, recs in by_upc.items():
+        per: dict[tuple, set] = defaultdict(set)
+        for r in recs:
+            c = family_core(str(r.get("product_name") or ""),
+                            str(r.get("product_type") or ""))
+            if c:
+                per[(str(r.get("wholesaler") or ""),
+                     str(r.get("edition") or ""))].add(c)
+        if any(len(cs) > 1 for cs in per.values()):
+            poly.add(un)
+    print(f"reused (polysemous) barcodes excluded as identity nodes: {len(poly)}")
 
     # ---- 2) enrichment names/brands ----
     with get_pg() as pg:

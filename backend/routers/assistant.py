@@ -18,15 +18,25 @@ class AskBody(BaseModel):
 
 
 @router.post("/ask")
-def ask(body: AskBody, user: Optional[dict] = Depends(get_optional_user)):
+async def ask(body: AskBody, user: Optional[dict] = Depends(get_optional_user)):
     """Answer a question with markdown + optional charts + resolved actions, plus
     token/$ usage. Multi-turn via `history`; `page` tells the assistant which
     screen the user is on so it prioritizes relevant tools (and enables the
-    signed-in user's cart/favorites/lists/orders tools). Logged for the rollup."""
-    from backend import assistant as engine, ai_usage
+    signed-in user's cart/favorites/lists/orders tools). Logged for the rollup.
+
+    Routes to the Claude Agent SDK path (ask_async) when CELR_USE_AGENT_SDK is on,
+    else the raw-API loop (run in a threadpool so it doesn't block the event
+    loop). The agent path self-degrades to the raw-API loop on any SDK failure."""
+    from backend import assistant as engine, ai_usage, llm_client
     try:
-        res = engine.ask(body.question, body.history, user=user, page=body.page,
-                         page_path=body.page_path, page_query=body.page_query)
+        if llm_client.use_agent_sdk():
+            res = await engine.ask_async(body.question, body.history, user=user, page=body.page,
+                                         page_path=body.page_path, page_query=body.page_query)
+        else:
+            from fastapi.concurrency import run_in_threadpool
+            res = await run_in_threadpool(
+                engine.ask, body.question, body.history, user=user, page=body.page,
+                page_path=body.page_path, page_query=body.page_query)
     except Exception as e:
         # Never 500 the chat — degrade gracefully so the UI shows a message.
         import logging

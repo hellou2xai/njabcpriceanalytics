@@ -5399,10 +5399,478 @@ def _listing_analysis(products: list) -> str:
     return "  \n".join(lines)
 
 
-def ask(question: str, history: list | None = None, user: dict | None = None,
-        page: str | None = None, page_path: str | None = None,
-        page_query: str | None = None) -> dict:
-    question = (question or "").strip()
+# Args that name WHAT to look at (product/brand/code/category...) — a call that
+# carries one is a filtered call, not an unfiltered sweep (specificity guard).
+_FILTERISH = ("q", "query", "search", "product", "upc", "brand",
+              "rip_code", "combo_code", "category", "type", "varietal", "region")
+
+
+class _Capture:
+    """Per-request accumulators + the tool-execution/capture logic shared by the
+    raw-API loop (ask) and the Agent SDK path (ask_async). One instance per
+    request. run_tool() executes ONE tool call and folds its result into the
+    accumulators exactly as the inline loop did, so both paths produce the same
+    products / templates / screen / rip-cluster state."""
+
+    def __init__(self, ctx: dict, page_path, page_query):
+        self.ctx = ctx
+        self.page_path = page_path
+        self.page_query = page_query
+        self.actions_out: list = []
+        self.products_out: list = []
+        self.prod_filtered: list = []
+        self.seen_products: dict = {}
+        self.price_detail_result: dict | None = None
+        self.timeline_result: dict | None = None
+        self.rip_lookup_result: dict | None = None
+        self.item_result: dict | None = None
+        self.combo_result: list | None = None
+        self.combo_analyzer_result: dict | None = None
+        self.compare_result: dict | None = None
+        self.time_sensitive_result: list | None = None
+        self.movers_result: tuple | None = None
+        self.screen_out: dict | None = None
+        self.screen_args: dict | None = None
+        self.rip_clusters_out: list = []
+        self.rip_clusters_seen: set = set()
+
+    def collect(self, items, filtered: bool = True):
+        for p in (items or []):
+            if not isinstance(p, dict) or not p.get("product_name"):
+                continue
+            key = (p.get("wholesaler"), str(p.get("upc") or ""), p.get("product_name"), p.get("unit_volume"))
+            if key in self.seen_products:
+                if filtered:
+                    self.prod_filtered[self.seen_products[key]] = True
+                continue
+            self.seen_products[key] = len(self.products_out)
+            self.products_out.append({k: p.get(k) for k in
+                                      ("product_name", "wholesaler", "upc", "abg_sku", "unit_volume", "unit_qty",
+                                       "vintage", "effective_case_price", "frontline_case_price")})
+            self.prod_filtered.append(filtered)
+
+    @staticmethod
+    def is_filtered_call(inp) -> bool:
+        if not isinstance(inp, dict):
+            return False
+        for k, v in inp.items():
+            kl = str(k).lower()
+            if any(f in kl for f in _FILTERISH) and "distributor" not in kl and str(v or "").strip():
+                return True
+        return False
+
+    def run_tool(self, con, name, inp):
+        """Execute one tool call and capture its result. Mirrors the inline
+        per-tool dispatch (distributor-slug normalization + show_on_screen /
+        perform_action / ctx / data branches + template captures)."""
+        inp = inp if isinstance(inp, dict) else {}
+        for _dk in ("distributor", "from_distributor", "to_distributor"):
+            _dv = inp.get(_dk)
+            if _dv:
+                _slug = _resolve_distributor(_dv)
+                if _slug:
+                    inp[_dk] = _slug
+        if isinstance(inp.get("distributors"), list):
+            inp["distributors"] = [(_resolve_distributor(d) or d) for d in inp["distributors"]]
+
+        if name == "show_on_screen":
+            si = inp
+            self.screen_args = si
+            sc = _build_screen(si, self.page_path, self.page_query)
+            q = (si.get("q") or "").strip()
+            compact = re.sub(r"[\s\-]", "", q)
+            if compact.isdigit() and len(compact) >= 6:
+                try:
+                    hit = _resolve_products(con, {}, q, "first", 1)
+                except Exception:
+                    hit = []
+                if hit:
+                    self.screen_out = sc
+                    return {"ok": True, "found": True, "path": sc["path"], "product": hit[0].get("product_name")}
+                return {"ok": False, "found": False, "message": f"No product found for UPC {q}."}
+            self.screen_out = sc
+            return {"ok": True, "path": sc["path"]}
+
+        if name == "perform_action":
+            try:
+                out = _do_action(con, inp, self.actions_out)
+                if self.actions_out:
+                    self.collect(self.actions_out[-1].get("products"))
+            except Exception as e:
+                out = {"error": f"{type(e).__name__}"}
+            return out
+
+        if name in _CTX_TOOLS:
+            try:
+                out = _CTX_TOOLS[name][0](con, inp, self.ctx)
+            except Exception as e:
+                out = {"error": f"{type(e).__name__}"}
+            if isinstance(out, list):
+                self.collect(out, filtered=self.is_filtered_call(inp))
+            if (name == "find_deals" and isinstance(out, list) and out
+                    and str(inp.get("kind") or "").lower()
+                        in ("time_sensitive", "time-sensitive", "ending", "expiring", "clearance", "closeout")):
+                self.time_sensitive_result = out
+            if name == "price_movers" and isinstance(out, list):
+                _dir = inp.get("direction") or inp.get("price_trend") or "drop"
+                _dir = "increase" if str(_dir).lower() in ("increase", "up", "rising", "rise") else "drop"
+                self.movers_result = (out, _dir)
+            return out
+
+        if name in _DATA_TOOLS:
+            try:
+                out = _DATA_TOOLS[name][0](con, inp)
+            except Exception as e:
+                out = {"error": f"{type(e).__name__}"}
+            if isinstance(out, list):
+                self.collect(out, filtered=self.is_filtered_call(inp))
+            elif isinstance(out, dict) and out.get("product") and name != "price_timeline":
+                self.collect([{**out, "product_name": out.get("product")}])
+            if isinstance(out, dict) and isinstance(out.get("comparison"), list):
+                self.collect(out["comparison"])
+                if name == "compare_distributors" and out.get("comparison"):
+                    self.compare_result = out
+            if isinstance(out, dict) and isinstance(out.get("alternatives"), list):
+                self.collect(out["alternatives"])
+            if isinstance(out, dict) and isinstance(out.get("basket"), list):
+                self.collect(out["basket"])
+            if name in ("price_details", "deal_360") and isinstance(out, dict) and not out.get("error"):
+                self.price_detail_result = out
+                if self.item_result is None or name == "deal_360":
+                    self.item_result = out
+                self.collect([out])
+            if name == "combo_deals" and isinstance(out, list) and out:
+                self.combo_result = out
+            if name == "combo_analyzer" and isinstance(out, dict) and out.get("combos"):
+                self.combo_analyzer_result = out
+            if name == "price_timeline" and isinstance(out, dict) and not out.get("error"):
+                self.timeline_result = out
+            if name == "rip_lookup" and isinstance(out, dict) and not out.get("error"):
+                if (self.rip_lookup_result is None
+                        or (out.get("rip_codes") and not self.rip_lookup_result.get("rip_codes"))):
+                    self.rip_lookup_result = out
+                for rc in out.get("rip_codes") or []:
+                    code = (rc.get("rip_code") or "").strip()
+                    ws_c = (rc.get("wholesaler") or "").strip()
+                    if not code or not ws_c:
+                        continue
+                    if any(ch.isspace() for ch in code):
+                        continue
+                    if int(rc.get("member_count") or 0) <= 0:
+                        continue
+                    key = (ws_c.lower(), code)
+                    if key in self.rip_clusters_seen:
+                        continue
+                    self.rip_clusters_seen.add(key)
+                    from urllib.parse import quote as _quote
+                    _ws_q = _quote(ws_c.lower(), safe='')
+                    try:
+                        _members = _rip_case_mix_products(con, code, ws_c)
+                    except Exception:
+                        _members = []
+                    _upcs = sorted({
+                        str(m.get("upc") or "").lstrip("0")
+                        for m in _members
+                        if str(m.get("upc") or "").lstrip("0")
+                    })
+                    if _upcs and len(_upcs) <= 120:
+                        catalog_url = (f"/catalog?wholesaler={_ws_q}"
+                                       f"&upcs={_quote(','.join(_upcs), safe=',')}")
+                    else:
+                        catalog_url = (f"/catalog?wholesaler={_ws_q}"
+                                       f"&rip_code={_quote(code, safe='')}")
+                    self.rip_clusters_out.append({
+                        "rip_code": code, "wholesaler": ws_c,
+                        "label": f"{ws_c} RIP {code}",
+                        "member_count": int(rc.get("member_count") or 0),
+                        "description": rc.get("description"),
+                        "catalog_url": catalog_url,
+                    })
+            return out
+
+        return {"error": "unknown tool"}
+
+
+def _system_dynamic_blocks(page, page_path) -> list[str]:
+    """The per-request system text blocks appended after the static _SYSTEM (the
+    CORE RULE + SCREEN SCOPE + STANDALONE behaviour). Shared by both the raw-API
+    loop (as cache-controlled blocks) and the Agent SDK path (joined into the
+    single system_prompt string)."""
+    blocks = [
+        "CORE RULE — adapt to WHERE you are running (the SCREEN/STANDALONE block below says which):\n"
+        "(A) DOCKED beside a data grid (you are on a page screen): your primary job is to REFRESH THAT GRID. "
+        "For any show / find / filter / sort / 'with RIP' / 'on deal' / price-trend request, call show_on_screen "
+        "so the grid updates in place (a one-line confirmation in chat is enough). Use chat prose only for "
+        "genuinely conversational questions (why/how, totals & counts, one product's full breakdown, a "
+        "head-to-head comparison, a RIP tier explanation).\n"
+        "(B) STANDALONE chat page (no grid anywhere beside you): present the INFO & ANALYSIS in the chat FIRST "
+        "— call the data tools and show prose + compact tables + charts + product cards grounded in real rows — "
+        "and THEN add a link to open the relevant data grid. NEVER reply with only a grid link or a bare "
+        "one-liner here; the analysis is the answer, the grid link is a follow-up."
+    ]
+    if page:
+        scope = _PAGE_SCOPE.get(page)
+        if scope:
+            blocks.append(
+                f"SCREEN SCOPE — you are DOCKED beside the '{page}' data grid and are SCOPED TO IT ONLY. "
+                f"Help only with: {scope}. Stay on this screen — do NOT navigate away. Per the CORE RULE, for "
+                f"any show/find/filter/sort request REFRESH this grid by calling show_on_screen (even if it "
+                f"already shows similar data) so the buyer sees the updated result, with a one-line chat "
+                f"confirmation. If the user "
+                f"asks about something that belongs to a DIFFERENT screen (e.g. a general catalog search, "
+                f"orders, favorites) say in one line that it's handled on that other screen and offer to "
+                f"help within '{page}' instead — do not answer the off-screen request or switch pages. "
+                f"(You may still use price_details / rip_lookup / compare_distributors for detail on a "
+                f"product shown on THIS screen.)")
+        else:
+            blocks.append(
+                f"The user is on the '{page}' screen. Stay here and keep answers relevant to it; do not "
+                f"navigate away unless they explicitly ask.")
+    if not page_path:
+        blocks.append(
+            "STANDALONE ASSISTANT PAGE: the user is on the dedicated /celar "
+            "page with NO grid visible anywhere — not to the left, not on the "
+            "page, not on the screen. The chat IS the only view. "
+            "BANNED PHRASES (do NOT use any of these on this page): 'on the "
+            "left', 'to the left', 'on the page', 'on the screen', 'on the "
+            "side', 'in the grid', 'the catalog is filtered to', 'I've "
+            "filtered the page', 'showing X on Y'. They are LIES on this "
+            "page because no such surface exists. "
+            "For show-on-screen-style requests (find/show/list/cheapest/etc.) "
+            "you MUST: (1) call the relevant data tool (top_products, "
+            "find_deals, price_movers, deal_360, compare_distributors, "
+            "rip_lookup) to get real numbers; (2) call show_on_screen so the "
+            "user gets a hyperlink to the filtered Catalog page; (3) reply "
+            "with a concise PROSE summary of the picks. DO NOT hand-format the "
+            "products as a markdown table — the app AUTOMATICALLY renders the "
+            "returned products as an interactive table (clickable names that open "
+            "the product modal + a this->next pricing sparkline per row), so a "
+            "markdown table would just duplicate it. Just summarize the top picks "
+            "in words (e.g. 'Found N matches — the cheapest is X at $Y/cs; Z also "
+            "stands out') and let the table show the detail. Phrase as 'Found N "
+            "matches. Top picks:' or 'Here are the cheapest X:' — NEVER 'Showing "
+            "X on [anything]'. Surface the hyperlink as 'Open full list in "
+            "Catalog ->' at the end. End with one offer to help further. "
+            "SEMANTIC FILTERS on the data tools: top_products, price_movers and "
+            "find_deals now accept region= and varietal= (same vocabulary as "
+            "show_on_screen) and price_trend=increase|drop. For ANY geography or "
+            "grape/style query you MUST pass region=/varietal= (NOT match=, which "
+            "matches stray substrings like ABSOLUT CALIFORNIA). For 'prices going "
+            "up/down', pass price_trend, optionally with region/category, e.g. "
+            "'California wines going up' -> top_products(region=california, "
+            "price_trend=increase) or price_movers(region=california, "
+            "direction=increase). This returns the RIGHT products for the inline "
+            "table instead of unrelated spirits.")
+    return blocks
+
+
+def _compose_system_prompt(page, page_path) -> str:
+    """The full system prompt as ONE string for the Agent SDK path (the SDK auto-
+    caches a string system prompt; the raw-API path keeps the cache-controlled
+    block form)."""
+    return "\n\n".join([_SYSTEM, *_system_dynamic_blocks(page, page_path)])
+
+
+def _finalize_response(final_text, cap: "_Capture", *, question, page_path,
+                       model, total_in, total_out) -> dict:
+    """Post-model finalization shared by both paths: charts, deterministic
+    templates (RIP/Item/Combo/Time-Sensitive/Movers/Compare), specificity guard,
+    product enrichment, screen backstop, and the response contract. Runs purely
+    on captured data — no model dependency."""
+    charts = _extract_charts(final_text)
+    charts = _price_charts(cap.price_detail_result) + _timeline_charts(cap.timeline_result) + charts
+    answer = _strip_charts(final_text) or "Done."
+    if not page_path:
+        answer = _scrub_standalone(answer)
+        if cap.screen_out is not None and not cap.products_out and cap.screen_args is not None:
+            try:
+                cap.collect(_auto_table_products(cap.screen_args))
+            except Exception:
+                pass
+    _ql = question.lower()
+    _model_used_rip = isinstance(cap.rip_lookup_result, dict) and bool(cap.rip_lookup_result.get("rip_codes"))
+    _tmpl_fired = False
+    if _model_used_rip or any(k in _ql for k in ("rip", "rebate")):
+        summary_intent = any(p in _ql for p in (
+            "by distributor", "per distributor", "by wholesaler", "per wholesaler",
+            "every rip", "all rips", "all rip codes", "list rip", "list of rip",
+            "rip codes and", "rip number and number", "rip count", "case mix size",
+            "items per rip", "products per rip", "size per rip",
+        ))
+        dist_filter = None
+        for w in ("allied", "fedway", "opici"):
+            if w in _ql:
+                dist_filter = w
+                break
+        import logging as _logging
+        _rip_log = _logging.getLogger("assistant.rip_template")
+        if summary_intent:
+            try:
+                with get_duckdb() as _con:
+                    _rs = _t_rip_summary(_con, {"distributor": dist_filter})
+                _md = _format_rip_summary_md(_rs)
+                if _md:
+                    answer = _md
+                    _tmpl_fired = True
+                    _rip_log.info("RIP summary template fired (chars=%d)", len(_md))
+                else:
+                    _rip_log.info("RIP summary template produced empty output (dist=%s)", dist_filter)
+            except Exception:
+                _rip_log.exception("RIP summary template raised")
+        else:
+            try:
+                _rl = (cap.rip_lookup_result
+                       if (isinstance(cap.rip_lookup_result, dict) and cap.rip_lookup_result.get("rip_codes"))
+                       else None)
+                term = None
+                if _rl is None:
+                    term = (cap.screen_args or {}).get("q") if cap.screen_args else None
+                    if not term:
+                        m = re.search(r"\b(?:for|of|about|on)\s+(.+)$", question, re.I)
+                        term = (m.group(1) if m else "").strip()
+                        term = re.sub(r"\b(rip|rebate|details?|analysis|code|tiers?|mix|bottle|prices?)\b",
+                                      " ", term, flags=re.I).strip()
+                    if not term:
+                        term = re.sub(r"\b(show|me|products?|the|and|for|of|about|on|in|with|rip|rebate|mix|case|bottle|prices?|details?)\b",
+                                      " ", _ql).strip()
+                _rip_log.info("RIP template trigger: question=%r reused_model_lookup=%s term=%r",
+                              question, _rl is not None, term)
+                with get_duckdb() as _con:
+                    if _rl is None and term:
+                        _rl = _t_rip_lookup(_con, {"match": term})
+                    _md = _format_rip_full_md(_con, _rl) if _rl else ""
+                _codes = (_rl or {}).get("rip_codes") or []
+                _mp = (_rl or {}).get("matched_products") or []
+                if _md:
+                    answer = _md
+                    _tmpl_fired = True
+                    _rip_log.info("RIP template fired: reused=%s term=%r matched=%d codes=%d chars=%d",
+                                  _rl is cap.rip_lookup_result, term, len(_mp), len(_codes), len(_md))
+                else:
+                    _rip_log.warning("RIP template produced empty output: term=%r matched=%d codes=%d note=%r",
+                                     term, len(_mp), len(_codes), (_rl or {}).get("note"))
+            except Exception:
+                _rip_log.exception("RIP template raised for question=%r", question)
+
+    import logging as _logging2
+    _tlog = _logging2.getLogger("assistant.det_template")
+    if not _tmpl_fired:
+        try:
+            if isinstance(cap.compare_result, dict) and cap.compare_result.get("comparison"):
+                _md = _format_compare_md(cap.compare_result)
+                if _md:
+                    answer = _md
+                    _tmpl_fired = True
+                    _tlog.info("Compare template fired (chars=%d)", len(_md))
+            if not _tmpl_fired and isinstance(cap.item_result, dict) and not cap.item_result.get("error") and cap.item_result.get("product_name"):
+                _md = _format_item_md(cap.item_result)
+                if _md:
+                    answer = _md
+                    _tmpl_fired = True
+                    _tlog.info("Item template fired (chars=%d)", len(_md))
+            if not _tmpl_fired and isinstance(cap.combo_analyzer_result, dict) and cap.combo_analyzer_result.get("combos"):
+                _md = _format_combo_analyzer_md(cap.combo_analyzer_result)
+                if _md:
+                    answer = _md
+                    _tmpl_fired = True
+                    _tlog.info("Combo analyzer template fired (chars=%d)", len(_md))
+            if not _tmpl_fired and isinstance(cap.combo_result, list) and cap.combo_result:
+                _md = _format_combo_md(cap.combo_result)
+                if _md:
+                    answer = _md
+                    _tmpl_fired = True
+                    _tlog.info("Combo template fired (chars=%d)", len(_md))
+            if not _tmpl_fired and isinstance(cap.time_sensitive_result, list) and cap.time_sensitive_result:
+                _md = _format_time_sensitive_md(cap.time_sensitive_result)
+                if _md:
+                    answer = _md
+                    _tmpl_fired = True
+                    _tlog.info("Time-sensitive template fired (chars=%d)", len(_md))
+            if not _tmpl_fired and isinstance(cap.movers_result, tuple) and cap.movers_result[0]:
+                with get_duckdb() as _con:
+                    _md = _format_movers_md(_con, cap.movers_result[0], cap.movers_result[1])
+                if _md:
+                    answer = _md
+                    _tmpl_fired = True
+                    _tlog.info("Movers template fired (%s, chars=%d)", cap.movers_result[1], len(_md))
+        except Exception:
+            _tlog.exception("deterministic template raised for question=%r", question)
+
+    products_out = cap.products_out
+    if any(cap.prod_filtered) and not all(cap.prod_filtered):
+        _before = len(products_out)
+        products_out = [p for p, f in zip(products_out, cap.prod_filtered) if f]
+        _tlog.info("specificity guard: docked %d filtered products (dropped %d sweep rows)",
+                   len(products_out), _before - len(products_out))
+    products_final = products_out[:5000]
+    screen_out = cap.screen_out
+    if products_final:
+        try:
+            from backend.ai_catalog_query import _enrich_products_with_tiers
+            with get_duckdb() as _con:
+                _enrich_products_with_tiers(_con, products_final)
+        except Exception:
+            pass
+        try:
+            from backend.deal_compare import deal_compare
+            with get_duckdb() as _con:
+                deal_compare(_con, products_final, cap=80)
+        except Exception:
+            pass
+        if len(products_final) >= 3 and not _tmpl_fired:
+            try:
+                _an = _listing_analysis(products_final)
+                if _an:
+                    answer = _an + "\n\n" + (answer or "")
+            except Exception:
+                _tlog.exception("listing analysis raised for question=%r", question)
+        if len(products_final) >= 3 and screen_out is None:
+            upcs = sorted({
+                str(p.get("upc")).lstrip("0")
+                for p in products_final
+                if p.get("upc") and str(p.get("upc")).strip("0").strip()
+            })
+            if upcs:
+                upc_csv = ",".join(upcs)
+                screen_out = {
+                    "path": f"/catalog?upcs={upc_csv}",
+                    "label": f"these {len(products_final)} products in Catalog",
+                }
+    if screen_out is None and answer:
+        _ms = re.match(
+            r"^\s*showing\s+\*{0,2}(.+?)\*{0,2}"
+            r"(?:\s+(?:products?|deals?|sorted|on|in|from|by|time-?sensitive|that|with|priced)\b|[.,!]|$)",
+            answer, re.I)
+        if _ms:
+            _subj = _ms.group(1).strip().strip("*\"'").strip()
+            _subj = re.sub(r"^(?:new|the|some|more|all|a|an)\s+", "", _subj, flags=re.I).strip()
+            _low = _subj.lower()
+            _bad = any(w in _low for w in ("cheapest", "biggest", "these", "those",
+                                           "case mix", "rebate", "result", "discount", "deal"))
+            if 0 < len(_subj) <= 40 and not _bad:
+                from urllib.parse import urlencode
+                _grids = ("/catalog", "/new-items", "/time-sensitive", "/major-discounts",
+                          "/price-drops", "/price-increases", "/combos")
+                _base = page_path if page_path in _grids else "/catalog"
+                screen_out = {"path": _base + "?" + urlencode({"q": _subj}), "label": _subj}
+
+    return _json_safe({
+        "answer": answer,
+        "charts": charts,
+        "actions": cap.actions_out,
+        "products": products_final,
+        "rip_clusters": cap.rip_clusters_out,
+        "screen": screen_out,
+        "usage": {"input_tokens": total_in, "output_tokens": total_out,
+                  "model": model, "cost_usd": _cost_usd(model, total_in, total_out), "enabled": True},
+    })
+
+
+def _fast_path(question, history, user, page, page_path):
+    """Deterministic, no-model answers shared by ask() and ask_async(): empty
+    prompt, a bare UPC, and 'add the whole Case Mix'. Returns a response dict, or
+    None to fall through to the model. Keeps these cheap paths off the model (and
+    off the Agent SDK subprocess) entirely."""
     if not question:
         return {"answer": "Ask me anything about your catalog — pricing, deals, distributors, or say "
                           "‘add 2 cases of the cheapest prosecco to my cart’.",
@@ -5490,6 +5958,16 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                     "charts": [], "actions": [action], "products": products[:5000], "screen": None,
                     "usage": zero,
                 })
+    return None
+
+
+def ask(question: str, history: list | None = None, user: dict | None = None,
+        page: str | None = None, page_path: str | None = None,
+        page_query: str | None = None) -> dict:
+    question = (question or "").strip()
+    _fp = _fast_path(question, history, user, page, page_path)
+    if _fp is not None:
+        return _fp
 
     client = _client_or_none()
     if client is None:
@@ -5510,148 +5988,12 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
     # Cache the big static system block; append a small dynamic page hint so the
     # model prioritizes tools relevant to the screen the user is on.
     system_blocks = [{"type": "text", "text": _SYSTEM, "cache_control": {"type": "ephemeral"}}]
-    # CORE RULE — the defining behaviour difference between the two surfaces the
-    # assistant runs on. Everything else defers to this.
-    system_blocks.append({"type": "text", "text":
-        "CORE RULE — adapt to WHERE you are running (the SCREEN/STANDALONE block below says which):\n"
-        "(A) DOCKED beside a data grid (you are on a page screen): your primary job is to REFRESH THAT GRID. "
-        "For any show / find / filter / sort / 'with RIP' / 'on deal' / price-trend request, call show_on_screen "
-        "so the grid updates in place (a one-line confirmation in chat is enough). Use chat prose only for "
-        "genuinely conversational questions (why/how, totals & counts, one product's full breakdown, a "
-        "head-to-head comparison, a RIP tier explanation).\n"
-        "(B) STANDALONE chat page (no grid anywhere beside you): present the INFO & ANALYSIS in the chat FIRST "
-        "— call the data tools and show prose + compact tables + charts + product cards grounded in real rows — "
-        "and THEN add a link to open the relevant data grid. NEVER reply with only a grid link or a bare "
-        "one-liner here; the analysis is the answer, the grid link is a follow-up."})
-    if page:
-        scope = _PAGE_SCOPE.get(page)
-        if scope:
-            system_blocks.append({"type": "text", "text":
-                f"SCREEN SCOPE — you are DOCKED beside the '{page}' data grid and are SCOPED TO IT ONLY. "
-                f"Help only with: {scope}. Stay on this screen — do NOT navigate away. Per the CORE RULE, for "
-                f"any show/find/filter/sort request REFRESH this grid by calling show_on_screen (even if it "
-                f"already shows similar data) so the buyer sees the updated result, with a one-line chat "
-                f"confirmation. If the user "
-                f"asks about something that belongs to a DIFFERENT screen (e.g. a general catalog search, "
-                f"orders, favorites) say in one line that it's handled on that other screen and offer to "
-                f"help within '{page}' instead — do not answer the off-screen request or switch pages. "
-                f"(You may still use price_details / rip_lookup / compare_distributors for detail on a "
-                f"product shown on THIS screen.)"})
-        else:
-            system_blocks.append({"type": "text", "text":
-                f"The user is on the '{page}' screen. Stay here and keep answers relevant to it; do not "
-                f"navigate away unless they explicitly ask."})
-    if not page_path:
-        # Standalone Celar Assistant page (no grid on the side). The default
-        # "one-line confirmation" rule assumes the filtered grid is visible
-        # next to the chat — here it isn't, so the user gets a thin reply.
-        # Override: still call show_on_screen so a hyperlink is surfaced, but
-        # ALSO answer in prose with a real summary (top 3-5 items, counts,
-        # price range) so the chat is useful even before the user clicks
-        # through. Use the matching data tool first (top_products / find_deals
-        # / price_movers / etc.) to ground the summary in actual rows — never
-        # invent numbers.
-        system_blocks.append({"type": "text", "text":
-            "STANDALONE ASSISTANT PAGE: the user is on the dedicated /celar "
-            "page with NO grid visible anywhere — not to the left, not on the "
-            "page, not on the screen. The chat IS the only view. "
-            "BANNED PHRASES (do NOT use any of these on this page): 'on the "
-            "left', 'to the left', 'on the page', 'on the screen', 'on the "
-            "side', 'in the grid', 'the catalog is filtered to', 'I've "
-            "filtered the page', 'showing X on Y'. They are LIES on this "
-            "page because no such surface exists. "
-            "For show-on-screen-style requests (find/show/list/cheapest/etc.) "
-            "you MUST: (1) call the relevant data tool (top_products, "
-            "find_deals, price_movers, deal_360, compare_distributors, "
-            "rip_lookup) to get real numbers; (2) call show_on_screen so the "
-            "user gets a hyperlink to the filtered Catalog page; (3) reply "
-            "with a concise PROSE summary of the picks. DO NOT hand-format the "
-            "products as a markdown table — the app AUTOMATICALLY renders the "
-            "returned products as an interactive table (clickable names that open "
-            "the product modal + a this->next pricing sparkline per row), so a "
-            "markdown table would just duplicate it. Just summarize the top picks "
-            "in words (e.g. 'Found N matches — the cheapest is X at $Y/cs; Z also "
-            "stands out') and let the table show the detail. Phrase as 'Found N "
-            "matches. Top picks:' or 'Here are the cheapest X:' — NEVER 'Showing "
-            "X on [anything]'. Surface the hyperlink as 'Open full list in "
-            "Catalog ->' at the end. End with one offer to help further. "
-            "SEMANTIC FILTERS on the data tools: top_products, price_movers and "
-            "find_deals now accept region= and varietal= (same vocabulary as "
-            "show_on_screen) and price_trend=increase|drop. For ANY geography or "
-            "grape/style query you MUST pass region=/varietal= (NOT match=, which "
-            "matches stray substrings like ABSOLUT CALIFORNIA). For 'prices going "
-            "up/down', pass price_trend, optionally with region/category, e.g. "
-            "'California wines going up' -> top_products(region=california, "
-            "price_trend=increase) or price_movers(region=california, "
-            "direction=increase). This returns the RIGHT products for the inline "
-            "table instead of unrelated spirits."})
+    for _blk in _system_dynamic_blocks(page, page_path):
+        system_blocks.append({"type": "text", "text": _blk})
     messages = _history_messages(history) + [{"role": "user", "content": question}]
     total_in = total_out = 0
     final_text = ""
-    actions_out: list = []
-    products_out: list = []
-    prod_filtered: list = []   # parallel to products_out: came from a product-identified call?
-    seen_products: dict = {}   # dedup key -> index into products_out
-    price_detail_result: dict | None = None
-    timeline_result: dict | None = None   # last price_timeline result (for the deterministic line chart)
-    rip_lookup_result: dict | None = None  # last rip_lookup result the model used (for the deterministic RIP template)
-    # Tool results the model used this turn, for the other deterministic templates
-    # (Item / Combo / Time-Sensitive / Price Movers). Each is captured below as the
-    # model calls the backing tool, then rendered + substituted after the turn.
-    item_result: dict | None = None         # deal_360 / price_details
-    combo_result: list | None = None         # combo_deals
-    combo_analyzer_result: dict | None = None  # combo_analyzer
-    compare_result: dict | None = None         # compare_distributors (per-bottle template)
-    time_sensitive_result: list | None = None  # find_deals(time_sensitive|closeout)
-    movers_result: tuple | None = None       # (rows, direction) from price_movers
-    screen_out: dict | None = None
-    screen_args: dict | None = None   # last show_on_screen filters (for the standalone auto-table)
-    # RIP clusters touched by any rip_lookup call this turn. Each entry is
-    # {code, wholesaler, label, member_count}; the frontend renders one "Add
-    # Case Mix to Cart" button per cluster, which calls /api/cart/add-by-rip
-    # to resolve the full member list server-side and add it as ONE batch.
-    rip_clusters_out: list = []
-    rip_clusters_seen: set = set()
-
-    def _collect(items, filtered: bool = True):
-        # Accumulate any product dicts a tool surfaced so the UI can render them
-        # as actionable cards (Add to Cart / List / Favorite). Deduped.
-        # `filtered` records whether the producing tool call carried a
-        # product-identifying argument (q / upc / product / brand / rip_code);
-        # an unfiltered sweep is dropped at finalize whenever a filtered call
-        # also produced products — the SPECIFICITY GUARD that stops a broad
-        # first call (2,062 products) from drowning a brand-specific answer.
-        for p in (items or []):
-            if not isinstance(p, dict) or not p.get("product_name"):
-                continue
-            key = (p.get("wholesaler"), str(p.get("upc") or ""), p.get("product_name"), p.get("unit_volume"))
-            if key in seen_products:
-                # A product re-surfaced by a FILTERED call counts as filtered,
-                # so the guard can't drop it just because a sweep saw it first.
-                if filtered:
-                    prod_filtered[seen_products[key]] = True
-                continue
-            seen_products[key] = len(products_out)
-            products_out.append({k: p.get(k) for k in
-                                 ("product_name", "wholesaler", "upc", "abg_sku", "unit_volume", "unit_qty",
-                                  "vintage", "effective_case_price", "frontline_case_price")})
-            prod_filtered.append(filtered)
-
-    _FILTERISH = ("q", "query", "search", "product", "upc", "brand",
-                  "rip_code", "combo_code", "category", "type", "varietal", "region")
-
-    def _is_filtered_call(inp) -> bool:
-        """True when the tool call names WHAT to look at (a product, brand,
-        barcode, code, category...). Sort/limit/distributor-only calls are
-        unfiltered sweeps."""
-        if not isinstance(inp, dict):
-            return False
-        for k, v in inp.items():
-            kl = str(k).lower()
-            if any(f in kl for f in _FILTERISH) and "distributor" not in kl \
-                    and str(v or "").strip():
-                return True
-        return False
+    cap = _Capture(ctx, page_path, page_query)
 
     with get_duckdb() as con:
         for _ in range(_MAX_TURNS):
@@ -5679,181 +6021,7 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
                 for b in resp.content:
                     if getattr(b, "type", "") != "tool_use":
                         continue
-                    # Normalise any distributor name the model passes ("Allied
-                    # Beverage" -> "allied") so every tool filters on the slug the
-                    # catalog stores, not a label that matches nothing.
-                    if isinstance(getattr(b, "input", None), dict):
-                        for _dk in ("distributor", "from_distributor", "to_distributor"):
-                            _dv = b.input.get(_dk)
-                            if _dv:
-                                _slug = _resolve_distributor(_dv)
-                                if _slug:
-                                    b.input[_dk] = _slug
-                        if isinstance(b.input.get("distributors"), list):
-                            b.input["distributors"] = [
-                                (_resolve_distributor(d) or d) for d in b.input["distributors"]]
-                    if b.name == "show_on_screen":
-                        si = b.input or {}
-                        screen_args = si
-                        sc = _build_screen(si, page_path, page_query)
-                        # If the request targets a specific UPC, verify it exists
-                        # so we can say "showing it" vs "product not found" (and
-                        # not navigate to an empty screen on a bad barcode).
-                        q = (si.get("q") or "").strip()
-                        compact = re.sub(r"[\s\-]", "", q)
-                        if compact.isdigit() and len(compact) >= 6:
-                            try:
-                                hit = _resolve_products(con, {}, q, "first", 1)
-                            except Exception:
-                                hit = []
-                            if hit:
-                                screen_out = sc
-                                out = {"ok": True, "found": True, "path": sc["path"],
-                                       "product": hit[0].get("product_name")}
-                            else:
-                                out = {"ok": False, "found": False,
-                                       "message": f"No product found for UPC {q}."}
-                        else:
-                            screen_out = sc
-                            out = {"ok": True, "path": sc["path"]}
-                    elif b.name == "perform_action":
-                        try:
-                            out = _do_action(con, b.input or {}, actions_out)
-                            if actions_out:   # surface the acted-on products as cards
-                                _collect(actions_out[-1].get("products"))
-                        except Exception as e:
-                            out = {"error": f"{type(e).__name__}"}
-                    elif b.name in _CTX_TOOLS:
-                        try:
-                            out = _CTX_TOOLS[b.name][0](con, b.input or {}, ctx)
-                        except Exception as e:
-                            out = {"error": f"{type(e).__name__}"}
-                        if isinstance(out, list):   # find_deals / price_movers -> cards
-                            _collect(out, filtered=_is_filtered_call(b.input))
-                        # Capture for the deterministic templates (rendered after
-                        # the turn): time-sensitive deals and price movers.
-                        if (b.name == "find_deals" and isinstance(out, list) and out
-                                and str((b.input or {}).get("kind") or "").lower()
-                                    in ("time_sensitive", "time-sensitive", "ending", "expiring",
-                                        "clearance", "closeout")):
-                            time_sensitive_result = out
-                        if b.name == "price_movers" and isinstance(out, list):
-                            _dir = (b.input or {}).get("direction") or (b.input or {}).get("price_trend") or "drop"
-                            _dir = "increase" if str(_dir).lower() in ("increase", "up", "rising", "rise") else "drop"
-                            movers_result = (out, _dir)
-                    elif b.name in _DATA_TOOLS:
-                        try:
-                            out = _DATA_TOOLS[b.name][0](con, b.input or {})
-                        except Exception as e:
-                            out = {"error": f"{type(e).__name__}"}
-                        # top_products / price_history surface concrete products.
-                        if isinstance(out, list):
-                            _collect(out, filtered=_is_filtered_call(b.input))
-                        elif isinstance(out, dict) and out.get("product") and b.name != "price_timeline":
-                            _collect([{**out, "product_name": out.get("product")}])
-                        # compare_distributors -> each distributor row as a card;
-                        # find_substitute -> each alternative as a card.
-                        if isinstance(out, dict) and isinstance(out.get("comparison"), list):
-                            _collect(out["comparison"])
-                            if b.name == "compare_distributors" and out.get("comparison"):
-                                compare_result = out   # deterministic template below
-                        if isinstance(out, dict) and isinstance(out.get("alternatives"), list):
-                            _collect(out["alternatives"])
-                        if isinstance(out, dict) and isinstance(out.get("basket"), list):
-                            _collect(out["basket"])
-                        if b.name in ("price_details", "deal_360") and isinstance(out, dict) and not out.get("error"):
-                            price_detail_result = out
-                            # deal_360 is richer (months/combo/ts) — prefer it for
-                            # the Item template; a bare price_details still renders.
-                            if item_result is None or b.name == "deal_360":
-                                item_result = out
-                            _collect([out])   # also show the product as a card
-                        if b.name == "combo_deals" and isinstance(out, list) and out:
-                            combo_result = out
-                        if b.name == "combo_analyzer" and isinstance(out, dict) and (out.get("combos")):
-                            combo_analyzer_result = out
-                        if b.name == "price_timeline" and isinstance(out, dict) and not out.get("error"):
-                            timeline_result = out   # deterministic line chart attached below
-                        # RIP clusters: surface one entry per (wholesaler, code)
-                        # so the frontend can render two action buttons per
-                        # cluster — "Add Case Mix to Cart" and a deep link
-                        # that opens the same cluster in the Catalog page.
-                        if (b.name == "rip_lookup" and isinstance(out, dict)
-                                and not out.get("error")):
-                            # Keep the richest rip_lookup result the model used this
-                            # turn so the deterministic RIP template can render from
-                            # the EXACT data the model saw — no fragile re-extraction
-                            # of a search term from the question (which silently
-                            # produced empty output on combo/follow-up phrasings and
-                            # let the model's free-form table stand). Prefer a result
-                            # that actually carries rip_codes.
-                            if (rip_lookup_result is None
-                                    or (out.get("rip_codes") and not rip_lookup_result.get("rip_codes"))):
-                                rip_lookup_result = out
-                            for rc in out.get("rip_codes") or []:
-                                code = (rc.get("rip_code") or "").strip()
-                                ws_c = (rc.get("wholesaler") or "").strip()
-                                if not code or not ws_c:
-                                    continue
-                                # Skip malformed multi-code rows: some source
-                                # RIP sheets jam two codes into one cell
-                                # ("10209 50017"), which never resolves
-                                # against the canonical rip_code column and
-                                # produces empty Add-to-Cart / Open-in-Catalog
-                                # results. The legitimate single-code clusters
-                                # (10209, 50017) appear as their own rows.
-                                if any(ch.isspace() for ch in code):
-                                    continue
-                                # Skip clusters with zero members — the buttons
-                                # would resolve to empty either way and just
-                                # waste the user's attention.
-                                if int(rc.get("member_count") or 0) <= 0:
-                                    continue
-                                key = (ws_c.lower(), code)
-                                if key in rip_clusters_seen:
-                                    continue
-                                rip_clusters_seen.add(key)
-                                # Deep link PINS to the cluster's exact member
-                                # UPCs (?upcs=<csv> + wholesaler), so the grid
-                                # shows precisely the Case Mix the chat lists —
-                                # NOT a rip_code+group_by_rip filter, which fans
-                                # a UPC out across every code it carries and could
-                                # land the buyer on a DIFFERENT (e.g. combo/stack)
-                                # cluster than the button promised. Bounded at 120
-                                # UPCs (URL stays < ~2KB); a larger cluster falls
-                                # back to the exact-code filter WITHOUT group_by_rip
-                                # so the fan-out still can't relabel rows.
-                                from urllib.parse import quote as _quote
-                                _ws_q = _quote(ws_c.lower(), safe='')
-                                try:
-                                    _members = _rip_case_mix_products(con, code, ws_c)
-                                except Exception:
-                                    _members = []
-                                _upcs = sorted({
-                                    str(m.get("upc") or "").lstrip("0")
-                                    for m in _members
-                                    if str(m.get("upc") or "").lstrip("0")
-                                })
-                                if _upcs and len(_upcs) <= 120:
-                                    catalog_url = (
-                                        f"/catalog?wholesaler={_ws_q}"
-                                        f"&upcs={_quote(','.join(_upcs), safe=',')}"
-                                    )
-                                else:
-                                    catalog_url = (
-                                        f"/catalog?wholesaler={_ws_q}"
-                                        f"&rip_code={_quote(code, safe='')}"
-                                    )
-                                rip_clusters_out.append({
-                                    "rip_code": code,
-                                    "wholesaler": ws_c,
-                                    "label": f"{ws_c} RIP {code}",
-                                    "member_count": int(rc.get("member_count") or 0),
-                                    "description": rc.get("description"),
-                                    "catalog_url": catalog_url,
-                                })
-                    else:
-                        out = {"error": "unknown tool"}
+                    out = cap.run_tool(con, b.name, b.input)
                     results.append({"type": "tool_result", "tool_use_id": b.id,
                                     "content": json.dumps(out, default=str)[:6000]})
                 messages.append({"role": "user", "content": results})
@@ -5862,282 +6030,45 @@ def ask(question: str, history: list | None = None, user: dict | None = None,
             final_text = "".join(getattr(b, "text", "") for b in resp.content if getattr(b, "type", "") == "text")
             break
 
-    charts = _extract_charts(final_text)
-    # Deterministically attach the alcohol-retail price visuals when a price
-    # breakdown was fetched, so they always appear (not model-dependent).
-    charts = _price_charts(price_detail_result) + _timeline_charts(timeline_result) + charts
-    answer = _strip_charts(final_text) or "Done."
-    if not page_path:
-        # Standalone page: no grid exists, so strip any "on the left/screen/page"
-        # phrasing the model emitted regardless of the prompt instruction.
-        answer = _scrub_standalone(answer)
-        # AUTO-TABLE: on the standalone page the model often just drives a screen
-        # (confirmation + link) and forgets to fetch products, so the user has to
-        # ask "show in table". If it drove a catalog-style screen but surfaced no
-        # products, populate the inline table deterministically from the SAME
-        # filters the link uses, so the table always appears without being asked.
-        if screen_out is not None and not products_out and screen_args is not None:
-            try:
-                _collect(_auto_table_products(screen_args))   # deduped into products_out
-            except Exception:
-                pass  # never fail the answer over the auto-table
-        # (Standalone-only RIP fallback removed — replaced by the unconditional
-        # RIP template below, which fires for any RIP question regardless of
-        # mode so the layout is identical on Haiku / Sonnet / Opus.)
-    # RIP TEMPLATE — for any rebate-related question, REPLACE the model's text
-    # with the deterministic rich template (product header → tier table with
-    # case+bottle columns → "At N cases" effective summary → full Case Mix
-    # table). User rule: "make this as a fixed template; show irrespective of
-    # model". The model's text is dropped because Haiku / Sonnet / Opus all
-    # vary in layout and accuracy. The frontend's per-cluster Add-to-Cart
-    # buttons (rip_clusters) keep working since they read structured fields,
-    # not the answer text.
-    _ql = question.lower()
-    # Fire the deterministic RIP template when the question is about rebates OR
-    # the model actually called rip_lookup this turn (covers combo/stack and
-    # follow-up phrasings like "explain the combo code" that never contain the
-    # word "rip" but still resolved a Case Mix the model tabulated free-form).
-    _model_used_rip = isinstance(rip_lookup_result, dict) and bool(rip_lookup_result.get("rip_codes"))
-    _tmpl_fired = False   # set once any deterministic template replaces the answer
-    if _model_used_rip or any(k in _ql for k in ("rip", "rebate")):
-        # SUMMARY intent: "by distributor show rip codes and case-mix sizes",
-        # "how many products per rip", "list every rip per distributor". The
-        # rollup template lists every (wholesaler, rip_code) with its SKU
-        # count instead of focusing on one focal product.
-        summary_intent = any(p in _ql for p in (
-            "by distributor", "per distributor", "by wholesaler", "per wholesaler",
-            "every rip", "all rips", "all rip codes", "list rip", "list of rip",
-            "rip codes and", "rip number and number", "rip count", "case mix size",
-            "items per rip", "products per rip", "size per rip",
-        ))
-        # Optional one-distributor filter the model may have typed in words.
-        dist_filter = None
-        for w in ("allied", "fedway", "opici"):
-            if w in _ql:
-                dist_filter = w
-                break
-        import logging as _logging
-        _rip_log = _logging.getLogger("assistant.rip_template")
-        if summary_intent:
-            try:
-                with get_duckdb() as _con:
-                    _rs = _t_rip_summary(_con, {"distributor": dist_filter})
-                _md = _format_rip_summary_md(_rs)
-                if _md:
-                    answer = _md
-                    _tmpl_fired = True
-                    _rip_log.info("RIP summary template fired (chars=%d)", len(_md))
-                else:
-                    _rip_log.info("RIP summary template produced empty output (dist=%s)", dist_filter)
-            except Exception:
-                _rip_log.exception("RIP summary template raised")
-        else:
-            try:
-                # PREFER the rip_lookup result the model actually used this turn:
-                # it already resolved the focal product + codes from the model's own
-                # (smarter) interpretation of the question. Rendering from it makes
-                # the template fire reliably — the old path RE-EXTRACTED a term from
-                # the raw question and re-ran rip_lookup, which silently produced
-                # nothing on combo/follow-up phrasings and let the model's free-form
-                # table stand. Only re-extract + re-lookup when the model did NOT
-                # call rip_lookup this turn.
-                _rl = (rip_lookup_result
-                       if (isinstance(rip_lookup_result, dict) and rip_lookup_result.get("rip_codes"))
-                       else None)
-                term = None
-                if _rl is None:
-                    term = (screen_args or {}).get("q") if screen_args else None
-                    if not term:
-                        m = re.search(r"\b(?:for|of|about|on)\s+(.+)$", question, re.I)
-                        term = (m.group(1) if m else "").strip()
-                        term = re.sub(r"\b(rip|rebate|details?|analysis|code|tiers?|mix|bottle|prices?)\b",
-                                      " ", term, flags=re.I).strip()
-                    if not term:
-                        # Last-ditch: strip stop words from the whole question.
-                        term = re.sub(r"\b(show|me|products?|the|and|for|of|about|on|in|with|rip|rebate|mix|case|bottle|prices?|details?)\b",
-                                      " ", _ql).strip()
-                _rip_log.info("RIP template trigger: question=%r reused_model_lookup=%s term=%r",
-                              question, _rl is not None, term)
-                with get_duckdb() as _con:
-                    if _rl is None and term:
-                        _rl = _t_rip_lookup(_con, {"match": term})
-                    _md = _format_rip_full_md(_con, _rl) if _rl else ""
-                _codes = (_rl or {}).get("rip_codes") or []
-                _mp = (_rl or {}).get("matched_products") or []
-                if _md:
-                    answer = _md
-                    _tmpl_fired = True
-                    _rip_log.info("RIP template fired: reused=%s term=%r matched=%d codes=%d chars=%d",
-                                  _rl is rip_lookup_result, term, len(_mp), len(_codes), len(_md))
-                else:
-                    _rip_log.warning("RIP template produced empty output: term=%r matched=%d codes=%d note=%r",
-                                     term, len(_mp), len(_codes), (_rl or {}).get("note"))
-            except Exception:
-                _rip_log.exception("RIP template raised for question=%r", question)
+    return _finalize_response(final_text, cap, question=question, page_path=page_path,
+                              model=model, total_in=total_in, total_out=total_out)
 
-    # OTHER deterministic templates — Item / Combo / Time-Sensitive / Price
-    # Movers. Each renders from the tool result the model used this turn and
-    # REPLACES the model's free-form text, exactly like RIP. Precedence (only one
-    # fires): RIP (above, intent-gated) > Item > Combo > Time-Sensitive > Movers.
-    # If a template raises or yields nothing, the model's own text stands and the
-    # prompt's backstop instructions keep that answer on-format.
-    if not _tmpl_fired:
-        import logging as _logging2
-        _tlog = _logging2.getLogger("assistant.det_template")
-        try:
-            # COMPARE outranks ITEM: when the model fetched a cross-distributor
-            # comparison, that's the question's shape — the per-bottle table +
-            # computed verdict must stand (the model blended a 6-pack case
-            # price against a 12-pack's and called the wrong winner).
-            if isinstance(compare_result, dict) and compare_result.get("comparison"):
-                _md = _format_compare_md(compare_result)
-                if _md:
-                    answer = _md
-                    _tmpl_fired = True
-                    _tlog.info("Compare template fired (chars=%d)", len(_md))
-            if not _tmpl_fired and isinstance(item_result, dict) and not item_result.get("error") and item_result.get("product_name"):
-                _md = _format_item_md(item_result)
-                if _md:
-                    answer = _md
-                    _tmpl_fired = True
-                    _tlog.info("Item template fired (chars=%d)", len(_md))
-            if not _tmpl_fired and isinstance(combo_analyzer_result, dict) and combo_analyzer_result.get("combos"):
-                _md = _format_combo_analyzer_md(combo_analyzer_result)
-                if _md:
-                    answer = _md
-                    _tmpl_fired = True
-                    _tlog.info("Combo analyzer template fired (chars=%d)", len(_md))
-            if not _tmpl_fired and isinstance(combo_result, list) and combo_result:
-                _md = _format_combo_md(combo_result)
-                if _md:
-                    answer = _md
-                    _tmpl_fired = True
-                    _tlog.info("Combo template fired (chars=%d)", len(_md))
-            if not _tmpl_fired and isinstance(time_sensitive_result, list) and time_sensitive_result:
-                _md = _format_time_sensitive_md(time_sensitive_result)
-                if _md:
-                    answer = _md
-                    _tmpl_fired = True
-                    _tlog.info("Time-sensitive template fired (chars=%d)", len(_md))
-            if not _tmpl_fired and isinstance(movers_result, tuple) and movers_result[0]:
-                with get_duckdb() as _con:
-                    _md = _format_movers_md(_con, movers_result[0], movers_result[1])
-                if _md:
-                    answer = _md
-                    _tmpl_fired = True
-                    _tlog.info("Movers template fired (%s, chars=%d)", movers_result[1], len(_md))
-        except Exception:
-            _tlog.exception("deterministic template raised for question=%r", question)
-    # Multi-product answers get enriched with tier ladders so the frontend can
-    # render a side-by-side comparison table, and a Catalog deep-link is built by
-    # exact UPCs so "Open in Catalog ->" lands on the same set the chat shows.
-    # DATA-ANALYSIS tool: surface the FULL set the tools returned (no 12/24-card
-    # cap) so 'list/show all X' is complete. The only ceiling is a browser
-    # safety backstop (5000) matching the per-tool cap, so a chat bubble can't be
-    # asked to render tens of thousands of rows and freeze the tab.
-    # SPECIFICITY GUARD (code-enforced, never prompt-dependent): when this turn
-    # produced products from BOTH a product-identified call and an unfiltered
-    # sweep (no q/upc/product/brand arg — e.g. the model exploring "everything
-    # with a price gap" before answering a Casal Garcia question), dock ONLY
-    # the filtered products. The sweep's 2,000-row union otherwise drowns the
-    # grid and the analyst banner in rows unrelated to the question.
-    if any(prod_filtered) and not all(prod_filtered):
-        _before = len(products_out)
-        products_out = [p for p, f in zip(products_out, prod_filtered) if f]
-        _tlog.info("specificity guard: docked %d filtered products (dropped %d sweep rows)",
-                   len(products_out), _before - len(products_out))
-    products_final = products_out[:5000]
-    if products_final:
-        # Enrich EVERY surfaced product with its discount/RIP tiers + next-month
-        # tiers so any tabular product view renders the rich interactive format
-        # (clickable name -> modal + this->next pricing sparkline), not just the
-        # 3+ comparison table.
-        try:
-            from backend.ai_catalog_query import _enrich_products_with_tiers
-            with get_duckdb() as _con:
-                _enrich_products_with_tiers(_con, products_final)
-        except Exception:
-            pass  # never fail the answer over enrichment
-        # PERVASIVE deal-radar: attach month-over-month RIP / case-discount / combo
-        # change + best-time-to-buy to EVERY product result (capped for perf), via
-        # the central engine so chat numbers match the catalog/cart everywhere.
-        try:
-            from backend.deal_compare import deal_compare
-            with get_duckdb() as _con:
-                deal_compare(_con, products_final, cap=80)
-        except Exception:
-            pass  # never fail the answer over enrichment
-        # Lead the grid with an analyst read (count, distributor split, price
-        # range, cheapest pick, discount coverage). Only for plain product
-        # listings (3+ rows) where no richer deterministic template already
-        # owns the answer, so we add insight without clobbering Item / Movers /
-        # Combo / Time-Sensitive templates.
-        if len(products_final) >= 3 and not _tmpl_fired:
-            try:
-                _an = _listing_analysis(products_final)
-                if _an:
-                    answer = _an + "\n\n" + (answer or "")
-            except Exception:
-                _tlog.exception("listing analysis raised for question=%r", question)
-        if len(products_final) >= 3 and screen_out is None:
-            # Normalise UPCs and drop blanks/zeros — a product missing a UPC
-            # would otherwise put a stray empty string in the comma-separated
-            # list and the catalog filter would think the user wanted an
-            # empty UPC. Sort + dedupe so the link is deterministic.
-            upcs = sorted({
-                str(p.get("upc")).lstrip("0")
-                for p in products_final
-                if p.get("upc") and str(p.get("upc")).strip("0").strip()
-            })
-            if upcs:
-                upc_csv = ",".join(upcs)
-                screen_out = {
-                    "path": f"/catalog?upcs={upc_csv}",
-                    "label": f"these {len(products_final)} products in Catalog",
-                }
-    # DETERMINISTIC BACKSTOP for the docked grid. Haiku sometimes CLAIMS it
-    # showed a product ("Showing Glenfiddich on the catalog.") but forgets to
-    # call show_on_screen, so no screen is returned and the grid stays frozen on
-    # the previous query. When the answer asserts it showed something on the
-    # catalog but we have no screen, synthesise one from the named subject so the
-    # grid actually changes. Guarded to a CONCISE subject (a product/brand), not
-    # a descriptive phrase, to avoid turning 'the cheapest 5 wines' into a search.
-    if screen_out is None and answer:
-        # The model (esp. Haiku) often CLAIMS it showed something — 'Showing
-        # Glenfiddich products on the catalog', 'Showing new vodka on the page',
-        # 'Showing bourbon time-sensitive deals on the screen' — but forgets to
-        # call show_on_screen, so the grid stays frozen on the prior query.
-        # Capture the subject (stop at the first filler word) and synthesise a
-        # screen pinned to the CURRENT grid page so it actually re-filters.
-        _ms = re.match(
-            r"^\s*showing\s+\*{0,2}(.+?)\*{0,2}"
-            r"(?:\s+(?:products?|deals?|sorted|on|in|from|by|time-?sensitive|that|with|priced)\b|[.,!]|$)",
-            answer, re.I)
-        if _ms:
-            _subj = _ms.group(1).strip().strip("*\"'").strip()
-            # Drop leading filler so 'new vodka' -> 'vodka', 'the macallan' -> 'macallan'.
-            _subj = re.sub(r"^(?:new|the|some|more|all|a|an)\s+", "", _subj, flags=re.I).strip()
-            _low = _subj.lower()
-            # Skip DESCRIPTIVE phrases that wouldn't make a sane free-text search.
-            _bad = any(w in _low for w in ("cheapest", "biggest", "these", "those",
-                                           "case mix", "rebate", "result", "discount", "deal"))
-            if 0 < len(_subj) <= 40 and not _bad:
-                from urllib.parse import urlencode
-                _grids = ("/catalog", "/new-items", "/time-sensitive", "/major-discounts",
-                          "/price-drops", "/price-increases", "/combos")
-                _base = page_path if page_path in _grids else "/catalog"
-                screen_out = {"path": _base + "?" + urlencode({"q": _subj}), "label": _subj}
 
-    return _json_safe({
-        "answer": answer,
-        "charts": charts,
-        "actions": actions_out,
-        "products": products_final,
-        "rip_clusters": rip_clusters_out,
-        "screen": screen_out,
-        "usage": {"input_tokens": total_in, "output_tokens": total_out,
-                  "model": model, "cost_usd": _cost_usd(model, total_in, total_out), "enabled": True},
-    })
+async def ask_async(question: str, history: list | None = None, user: dict | None = None,
+                    page: str | None = None, page_path: str | None = None,
+                    page_query: str | None = None) -> dict:
+    """Agent SDK path (flag-gated). Same contract as ask(): fast-paths first, then
+    drive the agent loop via claude-agent-sdk over the in-process celr MCP tools,
+    then run the SAME _finalize_response on the captured state. Falls back to a
+    deterministic answer when the LLM is unavailable."""
+    question = (question or "").strip()
+    _fp = _fast_path(question, history, user, page, page_path)
+    if _fp is not None:
+        return _fp
+    if not enabled():
+        return _fallback(question)
+
+    import asyncio
+    import logging
+    from backend import agent_runtime
+    from backend.llm_client import choose_model
+    ctx = {"user_id": (user or {}).get("id")}
+    model = choose_model(question, standalone=(not page_path))
+    cap = _Capture(ctx, page_path, page_query)
+    try:
+        res = await agent_runtime.run_agent_assistant(
+            question, history, cap, page=page, page_path=page_path,
+            model=model, max_turns=_MAX_TURNS)
+    except Exception as e:
+        # The Agent SDK spawns a CLI subprocess; if that fails for ANY reason
+        # (CLI missing, spawn error, transport drop), degrade to the proven
+        # raw-API loop rather than a thin offline answer. ask() reruns the
+        # fast-paths (cheap) and answers via the Messages API.
+        logging.getLogger("assistant.agent").warning(
+            "Agent SDK path failed (%s); falling back to raw-API loop", type(e).__name__)
+        return await asyncio.to_thread(ask, question, history, user, page, page_path, page_query)
+    return _finalize_response(res.text, cap, question=question, page_path=page_path,
+                              model=model, total_in=res.input_tokens, total_out=res.output_tokens)
 
 
 def _json_safe(v):

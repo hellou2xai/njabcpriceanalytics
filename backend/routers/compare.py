@@ -4284,12 +4284,25 @@ def edition_comparison(con, wholesaler: str, older: str = "", newer: str = "",
     m = (match or "").strip().lower()
     digits = re.sub(r"\D", "", m)
     is_upc = len(digits) >= 8
+    _m_tokens = m.split() if m and not is_upc else []
+
+    def _tok_in_name(tok: str, name: str) -> bool:
+        """True if any word in name is a prefix of tok or tok is a prefix of
+        any word in name.  Handles 'jamaican' matching 'jamaica', 'reserve'
+        matching 'reserve', etc. without requiring an exact substring hit."""
+        for w in name.split():
+            if w.startswith(tok) or tok.startswith(w):
+                return True
+        return False
 
     def matches(rec):
         if not m:
             return True
-        return (rec.get("upc_norm") == digits.lstrip("0")) if is_upc \
-            else (m in (rec.get("product_name") or "").lower())
+        if is_upc:
+            return rec.get("upc_norm") == digits.lstrip("0")
+        name = (rec.get("product_name") or "").lower()
+        # All tokens must appear (prefix-match logic so 'jamaican' hits 'jamaica').
+        return all(_tok_in_name(t, name) for t in _m_tokens)
 
     rows = []
     summary = {"rose": 0, "fell": 0, "unchanged": 0, "added": 0, "removed": 0,

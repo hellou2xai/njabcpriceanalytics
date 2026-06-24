@@ -18,6 +18,7 @@ from datetime import date as _date
 from backend.db import get_duckdb
 from backend.pg import get_pg
 from backend.pricing_cache import get_pricing_path
+from backend import llm_client
 
 # Bump this when the prompt changes; the generator regenerates anything not yet
 # on the current version.
@@ -31,14 +32,9 @@ _lock = threading.Lock()
 _run_token: str | None = None
 
 
+# Transitional shim: backend/main.py uses this for the admin health check.
 def _client_or_none():
-    if not os.getenv("ANTHROPIC_API_KEY"):
-        return None
-    try:
-        import anthropic
-        return anthropic.Anthropic()
-    except Exception:
-        return None
+    return llm_client.single_client()
 
 
 _SYSTEM = (
@@ -258,19 +254,16 @@ def _prompt(row: dict) -> str:
     return " ".join(bits)
 
 
-def _generate_one(client, row: dict) -> str | None:
+def _generate_one(row: dict) -> str | None:
     try:
-        msg = client.messages.create(
-            model=_MODEL,
+        comp = llm_client.complete(
+            model=llm_client.BLURB_MODEL,
             max_tokens=160,
             system=_SYSTEM,
             messages=[{"role": "user", "content": _prompt(row)}],
+            cache=True,
         )
-        parts = []
-        for block in msg.content or []:
-            if getattr(block, "type", None) == "text":
-                parts.append(block.text)
-        text = " ".join(parts).strip()
+        text = (comp.text or "").strip()
         # Defensive: strip any dash characters the model slipped in.
         text = text.replace(chr(0x2014), ", ").replace(chr(0x2013), ", ")
         return text or None
@@ -302,14 +295,13 @@ def _insert(rows: list[tuple[str, str, str, str]]) -> int:
 
 def generate_blurbs_batch(limit: int | None = None) -> int:
     """Generate up to `limit` blurbs for products that need one. Returns count written."""
-    client = _client_or_none()
-    if client is None:
+    if not llm_client.enabled():
         return 0
     cap = limit if limit is not None else _MAX_PER_RUN
     cands = _candidates(limit=cap)
     written: list[tuple[str, str, str, str]] = []
     for row in cands:
-        blurb = _generate_one(client, row)
+        blurb = _generate_one(row)
         if not blurb:
             continue
         written.append((str(row["wholesaler"]), str(row["upc"]), str(row["edition"]), blurb))

@@ -14,11 +14,11 @@ from __future__ import annotations
 import os
 import threading
 
+from backend import llm_client
+
 _MODEL = os.getenv("CELR_SEARCH_AI_MODEL", "claude-sonnet-4-6")
 _cache: dict[str, str | None] = {}
 _lock = threading.Lock()
-_client = None
-_client_init = False
 
 _SYSTEM = (
     "You translate liquor-store search shorthand into the real product/brand terms "
@@ -35,24 +35,8 @@ _SYSTEM = (
 )
 
 
-def _client_or_none():
-    global _client, _client_init
-    if _client_init:
-        return _client
-    _client_init = True
-    if not os.getenv("ANTHROPIC_API_KEY"):
-        _client = None
-        return None
-    try:
-        import anthropic
-        _client = anthropic.Anthropic()
-    except Exception:
-        _client = None
-    return _client
-
-
 def enabled() -> bool:
-    return _client_or_none() is not None
+    return llm_client.enabled()
 
 
 def ai_expand_query(q: str) -> str | None:
@@ -65,22 +49,20 @@ def ai_expand_query(q: str) -> str | None:
     with _lock:
         if key in _cache:
             return _cache[key]
-    client = _client_or_none()
-    if client is None:
+    if not enabled():
         with _lock:
             _cache[key] = None
         return None
     result: str | None = None
     try:
-        msg = client.messages.create(
-            model=_MODEL,
+        comp = llm_client.complete(
+            model=llm_client.SEARCH_MODEL,
             max_tokens=40,
             system=_SYSTEM,
             messages=[{"role": "user", "content": q}],
+            cache=True,
         )
-        text = "".join(
-            getattr(b, "text", "") for b in msg.content if getattr(b, "type", "") == "text"
-        ).strip()
+        text = (comp.text or "").strip()
         if text and text.lower() != key:
             result = text
     except Exception:

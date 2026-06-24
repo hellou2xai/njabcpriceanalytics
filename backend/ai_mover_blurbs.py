@@ -14,6 +14,7 @@ import threading
 from backend.db import get_duckdb
 from backend.pg import get_pg
 from backend.pricing_cache import get_pricing_path
+from backend import llm_client
 
 _BLURB_VERSION = "v1"
 _MODEL = os.getenv("CELR_BLURB_AI_MODEL", os.getenv("CELR_SEARCH_AI_MODEL", "claude-sonnet-4-6"))
@@ -22,16 +23,6 @@ _HISTORY_EDITIONS = int(os.getenv("CELR_BLURB_HISTORY", "5"))
 
 _lock = threading.Lock()
 _run_token: dict[str, str | None] = {"down": None, "up": None}
-
-
-def _client_or_none():
-    if not os.getenv("ANTHROPIC_API_KEY"):
-        return None
-    try:
-        import anthropic
-        return anthropic.Anthropic()
-    except Exception:
-        return None
 
 
 _SYSTEM = (
@@ -200,17 +191,14 @@ def _prompt(row: dict, direction: str) -> str:
     return " ".join(bits)
 
 
-def _generate_one(client, row: dict, direction: str) -> str | None:
+def _generate_one(row: dict, direction: str) -> str | None:
     try:
-        msg = client.messages.create(
-            model=_MODEL, max_tokens=160, system=_SYSTEM,
+        comp = llm_client.complete(
+            model=llm_client.MOVER_BLURB_MODEL, max_tokens=160, system=_SYSTEM,
             messages=[{"role": "user", "content": _prompt(row, direction)}],
+            cache=True,
         )
-        parts = []
-        for block in msg.content or []:
-            if getattr(block, "type", None) == "text":
-                parts.append(block.text)
-        text = " ".join(parts).strip()
+        text = (comp.text or "").strip()
         text = text.replace(chr(0x2014), ", ").replace(chr(0x2013), ", ")
         return text or None
     except Exception:
@@ -237,14 +225,13 @@ def _insert(rows: list[tuple[str, str, str, str, str]]) -> int:
 
 
 def generate_mover_blurbs_batch(direction: str, limit: int | None = None) -> int:
-    client = _client_or_none()
-    if client is None or direction not in ("up", "down"):
+    if not llm_client.enabled() or direction not in ("up", "down"):
         return 0
     cap = limit if limit is not None else _MAX_PER_RUN
     cands = _candidates(direction, limit=cap)
     written: list[tuple[str, str, str, str, str]] = []
     for row in cands:
-        blurb = _generate_one(client, row, direction)
+        blurb = _generate_one(row, direction)
         if not blurb:
             continue
         written.append((str(row["wholesaler"]), str(row["upc"]), str(row["edition"]), direction, blurb))

@@ -18,7 +18,21 @@ WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PRICING_SOURCE=postgres
+    PRICING_SOURCE=postgres \
+    DISABLE_AUTOUPDATER=1
+
+# Node 20 + the Claude Code CLI. The claude-agent-sdk (backend/agent_runtime.py)
+# orchestrates the agentic surfaces by spawning the `claude` CLI as a subprocess;
+# the SDK finds it on PATH. Tool execution still runs in-process in Python — only
+# the agent loop is in the subprocess. DISABLE_AUTOUPDATER (set above) stops the
+# ephemeral container from self-updating the binary at runtime. Placed before the
+# requirements copy so this layer caches independently of app/code changes.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates gnupg \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && npm install -g @anthropic-ai/claude-code \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt ./backend/requirements.txt
 RUN pip install -r backend/requirements.txt

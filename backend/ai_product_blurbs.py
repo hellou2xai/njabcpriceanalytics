@@ -22,6 +22,7 @@ from datetime import date as _date
 from backend.db import get_duckdb
 from backend.pg import get_pg
 from backend.pricing_cache import get_pricing_path
+from backend import llm_client
 
 _BLURB_VERSION = "v1"
 
@@ -32,16 +33,6 @@ _MAX_PER_RUN = int(os.getenv("CELR_PRODUCT_BLURB_MAX_PER_RUN", "300"))
 
 _lock = threading.Lock()
 _run_token: str | None = None
-
-
-def _client_or_none():
-    if not os.getenv("ANTHROPIC_API_KEY"):
-        return None
-    try:
-        import anthropic
-        return anthropic.Anthropic()
-    except Exception:
-        return None
 
 
 _SYSTEM = (
@@ -262,19 +253,16 @@ def _prompt(row: dict) -> str:
     return " ".join(bits)
 
 
-def _generate_one(client, row: dict) -> str | None:
+def _generate_one(row: dict) -> str | None:
     try:
-        msg = client.messages.create(
-            model=_MODEL,
+        comp = llm_client.complete(
+            model=llm_client.PRODUCT_BLURB_MODEL,
             max_tokens=260,
             system=_SYSTEM,
             messages=[{"role": "user", "content": _prompt(row)}],
+            cache=True,
         )
-        parts = []
-        for block in msg.content or []:
-            if getattr(block, "type", None) == "text":
-                parts.append(block.text)
-        text = " ".join(parts).strip()
+        text = (comp.text or "").strip()
         # Defensive: strip any dash characters the model slipped in.
         text = text.replace(chr(0x2014), ", ").replace(chr(0x2013), ", ")
         return text or None
@@ -304,14 +292,13 @@ def _insert(rows: list[tuple[str, str, str, str]]) -> int:
 
 
 def generate_blurbs_batch(limit: int | None = None) -> int:
-    client = _client_or_none()
-    if client is None:
+    if not llm_client.enabled():
         return 0
     cap = limit if limit is not None else _MAX_PER_RUN
     cands = _candidates(limit=cap)
     written: list[tuple[str, str, str, str]] = []
     for row in cands:
-        blurb = _generate_one(client, row)
+        blurb = _generate_one(row)
         if not blurb:
             continue
         written.append((str(row["wholesaler"]), str(row["upc"]), str(row["edition"]), blurb))

@@ -28,6 +28,7 @@ from datetime import date
 
 from backend.db import get_duckdb
 from backend.enrichment_join import attach_sku_mapping
+from backend import llm_client
 
 _MODEL = os.getenv("CELR_CATALOG_AI_MODEL", os.getenv("CELR_SEARCH_AI_MODEL", "claude-sonnet-4-6"))
 
@@ -50,18 +51,15 @@ def _cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
     return round(input_tokens / 1_000_000 * in_rate + output_tokens / 1_000_000 * out_rate, 6)
 
 
-def _client_or_none():
-    if not os.getenv("ANTHROPIC_API_KEY"):
-        return None
-    try:
-        import anthropic
-        return anthropic.Anthropic()
-    except Exception:
-        return None
-
-
 def enabled() -> bool:
-    return _client_or_none() is not None
+    return llm_client.enabled()
+
+
+# Transitional shim: backend/assistant.py still imports `_client_or_none` for its
+# current raw-API loop (replaced in the Agent SDK migration, Step 3). It now
+# returns the seam's shared client so there's one client process-wide.
+def _client_or_none():
+    return llm_client.single_client()
 
 
 def _current_ym() -> str:
@@ -641,43 +639,37 @@ def answer_question(question: str, history: list | None = None) -> dict:
                 "q": "", "filters": _empty_filters(), "sort": "product_name", "order": "asc", "actions": [],
                 "usage": {"input_tokens": 0, "output_tokens": 0, "model": "none", "cost_usd": 0.0, "enabled": enabled()}}
 
-    client = _client_or_none()
-    if client is None:
+    if not enabled():
         return _fallback(question)
 
     dists, cats, sizes = _facets()
     # Catalog filter extraction is a simple single-tool task -> always Haiku
-    # (cheapest). Prompt-cache the system + tool so the repeated boilerplate
-    # isn't re-billed at full rate on every question.
-    from backend.model_router import HAIKU
-    model = HAIKU
+    # (cheapest). The seam prompt-caches the system + tool so the repeated
+    # boilerplate isn't re-billed at full rate on every question.
+    model = llm_client.CATALOG_MODEL
     tool = _tool(dists, cats, sizes)
-    tool["cache_control"] = {"type": "ephemeral"}
     try:
-        msg = client.messages.create(
+        comp = llm_client.complete(
             model=model,
             max_tokens=700,
-            system=[{"type": "text", "text": _SYSTEM, "cache_control": {"type": "ephemeral"}}],
+            system=_SYSTEM,
             tools=[tool],
             tool_choice={"type": "tool", "name": "set_catalog_view"},
             messages=_history_messages(history) + [{"role": "user", "content": question}],
+            cache=True,
         )
     except Exception as e:
         out = _fallback(question)
         out["answer"] = f"AI call failed ({type(e).__name__}); used keyword matching instead. " + out["answer"]
         return out
 
-    args = {}
-    for block in msg.content or []:
-        if getattr(block, "type", None) == "tool_use" and getattr(block, "name", "") == "set_catalog_view":
-            args = block.input or {}
-            break
+    args = (comp.tool_use or {}).get("input") or {}
 
     filters = _to_filters(args)
     actions = _resolve_actions(args.get("actions") or [], filters, str(args.get("q") or ""))
 
-    in_tok = getattr(msg.usage, "input_tokens", 0) or 0
-    out_tok = getattr(msg.usage, "output_tokens", 0) or 0
+    in_tok = comp.input_tokens
+    out_tok = comp.output_tokens
     return {
         "answer": str(args.get("answer") or "Updated the catalog to match your question.").strip(),
         "q": str(args.get("q") or "").strip(),

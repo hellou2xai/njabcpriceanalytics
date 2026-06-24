@@ -47,6 +47,28 @@ services:
         sync: false
       - key: CELR_SEARCH_AI_MODEL
         value: claude-sonnet-4-6
+      # --- AI layer (backend/llm_client.py seam + claude-agent-sdk) ---
+      # Rollout flag for the Agent SDK path (main assistant + procurement agents).
+      # Default 0 = keep the existing raw-API loops (safe to deploy the dormant
+      # CLI). Flip to 1 ONLY AFTER raising the web instance to Pro Plus
+      # (4 CPU / 8 GB) in the dashboard — an agent run spawns a `claude`
+      # subprocess on top of the DuckDB pool budget that already fills ~4 GB.
+      - key: CELR_USE_AGENT_SDK
+        value: "0"
+      # Bounds concurrent agent subprocesses (each ~ a Node/CLI process). The
+      # cron fan-out spawns one thread per user, so this is the OOM guard. Raise
+      # only with the bigger instance.
+      - key: CELR_AGENT_MAX_CONCURRENCY
+        value: "1"
+      # Provider for the single-shot path (catalog query / search / blurbs).
+      # 'anthropic' today; 'openrouter' uses the Anthropic-compatible endpoint
+      # below (the agent path stays Claude-only regardless).
+      - key: CELR_LLM_PROVIDER
+        value: anthropic
+      - key: OPENROUTER_BASE_URL
+        value: https://openrouter.ai/api/v1
+      - key: OPENROUTER_API_KEY
+        sync: false           # inert until CELR_LLM_PROVIDER=openrouter
       - key: GOOGLE_MAPS_API_KEY
         sync: false
       - key: SERPAPI_API_KEY

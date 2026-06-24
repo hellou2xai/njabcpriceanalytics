@@ -4284,25 +4284,55 @@ def edition_comparison(con, wholesaler: str, older: str = "", newer: str = "",
     m = (match or "").strip().lower()
     digits = re.sub(r"\D", "", m)
     is_upc = len(digits) >= 8
-    _m_tokens = m.split() if m and not is_upc else []
+    _m_tokens = [t for t in m.split() if len(t) >= 2] if m and not is_upc else []
 
     def _tok_in_name(tok: str, name: str) -> bool:
-        """True if any word in name is a prefix of tok or tok is a prefix of
-        any word in name.  Handles 'jamaican' matching 'jamaica', 'reserve'
-        matching 'reserve', etc. without requiring an exact substring hit."""
+        """True when any word in name shares a prefix with tok (handles
+        'jamaican' vs 'jamaica', 'glenlivet' vs 'glenlive', etc.)."""
         for w in name.split():
             if w.startswith(tok) or tok.startswith(w):
                 return True
         return False
 
+    # Resolve the match term to UPC norms across the FULL catalog (all
+    # distributors), then CPN-expand to catch barcode variants (e.g. Allied
+    # 674868000146 and Fedway 64868000146 are the same Glenlivet Jamaica
+    # Edition — different barcodes, same CPN).  Filtering by UPC identity is
+    # the only robust path; name filtering silently drops heavily-abbreviated
+    # distributor names like 'GLENLIVE 12Y JAMCN6P'.
+    match_upc_norms: Optional[set] = None
+    if is_upc:
+        match_upc_norms = {digits.lstrip("0")}
+    elif _m_tokens:
+        all_catalog = con.execute(f"""
+            SELECT DISTINCT LTRIM(upc,'0') AS upc_norm,
+                            LOWER(product_name) AS pname
+            FROM {src} WHERE {_VALID_UPC}
+        """).fetchall()
+        base_upcs = {
+            r[0] for r in all_catalog
+            if r[0] and r[1] and all(_tok_in_name(t, r[1]) for t in _m_tokens)
+        }
+        if base_upcs:
+            cpn_map = _cpn_for_upcs(con, list(base_upcs))
+            match_cpns = list(set(cpn_map.values()))
+            if match_cpns:
+                try:
+                    _cp = read_parquet(con, "celr_products")
+                    _ph = ",".join("?" * len(match_cpns))
+                    expanded = con.execute(
+                        f"SELECT DISTINCT upc_norm FROM {_cp} WHERE cpn IN ({_ph})",
+                        match_cpns).fetchall()
+                    match_upc_norms = {r[0] for r in expanded if r[0]} | base_upcs
+                except Exception:
+                    match_upc_norms = base_upcs
+            else:
+                match_upc_norms = base_upcs
+
     def matches(rec):
-        if not m:
+        if match_upc_norms is None:
             return True
-        if is_upc:
-            return rec.get("upc_norm") == digits.lstrip("0")
-        name = (rec.get("product_name") or "").lower()
-        # All tokens must appear (prefix-match logic so 'jamaican' hits 'jamaica').
-        return all(_tok_in_name(t, name) for t in _m_tokens)
+        return (rec.get("upc_norm") or "") in match_upc_norms
 
     rows = []
     summary = {"rose": 0, "fell": 0, "unchanged": 0, "added": 0, "removed": 0,

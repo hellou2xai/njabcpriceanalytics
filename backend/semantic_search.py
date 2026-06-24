@@ -174,6 +174,9 @@ def semantic_search(
     *,
     limit: int = 24,
     product_type: Optional[str] = None,
+    sizes: Optional[list] = None,
+    unit_qty: Optional[str] = None,
+    vintage: Optional[str] = None,
 ) -> list[dict[str, Any]]:
     """Return ranked product cards (current edition per wholesaler) that
     best match the free-text `query` against the enrichment corpus.
@@ -185,6 +188,10 @@ def semantic_search(
         limit: max card count to return (default 24).
         product_type: optional narrowing — same semantics as the catalog's
             product_type filter ("Wine", "Spirits", "Beer", ...).
+        sizes: list of volume strings to keep, e.g. ["750ML", "750"]. Each is
+            normalised (no spaces, uppercase) and matched against unit_volume.
+        unit_qty: pack size to keep, e.g. "12" (bottles/case).
+        vintage: vintage year string to keep, e.g. "2019".
 
     Returns a list of dicts in the same shape as /api/catalog/search items:
     product_name, wholesaler, upc, unit_volume, unit_qty, vintage,
@@ -253,6 +260,36 @@ def semantic_search(
                          "OR LOWER(COALESCE(c.enr_category,'')) LIKE LOWER($pt_like))")
         else:
             pt_clause = "AND c.product_type = $pt"
+    # Volume (size) filter: normalise to no-space uppercase and IN-match.
+    size_clause = ""
+    if sizes:
+        size_cands = set()
+        for s in sizes:
+            n = str(s or "").strip().upper().replace(" ", "").replace("LITER", "L").replace("LITRE", "L")
+            if not n:
+                continue
+            size_cands.add(n)
+            if n[-1].isdigit():
+                size_cands.update({n + "L", n + "ML", n + "OZ"})
+        if size_cands:
+            sc = sorted(size_cands)
+            for i, v in enumerate(sc):
+                params[f"sz{i}"] = v
+            size_clause = ("AND UPPER(REPLACE(c.unit_volume, ' ', '')) IN ("
+                           + ", ".join(f"$sz{i}" for i in range(len(sc))) + ")")
+    # Pack-size filter.
+    pack_clause = ""
+    if unit_qty is not None:
+        try:
+            params["pack"] = str(int(float(unit_qty)))
+            pack_clause = "AND TRY_CAST(c.unit_qty AS INTEGER)::VARCHAR = $pack"
+        except (ValueError, TypeError):
+            pass
+    # Vintage filter.
+    vint_clause = ""
+    if vintage:
+        params["vint"] = str(vintage).split(".")[0]
+        vint_clause = "AND CAST(c.vintage AS VARCHAR) LIKE $vint"
     rows = con_duck.execute(
         f"""
         WITH cur AS (
@@ -267,7 +304,7 @@ def semantic_search(
         FROM cpl_enriched c
         JOIN cur ON c.wholesaler = cur.wholesaler AND c.edition = cur.ed
         WHERE LTRIM(CAST(c.upc AS VARCHAR), '0') IN ({upc_ph})
-          {pt_clause}
+          {pt_clause} {size_clause} {pack_clause} {vint_clause}
         """,
         params,
     ).fetchdf().to_dict(orient="records")

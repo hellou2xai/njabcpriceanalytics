@@ -1734,9 +1734,22 @@ def _t_semantic_search(con, args):
                     break
         except Exception:
             pt = None
+    # Extract volume/pack/vintage tokens from the query so the SQL join
+    # narrows to the requested size automatically ("750ml bourbon" -> 750ml only).
+    raw_toks = q.split()
+    size_toks = [t for t in raw_toks
+                 if re.fullmatch(r"\d+(?:\.\d+)?(?:ml|l|ltr|liter|litre|oz)", t, re.I)]
+    year_toks = [t for t in raw_toks if re.fullmatch(r"(19|20)\d{2}", t)]
+    pack_toks = [t for t in raw_toks
+                 if re.fullmatch(r"\d{1,2}", t) and t not in year_toks]
+    # If caller already supplied explicit overrides, honour them.
+    sizes = args.get("sizes") or (size_toks or None)
+    unit_qty_f = args.get("unit_qty") or (pack_toks[0] if pack_toks else None)
+    vintage_f = args.get("vintage") or (year_toks[0] if year_toks else None)
     try:
         with get_pg() as pg:
-            rows = _ss(pg, con, q, limit=limit, product_type=pt)
+            rows = _ss(pg, con, q, limit=limit, product_type=pt,
+                       sizes=sizes, unit_qty=unit_qty_f, vintage=vintage_f)
     except Exception as e:
         import logging
         logging.getLogger("assistant").warning("semantic_search failed: %s", e)

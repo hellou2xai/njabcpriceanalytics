@@ -3435,53 +3435,222 @@ _CTX_TOOLS = {
 
 
 def _tool_specs() -> list:
-    specs = []
-    common_props = {
-        "match": {"type": "string"}, "category": {"type": "string"},
-        "distributor": {"type": "string"}, "has_rip": {"type": "boolean"},
-        "has_discount": {"type": "boolean"}, "price_min": {"type": "number"},
-        "price_max": {"type": "number"},
-        "order_by": {"type": "string", "enum": ["cheapest", "expensive"]},
-        "limit": {"type": "number"},
-        "rip_code": {"type": "string", "description": "A specific RIP rebate code (for rip_lookup)."},
-        "month": {"type": "string", "description": "Target month / edition for rip_lookup, e.g. 'May', 'May 2026', or '2026-05'. Pass whenever the user names a month so a rebate that existed then but has since expired is still found. Omit for the current month."},
-        "months": {"type": "number", "description": "For price_timeline: how many recent editions/months to include (default 12, max 36)."},
-        "sizes": {"type": "array", "items": {"type": "string"},
-                  "description": "Restrict to specific bottle sizes the buyer named, e.g. ['1.75L','750mL']. Bare numbers work ('1.75','750'). ALWAYS set this when the user specifies a size — do not return other sizes."},
-        "region": {"type": "string", "description": "Region / origin hint (california, napa, sonoma, bordeaux, tuscany, italy, france, spain, kentucky, scotland, mexico, ...). Use this for ANY geography query instead of putting the place name in `match` — `match='california'` wrongly matches ABSOLUT CALIFORNIA. Auto-narrows product_type (california -> Wine, kentucky -> Spirits)."},
-        "varietal": {"type": "string", "description": "Varietal / style hint (cabernet, pinot noir, chardonnay, prosecco, ipa, bourbon, single malt, reposado, ...). Use instead of `match` for grape/style queries; stacks with region ('California cabernets')."},
-        "price_trend": {"type": "string", "enum": ["increase", "drop"], "description": "Narrow to products whose price is going UP ('increase') or DOWN ('drop') in the latest edition. Combine with region/varietal/category, e.g. 'California wines going up' = region=california + price_trend=increase."},
-        "direction": {"type": "string", "enum": ["lost", "gained", "changed"], "description": "For deal_changes: which month-over-month change to find — lost (had it last month, not now), gained (new this month), changed (any). Default lost."},
-        "scope": {"type": "string", "enum": ["rip", "discount", "combo", "any"], "description": "For deal_changes: which deal type to diff — rip, discount (case discount), combo, or any. Default any."},
-        "when": {"type": "string", "enum": ["now", "next", "soon"], "description": "For best_to_buy: now (best to buy now), next (cheaper next edition → wait), soon (dated/time-sensitive deals ending within days)."},
-        "rolling_keg": {"type": "boolean", "description": "For beer_mix_match: true to return ONLY rolling-keg rebate deals."},
-        "threshold": {"type": "number", "description": "For rip_near_cap: minimum single-tier rebate dollars to include (default 700; the cap is $1,000)."},
-        "query": {"type": "string", "description": "Product/brand scope for distributor_arbitrage (name or UPC, resolved semantically). ALWAYS set it when the user names a product or brand — never run an unscoped sweep for a brand-specific question."},
-        "distributors": {"type": "array", "items": {"type": "string"},
-                         "description": "Distributor slugs to compare/restrict to (allied, fedway, opici, peerless, high_grade, kramer, shore_point, jersey_beverage). For compare_rip_outcomes defaults to allied/fedway/opici; for distributor_arbitrage restricts the gap scan to these houses."},
-        "cases": {"type": "number", "description": "For compare_rip_outcomes: how many cases the buyer plans to buy (drives the winner@volume; default 5)."},
-        "reach_mode": {"type": "string", "enum": ["soft", "hard", "off"], "description": "For price_360: how to value rebates the retailer may not reach — soft (discount by likelihood), hard (zero if unreachable), off (full value). Default soft."},
-        "older": {"type": "string", "description": "For edition_compare: the OLDER CPL edition (e.g. '2026-05'). Omit to default to the second-latest."},
-        "newer": {"type": "string", "description": "For edition_compare: the NEWER CPL edition (e.g. '2026-06'). Omit to default to the latest."},
-        "change": {"type": "string", "description": "For edition_compare: filter to a change type — increase, decrease, added, removed, rip."},
+    # Reusable property atoms.
+    _match      = {"type": "string", "description": "Product name, brand, or UPC."}
+    _category   = {"type": "string", "description": "Product category (Wine, Spirits, Beer, Cider, RTD)."}
+    _dist       = {"type": "string", "description": "Distributor slug: allied, fedway, opici, peerless, high_grade, kramer, shore_point, jersey_beverage."}
+    _dists      = {"type": "array", "items": {"type": "string"}, "description": "Array of distributor slugs."}
+    _limit      = {"type": "number", "description": "Max results to return."}
+    _rip_code   = {"type": "string", "description": "A specific RIP rebate code."}
+    _month      = {"type": "string", "description": "Target edition month, e.g. 'May', 'May 2026', '2026-05'. Omit for the current month."}
+    _region     = {"type": "string", "description": "Geographic region (california, napa, bordeaux, tuscany, kentucky, scotland, ...). Use instead of `match` for geography — `match='california'` matches ABSOLUT CALIFORNIA cans, not California wines. Auto-narrows product_type."}
+    _varietal   = {"type": "string", "description": "Grape variety or spirit/beer sub-type (cabernet, bourbon, rye, single malt, ipa, prosecco, ...). Stacks with region."}
+    _cases      = {"type": "number", "description": "Number of cases the buyer plans to purchase."}
+    _price_min  = {"type": "number", "description": "Minimum case price filter."}
+    _price_max  = {"type": "number", "description": "Maximum case price filter."}
+    _sizes      = {"type": "array", "items": {"type": "string"}, "description": "Restrict to specific bottle sizes, e.g. ['750mL','1.75L']. ALWAYS set when the user names a size."}
+    _source     = {"type": "string", "enum": ["cart", "favorites", "list"], "description": "Basket to analyze. Default: cart. 'favorites' = wishlist."}
+    _list_name  = {"type": "string", "description": "When source='list' (or focus='lists'), the list to target."}
+
+    # Per-tool input schemas. Only the params each handler actually reads.
+    _DATA_SCHEMAS: dict[str, dict] = {
+        "timing_traps": {
+            "distributor": _dist, "match": _match, "limit": _limit,
+        },
+        "category_breakdown": {},
+        "price_timeline": {
+            "match": _match,
+            "distributor": _dist,
+            "months": {"type": "number", "description": "Recent editions to include (default 12, max 36)."},
+        },
+        "rip_lookup": {
+            "rip_code": _rip_code,
+            "match": _match,
+            "month": _month,
+        },
+        "rip_summary": {
+            "distributor": _dist,
+            "month": _month,
+            "min_members": {"type": "number", "description": "Minimum case-mix size to include (default 1)."},
+            "limit_per_distributor": {"type": "number", "description": "Max RIP codes per distributor (default 50)."},
+        },
+        "compare_distributors": {"match": _match},
+        "distributor_breakdown": {},
+        "deal_counts": {},
+        "top_products": {
+            "match": _match, "category": _category, "distributor": _dist,
+            "has_rip": {"type": "boolean", "description": "Filter to products with a RIP rebate."},
+            "has_discount": {"type": "boolean", "description": "Filter to products with a case discount."},
+            "price_min": _price_min, "price_max": _price_max,
+            "order_by": {"type": "string", "enum": ["cheapest", "expensive"]},
+            "limit": _limit,
+            "sizes": _sizes,
+            "region": _region,
+            "varietal": _varietal,
+            "price_trend": {"type": "string", "enum": ["increase", "drop"], "description": "Narrow to products whose price is going UP or DOWN in the latest edition."},
+        },
+        "price_history": {"match": _match},
+        "price_details": {"match": _match, "category": _category, "distributor": _dist},
+        "best_one_case_rip": {"distributor": _dist, "limit": _limit},
+        "deal_360": {"match": _match, "category": _category, "distributor": _dist},
+        "size_value": {"match": _match, "category": _category, "distributor": _dist, "limit": _limit},
+        "rip_tier_gap": {
+            "match": _match,
+            "rip_code": _rip_code,
+            "have": {"type": "number", "description": "Cases the buyer already has in hand. Drives 'how many MORE cases to reach the next tier'."},
+        },
+        "distributor_arbitrage": {
+            "query": {"type": "string", "description": "Product name or UPC to scope the gap scan. ALWAYS set for brand-specific questions — never run an unscoped sweep."},
+            "distributors": _dists,
+            "category": _category,
+            "min_savings_pct": {"type": "number", "description": "Minimum price-gap % to include (default 0)."},
+            "limit": _limit,
+        },
+        "edition_compare": {
+            "distributor": {**_dist, "description": "Distributor slug (required)."},
+            "older": {"type": "string", "description": "Older CPL edition, e.g. '2026-05'. Omit for the second-latest."},
+            "newer": {"type": "string", "description": "Newer CPL edition, e.g. '2026-06'. Omit for the latest."},
+            "match": _match,
+            "change": {"type": "string", "enum": ["increase", "decrease", "added", "removed", "rip"], "description": "Filter to a specific change type."},
+            "limit": _limit,
+        },
+        "rate_shop": {
+            "match": {**_match, "description": "Product name or UPC (required)."},
+            "cases": _cases,
+        },
+        "price_360": {
+            "match": {**_match, "description": "Product name or UPC (required)."},
+            "reach_mode": {"type": "string", "enum": ["soft", "hard", "off"], "description": "How to value potentially unreachable rebates: soft (discount by likelihood), hard (zero), off (full value). Default soft."},
+        },
+        "compare_rip_outcomes": {
+            "match": {**_match, "description": "Product name or UPC (required)."},
+            "distributors": _dists,
+            "cases": _cases,
+        },
+        "semantic_search": {
+            "q": {"type": "string", "description": "Natural-language descriptive query, e.g. 'old vine zinfandel cool climate', 'small-producer natural orange wine', 'rare single barrel bourbon'. Use for phrases that don't fit region/varietal slots."},
+            "limit": _limit,
+            "product_type": {"type": "string", "enum": ["Wine", "Spirits", "Beer", "Cider", "RTD"], "description": "Optionally narrow to one product type."},
+        },
+        "combo_deals": {
+            "q": {"type": "string", "description": "Brand or product keyword to filter combos."},
+            "distributor": _dist,
+            "limit": _limit,
+        },
+        "combo_analyzer": {
+            "q": {"type": "string", "description": "Brand or product keyword to filter."},
+            "combo_code": {"type": "string", "description": "Specific combo code to analyze (from combo_deals)."},
+            "distributor": _dist,
+            "limit": _limit,
+        },
+        "category_distributor_compare": {
+            "category": {**_category, "description": "Product category to compare across distributors (required)."},
+        },
+        "deals_by_category": {},
+        "build_assortment": {
+            "q": {"type": "string", "description": "Natural-language brief describing what to build (required), e.g. 'value bourbon well', 'cool-climate pinots under $18/btl', 'a sparkling list'."},
+            "category": _category,
+            "varietal": _varietal,
+            "region": _region,
+            "max_bottle_price": {"type": "number", "description": "Maximum per-bottle price."},
+            "max_case_price": {"type": "number", "description": "Maximum per-case price."},
+            "limit": _limit,
+        },
+        "find_substitute": {
+            "match": {**_match, "description": "Product to find substitutes for (required)."},
+            "max_case_price": {"type": "number", "description": "Maximum case price for the substitute."},
+        },
+        "build_budget_basket": {
+            "budget": {"type": "number", "description": "Total spend budget in dollars (required)."},
+            "rank_by": {"type": "string", "enum": ["gp", "savings"], "description": "Rank by gross-profit % ('gp', default) or total savings ('savings')."},
+            "category": _category,
+            "distributor": _dist,
+        },
+        "dated_deal_reminders": {
+            "within_days": {"type": "number", "description": "Days ahead to watch for starting/ending deals (default 7)."},
+            "distributor": _dist,
+        },
+        "deal_changes": {
+            "direction": {"type": "string", "enum": ["lost", "gained", "changed"], "description": "lost = had it last month, not now; gained = new this month; changed = any. Default lost."},
+            "scope": {"type": "string", "enum": ["rip", "discount", "combo", "any"], "description": "Which deal type to diff. Default any."},
+            "match": _match, "category": _category, "distributor": _dist,
+            "region": _region, "varietal": _varietal,
+        },
+        "best_to_buy": {
+            "when": {"type": "string", "enum": ["now", "next", "soon"], "description": "now = best to buy today; next = cheaper next edition, so wait; soon = time-sensitive deals ending within days."},
+            "match": _match, "category": _category, "distributor": _dist,
+            "region": _region, "varietal": _varietal, "limit": _limit,
+        },
+        "beer_mix_match": {
+            "match": _match,
+            "distributor": _dist,
+            "rolling_keg": {"type": "boolean", "description": "True to return only rolling-keg rebate deals."},
+            "limit": _limit,
+        },
+        "rip_near_cap": {
+            "distributor": _dist,
+            "threshold": {"type": "number", "description": "Minimum single-tier rebate $ to include (default 700; the NJ cap is $1,000)."},
+            "limit": _limit,
+        },
+        "discontinued": {
+            "match": _match, "category": _category, "distributor": _dist, "limit": _limit,
+        },
+        "best_gp_deals": {
+            "category": _category, "distributor": _dist,
+            "min_pct": {"type": "number", "description": "Minimum discount percentage to include."},
+            "limit": _limit,
+        },
+        "closeouts": {
+            "category": _category, "distributor": _dist, "limit": _limit,
+        },
     }
+
+    _CTX_SCHEMAS: dict[str, dict] = {
+        "find_deals": {
+            "kind": {"type": "string", "enum": ["time_sensitive", "discount", "clearance"]},
+            "distributor": _dist, "limit": _limit,
+        },
+        "price_movers": {
+            "direction": {"type": "string", "enum": ["drop", "increase"]},
+            "match": _match, "category": _category, "distributor": _dist,
+            "region": _region, "varietal": _varietal,
+            "price_min": _price_min, "price_max": _price_max, "limit": _limit,
+        },
+        "get_cart": {},
+        "get_favorites": {},
+        "get_lists": {},
+        "get_orders": {},
+        "get_sales_reps": {},
+        "cart_rep_status": {},
+        "order_history": {
+            "order_id": {"type": "integer", "description": "Fetch one specific past order by ID. Omit for the recent list."},
+            "limit": _limit,
+        },
+        "lapsed_items": {
+            "lapsed_days": {"type": "integer", "description": "Days since last order to count as lapsed (default 45)."},
+        },
+        "analyze_cart":  {"source": _source, "list_name": _list_name},
+        "optimize_cart": {"source": _source, "list_name": _list_name},
+        "cart_timing":   {"source": _source, "list_name": _list_name},
+        "cart_rip_tiers": {"source": _source, "list_name": _list_name},
+        "edition_changes": {
+            "focus": {"type": "string", "enum": ["all", "mine", "favorites", "cart", "lists"], "description": "'mine' = the user's whole footprint (cart+favorites+lists+recently ordered). Use for 'what changed for me'."},
+            "limit": _limit,
+            "list_name": _list_name,
+        },
+    }
+
+    specs = []
     for name, (_fn, desc) in _DATA_TOOLS.items():
+        schema = _DATA_SCHEMAS.get(name, {})
         specs.append({"name": name, "description": desc,
-                      "input_schema": {"type": "object", "properties": common_props}})
-    # Context tools (deals + the signed-in user's cart/favorites/lists/orders).
-    ctx_props = {**common_props,
-                 "kind": {"type": "string", "enum": ["time_sensitive", "discount", "clearance"]},
-                 "direction": {"type": "string", "enum": ["drop", "increase"]},
-                 "source": {"type": "string", "enum": ["cart", "favorites", "list"],
-                            "description": "Which basket to analyze for cart tools (analyze_cart, optimize_cart, cart_timing, cart_rip_tiers). 'favorites' = wishlist/watchlist. Defaults to cart."},
-                 "focus": {"type": "string", "enum": ["all", "mine", "favorites", "cart", "lists"],
-                           "description": "edition_changes scope. 'mine' = the user's whole footprint (cart+favorites+lists+recent orders) — use for 'what changed for me'."},
-                 "order_id": {"type": "integer", "description": "order_history: fetch one specific past order by id."},
-                 "lapsed_days": {"type": "integer", "description": "lapsed_items: how many days since last order counts as 'lapsed' (default 45)."},
-                 "list_name": {"type": "string", "description": "When source='list' (or focus='lists'), the list to target (omit for all of the user's lists)."}}
+                      "input_schema": {"type": "object", "properties": schema,
+                                       "additionalProperties": False}})
     for name, (_fn, desc) in _CTX_TOOLS.items():
+        schema = _CTX_SCHEMAS.get(name, {})
         specs.append({"name": name, "description": desc,
-                      "input_schema": {"type": "object", "properties": ctx_props}})
+                      "input_schema": {"type": "object", "properties": schema,
+                                       "additionalProperties": False}})
     # Action tools
     specs.append({
         "name": "perform_action",

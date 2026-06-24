@@ -355,6 +355,58 @@ def _cpn_for_upcs(con, upc_norms) -> dict[str, int]:
     return out
 
 
+def _tok_in_name(tok: str, name: str) -> bool:
+    """True when any word in name shares a prefix with tok (handles
+    'jamaican' vs 'jamaica', 'glenlivet' vs 'glenlive', etc.)."""
+    for w in name.split():
+        if w.startswith(tok) or tok.startswith(w):
+            return True
+    return False
+
+
+def _cpn_expand_name(con, src: str, name_query: str) -> Optional[set]:
+    """Resolve a product name query to a full set of UPC norms via token-prefix
+    scan across the full catalog + CPN family expansion.
+
+    Returns None when name_query is blank (caller should skip filtering).
+    Returns an empty set when query is non-empty but nothing matched.
+
+    The CPN step is critical: distributors use different UPCs AND abbreviated
+    names for the same product (Allied 'GLENLIVE 12Y JAMCN6P' vs Fedway
+    'GLENLIVET 12YR JAMAICA EDITION', different barcodes, same CPN).  A bare
+    name search only finds the distributor whose name is readable; the CPN
+    expansion brings in the rest."""
+    if not name_query:
+        return None
+    tokens = [t for t in name_query.strip().lower().split() if len(t) >= 2]
+    if not tokens:
+        return None
+    all_catalog = con.execute(
+        f"SELECT DISTINCT LTRIM(upc,'0') AS upc_norm, LOWER(product_name) AS pname "
+        f"FROM {src} WHERE {_VALID_UPC}"
+    ).fetchall()
+    base_upcs = {
+        r[0] for r in all_catalog
+        if r[0] and r[1] and all(_tok_in_name(t, r[1]) for t in tokens)
+    }
+    if not base_upcs:
+        return set()
+    cpn_map = _cpn_for_upcs(con, list(base_upcs))
+    match_cpns = list(set(cpn_map.values()))
+    if not match_cpns:
+        return base_upcs
+    try:
+        cp = read_parquet(con, "celr_products")
+        ph = ",".join("?" * len(match_cpns))
+        expanded = con.execute(
+            f"SELECT DISTINCT upc_norm FROM {cp} WHERE cpn IN ({ph})",
+            match_cpns
+        ).fetchall()
+        return {r[0] for r in expanded if r[0]} | base_upcs
+    except Exception:
+        return base_upcs
+
+
 _COMMON_ROW_FLAGS = {"has_discount", "has_rip"}  # whitelist for flag_any
 
 
@@ -2081,17 +2133,29 @@ def compare_rips(
         # The summary + counts below then reflect the searched context.
         if q or brand or product_type:
             qq, bb, pt = q.lower(), brand.lower(), product_type.lower()
+            qq_toks = [t for t in qq.split() if len(t) >= 2] if qq else []
             def _match(per):
-                recs = per.values()
+                recs = list(per.values())
                 if pt and not any((r.get("product_type") or "").lower() == pt for r in recs):
                     return False
                 if bb and not any(bb in (r.get("brand") or "").lower() for r in recs):
                     return False
-                if qq and not any(
+                if qq_toks:
+                    def _nm(name):
+                        nl = (name or "").lower()
+                        return all(_tok_in_name(t, nl) for t in qq_toks)
+                    if not any(
+                        _nm(r.get("product_name")) or _nm(r.get("brand"))
+                        or qq in str(r.get("upc") or "").lstrip("0")
+                        for r in recs
+                    ):
+                        return False
+                elif qq and not any(
                     qq in (r.get("product_name") or "").lower()
                     or qq in (r.get("brand") or "").lower()
                     or qq in str(r.get("upc") or "").lstrip("0")
-                    for r in recs):
+                    for r in recs
+                ):
                     return False
                 return True
             keys = [k for k in keys if _match(by_key[k])]
@@ -2631,17 +2695,29 @@ def compare_qds(
 
         if q or brand or product_type:
             qq, bb, pt = q.lower(), brand.lower(), product_type.lower()
+            qq_toks = [t for t in qq.split() if len(t) >= 2] if qq else []
             def _match(per):
-                recs = per.values()
+                recs = list(per.values())
                 if pt and not any((r.get("product_type") or "").lower() == pt for r in recs):
                     return False
                 if bb and not any(bb in (r.get("brand") or "").lower() for r in recs):
                     return False
-                if qq and not any(
+                if qq_toks:
+                    def _nm(name):
+                        nl = (name or "").lower()
+                        return all(_tok_in_name(t, nl) for t in qq_toks)
+                    if not any(
+                        _nm(r.get("product_name")) or _nm(r.get("brand"))
+                        or qq in str(r.get("upc") or "").lstrip("0")
+                        for r in recs
+                    ):
+                        return False
+                elif qq and not any(
                     qq in (r.get("product_name") or "").lower()
                     or qq in (r.get("brand") or "").lower()
                     or qq in str(r.get("upc") or "").lstrip("0")
-                    for r in recs):
+                    for r in recs
+                ):
                     return False
                 return True
             keys = [k for k in keys if _match(by_key[k])]
@@ -3125,17 +3201,29 @@ def best_rips(
             # Narrow on search BEFORE the tier build (same as compare_rips).
             if q or brand or product_type:
                 qq, bb, pt = q.lower(), brand.lower(), product_type.lower()
+                qq_toks = [t for t in qq.split() if len(t) >= 2] if qq else []
                 def _match(per):
-                    recs = per.values()
+                    recs = list(per.values())
                     if pt and not any((r.get("product_type") or "").lower() == pt for r in recs):
                         return False
                     if bb and not any(bb in (r.get("brand") or "").lower() for r in recs):
                         return False
-                    if qq and not any(
+                    if qq_toks:
+                        def _nm(name):
+                            nl = (name or "").lower()
+                            return all(_tok_in_name(t, nl) for t in qq_toks)
+                        if not any(
+                            _nm(r.get("product_name")) or _nm(r.get("brand"))
+                            or qq in str(r.get("upc") or "").lstrip("0")
+                            for r in recs
+                        ):
+                            return False
+                    elif qq and not any(
                         qq in (r.get("product_name") or "").lower()
                         or qq in (r.get("brand") or "").lower()
                         or qq in str(r.get("upc") or "").lstrip("0")
-                        for r in recs):
+                        for r in recs
+                    ):
                         return False
                     return True
                 mkeys = [k for k in mkeys if _match(bk[k])]
@@ -3504,17 +3592,29 @@ def best_qd(
             mkeys = [k for k, per in bk.items() if any(per[w].get("has_discount") for w in per)]
             if q or brand or product_type:
                 qq, bb, pt = q.lower(), brand.lower(), product_type.lower()
+                qq_toks = [t for t in qq.split() if len(t) >= 2] if qq else []
                 def _match(per):
-                    recs = per.values()
+                    recs = list(per.values())
                     if pt and not any((r.get("product_type") or "").lower() == pt for r in recs):
                         return False
                     if bb and not any(bb in (r.get("brand") or "").lower() for r in recs):
                         return False
-                    if qq and not any(
+                    if qq_toks:
+                        def _nm(name):
+                            nl = (name or "").lower()
+                            return all(_tok_in_name(t, nl) for t in qq_toks)
+                        if not any(
+                            _nm(r.get("product_name")) or _nm(r.get("brand"))
+                            or qq in str(r.get("upc") or "").lstrip("0")
+                            for r in recs
+                        ):
+                            return False
+                    elif qq and not any(
                         qq in (r.get("product_name") or "").lower()
                         or qq in (r.get("brand") or "").lower()
                         or qq in str(r.get("upc") or "").lstrip("0")
-                        for r in recs):
+                        for r in recs
+                    ):
                         return False
                     return True
                 mkeys = [k for k in mkeys if _match(bk[k])]
@@ -3955,16 +4055,26 @@ def _fetch_product_offers(con, src: str, match: str, size_key: Optional[str] = N
     m = (match or "").strip()
     digits = re.sub(r"\D", "", m)
     is_upc = len(digits) >= 8
-    match_pred = "upc_norm = ?" if is_upc else "lower(product_name) LIKE ?"
-    match_param = digits.lstrip("0") if is_upc else f"%{m.lower()}%"
-    # Resolve the text to UPCs first, then pull EVERY distributor carrying those
-    # UPCs — the same barcode is often named differently per distributor (Allied
-    # 'CAMPARI APERITIVO' vs Fedway 'CAMPARI BITTERS'), so a name-only filter
-    # would silently drop offers. (No combo-code exclusion: a product's
-    # standalone CPL price is a valid offer regardless of combo linkage, and a
-    # blanket combo_code filter wrongly drops Allied/Shore-Point internal codes.)
+    # Resolve match to a UPC set first. For UPCs: direct. For names: token-prefix
+    # scan across the FULL catalog + CPN expansion so abbreviations at one
+    # distributor (Allied 'GLENLIVE 12Y JAMCN6P') don't silently drop when
+    # another distributor has the readable name (Fedway 'GLENLIVET 12YR JAMAICA
+    # EDITION'). Both UPCs map to the same CPN; the outer query fetches every
+    # offer carrying ANY of those UPC norms — including the abbreviated variant.
+    if is_upc:
+        match_upc_norms: Optional[set] = {digits.lstrip("0")}
+    else:
+        match_upc_norms = _cpn_expand_name(con, src, m)
+        if match_upc_norms is not None and not match_upc_norms:
+            return None, []   # query given, nothing matched
     base = f"{ed_pred} AND {_VALID_UPC}"
-    params = list(ed_params) + list(ed_params) + [match_param]
+    params = list(ed_params)
+    if match_upc_norms is not None:
+        upc_ph = ",".join("?" * len(match_upc_norms))
+        upc_clause = f"AND upc_norm IN ({upc_ph})"
+        params += list(match_upc_norms)
+    else:
+        upc_clause = ""
     vn = _pricing.vintage_norm_sql("vintage")
     df = con.execute(f"""
         SELECT wholesaler, edition, upc, product_name, product_type, brand,
@@ -3979,10 +4089,7 @@ def _fetch_product_offers(con, src: str, match: str, size_key: Optional[str] = N
                LTRIM(upc,'0') AS upc_norm, TRY_CAST(unit_qty AS DOUBLE) AS uqd,
                {vn} AS vintage_norm,
                UPPER(product_type) IN ('WINE','SPARKLING','VERMOUTH') AS vintage_sensitive
-        FROM {src} e WHERE {base}
-          AND upc_norm IN (
-              SELECT DISTINCT upc_norm FROM {src}
-              WHERE {base} AND {match_pred})
+        FROM {src} e WHERE {base} {upc_clause}
     """, params).df()
     recs = [_nan_clean(r) for r in df.to_dict(orient="records")]
     if not recs:
@@ -4285,14 +4392,6 @@ def edition_comparison(con, wholesaler: str, older: str = "", newer: str = "",
     digits = re.sub(r"\D", "", m)
     is_upc = len(digits) >= 8
     _m_tokens = [t for t in m.split() if len(t) >= 2] if m and not is_upc else []
-
-    def _tok_in_name(tok: str, name: str) -> bool:
-        """True when any word in name shares a prefix with tok (handles
-        'jamaican' vs 'jamaica', 'glenlivet' vs 'glenlive', etc.)."""
-        for w in name.split():
-            if w.startswith(tok) or tok.startswith(w):
-                return True
-        return False
 
     # Resolve the match term to UPC norms across the FULL catalog (all
     # distributors), then CPN-expand to catch barcode variants (e.g. Allied

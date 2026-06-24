@@ -427,6 +427,23 @@ def _t_compare_distributors(con, args):
         name_hint = prods[0].get("product_name")
     if not upc_norm:
         return {"error": "matched product has no UPC to compare across distributors"}
+    # CPN-expand the resolved UPC so Allied's barcode variant is included even
+    # when _resolve_products only found Fedway's version (different UPC, same
+    # product family — same CPN).
+    from backend.db import read_parquet as _rp
+    all_upc_norms = [upc_norm]
+    try:
+        cp = _rp(con, "celr_products")
+        row = con.execute(f"SELECT cpn FROM {cp} WHERE upc_norm = ?", [upc_norm]).fetchone()
+        if row and row[0] is not None:
+            cpn = int(row[0])
+            siblings = con.execute(
+                f"SELECT DISTINCT upc_norm FROM {cp} WHERE cpn = ?", [cpn]
+            ).fetchall()
+            all_upc_norms = list({r[0] for r in siblings if r[0]} | {upc_norm})
+    except Exception:
+        pass
+    _ph = ",".join("?" * len(all_upc_norms))
     cym = _current_ym()
     try:
         rows = con.execute(
@@ -434,8 +451,8 @@ def _t_compare_distributors(con, args):
             "SELECT c.wholesaler, c.product_name, c.unit_volume, c.unit_qty, c.upc, c.vintage, "
             "c.frontline_case_price, c.effective_case_price, c.total_savings_per_case, c.has_rip, c.has_discount "
             "FROM cpl_enriched c JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
-            "WHERE LTRIM(CAST(c.upc AS VARCHAR),'0') = ? "
-            "ORDER BY c.effective_case_price ASC NULLS LAST", [upc_norm]).fetchdf()
+            f"WHERE LTRIM(CAST(c.upc AS VARCHAR),'0') IN ({_ph}) "
+            "ORDER BY c.effective_case_price ASC NULLS LAST", all_upc_norms).fetchdf()
     except Exception as e:
         return {"error": f"{type(e).__name__}"}
     recs = rows.to_dict(orient="records")

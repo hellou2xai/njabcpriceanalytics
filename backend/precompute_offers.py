@@ -54,7 +54,7 @@ _OFFER_COLS = [
     "btl_effective", "qd_save_per_case", "rip_savings", "total_savings_per_case",
     "has_discount", "has_rip", "rip_code",
     "net_rank", "is_cheapest_net", "n_distributors", "spread_net",
-    "enr_category", "enr_region",
+    "enr_category", "enr_region", "abv_proof",
 ]
 
 
@@ -193,6 +193,7 @@ def _grid_rows_for_edition(con, src: str, edition: str) -> list[dict]:
                 "spread_net": spread,
                 "enr_category": m.get("enr_category"),
                 "enr_region": m.get("enr_region"),
+                "abv_proof": m.get("abv_proof"),
             })
             rank += 1
     return out

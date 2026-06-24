@@ -12,7 +12,7 @@ free-text descriptive phrases like:
 
 The implementation today is Postgres full-text search (tsvector + GIN
 index) over the concatenation of name + brand + description + region +
-category + category_path. It ranks via ts_rank, joins back to the live
+category + category_path + specs (Go-UPC JSON: proof/origin/strength). It ranks via ts_rank, joins back to the live
 DuckDB catalog to surface only in-stock SKUs in the current edition,
 and returns the same product card shape the catalog grid renders.
 
@@ -44,40 +44,44 @@ from typing import Any, Optional
 log = logging.getLogger("semantic_search")
 
 
-_INDEX_NAME = "product_enrichment_fts_idx"
+_INDEX_NAME = "product_enrichment_fts_idx_v2"
+_INDEX_NAME_V1 = "product_enrichment_fts_idx"
+
+# Tsvector expression shared by ensure_fts_index (CREATE INDEX) and
+# _fts_upcs (WHERE / ORDER BY). Kept in one place so they always agree.
+# specs is a Go-UPC JSON blob that often carries proof, origin, strength —
+# appending it as raw text makes "90 proof", "Kentucky" etc. FTS-searchable.
+_FTS_EXPR = """to_tsvector('english',
+    COALESCE(name, '') || ' ' ||
+    COALESCE(brand, '') || ' ' ||
+    COALESCE(description, '') || ' ' ||
+    COALESCE(region, '') || ' ' ||
+    COALESCE(category, '') || ' ' ||
+    COALESCE(category_path, '') || ' ' ||
+    COALESCE(specs, '')
+)"""
 
 
 def ensure_fts_index(con_pg) -> bool:
-    """Create the GIN functional index on product_enrichment if absent.
+    """Create (or upgrade) the GIN FTS index on product_enrichment.
 
-    Idempotent. Returns True if the index now exists (whether we just
-    created it or it was already there). Quietly returns False on any
-    error so a missing index doesn't crash the rest of the backend.
+    v2 adds the `specs` column (Go-UPC JSON: proof/origin/strength) to the
+    tsvector so those attributes are searchable via FTS fallback. v1 is
+    dropped if present. Idempotent; returns True when the index is ready.
     """
     try:
         cur = con_pg.cursor()
-        cur.execute(
-            "SELECT 1 FROM pg_indexes WHERE indexname = %s",
-            (_INDEX_NAME,),
-        )
+        # Drop obsolete v1 index so it doesn't waste space.
+        cur.execute("SELECT 1 FROM pg_indexes WHERE indexname = %s", (_INDEX_NAME_V1,))
+        if cur.fetchone():
+            log.info("Dropping obsolete FTS index %s", _INDEX_NAME_V1)
+            cur.execute(f"DROP INDEX CONCURRENTLY IF EXISTS {_INDEX_NAME_V1}")
+        cur.execute("SELECT 1 FROM pg_indexes WHERE indexname = %s", (_INDEX_NAME,))
         if cur.fetchone():
             return True
         log.info("Creating Postgres FTS index %s on product_enrichment", _INDEX_NAME)
         cur.execute(
-            f"""
-            CREATE INDEX {_INDEX_NAME}
-            ON product_enrichment
-            USING GIN (
-                to_tsvector('english',
-                    COALESCE(name, '') || ' ' ||
-                    COALESCE(brand, '') || ' ' ||
-                    COALESCE(description, '') || ' ' ||
-                    COALESCE(region, '') || ' ' ||
-                    COALESCE(category, '') || ' ' ||
-                    COALESCE(category_path, '')
-                )
-            )
-            """
+            f"CREATE INDEX {_INDEX_NAME} ON product_enrichment USING GIN ({_FTS_EXPR})"
         )
         return True
     except Exception as e:
@@ -138,22 +142,11 @@ def _fts_upcs(con_pg, query: str, limit: int) -> list[tuple[str, float]]:
     """Return (UPC, score) pairs ranked by Postgres FTS relevance."""
     cur = con_pg.cursor()
     cur.execute(
-        """
+        f"""
         SELECT upc,
-               ts_rank(
-                   to_tsvector('english',
-                       COALESCE(name,'') || ' ' || COALESCE(brand,'') || ' ' ||
-                       COALESCE(description,'') || ' ' || COALESCE(region,'') || ' ' ||
-                       COALESCE(category,'') || ' ' || COALESCE(category_path,'')
-                   ),
-                   websearch_to_tsquery('english', %s)
-               ) AS rel
+               ts_rank({_FTS_EXPR}, websearch_to_tsquery('english', %s)) AS rel
         FROM product_enrichment
-        WHERE to_tsvector('english',
-                  COALESCE(name,'') || ' ' || COALESCE(brand,'') || ' ' ||
-                  COALESCE(description,'') || ' ' || COALESCE(region,'') || ' ' ||
-                  COALESCE(category,'') || ' ' || COALESCE(category_path,'')
-              ) @@ websearch_to_tsquery('english', %s)
+        WHERE {_FTS_EXPR} @@ websearch_to_tsquery('english', %s)
           AND upc IS NOT NULL AND upc != ''
         ORDER BY rel DESC
         LIMIT %s

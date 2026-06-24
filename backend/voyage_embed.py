@@ -124,22 +124,50 @@ def embed_query(text: str, *, model: str = VOYAGE_DEFAULT_MODEL) -> list[float]:
 
 def _compose_text(name: Optional[str], brand: Optional[str], description: Optional[str],
                   region: Optional[str], category: Optional[str],
-                  category_path: Optional[str]) -> str:
+                  category_path: Optional[str], *,
+                  unit_volume: Optional[str] = None,
+                  unit_qty: Optional[str] = None,
+                  vintage: Optional[str] = None,
+                  abv_proof: Optional[str] = None,
+                  product_type: Optional[str] = None,
+                  enr_category: Optional[str] = None,
+                  enr_region: Optional[str] = None) -> str:
     """The text blob each product is embedded as. Keep parts short but
     distinctive — Voyage embeds up to 32K tokens but the relevant signal
-    fits in well under 1K."""
+    fits in well under 1K.
+
+    Physical attributes (volume, vintage, proof, type) from cpl_enriched are
+    appended when supplied so queries like '750ml bourbon 90 proof 2019' find
+    the right product even when those words don't appear in the Go-UPC text."""
     parts = []
     if name: parts.append(name.strip())
     if brand and (not name or brand.strip().lower() not in name.lower()):
         parts.append(brand.strip())
-    if region: parts.append(f"region: {region.strip()}")
-    if category: parts.append(f"category: {category.strip()}")
+    # Region: prefer enr_region (CPL-sourced) over the Go-UPC region field.
+    r = (enr_region or region or "").strip()
+    if r: parts.append(f"region: {r}")
+    # Category: prefer enr_category (granular, e.g. "Bourbon Whiskey") over the
+    # Go-UPC top-level category ("Spirits"). Both are kept when they differ.
+    cat = (enr_category or category or "").strip()
+    if cat: parts.append(f"category: {cat}")
+    if product_type and product_type.strip().lower() not in cat.lower():
+        parts.append(f"type: {product_type.strip()}")
     if category_path:
-        # category_path is JSON-array text - keep as-is for the model to read.
         parts.append(category_path.strip())
+    # Physical attributes — critical for volume/pack/proof/vintage searches.
+    phys = []
+    if unit_volume: phys.append(str(unit_volume).strip())
+    if unit_qty:
+        try:
+            phys.append(f"{int(float(unit_qty))} per case")
+        except (ValueError, TypeError):
+            phys.append(str(unit_qty).strip())
+    if vintage:
+        vstr = str(vintage).split(".")[0]
+        if vstr: phys.append(f"vintage {vstr}")
+    if abv_proof: phys.append(str(abv_proof).strip())
+    if phys: parts.append(" ".join(phys))
     if description:
-        # Truncate ultra-long descriptions to ~2K chars to stay under any
-        # token budget while keeping the signal.
         d = description.strip().replace("\n", " ")[:2000]
         parts.append(d)
     return " | ".join(parts)
@@ -169,6 +197,7 @@ def index_enrichment(
     model: str = VOYAGE_DEFAULT_MODEL,
     limit: Optional[int] = None,
     pause_between_batches: float = 0.0,
+    cpl_supplement: Optional[dict] = None,
 ) -> dict:
     """Embed enrichment rows and upsert them into product_embeddings.
 
@@ -180,6 +209,14 @@ def index_enrichment(
             refresh or model upgrade).
         model: Voyage model id; defaults to voyage-3 (1024 dims).
         limit: optional cap on rows for a smoke run.
+        cpl_supplement: optional dict mapping upc_norm (leading-zero-stripped
+            UPC string) to a dict of physical attributes from cpl_enriched:
+            {unit_volume, unit_qty, vintage, abv_proof, product_type,
+            enr_category, enr_region}. Built by the build script from a
+            DuckDB connection and passed here so the embedding text includes
+            volume/proof/vintage/type even though they aren't in
+            product_enrichment. When absent, embedding reverts to the
+            Go-UPC-only text (name + brand + region + category + description).
 
     Returns a small dict with counts for the log line at run end.
     """
@@ -224,11 +261,21 @@ def index_enrichment(
             # Row may be a dict (psycopg dict_row) or a tuple — handle both.
             if isinstance(r, dict):
                 upc = r["upc"]
-                blob = _compose_text(r["name"], r["brand"], r["description"],
-                                     r["region"], r["category"], r["category_path"])
+                name, brand, desc, region, cat, cat_path = (
+                    r["name"], r["brand"], r["description"],
+                    r["region"], r["category"], r["category_path"])
             else:
                 upc = r[0]
-                blob = _compose_text(r[1], r[2], r[3], r[4], r[5], r[6])
+                name, brand, desc, region, cat, cat_path = r[1], r[2], r[3], r[4], r[5], r[6]
+            cpl = (cpl_supplement or {}).get(str(upc).lstrip("0") or str(upc)) or {}
+            blob = _compose_text(name, brand, desc, region, cat, cat_path,
+                                 unit_volume=cpl.get("unit_volume"),
+                                 unit_qty=cpl.get("unit_qty"),
+                                 vintage=cpl.get("vintage"),
+                                 abv_proof=cpl.get("abv_proof"),
+                                 product_type=cpl.get("product_type"),
+                                 enr_category=cpl.get("enr_category"),
+                                 enr_region=cpl.get("enr_region"))
             if not blob.strip():
                 skipped_empty += 1
                 continue

@@ -4187,19 +4187,20 @@ _SYSTEM = (
     "LOST / GAINED a RIP or combo', 'deeper discount than last month', 'what changed' -> call "
     "deal_changes (direction=lost|gained|changed, scope=rip|discount|combo|any, plus match/region/"
     "varietal/category/distributor). It returns the changed products and drives the grid. "
-    "EDITION AVAILABILITY — HARD RULE ON FUTURE MONTHS: deal_changes, edition_compare, and "
-    "price_movers always operate on the most recently PUBLISHED CPL editions. They cannot return "
-    "data for a month that has not been loaded yet. If the user asks about a specific future month "
-    "by name (e.g. 'July vs June', 'better in July', 'what changed in July', 'July RIP') and that "
-    "month is not published: (1) The FIRST line of your reply MUST be the disclosure — "
-    "'The [Month] edition hasn't been published yet.' — never bury it in the middle. "
-    "(2) State which comparison IS available (e.g. 'I can show June vs May — the two most recent "
-    "published editions.'). (3) ASK: 'Want me to run that comparison instead?' (4) DO NOT silently "
-    "run a proxy comparison and present it as the answer to the user's question. Running 'June vs "
-    "May' in response to 'July vs June' without asking first is wrong — the user may not want that "
-    "comparison at all. This rule applies whenever a named future month appears in the question. "
-    "If no future month is named ('what changed this month', 'what gained a RIP', 'latest changes') "
-    "run the tool directly without asking. "
+    "EDITION AVAILABILITY — USE THE CONTEXT HEADER: your context begins with a 'PUBLISHED EDITIONS' "
+    "line injected live from the database. That line is the ONLY ground truth for which CPL months "
+    "exist. Never guess; never rely on the current calendar date alone. "
+    "Any month NOT in the published list cannot be queried. This applies to ALL tools that accept a "
+    "month/edition param: rip_lookup, rip_summary, edition_compare, deal_changes, price_movers. "
+    "If the user names a month that is NOT in the published list: (1) The FIRST line of your reply "
+    "MUST be the disclosure — '[Month] edition hasn't been published yet.' — never bury it. "
+    "(2) State which editions ARE available from the header. (3) ASK before running any proxy "
+    "comparison — the user may not want the available alternative at all. "
+    "If empty results come back from a tool for a month that IS in the published list, that is a "
+    "genuine 'no matching products' answer — not a missing edition. "
+    "deal_changes and price_movers always compare the two most recently published editions; the "
+    "'PUBLISHED EDITIONS' header tells you exactly which months those are. "
+    "If no specific future month is named, run tools directly without asking. "
     "BEER mix-&-match / KEG: for 'beer mix and match', 'best blended cost per case', 'rolling keg "
     "rebates', 'minimum buy to qualify for the beer tier' -> call beer_mix_match (Peerless / High "
     "Grade only). MAX-DOLLAR RIPS: for 'which RIPs pay close to the $1,000 cap', 'biggest dollar "
@@ -5773,12 +5774,44 @@ class _Capture:
         return {"error": "unknown tool"}
 
 
+def _edition_context_block() -> str:
+    """Returns a one-line edition-availability header built from the live DB.
+    Injected at request time so the model always has ground truth about which
+    CPL months are loaded, regardless of the current calendar date."""
+    try:
+        with get_duckdb() as _con:
+            rows = _con.execute(
+                "SELECT DISTINCT edition FROM cpl_enriched ORDER BY edition"
+            ).fetchall()
+            eds = [r[0] for r in rows if r[0]]
+    except Exception:
+        return ""
+    if not eds:
+        return ""
+    nym = _pricing.next_yyyy_mm()
+    published = sorted(eds)
+    latest = published[-1]
+    prior = published[-2] if len(published) >= 2 else None
+    next_in_db = nym in published
+    parts = [f"PUBLISHED EDITIONS: {', '.join(published)}."]
+    parts.append(f"Latest published: {latest}.")
+    if prior:
+        parts.append(f"Prior edition: {prior}.")
+        parts.append(f"deal_changes and price_movers compare {prior} -> {latest}.")
+    if next_in_db:
+        parts.append(f"Next edition ({nym}) IS in the database.")
+    else:
+        parts.append(f"Next edition ({nym}) is NOT loaded yet.")
+    return " ".join(parts)
+
+
 def _system_dynamic_blocks(page, page_path) -> list[str]:
     """The per-request system text blocks appended after the static _SYSTEM (the
     CORE RULE + SCREEN SCOPE + STANDALONE behaviour). Shared by both the raw-API
     loop (as cache-controlled blocks) and the Agent SDK path (joined into the
     single system_prompt string)."""
-    blocks = [
+    edition_ctx = _edition_context_block()
+    blocks = [*(([edition_ctx]) if edition_ctx else []),
         "CORE RULE — adapt to WHERE you are running (the SCREEN/STANDALONE block below says which):\n"
         "(A) DOCKED beside a data grid (you are on a page screen): your primary job is to REFRESH THAT GRID. "
         "For any show / find / filter / sort / 'with RIP' / 'on deal' / price-trend request, call show_on_screen "

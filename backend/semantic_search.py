@@ -188,8 +188,8 @@ def semantic_search(
 
     Returns a list of dicts in the same shape as /api/catalog/search items:
     product_name, wholesaler, upc, unit_volume, unit_qty, vintage,
-    frontline_case_price, effective_case_price, plus a `score` field
-    carrying the relevance for the UI to optionally display.
+    frontline_case_price, effective_case_price, product_type, enr_category,
+    enr_region, abv_proof, plus a `score` field for relevance display.
     """
     q = (query or "").strip()
     if not q or con_pg is None or con_duck is None:
@@ -237,10 +237,22 @@ def semantic_search(
     params = {"cym": cym}
     for i, v in enumerate(upcs):
         params[f"u_{i}"] = v
+    has_enr_cat = bool(con_duck.execute(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name='cpl_enriched' AND column_name='enr_category'"
+    ).fetchone())
+    enr_cat_sel = "c.enr_category, c.enr_region," if has_enr_cat else "NULL AS enr_category, NULL AS enr_region,"
     pt_clause = ""
     if product_type:
-        pt_clause = "AND c.product_type = $pt"
         params["pt"] = product_type
+        if has_enr_cat:
+            # Granular terms like "bourbon" or "scotch whisky" won't match product_type
+            # ("Spirits") — fall through to enr_category ILIKE as well.
+            params["pt_like"] = f"%{product_type}%"
+            pt_clause = ("AND (c.product_type = $pt "
+                         "OR LOWER(COALESCE(c.enr_category,'')) LIKE LOWER($pt_like))")
+        else:
+            pt_clause = "AND c.product_type = $pt"
     rows = con_duck.execute(
         f"""
         WITH cur AS (
@@ -251,7 +263,7 @@ def semantic_search(
         )
         SELECT c.product_name, c.wholesaler, c.upc, c.unit_volume, c.unit_qty,
                c.vintage, c.frontline_case_price, c.effective_case_price,
-               c.product_type
+               c.product_type, {enr_cat_sel} c.abv_proof
         FROM cpl_enriched c
         JOIN cur ON c.wholesaler = cur.wholesaler AND c.edition = cur.ed
         WHERE LTRIM(CAST(c.upc AS VARCHAR), '0') IN ({upc_ph})

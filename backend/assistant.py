@@ -1632,8 +1632,26 @@ def _t_edition_compare(con, args):
     elif change in ("down", "drop", "decrease"):
         change = "decrease"
     lim = int(args.get("limit") or (50 if scope == "catalog" else 20))
-    return edition_comparison(con, w, older, newer, scope, match, change,
-                              sort="net_delta", order="desc", limit=lim)
+    result = edition_comparison(con, w, older, newer, scope, match, change,
+                                sort="net_delta", order="desc", limit=lim)
+    # Guard: if match is a broad category/type/region term (not a specific
+    # product) it can resolve to 50-200 rows, which is useless for this tool
+    # and means the qualifier was stripped. Return an actionable error so the
+    # model retries with the full name. Category questions belong in
+    # deal_changes() or price_movers() with product_type=, not here.
+    if match and isinstance(result, dict):
+        digits = re.sub(r"\D", "", match)
+        if result.get("total", 0) > 25 and len(digits) < 8:
+            return {
+                "error": (
+                    f"MATCH TOO BROAD: '{match}' matched {result['total']} products. "
+                    "Pass the full product qualifier, e.g. 'glenlivet jamaican edition', "
+                    "'jack honey 750ml', or a UPC. "
+                    "For category comparisons (all bourbon, all scotch whisky) use "
+                    "deal_changes() or price_movers() with product_type= instead."
+                ),
+            }
+    return result
 
 
 def _t_rate_shop(con, args):

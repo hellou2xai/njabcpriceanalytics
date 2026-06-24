@@ -5091,7 +5091,14 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 /* Near full-width conversation (Claude/ChatGPT wide layout): fill the content
    area with comfortable side padding, capped so it stays sane on ultra-wide
    monitors. Was max-width:900px, which left big empty margins. */
-.celar-page { display: flex; flex-direction: row; height: calc(100vh - 16px); width: 100%; box-sizing: border-box; overflow: hidden; }
+/* Strip main-content padding for the full-page chat — it wastes 64px wide + 48px tall.
+   :has() specificity (0,2,0) beats the base .main-content (0,1,0) rule. */
+.main-content:has(> .celar-page) { padding: 0; }
+/* Mobile: main-content has no defined height; give it the full viewport */
+@media (max-width: 1023px) {
+  .main-content:has(> .celar-page) { height: 100dvh; overflow: hidden; }
+}
+.celar-page { display: flex; flex-direction: row; height: 100%; width: 100%; box-sizing: border-box; overflow: hidden; }
 .celar-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 6px 4px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 .celar-head-title { display: flex; gap: 11px; align-items: center; min-width: 0; flex: 1 1 200px; }
 .celar-spark { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 10px; color: #fff; flex-shrink: 0;
@@ -5239,7 +5246,7 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 .celar-compare-table tbody td.celar-compare-name,
 .celar-compare-table thead th { white-space: nowrap; }
 .celar-compare-table thead th {
-  text-align: left; padding: 8px 10px;
+  text-align: left; padding: 6px 8px;
   background: color-mix(in srgb, var(--accent) 6%, var(--bg));
   border-bottom: 1px solid var(--border);
   font-size: 11px; font-weight: 700; text-transform: uppercase;
@@ -5247,7 +5254,7 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
   white-space: nowrap;
 }
 .celar-compare-table tbody td {
-  padding: 8px 10px; border-bottom: 1px solid var(--border);
+  padding: 6px 8px; border-bottom: 1px solid var(--border);
   vertical-align: top;
 }
 .celar-compare-table tbody tr:last-child td { border-bottom: none; }
@@ -5467,11 +5474,10 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 }
 .celar-main {
   flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; height: 100%;
-  max-width: 900px; margin: 0 auto; padding: 0 clamp(12px, 2vw, 32px); box-sizing: border-box;
+  padding: 0 clamp(12px, 1.5vw, 24px); box-sizing: border-box;
 }
 @media (max-width: 1100px) {
   .celar-sidebar { display: none; }
-  .celar-main { max-width: 100%; }
 }
 
 /* Sidebar internals */
@@ -5499,9 +5505,11 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
   border: 1px solid var(--border); line-height: 1.4; background: var(--bg);
 }
 
-/* Constrain bubble width on the dedicated full page for readability */
-.celar-page .celar-msg-assistant .celar-bubble { max-width: 760px; }
-.celar-page .celar-msg-user .celar-bubble { max-width: 580px; }
+/* Full-page bubbles: relative, not absolute, so they never exceed the thread width.
+   Absolute 760px / 580px beat the base calc(100%-44px) rule and caused data overflow
+   when the thread was narrower than 760px (common on 1280px screens). */
+.celar-page .celar-msg-assistant .celar-bubble { max-width: 100%; }
+.celar-page .celar-msg-user .celar-bubble { max-width: 72%; }
 
 /* Larger suggestion chips on the standalone page */
 .celar-page .celar-suggestion { font-size: 14px; padding: 13px 16px; }

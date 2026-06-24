@@ -312,10 +312,28 @@ def _resolve_products(con, view: dict, match: str, which: str, cap: int,
                 params[f"fl{i}"] = f"%{fw}%"
             flav = " OR ".join(f"UPPER(c.product_name) LIKE $fl{i}" for i in range(len(_FLAVOR_TOKENS)))
             where.append(f"({flav})" if flavored_intent else f"NOT ({flav})")
+    # enr_category presence check: the column is added during cache enrichment and
+    # may be absent on older caches. Probe once per call so the SQL stays valid.
+    _has_enr_cat = bool(con.execute(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name='cpl_enriched' AND column_name='enr_category'"
+    ).fetchone())
     for i, cat in enumerate(view.get("categories") or []):
         params[f"cat{i}"] = cat
+        if _has_enr_cat:
+            params[f"cat_like{i}"] = f"%{cat}%"
     if view.get("categories"):
-        where.append("c.product_type IN (" + ", ".join(f"$cat{i}" for i in range(len(view['categories']))) + ")")
+        if _has_enr_cat:
+            # For granular categories like "bourbon" or "scotch whisky" that aren't
+            # valid product_type values, fall through to enr_category ILIKE so the
+            # filter still narrows correctly even when product_type is "Spirits".
+            cat_preds = [
+                f"(c.product_type = $cat{i} OR LOWER(COALESCE(c.enr_category,'')) LIKE LOWER($cat_like{i}))"
+                for i in range(len(view["categories"]))
+            ]
+            where.append("(" + " OR ".join(cat_preds) + ")")
+        else:
+            where.append("c.product_type IN (" + ", ".join(f"$cat{i}" for i in range(len(view['categories']))) + ")")
     # Normalise distributor names ("Allied Beverage" -> "allied") so the filter
     # matches the slug stored in the catalog instead of silently finding nothing.
     divisions = [resolve_distributor(d) or d for d in (view.get("divisions") or [])]
@@ -390,13 +408,14 @@ def _resolve_products(con, view: dict, match: str, which: str, cap: int,
     # downstream by-UPC tool (deal_360, price_details) can actually price.
     order = ("CASE WHEN LENGTH(LTRIM(CAST(c.upc AS VARCHAR), '0')) >= 8 "
              "THEN 0 ELSE 1 END, " + order)
+    _enr_cat_sel = "c.enr_category, c.enr_region," if _has_enr_cat else "NULL AS enr_category, NULL AS enr_region,"
     sql = f"""
         WITH cur AS (
           SELECT wholesaler, COALESCE(MAX(CASE WHEN edition <= $cym THEN edition END), MAX(edition)) AS ed
           FROM cpl_enriched GROUP BY wholesaler
         )
         SELECT c.product_name, c.wholesaler, c.upc, c.unit_volume, c.unit_qty, c.vintage,
-               c.effective_case_price, c.frontline_case_price
+               c.effective_case_price, c.frontline_case_price, {_enr_cat_sel} c.product_type
         FROM cpl_enriched c JOIN cur ON c.wholesaler = cur.wholesaler AND c.edition = cur.ed
         WHERE {' AND '.join(where)}
         ORDER BY {order}
@@ -419,6 +438,9 @@ def _resolve_products(con, view: dict, match: str, which: str, cap: int,
                                      if _clean(r["effective_case_price"]) is not None else None),
             "frontline_case_price": (float(r["frontline_case_price"])
                                      if _clean(r["frontline_case_price"]) is not None else None),
+            "product_type": _clean(r.get("product_type")),
+            "enr_category": _clean(r.get("enr_category")),
+            "enr_region": _clean(r.get("enr_region")),
         })
     # Allied (ABG) SKU on Allied rows only, so the assistant shows the
     # distributor's own item number next to the UPC.

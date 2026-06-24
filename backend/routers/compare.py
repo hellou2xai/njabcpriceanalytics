@@ -472,8 +472,12 @@ def _common_rows(con, src: str, slugs: list[str], eds: dict[str, str],
         "SELECT 1 FROM information_schema.columns "
         "WHERE table_name = ? AND column_name = 'enr_name'", [src]).fetchone())
     enr_sel = "enr_name," if has_enr else "NULL AS enr_name,"
+    has_enr_cat = bool(con.execute(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = ? AND column_name = 'enr_category'", [src]).fetchone())
+    enr_cat_sel = "enr_category, enr_region," if has_enr_cat else "NULL AS enr_category, NULL AS enr_region,"
     sql = f"""
-        SELECT wholesaler, edition, upc, product_name, {enr_sel} product_type, brand,
+        SELECT wholesaler, edition, upc, product_name, {enr_sel} {enr_cat_sel} product_type, brand,
                unit_qty, unit_volume, unit_volume_std, unit_type, vintage, abv_proof,
                from_date, to_date,
                frontline_case_price, frontline_unit_price,
@@ -2141,19 +2145,34 @@ def compare_rips(
                 if bb and not any(bb in (r.get("brand") or "").lower() for r in recs):
                     return False
                 if qq_toks:
-                    # Check name, brand, type, and UPC. Type is included so
-                    # category/region terms ('bourbon', 'scotch', 'french wine')
-                    # match products that don't carry those words in their name.
-                    def _field_match(value):
-                        nl = (value or "").lower()
-                        return all(_tok_in_name(t, nl) for t in qq_toks)
-                    if not any(
-                        _field_match(r.get("product_name"))
-                        or _field_match(r.get("brand"))
-                        or _field_match(r.get("product_type"))
-                        or qq in str(r.get("upc") or "").lstrip("0")
-                        for r in recs
-                    ):
+                    def _tok_hits(tok, r):
+                        # One token against all attributes: name, brand, type,
+                        # enr_category, volume (e.g. "750ml"), pack size (e.g. "12"),
+                        # vintage year (e.g. "2019"), and UPC substring.
+                        t = tok.lower().replace(" ", "")
+                        def _pref(v):
+                            return _tok_in_name(tok, (v or "").lower())
+                        vol = (r.get("unit_volume") or "").lower().replace(" ", "")
+                        try:
+                            pack = str(int(float(r.get("unit_qty")))) if r.get("unit_qty") is not None else ""
+                        except (ValueError, TypeError):
+                            pack = ""
+                        vint = str(r.get("vintage_norm") or r.get("vintage") or "").split(".")[0]
+                        return (
+                            _pref(r.get("product_name"))
+                            or _pref(r.get("brand"))
+                            or _pref(r.get("product_type"))
+                            or _pref(r.get("enr_category"))
+                            or _pref(r.get("enr_region"))
+                            or (vol and vol.startswith(t))
+                            or (pack and t == pack)
+                            or (vint and len(vint) == 4 and t == vint)
+                            or tok in str(r.get("upc") or "").lstrip("0")
+                        )
+                    # Each token must match some attribute of the same record;
+                    # different tokens may hit different fields ("750ml" vs
+                    # "bourbon" resolve independently but must coexist in one r).
+                    if not any(all(_tok_hits(t, r) for t in qq_toks) for r in recs):
                         return False
                 elif qq and not any(
                     qq in (r.get("product_name") or "").lower()
@@ -2716,6 +2735,8 @@ def compare_qds(
                         _field_match(r.get("product_name"))
                         or _field_match(r.get("brand"))
                         or _field_match(r.get("product_type"))
+                        or _field_match(r.get("enr_category"))
+                        or _field_match(r.get("enr_region"))
                         or qq in str(r.get("upc") or "").lstrip("0")
                         for r in recs
                     ):

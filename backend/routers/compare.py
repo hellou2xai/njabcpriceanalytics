@@ -2141,11 +2141,16 @@ def compare_rips(
                 if bb and not any(bb in (r.get("brand") or "").lower() for r in recs):
                     return False
                 if qq_toks:
-                    def _nm(name):
-                        nl = (name or "").lower()
+                    # Check name, brand, type, and UPC. Type is included so
+                    # category/region terms ('bourbon', 'scotch', 'french wine')
+                    # match products that don't carry those words in their name.
+                    def _field_match(value):
+                        nl = (value or "").lower()
                         return all(_tok_in_name(t, nl) for t in qq_toks)
                     if not any(
-                        _nm(r.get("product_name")) or _nm(r.get("brand"))
+                        _field_match(r.get("product_name"))
+                        or _field_match(r.get("brand"))
+                        or _field_match(r.get("product_type"))
                         or qq in str(r.get("upc") or "").lstrip("0")
                         for r in recs
                     ):
@@ -2153,6 +2158,7 @@ def compare_rips(
                 elif qq and not any(
                     qq in (r.get("product_name") or "").lower()
                     or qq in (r.get("brand") or "").lower()
+                    or qq in (r.get("product_type") or "").lower()
                     or qq in str(r.get("upc") or "").lstrip("0")
                     for r in recs
                 ):
@@ -2703,11 +2709,13 @@ def compare_qds(
                 if bb and not any(bb in (r.get("brand") or "").lower() for r in recs):
                     return False
                 if qq_toks:
-                    def _nm(name):
-                        nl = (name or "").lower()
+                    def _field_match(value):
+                        nl = (value or "").lower()
                         return all(_tok_in_name(t, nl) for t in qq_toks)
                     if not any(
-                        _nm(r.get("product_name")) or _nm(r.get("brand"))
+                        _field_match(r.get("product_name"))
+                        or _field_match(r.get("brand"))
+                        or _field_match(r.get("product_type"))
                         or qq in str(r.get("upc") or "").lstrip("0")
                         for r in recs
                     ):
@@ -2715,6 +2723,7 @@ def compare_qds(
                 elif qq and not any(
                     qq in (r.get("product_name") or "").lower()
                     or qq in (r.get("brand") or "").lower()
+                    or qq in (r.get("product_type") or "").lower()
                     or qq in str(r.get("upc") or "").lstrip("0")
                     for r in recs
                 ):
@@ -3209,11 +3218,13 @@ def best_rips(
                     if bb and not any(bb in (r.get("brand") or "").lower() for r in recs):
                         return False
                     if qq_toks:
-                        def _nm(name):
-                            nl = (name or "").lower()
+                        def _field_match(value):
+                            nl = (value or "").lower()
                             return all(_tok_in_name(t, nl) for t in qq_toks)
                         if not any(
-                            _nm(r.get("product_name")) or _nm(r.get("brand"))
+                            _field_match(r.get("product_name"))
+                            or _field_match(r.get("brand"))
+                            or _field_match(r.get("product_type"))
                             or qq in str(r.get("upc") or "").lstrip("0")
                             for r in recs
                         ):
@@ -3221,6 +3232,7 @@ def best_rips(
                     elif qq and not any(
                         qq in (r.get("product_name") or "").lower()
                         or qq in (r.get("brand") or "").lower()
+                        or qq in (r.get("product_type") or "").lower()
                         or qq in str(r.get("upc") or "").lstrip("0")
                         for r in recs
                     ):
@@ -3600,11 +3612,13 @@ def best_qd(
                     if bb and not any(bb in (r.get("brand") or "").lower() for r in recs):
                         return False
                     if qq_toks:
-                        def _nm(name):
-                            nl = (name or "").lower()
+                        def _field_match(value):
+                            nl = (value or "").lower()
                             return all(_tok_in_name(t, nl) for t in qq_toks)
                         if not any(
-                            _nm(r.get("product_name")) or _nm(r.get("brand"))
+                            _field_match(r.get("product_name"))
+                            or _field_match(r.get("brand"))
+                            or _field_match(r.get("product_type"))
                             or qq in str(r.get("upc") or "").lstrip("0")
                             for r in recs
                         ):
@@ -3612,6 +3626,7 @@ def best_qd(
                     elif qq and not any(
                         qq in (r.get("product_name") or "").lower()
                         or qq in (r.get("brand") or "").lower()
+                        or qq in (r.get("product_type") or "").lower()
                         or qq in str(r.get("upc") or "").lstrip("0")
                         for r in recs
                     ):

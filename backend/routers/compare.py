@@ -3910,6 +3910,31 @@ def warm_board_caches() -> None:
             sort="spread", order="desc", limit=2000, month_mode="cur",
             user=None, request=None, response=None,
         )),
+        # Compare Prices defaults to allied+fedway (most common pair); also warm
+        # with only_differences=True since the page defaults to that filter on.
+        ("compare_products(diff=False)", lambda: compare_products(
+            wholesalers="allied,fedway", q="", product_type="",
+            only_differences=False, min_spread=0.0, cases=0,
+            sort="spread", order="desc", limit=2000, months=1,
+            month_mode="cur", confidence="high", verified="all",
+            user=None, request=None, response=None,
+        )),
+        ("compare_products(diff=True)", lambda: compare_products(
+            wholesalers="allied,fedway", q="", product_type="",
+            only_differences=True, min_spread=1.0, cases=0,
+            sort="spread", order="desc", limit=2000, months=1,
+            month_mode="cur", confidence="high", verified="all",
+            user=None, request=None, response=None,
+        )),
+        # Compare QD defaults to allied+fedway with cases=5.
+        ("compare_qds", lambda: compare_qds(
+            wholesalers="allied,fedway", cases=5, q="", product_type="",
+            brand="", only_differences=False, min_diff=1.0,
+            include_anomalies=False, time_sensitive_only=False,
+            expiring_only=False, timing_diff_only=False, qd_diff_only=False,
+            sort="spread", order="desc", limit=2000, month_mode="cur",
+            user=None, request=None, response=None,
+        )),
     ]
     for name, fn in boards:
         try:

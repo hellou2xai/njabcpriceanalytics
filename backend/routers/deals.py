@@ -2412,6 +2412,18 @@ def warm_combos_cache() -> None:
         print(f"[startup] combos warm failed: {exc}")
 
 
+def warm_discounts_cache() -> None:
+    """Pre-warm the default Discounts page response."""
+    try:
+        get_top_discounts(wholesaler=None, edition=None, product_type=None,
+                          min_discount_pct=0, sort="total_savings_per_case",
+                          limit=50, per_category=False,
+                          request=None, response=None)
+        print("[startup] discounts cache warmed")
+    except Exception as exc:
+        print(f"[startup] discounts warm failed: {exc}")
+
+
 @router.get("/rip-products")
 def get_rip_products(
     wholesaler: Optional[str] = None,

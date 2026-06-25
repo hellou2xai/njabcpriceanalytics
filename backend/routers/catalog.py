@@ -2299,6 +2299,19 @@ def new_items(
     Rows are the current-edition catalog records (same shape as /search) plus an
     ``introduced_edition`` field, so the catalog table renders identically.
     """
+    # Cache the default first-page load (no tiers, no offset) so repeat visits
+    # and the startup warm don't re-run the heavy cross-edition UPC diff query.
+    # Keyed on date (ET) so RIP window status auto-invalidates daily, and on the
+    # pricing file path via pricing_tag() so a data reload invalidates it too.
+    _cache_key = None
+    if not include_tiers and offset == 0:
+        _cache_key = (q or "", wholesaler or "", int(months),
+                      introduced_edition or "", has_discount, has_rip,
+                      sort, order, int(limit),
+                      as_of or _pricing.eastern_today().isoformat())
+        _hit = _cache.peek("new-items", _cache_key)
+        if _hit is not None:
+            return _hit
     with get_duckdb() as con:
         src = read_parquet(con, "cpl_enriched")
         current_ym = _current_yyyy_mm()
@@ -2459,7 +2472,7 @@ def new_items(
         _attach_sku_mapping(con, records)
         _attach_dup_upc(con, src, records)
 
-        return {
+        _result = {
             "total": int(count),
             "limit": limit,
             "offset": offset,
@@ -2468,6 +2481,20 @@ def new_items(
             "months": months_summary,
             "items": records,
         }
+    if _cache_key is not None:
+        _cache.store("new-items", _cache_key, _result)
+    return _result
+
+
+def warm_new_items() -> None:
+    """Pre-warm the default New Items page (first page, no tiers)."""
+    try:
+        new_items(q="", wholesaler=None, introduced_edition=None, months=3,
+                  has_discount=None, has_rip=None, sort="introduced_edition",
+                  order="desc", limit=50, offset=0, include_tiers=False, as_of=None)
+        print("[startup] new-items cache warmed")
+    except Exception as exc:
+        print(f"[startup] new-items warm failed: {exc}")
 
 
 @router.get("/product/{wholesaler}/{product_name:path}")

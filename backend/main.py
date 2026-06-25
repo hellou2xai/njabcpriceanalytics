@@ -192,16 +192,26 @@ def startup():
         # Warm the RIP Products tier cache in the background so the first open of
         # that (heavy) page is instant. Never blocks startup or the health check.
         import threading
-        from backend.routers.deals import warm_rip_cache, warm_time_sensitive_cache, warm_combos_cache
+        from backend.routers.deals import (
+            warm_rip_cache, warm_time_sensitive_cache,
+            warm_combos_cache, warm_discounts_cache)
         threading.Thread(target=warm_rip_cache, daemon=True).start()
         # Prime the Time-Sensitive Deals payload so the first open is instant.
         threading.Thread(target=warm_time_sensitive_cache, daemon=True).start()
-        # Prime the Best RIPs, Best QD, Compare RIPs, and Combos boards so the
-        # first visitor after a deploy doesn't pay the 15-20s cold-compute cost.
-        # Runs sequentially inside one thread (DuckDB is single-threaded, parallel
-        # threads just serialize on the lock and add overhead).
+        # Prime the compare boards, combos, discounts, and new-items so the
+        # first visitor after a deploy doesn't pay the 7-20s cold-compute cost.
+        # Runs sequentially inside one thread (DuckDB is single-threaded).
         from backend.routers.compare import warm_board_caches
-        threading.Thread(target=lambda: [warm_board_caches(), warm_combos_cache()], daemon=True).start()
+        from backend.routers.catalog import warm_new_items
+        threading.Thread(
+            target=lambda: [
+                warm_board_caches(),
+                warm_combos_cache(),
+                warm_discounts_cache(),
+                warm_new_items(),
+            ],
+            daemon=True,
+        ).start()
         # Prime the default Products grid response (perf #2 memo) so the first
         # visitor doesn't eat the cold catalog query.
         try:
@@ -265,12 +275,21 @@ def reload_pricing(user: dict = Depends(get_current_user)):
     import threading
     from backend.routers.deals import (
         warm_rip_cache, clear_time_sensitive_cache, warm_time_sensitive_cache,
-        warm_combos_cache)
+        warm_combos_cache, warm_discounts_cache)
     from backend.routers.compare import warm_board_caches
+    from backend.routers.catalog import warm_new_items
     clear_time_sensitive_cache()   # drop the cached Time-Sensitive payloads
     threading.Thread(target=warm_rip_cache, daemon=True).start()
     threading.Thread(target=warm_time_sensitive_cache, daemon=True).start()
-    threading.Thread(target=lambda: [warm_board_caches(), warm_combos_cache()], daemon=True).start()
+    threading.Thread(
+        target=lambda: [
+            warm_board_caches(),
+            warm_combos_cache(),
+            warm_discounts_cache(),
+            warm_new_items(),
+        ],
+        daemon=True,
+    ).start()
     # Re-warm the default Products grid memo (auto-invalidated by the new
     # pricing file path) so the post-reload first visitor stays instant.
     try:

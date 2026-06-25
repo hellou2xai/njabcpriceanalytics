@@ -37,7 +37,17 @@ def get_pool() -> ConnectionPool:
             min_size=1,
             max_size=10,
             open=True,
-            kwargs={"row_factory": dict_row},
+            kwargs={
+                "row_factory": dict_row,
+                "connect_timeout": 10,
+                # TCP keepalives detect silently-dropped Render connections
+                # within ~25s (10s idle + 3 probes × 5s) instead of hanging
+                # until the next query attempt times out at the app level.
+                "keepalives": 1,
+                "keepalives_idle": 10,
+                "keepalives_interval": 5,
+                "keepalives_count": 3,
+            },
         )
     return _pool
 

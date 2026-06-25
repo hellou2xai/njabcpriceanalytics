@@ -143,20 +143,28 @@ def main() -> None:
         except Exception as exc:
             print(f"  cpl_enriched supplement skipped: {exc}")
 
-    with psycopg.connect(args.database_url) as con:
-        ensure_table(con)
-        from backend.voyage_embed import index_enrichment
-        result = index_enrichment(
-            con,
-            only_missing=not args.all,
-            limit=args.limit,
-            model=args.model,
-            batch_size=args.batch_size,
-            pause_between_batches=args.pause,
-            cpl_supplement=cpl_supplement or None,
-        )
-        print()
-        print(f"Done: {result}")
+    # DDL phase: separate short-lived connection, no statement_timeout.
+    # HNSW index creation on a populated table can take several minutes —
+    # any statement_timeout here would kill it.
+    with psycopg.connect(args.database_url, connect_timeout=15) as setup_con:
+        ensure_table(setup_con)
+
+    # Embed phase: index_enrichment opens its own per-batch connections
+    # internally via voyage_embed._connect() which has full timeout protection
+    # (connect_timeout, keepalives, statement_timeout=30s).
+    # The con_pg param is unused inside index_enrichment — passing None is safe.
+    from backend.voyage_embed import index_enrichment
+    result = index_enrichment(
+        None,
+        only_missing=not args.all,
+        limit=args.limit,
+        model=args.model,
+        batch_size=args.batch_size,
+        pause_between_batches=args.pause,
+        cpl_supplement=cpl_supplement or None,
+    )
+    print()
+    print(f"Done: {result}")
 
 
 if __name__ == "__main__":

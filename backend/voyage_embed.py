@@ -42,50 +42,45 @@ def voyage_available() -> bool:
     return bool(os.getenv("VOYAGE_API_KEY"))
 
 
-def _post(payload: dict, *, retries: int = 3, timeout: float = 30.0) -> dict:
+def _post(payload: dict, *, retries: int = 3, read_timeout: float = 45.0) -> dict:
     """POST one batch to Voyage. Retries on 429/5xx with exponential backoff.
 
-    Tightened defaults: 30s socket timeout (was 60), 3 retries (was 4). At
-    the prior settings a single bad batch could burn 15 minutes silently."""
-    import urllib.request
-    import urllib.error
-    import json
+    Uses httpx instead of urllib so the per-phase timeout (connect vs read)
+    is enforced by urllib3-style infrastructure that works on Windows SSL
+    sockets. urllib's socket timeout is unreliable on Windows HTTPS once
+    the TLS handshake completes — a hung read blocks indefinitely."""
+    import httpx
 
     key = os.environ.get("VOYAGE_API_KEY")
     if not key:
         raise RuntimeError("VOYAGE_API_KEY not set")
-    body = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        VOYAGE_BASE_URL,
-        data=body,
-        method="POST",
-        headers={
-            "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json",
-        },
-    )
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+    }
+    timeout = httpx.Timeout(connect=10.0, read=read_timeout, write=10.0, pool=5.0)
     delay = 1.0
     for attempt in range(retries):
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                return json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            code = e.code
-            if code == 429 or 500 <= code < 600:
+            resp = httpx.post(VOYAGE_BASE_URL, json=payload, headers=headers, timeout=timeout)
+            if resp.status_code == 429 or 500 <= resp.status_code < 600:
                 log.warning("Voyage HTTP %d (attempt %d/%d) - backing off %.1fs",
-                            code, attempt + 1, retries, delay)
+                            resp.status_code, attempt + 1, retries, delay)
                 time.sleep(delay)
                 delay *= 2
                 continue
-            # Non-retryable: surface the response body for diagnostics.
-            try:
-                msg = e.read().decode("utf-8")
-            except Exception:
-                msg = str(e)
-            raise RuntimeError(f"Voyage HTTP {code}: {msg}") from e
-        except (urllib.error.URLError, TimeoutError) as e:
-            log.warning("Voyage URL error (attempt %d/%d): %s", attempt + 1, retries, e)
-            time.sleep(delay); delay *= 2
+            resp.raise_for_status()
+            return resp.json()
+        except httpx.TimeoutException as e:
+            log.warning("Voyage timeout (attempt %d/%d): %s", attempt + 1, retries, e)
+            time.sleep(delay)
+            delay *= 2
+        except httpx.HTTPStatusError as e:
+            raise RuntimeError(f"Voyage HTTP {e.response.status_code}: {e.response.text}") from e
+        except httpx.NetworkError as e:
+            log.warning("Voyage network error (attempt %d/%d): %s", attempt + 1, retries, e)
+            time.sleep(delay)
+            delay *= 2
     raise RuntimeError("Voyage request failed after retries")
 
 
@@ -179,14 +174,28 @@ def _format_vec_literal(vec: list[float]) -> str:
 
 
 def _connect():
-    """Open a fresh psycopg connection to the configured database. Used so the
-    indexer can grab a clean connection per batch — eliminates the Render-side
-    idle-timeout drops that kill long-lived connections mid-run."""
+    """Open a fresh psycopg connection to the configured database.
+
+    Three layers of timeout defence:
+    - connect_timeout=10: abort if the TCP+auth handshake takes > 10s.
+    - keepalives: detect a silently-dropped connection within ~10s of inactivity
+      (idle=5s, then 3 probes at 2s intervals). Without this, a hung execute()
+      or commit() can block indefinitely even after the server drops the socket.
+    - statement_timeout=30000: Postgres aborts any statement that runs > 30s,
+      which covers the INSERT/ON CONFLICT upsert loop."""
     import psycopg
     url = os.environ.get("RENDER_EXTERNAL_DATABASE_URL") or os.environ.get("DATABASE_URL")
     if not url:
         raise RuntimeError("no database URL")
-    return psycopg.connect(url, connect_timeout=10)
+    return psycopg.connect(
+        url,
+        connect_timeout=10,
+        keepalives=1,
+        keepalives_idle=5,
+        keepalives_interval=2,
+        keepalives_count=3,
+        options="-c statement_timeout=180000",
+    )
 
 
 def index_enrichment(

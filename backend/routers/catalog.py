@@ -10,6 +10,7 @@ import re
 from datetime import date
 
 from fastapi import APIRouter, Query, Depends, Request, Response
+from pydantic import BaseModel
 from typing import Optional
 
 from backend.db import get_duckdb, read_parquet
@@ -4905,9 +4906,6 @@ def _classify_trend(prices: list) -> str:
     elif recent < prev:
         return "falling"
     return "stable"
-
-
-from pydantic import BaseModel
 
 
 class CatalogAiQueryBody(BaseModel):

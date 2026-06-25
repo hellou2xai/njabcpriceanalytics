@@ -799,7 +799,10 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
             JOIN rip_windows_per_code_upc rw
                 ON cc.wholesaler = rw.wholesaler
                 AND cc.edition = rw.edition
-                AND cc.upc = rw.upc
+                AND (
+                    cc.upc = rw.upc
+                    OR (cc.upc IS NULL AND LTRIM(CAST(rw.upc AS VARCHAR), '0') = '')
+                )
                 -- Single listing (real UPC, not an all-same-digit stub): any
                 -- code's window for this UPC. Many listings: only the window
                 -- under THIS row's own valid matching code.
@@ -901,7 +904,12 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
                 ON cc.wholesaler = r1.wholesaler
                 AND cc.edition = r1.edition
                 AND cc.single_code = r1.rip_code
-                AND cc.upc = r1.upc
+                AND (
+                    cc.upc = r1.upc
+                    -- CPL row has no real UPC, RIP sheet has a stub (all-zero)
+                    -- catch-all row for the same code (e.g. Allied new vintages).
+                    OR (cc.upc IS NULL AND LTRIM(CAST(r1.upc AS VARCHAR), '0') = '')
+                )
                 AND cc.single_code != ''
                 AND cc.single_code != '0'
             LEFT JOIN rip_credit_by_pack pk

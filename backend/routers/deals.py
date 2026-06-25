@@ -2402,6 +2402,16 @@ def warm_rip_cache():
         print(f"[startup] RIP cache warm skipped: {e}")
 
 
+def warm_combos_cache() -> None:
+    """Pre-warm the default Combos page response so the first load is instant."""
+    try:
+        get_combos(wholesaler=None, edition=None, q="", limit=50,
+                   request=None, response=None)
+        print("[startup] combos cache warmed")
+    except Exception as exc:
+        print(f"[startup] combos warm failed: {exc}")
+
+
 @router.get("/rip-products")
 def get_rip_products(
     wholesaler: Optional[str] = None,

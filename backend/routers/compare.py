@@ -3879,6 +3879,46 @@ def best_qd(
     return result
 
 
+def warm_board_caches() -> None:
+    """Pre-warm Best RIPs, Best QD, and Compare RIPs for the default page load.
+
+    Called at startup (and after a pricing reload) in a background thread so
+    the first real user request hits the in-process board cache instead of
+    paying the full 15-20s DuckDB computation cost. Runs sequentially because
+    DuckDB is single-threaded; parallel threads would just serialize on the lock."""
+    boards = [
+        ("best_rips", lambda: best_rips(
+            q="", product_type="", brand="", wholesalers="", months="",
+            only_differences=False, min_profit=0.0, cases=0,
+            time_sensitive_only=False, hide_expired=True,
+            sort="best_profit", order="desc", limit=2000,
+            user=None, request=None, response=None,
+        )),
+        ("best_qd", lambda: best_qd(
+            q="", product_type="", brand="", wholesalers="", months="",
+            only_differences=False, min_discount=0.0, cases=0,
+            exclude_single_cs=False, time_sensitive_only=False,
+            hide_expired=True, sort="best_discount", order="desc", limit=2000,
+            user=None, request=None, response=None,
+        )),
+        ("compare_rips", lambda: compare_rips(
+            wholesalers="allied,fedway", cases=5, q="", product_type="",
+            brand="", only_differences=False, min_diff=1.0,
+            include_anomalies=False, time_sensitive_only=False,
+            combo_only=False, expiring_only=False, timing_diff_only=False,
+            qty_diff_only=False, better_terms_only=False, rip_diff_only=False,
+            sort="spread", order="desc", limit=2000, month_mode="cur",
+            user=None, request=None, response=None,
+        )),
+    ]
+    for name, fn in boards:
+        try:
+            fn()
+            print(f"[startup] {name} board warmed")
+        except Exception as exc:
+            print(f"[startup] {name} warm failed: {exc}")
+
+
 def assistant_rip_comparison(con, match: str, wholesalers: Optional[list[str]] = None,
                              cases: float = 5) -> dict:
     """Single-product RIP-outcome comparison for the AI assistant. Resolves

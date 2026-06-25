@@ -531,9 +531,10 @@ def attach_tiers(con, records, ref_date=None) -> None:
     uniq_codes = sorted({k[0] for k in keys})
     uniq_ws = sorted({k[1] for k in keys})
     uniq_ed = sorted({k[2] for k in keys})
-    rip_full: dict = {}    # (code, ws, ed, upc) -> [tiers]  (the only valid match)
-    rip_wins: dict = {}    # (ws, ed, upc_norm) -> [(from_date, to_date)] for gap detection
-    credit_pack: dict = {}  # (code, ws, ed, unit_volume, unit_qty_n) -> case_credit fallback
+    rip_full: dict = {}         # (code, ws, ed, upc) -> [tiers]  (the only valid match)
+    rip_by_item_no: dict = {}   # (code, ws, ed, dist_item_no) -> [tiers]  (no-UPC fallback)
+    rip_wins: dict = {}         # (ws, ed, upc_norm) -> [(from_date, to_date)] for gap detection
+    credit_pack: dict = {}      # (code, ws, ed, unit_volume, unit_qty_n) -> case_credit fallback
     if uniq_codes:
         # Pull all RIP rows matching any (code, ws, ed) on this page, then split
         # into per-UPC and code-level buckets so we can fall back when a
@@ -554,7 +555,8 @@ def attach_tiers(con, records, ref_date=None) -> None:
                    rip_unit_1, rip_qty_1, rip_amt_1,
                    rip_unit_2, rip_qty_2, rip_amt_2,
                    rip_unit_3, rip_qty_3, rip_amt_3,
-                   rip_unit_4, rip_qty_4, rip_amt_4
+                   rip_unit_4, rip_qty_4, rip_amt_4,
+                   CAST(dist_item_no AS VARCHAR) AS dist_item_no
             FROM {rip_src}
             WHERE rip_code IN ({ph_codes})
               AND wholesaler IN ({ph_ws})
@@ -663,6 +665,14 @@ def attach_tiers(con, records, ref_date=None) -> None:
                 continue
             upc_key = (str(r["rip_code"]), r["wholesaler"], r["edition"], str(r.get("upc") or ""))
             rip_full.setdefault(upc_key, []).extend(tiers_here)
+            # Item-number fallback: for RIP rows with no real UPC but a real
+            # dist_item_no, also index by (code, ws, ed, dist_item_no) so
+            # no-UPC CPL products can match by item number instead of barcode.
+            _item_no = str(r.get("dist_item_no") or "").strip()
+            _upc_raw = str(r.get("upc") or "").lstrip("0")
+            if _item_no and not _upc_raw:
+                item_key = (str(r["rip_code"]), r["wholesaler"], r["edition"], _item_no)
+                rip_by_item_no.setdefault(item_key, []).extend(tiers_here)
 
     # Partial-window QUANTITY DISCOUNTS. A dated promo lives as a SEPARATE
     # sub-month row in the RAW cpl (with its own best_case_price = the BEST QD
@@ -907,6 +917,20 @@ def attach_tiers(con, records, ref_date=None) -> None:
         is_stub = (not _u) or (len(set(_u)) <= 1)
         if not is_stub and (ws, ed, un) in single_listing:
             out.extend(rip_by_upc.get((ws, ed, un), []))
+        # Item-number fallback: when no real UPC is present on this CPL row AND
+        # the record carries a dist_item_no, look up by (code, ws, ed, item_no).
+        # This matches derive.py's rip_per_item_no CTE: same edition-scoping, same
+        # stub-UPC guard. Deduplicates by (qty, amount) to avoid tier repetition.
+        if is_stub and not out:
+            _item_no = str(rec.get("dist_item_no") or "").strip()
+            if _item_no:
+                seen_tiers: set = set()
+                for rc in candidates:
+                    for tier in rip_by_item_no.get((rc, ws, ed, _item_no), []):
+                        key = (tier["qty"], tier["amount"], tier.get("from_date"), tier.get("to_date"))
+                        if key not in seen_tiers:
+                            seen_tiers.add(key)
+                            out.append(tier)
         return out
 
     def _uq(rec) -> float:

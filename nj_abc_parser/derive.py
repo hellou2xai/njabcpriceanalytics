@@ -655,6 +655,60 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
                 AND rc.rip_code = CAST(b.rip_code AS VARCHAR)
                 AND rc.upc_n = LTRIM(CAST(b.upc AS VARCHAR), '0')
         ),
+        rip_per_item_no AS (
+            -- Fallback match for RIP rows where both the sheet and CPL carry no
+            -- real UPC but share a dist_item_no (Fedway item number). The item
+            -- number is product-specific: it encodes vintage, size, and pack, so
+            -- it is a safe substitute when barcodes are absent. Edition-scoped
+            -- like all other RIP CTEs (codes recycle across months). Full-month
+            -- gate applied same as rip_per_code_upc_raw.
+            SELECT
+                wholesaler, edition, rip_code,
+                CAST(dist_item_no AS VARCHAR) AS dist_item_no,
+                MAX(GREATEST(
+                    COALESCE(CASE WHEN rip_qty_1 > 0 AND LOWER(rip_unit_1) NOT LIKE 'b%' THEN rip_amt_1 / rip_qty_1 END, 0),
+                    COALESCE(CASE WHEN rip_qty_2 > 0 AND LOWER(rip_unit_2) NOT LIKE 'b%' THEN rip_amt_2 / rip_qty_2 END, 0),
+                    COALESCE(CASE WHEN rip_qty_3 > 0 AND LOWER(rip_unit_3) NOT LIKE 'b%' THEN rip_amt_3 / rip_qty_3 END, 0),
+                    COALESCE(CASE WHEN rip_qty_4 > 0 AND LOWER(rip_unit_4) NOT LIKE 'b%' THEN rip_amt_4 / rip_qty_4 END, 0)
+                )) AS best_case_per_case,
+                MAX(GREATEST(
+                    COALESCE(CASE WHEN rip_qty_1 > 0 AND LOWER(rip_unit_1) LIKE 'b%' THEN rip_amt_1 / rip_qty_1 END, 0),
+                    COALESCE(CASE WHEN rip_qty_2 > 0 AND LOWER(rip_unit_2) LIKE 'b%' THEN rip_amt_2 / rip_qty_2 END, 0),
+                    COALESCE(CASE WHEN rip_qty_3 > 0 AND LOWER(rip_unit_3) LIKE 'b%' THEN rip_amt_3 / rip_qty_3 END, 0),
+                    COALESCE(CASE WHEN rip_qty_4 > 0 AND LOWER(rip_unit_4) LIKE 'b%' THEN rip_amt_4 / rip_qty_4 END, 0)
+                )) AS best_bottle_per_bottle
+            FROM read_parquet('{pdir}/rip/**/data.parquet', hive_partitioning=true, union_by_name=true)
+            WHERE rip_code IS NOT NULL
+              AND dist_item_no IS NOT NULL AND CAST(dist_item_no AS VARCHAR) != ''
+              AND (upc IS NULL OR LTRIM(CAST(upc AS VARCHAR), '0') = '')
+              AND {full_window('from_date', 'to_date')}
+            GROUP BY wholesaler, edition, rip_code, CAST(dist_item_no AS VARCHAR)
+        ),
+        rip_windows_per_item_no AS (
+            -- Per-window version of rip_per_item_no (no full-month gate).
+            -- Powers the precomputed rip_windows JSON list for no-UPC products.
+            SELECT
+                wholesaler, edition, rip_code,
+                CAST(dist_item_no AS VARCHAR) AS dist_item_no,
+                from_date, to_date,
+                MAX(GREATEST(
+                    COALESCE(CASE WHEN rip_qty_1 > 0 AND LOWER(rip_unit_1) NOT LIKE 'b%' THEN rip_amt_1 / rip_qty_1 END, 0),
+                    COALESCE(CASE WHEN rip_qty_2 > 0 AND LOWER(rip_unit_2) NOT LIKE 'b%' THEN rip_amt_2 / rip_qty_2 END, 0),
+                    COALESCE(CASE WHEN rip_qty_3 > 0 AND LOWER(rip_unit_3) NOT LIKE 'b%' THEN rip_amt_3 / rip_qty_3 END, 0),
+                    COALESCE(CASE WHEN rip_qty_4 > 0 AND LOWER(rip_unit_4) NOT LIKE 'b%' THEN rip_amt_4 / rip_qty_4 END, 0)
+                )) AS best_case_per_case,
+                MAX(GREATEST(
+                    COALESCE(CASE WHEN rip_qty_1 > 0 AND LOWER(rip_unit_1) LIKE 'b%' THEN rip_amt_1 / rip_qty_1 END, 0),
+                    COALESCE(CASE WHEN rip_qty_2 > 0 AND LOWER(rip_unit_2) LIKE 'b%' THEN rip_amt_2 / rip_qty_2 END, 0),
+                    COALESCE(CASE WHEN rip_qty_3 > 0 AND LOWER(rip_unit_3) LIKE 'b%' THEN rip_amt_3 / rip_qty_3 END, 0),
+                    COALESCE(CASE WHEN rip_qty_4 > 0 AND LOWER(rip_unit_4) LIKE 'b%' THEN rip_amt_4 / rip_qty_4 END, 0)
+                )) AS best_bottle_per_bottle
+            FROM read_parquet('{pdir}/rip/**/data.parquet', hive_partitioning=true, union_by_name=true)
+            WHERE rip_code IS NOT NULL
+              AND dist_item_no IS NOT NULL AND CAST(dist_item_no AS VARCHAR) != ''
+              AND (upc IS NULL OR LTRIM(CAST(upc AS VARCHAR), '0') = '')
+            GROUP BY wholesaler, edition, rip_code, CAST(dist_item_no AS VARCHAR), from_date, to_date
+        ),
         -- How many DISTINCT listings share each (wholesaler, edition, UPC).
         -- "Listing" = the same identity the `joined` CTE partitions on
         -- (product_name, unit_volume, vintage). One UPC is reused across
@@ -769,6 +823,33 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
                   ) > 0
             GROUP BY cc.wholesaler, cc.edition, cc.upc, cc.product_name, cc.unit_volume, cc.vintage, cc.unit_qty
         ),
+        rip_windows_agg_item_no AS (
+            -- Mirrors rip_windows_agg for no-UPC CPL rows matched via dist_item_no.
+            -- Kept as a separate CTE so the existing UPC-path aggregation is unchanged.
+            SELECT
+                cc.wholesaler, cc.edition, cc.upc, cc.product_name, cc.unit_volume, cc.vintage, cc.unit_qty,
+                CAST(to_json(list(DISTINCT struct_pack(
+                    from_date := CAST(riw.from_date AS VARCHAR),
+                    to_date := CAST(riw.to_date AS VARCHAR),
+                    amt := ROUND(GREATEST(
+                        COALESCE(riw.best_case_per_case, 0),
+                        COALESCE(riw.best_bottle_per_bottle, 0) * COALESCE(TRY_CAST(cc.unit_qty AS DOUBLE), 1)
+                    ), 2)
+                ))) AS VARCHAR) AS rip_windows
+            FROM cpl_codes cc
+            JOIN rip_windows_per_item_no riw
+                ON riw.wholesaler = cc.wholesaler
+                AND riw.edition = cc.edition
+                AND riw.dist_item_no = CAST(cc.dist_item_no AS VARCHAR)
+                AND riw.rip_code = cc.single_code
+                AND cc.single_code != '' AND cc.single_code != '0'
+            WHERE (cc.upc IS NULL OR LTRIM(CAST(cc.upc AS VARCHAR), '0') = '')
+              AND GREATEST(
+                    COALESCE(riw.best_case_per_case, 0),
+                    COALESCE(riw.best_bottle_per_bottle, 0) * COALESCE(TRY_CAST(cc.unit_qty AS DOUBLE), 1)
+                  ) > 0
+            GROUP BY cc.wholesaler, cc.edition, cc.upc, cc.product_name, cc.unit_volume, cc.vintage, cc.unit_qty
+        ),
         cpl_with_rip AS (
             SELECT
                 cc.* EXCLUDE (single_code),
@@ -803,6 +884,11 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
                                 * CASE WHEN r1.upc_credit IS NULL
                                        THEN COALESCE(pk.case_credit, 1.0) ELSE 1.0 END,
                             COALESCE(r1.best_bottle_per_bottle, 0)
+                                * COALESCE(TRY_CAST(cc.unit_qty AS DOUBLE), 1),
+                            -- Item-number path: for products where CPL and RIP
+                            -- sheet both carry dist_item_no but no real UPC.
+                            COALESCE(ri.best_case_per_case, 0),
+                            COALESCE(ri.best_bottle_per_bottle, 0)
                                 * COALESCE(TRY_CAST(cc.unit_qty AS DOUBLE), 1)
                         )
                 END AS code_best_rip
@@ -828,6 +914,12 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
                 ON ru.wholesaler = cc.wholesaler
                 AND ru.edition = cc.edition
                 AND ru.upc_s = CAST(cc.upc AS VARCHAR)
+            LEFT JOIN rip_per_item_no ri
+                ON ri.wholesaler = cc.wholesaler
+                AND ri.edition = cc.edition
+                AND ri.rip_code = cc.single_code
+                AND ri.dist_item_no = CAST(cc.dist_item_no AS VARCHAR)
+                AND cc.single_code != '' AND cc.single_code != '0'
         ),
         joined AS (
             -- Collapse per-code rows back to one row per CPL line by taking
@@ -864,7 +956,7 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
                 j.* EXCLUDE (best_rip_amt, rn),
                 -- Date-aware RIP windows for the runtime "live now" price + sort,
                 -- as a JSON-array string. Empty array when the SKU carries no RIP.
-                COALESCE(rwa.rip_windows, '[]') AS rip_windows,
+                COALESCE(rwa.rip_windows, rwai.rip_windows, '[]') AS rip_windows,
                 -- Tag whether THIS CPL row's window is full-month (or null).
                 -- A partial-window CPL row (e.g. 5 Apr - 22 Apr) is a time-
                 -- sensitive deal; its discount is excluded from effective
@@ -935,6 +1027,14 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
                 AND j.unit_volume IS NOT DISTINCT FROM rwa.unit_volume
                 AND j.vintage IS NOT DISTINCT FROM rwa.vintage
                 AND j.unit_qty IS NOT DISTINCT FROM rwa.unit_qty
+            LEFT JOIN rip_windows_agg_item_no rwai
+                ON j.wholesaler IS NOT DISTINCT FROM rwai.wholesaler
+                AND j.edition IS NOT DISTINCT FROM rwai.edition
+                AND j.upc IS NOT DISTINCT FROM rwai.upc
+                AND j.product_name IS NOT DISTINCT FROM rwai.product_name
+                AND j.unit_volume IS NOT DISTINCT FROM rwai.unit_volume
+                AND j.vintage IS NOT DISTINCT FROM rwai.vintage
+                AND j.unit_qty IS NOT DISTINCT FROM rwai.unit_qty
             WHERE j.rn = 1
         )
         -- Precompute the this-month -> next-month effective comparison so the

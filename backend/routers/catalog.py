@@ -2153,6 +2153,124 @@ def semantic_search(
     return cached_response("semantic-search", _ckey, _build)
 
 
+class SemanticCompareBody(BaseModel):
+    q: str
+    limit: int = 20
+    product_type: Optional[str] = None
+    sizes: Optional[list] = None
+    unit_qty: Optional[str] = None
+    vintage: Optional[str] = None
+
+
+@router.post("/semantic-compare")
+def semantic_compare(body: SemanticCompareBody):
+    """Natural-language cross-distributor price comparison.
+
+    Runs semantic search to find matching products, then returns the full
+    per-distributor price grid (from the precomputed sku_offer table) for
+    each matching product — cheapest distributor first within each product.
+
+    Falls back to semantic-only results (no per-distributor breakdown) when
+    sku_offer has not been built yet (local dev without a full cache build)."""
+    import math as _math
+    from backend.semantic_search import semantic_search as _ss
+    from backend.pg import get_pg
+    from backend.precompute_offers import _OFFER_COLS
+
+    q = (body.q or "").strip()
+    if not q:
+        return {"q": q, "count": 0, "edition": _current_yyyy_mm(), "items": []}
+
+    edition = _current_yyyy_mm()
+
+    with get_pg() as pg, get_duckdb() as con:
+        # Over-fetch so the sku_offer join has enough candidates. Many semantic
+        # hits will be on UPCs not in sku_offer (e.g. only in prior editions).
+        raw = _ss(pg, con, q,
+                  limit=min(body.limit * 5, 200),
+                  product_type=body.product_type,
+                  sizes=body.sizes,
+                  unit_qty=body.unit_qty,
+                  vintage=body.vintage)
+        if not raw:
+            return {"q": q, "count": 0, "edition": edition, "items": []}
+
+        # Best semantic score per upc_norm.
+        upc_scores: dict[str, float] = {}
+        for r in raw:
+            un = str(r.get("upc") or "").lstrip("0")
+            if un:
+                upc_scores[un] = max(upc_scores.get(un, 0.0),
+                                     float(r.get("score") or 0.0))
+        if not upc_scores:
+            return {"q": q, "count": 0, "edition": edition, "items": []}
+
+        # Pull the full cross-distributor grid for these UPCs from sku_offer.
+        upc_list = list(upc_scores.keys())
+        ph = ", ".join("?" * len(upc_list))
+        offer_rows: list[dict] = []
+        try:
+            df = con.execute(
+                f"SELECT {', '.join(_OFFER_COLS)} FROM sku_offer "
+                f"WHERE edition = ? AND upc_norm IN ({ph}) "
+                "ORDER BY group_key, net_rank",
+                [edition] + upc_list,
+            ).df()
+            for rec in df.to_dict("records"):
+                for k, v in list(rec.items()):
+                    if isinstance(v, float) and _math.isnan(v):
+                        rec[k] = None
+                offer_rows.append(rec)
+        except Exception:
+            # sku_offer absent or stale — return semantic hits without grid.
+            fallback = [_clean_record(r) for r in raw[: body.limit]]
+            return {"q": q, "count": len(fallback), "edition": edition,
+                    "items": fallback, "_note": "sku_offer unavailable"}
+
+        if not offer_rows:
+            fallback = [_clean_record(r) for r in raw[: body.limit]]
+            return {"q": q, "count": len(fallback), "edition": edition,
+                    "items": fallback}
+
+        # Group offer rows by group_key; track best score across member UPCs.
+        groups: dict[str, list[dict]] = {}
+        group_score: dict[str, float] = {}
+        for rec in offer_rows:
+            gk = rec.get("group_key") or rec.get("match_key") or ""
+            if not gk:
+                continue
+            groups.setdefault(gk, []).append(rec)
+            un = str(rec.get("upc_norm") or "")
+            group_score[gk] = max(group_score.get(gk, 0.0),
+                                  upc_scores.get(un, 0.0))
+
+        # Build one item per product group.
+        items = []
+        for gk, dists in groups.items():
+            rep = dists[0]   # cheapest distributor (net_rank=0 is first)
+            items.append({
+                "group_key": gk,
+                "product_name": rep.get("display_name") or rep.get("product_name"),
+                "brand": rep.get("brand"),
+                "product_type": rep.get("product_type"),
+                "unit_volume": rep.get("unit_volume"),
+                "unit_qty": rep.get("unit_qty"),
+                "vintage": rep.get("vintage"),
+                "enr_category": rep.get("enr_category"),
+                "enr_region": rep.get("enr_region"),
+                "abv_proof": rep.get("abv_proof"),
+                "n_distributors": rep.get("n_distributors"),
+                "cheapest_effective": rep.get("effective_case_price"),
+                "spread_net": rep.get("spread_net"),
+                "score": round(group_score.get(gk, 0.0), 4),
+                "distributors": dists,
+            })
+
+        items.sort(key=lambda x: x.get("score") or 0.0, reverse=True)
+        items = items[: body.limit]
+        return {"q": q, "count": len(items), "edition": edition, "items": items}
+
+
 @router.get("/new-items")
 def new_items(
     q: str = Query("", description="Search term"),

@@ -1761,6 +1761,146 @@ def _t_semantic_search(con, args):
     return rows
 
 
+def _t_semantic_compare(con, args):
+    """Semantic search + cross-distributor price comparison in one call.
+
+    Finds products matching a descriptive query, then shows each product's
+    price at every active distributor side-by-side, cheapest first. Use when
+    the buyer wants to know BOTH which product fits a description AND who has
+    the best price on it. Returns one entry per product family, each with a
+    `distributors` list ranked by effective case price.
+
+    Falls back to plain semantic results (no per-distributor breakdown) when
+    the sku_offer precomputed grid is unavailable."""
+    import math as _math
+    from backend.semantic_search import semantic_search as _ss
+    from backend.pg import get_pg
+    from backend import pricing as _pricing
+    from backend.precompute_offers import _OFFER_COLS
+
+    q = (args.get("q") or args.get("query") or "").strip()
+    limit = min(int(args.get("limit") or 10), 25)
+    pt = (args.get("product_type") or "").strip() or None
+
+    if not q:
+        return []
+
+    # Auto-infer product type from vocabulary (same logic as semantic_search tool).
+    if not pt:
+        try:
+            from backend.varietal_semantics import build_varietal_filter
+            for tok in re.findall(r"[a-z][a-z\s'-]{2,}", q.lower()):
+                for w in tok.split():
+                    _c, _p, _auto = build_varietal_filter(w.rstrip("s"))
+                    if _auto:
+                        pt = _auto
+                        break
+                if pt:
+                    break
+        except Exception:
+            pt = None
+
+    edition = _pricing.current_yyyy_mm()
+
+    try:
+        with get_pg() as pg:
+            raw = _ss(pg, con, q, limit=limit * 5, product_type=pt)
+    except Exception as e:
+        import logging
+        logging.getLogger("assistant").warning("semantic_compare _ss failed: %s", e)
+        return []
+
+    if not raw:
+        return []
+
+    # Stocking-deal filter: same floor as semantic_search tool.
+    if not bool(args.get("include_stocking_deals")):
+        raw = [r for r in raw if not _is_stocking_row(r)]
+
+    # Best semantic score per upc_norm.
+    upc_scores: dict = {}
+    for r in raw:
+        un = str(r.get("upc") or "").lstrip("0")
+        if un:
+            upc_scores[un] = max(upc_scores.get(un, 0.0),
+                                 float(r.get("score") or 0.0))
+    if not upc_scores:
+        return []
+
+    # Pull sku_offer cross-distributor grid for these UPCs.
+    upc_list = list(upc_scores.keys())
+    ph = ", ".join("?" * len(upc_list))
+    try:
+        df = con.execute(
+            f"SELECT {', '.join(_OFFER_COLS)} FROM sku_offer "
+            f"WHERE edition = ? AND upc_norm IN ({ph}) "
+            "ORDER BY group_key, net_rank",
+            [edition] + upc_list,
+        ).df()
+    except Exception:
+        # sku_offer absent: return plain semantic hits so tool is never empty.
+        return [r for r in raw[:limit] if not _is_stocking_row(r)]
+
+    if df.empty:
+        return [r for r in raw[:limit] if not _is_stocking_row(r)]
+
+    # Group by group_key; track best relevance score per group.
+    groups: dict = {}
+    group_score: dict = {}
+    for rec in df.to_dict("records"):
+        for k, v in list(rec.items()):
+            if isinstance(v, float) and _math.isnan(v):
+                rec[k] = None
+        gk = rec.get("group_key") or rec.get("match_key") or ""
+        if not gk:
+            continue
+        groups.setdefault(gk, []).append(rec)
+        un = str(rec.get("upc_norm") or "")
+        group_score[gk] = max(group_score.get(gk, 0.0), upc_scores.get(un, 0.0))
+
+    items = []
+    for gk, dists in groups.items():
+        rep = dists[0]
+        cheapest = rep.get("effective_case_price")
+        items.append({
+            "group_key": gk,
+            "product_name": rep.get("display_name") or rep.get("product_name"),
+            "unit_volume": rep.get("unit_volume"),
+            "unit_qty": rep.get("unit_qty"),
+            "vintage": rep.get("vintage"),
+            "product_type": rep.get("product_type"),
+            "enr_category": rep.get("enr_category"),
+            "enr_region": rep.get("enr_region"),
+            "abv_proof": rep.get("abv_proof"),
+            "n_distributors": rep.get("n_distributors"),
+            "cheapest_effective": cheapest,
+            "spread_net": rep.get("spread_net"),
+            "score": round(group_score.get(gk, 0.0), 4),
+            "distributors": [
+                {
+                    "wholesaler": d.get("wholesaler"),
+                    "product_name": d.get("product_name"),
+                    "upc": d.get("upc"),
+                    "frontline_case_price": d.get("frontline_case_price"),
+                    "after_qd_case_price": d.get("after_qd_case_price"),
+                    "effective_case_price": d.get("effective_case_price"),
+                    "btl_effective": d.get("btl_effective"),
+                    "rip_savings": d.get("rip_savings"),
+                    "total_savings_per_case": d.get("total_savings_per_case"),
+                    "has_discount": d.get("has_discount"),
+                    "has_rip": d.get("has_rip"),
+                    "rip_code": d.get("rip_code"),
+                    "net_rank": d.get("net_rank"),
+                    "is_cheapest_net": d.get("is_cheapest_net"),
+                }
+                for d in dists
+            ],
+        })
+
+    items.sort(key=lambda x: x.get("score") or 0.0, reverse=True)
+    return items[:limit]
+
+
 def _t_combo_deals(con, args):
     """COMBO / BUNDLE deals (a whole product type the other tools don't cover):
     one row per combo with its pack price, total savings and component list, this
@@ -2394,6 +2534,7 @@ _DATA_TOOLS = {
     "rip_near_cap": (_t_rip_near_cap, "RIP rebates approaching the $1,000 single-RIP transaction cap (NJ) — the maximum-DOLLAR rebates this edition. Args: distributor, threshold (default 700), limit. Returns RIP codes ranked by largest single-tier rebate, the capped value, and whether at/over the $1,000 cap. Use for 'which RIPs pay close to the $1,000 cap', 'biggest dollar rebates per transaction', 'max rebate buys'."),
     "best_to_buy": (_t_best_to_buy, "WHEN to buy: ranks products by the timing of their best NET (after discount + RIP) price. when=now (best to grab now), when=next (cheaper next edition, so wait/hold), when=soon (dated/time-sensitive deals ending within days). Args: when, match, category, region, varietal, distributor, limit. Use for 'when is the best time to buy X', \"what's best this week / now vs next month\", 'should I buy now or wait'."),
     "semantic_search": (_t_semantic_search, "FREE-TEXT semantic search over the enrichment corpus. USE this for descriptive natural-language queries that DON'T map to a region/varietal slot — 'old vine zinfandel from a cool climate', 'small-producer natural orange wine', 'high altitude napa cabernet', 'biodynamic Burgundy', 'rare single barrel bourbon from kentucky', 'small batch japanese whisky'. Args: q (the user's phrase), limit (default 12), product_type (optional narrowing). Returns ranked product cards (product_name, wholesaler, upc, prices, score). Prefer region/varietal slots when they match; fall back to this for the long tail."),
+    "semantic_compare": (_t_semantic_compare, "SEMANTIC SEARCH + CROSS-DISTRIBUTOR PRICE COMPARISON in one call. Use when the buyer asks 'where is X cheapest', 'compare prices for Y across distributors', 'who has the best deal on Z' — where X/Y/Z is described in natural language rather than an exact product name. Finds matching products by description, then returns each product's price at every active distributor (cheapest first) with frontline, after-discount, after-RIP, and total-savings per case. Args: q (descriptive query), limit (default 10, max 25), product_type (optional). Returns items[] each with product_name, enr_category, score, n_distributors, cheapest_effective, spread_net, and a distributors[] list."),
 }
 
 
@@ -3578,6 +3719,11 @@ def _tool_specs() -> list:
         "semantic_search": {
             "q": {"type": "string", "description": "Natural-language descriptive query, e.g. 'old vine zinfandel cool climate', 'small-producer natural orange wine', 'rare single barrel bourbon'. Use for phrases that don't fit region/varietal slots."},
             "limit": _limit,
+            "product_type": {"type": "string", "enum": ["Wine", "Spirits", "Beer", "Cider", "RTD"], "description": "Optionally narrow to one product type."},
+        },
+        "semantic_compare": {
+            "q": {"type": "string", "description": "Descriptive natural-language query for the product, e.g. 'single barrel bourbon', 'natural orange wine', 'small batch japanese whisky'. Used for both the semantic match AND to find the cheapest distributor."},
+            "limit": {"type": "integer", "description": "Max number of product groups to return (default 10, max 25)."},
             "product_type": {"type": "string", "enum": ["Wine", "Spirits", "Beer", "Cider", "RTD"], "description": "Optionally narrow to one product type."},
         },
         "combo_deals": {

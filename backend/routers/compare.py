@@ -54,7 +54,7 @@ from collections import OrderedDict as _OrderedDict
 
 _BOARD_CACHE: "_OrderedDict[tuple, dict]" = _OrderedDict()
 _BOARD_CACHE_LOCK = _threading.Lock()
-_BOARD_CACHE_MAX = 64  # bounded; each entry is one trimmed board response
+_BOARD_CACHE_MAX = 256  # bounded; each entry is one trimmed board response
 
 
 def _cache_tag() -> str:

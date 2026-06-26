@@ -6575,10 +6575,22 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
    fixed breakpoint. min(100%, 320px) guards tiny screens from overflowing. */
 .pdx-detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 16px; margin-top: 16px; }
 .pdx-panel { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; background: var(--bg); }
-/* The 4-column RIP table scrolls WITHIN its panel when the column is narrow, so
-   a phone never gets a horizontal page scrollbar. */
-.pdx-rip { overflow-x: auto; }
 .pdx-summary, .pdx-order { border: 0; padding: 0; background: none; }
+
+/* ---- Unified RIP + Prices cards: identical chrome (month title + coloured
+   band + table) so both panels read as ONE consistent UI. ---- */
+.pdx-card-stack { display: flex; flex-direction: column; gap: 12px; }
+.pdx-card { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--surface); max-width: 460px; }
+.pdx-card-title { text-align: center; font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; padding: 6px 8px; color: var(--text); }
+.pdx-card-band { padding: 5px 10px; font-size: 12px; font-weight: 700; }
+.pdx-card--current .pdx-card-band { background: #41557a; color: #fff; }
+.pdx-card--next .pdx-card-band { background: var(--surface-2, #eef1f5); color: var(--text-muted); }
+.pdx-tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.pdx-tbl th { text-align: left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); padding: 5px 8px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.pdx-tbl th.pdx-num { text-align: right; }
+.pdx-tbl td { padding: 6px 8px; border-bottom: 1px solid var(--border); color: var(--text); vertical-align: top; }
+.pdx-tbl tr:last-child td { border-bottom: 0; }
+.pdx-tbl-best td { background: var(--hl-bg); color: var(--hl-fg); font-weight: 700; }
 
 .pdx-rip-progs { display: flex; flex-direction: column; gap: 12px; }
 .pdx-rip-code { font-size: 12px; font-weight: 800; color: var(--green); margin-bottom: 4px; }
@@ -6600,7 +6612,10 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
    the month (consistent across the detail page, list rows and quick view). */
 .pdx-ts { display: inline-block; margin-left: 5px; padding: 0 5px; border-radius: 999px; font-size: 9px; font-weight: 800; letter-spacing: .04em; vertical-align: middle;
   color: #92400e; background: #fef3c7; border: 1px solid #fcd34d; }
-.pdx-rip-dates { white-space: nowrap; color: var(--text-muted); }
+/* Date range on two lines ("2026-06-01" / "- 2026-06-30") so the table is
+   narrow enough to fit without a horizontal scrollbar. */
+.pdx-rip-dates { color: var(--text-muted); }
+.pdx-rip-dateline { white-space: nowrap; line-height: 1.4; }
 .pdx-rip-sizes { color: var(--text); }
 /* Each pack rule / clause from rip_description on its own line. */
 .pdx-rip-sizeline { line-height: 1.45; }
@@ -6629,10 +6644,28 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
    .pdx-detail-grid stacks fluidly via auto-fit above, so no breakpoint needed
    for it. These handle the summary row, tables and touch targets on phones. */
 @media (max-width: 768px) {
-  /* Let the RIP date range wrap instead of forcing the table wide. */
-  .pdx-rip-dates { white-space: normal; }
-  /* QD cards fill the column on tablet/phone (the 460px cap is desktop-only). */
-  .pdx-qd-card { max-width: 100%; }
+  /* Cards fill the column on tablet/phone (the 460px cap is desktop-only). */
+  .pdx-card { max-width: 100%; }
+  /* Hide the floating action buttons on small screens — they overlap content
+     and the same actions live in the side nav / each card. */
+  .feedback-fab, .global-assistant-fab, .cart-fab { display: none !important; }
+}
+@media (max-width: 560px) {
+  /* The 4-column RIP table is unusable on a phone (the date column wraps
+     char-by-char). Collapse it into a stacked, labelled block per RIP. */
+  .pdx-tbl--rip thead { display: none; }
+  .pdx-tbl--rip, .pdx-tbl--rip tbody, .pdx-tbl--rip tr, .pdx-tbl--rip td { display: block; width: 100%; }
+  .pdx-tbl--rip tr { padding: 8px 0; border-bottom: 2px solid var(--border); }
+  .pdx-tbl--rip tr:last-child { border-bottom: 0; }
+  .pdx-tbl--rip td { border: 0; padding: 2px 12px; }
+  .pdx-tbl--rip .pdx-rip-codecell { font-size: 13px; padding-bottom: 3px; white-space: normal; }
+  .pdx-tbl--rip td[data-label]:not(.pdx-rip-codecell)::before {
+    content: attr(data-label) ': '; font-weight: 700; color: var(--text-muted);
+    text-transform: uppercase; font-size: 10px; letter-spacing: .03em; margin-right: 4px;
+  }
+  /* Full-width cell -> date range on one line again. */
+  .pdx-tbl--rip .pdx-rip-dateline { display: inline; }
+  .pdx-tbl--rip .pdx-rip-dates { color: var(--text); }
 }
 @media (max-width: 480px) {
   .pdx-summary { gap: 12px; }

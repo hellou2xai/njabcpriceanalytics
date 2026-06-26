@@ -16,7 +16,7 @@
  * Driven from the SAME buildMonths(price_3mo) series the sparkline/ladder use,
  * so the numbers can never disagree with the rest of the app.
  */
-import { Fragment, useMemo } from 'react';
+import { useMemo } from 'react';
 import { buildMonths } from '../lib/promotionsSparkline';
 import { currentMonth, type MonthBreakdown, type RipTier } from './MonthEffectiveSparkline';
 import { bottlesPerCase, sizeToMl } from '../lib/productSizes';
@@ -174,54 +174,60 @@ function buildRipRows(cur: MonthBreakdown | null, next: MonthBreakdown | null, p
   return rows;
 }
 
+// One month card — same chrome as the QD price card (title + coloured band +
+// table) so RIP and Prices read as one consistent UI.
+function RipCard({ title, variant, rows, empty }: {
+  title: string; variant: 'current' | 'next'; rows: RipRow[]; empty: string;
+}) {
+  return (
+    <div className={`pdx-card pdx-card--${variant}`}>
+      <div className="pdx-card-title">{title}</div>
+      <div className="pdx-card-band">RIP</div>
+      <table className="pdx-tbl pdx-tbl--rip">
+        <thead>
+          <tr><th>RIP</th><th>Dates</th><th>Sizes</th><th>Levels</th></tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 ? (
+            <tr><td className="pdx-rip-norip" colSpan={4}>{empty}</td></tr>
+          ) : rows.map((r, i) => (
+            <tr key={i}>
+              <td className="pdx-rip-codecell" data-label="RIP">RIP{r.code ? ` ${r.code}` : ''}{r.ts && <TsSticker />}</td>
+              <td className="pdx-rip-dates" data-label="Dates">
+                {r.dates.split(' - ').map((part, di) => (
+                  <div className="pdx-rip-dateline" key={di}>{di > 0 ? ' - ' : ''}{part}</div>
+                ))}
+              </td>
+              <td className="pdx-rip-sizes" data-label="Sizes">
+                {r.sizes.length === 0 ? '—' : r.sizes.map((line, li) => (
+                  <div className="pdx-rip-sizeline" key={li}>{line}</div>
+                ))}
+              </td>
+              <td className="pdx-rip-levels" data-label="Levels">
+                {r.levels.length === 0 ? '—' : r.levels.map((l, li) => (
+                  <span className="pdx-rip-level" key={li}>
+                    {fmtCs(l.cases)} {l.cases === 1 ? 'case' : 'cases'}: <strong>{moneyRound(l.total)}</strong>
+                  </span>
+                ))}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function RipPanel({ rows }: { rows: RipRow[] }) {
+  const curRows = rows.filter(r => !r.isNext && !r.noRip);
+  const nextRows = rows.filter(r => r.isNext && !r.noRip);
+  const nextLoaded = rows.some(r => r.isNext);
   return (
     <section className="pdx-panel pdx-rip">
-      <h3 className="pdx-panel-h">RIP</h3>
-      {rows.length === 0 ? (
-        <p className="pdx-empty">No RIP this month.</p>
-      ) : (
-        <table className="pdx-rip-table">
-          <thead>
-            <tr><th>RIP</th><th>Dates</th><th>Sizes</th><th>Levels</th></tr>
-          </thead>
-          <tbody>
-            {rows.map((r, i) => {
-              const prev = i > 0 ? rows[i - 1] : null;
-              // Group label before the first current-month and first next-month row.
-              const header = (!r.isNext && (!prev || prev.isNext)) ? 'Current Month'
-                : (r.isNext && (!prev || !prev.isNext)) ? 'Next Month' : null;
-              return (
-                <Fragment key={i}>
-                  {header && (
-                    <tr className="pdx-rip-grouphdr"><td colSpan={4}>{header}</td></tr>
-                  )}
-                  {r.noRip ? (
-                    <tr><td className="pdx-rip-norip" colSpan={4}>{r.isNext ? 'No RIP Next Month' : 'No RIP This Month'}</td></tr>
-                  ) : (
-                    <tr>
-                      <td className="pdx-rip-codecell">RIP{r.code ? ` ${r.code}` : ''}{r.ts && <TsSticker />}</td>
-                      <td className="pdx-rip-dates">{r.dates}</td>
-                      <td className="pdx-rip-sizes">
-                        {r.sizes.length === 0 ? '—' : r.sizes.map((line, li) => (
-                          <div className="pdx-rip-sizeline" key={li}>{line}</div>
-                        ))}
-                      </td>
-                      <td className="pdx-rip-levels">
-                        {r.levels.length === 0 ? '—' : r.levels.map((l, li) => (
-                          <span className="pdx-rip-level" key={li}>
-                            {fmtCs(l.cases)} {l.cases === 1 ? 'case' : 'cases'}: <strong>{moneyRound(l.total)}</strong>
-                          </span>
-                        ))}
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              );
-            })}
-          </tbody>
-        </table>
-      )}
+      <div className="pdx-card-stack">
+        <RipCard title="CURRENT MONTH" variant="current" rows={curRows} empty="No RIP this month" />
+        {nextLoaded && <RipCard title="NEXT MONTH" variant="next" rows={nextRows} empty="No RIP next month" />}
+      </div>
     </section>
   );
 }
@@ -253,10 +259,10 @@ function QdCard({ title, variant, rows, csWord, btlWord }: {
 }) {
   const best = rows.reduce<number | null>((m, r) => r.perCase != null ? (m == null ? r.perCase : Math.min(m, r.perCase)) : m, null);
   return (
-    <div className={`pdx-qd-card pdx-qd-card--${variant}`}>
-      <div className="pdx-qd-title">{title}</div>
-      <div className="pdx-qd-band">Prices Chart</div>
-      <table className="pdx-qd-table">
+    <div className={`pdx-card pdx-card--${variant}`}>
+      <div className="pdx-card-title">{title}</div>
+      <div className="pdx-card-band">Prices Chart</div>
+      <table className="pdx-tbl pdx-tbl--qd">
         <thead>
           <tr><th>Type</th><th className="pdx-num">Price by {csWord}</th><th className="pdx-num">Price by {btlWord}</th></tr>
         </thead>
@@ -264,7 +270,7 @@ function QdCard({ title, variant, rows, csWord, btlWord }: {
           {rows.map((r, i) => {
             const isBest = r.perCase != null && best != null && r.perCase <= best + 1e-9 && /case/i.test(r.label) && r.label !== '1 Case';
             return (
-              <tr key={i} className={isBest ? 'pdx-qd-best' : undefined}>
+              <tr key={i} className={isBest ? 'pdx-tbl-best' : undefined}>
                 <td>{r.label}{r.ts && <TsSticker />}</td>
                 <td className="pdx-num">{money(r.perCase) ?? '—'}</td>
                 <td className="pdx-num">{money(r.perBottle) ?? '—'}</td>
@@ -285,7 +291,7 @@ function QdChart({ cur, next, pack, frontlineUnit, csWord, btlWord }: {
   const nextRows = buildQdRows(next, pack, frontlineUnit);
   return (
     <section className="pdx-panel pdx-qd">
-      <div className="pdx-qd-stack">
+      <div className="pdx-card-stack">
         {curRows.length > 0 && <QdCard title="CURRENT MONTH" variant="current" rows={curRows} csWord={csWord} btlWord={btlWord} />}
         {next && nextRows.length > 0 && <QdCard title="NEXT MONTH" variant="next" rows={nextRows} csWord={csWord} btlWord={btlWord} />}
       </div>

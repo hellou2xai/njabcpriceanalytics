@@ -16,7 +16,7 @@
  * Driven from the SAME buildMonths(price_3mo) series the sparkline/ladder use,
  * so the numbers can never disagree with the rest of the app.
  */
-import { useMemo } from 'react';
+import { Fragment, useMemo } from 'react';
 import { buildMonths } from '../lib/promotionsSparkline';
 import { currentMonth, type MonthBreakdown, type RipTier } from './MonthEffectiveSparkline';
 import { bottlesPerCase, sizeToMl } from '../lib/productSizes';
@@ -140,7 +140,14 @@ function buildRipRows(cur: MonthBreakdown | null, next: MonthBreakdown | null, p
   };
   addBlock(cur, false);
   addBlock(next, true);
-  if (next && !rows.some(r => r.isNext)) {
+  const hasCurrent = rows.some(r => !r.isNext);
+  const hasNext = rows.some(r => r.isNext);
+  // No RIP this month -> a "No RIP This Month" line under Current Month.
+  if (!hasCurrent) {
+    rows.unshift({ code: null, dates: '', sizes: [], levels: [], ts: false, isNext: false, noRip: true });
+  }
+  // Next month's edition loaded with no RIP -> a single "No RIP Next Month" line.
+  if (next && !hasNext) {
     rows.push({ code: null, dates: '', sizes: [], levels: [], ts: false, isNext: true, noRip: true });
   }
   return rows;
@@ -158,29 +165,39 @@ function RipPanel({ rows }: { rows: RipRow[] }) {
             <tr><th>RIP</th><th>Dates</th><th>Sizes</th><th>Levels</th></tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => r.noRip ? (
-              <tr key={i}>
-                <td className="pdx-rip-codecell">Next Month</td>
-                <td className="pdx-rip-norip" colSpan={3}>No RIP Next Month</td>
-              </tr>
-            ) : (
-              <tr key={i}>
-                <td className="pdx-rip-codecell">RIP{r.code ? ` ${r.code}` : ''}{r.ts && <TsSticker />}</td>
-                <td className="pdx-rip-dates">{r.dates}</td>
-                <td className="pdx-rip-sizes">
-                  {r.sizes.length === 0 ? '—' : r.sizes.map((line, li) => (
-                    <div className="pdx-rip-sizeline" key={li}>{line}</div>
-                  ))}
-                </td>
-                <td className="pdx-rip-levels">
-                  {r.levels.length === 0 ? '—' : r.levels.map((l, li) => (
-                    <span className="pdx-rip-level" key={li}>
-                      {fmtCs(l.cases)} {l.cases === 1 ? 'case' : 'cases'}: <strong>{moneyRound(l.total)}</strong>
-                    </span>
-                  ))}
-                </td>
-              </tr>
-            ))}
+            {rows.map((r, i) => {
+              const prev = i > 0 ? rows[i - 1] : null;
+              // Group label before the first current-month and first next-month row.
+              const header = (!r.isNext && (!prev || prev.isNext)) ? 'Current Month'
+                : (r.isNext && (!prev || !prev.isNext)) ? 'Next Month' : null;
+              return (
+                <Fragment key={i}>
+                  {header && (
+                    <tr className="pdx-rip-grouphdr"><td colSpan={4}>{header}</td></tr>
+                  )}
+                  {r.noRip ? (
+                    <tr><td className="pdx-rip-norip" colSpan={4}>{r.isNext ? 'No RIP Next Month' : 'No RIP This Month'}</td></tr>
+                  ) : (
+                    <tr>
+                      <td className="pdx-rip-codecell">RIP{r.code ? ` ${r.code}` : ''}{r.ts && <TsSticker />}</td>
+                      <td className="pdx-rip-dates">{r.dates}</td>
+                      <td className="pdx-rip-sizes">
+                        {r.sizes.length === 0 ? '—' : r.sizes.map((line, li) => (
+                          <div className="pdx-rip-sizeline" key={li}>{line}</div>
+                        ))}
+                      </td>
+                      <td className="pdx-rip-levels">
+                        {r.levels.length === 0 ? '—' : r.levels.map((l, li) => (
+                          <span className="pdx-rip-level" key={li}>
+                            {fmtCs(l.cases)} {l.cases === 1 ? 'case' : 'cases'}: <strong>{moneyRound(l.total)}</strong>
+                          </span>
+                        ))}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       )}

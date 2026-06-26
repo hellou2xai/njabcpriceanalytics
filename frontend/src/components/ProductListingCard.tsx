@@ -18,10 +18,11 @@ import FavoriteButton from './FavoriteButton';
 import AddToCartButton from './AddToCartButton';
 import AddToListButton from './AddToListButton';
 import { QtyStepper, type CartState } from './CatalogTable';
+import DistCompareChip from './DistCompareChip';
 import { buildMonths } from '../lib/promotionsSparkline';
 import { currentMonth, type MonthBreakdown } from './MonthEffectiveSparkline';
 import RipQdPanels, { money, afterOneCase, ozPerBottle } from './RipQdPanels';
-import { bottlesPerCase, stripHeaderVintage } from '../lib/productSizes';
+import { bottlesPerCase, sizeToMl, stripHeaderVintage } from '../lib/productSizes';
 import { distributorName, abgSku, skuLabel, perUnitNoun, priceUnitWord } from '../lib/distributors';
 import type { Product } from '../lib/api';
 
@@ -33,8 +34,8 @@ function detailUrl(size: Product): string {
   return `/product?${q.toString()}`;
 }
 
-function SummaryCard({ size, name, cur, next, pack }: {
-  size: Product; name: string; cur: MonthBreakdown | null; next: MonthBreakdown | null; pack: number | null;
+function SummaryCard({ size, name, cur, next, pack, sibs }: {
+  size: Product; name: string; cur: MonthBreakdown | null; next: MonthBreakdown | null; pack: number | null; sibs: Product[];
 }) {
   const ozB = ozPerBottle(size.unit_volume);
   // Cost per ounce = FRONTLINE single-bottle price ÷ fluid ounces (list-price
@@ -97,6 +98,11 @@ function SummaryCard({ size, name, cur, next, pack }: {
           {abgSku(size.wholesaler, size.abg_sku) && <span className="pdx-sum-sku">SKU: {skuLabel(size.wholesaler)} {size.abg_sku}</span>}
           {size.upc && <span className="pdx-sum-upc">UPC: {size.upc}</span>}
         </div>
+        {sibs.length > 1 && (
+          <div className="pdx-sum-better">
+            <DistCompareChip sizes={sibs} selfWholesaler={size.wholesaler} />
+          </div>
+        )}
       </div>
       <div className="pdx-sum-prices">
         <PricePair label={csWord.toUpperCase()} now={caseThis} nxt={caseNext} />
@@ -106,7 +112,12 @@ function SummaryCard({ size, name, cur, next, pack }: {
   );
 }
 
-export default function ProductListingCard({ size, name, cart, updateQty, showPanels = true }: {
+const vKey = (v: unknown) => {
+  const s = v == null ? '' : String(v).trim().toLowerCase();
+  return ['', '0', 'nv', 'none', 'nan'].includes(s) ? '' : s;
+};
+
+export default function ProductListingCard({ size, name, cart, updateQty, showPanels = true, crossDist }: {
   size: Product;
   name?: string;
   cart: CartState;
@@ -114,6 +125,9 @@ export default function ProductListingCard({ size, name, cart, updateQty, showPa
   // Summary view (Products page "Summary" toggle) hides the RIP/QD panels and
   // shows only the summary card + order actions; Price-details view shows them.
   showPanels?: boolean;
+  // Same-product rows at other distributors (rep UPC), for the "Better price at
+  // X" chip — matched to THIS size by size + pack + vintage below.
+  crossDist?: Product[];
 }) {
   const pname = name ?? size.product_name;
   const pack = bottlesPerCase(pname, size.unit_qty);
@@ -121,6 +135,11 @@ export default function ProductListingCard({ size, name, cart, updateQty, showPa
   const cur = currentMonth(months);
   const next = months.find(m => m.future) ?? null;
   const btlWord = perUnitNoun(size.unit_volume, size.unit_type);
+  // Cross-distributor siblings for THIS exact SKU (size + pack + vintage).
+  const sibs = useMemo(() => (crossDist ?? []).filter(p =>
+    sizeToMl(p.unit_volume) === sizeToMl(size.unit_volume)
+    && bottlesPerCase(p.product_name, p.unit_qty) === bottlesPerCase(size.product_name, size.unit_qty)
+    && vKey(p.vintage) === vKey(size.vintage)), [crossDist, size]);
 
   const cartKey = `${size.product_name}|${size.wholesaler}|${size.upc ?? ''}|${size.unit_volume ?? ''}`;
   const qty = cart[cartKey] ?? { cases: 0, units: 0 };
@@ -135,7 +154,7 @@ export default function ProductListingCard({ size, name, cart, updateQty, showPa
       {/* One row: image · meta · prices · order — the order fills the space to
           the right of the prices instead of sitting on its own line below. */}
       <div className="pdx-summary">
-        <SummaryCard size={size} name={pname} cur={cur} next={next} pack={pack} />
+        <SummaryCard size={size} name={pname} cur={cur} next={next} pack={pack} sibs={sibs} />
         <div className="pdx-order">
           <div className="pdx-order-steppers">
             <QtyStepper label={`${btlWord.charAt(0).toUpperCase()}${btlWord.slice(1)}s`}

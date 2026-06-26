@@ -495,8 +495,9 @@ function SizeRow({ size, cart, updateQty, primaryName, showDeals = true, hideDis
 }) {
   // The expanded list row IS the uniform listing card (summary + RIP/QD). The
   // page "Summary / Price details" toggle (showDeals) hides or shows the panels.
-  void hideDist; void crossDist; void dealMonth;
-  return <ProductListingCard size={size} name={primaryName} cart={cart} updateQty={updateQty} showPanels={showDeals} />;
+  void hideDist; void dealMonth;
+  return <ProductListingCard size={size} name={primaryName} cart={cart} updateQty={updateQty}
+    showPanels={showDeals} crossDist={crossDist} />;
 }
 
 function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded = false, dealMonth = 'current' }: {

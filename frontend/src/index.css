@@ -6545,6 +6545,7 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pdx-sum-sku { color: var(--hl-fg); font-weight: 700; }
 .pdx-sum-upc { color: var(--text); font-weight: 600; }
 .pdx-sum-spark { display: inline-block; margin-top: 8px; }
+.pdx-sum-better { margin-top: 6px; }
 /* CASE then BOTTLE STACKED (two lines), each: label left, Price + Next Month
    right — matches the Image #5 reference. */
 .pdx-sum-prices { display: flex; flex-direction: column; gap: 14px; align-self: center; flex: 0 0 auto; min-width: 200px; }
@@ -6585,6 +6586,8 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pdx-rip-month { font-weight: 700; white-space: nowrap; }
 /* Column-1 RIP code in the flat RIP table (codes are reissued each edition). */
 .pdx-rip-codecell { font-weight: 800; color: var(--green); white-space: nowrap; }
+/* Current Month / Next Month group label rows within the flat RIP table. */
+.pdx-rip-grouphdr td { font-weight: 800; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--text); background: var(--surface-2, #eef1f5); padding: 6px 8px; border-bottom: 1px solid var(--border); }
 /* Time-sensitive sticker — amber pill on any RIP/QD line valid only part of
    the month (consistent across the detail page, list rows and quick view). */
 .pdx-ts { display: inline-block; margin-left: 5px; padding: 0 5px; border-radius: 999px; font-size: 9px; font-weight: 800; letter-spacing: .04em; vertical-align: middle;

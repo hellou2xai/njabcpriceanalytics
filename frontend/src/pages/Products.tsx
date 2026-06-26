@@ -77,8 +77,9 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
   const [cart, setCartState] = useState<CartState>(loadCart);
   // "Price details / Summary" toggle: whether collapsed cards show the full
   // deal ladder. Persisted; expanding a card always shows full detail rows.
+  // Default to Summary view; only Price details when the user explicitly chose it.
   const [priceDetails, setPriceDetails] = useState(() =>
-    localStorage.getItem('lpb_products_price_details') !== '0');
+    localStorage.getItem('lpb_products_price_details') === '1');
   const setDetails = (v: boolean) => {
     setPriceDetails(v);
     localStorage.setItem('lpb_products_price_details', v ? '1' : '0');

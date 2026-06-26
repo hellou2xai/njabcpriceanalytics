@@ -69,7 +69,7 @@ function SummaryCard({ size, name, cur, next, pack }: {
   );
 
   return (
-    <section className="pdx-panel pdx-summary">
+    <>
       <Link to={detailUrl(size)} className="pdx-sum-imglink" aria-label={size.product_name}>
         <ProductThumb src={size.image_url} alt={size.product_name} size={160} expandable />
       </Link>
@@ -102,7 +102,7 @@ function SummaryCard({ size, name, cur, next, pack }: {
         <PricePair label={csWord.toUpperCase()} now={caseThis} nxt={caseNext} />
         <PricePair label={btlWord.toUpperCase()} now={btlThis} nxt={btlNext} />
       </div>
-    </section>
+    </>
   );
 }
 
@@ -132,33 +132,35 @@ export default function ProductListingCard({ size, name, cart, updateQty, showPa
 
   return (
     <div className="pdx-listing">
-      <SummaryCard size={size} name={pname} cur={cur} next={next} pack={pack} />
-
-      <div className="pdx-order">
-        <div className="pdx-order-steppers">
-          <QtyStepper label={`${btlWord.charAt(0).toUpperCase()}${btlWord.slice(1)}s`}
-            value={qty.units} onChange={v => updateQty(cartKey, 'units', v)} />
-          <QtyStepper label="Cases" value={qty.cases} onChange={v => updateQty(cartKey, 'cases', v)} />
-        </div>
-        <div className="pdx-order-actions">
-          <AddToCartButton productName={size.product_name} wholesaler={size.wholesaler}
-            upc={size.upc} unitVolume={size.unit_volume}
-            unitQty={size.unit_qty != null ? String(size.unit_qty) : undefined}
-            vintage={size.vintage != null ? String(size.vintage) : undefined}
-            qtyCases={qty.cases} qtyUnits={qty.units} />
-          <AddToListButton productName={size.product_name} wholesaler={size.wholesaler}
-            upc={size.upc} unitVolume={size.unit_volume}
-            unitQty={size.unit_qty != null ? String(size.unit_qty) : undefined}
-            vintage={size.vintage != null ? String(size.vintage) : undefined} />
+      {/* One row: image · meta · prices · order — the order fills the space to
+          the right of the prices instead of sitting on its own line below. */}
+      <div className="pdx-summary">
+        <SummaryCard size={size} name={pname} cur={cur} next={next} pack={pack} />
+        <div className="pdx-order">
+          <div className="pdx-order-steppers">
+            <QtyStepper label={`${btlWord.charAt(0).toUpperCase()}${btlWord.slice(1)}s`}
+              value={qty.units} onChange={v => updateQty(cartKey, 'units', v)} />
+            <QtyStepper label="Cases" value={qty.cases} onChange={v => updateQty(cartKey, 'cases', v)} />
+          </div>
+          <div className="pdx-order-actions">
+            <AddToCartButton productName={size.product_name} wholesaler={size.wholesaler}
+              upc={size.upc} unitVolume={size.unit_volume}
+              unitQty={size.unit_qty != null ? String(size.unit_qty) : undefined}
+              vintage={size.vintage != null ? String(size.vintage) : undefined}
+              qtyCases={qty.cases} qtyUnits={qty.units} />
+            <AddToListButton productName={size.product_name} wholesaler={size.wholesaler}
+              upc={size.upc} unitVolume={size.unit_volume}
+              unitQty={size.unit_qty != null ? String(size.unit_qty) : undefined}
+              vintage={size.vintage != null ? String(size.vintage) : undefined} />
+            {!showPanels && (
+              <button type="button" className="pdx-expand-toggle" onClick={() => setExpanded(e => !e)}>
+                {expanded ? 'Hide details' : 'View details'}
+                <ChevronDown size={15} className={`pdx-expand-chev${expanded ? ' open' : ''}`} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
-
-      {!showPanels && (
-        <button type="button" className="pdx-expand-toggle" onClick={() => setExpanded(e => !e)}>
-          {expanded ? 'Hide details' : 'View details'}
-          <ChevronDown size={15} className={`pdx-expand-chev${expanded ? ' open' : ''}`} />
-        </button>
-      )}
       {panelsVisible && <RipQdPanels size={size} name={pname} />}
     </div>
   );

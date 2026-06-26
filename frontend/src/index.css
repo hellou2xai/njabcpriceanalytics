@@ -6595,6 +6595,29 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
    band + table) so both panels read as ONE consistent UI. ---- */
 .pdx-card-stack { display: flex; flex-direction: column; gap: 12px; }
 .pdx-card { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--surface); max-width: 460px; }
+/* RIP has 4 columns, so its card fills the panel (the 460px cap is for the
+   3-column Prices card only, to keep it compact), and the table STACKS into
+   labelled blocks via a container query when the RIP column itself is narrow —
+   so the detail rail and phones are handled regardless of viewport width. */
+.pdx-rip { container-type: inline-size; }
+.pdx-rip .pdx-card { max-width: none; }
+@container (max-width: 540px) {
+  .pdx-tbl--rip thead { display: none; }
+  .pdx-tbl--rip, .pdx-tbl--rip tbody, .pdx-tbl--rip tr, .pdx-tbl--rip td { display: block; width: 100%; }
+  .pdx-tbl--rip tr { padding: 8px 0; border-bottom: 2px solid var(--border); }
+  .pdx-tbl--rip tr:last-child { border-bottom: 0; }
+  .pdx-tbl--rip td { border: 0; padding: 2px 12px; }
+  .pdx-tbl--rip .pdx-rip-codecell { font-size: 13px; padding-bottom: 3px; white-space: normal; }
+  .pdx-tbl--rip td[data-label]:not(.pdx-rip-codecell)::before {
+    content: attr(data-label) ': '; font-weight: 700; color: var(--text-muted);
+    text-transform: uppercase; font-size: 10px; letter-spacing: .03em; margin-right: 4px;
+  }
+  .pdx-tbl--rip .pdx-rip-dateline { display: inline; }
+  .pdx-tbl--rip .pdx-rip-dates { color: var(--text); }
+  /* Each rebate level on its own line (the cell is block when stacked, so the
+     inline chips would otherwise run together and overflow). */
+  .pdx-tbl--rip .pdx-rip-level { display: block; white-space: normal; }
+}
 .pdx-card-title { text-align: center; font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; padding: 6px 8px; color: var(--text); }
 /* Band is the FIRST line of the card, centred — "Price" / "RIP". */
 .pdx-card-band { padding: 5px 10px; font-size: 12px; font-weight: 700; text-align: center; }
@@ -6665,23 +6688,8 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
      and the same actions live in the side nav / each card. */
   .feedback-fab, .global-assistant-fab, .cart-fab { display: none !important; }
 }
-@media (max-width: 560px) {
-  /* The 4-column RIP table is unusable on a phone (the date column wraps
-     char-by-char). Collapse it into a stacked, labelled block per RIP. */
-  .pdx-tbl--rip thead { display: none; }
-  .pdx-tbl--rip, .pdx-tbl--rip tbody, .pdx-tbl--rip tr, .pdx-tbl--rip td { display: block; width: 100%; }
-  .pdx-tbl--rip tr { padding: 8px 0; border-bottom: 2px solid var(--border); }
-  .pdx-tbl--rip tr:last-child { border-bottom: 0; }
-  .pdx-tbl--rip td { border: 0; padding: 2px 12px; }
-  .pdx-tbl--rip .pdx-rip-codecell { font-size: 13px; padding-bottom: 3px; white-space: normal; }
-  .pdx-tbl--rip td[data-label]:not(.pdx-rip-codecell)::before {
-    content: attr(data-label) ': '; font-weight: 700; color: var(--text-muted);
-    text-transform: uppercase; font-size: 10px; letter-spacing: .03em; margin-right: 4px;
-  }
-  /* Full-width cell -> date range on one line again. */
-  .pdx-tbl--rip .pdx-rip-dateline { display: inline; }
-  .pdx-tbl--rip .pdx-rip-dates { color: var(--text); }
-}
+/* (RIP table stacking is handled by the @container query above, so it works in
+   the narrow detail rail too — not just by viewport width.) */
 @media (max-width: 480px) {
   .pdx-summary { gap: 12px; }
   /* Prices + order span full width and stack under the meta. */

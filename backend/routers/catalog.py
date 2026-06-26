@@ -764,6 +764,9 @@ def search_products(
     brands: Optional[str] = None,           # comma-separated brands
     sizes: Optional[str] = None,            # comma-separated unit volumes
     unit_kinds: Optional[str] = None,       # comma-separated container types: Bottle, Can, Keg
+    countries: Optional[str] = None,        # comma-separated geo_country (LLM enrichment)
+    regions: Optional[str] = None,          # comma-separated geo_region
+    grapes: Optional[str] = None,           # comma-separated grapes (matched inside geo_varietal blend)
     upcs: Optional[str] = Query(None, description="Comma-separated UPCs (leading-zero-normalised); restricts the grid to exactly these SKUs. Used by Celar Assistant 'Open in Catalog' links."),
     rip_code: Optional[str] = Query(None, description="Restrict to products in this RIP cluster (current edition). Optional ?wholesaler= or ?divisions= narrows to one distributor; without that, any wholesaler carrying the code is included. Same (edition, distributor, UPC-validity) scoping the catalog's group-by-RIP plumbing uses."),
     region: Optional[str] = Query(None, description="Region / origin hint, e.g. 'california', 'napa', 'bordeaux', 'tuscany'. Filters by product name tokens + enrichment description. Auto-narrows product_type when the region implies a category (e.g. region=california auto-applies product_type=Wine if none is set)."),
@@ -797,7 +800,8 @@ def search_products(
             q, wholesaler, edition, product_type, min_price, max_price,
             has_discount, has_closeout, has_rip, in_combo, time_sensitive,
             price_drop, price_increase, brand, unit_volume, divisions, categories,
-            brands, sizes, unit_kinds, upcs, rip_code, region, varietal,
+            brands, sizes, unit_kinds, countries, regions, grapes,
+            upcs, rip_code, region, varietal,
             tracked_only, introduced_within_months, introduced_edition, sort, order,
             limit, offset, include_tiers, group_by_rip, images_first,
             as_of or _pricing.eastern_today().isoformat(),
@@ -1142,6 +1146,19 @@ def search_products(
         # bottle stored as "25.33OZ". COALESCE keeps it working if the cache
         # predates the unit_volume_std column.
         _in_filter(where, params, "COALESCE(unit_volume_std, unit_volume)", sizes, "size_")
+        # Canonical origin / grape filters from the LLM geo enrichment. Only when
+        # the cache carries the geo_* columns. Country/region are single-valued
+        # (exact IN); grape lives inside a '; '-joined blend so it's a contains.
+        if _has_geo_cols(con):
+            _in_filter(where, params, "geo_country", countries, "gco_")
+            _in_filter(where, params, "geo_region", regions, "grg_")
+            if grapes:
+                gparts = []
+                for i, g in enumerate([x.strip() for x in grapes.split(",") if x.strip()]):
+                    params[f"grp_{i}"] = f"%{g}%"
+                    gparts.append(f"LOWER(geo_varietal) LIKE LOWER($grp_{i})")
+                if gparts:
+                    where.append("(" + " OR ".join(gparts) + ")")
         # Exact-UPC restriction used by Celar Assistant deep-links — locks
         # the grid to the same SKUs the chat surfaced. Leading zeros are
         # normalised on BOTH sides so "020585000475" and "20585000475"
@@ -4040,6 +4057,9 @@ def search_facets(
     brands: Optional[str] = None,
     sizes: Optional[str] = None,
     unit_kinds: Optional[str] = None,
+    countries: Optional[str] = None,
+    regions: Optional[str] = None,
+    grapes: Optional[str] = None,
     min_price: Optional[float] = None,
     max_price: Optional[float] = None,
     has_rip: Optional[bool] = None,
@@ -4057,7 +4077,8 @@ def search_facets(
     # /search). The Products page fires this on every load alongside the grid;
     # it was ~1s uncached. Key on all params + ET date; pricing_tag invalidates.
     _ckey = (q, wholesaler, edition, divisions, categories, brands, sizes,
-             unit_kinds, min_price, max_price, has_rip, has_discount,
+             unit_kinds, countries, regions, grapes,
+             min_price, max_price, has_rip, has_discount,
              introduced_within_months, introduced_edition,
              _pricing.eastern_today().isoformat())
     if request is not None and response is not None:
@@ -4182,6 +4203,19 @@ def search_facets(
         add_in("brand", "brand_clean", brands, "fbrnd_")
         add_in("size", "COALESCE(unit_volume_std, unit_volume)", sizes, "fsize_")
         add_in("ukind", _UNIT_KIND_SQL, unit_kinds, "fukind_")
+        # Canonical origin / grape predicates (LLM enrichment). country/region
+        # are exact IN; grape is a contains against the '; '-joined blend.
+        _has_geo = _has_geo_cols(con)
+        if _has_geo:
+            add_in("gco", "geo_country", countries, "fgco_")
+            add_in("grg", "geo_region", regions, "fgrg_")
+            gvals = [v.strip() for v in (grapes or "").split(",") if v.strip()]
+            if gvals:
+                keys, pp = [], {}
+                for i, v in enumerate(gvals):
+                    k = f"fgrp_{i}"; pp[k] = f"%{v}%"
+                    keys.append(f"LOWER(geo_varietal) LIKE LOWER(${k})")
+                preds.append({"dim": "grp", "sql": "(" + " OR ".join(keys) + ")", "params": pp})
         if min_price is not None or max_price is not None:
             parts, pp = [], {}
             if min_price is not None: parts.append("frontline_case_price >= $fmin"); pp["fmin"] = min_price
@@ -4253,11 +4287,11 @@ def search_facets(
         # Canonical geo facets (origin + grape) from the LLM enrichment. Only
         # when the cache carries geo_* (older caches omit them). Grapes are a
         # '; '-joined blend per row, so split into individual varieties.
-        if _has_geo_cols(con):
-            _facets["countries"] = grouped("geo_country", "country")
-            _facets["regions"] = grouped("geo_region", "region")[:120]
+        if _has_geo:
+            _facets["countries"] = grouped("geo_country", "gco")
+            _facets["regions"] = grouped("geo_region", "grg")[:120]
             try:
-                wc, p = build(None)
+                wc, p = build("grp")   # exclude its own dimension
                 gdf = con.execute(f"""
                     SELECT trim(g) AS key, count(*) AS n
                     FROM {src}, UNNEST(string_split(geo_varietal, '; ')) AS t(g)

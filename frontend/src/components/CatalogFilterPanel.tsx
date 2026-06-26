@@ -28,6 +28,10 @@ export interface CatalogFilters {
   brands: string[];
   sizes: string[];
   unitKinds: string[];   // container type: Bottle / Can / Keg
+  // Canonical origin / grape from the LLM geo enrichment (Products page rail).
+  countries: string[];
+  regions: string[];
+  grapes: string[];
 }
 
 export const emptyCatalogFilters: CatalogFilters = {
@@ -36,6 +40,9 @@ export const emptyCatalogFilters: CatalogFilters = {
   brands: [],
   sizes: [],
   unitKinds: [],
+  countries: [],
+  regions: [],
+  grapes: [],
 };
 
 export function countActiveFilters(f: CatalogFilters): number {
@@ -53,6 +60,9 @@ export function countActiveFilters(f: CatalogFilters): number {
   n += f.brands.length;
   n += f.sizes.length;
   n += f.unitKinds?.length ?? 0;
+  n += f.countries?.length ?? 0;
+  n += f.regions?.length ?? 0;
+  n += f.grapes?.length ?? 0;
   return n;
 }
 

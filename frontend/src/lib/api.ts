@@ -2366,6 +2366,10 @@ export interface CatalogFacets {
   brands: FacetBucket[];
   sizes: FacetBucket[];
   unit_kinds?: FacetBucket[];   // Bottle / Can / Keg buckets
+  // Canonical origin / grape facets from the LLM geo enrichment.
+  countries?: FacetBucket[];
+  regions?: FacetBucket[];
+  grapes?: FacetBucket[];
 }
 export interface PricePoint {
   edition: string;

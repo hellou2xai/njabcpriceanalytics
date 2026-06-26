@@ -85,6 +85,20 @@ export default function ProductsFilterRail({ filters, onChange, items, facets, t
     const base = facets ? toMap(facets.sizes) : buildFacet(items, 'unit_volume');
     return new Map([...base.entries()].sort((a, b) => toMl(a[0]) - toMl(b[0])));
   }, [facets, items]);
+  // Canonical origin / grape facets from the LLM geo enrichment.
+  const countryFacet = useMemo(
+    () => (facets ? toMap(facets.countries) : buildFacet(items, 'geo_country')),
+    [facets, items]);
+  const regionFacet = useMemo(
+    () => (facets ? toMap(facets.regions) : buildFacet(items, 'geo_region')),
+    [facets, items]);
+  const grapeFacet = useMemo(
+    () => (facets ? toMap(facets.grapes) : new Map<string, number>()),
+    [facets, items]);
+  const [regionSearch, setRegionSearch] = useState('');
+  const [grapeSearch, setGrapeSearch] = useState('');
+  const [regionShowAll, setRegionShowAll] = useState(false);
+  const [grapeShowAll, setGrapeShowAll] = useState(false);
 
   const ripCount = facets?.has_rip ?? items.filter(i => i.has_rip).length;
   const discCount = facets?.has_discount ?? items.filter(i => i.has_discount).length;
@@ -101,11 +115,23 @@ export default function ProductsFilterRail({ filters, onChange, items, facets, t
   }, [brandFacet, brandSearch]);
   const visibleBrands = brandShowAll ? brandEntries : brandEntries.slice(0, 10);
 
+  const filterEntries = (m: Map<string, number>, search: string) => {
+    const e = [...m.entries()];
+    if (!search) return e;
+    const s = search.toLowerCase();
+    return e.filter(([name]) => name.toLowerCase().includes(s));
+  };
+  const regionEntries = useMemo(() => filterEntries(regionFacet, regionSearch), [regionFacet, regionSearch]);
+  const grapeEntries = useMemo(() => filterEntries(grapeFacet, grapeSearch), [grapeFacet, grapeSearch]);
+  const visibleRegions = regionShowAll ? regionEntries : regionEntries.slice(0, 12);
+  const visibleGrapes = grapeShowAll ? grapeEntries : grapeEntries.slice(0, 12);
+
   const total = countActiveFilters(filters);
 
   const clearAll = () => {
     onChange({ ...emptyCatalogFilters });
     setPriceMin(''); setPriceMax(''); setBrandSearch(''); setBrandShowAll(false);
+    setRegionSearch(''); setGrapeSearch(''); setRegionShowAll(false); setGrapeShowAll(false);
   };
 
   return (
@@ -236,6 +262,64 @@ export default function ProductsFilterRail({ filters, onChange, items, facets, t
           ))}
         </div>
       </Section>
+
+      {/* Canonical ORIGIN + GRAPE from the LLM geo enrichment. Only rendered
+          when the backend returns the geo facets (cache carries geo_*). */}
+      {countryFacet.size > 0 && (
+        <Section title="Country" defaultOpen={false} badge={filters.countries.length}>
+          <div className="prod-filter-list">
+            {[...countryFacet.entries()].map(([c, count]) => (
+              <label key={c} className="prod-filter-check">
+                <input type="checkbox" checked={filters.countries.includes(c)}
+                  onChange={() => onChange({ ...filters, countries: toggle(filters.countries, c) })} />
+                <span>{c}</span><span className="prod-filter-count">{count}</span>
+              </label>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {regionFacet.size > 0 && (
+        <Section title="Region" defaultOpen={false} badge={filters.regions.length}>
+          <input type="text" className="prod-filter-search" placeholder="Search regions…"
+            value={regionSearch} onChange={e => setRegionSearch(e.target.value)} />
+          <div className="prod-filter-list">
+            {visibleRegions.map(([r, count]) => (
+              <label key={r} className="prod-filter-check">
+                <input type="checkbox" checked={filters.regions.includes(r)}
+                  onChange={() => onChange({ ...filters, regions: toggle(filters.regions, r) })} />
+                <span>{r}</span><span className="prod-filter-count">{count}</span>
+              </label>
+            ))}
+          </div>
+          {regionEntries.length > 12 && (
+            <button type="button" className="prod-filter-showall" onClick={() => setRegionShowAll(s => !s)}>
+              {regionShowAll ? 'Show fewer' : `Show all ${regionEntries.length}…`}
+            </button>
+          )}
+        </Section>
+      )}
+
+      {grapeFacet.size > 0 && (
+        <Section title="Grape" defaultOpen={false} badge={filters.grapes.length}>
+          <input type="text" className="prod-filter-search" placeholder="Search grapes…"
+            value={grapeSearch} onChange={e => setGrapeSearch(e.target.value)} />
+          <div className="prod-filter-list">
+            {visibleGrapes.map(([g, count]) => (
+              <label key={g} className="prod-filter-check">
+                <input type="checkbox" checked={filters.grapes.includes(g)}
+                  onChange={() => onChange({ ...filters, grapes: toggle(filters.grapes, g) })} />
+                <span>{g}</span><span className="prod-filter-count">{count}</span>
+              </label>
+            ))}
+          </div>
+          {grapeEntries.length > 12 && (
+            <button type="button" className="prod-filter-showall" onClick={() => setGrapeShowAll(s => !s)}>
+              {grapeShowAll ? 'Show fewer' : `Show all ${grapeEntries.length}…`}
+            </button>
+          )}
+        </Section>
+      )}
       </div>
     </aside>
   );

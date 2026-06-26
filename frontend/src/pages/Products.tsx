@@ -44,6 +44,9 @@ function filtersFromParams(params: URLSearchParams): CatalogFilters {
     brands: csv('brands'),
     sizes: csv('sizes'),
     unitKinds: csv('unit_kinds'),
+    countries: csv('countries'),
+    regions: csv('regions'),
+    grapes: csv('grapes'),
     priceMin: params.get('priceMin') ? parseFloat(params.get('priceMin')!) : undefined,
     priceMax: params.get('priceMax') ? parseFloat(params.get('priceMax')!) : undefined,
   };
@@ -138,6 +141,9 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
     if (filters.brands?.length) next.set('brands', filters.brands.join(','));
     if (filters.sizes?.length) next.set('sizes', filters.sizes.join(','));
     if (filters.unitKinds?.length) next.set('unit_kinds', filters.unitKinds.join(','));
+    if (filters.countries?.length) next.set('countries', filters.countries.join(','));
+    if (filters.regions?.length) next.set('regions', filters.regions.join(','));
+    if (filters.grapes?.length) next.set('grapes', filters.grapes.join(','));
     if (filters.priceMin != null) next.set('priceMin', String(filters.priceMin));
     if (filters.priceMax != null) next.set('priceMax', String(filters.priceMax));
     if (next.toString() !== params.toString()) setSearchParams(next, { replace: true });
@@ -169,6 +175,9 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
     brands: filters.brands.join(',') || undefined,
     sizes: filters.sizes.join(',') || undefined,
     unit_kinds: filters.unitKinds.join(',') || undefined,
+    countries: filters.countries.join(',') || undefined,
+    regions: filters.regions.join(',') || undefined,
+    grapes: filters.grapes.join(',') || undefined,
     min_price: filters.priceMin,
     max_price: filters.priceMax,
   };

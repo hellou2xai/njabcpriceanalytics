@@ -42,7 +42,10 @@ export default function MobileLens({ open, onClose, onResult }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);        // vision identify in flight
   const [scanning, setScanning] = useState(false); // barcode loop active
+  const [ready, setReady] = useState(false);      // camera playing
   const [hint, setHint] = useState<string | null>(null);
+  const onResultRef = useRef(onResult);
+  onResultRef.current = onResult;
 
   const stopCamera = useCallback(() => {
     scanRef.current = false;
@@ -55,7 +58,7 @@ export default function MobileLens({ open, onClose, onResult }: Props) {
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    setError(null); setBusy(false); setScanning(false); setHint(null);
+    setError(null); setBusy(false); setScanning(false); setReady(false); setHint(null);
     (async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -67,6 +70,7 @@ export default function MobileLens({ open, onClose, onResult }: Props) {
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           await videoRef.current.play().catch(() => {});
+          if (!cancelled) setReady(true);   // -> auto-start barcode scan
         }
       } catch (e: unknown) {
         const name = (e as { name?: string })?.name;
@@ -108,26 +112,39 @@ export default function MobileLens({ open, onClose, onResult }: Props) {
     img.src = URL.createObjectURL(file);
   }, [identify]);
 
-  // Toggle the continuous barcode scan loop over the live video.
-  const toggleScan = useCallback(() => {
-    if (scanning) { scanRef.current = false; setScanning(false); setHint(null); return; }
+  // Continuous barcode scan loop over the live video. Auto-runs as soon as the
+  // camera is ready (no tap needed) and on every frame until a code is found.
+  const stopScan = useCallback(() => {
+    scanRef.current = false;
+    if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+    setScanning(false);
+  }, []);
+  const startScan = useCallback(() => {
+    if (scanRef.current) return;
     if (!detectorRef.current) detectorRef.current = new BarcodeDetector({ formats: BARCODE_FORMATS as unknown as string[] });
-    setScanning(true); setError(null); setHint('Point the camera at the barcode');
-    scanRef.current = true;
+    scanRef.current = true; setScanning(true);
+    setHint('Point at a barcode to scan, or take a photo');
     const tick = async () => {
-      if (!scanRef.current || !videoRef.current?.videoWidth) {
-        if (scanRef.current) rafRef.current = requestAnimationFrame(tick);
-        return;
+      if (!scanRef.current) return;
+      const v = videoRef.current;
+      if (v?.videoWidth) {
+        try {
+          const codes = await detectorRef.current!.detect(v);
+          const raw = codes.find(c => c.rawValue)?.rawValue?.trim();
+          if (raw) { scanRef.current = false; setScanning(false); onResultRef.current(raw); close(); return; }
+        } catch { /* keep scanning */ }
       }
-      try {
-        const codes = await detectorRef.current!.detect(videoRef.current);
-        const raw = codes.find(c => c.rawValue)?.rawValue?.trim();
-        if (raw) { scanRef.current = false; setScanning(false); onResult(raw); close(); return; }
-      } catch { /* keep scanning */ }
       if (scanRef.current) rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
-  }, [scanning, onResult, close]);
+  }, [close]);
+
+  // Auto-start scanning once the camera is live; pause it while a photo is
+  // being identified, resume after.
+  useEffect(() => {
+    if (!open || !ready) return;
+    if (busy) stopScan(); else startScan();
+  }, [open, ready, busy, startScan, stopScan]);
 
   if (!open) return null;
 
@@ -159,8 +176,9 @@ export default function MobileLens({ open, onClose, onResult }: Props) {
         <button type="button" className="lens-shutter" onClick={takePhoto} disabled={busy} aria-label="Take picture and search">
           {busy ? <Loader2 className="lens-spin" size={26} /> : <Camera size={28} />}
         </button>
-        <button type="button" className={`lens-side-btn${scanning ? ' is-active' : ''}`} onClick={toggleScan} disabled={busy}>
-          <ScanBarcode size={22} /><span>{scanning ? 'Scanning' : 'Barcode'}</span>
+        <button type="button" className={`lens-side-btn${scanning ? ' is-active' : ''}`}
+          onClick={() => (scanning ? stopScan() : startScan())} disabled={busy}>
+          <ScanBarcode size={22} /><span>{scanning ? 'Scanning…' : 'Scan'}</span>
         </button>
       </div>
       <input ref={fileRef} type="file" accept="image/*" capture="environment"

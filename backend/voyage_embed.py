@@ -249,9 +249,20 @@ def index_enrichment(
     # Initial fetch uses its OWN short-lived connection so the candidate
     # cursor doesn't get hit by Render's idle-timeout drop. Once we have
     # the row list in memory, batch-level upserts open their own.
-    base = """
+    # Pull the canonical geo enrichment straight from product_enrichment (the
+    # table being embedded) so origin/grape land in the vector regardless of the
+    # cache supplement. Guarded by column existence for DBs that predate them.
+    _GEO = ["geo_country", "geo_region", "geo_subregion", "geo_varietal", "geo_style"]
+    with _connect() as _cc:
+        _ck = _cc.cursor()
+        _ck.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'product_enrichment' AND column_name = ANY(%s)", (_GEO,))
+        _have = {(r["column_name"] if isinstance(r, dict) else r[0]) for r in _ck.fetchall()}
+    geo_sel = "".join(f", pe.{c}" for c in _GEO if c in _have)
+    base = f"""
         SELECT pe.upc, pe.name, pe.brand, pe.description, pe.region,
-               pe.category, pe.category_path
+               pe.category, pe.category_path{geo_sel}
         FROM product_enrichment pe
         WHERE pe.upc IS NOT NULL AND pe.upc != ''
           AND (
@@ -271,7 +282,10 @@ def index_enrichment(
     with _connect() as fetch_con:
         fcur = fetch_con.cursor()
         fcur.execute(base)
-        rows = fcur.fetchall()
+        _cols = [d[0] for d in fcur.description]
+        # Normalise every row to a dict keyed by column name (works whether the
+        # driver returns tuples or dict rows), so geo columns read by name.
+        rows = [r if isinstance(r, dict) else dict(zip(_cols, r)) for r in fcur.fetchall()]
     log.info("Indexing %d enrichment rows into product_embeddings", len(rows))
     embedded = 0
     skipped_empty = 0
@@ -282,16 +296,15 @@ def index_enrichment(
         texts: list[str] = []
         upcs: list[str] = []
         for r in chunk:
-            # Row may be a dict (psycopg dict_row) or a tuple — handle both.
-            if isinstance(r, dict):
-                upc = r["upc"]
-                name, brand, desc, region, cat, cat_path = (
-                    r["name"], r["brand"], r["description"],
-                    r["region"], r["category"], r["category_path"])
-            else:
-                upc = r[0]
-                name, brand, desc, region, cat, cat_path = r[1], r[2], r[3], r[4], r[5], r[6]
+            # Rows are normalised to dicts above (column-name keyed).
+            upc = r["upc"]
+            name, brand, desc, region, cat, cat_path = (
+                r.get("name"), r.get("brand"), r.get("description"),
+                r.get("region"), r.get("category"), r.get("category_path"))
             cpl = (cpl_supplement or {}).get(str(upc).lstrip("0") or str(upc)) or {}
+            # Geo: prefer the value selected straight from product_enrichment;
+            # fall back to the cache supplement for older DBs without the columns.
+            geo = lambda k: r.get(k) or cpl.get(k)  # noqa: E731
             blob = _compose_text(name, brand, desc, region, cat, cat_path,
                                  unit_volume=cpl.get("unit_volume"),
                                  unit_qty=cpl.get("unit_qty"),
@@ -300,11 +313,11 @@ def index_enrichment(
                                  product_type=cpl.get("product_type"),
                                  enr_category=cpl.get("enr_category"),
                                  enr_region=cpl.get("enr_region"),
-                                 geo_country=cpl.get("geo_country"),
-                                 geo_region=cpl.get("geo_region"),
-                                 geo_subregion=cpl.get("geo_subregion"),
-                                 geo_varietal=cpl.get("geo_varietal"),
-                                 geo_style=cpl.get("geo_style"))
+                                 geo_country=geo("geo_country"),
+                                 geo_region=geo("geo_region"),
+                                 geo_subregion=geo("geo_subregion"),
+                                 geo_varietal=geo("geo_varietal"),
+                                 geo_style=geo("geo_style"))
             if not blob.strip():
                 skipped_empty += 1
                 continue

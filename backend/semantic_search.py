@@ -101,6 +101,29 @@ def ensure_fts_index(con_pg) -> bool:
         return False
 
 
+def _scalar(row):
+    """First column of a row, row-factory-agnostic (see _first_two)."""
+    if row is None:
+        return None
+    try:
+        return row[0]
+    except (KeyError, TypeError):
+        return list(row.values())[0]
+
+
+def _first_two(row):
+    """First two column values of a result row, regardless of the connection's
+    row factory. The prod psycopg pool uses dict_row, so unpacking `for a, b in
+    rows` would iterate the dict KEYS ('upc','rel') instead of values and blow
+    up float('rel') — that silently returned [] for EVERY FTS/vector query.
+    Index first (tuple / psycopg2 DictRow), fall back to .values() (dict_row)."""
+    try:
+        return row[0], row[1]
+    except (KeyError, TypeError):
+        vals = list(row.values())
+        return vals[0], vals[1]
+
+
 def _rollback(con) -> None:
     """Clear an aborted transaction so a SUBSEQUENT query on the same connection
     can run. Critical for the Voyage->FTS fallback: a failed pgvector query
@@ -130,10 +153,10 @@ def _voyage_upcs(con_pg, query: str, limit: int) -> Optional[list[tuple[str, flo
             "SELECT COUNT(*) FROM information_schema.tables "
             "WHERE table_name = 'product_embeddings'"
         )
-        if not cur.fetchone()[0]:
+        if not _scalar(cur.fetchone()):
             return None
         cur.execute("SELECT COUNT(*) FROM product_embeddings")
-        if not cur.fetchone()[0]:
+        if not _scalar(cur.fetchone()):
             return None
     except Exception as e:
         log.warning("Voyage path probe failed: %s", e)
@@ -157,8 +180,12 @@ def _voyage_upcs(con_pg, query: str, limit: int) -> Optional[list[tuple[str, flo
             (_format_vec_literal(qvec), _format_vec_literal(qvec),
              int(limit) * 3),
         )
-        rows = cur.fetchall()
-        return [(str(u), float(s)) for u, s in rows if u]
+        out = []
+        for row in cur.fetchall():
+            u, s = _first_two(row)
+            if u:
+                out.append((str(u), float(s)))
+        return out
     except Exception as e:
         log.warning("pgvector query failed - falling back to FTS: %s", e)
         _rollback(con_pg)
@@ -181,7 +208,8 @@ def _fts_upcs(con_pg, query: str, limit: int) -> list[tuple[str, float]]:
         (query, query, int(limit) * 3),   # over-fetch — many will drop in the cpl join
     )
     out = []
-    for upc, rel in cur.fetchall():
+    for row in cur.fetchall():
+        upc, rel = _first_two(row)
         if upc:
             out.append((str(upc), float(rel)))
     return out

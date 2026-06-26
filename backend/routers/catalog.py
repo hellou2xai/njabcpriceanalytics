@@ -2253,36 +2253,6 @@ def semantic_search(
         if _nm is not None:
             return _nm
 
-    # TEMP diagnostic (remove): surfaces the engine internals from inside prod
-    # so we can see why text queries return 0. Hit ?diag=1.
-    if request is not None and request.query_params.get("diag") == "1":
-        import traceback
-        from backend.semantic_search import _voyage_upcs, _fts_upcs, _current_ym
-        info: dict = {"q": q}
-        try:
-            with get_pg() as pg, get_duckdb() as con:
-                try:
-                    v = _voyage_upcs(pg, q, limit)
-                    info["voyage"] = None if v is None else len(v)
-                    info["voyage_sample"] = [u for u, _ in (v or [])[:3]]
-                except Exception as e:
-                    info["voyage_err"] = f"{type(e).__name__}: {e}"
-                try:
-                    f = _fts_upcs(pg, q, limit)
-                    info["fts"] = len(f)
-                    info["fts_sample"] = [u for u, _ in f[:3]]
-                except Exception as e:
-                    info["fts_err"] = f"{type(e).__name__}: {e}\n{traceback.format_exc()[-400:]}"
-                info["cym"] = _current_ym()
-                try:
-                    cnt = con.execute("SELECT COUNT(*) FROM cpl_enriched").fetchone()[0]
-                    info["cpl_rows"] = int(cnt)
-                except Exception as e:
-                    info["cpl_err"] = str(e)
-        except Exception as e:
-            info["fatal"] = f"{type(e).__name__}: {e}"
-        return info
-
     def _build():
         with get_pg() as pg, get_duckdb() as con:
             rows = _ss(pg, con, q, limit=limit, product_type=product_type)

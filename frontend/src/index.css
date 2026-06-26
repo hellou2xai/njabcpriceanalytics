@@ -6813,6 +6813,36 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pdx-qd-best td, .pdx-qd-best { background: var(--hl-bg); }
 .pdx-qd-best td { color: var(--hl-fg); font-weight: 700; }
 
+/* ---- Price/QD table responsiveness (was clipping the Total column) ----
+   Mirror the RIP table: container-query driven + fixed layout so the 5 columns
+   ALWAYS fit the card at any width (never overflow / clip), and restack into
+   labelled rows when the panel is too narrow for a table (phones, the detail
+   rail, the two-panel grid before it stacks). The td's already carry data-label. */
+.pdx-qd { container-type: inline-size; }
+/* Fixed layout pins the table to its container width; content wraps inside the
+   column instead of shoving "Total QD" off the right edge. Type a touch wider;
+   the four numeric columns share the rest evenly. */
+.pdx-tbl--qd { table-layout: fixed; width: 100%; }
+.pdx-tbl--qd th, .pdx-tbl--qd td { overflow-wrap: anywhere; }
+.pdx-tbl--qd th { white-space: normal; vertical-align: bottom; }
+.pdx-tbl--qd th:first-child, .pdx-tbl--qd td:first-child { width: 22%; }
+.pdx-tbl--qd th:not(:first-child), .pdx-tbl--qd td:not(:first-child) { width: 19.5%; }
+@container (max-width: 460px) {
+  .pdx-tbl--qd thead { display: none; }
+  .pdx-tbl--qd, .pdx-tbl--qd tbody, .pdx-tbl--qd tr, .pdx-tbl--qd td { display: block; width: 100%; }
+  .pdx-tbl--qd tr { padding: 8px 0; border-bottom: 2px solid var(--border); }
+  .pdx-tbl--qd tr:last-child { border-bottom: 0; }
+  /* Each cell becomes a "Label …… value" row — readable without a header. */
+  .pdx-tbl--qd td { border: 0; padding: 3px 12px; display: flex; align-items: baseline;
+    justify-content: space-between; gap: 12px; text-align: right; }
+  .pdx-tbl--qd td:first-child { font-weight: 700; }
+  .pdx-tbl--qd td[data-label]::before {
+    content: attr(data-label); font-weight: 700; color: var(--text-muted);
+    text-transform: uppercase; font-size: 10px; letter-spacing: .03em; text-align: left;
+  }
+  .pdx-tbl--qd td:first-child[data-label]::before { display: none; }
+}
+
 /* ---- responsive (project breakpoints: 1023 / 768 / 480) ----
    .pdx-detail-grid stacks fluidly via auto-fit above, so no breakpoint needed
    for it. These handle the summary row, tables and touch targets on phones. */

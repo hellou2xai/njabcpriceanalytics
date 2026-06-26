@@ -23,7 +23,7 @@ import AddToListButton from './AddToListButton';
 import { QtyStepper, type CartState } from './CatalogTable';
 import PriceSparklines from './PriceSparklines';
 import DealLadder from './DealLadder';
-import RipQdPanels from './RipQdPanels';
+import ProductListingCard from './ProductListingCard';
 import DealTimingSticker, { everyDayFromTiers } from './DealTimingSticker';
 import DistCompareChip from './DistCompareChip';
 import TierBadge from './TierBadge';
@@ -493,146 +493,10 @@ function SizeRow({ size, cart, updateQty, primaryName, showDeals = true, hideDis
   // Which month's RIP/QD ladder to show ('current' | 'next').
   dealMonth?: 'current' | 'next';
 }) {
-  const cartKey = `${size.product_name}|${size.wholesaler}|${size.upc ?? ''}|${size.unit_volume ?? ''}`;
-  const qty = cart[cartKey] ?? { cases: 0, units: 0 };
-  const pack = bottlesPerCase(size.product_name, size.unit_qty);
-  const comboLink = useComboLink();
-  const comboUrl = comboLink(size.wholesaler, size.upc);
-  const sku = abgSku(size.wholesaler, size.abg_sku) ? `${skuLabel(size.wholesaler)} ${size.abg_sku}` : size.upc;
-  // Headline = price after the 1-case QD (the realistic single-case price), not
-  // the deepest RIP. The deeper RIP/QD tiers still show in the deal ladder below.
-  const caseP = oneCaseQdCase(size) ?? size.effective_case_price;
-  const btlPrice = pack ? caseP / pack : (size.frontline_unit_price ?? caseP);
-  // Current-month quantity-discount + RIP tier ladders, shown inline so the
-  // buyer gets every number without hovering the sparkline. Driven from the
-  // SAME price_3mo data the sparkline uses (via buildMonths), so the inline
-  // deals can never disagree with the chart (the row's flat `tiers` array can
-  // be dropped on the multi-UPC variant search while price_3mo survives).
-  const months = buildMonths(size);
-  // Same-SKU rows across distributors (from the card's cross-distributor fetch),
-  // for the per-item cheaper-distributor chip. Matched on the FULL identity —
-  // size + pack + vintage — so the chip never compares a '24 against another
-  // house's '23 (a shared barcode can carry both). Empty for sizes not in the fetch.
-  const vKey = (v: unknown) => {
-    const s = v == null ? '' : String(v).trim().toLowerCase();
-    return ['', '0', 'nv', 'none', 'nan'].includes(s) ? '' : s;
-  };
-  const sizeSibs = (crossDist ?? []).filter(p =>
-    sizeToMl(p.unit_volume) === sizeToMl(size.unit_volume)
-    && bottlesPerCase(p.product_name, p.unit_qty) === bottlesPerCase(size.product_name, size.unit_qty)
-    && vKey(p.vintage) === vKey(size.vintage));
-  return (
-    <div className="prod-size-row">
-      <Link to={detailUrl(size.wholesaler, size.product_name, size.upc, size.unit_volume)} className="prod-size-id"
-        title="Open this product — exact size and UPC">
-        <div className="prod-size-name">{size.unit_volume || '-'} {containerTitle(size.unit_volume, size.unit_type)}</div>
-        {/* The distributor's EXACT catalogue name always shows on the listing
-            line (it's how the buyer matches the row to the distributor's own
-            book) — suppressed only when it would literally repeat the card
-            title above it. Compared case-insensitively: the title is the
-            standardized CELR header, the listing name is the raw line. */}
-        {size.product_name && size.product_name.trim().toUpperCase() !== (primaryName ?? '').trim().toUpperCase() && (
-          <div className="prod-size-variant">{size.product_name}</div>
-        )}
-        {!hideDist && <div className="prod-size-dist"><Store size={11} /> {distributorName(size.wholesaler)}</div>}
-        <div className="prod-size-pack">{packPhrase(pack, size.unit_volume, size.unit_type)}</div>
-        {sku && <div className="prod-size-sku"
-          title={size.abg_item_name ? `${distributorName(size.wholesaler)}: ${size.abg_item_name}` : undefined}>
-          SKU: {sku}{size.abg_item_name ? <span className="prod-size-skuname"> · {size.abg_item_name}</span> : null}</div>}
-        {size.vintage != null && String(size.vintage) !== '0' && String(size.vintage).trim() !== '' && (
-          <span className="tag tag-blue prod-size-vintage">Vintage {size.vintage}</span>
-        )}
-      </Link>
-      <div className="prod-size-price">
-        <span className="prod-size-badges">
-          {/* Per-item: which month this size's price is best in, and (when a
-              cheaper distributor exists for THIS size) the best-price chip. */}
-          <BetterMonthSticker s={size} />
-          <DistCompareChip sizes={sizeSibs} selfWholesaler={size.wholesaler} />
-          <IntroSticker ym={size.introduced_edition} />
-          {size.has_discount && <TierBadge kind="qd" />}
-          {size.has_rip && <TierBadge kind="rip" />}
-          <DealTimingSticker deals={size.deal_windows ?? []} gaps={size.rip_gaps}
-            everyDay={everyDayFromTiers(size.tiers, size.frontline_case_price)} />
-          {comboUrl && (
-            <Link to={comboUrl} className="prod-combo-sticker" onClick={e => e.stopPropagation()}
-              title="This product is part of a combo bundle — view the combo">🎁 Combo</Link>
-          )}
-        </span>
-        {/* Three labelled price rows so the buyer reads the headline AND the two
-            best deals at a glance, all in the same case/bottle format:
-              Best 1 CS — the realistic single-case price (after the 1-case QD),
-              Best QD  — the deepest quantity-discount bracket (RIP excluded),
-              Best RIP — the deepest RIP rebate price.
-            QD/RIP rows render only when that deal beats the single-case price
-            (no row that just repeats Best 1 CS, no empty rows). All values come
-            from canonical sources (oneCaseQdCase, best_qd, pickBestRip). */}
-        {(() => {
-          const keg = isKegUnit(size.unit_volume, size.unit_type);
-          const csW = priceUnitWord(size.unit_volume, size.unit_type);
-          const btlW = perUnitNoun(size.unit_volume, size.unit_type);
-          const m = (v: number | null | undefined) => (v == null ? null : `$${v.toFixed(2)}`);
-          const qd = size.best_qd;
-          const rip = pickBestRip(size, dealMonth);
-          const Row = (label: string, cs: number, csCases: number | null | undefined,
-                       btl: number | null, cls?: string, btlHi = false) => (
-            <div className={`prod-size-bestrow${cls ? ` ${cls}` : ''}`}>
-              <span className="prod-size-bestrow-k">{label}{csCases != null ? ` · ${csCases} cs` : ''}</span>
-              <span className="prod-size-bestrow-v">
-                <span className="prod-size-case">{m(cs)}/{csW}</span>
-                {!keg && btl != null && (
-                  <span className={`prod-size-btl${btlHi ? ' prod-size-btl--hi' : ''}`}
-                    title={btlHi ? `Per-${btlW} price requires buying ${csCases} cases` : undefined}>
-                    {m(btl)}/{btlW}
-                  </span>
-                )}
-              </span>
-            </div>
-          );
-          return (
-            <div className="prod-size-amounts">
-              {Row('Best 1 CS', caseP, null, keg ? null : btlPrice)}
-              {qd && qd.case_price != null
-                && ((qd.cases ?? 0) > 1 || qd.case_price < caseP - 0.005)
-                // Highlight the per-bottle price when this QD only unlocks at a
-                // multi-case buy-in (> 1 CS), so the buyer sees the bottle price
-                // isn't available at a single case.
-                && Row('Best QD', qd.case_price, qd.cases, qd.bottle_price ?? null, 'is-qd', (qd.cases ?? 0) > 1)}
-              {rip && rip.eff < caseP - 0.005
-                && Row('Best RIP', rip.eff, rip.cases, rip.btl ?? null, 'is-rip')}
-            </div>
-          );
-        })()}
-        <PriceSparklines wholesaler={size.wholesaler} productName={size.product_name}
-          upc={size.upc} unitVolume={size.unit_volume} unitQty={size.unit_qty} vintage={size.vintage}
-          months={months} />
-      </div>
-      {/* Inline RIP + quantity-discount tiers — the SAME shared RipQdPanels the
-          product-detail page and Quick View use, so QD/RIP read identically
-          everywhere (uniformity). Full-width row below; Summary hides it. */}
-      <div className="prod-size-order">
-        <div className="prod-size-steppers">
-          <QtyStepper label={isKegUnit(size.unit_volume, size.unit_type) ? 'Kegs' : containerNoun(size.unit_volume, size.unit_type) === 'can' ? 'Cans' : 'Bottles'}
-            value={qty.units} onChange={v => updateQty(cartKey, 'units', v)} />
-          {!isKegUnit(size.unit_volume, size.unit_type) && (
-            <QtyStepper label="Cases" value={qty.cases} onChange={v => updateQty(cartKey, 'cases', v)} />
-          )}
-        </div>
-        <div className="prod-size-actions">
-          <AddToCartButton productName={size.product_name} wholesaler={size.wholesaler}
-            upc={size.upc} unitVolume={size.unit_volume}
-            unitQty={size.unit_qty != null ? String(size.unit_qty) : undefined}
-            vintage={size.vintage != null ? String(size.vintage) : undefined}
-            qtyCases={qty.cases} qtyUnits={qty.units} />
-          <AddToListButton productName={size.product_name} wholesaler={size.wholesaler}
-            upc={size.upc} unitVolume={size.unit_volume}
-            unitQty={size.unit_qty != null ? String(size.unit_qty) : undefined}
-            vintage={size.vintage != null ? String(size.vintage) : undefined} />
-        </div>
-      </div>
-      {showDeals && <RipQdPanels size={size} name={primaryName} className="prod-size-ripqd" />}
-    </div>
-  );
+  // The expanded list row IS the uniform listing card (summary + RIP/QD),
+  // identical to the product-detail page, so every surface reads the same.
+  void showDeals; void hideDist; void crossDist; void dealMonth;
+  return <ProductListingCard size={size} name={primaryName} cart={cart} updateQty={updateQty} />;
 }
 
 function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded = false, dealMonth = 'current' }: {

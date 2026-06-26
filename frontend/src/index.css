@@ -6513,8 +6513,8 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pdx-page-title { margin: 0; font-size: 24px; font-weight: 800; color: var(--text); }
 .pdx-loading { padding: 24px; color: var(--text-muted); }
 
-.pdx-listings { display: flex; flex-direction: column; gap: 22px; }
-.pdx-listing { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 16px; }
+.pdx-listings { display: flex; flex-direction: column; }
+.pdx-listing { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 16px; margin-bottom: 16px; }
 .pdx-end { text-align: center; color: var(--text-muted); font-size: 12px; font-weight: 600; padding: 8px 0 0; }
 
 /* shared panel chrome */
@@ -6526,6 +6526,8 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pdx-sum-imglink { display: block; flex-shrink: 0; }
 .pdx-sum-meta { min-width: 0; }
 .pdx-sum-titlerow { display: flex; align-items: center; gap: 8px; }
+.pdx-sum-title-link { text-decoration: none; color: inherit; min-width: 0; }
+.pdx-sum-title-link:hover .pdx-sum-title { color: var(--accent); }
 .pdx-sum-title { margin: 0; font-size: 22px; font-weight: 800; color: var(--text); line-height: 1.2; }
 .pdx-sum-specs { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 6px; font-size: 13px; color: var(--text-muted); }
 .pdx-sum-specs > span:not(:last-child)::after { content: '|'; margin-left: 8px; color: var(--border); }
@@ -6564,12 +6566,22 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
   color: #92400e; background: #fef3c7; border: 1px solid #fcd34d; }
 .pdx-rip-dates { white-space: nowrap; color: var(--text-muted); }
 .pdx-rip-sizes { color: var(--text); }
+/* Each pack rule / clause from rip_description on its own line. */
+.pdx-rip-sizeline { line-height: 1.45; }
+.pdx-rip-sizeline + .pdx-rip-sizeline { margin-top: 1px; }
 .pdx-rip-levels { display: flex; flex-direction: column; gap: 2px; }
 .pdx-rip-level { white-space: nowrap; }
 
-/* ---- QD prices chart ---- */
-.pdx-qd-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.pdx-qd-month-h { font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px; }
+/* ---- QD prices chart: stacked Current / Next month cards with distinct
+   header bands so the two months are never confused (matches qd.png). ---- */
+.pdx-qd { padding: 12px; }
+.pdx-qd-stack { display: flex; flex-direction: column; gap: 12px; }
+.pdx-qd-card { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--surface); }
+.pdx-qd-title { text-align: center; font-size: 12px; font-weight: 800; letter-spacing: .06em; padding: 6px 8px; color: var(--text); }
+.pdx-qd-band { padding: 5px 10px; font-size: 12px; font-weight: 700; }
+.pdx-qd-card--current .pdx-qd-band { background: #41557a; color: #fff; }
+.pdx-qd-card--next .pdx-qd-band { background: var(--surface-2, #eef1f5); color: var(--text-muted); }
+.pdx-qd-card .pdx-qd-table th { background: var(--surface); }
 .pdx-num { text-align: right; }
 .pdx-qd-best td, .pdx-qd-best { background: var(--hl-bg); }
 .pdx-qd-best td { color: var(--hl-fg); font-weight: 700; }
@@ -6583,7 +6595,6 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 @media (max-width: 560px) {
   .pdx-summary { grid-template-columns: 1fr; justify-items: start; }
   .pdx-sum-prices { gap: 20px; }
-  .pdx-qd-grid { grid-template-columns: 1fr; }
   .pdx-order { justify-content: stretch; }
   .pdx-order-actions { flex: 1; min-width: 0; }
 }

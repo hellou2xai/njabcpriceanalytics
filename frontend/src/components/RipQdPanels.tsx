@@ -5,11 +5,13 @@
  * Products list expanded rows, Quick View) so every surface renders the SAME
  * two panels and users get a uniform read:
  *
- *   RIP details   — one row per program per month: Dates | Sizes | Levels,
- *                   where Sizes is the RIP-sheet free text (rip_description,
- *                   column M) and Levels are qualifying cases : total rebate $.
- *   Prices chart  — per month: Type | Price by case | Price by bottle, rows =
- *                   1 Bottle + 1 Case + every quantity-discount bracket.
+ *   RIP          — one row per program per month: Current/Next Month | Dates |
+ *                  Sizes | Levels. Sizes is the RIP-sheet free text
+ *                  (rip_description, column M) with each pack rule on its own
+ *                  line; Levels are qualifying cases : total rebate $.
+ *   Prices chart — stacked Current Month / Next Month cards (distinct header
+ *                  bands), each: Type | Price by case | Price by bottle, rows =
+ *                  1 Bottle + 1 Case + every quantity-discount bracket.
  *
  * Driven from the SAME buildMonths(price_3mo) series the sparkline/ladder use,
  * so the numbers can never disagree with the rest of the app.
@@ -17,7 +19,6 @@
 import { useMemo } from 'react';
 import { buildMonths } from '../lib/promotionsSparkline';
 import { currentMonth, type MonthBreakdown, type RipTier } from './MonthEffectiveSparkline';
-import { fmtDateRange } from '../lib/dealDates';
 import { bottlesPerCase, sizeToMl } from '../lib/productSizes';
 import { priceUnitWord, perUnitNoun } from '../lib/distributors';
 import type { Product } from '../lib/api';
@@ -34,36 +35,54 @@ export function ozPerBottle(uv?: string | null): number | null {
 
 // Any unit starting with 'b' is a bottle (Fedway abbreviates bottles "B").
 const isBottleUnit = (unit?: string | null) => /^\s*b/i.test(String(unit ?? ''));
-// Case-equivalent quantity for a tier: a bottle-unit tier divided by the pack.
 function caseQty(t: RipTier, pack: number | null): number {
   return isBottleUnit(t.unit) && pack && pack > 0 ? t.qty / pack : t.qty;
 }
-// Real physical buy-in in cases (honours the half-case qualifying quantity).
 function buyCases(t: RipTier, pack: number | null): number {
   if (isBottleUnit(t.unit) && pack && pack > 0) return t.qty / pack;
   if (t.qualifiedCases != null && t.qualifiedCases !== t.qty) return t.qualifiedCases;
   return t.qty;
 }
 function fmtCs(n: number): string {
-  const r = Math.round(n * 100) / 100;
-  return String(r);
+  return String(Math.round(n * 100) / 100);
 }
-// Case price after the 1-case (entry) quantity discount for a month block — the
-// headline "what you pay for one case", no RIP. disc1 is the precomputed
-// after-1cs price; fall back to the frontline list price.
 export function afterOneCase(b: MonthBreakdown | null): number | null {
   if (!b) return null;
   return b.disc1 ?? b.frontline ?? null;
 }
 
-// Time-sensitive sticker — shown on EVERY RIP or QD line whose deal is valid
-// only on partial dates (not the whole month), so a limited-window deal is
-// never mistaken for the dependable monthly price.
+// ISO validity window "2026-06-01 - 2026-06-30" (matches the RIP sheet). A
+// missing window reads "Full month".
+function isoRange(from?: string | null, to?: string | null): string {
+  const a = from ? String(from).slice(0, 10) : null;
+  const b = to ? String(to).slice(0, 10) : null;
+  if (a && b) return `${a} - ${b}`;
+  if (a) return `from ${a}`;
+  if (b) return `until ${b}`;
+  return 'Full month';
+}
+
+// Split the RIP free text (rip_description) so each pack rule / clause is on its
+// own line, e.g. "GLENLIVET 12YR 12PK 375ML = 1/2 CASE 6PK 750ML = 1/2 CASE
+// EXCLUDES VAP" -> ["GLENLIVET 12YR", "12PK 375ML = 1/2 CASE",
+// "6PK 750ML = 1/2 CASE", "EXCLUDES VAP"]. The sheet uses no newlines, so we
+// break before each pack token (Npk) and before INCLUDES/EXCLUDES clauses.
+function splitRipSizes(desc?: string | null): string[] {
+  if (!desc) return [];
+  const s = String(desc).replace(/\s+/g, ' ').trim()
+    .replace(/\s+(?=\d+\s*PK\b)/gi, '\n')
+    .replace(/\s+(?=(?:EXCLUDES|INCLUDES)\b)/gi, '\n');
+  return s.split('\n').map(x => x.trim()).filter(Boolean);
+}
+
+// Time-sensitive sticker — shown on EVERY RIP or QD line valid only on partial
+// dates (not the whole month), so a limited-window deal is never mistaken for
+// the dependable monthly price.
 const TsSticker = () => (
   <span className="pdx-ts" title="Time-sensitive: valid only on the dates shown, not the whole month.">TS</span>
 );
 
-// ───────────────────────── RIP details panel ─────────────────────────
+// ───────────────────────── RIP panel ─────────────────────────
 interface RipLevel { cases: number; per: number; total: number; }
 function ripLevels(tiers: RipTier[], pack: number | null): RipLevel[] {
   const m = new Map<number, RipLevel>();
@@ -79,19 +98,17 @@ function ripLevels(tiers: RipTier[], pack: number | null): RipLevel[] {
 }
 
 type MonthLabel = 'Current Month' | 'Next Month';
-interface RipProgramRow { month: MonthLabel; dates: string; sizes: string | null; levels: RipLevel[]; ts: boolean; }
+interface RipProgramRow { month: MonthLabel; dates: string; sizes: string[]; levels: RipLevel[]; ts: boolean; }
 interface RipProgram { code: string | null; rows: RipProgramRow[]; }
 
-// Build one row PER (program code, validity window) PER month, so a full-month
-// RIP and a time-sensitive (partial-window) RIP under the same code each get
-// their own row under the right month. Next Month rows appear only when that
-// edition is loaded (the `next` block is present).
+// One row PER (program code, validity window) PER month. A full-month RIP and a
+// time-sensitive window under the same code each get their own row. Next Month
+// rows appear only when that edition's block is loaded.
 function buildRipPrograms(cur: MonthBreakdown | null, next: MonthBreakdown | null, pack: number | null): RipProgram[] {
   const byCode = new Map<string, RipProgram>();
   const add = (month: MonthLabel, block: MonthBreakdown | null) => {
     const tiers = (block?.ripTiers ?? []).filter(t => (t.ripOnlySave ?? 0) > 0.005);
     if (!tiers.length) return;
-    // group by RIP code, then by validity window within the code
     const byCodeTiers = new Map<string, RipTier[]>();
     for (const t of tiers) {
       const k = t.code ?? '';
@@ -110,8 +127,8 @@ function buildRipPrograms(cur: MonthBreakdown | null, next: MonthBreakdown | nul
         const t0 = wt[0];
         prog.rows.push({
           month,
-          dates: fmtDateRange(t0.from_date, t0.to_date) || 'Full month',
-          sizes: wt.map(t => t.description).find(d => d && d.trim()) ?? null,
+          dates: isoRange(t0.from_date, t0.to_date),
+          sizes: splitRipSizes(wt.map(t => t.description).find(d => d && d.trim())),
           levels: ripLevels(wt, pack),
           ts: wt.some(t => t.ts),
         });
@@ -147,7 +164,11 @@ function RipPanel({ programs }: { programs: RipProgram[] }) {
                         {r.ts && <TsSticker />}
                       </td>
                       <td className="pdx-rip-dates">{r.dates}</td>
-                      <td className="pdx-rip-sizes">{r.sizes ?? '—'}</td>
+                      <td className="pdx-rip-sizes">
+                        {r.sizes.length === 0 ? '—' : r.sizes.map((line, li) => (
+                          <div className="pdx-rip-sizeline" key={li}>{line}</div>
+                        ))}
+                      </td>
                       <td className="pdx-rip-levels">
                         {r.levels.length === 0 ? '—' : r.levels.map((l, li) => (
                           <span className="pdx-rip-level" key={li}>
@@ -173,8 +194,6 @@ function buildQdRows(block: MonthBreakdown | null, pack: number | null, frontlin
   if (!block) return [];
   const rows: QdRow[] = [];
   const bottleList = block.frontline != null && pack ? block.frontline / pack : frontlineUnit;
-  // 1 Bottle (list single bottle) and 1 Case (after the 1-case QD) are the
-  // dependable monthly headline prices — never time-sensitive.
   rows.push({ label: '1 Bottle', perCase: null, perBottle: bottleList, ts: false });
   const oneCase = afterOneCase(block);
   rows.push({ label: '1 Case', perCase: oneCase, perBottle: oneCase != null && pack ? oneCase / pack : null, ts: false });
@@ -191,11 +210,14 @@ function buildQdRows(block: MonthBreakdown | null, pack: number | null, frontlin
   return [...rows, ...brackets];
 }
 
-function QdMonth({ title, rows, csWord, btlWord }: { title: string; rows: QdRow[]; csWord: string; btlWord: string }) {
+function QdCard({ title, variant, rows, csWord, btlWord }: {
+  title: string; variant: 'current' | 'next'; rows: QdRow[]; csWord: string; btlWord: string;
+}) {
   const best = rows.reduce<number | null>((m, r) => r.perCase != null ? (m == null ? r.perCase : Math.min(m, r.perCase)) : m, null);
   return (
-    <div className="pdx-qd-month">
-      <div className="pdx-qd-month-h">{title}</div>
+    <div className={`pdx-qd-card pdx-qd-card--${variant}`}>
+      <div className="pdx-qd-title">{title}</div>
+      <div className="pdx-qd-band">Prices Chart</div>
       <table className="pdx-qd-table">
         <thead>
           <tr><th>Type</th><th className="pdx-num">Price by {csWord}</th><th className="pdx-num">Price by {btlWord}</th></tr>
@@ -225,21 +247,15 @@ function QdChart({ cur, next, pack, frontlineUnit, csWord, btlWord }: {
   const nextRows = buildQdRows(next, pack, frontlineUnit);
   return (
     <section className="pdx-panel pdx-qd">
-      <h3 className="pdx-panel-h">Prices chart</h3>
-      <div className="pdx-qd-grid">
-        {curRows.length > 0 && <QdMonth title="Current Month" rows={curRows} csWord={csWord} btlWord={btlWord} />}
-        {next && nextRows.length > 0 && <QdMonth title="Next Month" rows={nextRows} csWord={csWord} btlWord={btlWord} />}
+      <div className="pdx-qd-stack">
+        {curRows.length > 0 && <QdCard title="CURRENT MONTH" variant="current" rows={curRows} csWord={csWord} btlWord={btlWord} />}
+        {next && nextRows.length > 0 && <QdCard title="NEXT MONTH" variant="next" rows={nextRows} csWord={csWord} btlWord={btlWord} />}
       </div>
     </section>
   );
 }
 
 // ───────────────────────── public component ─────────────────────────
-/**
- * Render the uniform RIP details + QD prices chart for one product listing.
- * `name` (the product family name) is used only to correct slash-multipack
- * sizing; defaults to the row's own product_name.
- */
 export default function RipQdPanels({ size, name, className }: {
   size: Product;
   name?: string;

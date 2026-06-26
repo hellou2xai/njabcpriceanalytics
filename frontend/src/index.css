@@ -6535,10 +6535,13 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pdx-sum-dist { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
 .pdx-sum-upc { color: var(--hl-fg); font-weight: 600; }
 .pdx-sum-spark { display: inline-block; margin-top: 8px; }
-.pdx-sum-prices { display: flex; gap: 28px; align-self: center; }
-.pdx-price-block { min-width: 120px; }
+/* CASE then BOTTLE STACKED (two lines), each: label left, Price + Next Month
+   right — matches the Image #5 reference. */
+.pdx-sum-prices { display: flex; flex-direction: column; gap: 14px; align-self: center; min-width: 230px; }
+.pdx-price-block { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; }
 .pdx-price-k { font-size: 12px; font-weight: 800; letter-spacing: .05em; color: var(--text-muted); }
-.pdx-price-now { font-size: 15px; color: var(--text); margin-top: 2px; font-variant-numeric: tabular-nums; }
+.pdx-price-vals { text-align: right; }
+.pdx-price-now { font-size: 15px; color: var(--text); font-variant-numeric: tabular-nums; }
 .pdx-price-now strong { font-size: 19px; color: var(--text); }
 .pdx-price-next { font-size: 12.5px; color: var(--text-muted); margin-top: 2px; font-variant-numeric: tabular-nums; }
 .pdx-price-next--down { color: var(--hl-fg); font-weight: 700; }
@@ -6557,6 +6560,8 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pdx-rip-code { font-size: 12px; font-weight: 800; color: var(--green); margin-bottom: 4px; }
 .pdx-rip-table, .pdx-qd-table { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .pdx-rip-table th, .pdx-qd-table th { text-align: left; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); padding: 4px 8px; border-bottom: 1px solid var(--border); }
+/* Price-by columns: header right-aligned so it sits directly over its number. */
+.pdx-rip-table th.pdx-num, .pdx-qd-table th.pdx-num { text-align: right; }
 .pdx-rip-table td, .pdx-qd-table td { padding: 5px 8px; border-bottom: 1px solid var(--border); color: var(--text); vertical-align: top; }
 .pdx-rip-table tr:last-child td, .pdx-qd-table tr:last-child td { border-bottom: 0; }
 .pdx-rip-month { font-weight: 700; white-space: nowrap; }

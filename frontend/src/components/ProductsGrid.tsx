@@ -493,10 +493,10 @@ function SizeRow({ size, cart, updateQty, primaryName, showDeals = true, hideDis
   // Which month's RIP/QD ladder to show ('current' | 'next').
   dealMonth?: 'current' | 'next';
 }) {
-  // The expanded list row IS the uniform listing card (summary + RIP/QD),
-  // identical to the product-detail page, so every surface reads the same.
-  void showDeals; void hideDist; void crossDist; void dealMonth;
-  return <ProductListingCard size={size} name={primaryName} cart={cart} updateQty={updateQty} />;
+  // The expanded list row IS the uniform listing card (summary + RIP/QD). The
+  // page "Summary / Price details" toggle (showDeals) hides or shows the panels.
+  void hideDist; void crossDist; void dealMonth;
+  return <ProductListingCard size={size} name={primaryName} cart={cart} updateQty={updateQty} showPanels={showDeals} />;
 }
 
 function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded = false, dealMonth = 'current' }: {

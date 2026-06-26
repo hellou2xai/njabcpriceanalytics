@@ -57,12 +57,14 @@ function SummaryCard({ size, name, cur, next, pack }: {
   const PricePair = ({ label, now, nxt }: { label: string; now: number | null; nxt: number | null }) => (
     <div className="pdx-price-block">
       <div className="pdx-price-k">{label}</div>
-      <div className="pdx-price-now">Price: <strong>{money(now) ?? '—'}</strong></div>
-      {nxt != null && (
-        <div className={`pdx-price-next${now != null && nxt < now - 0.005 ? ' pdx-price-next--down' : ''}`}>
-          Next Month: {money(nxt)}
-        </div>
-      )}
+      <div className="pdx-price-vals">
+        <div className="pdx-price-now">Price: <strong>{money(now) ?? '—'}</strong></div>
+        {nxt != null && (
+          <div className={`pdx-price-next${now != null && nxt < now - 0.005 ? ' pdx-price-next--down' : ''}`}>
+            Next Month: {money(nxt)}
+          </div>
+        )}
+      </div>
     </div>
   );
 
@@ -100,11 +102,14 @@ function SummaryCard({ size, name, cur, next, pack }: {
   );
 }
 
-export default function ProductListingCard({ size, name, cart, updateQty }: {
+export default function ProductListingCard({ size, name, cart, updateQty, showPanels = true }: {
   size: Product;
   name?: string;
   cart: CartState;
   updateQty: (key: string, field: 'cases' | 'units', value: number) => void;
+  // Summary view (Products page "Summary" toggle) hides the RIP/QD panels and
+  // shows only the summary card + order actions; Price-details view shows them.
+  showPanels?: boolean;
 }) {
   const pname = name ?? size.product_name;
   const pack = bottlesPerCase(pname, size.unit_qty);
@@ -139,7 +144,7 @@ export default function ProductListingCard({ size, name, cart, updateQty }: {
         </div>
       </div>
 
-      <RipQdPanels size={size} name={pname} />
+      {showPanels && <RipQdPanels size={size} name={pname} />}
     </div>
   );
 }

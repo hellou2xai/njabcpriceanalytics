@@ -181,8 +181,8 @@ function RipCard({ title, variant, rows, empty }: {
 }) {
   return (
     <div className={`pdx-card pdx-card--${variant}`}>
-      <div className="pdx-card-title">{title}</div>
       <div className="pdx-card-band">RIP</div>
+      <div className="pdx-card-title">{title}</div>
       <table className="pdx-tbl pdx-tbl--rip">
         <thead>
           <tr><th>RIP</th><th>Dates</th><th>Sizes</th><th>Levels</th></tr>
@@ -260,8 +260,8 @@ function QdCard({ title, variant, rows, csWord, btlWord }: {
   const best = rows.reduce<number | null>((m, r) => r.perCase != null ? (m == null ? r.perCase : Math.min(m, r.perCase)) : m, null);
   return (
     <div className={`pdx-card pdx-card--${variant}`}>
+      <div className="pdx-card-band">Price</div>
       <div className="pdx-card-title">{title}</div>
-      <div className="pdx-card-band">Prices Chart</div>
       <table className="pdx-tbl pdx-tbl--qd">
         <thead>
           <tr><th>Type</th><th className="pdx-num">Price by {csWord}</th><th className="pdx-num">Price by {btlWord}</th></tr>

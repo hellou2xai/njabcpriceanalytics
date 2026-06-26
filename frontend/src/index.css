@@ -6289,6 +6289,20 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pd-identity-meta { flex: 1; min-width: 0; }
 .pd-identity-titlerow { display: flex; align-items: center; gap: 10px; }
 .pd-title { margin: 0; font-size: 26px; font-weight: 800; color: var(--text); }
+/* ---- Detail page on phones: stack the identity block (image over meta) so the
+   meta isn't crushed next to the image and the content stops overflowing. ---- */
+@media (max-width: 768px) {
+  .pd-identity { flex-direction: column; gap: 12px; }
+  .pd-identity-meta { width: 100%; min-width: 0; }
+  .pd-title { font-size: 21px; }
+  .pd-identity .product-thumb, .pd-identity img { max-width: 150px; height: auto; }
+}
+@media (max-width: 560px) {
+  /* Stack each attribute label over its value so long values never overflow. */
+  .pd-attrs { grid-template-columns: 1fr; gap: 0; }
+  .pd-attrs dt { margin-top: 8px; }
+  .pd-attrs dd { margin-bottom: 2px; }
+}
 .pd-attrs { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 12px 0 0; font-size: 13px; }
 .pd-attrs > div { display: contents; }
 .pd-attrs dt { color: var(--text-muted); font-weight: 600; }
@@ -6582,7 +6596,8 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pdx-card-stack { display: flex; flex-direction: column; gap: 12px; }
 .pdx-card { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--surface); max-width: 460px; }
 .pdx-card-title { text-align: center; font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; padding: 6px 8px; color: var(--text); }
-.pdx-card-band { padding: 5px 10px; font-size: 12px; font-weight: 700; }
+/* Band is the FIRST line of the card, centred — "Price" / "RIP". */
+.pdx-card-band { padding: 5px 10px; font-size: 12px; font-weight: 700; text-align: center; }
 .pdx-card--current .pdx-card-band { background: #41557a; color: #fff; }
 .pdx-card--next .pdx-card-band { background: var(--surface-2, #eef1f5); color: var(--text-muted); }
 .pdx-tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }

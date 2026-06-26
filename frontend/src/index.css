@@ -6742,12 +6742,13 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 /* Each pack rule / clause from rip_description on its own line. */
 .pdx-rip-sizeline { line-height: 1.45; }
 .pdx-rip-sizeline + .pdx-rip-sizeline { margin-top: 1px; }
-.pdx-rip-levels { display: flex; flex-direction: column; gap: 2px; }
-.pdx-rip-level { white-space: nowrap; }
-/* Effective "after QD/RIP" price cells: one value per RIP level, right-aligned
-   to line up with the Levels column. */
-.pdx-rip-after { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; font-variant-numeric: tabular-nums; }
-.pdx-tbl--rip .pdx-rip-after .pdx-rip-level { display: block; }
+.pdx-rip-levels { display: flex; flex-direction: column; gap: 6px; }
+/* Each level: the rebate line, then a compact green "net after QD/RIP" line
+   right under it (kept in the Levels column so no extra columns widen the
+   table in the detail two-panel / quick-view sidebar). */
+.pdx-rip-level { display: block; }
+.pdx-rip-rebate { display: block; white-space: nowrap; }
+.pdx-rip-net { display: block; font-size: 11.5px; font-weight: 600; color: #15803d; white-space: nowrap; margin-top: 1px; font-variant-numeric: tabular-nums; }
 .pdx-rip-norip { color: var(--text-muted); font-style: italic; }
 
 /* ---- QD prices chart: stacked Current / Next month cards with distinct

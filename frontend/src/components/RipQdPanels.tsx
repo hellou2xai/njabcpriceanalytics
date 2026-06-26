@@ -194,15 +194,11 @@ function RipCard({ title, variant, rows, empty, qdRows, pack, csWord, btlWord }:
       <div className="pdx-card-title">{title}</div>
       <table className="pdx-tbl pdx-tbl--rip">
         <thead>
-          <tr>
-            <th>RIP</th><th>Dates</th><th>Sizes</th><th>Levels</th>
-            <th className="pdx-num" title={`Net price after QD + RIP rebate, per ${csWord}`}>After QD/RIP {csWord}</th>
-            <th className="pdx-num" title={`Net price after QD + RIP rebate, per ${btlWord}`}>per {btlWord}</th>
-          </tr>
+          <tr><th>RIP</th><th>Dates</th><th>Sizes</th><th>Levels &amp; net price after QD/RIP</th></tr>
         </thead>
         <tbody>
           {rows.length === 0 ? (
-            <tr><td className="pdx-rip-norip" colSpan={6}>{empty}</td></tr>
+            <tr><td className="pdx-rip-norip" colSpan={4}>{empty}</td></tr>
           ) : rows.map((r, i) => (
             <tr key={i}>
               <td className="pdx-rip-codecell" data-label="RIP">RIP{r.code ? ` ${r.code}` : ''}{r.ts && <TsSticker />}</td>
@@ -217,21 +213,21 @@ function RipCard({ title, variant, rows, empty, qdRows, pack, csWord, btlWord }:
                 ))}
               </td>
               <td className="pdx-rip-levels" data-label="Levels">
-                {r.levels.length === 0 ? '—' : r.levels.map((l, li) => (
-                  <span className="pdx-rip-level" key={li}>
-                    {fmtCs(l.cases)} {l.cases === 1 ? 'case' : 'cases'}: <strong>{moneyRound(l.total)}</strong>
-                  </span>
-                ))}
-              </td>
-              <td className="pdx-num pdx-rip-after" data-label={`After QD/RIP ${csWord}`}>
-                {r.levels.length === 0 ? '—' : r.levels.map((l, li) => (
-                  <span className="pdx-rip-level" key={li}>{money(after(l).perCase) ?? '—'}</span>
-                ))}
-              </td>
-              <td className="pdx-num pdx-rip-after" data-label={`per ${btlWord}`}>
-                {r.levels.length === 0 ? '—' : r.levels.map((l, li) => (
-                  <span className="pdx-rip-level" key={li}>{money(after(l).perBottle) ?? '—'}</span>
-                ))}
+                {r.levels.length === 0 ? '—' : r.levels.map((l, li) => {
+                  const a = after(l);
+                  return (
+                    <span className="pdx-rip-level" key={li}>
+                      <span className="pdx-rip-rebate">
+                        {fmtCs(l.cases)} {l.cases === 1 ? 'case' : 'cases'}: <strong>{moneyRound(l.total)}</strong>
+                      </span>
+                      {a.perCase != null && (
+                        <span className="pdx-rip-net">
+                          net {money(a.perCase)}/{csWord}{a.perBottle != null ? ` · ${money(a.perBottle)}/${btlWord}` : ''}
+                        </span>
+                      )}
+                    </span>
+                  );
+                })}
               </td>
             </tr>
           ))}
@@ -292,13 +288,16 @@ function qdEffCaseAt(rows: QdRow[], n: number): number | null {
   return best;
 }
 
-function QdCard({ title, variant, rows, csWord, btlWord }: {
-  title: string; variant: 'current' | 'next'; rows: QdRow[]; csWord: string; btlWord: string;
+function QdCard({ title, variant, rows, frontlineCase, csWord, btlWord }: {
+  title: string; variant: 'current' | 'next'; rows: QdRow[]; frontlineCase: number | null;
+  csWord: string; btlWord: string;
 }) {
   const best = rows.reduce<number | null>((m, r) => r.perCase != null ? (m == null ? r.perCase : Math.min(m, r.perCase)) : m, null);
-  // QD is the saving vs the plain 1-case price. Per case = base − tier price;
-  // Total QD = per-case saving × the cases at that tier.
-  const base = rows.find(r => r.label === '1 Case')?.perCase ?? null;
+  // QD per case is the discount off the FRONTLINE list price — the same number
+  // the CPL publishes in its discount columns (e.g. discount '50 Cases' = $102
+  // off frontline). Computing it off the frontline (not the 1-case price) makes
+  // it match the source exactly. Total QD = per-case saving × the cases.
+  const base = frontlineCase;
   return (
     <div className={`pdx-card pdx-card--${variant}`}>
       <div className="pdx-card-band">Price</div>
@@ -316,7 +315,7 @@ function QdCard({ title, variant, rows, csWord, btlWord }: {
         <tbody>
           {rows.map((r, i) => {
             const isBest = r.perCase != null && best != null && r.perCase <= best + 1e-9 && /case/i.test(r.label) && r.label !== '1 Case';
-            const qdPer = (r.cases >= 2 && base != null && r.perCase != null)
+            const qdPer = (r.cases >= 1 && base != null && r.perCase != null)
               ? Math.max(0, Math.round((base - r.perCase) * 100) / 100) : null;
             const qdTot = qdPer != null && qdPer > 0 ? Math.round(qdPer * r.cases * 100) / 100 : null;
             return (
@@ -335,14 +334,15 @@ function QdCard({ title, variant, rows, csWord, btlWord }: {
   );
 }
 
-function QdChart({ curRows, nextRows, hasNext, csWord, btlWord }: {
-  curRows: QdRow[]; nextRows: QdRow[]; hasNext: boolean; csWord: string; btlWord: string;
+function QdChart({ curRows, nextRows, curFrontline, nextFrontline, hasNext, csWord, btlWord }: {
+  curRows: QdRow[]; nextRows: QdRow[]; curFrontline: number | null; nextFrontline: number | null;
+  hasNext: boolean; csWord: string; btlWord: string;
 }) {
   return (
     <section className="pdx-panel pdx-qd">
       <div className="pdx-card-stack">
-        {curRows.length > 0 && <QdCard title="CURRENT MONTH" variant="current" rows={curRows} csWord={csWord} btlWord={btlWord} />}
-        {hasNext && nextRows.length > 0 && <QdCard title="NEXT MONTH" variant="next" rows={nextRows} csWord={csWord} btlWord={btlWord} />}
+        {curRows.length > 0 && <QdCard title="CURRENT MONTH" variant="current" rows={curRows} frontlineCase={curFrontline} csWord={csWord} btlWord={btlWord} />}
+        {hasNext && nextRows.length > 0 && <QdCard title="NEXT MONTH" variant="next" rows={nextRows} frontlineCase={nextFrontline} csWord={csWord} btlWord={btlWord} />}
       </div>
     </section>
   );
@@ -371,7 +371,7 @@ export default function RipQdPanels({ size, name, className }: {
   return (
     <div className={`pdx-detail-grid${className ? ` ${className}` : ''}`}>
       <RipPanel rows={ripRows} curQd={curQd} nextQd={nextQd} pack={pack} csWord={csWord} btlWord={btlWord} />
-      <QdChart curRows={curQd} nextRows={nextQd} hasNext={!!next} csWord={csWord} btlWord={btlWord} />
+      <QdChart curRows={curQd} nextRows={nextQd} curFrontline={cur?.frontline ?? null} nextFrontline={next?.frontline ?? null} hasNext={!!next} csWord={csWord} btlWord={btlWord} />
     </div>
   );
 }

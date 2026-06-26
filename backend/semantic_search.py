@@ -101,6 +101,18 @@ def ensure_fts_index(con_pg) -> bool:
         return False
 
 
+def _rollback(con) -> None:
+    """Clear an aborted transaction so a SUBSEQUENT query on the same connection
+    can run. Critical for the Voyage->FTS fallback: a failed pgvector query
+    (e.g. a driver-specific ::vector binding error) leaves a psycopg connection
+    in a failed-transaction state, and without this the FTS fallback would then
+    also fail and the endpoint would return zero rows for EVERY text query."""
+    try:
+        con.rollback()
+    except Exception:
+        pass
+
+
 def _voyage_upcs(con_pg, query: str, limit: int) -> Optional[list[tuple[str, float]]]:
     """Return (UPC, score) pairs ranked by pgvector cosine similarity against
     Voyage embeddings. Returns None when the engine isn't available (no key,
@@ -125,11 +137,13 @@ def _voyage_upcs(con_pg, query: str, limit: int) -> Optional[list[tuple[str, flo
             return None
     except Exception as e:
         log.warning("Voyage path probe failed: %s", e)
+        _rollback(con_pg)
         return None
     try:
         qvec = embed_query(query)
     except Exception as e:
         log.warning("Voyage query embed failed - falling back to FTS: %s", e)
+        _rollback(con_pg)
         return None
     try:
         cur = con_pg.cursor()
@@ -147,6 +161,7 @@ def _voyage_upcs(con_pg, query: str, limit: int) -> Optional[list[tuple[str, flo
         return [(str(u), float(s)) for u, s in rows if u]
     except Exception as e:
         log.warning("pgvector query failed - falling back to FTS: %s", e)
+        _rollback(con_pg)
         return None
 
 
@@ -220,11 +235,18 @@ def semantic_search(
         upcs_scored = [(u, 1.0) for u in dict.fromkeys(ids)]
         engine = "codes"
     else:
-        voyage_hits = _voyage_upcs(con_pg, q, limit)
-        if voyage_hits is not None and voyage_hits:
+        try:
+            voyage_hits = _voyage_upcs(con_pg, q, limit)
+        except Exception as e:
+            log.warning("Voyage lookup raised: %s", e)
+            voyage_hits = None
+        if voyage_hits:
             upcs_scored = voyage_hits
             engine = "voyage"
         else:
+            # A failed/empty Voyage attempt may have aborted the transaction;
+            # clear it so FTS (which carries the geo enrichment corpus) can run.
+            _rollback(con_pg)
             try:
                 upcs_scored = _fts_upcs(con_pg, q, limit)
                 engine = "fts"

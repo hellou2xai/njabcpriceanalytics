@@ -6570,8 +6570,14 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pdx-expand-chev.open { transform: rotate(180deg); }
 
 /* ---- RIP details + QD chart, side by side ---- */
-.pdx-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+/* Two panels when there's room (~640px+), ONE column when the container is
+   narrow (a 420px detail rail, a tablet, a phone) — fluid, container-aware, no
+   fixed breakpoint. min(100%, 320px) guards tiny screens from overflowing. */
+.pdx-detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 16px; margin-top: 16px; }
 .pdx-panel { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; background: var(--bg); }
+/* The 4-column RIP table scrolls WITHIN its panel when the column is narrow, so
+   a phone never gets a horizontal page scrollbar. */
+.pdx-rip { overflow-x: auto; }
 .pdx-summary, .pdx-order { border: 0; padding: 0; background: none; }
 
 .pdx-rip-progs { display: flex; flex-direction: column; gap: 12px; }
@@ -6619,14 +6625,25 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pdx-qd-best td, .pdx-qd-best { background: var(--hl-bg); }
 .pdx-qd-best td { color: var(--hl-fg); font-weight: 700; }
 
-/* ---- responsive ---- */
-@media (max-width: 900px) {
-  .pdx-detail-grid { grid-template-columns: 1fr; }
+/* ---- responsive (project breakpoints: 1023 / 768 / 480) ----
+   .pdx-detail-grid stacks fluidly via auto-fit above, so no breakpoint needed
+   for it. These handle the summary row, tables and touch targets on phones. */
+@media (max-width: 768px) {
+  /* Let the RIP date range wrap instead of forcing the table wide. */
+  .pdx-rip-dates { white-space: normal; }
+  /* QD cards fill the column on tablet/phone (the 460px cap is desktop-only). */
+  .pdx-qd-card { max-width: 100%; }
 }
-@media (max-width: 560px) {
-  .pdx-summary { gap: 16px; }
+@media (max-width: 480px) {
+  .pdx-summary { gap: 12px; }
+  /* Prices + order span full width and stack under the meta. */
+  .pdx-sum-prices, .pdx-order, .pdx-order-actions { flex: 1 1 100%; min-width: 0; }
   .pdx-order { justify-content: stretch; }
-  .pdx-order-actions { flex: 1; min-width: 0; }
+  /* Touch targets >= 44px on phones (default steppers are 28px). */
+  .pdx-order .qty-stepper button { width: 44px; height: 44px; }
+  .pdx-order .qty-stepper input { height: 44px; }
+  .pdx-order .btn { min-height: 44px; }
+  .pdx-expand-toggle { width: 100%; min-height: 44px; justify-content: center; }
 }
 
 /* ---- PriceSparklines: two tiny transparent sparklines, shown at every layer ---- */

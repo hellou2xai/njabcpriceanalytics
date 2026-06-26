@@ -587,12 +587,23 @@ export default function ProductDetail() {
             {(() => {
               const hs = primarySize ?? sizes[0];
               if (!hs) return null;
+              // Headline product order: Bottles + Cases steppers so the buyer can
+              // pick the quantity here (not just on the per-size rows below), and
+              // Add to cart uses that quantity instead of a hard-coded 1 case.
+              const hck = `${hs.product_name}|${hs.wholesaler}|${hs.upc ?? ''}|${hs.unit_volume ?? ''}`;
+              const hq = cart[hck] ?? { cases: 0, units: 0 };
               return (
                 <div className="pd-identity-actions">
+                  <div className="pd-steppers">
+                    <QtyStepper label={`${containerNoun(hs.unit_volume, hs.unit_type).replace(/^./, c => c.toUpperCase())}s`}
+                      value={hq.units} onChange={v => updateQty(hck, 'units', v)} />
+                    <QtyStepper label="Cases" value={hq.cases} onChange={v => updateQty(hck, 'cases', v)} />
+                  </div>
                   <AddToCartButton productName={hs.product_name} wholesaler={hs.wholesaler}
                     upc={hs.upc ?? undefined} unitVolume={hs.unit_volume ?? undefined}
                     unitQty={hs.unit_qty != null ? String(hs.unit_qty) : undefined}
-                    vintage={hs.vintage != null ? String(hs.vintage) : undefined} qtyCases={1} />
+                    vintage={hs.vintage != null ? String(hs.vintage) : undefined}
+                    qtyCases={hq.cases} qtyUnits={hq.units} />
                   <AddToListButton productName={hs.product_name} wholesaler={hs.wholesaler}
                     upc={hs.upc ?? undefined} unitVolume={hs.unit_volume ?? undefined}
                     unitQty={hs.unit_qty != null ? String(hs.unit_qty) : undefined}

@@ -1742,6 +1742,9 @@ def search_products(
                    total_savings_per_case, rip_code, combo_code,
                    {_opt_col(con, 'dist_item_no')}, {_opt_col(con, 'dist_item_name')},
                    {_opt_col(con, 'enr_category')}, {_opt_col(con, 'enr_region')},
+                   {_opt_col(con, 'geo_country')}, {_opt_col(con, 'geo_region')},
+                   {_opt_col(con, 'geo_subregion')}, {_opt_col(con, 'geo_varietal')},
+                   {_opt_col(con, 'geo_color')}, {_opt_col(con, 'geo_style')},
                    {_opt_col(con, 'abv_proof')},
                    discount_1_qty, discount_1_amt,
                    discount_2_qty, discount_2_amt,
@@ -4247,6 +4250,25 @@ def search_facets(
             # Container type buckets (Bottle / Can / Keg) from the DB unit_type.
             "unit_kinds": grouped(_UNIT_KIND_SQL, "ukind"),
         }
+        # Canonical geo facets (origin + grape) from the LLM enrichment. Only
+        # when the cache carries geo_* (older caches omit them). Grapes are a
+        # '; '-joined blend per row, so split into individual varieties.
+        if _has_geo_cols(con):
+            _facets["countries"] = grouped("geo_country", "country")
+            _facets["regions"] = grouped("geo_region", "region")[:120]
+            try:
+                wc, p = build(None)
+                gdf = con.execute(f"""
+                    SELECT trim(g) AS key, count(*) AS n
+                    FROM {src}, UNNEST(string_split(geo_varietal, '; ')) AS t(g)
+                    WHERE {wc} AND geo_varietal IS NOT NULL AND geo_varietal != ''
+                      AND trim(g) != ''
+                    GROUP BY 1 ORDER BY n DESC LIMIT 120
+                """, p).fetchdf()
+                _facets["grapes"] = [{"key": r["key"], "count": int(r["n"])}
+                                     for _, r in gdf.iterrows()]
+            except Exception:
+                _facets["grapes"] = []
         _cache.store("catalog_facets", _ckey, _facets)
         return _facets
 

@@ -1,0 +1,1306 @@
+{
+ "Agiorgitiko": {
+  "color": "Red",
+  "synonyms": [
+   "Mavro Nemeas",
+   "St George"
+  ]
+ },
+ "Aglianico": {
+  "color": "Red",
+  "synonyms": [
+   "Ellanico",
+   "Gragano",
+   "Uva Hellenica"
+  ]
+ },
+ "Airén": {
+  "color": "White",
+  "synonyms": [
+   "Lairén",
+   "Manchega",
+   "Valdepeñera"
+  ]
+ },
+ "Albariño": {
+  "color": "White",
+  "synonyms": [
+   "Alvarhão",
+   "Alvarinho"
+  ]
+ },
+ "Albarola": {
+  "color": "White",
+  "synonyms": [
+   "Bianchetta Genovese"
+  ]
+ },
+ "Alicante Bouschet": {
+  "color": "Red",
+  "synonyms": [
+   "Alicante",
+   "Alicante Henri Bouschet",
+   "Garnacha Tintorera"
+  ]
+ },
+ "Aligoté": {
+  "color": "White",
+  "synonyms": [
+   "Plant Gris",
+   "Vert Blanc"
+  ]
+ },
+ "Alvarelhão": {
+  "color": "Red",
+  "synonyms": [
+   "Brancelho",
+   "Tinto Cão"
+  ]
+ },
+ "Antão Vaz": {
+  "color": "White",
+  "synonyms": [
+   "Antão"
+  ]
+ },
+ "Arinto": {
+  "color": "White",
+  "synonyms": [
+   "Arinto de Bucelas",
+   "Pedernã"
+  ]
+ },
+ "Arneis": {
+  "color": "White",
+  "synonyms": [
+   "Bianchetta",
+   "Nebbiolo Bianco"
+  ]
+ },
+ "Assyrtiko": {
+  "color": "White",
+  "synonyms": [
+   "Assyrtico",
+   "Assyrtiko Santorinis"
+  ]
+ },
+ "Athiri": {
+  "color": "White",
+  "synonyms": []
+ },
+ "Bacchus": {
+  "color": "White",
+  "synonyms": []
+ },
+ "Baco Blanc": {
+  "color": "White",
+  "synonyms": [
+   "Baco 22A"
+  ]
+ },
+ "Baco Noir": {
+  "color": "Red",
+  "synonyms": [
+   "Baco 1"
+  ]
+ },
+ "Baga": {
+  "color": "Red",
+  "synonyms": [
+   "Poeirinho",
+   "Tinta Bairrada"
+  ]
+ },
+ "Barbera": {
+  "color": "Red",
+  "synonyms": [
+   "Barbera d'Alba",
+   "Barbera d'Asti",
+   "Gaietto"
+  ]
+ },
+ "Blaufränkisch": {
+  "color": "Red",
+  "synonyms": [
+   "Frankinja",
+   "Kékfrankos",
+   "Lemberger",
+   "Limberger"
+  ]
+ },
+ "Bobal": {
+  "color": "Red",
+  "synonyms": [
+   "Bobál",
+   "Requena"
+  ]
+ },
+ "Bourboulenc": {
+  "color": "White",
+  "synonyms": [
+   "Clairette à Gros Grains",
+   "Doucillon Blanc"
+  ]
+ },
+ "Cabernet Cortis": {
+  "color": "Red",
+  "synonyms": []
+ },
+ "Cabernet Franc": {
+  "color": "Red",
+  "synonyms": [
+   "Bouchet",
+   "Bouchy",
+   "Breton",
+   "Carmenet",
+   "Véronais"
+  ]
+ },
+ "Cabernet Sauvignon": {
+  "color": "Red",
+  "synonyms": [
+   "Bouchet",
+   "Petit-Bouchet",
+   "Sauvignon Rouge",
+   "Vidure"
+  ]
+ },
+ "Carignan": {
+  "color": "Red",
+  "synonyms": [
+   "Bovale Grande",
+   "Carignane",
+   "Cariñena",
+   "Mazuelo",
+   "Mouvèdre",
+   "Samsó"
+  ]
+ },
+ "Carignan Blanc": {
+  "color": "White",
+  "synonyms": [
+   "Cariñena Blanca"
+  ]
+ },
+ "Carménère": {
+  "color": "Red",
+  "synonyms": [
+   "Bouton Blanc",
+   "Cabernelle",
+   "Grande Vidure"
+  ]
+ },
+ "Carricante": {
+  "color": "White",
+  "synonyms": [
+   "Catanese Bianco"
+  ]
+ },
+ "Catarratto": {
+  "color": "White",
+  "synonyms": [
+   "Catarratto Bianco",
+   "Catarratto Comune",
+   "Catarratto Lucido"
+  ]
+ },
+ "Catawba": {
+  "color": "White",
+  "synonyms": []
+ },
+ "Cava": {
+  "color": "White",
+  "synonyms": [
+   "Macabeo",
+   "Parellada",
+   "Xarel·lo"
+  ]
+ },
+ "Chambourcin": {
+  "color": "Red",
+  "synonyms": [
+   "Joannes Seyve 26-205"
+  ]
+ },
+ "Chardonnay": {
+  "color": "White",
+  "synonyms": [
+   "Aubaine",
+   "Beaunois",
+   "Melon d'Arbois",
+   "Morillon",
+   "Pinot Chardonnay"
+  ]
+ },
+ "Chenin Blanc": {
+  "color": "White",
+  "synonyms": [
+   "Pineau d'Anjou",
+   "Pineau de la Loire",
+   "Steen",
+   "Vouvray"
+  ]
+ },
+ "Cinsault": {
+  "color": "Red",
+  "synonyms": [
+   "Black Malvoisie",
+   "Cinsaut",
+   "Ottavianello"
+  ]
+ },
+ "Clairette Blanche": {
+  "color": "White",
+  "synonyms": [
+   "Blanquette",
+   "Clairette"
+  ]
+ },
+ "Colombard": {
+  "color": "White",
+  "synonyms": [
+   "Colombar",
+   "French Colombard"
+  ]
+ },
+ "Concord": {
+  "color": "Red",
+  "synonyms": []
+ },
+ "Cortese": {
+  "color": "White",
+  "synonyms": [
+   "Bianca Fernanda",
+   "Gavi"
+  ]
+ },
+ "Corvina Veronese": {
+  "color": "Red",
+  "synonyms": [
+   "Corbina",
+   "Corvina",
+   "Cruina"
+  ]
+ },
+ "Counoise": {
+  "color": "Red",
+  "synonyms": [
+   "Aubun",
+   "Piquepoul Noir"
+  ]
+ },
+ "Dolcetto": {
+  "color": "Red",
+  "synonyms": [
+   "Charbono",
+   "Douce Noire",
+   "Ormeasco"
+  ]
+ },
+ "Dornfelder": {
+  "color": "Red",
+  "synonyms": []
+ },
+ "Duras": {
+  "color": "Red",
+  "synonyms": []
+ },
+ "Erbaluce": {
+  "color": "White",
+  "synonyms": [
+   "Greco Novarese"
+  ]
+ },
+ "Falanghina": {
+  "color": "White",
+  "synonyms": [
+   "Falanghina del Sannio",
+   "Falerno"
+  ]
+ },
+ "Fer Servadou": {
+  "color": "Red",
+  "synonyms": [
+   "Braucol",
+   "Fer",
+   "Mansois",
+   "Pinenc"
+  ]
+ },
+ "Fernão Pires": {
+  "color": "White",
+  "synonyms": [
+   "Maria Gomes"
+  ]
+ },
+ "Fetească Albă": {
+  "color": "White",
+  "synonyms": [
+   "Fata Alba",
+   "Leányka",
+   "Poama Fetei"
+  ]
+ },
+ "Fetească Neagră": {
+  "color": "Red",
+  "synonyms": [
+   "Fekete Leányszőlő",
+   "Leányka Fekete"
+  ]
+ },
+ "Fetească Regală": {
+  "color": "White",
+  "synonyms": [
+   "Dánosi Fehér",
+   "Königliche Mädchentraube"
+  ]
+ },
+ "Fiano": {
+  "color": "White",
+  "synonyms": [
+   "Apianum",
+   "Fiano di Avellino"
+  ]
+ },
+ "Folle Blanche": {
+  "color": "White",
+  "synonyms": [
+   "Gros Plant",
+   "Picpoul"
+  ]
+ },
+ "Frappato": {
+  "color": "Red",
+  "synonyms": [
+   "Frappato di Vittoria"
+  ]
+ },
+ "Friulano": {
+  "color": "White",
+  "synonyms": [
+   "Sauvignon Vert",
+   "Sauvignonasse",
+   "Tocai Friulano"
+  ]
+ },
+ "Furmint": {
+  "color": "White",
+  "synonyms": [
+   "Mosler",
+   "Sipon",
+   "Zapfner"
+  ]
+ },
+ "Gamay Noir": {
+  "color": "Red",
+  "synonyms": [
+   "Bourguignon Noir",
+   "Gamay",
+   "Gamay Beaujolais"
+  ]
+ },
+ "Garganega": {
+  "color": "White",
+  "synonyms": [
+   "Grecanico Dorato",
+   "Soave"
+  ]
+ },
+ "Garnacha Tintorera": {
+  "color": "Red",
+  "synonyms": [
+   "Alicante Bouschet",
+   "Alicante Henri Bouschet"
+  ]
+ },
+ "Gewürztraminer": {
+  "color": "White",
+  "synonyms": [
+   "Heida",
+   "Roter Traminer",
+   "Savagnin Rose",
+   "Traminer Aromatico",
+   "Traminer Musqué"
+  ]
+ },
+ "Glera": {
+  "color": "White",
+  "synonyms": [
+   "Prosecco",
+   "Serprina"
+  ]
+ },
+ "Godello": {
+  "color": "White",
+  "synonyms": [
+   "Gouveio",
+   "Verdejo",
+   "Verdelho"
+  ]
+ },
+ "Graševina": {
+  "color": "White",
+  "synonyms": [
+   "Laski Rizling",
+   "Olasz Rizling",
+   "Welschriesling"
+  ]
+ },
+ "Greco": {
+  "color": "White",
+  "synonyms": [
+   "Asprinio",
+   "Greco Bianco",
+   "Greco di Tufo"
+  ]
+ },
+ "Grenache": {
+  "color": "Red",
+  "synonyms": [
+   "Alicante",
+   "Cannonau",
+   "Garnacha",
+   "Garnacha Tinta",
+   "Grenache Noir",
+   "Tinto Aragonés"
+  ]
+ },
+ "Grenache Blanc": {
+  "color": "White",
+  "synonyms": [
+   "Garnacha Blanca",
+   "Grenache White"
+  ]
+ },
+ "Grenache Gris": {
+  "color": "White",
+  "synonyms": [
+   "Garnacha Gris",
+   "Garnacha Roja"
+  ]
+ },
+ "Grenache Noir": {
+  "color": "Red",
+  "synonyms": [
+   "Alicante",
+   "Cannonau",
+   "Garnacha"
+  ]
+ },
+ "Gros Manseng": {
+  "color": "White",
+  "synonyms": [
+   "Manseng Gros"
+  ]
+ },
+ "Grüner Veltliner": {
+  "color": "White",
+  "synonyms": [
+   "Grüner",
+   "Veltliner",
+   "Veltliner Grün",
+   "Weißgipfler"
+  ]
+ },
+ "Hondarrabi Beltza": {
+  "color": "Red",
+  "synonyms": [
+   "Txakoli Tinto"
+  ]
+ },
+ "Hárslevelű": {
+  "color": "White",
+  "synonyms": [
+   "Lindenblättrige",
+   "Lipovina"
+  ]
+ },
+ "Johanniter": {
+  "color": "White",
+  "synonyms": []
+ },
+ "Jurançon Noir": {
+  "color": "Red",
+  "synonyms": []
+ },
+ "Kadarka": {
+  "color": "Red",
+  "synonyms": [
+   "Gamza",
+   "Skadarka"
+  ]
+ },
+ "Kerner": {
+  "color": "White",
+  "synonyms": []
+ },
+ "Lagrein": {
+  "color": "Red",
+  "synonyms": [
+   "Lagrein Dunkel",
+   "Lagrein Rosato"
+  ]
+ },
+ "Lemberger": {
+  "color": "Red",
+  "synonyms": [
+   "Blaufränkisch",
+   "Frankinja",
+   "Kékfrankos"
+  ]
+ },
+ "Len de l'El": {
+  "color": "White",
+  "synonyms": [
+   "Len de l'Elh",
+   "Ondenc"
+  ]
+ },
+ "Limnio": {
+  "color": "Red",
+  "synonyms": []
+ },
+ "Loureiro": {
+  "color": "White",
+  "synonyms": [
+   "Loureira",
+   "Loureiro Branco"
+  ]
+ },
+ "Maccabeu": {
+  "color": "White",
+  "synonyms": [
+   "Macabeo",
+   "Maccabéo",
+   "Viura"
+  ]
+ },
+ "Malagousia": {
+  "color": "White",
+  "synonyms": [
+   "Malagouzia"
+  ]
+ },
+ "Malagouzia": {
+  "color": "White",
+  "synonyms": [
+   "Malagousia"
+  ]
+ },
+ "Malbec": {
+  "color": "Red",
+  "synonyms": [
+   "Auxerrois",
+   "Côt",
+   "Jacobin",
+   "Malbeck",
+   "Pressac"
+  ]
+ },
+ "Mandilaria": {
+  "color": "Red",
+  "synonyms": [
+   "Amorgiano",
+   "Mandelaria"
+  ]
+ },
+ "Marsanne": {
+  "color": "White",
+  "synonyms": [
+   "Ermitage Blanc",
+   "Grosse Roussette"
+  ]
+ },
+ "Maréchal Foch": {
+  "color": "Red",
+  "synonyms": [
+   "Foch",
+   "Kuhlmann 188-2"
+  ]
+ },
+ "Mauzac": {
+  "color": "White",
+  "synonyms": [
+   "Blanquette",
+   "Mauzac Blanc"
+  ]
+ },
+ "Mavrud": {
+  "color": "Red",
+  "synonyms": []
+ },
+ "Melon de Bourgogne": {
+  "color": "White",
+  "synonyms": [
+   "Gamay Blanc",
+   "Muscadet",
+   "Pinot Blanc Musqué"
+  ]
+ },
+ "Mencia": {
+  "color": "Red",
+  "synonyms": [
+   "Jaen",
+   "Mencía",
+   "Mouratón"
+  ]
+ },
+ "Merlot": {
+  "color": "Red",
+  "synonyms": [
+   "Bigney",
+   "Crabutet Noir",
+   "Médoc Noir",
+   "Vitraille"
+  ]
+ },
+ "Meunier": {
+  "color": "Red",
+  "synonyms": [
+   "Müllrebe",
+   "Pinot Meunier",
+   "Schwarzriesling",
+   "Wrotham Pinot"
+  ]
+ },
+ "Molinara": {
+  "color": "Red",
+  "synonyms": [
+   "Molinare",
+   "Rossanella",
+   "Rossara"
+  ]
+ },
+ "Monastrell": {
+  "color": "Red",
+  "synonyms": [
+   "Esparte",
+   "Mataro",
+   "Mourvèdre",
+   "Negron"
+  ]
+ },
+ "Montepulciano": {
+  "color": "Red",
+  "synonyms": [
+   "Cordisco",
+   "Morellone",
+   "Uva Abruzzese"
+  ]
+ },
+ "Moscatel de Alejandría": {
+  "color": "White",
+  "synonyms": [
+   "Hanepoot",
+   "Muscat Romain",
+   "Muscat of Alexandria",
+   "Zibibbo"
+  ]
+ },
+ "Moschofilero": {
+  "color": "White",
+  "synonyms": [
+   "Moschofilero Mantinias"
+  ]
+ },
+ "Muscadelle": {
+  "color": "White",
+  "synonyms": [
+   "Angelica",
+   "Raisinotte",
+   "Tokay"
+  ]
+ },
+ "Muscadet": {
+  "color": "White",
+  "synonyms": [
+   "Gamay Blanc",
+   "Melon",
+   "Melon de Bourgogne",
+   "Pinot Blanc Musqué"
+  ]
+ },
+ "Muscat Blanc à Petits Grains": {
+  "color": "White",
+  "synonyms": [
+   "Brown Muscat",
+   "Moscatel Fino",
+   "Moscato Bianco",
+   "Muscat Canelli",
+   "Muscat de Frontignan",
+   "Yellow Muscat"
+  ]
+ },
+ "Muscat Ottonel": {
+  "color": "White",
+  "synonyms": [
+   "Muscat d'Alsace",
+   "Ottonel Muscat"
+  ]
+ },
+ "Muscat of Alexandria": {
+  "color": "White",
+  "synonyms": [
+   "Hanepoot",
+   "Lexia",
+   "Moscatel de Alejandría",
+   "Muscat Gordo Blanco",
+   "Zibibbo"
+  ]
+ },
+ "Müller-Thurgau": {
+  "color": "White",
+  "synonyms": [
+   "Müller Thurgau",
+   "Riesling-Sylvaner",
+   "Rivaner"
+  ]
+ },
+ "Nebbiolo": {
+  "color": "Red",
+  "synonyms": [
+   "Chiavennasca",
+   "Melasca",
+   "Nibiö",
+   "Picoutener",
+   "Spanna"
+  ]
+ },
+ "Nerello Mascalese": {
+  "color": "Red",
+  "synonyms": [
+   "Mascalese",
+   "Nerello"
+  ]
+ },
+ "Nero d'Avola": {
+  "color": "Red",
+  "synonyms": [
+   "Calabrese",
+   "Calabrese Nera"
+  ]
+ },
+ "Niagara": {
+  "color": "White",
+  "synonyms": []
+ },
+ "Norton": {
+  "color": "Red",
+  "synonyms": [
+   "Cynthiana",
+   "Norton's Virginia Seedling"
+  ]
+ },
+ "Palomino Fino": {
+  "color": "White",
+  "synonyms": [
+   "Jerez",
+   "Listán Blanco",
+   "Palomino"
+  ]
+ },
+ "Parellada": {
+  "color": "White",
+  "synonyms": [
+   "Montonec",
+   "Parellada Blanca"
+  ]
+ },
+ "Pecorino": {
+  "color": "White",
+  "synonyms": [
+   "Pecorino d'Abruzzo"
+  ]
+ },
+ "Pedro Ximénez": {
+  "color": "White",
+  "synonyms": [
+   "PX",
+   "Pedro Jiménez"
+  ]
+ },
+ "Petit Manseng": {
+  "color": "White",
+  "synonyms": [
+   "Manseng Petit"
+  ]
+ },
+ "Petit Verdot": {
+  "color": "Red",
+  "synonyms": [
+   "Carmelin",
+   "Petit Verdau"
+  ]
+ },
+ "Picpoul Blanc": {
+  "color": "White",
+  "synonyms": [
+   "Picpoul de Pinet",
+   "Piquepoul Blanc"
+  ]
+ },
+ "Pinot Auxerrois": {
+  "color": "White",
+  "synonyms": [
+   "Auxerrois",
+   "Auxerrois Blanc"
+  ]
+ },
+ "Pinot Blanc": {
+  "color": "White",
+  "synonyms": [
+   "Clevner",
+   "Klevner",
+   "Pinot Bianco",
+   "Weißburgunder"
+  ]
+ },
+ "Pinot Gris": {
+  "color": "White",
+  "synonyms": [
+   "Grauburgunder",
+   "Malvoisie",
+   "Pinot Grigio",
+   "Ruländer",
+   "Szürkebarát"
+  ]
+ },
+ "Pinot Noir": {
+  "color": "Red",
+  "synonyms": [
+   "Blauburgunder",
+   "Morillon Noir",
+   "Pinot Nero",
+   "Savagnin Noir",
+   "Spätburgunder"
+  ]
+ },
+ "Pinotage": {
+  "color": "Red",
+  "synonyms": []
+ },
+ "Plavac Mali": {
+  "color": "Red",
+  "synonyms": []
+ },
+ "Primitivo": {
+  "color": "Red",
+  "synonyms": [
+   "Crljenak Kaštelanski",
+   "Tribidrag",
+   "Zinfandel"
+  ]
+ },
+ "Raboso": {
+  "color": "Red",
+  "synonyms": [
+   "Friularo",
+   "Raboso Piave",
+   "Raboso Veronese"
+  ]
+ },
+ "Refosco dal Peduncolo Rosso": {
+  "color": "Red",
+  "synonyms": [
+   "Refosco",
+   "Terrano"
+  ]
+ },
+ "Regent": {
+  "color": "Red",
+  "synonyms": []
+ },
+ "Ribolla Gialla": {
+  "color": "White",
+  "synonyms": [
+   "Rebula",
+   "Robola"
+  ]
+ },
+ "Riesling": {
+  "color": "White",
+  "synonyms": [
+   "Johannisberg Riesling",
+   "Klingelberger",
+   "Rheingiesling",
+   "Rhine Riesling",
+   "White Riesling"
+  ]
+ },
+ "Rkatsiteli": {
+  "color": "White",
+  "synonyms": [
+   "Rcaci Teli",
+   "Rkatsiteli Tetri"
+  ]
+ },
+ "Roditis": {
+  "color": "White",
+  "synonyms": [
+   "Rhodites",
+   "Rhoditis"
+  ]
+ },
+ "Rolle": {
+  "color": "White",
+  "synonyms": [
+   "Pigato",
+   "Vermentino"
+  ]
+ },
+ "Rondinella": {
+  "color": "Red",
+  "synonyms": [
+   "Rondinella Veronese"
+  ]
+ },
+ "Roussanne": {
+  "color": "White",
+  "synonyms": [
+   "Bergeron",
+   "Roussanne du Var",
+   "Roussette"
+  ]
+ },
+ "Sagrantino": {
+  "color": "Red",
+  "synonyms": [
+   "Sagrantino di Montefalco"
+  ]
+ },
+ "Sangiovese": {
+  "color": "Red",
+  "synonyms": [
+   "Brunello",
+   "Chianti",
+   "Morellino",
+   "Nielluccio",
+   "Prugnolo Gentile",
+   "Sangioveto"
+  ]
+ },
+ "Sankt Laurent": {
+  "color": "Red",
+  "synonyms": [
+   "Saint Laurent",
+   "Svatovavřinecké"
+  ]
+ },
+ "Sauvignon Blanc": {
+  "color": "White",
+  "synonyms": [
+   "Blanc Fumé",
+   "Fumé Blanc",
+   "Muskat Sylvaner",
+   "Sauvignon Jaune"
+  ]
+ },
+ "Sauvignon Gris": {
+  "color": "White",
+  "synonyms": [
+   "Fié Gris",
+   "Sauvignon Rose"
+  ]
+ },
+ "Savagnin": {
+  "color": "White",
+  "synonyms": [
+   "Heida",
+   "Naturé",
+   "Païen",
+   "Traminer"
+  ]
+ },
+ "Savatiano": {
+  "color": "White",
+  "synonyms": []
+ },
+ "Scheurebe": {
+  "color": "White",
+  "synonyms": [
+   "Sämling 88"
+  ]
+ },
+ "Schiava": {
+  "color": "Red",
+  "synonyms": [
+   "Black Hamburg",
+   "Schiava Gentile",
+   "Schiava Grossa",
+   "Trollinger",
+   "Vernatsch"
+  ]
+ },
+ "Seyval Blanc": {
+  "color": "White",
+  "synonyms": [
+   "Seyve-Villard 5-276"
+  ]
+ },
+ "Silvaner": {
+  "color": "White",
+  "synonyms": [
+   "Grüner Silvaner",
+   "Sylvaner",
+   "Österreicher"
+  ]
+ },
+ "Solaris": {
+  "color": "White",
+  "synonyms": []
+ },
+ "Sousão": {
+  "color": "Red",
+  "synonyms": [
+   "Sousón",
+   "Vinhão"
+  ]
+ },
+ "Spätburgunder": {
+  "color": "Red",
+  "synonyms": [
+   "Blauburgunder",
+   "Pinot Nero",
+   "Pinot Noir"
+  ]
+ },
+ "Syrah": {
+  "color": "Red",
+  "synonyms": [
+   "Hermitage",
+   "Marsanne Noir",
+   "Shiraz",
+   "Sirac",
+   "Sérine"
+  ]
+ },
+ "Sémillon": {
+  "color": "White",
+  "synonyms": [
+   "Chevrier",
+   "Gros Sémillon",
+   "Hunter Valley Riesling"
+  ]
+ },
+ "Tannat": {
+  "color": "Red",
+  "synonyms": [
+   "Bordeleza Belcha",
+   "Harriague",
+   "Moustrou"
+  ]
+ },
+ "Tempranillo": {
+  "color": "Red",
+  "synonyms": [
+   "Aragonez",
+   "Cencibel",
+   "Tinta Roriz",
+   "Tinta de Toro",
+   "Tinto Fino",
+   "Tinto del País",
+   "Ull de Llebre"
+  ]
+ },
+ "Teroldego": {
+  "color": "Red",
+  "synonyms": [
+   "Teroldego Rotaliano"
+  ]
+ },
+ "Tinta Barroca": {
+  "color": "Red",
+  "synonyms": [
+   "Barroca"
+  ]
+ },
+ "Tinta Cão": {
+  "color": "Red",
+  "synonyms": [
+   "Tinto Cão"
+  ]
+ },
+ "Torrontés Mendocino": {
+  "color": "White",
+  "synonyms": [
+   "Torrontés"
+  ]
+ },
+ "Torrontés Riojano": {
+  "color": "White",
+  "synonyms": [
+   "Torrontés",
+   "Torrontés Rioja"
+  ]
+ },
+ "Torrontés Sanjuanino": {
+  "color": "White",
+  "synonyms": [
+   "Torrontés"
+  ]
+ },
+ "Touriga Franca": {
+  "color": "Red",
+  "synonyms": [
+   "Touriga Francesa",
+   "Touriga Frank"
+  ]
+ },
+ "Touriga Nacional": {
+  "color": "Red",
+  "synonyms": [
+   "Nacional",
+   "Touriga"
+  ]
+ },
+ "Trebbiano Toscano": {
+  "color": "White",
+  "synonyms": [
+   "Clairette Ronde",
+   "Procanico",
+   "Saint-Émilion",
+   "Ugni Blanc"
+  ]
+ },
+ "Trincadeira": {
+  "color": "Red",
+  "synonyms": [
+   "Preto Martinho",
+   "Tinta Amarela"
+  ]
+ },
+ "Trollinger": {
+  "color": "Red",
+  "synonyms": [
+   "Black Hamburg",
+   "Schiava Grossa",
+   "Vernatsch"
+  ]
+ },
+ "Txakoli": {
+  "color": "White",
+  "synonyms": [
+   "Gros Manseng",
+   "Hondarrabi Zuri"
+  ]
+ },
+ "Ugni Blanc": {
+  "color": "White",
+  "synonyms": [
+   "Clairette Ronde",
+   "Saint-Émilion",
+   "Trebbiano Toscano"
+  ]
+ },
+ "Vaccarèse": {
+  "color": "Red",
+  "synonyms": [
+   "Brun Argenté"
+  ]
+ },
+ "Verdejo": {
+  "color": "White",
+  "synonyms": [
+   "Verdejo Blanco",
+   "Verdejo de Rueda"
+  ]
+ },
+ "Verdicchio": {
+  "color": "White",
+  "synonyms": [
+   "Lugana",
+   "Trebbiano di Lugana",
+   "Trebbiano di Soave"
+  ]
+ },
+ "Verdicchio Bianco": {
+  "color": "White",
+  "synonyms": [
+   "Lugana",
+   "Trebbiano di Lugana",
+   "Trebbiano di Soave"
+  ]
+ },
+ "Vermentino": {
+  "color": "White",
+  "synonyms": [
+   "Favorita",
+   "Pigato",
+   "Rolle"
+  ]
+ },
+ "Vernatsch": {
+  "color": "Red",
+  "synonyms": [
+   "Black Hamburg",
+   "Schiava",
+   "Trollinger"
+  ]
+ },
+ "Vidal Blanc": {
+  "color": "White",
+  "synonyms": [
+   "Vidal 256"
+  ]
+ },
+ "Vidiano": {
+  "color": "White",
+  "synonyms": []
+ },
+ "Viognier": {
+  "color": "White",
+  "synonyms": [
+   "Viogner",
+   "Vionnier"
+  ]
+ },
+ "Viura": {
+  "color": "White",
+  "synonyms": [
+   "Macabeo",
+   "Macabeu",
+   "Maccabéo"
+  ]
+ },
+ "Welschriesling": {
+  "color": "White",
+  "synonyms": [
+   "Graševina",
+   "Italian Riesling",
+   "Laski Rizling",
+   "Olasz Rizling",
+   "Riesling Italico"
+  ]
+ },
+ "Xarel·lo": {
+  "color": "White",
+  "synonyms": [
+   "Pansá Blanca",
+   "Xarello"
+  ]
+ },
+ "Xinomavro": {
+  "color": "Red",
+  "synonyms": [
+   "Popolka",
+   "Xynomavro"
+  ]
+ },
+ "Zinfandel": {
+  "color": "Red",
+  "synonyms": [
+   "Crljenak Kaštelanski",
+   "Kratošija",
+   "Primitivo",
+   "Tribidrag"
+  ]
+ },
+ "Zweigelt": {
+  "color": "Red",
+  "synonyms": [
+   "Blauer Zweigelt",
+   "Rotburger",
+   "Zweigeltrebe"
+  ]
+ }
+}

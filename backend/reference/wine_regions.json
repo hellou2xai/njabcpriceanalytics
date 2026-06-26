@@ -1,0 +1,2681 @@
+{
+ "France": {
+  "Alsace": [
+   "Alsace AOC",
+   "Alsace Grand Cru",
+   "Cremant d'Alsace",
+   "Gewurztraminer",
+   "Muscat d'Alsace",
+   "Pinot Gris",
+   "Riesling",
+   "Selection de Grains Nobles",
+   "Vendanges Tardives"
+  ],
+  "Beaujolais": [
+   "Beaujolais AOC",
+   "Beaujolais-Villages",
+   "Brouilly",
+   "Chenas",
+   "Chiroubles",
+   "Cote de Brouilly",
+   "Fleurie",
+   "Julienas",
+   "Morgon",
+   "Moulin-a-Vent",
+   "Regnie",
+   "Saint-Amour"
+  ],
+  "Bordeaux": [
+   "Barsac",
+   "Blaye Cotes de Bordeaux",
+   "Cadillac Cotes de Bordeaux",
+   "Canon-Fronsac",
+   "Castillon Cotes de Bordeaux",
+   "Cotes de Bordeaux",
+   "Cotes de Bourg",
+   "Cremant de Bordeaux",
+   "Entre-Deux-Mers",
+   "Francs Cotes de Bordeaux",
+   "Fronsac",
+   "Graves",
+   "Haut-Medoc",
+   "Lalande-de-Pomerol",
+   "Listrac-Medoc",
+   "Margaux",
+   "Medoc",
+   "Moulis-en-Medoc",
+   "Pauillac",
+   "Pessac-Leognan",
+   "Pomerol",
+   "Saint-Emilion",
+   "Saint-Emilion Grand Cru",
+   "Saint-Estephe",
+   "Saint-Julien",
+   "Sauternes"
+  ],
+  "Burgundy": [
+   "Aloxe-Corton",
+   "Beaune",
+   "Bourgogne Aligoté",
+   "Chablis",
+   "Chablis Grand Cru",
+   "Chablis Premier Cru",
+   "Chambolle-Musigny",
+   "Chassagne-Montrachet",
+   "Cote Chalonnaise",
+   "Cote de Beaune",
+   "Cote de Nuits",
+   "Cremant de Bourgogne",
+   "Gevrey-Chambertin",
+   "Givry",
+   "Macon",
+   "Macon-Villages",
+   "Maconnais",
+   "Mercurey",
+   "Meursault",
+   "Montagny",
+   "Morey-Saint-Denis",
+   "Nuits-Saint-Georges",
+   "Petit Chablis",
+   "Pommard",
+   "Pouilly-Fuisse",
+   "Puligny-Montrachet",
+   "Rully",
+   "Saint-Veran",
+   "Santenay",
+   "Viré-Clesse",
+   "Volnay",
+   "Vosne-Romanee",
+   "Vougeot"
+  ],
+  "Champagne": [
+   "Aube",
+   "Blanc de Blancs",
+   "Blanc de Noirs",
+   "Cote de Sezanne",
+   "Cote des Bar",
+   "Cote des Blancs",
+   "Montagne de Reims",
+   "Rose de Riceys",
+   "Vallee de la Marne"
+  ],
+  "Corsica": [
+   "Ajaccio",
+   "Corse Calvi",
+   "Corse Figari",
+   "Corse Porto-Vecchio",
+   "Corse Sartene",
+   "Muscat du Cap Corse",
+   "Patrimonio",
+   "Vin de Corse"
+  ],
+  "Jura": [
+   "Arbois",
+   "Chateau-Chalon",
+   "Cotes du Jura",
+   "Cremant du Jura",
+   "L'Etoile",
+   "Macvin du Jura"
+  ],
+  "Languedoc-Roussillon": [
+   "Banyuls",
+   "Banyuls Grand Cru",
+   "Blanquette de Limoux",
+   "Clairette du Languedoc",
+   "Corbieres",
+   "Corbieres-Boutenac",
+   "Cotes du Roussillon",
+   "Cotes du Roussillon Villages",
+   "Cremant de Limoux",
+   "Faugeres",
+   "Fitou",
+   "La Clape",
+   "Languedoc AOC",
+   "Limoux",
+   "Maury",
+   "Minervois",
+   "Minervois-La-Liviniere",
+   "Muscat de Frontignan",
+   "Muscat de Lunel",
+   "Muscat de Mireval",
+   "Muscat de Rivesaltes",
+   "Muscat de Saint-Jean-de-Minervois",
+   "Pic Saint-Loup",
+   "Picpoul de Pinet",
+   "Rivesaltes",
+   "Roussillon",
+   "Saint-Chinian",
+   "Terrasses du Larzac"
+  ],
+  "Loire Valley": [
+   "Anjou",
+   "Anjou-Villages",
+   "Bonnezeaux",
+   "Bourgueil",
+   "Chinon",
+   "Coteaux du Layon",
+   "Cremant de Loire",
+   "Gros Plant du Pays Nantais",
+   "Menetou-Salon",
+   "Montlouis-sur-Loire",
+   "Muscadet",
+   "Muscadet Sevre et Maine",
+   "Pouilly-Fume",
+   "Quarts de Chaume",
+   "Quincy",
+   "Reuilly",
+   "Saint-Nicolas-de-Bourgueil",
+   "Sancerre",
+   "Saumur",
+   "Saumur-Champigny",
+   "Savennieres",
+   "Touraine",
+   "Vouvray"
+  ],
+  "Provence": [
+   "Bandol",
+   "Bellet",
+   "Cassis",
+   "Coteaux Varois en Provence",
+   "Coteaux d'Aix-en-Provence",
+   "Cotes de Provence",
+   "Les Baux-de-Provence",
+   "Palette",
+   "Pierrevert"
+  ],
+  "Rhone Valley": [
+   "Beaumes-de-Venise",
+   "Cairanne",
+   "Chateau-Grillet",
+   "Chateauneuf-du-Pape",
+   "Condrieu",
+   "Cornas",
+   "Cote-Rotie",
+   "Cotes du Rhone",
+   "Cotes du Rhone Villages",
+   "Crozes-Hermitage",
+   "Gigondas",
+   "Grignan-les-Adhemar",
+   "Hermitage",
+   "Lirac",
+   "Rasteau",
+   "Saint-Joseph",
+   "Saint-Peray",
+   "Tavel",
+   "Vacqueyras",
+   "Vinsobres"
+  ],
+  "Savoie": [
+   "Ayze",
+   "Bugey",
+   "Cremant de Bugey",
+   "Roussette de Savoie",
+   "Seyssel",
+   "Vin de Savoie"
+  ],
+  "South West France": [
+   "Bergerac",
+   "Buzet",
+   "Cahors",
+   "Côtes du Marmandais",
+   "Duras",
+   "Fronton",
+   "Gaillac",
+   "Irouléguy",
+   "Jurançon",
+   "Madiran",
+   "Marcillac",
+   "Monbazillac",
+   "Pacherenc du Vic-Bilh",
+   "Pécharmant"
+  ]
+ },
+ "Italy": {
+  "Abruzzo": [
+   "Cerasuolo d'Abruzzo DOC",
+   "Montepulciano d'Abruzzo Colline Teramane DOCG",
+   "Montepulciano d'Abruzzo DOC",
+   "Terre Tollesi / Tullum DOCG",
+   "Trebbiano d'Abruzzo DOC"
+  ],
+  "Basilicata": [
+   "Aglianico del Vulture DOC",
+   "Aglianico del Vulture Superiore DOCG",
+   "Matera DOC"
+  ],
+  "Calabria": [
+   "Ciro DOC",
+   "Ciro Rosso Classico Superiore Riserva DOC",
+   "Greco di Bianco DOC",
+   "Lamezia DOC",
+   "Sant'Anna di Isola Capo Rizzuto DOC",
+   "Terre di Cosenza DOC"
+  ],
+  "Campania": [
+   "Aglianico del Taburno DOCG",
+   "Campi Flegrei DOC",
+   "Falerno del Massico DOC",
+   "Fiano di Avellino DOCG",
+   "Greco di Tufo DOCG",
+   "Irpinia DOC",
+   "Sannio DOC",
+   "Taurasi DOCG",
+   "Vesuvio DOC"
+  ],
+  "Emilia-Romagna": [
+   "Albana di Romagna DOCG",
+   "Colli Bolognesi DOC",
+   "Colli Piacentini DOC",
+   "Lambrusco Grasparossa di Castelvetro DOC",
+   "Lambrusco Salamino di Santa Croce DOC",
+   "Lambrusco di Sorbara DOC",
+   "Pagadebit di Romagna DOC",
+   "Romagna Sangiovese DOC",
+   "Trebbiano di Romagna DOC"
+  ],
+  "Friuli-Venezia Giulia": [
+   "Carso DOC",
+   "Colli Orientali del Friuli DOC",
+   "Collio DOC",
+   "Collio Goriziano DOC",
+   "Friuli Aquileia DOC",
+   "Friuli Grave DOC",
+   "Friuli Isonzo DOC",
+   "Ramandolo DOCG",
+   "Rosazzo DOCG"
+  ],
+  "Lazio": [
+   "Cannellino di Frascati DOCG",
+   "Cesanese del Piglio DOCG",
+   "Colli Albani DOC",
+   "Est! Est!! Est!!! di Montefiascone DOC",
+   "Frascati DOC",
+   "Frascati Superiore DOCG",
+   "Marino DOC",
+   "Velletri DOC"
+  ],
+  "Liguria": [
+   "Cinque Terre DOC",
+   "Cinque Terre Sciacchetrà DOC",
+   "Colli di Luni DOC",
+   "Riviera Ligure di Ponente DOC",
+   "Rossese di Dolceacqua DOC"
+  ],
+  "Lombardy": [
+   "Bonarda dell'Oltrepo Pavese DOC",
+   "Franciacorta DOCG",
+   "Garda DOC",
+   "Lugana DOC",
+   "Moscato di Scanzo DOCG",
+   "Oltrepo Pavese DOC",
+   "Sforzato di Valtellina DOCG",
+   "Terre di Franciacorta DOC",
+   "Valtellina Superiore DOCG"
+  ],
+  "Marche": [
+   "Conero DOCG",
+   "Lacrima di Morro d'Alba DOC",
+   "Offida DOCG",
+   "Rosso Conero DOC",
+   "Rosso Piceno DOC",
+   "Verdicchio dei Castelli di Jesi Classico Superiore DOCG",
+   "Verdicchio dei Castelli di Jesi DOC",
+   "Verdicchio di Matelica DOC",
+   "Verdicchio di Matelica Riserva DOCG"
+  ],
+  "Molise": [
+   "Biferno DOC",
+   "Molise DOC",
+   "Tintilia del Molise DOC"
+  ],
+  "Piedmont": [
+   "Asti DOCG",
+   "Barbaresco DOCG",
+   "Barbera d'Alba DOC",
+   "Barbera d'Asti DOCG",
+   "Barolo DOCG",
+   "Brachetto d'Acqui DOCG",
+   "Dogliani DOCG",
+   "Dolcetto d'Alba DOC",
+   "Gattinara DOCG",
+   "Gavi DOCG",
+   "Ghemme DOCG",
+   "Langhe DOC",
+   "Monferrato DOC",
+   "Moscato d'Asti DOCG",
+   "Roero DOCG",
+   "Ruché di Castagnole Monferrato DOCG"
+  ],
+  "Puglia": [
+   "Brindisi DOC",
+   "Castel del Monte Bombino Nero DOCG",
+   "Castel del Monte DOC",
+   "Castel del Monte Nero di Troia Riserva DOCG",
+   "Gioia del Colle DOC",
+   "Locorotondo DOC",
+   "Negroamaro di Terra d'Otranto DOC",
+   "Primitivo di Manduria DOC",
+   "Primitivo di Manduria Dolce Naturale DOCG",
+   "Salice Salentino DOC"
+  ],
+  "Sardinia": [
+   "Cannonau di Sardegna DOC",
+   "Carignano del Sulcis DOC",
+   "Malvasia di Bosa DOC",
+   "Monica di Sardegna DOC",
+   "Nuragus di Cagliari DOC",
+   "Vermentino di Gallura DOCG",
+   "Vermentino di Sardegna DOC",
+   "Vernaccia di Oristano DOC"
+  ],
+  "Sicily": [
+   "Alcamo DOC",
+   "Cerasuolo di Vittoria DOCG",
+   "Contessa Entellina DOC",
+   "Etna DOC",
+   "Malvasia delle Lipari DOC",
+   "Marsala DOC",
+   "Moscato di Pantelleria DOC",
+   "Nero d'Avola DOC",
+   "Passito di Pantelleria DOC",
+   "Sicilia DOC"
+  ],
+  "Trentino-Alto Adige": [
+   "Alto Adige DOC",
+   "Alto Adige Lago di Caldaro DOC",
+   "Alto Adige Santa Maddalena DOC",
+   "Teroldego Rotaliano DOC",
+   "Trentino DOC",
+   "Trento DOC",
+   "Valdadige DOC"
+  ],
+  "Tuscany": [
+   "Bolgheri DOC",
+   "Bolgheri Sassicaia DOC",
+   "Brunello di Montalcino DOCG",
+   "Carmignano DOCG",
+   "Chianti Classico DOCG",
+   "Chianti DOCG",
+   "Elba DOC",
+   "Maremma Toscana DOC",
+   "Montecucco DOCG",
+   "Morellino di Scansano DOCG",
+   "Pomino DOC",
+   "Rosso di Montalcino DOC",
+   "Rosso di Montepulciano DOC",
+   "Val di Cornia DOC",
+   "Vernaccia di San Gimignano DOCG",
+   "Vino Nobile di Montepulciano DOCG"
+  ],
+  "Umbria": [
+   "Colli Martani DOC",
+   "Montefalco Rosso DOC",
+   "Orvieto DOC",
+   "Sagrantino di Montefalco DOCG",
+   "Torgiano DOC",
+   "Torgiano Rosso Riserva DOCG"
+  ],
+  "Valle d'Aosta": [
+   "Valle d'Aosta DOC",
+   "Valle d'Aosta Donnas DOC",
+   "Valle d'Aosta Enfer d'Arvier DOC"
+  ],
+  "Veneto": [
+   "Amarone della Valpolicella DOCG",
+   "Bardolino DOC",
+   "Bardolino Superiore DOCG",
+   "Breganze DOC",
+   "Colli Euganei DOC",
+   "Conegliano Valdobbiadene Prosecco DOCG",
+   "Gambellara DOC",
+   "Lugana DOC",
+   "Prosecco DOC",
+   "Recioto della Valpolicella DOCG",
+   "Recioto di Soave DOCG",
+   "Ripasso Valpolicella DOC",
+   "Soave DOC",
+   "Soave Superiore DOCG",
+   "Valpolicella DOC"
+  ]
+ },
+ "Spain": {
+  "Andalusia": [
+   "Condado de Huelva",
+   "Jerez-Xeres-Sherry",
+   "Malaga",
+   "Manzanilla-Sanlucar de Barrameda",
+   "Montilla-Moriles",
+   "Sierras de Malaga"
+  ],
+  "Aragon": [
+   "Calatayud",
+   "Campo de Borja",
+   "Carinena",
+   "Somontano"
+  ],
+  "Balearic Islands": [
+   "Binissalem",
+   "Pla i Llevant",
+   "Serra de Tramuntana-Costa Nord",
+   "Vi de la Terra Mallorca"
+  ],
+  "Basque Country": [
+   "Txakoli de Alava",
+   "Txakoli de Bizkaia",
+   "Txakoli de Getaria"
+  ],
+  "Bierzo": [],
+  "Canary Islands": [
+   "Abona",
+   "El Hierro",
+   "Gran Canaria",
+   "La Gomera",
+   "La Palma",
+   "Lanzarote",
+   "Tacoronte-Acentejo",
+   "Tenerife",
+   "Valle de Guimar",
+   "Valle de la Orotava",
+   "Ycoden-Daute-Isora"
+  ],
+  "Castilla y Leon": [
+   "Arlanza",
+   "Arribes",
+   "Bierzo",
+   "Cigales",
+   "Ribera del Duero",
+   "Rueda",
+   "Tierra de Leon",
+   "Tierra del Vino de Zamora",
+   "Toro"
+  ],
+  "Castilla-La Mancha": [
+   "Almansa",
+   "Jumilla",
+   "La Mancha",
+   "Manchuela",
+   "Mondéjar",
+   "Méntrida",
+   "Ribera del Jucar",
+   "Uclés",
+   "Valdepenas"
+  ],
+  "Catalonia": [
+   "Alella",
+   "Conca de Barbera",
+   "Costers del Segre",
+   "Emporda",
+   "Montsant",
+   "Penedes",
+   "Pla de Bages",
+   "Priorat",
+   "Tarragona",
+   "Terra Alta"
+  ],
+  "Extremadura": [
+   "Ribera del Guadiana"
+  ],
+  "Galicia": [
+   "Monterrei",
+   "Rias Baixas",
+   "Ribeira Sacra",
+   "Ribeiro",
+   "Valdeorras"
+  ],
+  "La Rioja (non-DOCa)": [
+   "Valles de Sadacia"
+  ],
+  "Madrid": [
+   "Arganda",
+   "Navalcarnero",
+   "San Martin de Valdeiglesias",
+   "Vinos de Madrid"
+  ],
+  "Murcia": [
+   "Bullas",
+   "Jumilla",
+   "Yecla"
+  ],
+  "Navarra": [
+   "Baja Montana",
+   "Ribera Alta",
+   "Ribera Baja",
+   "Tierra Estella",
+   "Valdizarbe"
+  ],
+  "Penedes": [
+   "Alt Penedes",
+   "Cava DO",
+   "Classic Penedes",
+   "Penedes Maritim"
+  ],
+  "Priorat": [
+   "Montsant",
+   "Priorat DOCa"
+  ],
+  "Rias Baixas": [
+   "Condado do Tea",
+   "O Rosal",
+   "Ribeira do Ulla",
+   "Soutomaior",
+   "Val do Salnes"
+  ],
+  "Ribera del Duero": [],
+  "Rioja": [
+   "Rioja Alavesa",
+   "Rioja Alta",
+   "Rioja Oriental"
+  ],
+  "Rueda": [],
+  "Toro": [],
+  "Valencia": [
+   "Alicante",
+   "Utiel-Requena",
+   "Valencia DO"
+  ]
+ },
+ "Portugal": {
+  "Alentejo": [
+   "Borba",
+   "Granja-Amareleja",
+   "Moura",
+   "Portalegre",
+   "Redondo",
+   "Reguengos",
+   "Vidigueira",
+   "Évora"
+  ],
+  "Algarve": [
+   "Lagoa",
+   "Lagos",
+   "Portimão",
+   "Tavira"
+  ],
+  "Açores": [
+   "Biscoitos",
+   "Graciosa",
+   "Pico"
+  ],
+  "Bairrada": [
+   "Baga",
+   "Bairrada DOC"
+  ],
+  "Beira Interior": [
+   "Castelo Rodrigo",
+   "Cova da Beira",
+   "Pinhel"
+  ],
+  "Douro": [
+   "Baixo Corgo",
+   "Cima Corgo",
+   "Douro Superior",
+   "Port (Porto DOC)"
+  ],
+  "Dão": [
+   "Alva",
+   "Besteiros",
+   "Castendo",
+   "Serra da Estrela",
+   "Silgueiros",
+   "Terras de Azurara",
+   "Terras de Senhorim"
+  ],
+  "Lafões": [],
+  "Lisboa": [
+   "Alenquer",
+   "Arruda",
+   "Bucelas",
+   "Carcavelos",
+   "Colares",
+   "Encostas d'Aire",
+   "Lourinhã",
+   "Torres Vedras",
+   "Óbidos"
+  ],
+  "Madeira": [
+   "Madeira DOC",
+   "Madeirense DOC"
+  ],
+  "Península de Setúbal": [
+   "Arrábida",
+   "Palmela",
+   "Setúbal DOC"
+  ],
+  "Tejo": [
+   "Almeirim",
+   "Cartaxo",
+   "Chamusca",
+   "Coruche",
+   "Santarém",
+   "Tomar"
+  ],
+  "Trás-os-Montes": [
+   "Chaves",
+   "Planalto Mirandês",
+   "Valpaços"
+  ],
+  "Vinho Verde": [
+   "Amarante",
+   "Ave",
+   "Baião",
+   "Basto",
+   "Cávado",
+   "Lima",
+   "Monção e Melgaço",
+   "Paiva",
+   "Sousa"
+  ]
+ },
+ "Germany": {
+  "Ahr": [
+   "Walporzheim/Ahrtal"
+  ],
+  "Baden": [
+   "Badische Bergstrasse",
+   "Bodensee",
+   "Breisgau",
+   "Kaiserstuhl",
+   "Kraichgau",
+   "Markgraflerland",
+   "Ortenau",
+   "Tauberfranken",
+   "Tuniberg"
+  ],
+  "Franken": [
+   "Escherndorf",
+   "Iphofen",
+   "Maindreieck",
+   "Mainviereck",
+   "Steigerwald",
+   "Wurzburg"
+  ],
+  "Hessische Bergstrasse": [
+   "Starkenburg",
+   "Umstadt"
+  ],
+  "Mittelrhein": [
+   "Bacharach",
+   "Loreley",
+   "Siebengebirge"
+  ],
+  "Mosel": [
+   "Bernkastel",
+   "Burg Cochem",
+   "Moseltor",
+   "Obermosel",
+   "Ruwer",
+   "Ruwertal",
+   "Saar"
+  ],
+  "Nahe": [
+   "Bad Kreuznach",
+   "Kreuznach",
+   "Monzingen",
+   "Niederhausen",
+   "Schloss Bockelheim"
+  ],
+  "Pfalz": [
+   "Bad Durkheim",
+   "Deidesheim",
+   "Forst",
+   "Mittelhaardt-Deutsche Weinstrasse",
+   "Sudliche Weinstrasse",
+   "Wachenheim"
+  ],
+  "Rheingau": [
+   "Erbach",
+   "Geisenheim",
+   "Hattenheim",
+   "Hochheim",
+   "Johannisberg",
+   "Rauenthal",
+   "Rudesheim"
+  ],
+  "Rheinhessen": [
+   "Alzey",
+   "Bingen",
+   "Ingelheim",
+   "Nierstein",
+   "Oppenheim",
+   "Wonnegau"
+  ],
+  "Saale-Unstrut": [
+   "Mansfelder Seen",
+   "Naumburg",
+   "Schloss Neuenburg",
+   "Thuringen"
+  ],
+  "Sachsen": [
+   "Dresden",
+   "Elstertal",
+   "Meissen"
+  ],
+  "Wurttemberg": [
+   "Kocher-Jagst-Tauber",
+   "Oberer Neckar",
+   "Remstal-Stuttgart",
+   "Tauberfranken",
+   "Württembergisch Unterland"
+  ]
+ },
+ "Austria": {
+  "Bergland Österreich": [
+   "Kärnten (Carinthia)",
+   "Oberösterreich (Upper Austria)",
+   "Salzburg",
+   "Tirol",
+   "Vorarlberg"
+  ],
+  "Burgenland": [
+   "Eisenberg",
+   "Mittelburgenland",
+   "Neusiedlersee",
+   "Neusiedlersee-Hügelland (Leithaberg)",
+   "Rosalia"
+  ],
+  "Niederösterreich (Lower Austria)": [
+   "Carnuntum",
+   "Kamptal",
+   "Kremstal",
+   "Thermenregion",
+   "Traisental",
+   "Wachau",
+   "Wagram",
+   "Weinviertel"
+  ],
+  "Steiermark (Styria)": [
+   "Südsteiermark (South Styria)",
+   "Vulkanland Steiermark (Southeast Styria)",
+   "Weststeiermark (West Styria)"
+  ],
+  "Wien (Vienna)": [
+   "Bisamberg",
+   "Grinzing",
+   "Gumpoldskirchen",
+   "Mauer",
+   "Nussberg",
+   "Sievering"
+  ]
+ },
+ "Greece": {
+  "Aegean Islands": [
+   "Chios",
+   "Ikaria",
+   "Lesvos",
+   "Muscat of Lemnos",
+   "Muscat of Rhodes",
+   "Muscat of Samos",
+   "Naxos",
+   "Paros",
+   "Rhodes",
+   "Santorini"
+  ],
+  "Central Greece": [
+   "Attica",
+   "Halkida",
+   "Kantza",
+   "Markopoulo",
+   "Slopes of Kithaironas"
+  ],
+  "Crete": [
+   "Archanes",
+   "Chania",
+   "Dafnes",
+   "Heraklion",
+   "Lasithi",
+   "Malvasia of Sitia",
+   "Muscat of Heraklion",
+   "Peza",
+   "Rethymno",
+   "Sitia"
+  ],
+  "Epirus": [
+   "Metsovo",
+   "Zitsa"
+  ],
+  "Ionian Islands": [
+   "Lefkada",
+   "Mavrodaphne of Cephalonia",
+   "Muscat of Cephalonia",
+   "Robola of Cephalonia",
+   "Verdea of Zakynthos"
+  ],
+  "Macedonia": [
+   "Amyndeon",
+   "Drama",
+   "Florina",
+   "Goumenissa",
+   "Imathia",
+   "Kavala",
+   "Naoussa",
+   "Pella",
+   "Slopes of Meliton",
+   "Thessaloniki"
+  ],
+  "Northern Aegean": [
+   "Kavala",
+   "Limnos",
+   "Samothrace"
+  ],
+  "Peloponnese": [
+   "Aigialia",
+   "Ilia",
+   "Mantinia",
+   "Mavrodaphne of Patras",
+   "Muscat Rio of Patras",
+   "Muscat of Patras",
+   "Nemea",
+   "Patras",
+   "Slopes of Agioritikos"
+  ],
+  "Thessaly": [
+   "Anchialos",
+   "Messenikola",
+   "Rapsani",
+   "Tyrnavos"
+  ],
+  "Thrace": [
+   "Alexandroupolis",
+   "Avdira",
+   "Maronia"
+  ]
+ },
+ "Hungary": {
+  "Balaton": [
+   "Badacsony",
+   "Balatonboglár",
+   "Balatonfelvidék",
+   "Balatonfüred-Csopak",
+   "Balatonmelléke",
+   "Somló",
+   "Zala"
+  ],
+  "Eger": [
+   "Andornaktalya",
+   "Debrő",
+   "Eger",
+   "Noszvaj",
+   "Szarvaskő"
+  ],
+  "Etyek-Buda": [
+   "Buda",
+   "Etyek",
+   "Páty",
+   "Tök"
+  ],
+  "Kunság": [
+   "Csongrád",
+   "Hajós-Baja",
+   "Kecskemét"
+  ],
+  "Mátra": [
+   "Domoszló",
+   "Gyöngyös",
+   "Visonta"
+  ],
+  "Neszmély": [
+   "Almásfüzitő",
+   "Neszmély",
+   "Süttő"
+  ],
+  "Pannon": [
+   "Pannon"
+  ],
+  "Pannonhalma": [
+   "Győr",
+   "Pannonhalma"
+  ],
+  "Sopron": [
+   "Fertőboz",
+   "Nagycenk",
+   "Sopron"
+  ],
+  "Szekszárd": [
+   "Bátaszék",
+   "Decs",
+   "Szekszárd"
+  ],
+  "Tokaj": [
+   "Bodrogkeresztur",
+   "Erdőbénye",
+   "Mad",
+   "Sarospatak",
+   "Tallya",
+   "Tarcal",
+   "Tokaj",
+   "Tolcsva"
+  ],
+  "Tolna": [
+   "Gyönk",
+   "Möcsény",
+   "Tolna"
+  ],
+  "Villány": [
+   "Kisharsány",
+   "Palkonya",
+   "Pécs",
+   "Siklós",
+   "Villány"
+  ]
+ },
+ "United States": {
+  "Arizona": [
+   "Sonoita",
+   "Verde Valley",
+   "Willcox"
+  ],
+  "California": [
+   "Alexander Valley",
+   "Amador County",
+   "Anderson Valley",
+   "Arroyo Grande Valley",
+   "Arroyo Seco",
+   "Atlas Peak",
+   "Ballard Canyon",
+   "Bennett Valley",
+   "Calistoga",
+   "Carmel Valley",
+   "Central Valley",
+   "Chalk Hill",
+   "Chiles Valley",
+   "Clarksburg",
+   "Clear Lake",
+   "Diamond Mountain District",
+   "Dry Creek Valley",
+   "Edna Valley",
+   "El Dorado",
+   "Fiddletown",
+   "Fort Ross-Seaview",
+   "Happy Canyon of Santa Barbara",
+   "Howell Mountain",
+   "Knights Valley",
+   "Lake County",
+   "Livermore Valley",
+   "Lodi",
+   "Los Olivos District",
+   "Mendocino County",
+   "Monterey County",
+   "Moon Mountain District",
+   "Mount Veeder",
+   "Napa Valley",
+   "Oakville",
+   "Paso Robles",
+   "Paso Robles Willow Creek District",
+   "Red Hills Lake County",
+   "Redwood Valley",
+   "Russian River Valley",
+   "Rutherford",
+   "San Luis Obispo County",
+   "Santa Barbara County",
+   "Santa Cruz Mountains",
+   "Santa Lucia Highlands",
+   "Santa Maria Valley",
+   "Santa Ynez Valley",
+   "Shenandoah Valley (California)",
+   "Sierra Foothills",
+   "Sonoma Coast",
+   "Sonoma County",
+   "Sonoma Valley",
+   "Spring Mountain District",
+   "St. Helena",
+   "Sta. Rita Hills",
+   "Stags Leap District",
+   "Templeton Gap District",
+   "Yountville"
+  ],
+  "Colorado": [
+   "Grand Valley",
+   "West Elks"
+  ],
+  "Georgia": [
+   "Dahlonega Plateau",
+   "Georgia Peninsula",
+   "Upper Hiwassee Highlands"
+  ],
+  "Idaho": [
+   "Eagle Foothills",
+   "Snake River Valley"
+  ],
+  "Maryland": [
+   "Catoctin",
+   "Cumberland Valley",
+   "Linganore"
+  ],
+  "Michigan": [
+   "Fennville",
+   "Lake Michigan Shore",
+   "Leelanau Peninsula",
+   "Old Mission Peninsula",
+   "Tip of the Mitt"
+  ],
+  "Missouri": [
+   "Augusta",
+   "Hermann",
+   "Ozark Highlands",
+   "Ozark Mountain"
+  ],
+  "New Jersey": [
+   "Central Delaware Valley",
+   "Outer Coastal Plain",
+   "Warren Hills"
+  ],
+  "New Mexico": [
+   "Mesilla Valley",
+   "Middle Rio Grande Valley",
+   "Mimbres Valley"
+  ],
+  "New York": [
+   "Canandaigua Lake",
+   "Cayuga Lake",
+   "Finger Lakes",
+   "Hudson River Region",
+   "Lake Erie (New York)",
+   "Long Island",
+   "Niagara Escarpment",
+   "North Fork of Long Island",
+   "Seneca Lake",
+   "The Hamptons (Long Island)",
+   "Upper Hudson"
+  ],
+  "North Carolina": [
+   "Haw River Valley",
+   "Swan Creek",
+   "Upper Hiwassee Highlands",
+   "Yadkin Valley"
+  ],
+  "Ohio": [
+   "Grand River Valley",
+   "Isle St. George",
+   "Lake Erie (Ohio)",
+   "Loramie Creek",
+   "Ohio River Valley"
+  ],
+  "Oregon": [
+   "Applegate Valley",
+   "Chehalem Mountains",
+   "Columbia Gorge",
+   "Columbia Valley (Oregon)",
+   "Dundee Hills",
+   "Eola-Amity Hills",
+   "McMinnville",
+   "Red Hill Douglas County",
+   "Ribbon Ridge",
+   "Rogue Valley",
+   "Southern Oregon",
+   "Umpqua Valley",
+   "Van Duzer Corridor",
+   "Walla Walla Valley (Oregon)",
+   "Willamette Valley",
+   "Yamhill-Carlton"
+  ],
+  "Pennsylvania": [
+   "Central Delaware Valley",
+   "Cumberland Valley",
+   "Lake Erie (Pennsylvania)",
+   "Lancaster Valley"
+  ],
+  "Texas": [
+   "Bell Mountain",
+   "Escondido Valley",
+   "Fredericksburg in the Texas Hill Country",
+   "Mesilla Valley (Texas)",
+   "Texas High Plains",
+   "Texas Hill Country"
+  ],
+  "Virginia": [
+   "Eastern Shore",
+   "Loudoun County",
+   "Middleburg Virginia",
+   "Monticello",
+   "North Fork of Roanoke",
+   "Northern Neck George Washington Birthplace",
+   "Rocky Knob",
+   "Shenandoah Valley"
+  ],
+  "Washington": [
+   "Ancient Lakes",
+   "Columbia Gorge",
+   "Columbia Valley",
+   "Horse Heaven Hills",
+   "Lake Chelan",
+   "Naches Heights",
+   "Puget Sound",
+   "Rattlesnake Hills",
+   "Red Mountain",
+   "Royal Slope",
+   "Snipes Mountain",
+   "The Rocks District of Milton-Freewater",
+   "Wahluke Slope",
+   "Walla Walla Valley",
+   "Yakima Valley"
+  ]
+ },
+ "Argentina": {
+  "Buenos Aires": [
+   "Barker",
+   "Chapadmalal",
+   "Maipu (Buenos Aires)"
+  ],
+  "Catamarca": [
+   "Belen",
+   "Fiambala",
+   "Santa Maria"
+  ],
+  "Cordoba": [
+   "Calamuchita Valley",
+   "Traslasierra Valley"
+  ],
+  "Entre Rios": [],
+  "Jujuy": [
+   "Quebrada de Humahuaca"
+  ],
+  "La Rioja": [
+   "Antinaco-Los Colorados Valley",
+   "Famatina Valley",
+   "General Angel Vicente Penaloza Valley"
+  ],
+  "Mendoza": [
+   "Guaymallen",
+   "Las Heras",
+   "Lavalle",
+   "Lujan de Cuyo",
+   "Maipo",
+   "Maipu",
+   "Rivadavia",
+   "San Carlos",
+   "San Rafael",
+   "Tunuyan",
+   "Tupungato",
+   "Valle de Uco"
+  ],
+  "Neuquen": [
+   "Anaelo",
+   "San Patricio del Chanan",
+   "Zapala"
+  ],
+  "Rio Negro": [
+   "Alto Valle del Rio Negro",
+   "Valle Inferior",
+   "Valle Medio"
+  ],
+  "Salta": [
+   "Cachi",
+   "Cafayate",
+   "Calchaqui Valleys",
+   "Molinos",
+   "San Carlos"
+  ],
+  "San Juan": [
+   "Calingasta Valley",
+   "Iglesia Valley",
+   "Pedernal Valley",
+   "Tulum Valley",
+   "Ullum-Zonda Valley"
+  ],
+  "Tucuman": [
+   "Amaicha del Valle",
+   "Tafi del Valle"
+  ]
+ },
+ "Chile": {
+  "Aconcagua": [
+   "Aconcagua Valley",
+   "Casablanca Valley",
+   "Leyda Valley",
+   "San Antonio Valley"
+  ],
+  "Atacama": [
+   "Copiapo Valley",
+   "Huasco Valley"
+  ],
+  "Austral": [
+   "Osorno Valley"
+  ],
+  "Central Valley": [
+   "Cachapoal Valley",
+   "Colchagua Valley",
+   "Curico Valley",
+   "Maipo Valley",
+   "Maule Valley",
+   "Rapel Valley"
+  ],
+  "Coquimbo": [
+   "Choapa Valley",
+   "Elqui Valley",
+   "Limari Valley"
+  ],
+  "Sur (South)": [
+   "Bio Bio Valley",
+   "Itata Valley",
+   "Malleco Valley"
+  ]
+ },
+ "Australia": {
+  "Australian Capital Territory": [
+   "Canberra District"
+  ],
+  "New South Wales": [
+   "Broke Fordwich",
+   "Canberra District",
+   "Cowra",
+   "Gundagai",
+   "Hastings River",
+   "Hilltops",
+   "Hunter Valley",
+   "Mudgee",
+   "Murray Darling",
+   "Orange",
+   "Perricoota",
+   "Pokolbin",
+   "Riverina",
+   "Shoalhaven Coast",
+   "Southern Highlands",
+   "Swan Hill",
+   "Tumbarumba",
+   "Upper Hunter Valley"
+  ],
+  "Northern Territory": [],
+  "Queensland": [
+   "Granite Belt",
+   "South Burnett"
+  ],
+  "South Australia": [
+   "Adelaide Hills",
+   "Adelaide Plains",
+   "Barossa Valley",
+   "Bordertown",
+   "Clare Valley",
+   "Coonawarra",
+   "Currency Creek",
+   "Eden Valley",
+   "High Eden",
+   "Kangaroo Island",
+   "Langhorne Creek",
+   "Lenswood",
+   "McLaren Vale",
+   "Mount Benson",
+   "Mount Gambier",
+   "Padthaway",
+   "Piccadilly Valley",
+   "Robe",
+   "Southern Fleurieu",
+   "Southern Flinders Ranges",
+   "Wrattonbully"
+  ],
+  "Tasmania": [
+   "Coal River Valley",
+   "Derwent Valley",
+   "East Coast Tasmania",
+   "Huon Valley",
+   "Northern Tasmania",
+   "Piper's River",
+   "Southern Tasmania",
+   "Tamar Valley"
+  ],
+  "Victoria": [
+   "Alpine Valleys",
+   "Beechworth",
+   "Bendigo",
+   "Geelong",
+   "Gippsland",
+   "Glenrowan",
+   "Grampians",
+   "Great Western",
+   "Heathcote",
+   "Henty",
+   "King Valley",
+   "Macedon Ranges",
+   "Mornington Peninsula",
+   "Murray Darling",
+   "Nagambie Lakes",
+   "Pyrenees",
+   "Rutherglen",
+   "Strathbogie Ranges",
+   "Sunbury",
+   "Swan Hill",
+   "Upper Goulburn",
+   "Yarra Valley"
+  ],
+  "Western Australia": [
+   "Albany",
+   "Blackwood Valley",
+   "Denmark",
+   "Frankland River",
+   "Geographe",
+   "Great Southern",
+   "Manjimup",
+   "Margaret River",
+   "Mount Barker",
+   "Mount Langi Ghiran",
+   "Peel",
+   "Pemberton",
+   "Perth Hills",
+   "Porongurup",
+   "Swan District",
+   "Swan Valley"
+  ]
+ },
+ "New Zealand": {
+  "Auckland": [
+   "Clevedon",
+   "Henderson",
+   "Kumeu/Huapai",
+   "Pukekohe",
+   "Waiheke Island"
+  ],
+  "Canterbury": [
+   "Banks Peninsula",
+   "Christchurch Plains",
+   "Waipara Valley"
+  ],
+  "Central Otago": [
+   "Alexandra",
+   "Bannockburn",
+   "Bendigo",
+   "Cromwell Basin",
+   "Gibbston",
+   "Wanaka"
+  ],
+  "Gisborne": [
+   "Poverty Bay"
+  ],
+  "Hawke's Bay": [
+   "Bridge Pa Triangle",
+   "Gimblett Gravels",
+   "Havelock North",
+   "Napier"
+  ],
+  "Marlborough": [
+   "Awatere Valley",
+   "Southern Valleys",
+   "Wairau Valley"
+  ],
+  "Nelson": [
+   "Moutere Hills",
+   "Waimea Plains"
+  ],
+  "Northland": [
+   "Kaipara",
+   "Matakana"
+  ],
+  "Waikato & Bay of Plenty": [
+   "Te Kauwhata"
+  ],
+  "Wairarapa": [
+   "Gladstone",
+   "Martinborough",
+   "Masterton"
+  ]
+ },
+ "South Africa": {
+  "Boberg": [
+   "Franschhoek",
+   "Paarl"
+  ],
+  "Breede River Valley": [
+   "Breedekloof",
+   "Robertson",
+   "Worcester"
+  ],
+  "Cape South Coast": [
+   "Bot River",
+   "Cape Agulhas",
+   "Elgin",
+   "Elim",
+   "Overberg",
+   "Sunday's Glen",
+   "Walker Bay"
+  ],
+  "Coastal Region": [
+   "Cape Point",
+   "Constantia",
+   "Darling",
+   "Franschhoek",
+   "Paarl",
+   "Stellenbosch",
+   "Swartland",
+   "Tygerberg"
+  ],
+  "Klein Karoo": [
+   "Calitzdorp",
+   "Langeberg-Garcia",
+   "Tradouw",
+   "Tradouw Highlands",
+   "Upper Langkloof"
+  ],
+  "Northern Cape": [
+   "Central Orange River",
+   "Douglas",
+   "Hartswater",
+   "Rietrivier FS",
+   "Sutherland-Karoo"
+  ],
+  "Olifants River": [
+   "Citrusdal Mountain",
+   "Citrusdal Valley",
+   "Lutzville Valley"
+  ]
+ },
+ "Canada": {
+  "British Columbia": [
+   "Fraser Valley",
+   "Gulf Islands",
+   "Kootenays",
+   "Okanagan Valley",
+   "Shuswap",
+   "Similkameen Valley",
+   "Thompson Valley",
+   "Vancouver Island"
+  ],
+  "New Brunswick": [
+   "Kennebecasis Valley",
+   "Upper Petitcodiac"
+  ],
+  "Nova Scotia": [
+   "Annapolis Valley",
+   "Bear River",
+   "Gaspereau Valley",
+   "Malagash Peninsula"
+  ],
+  "Ontario": [
+   "Beamsville Bench",
+   "Creek Shores",
+   "Four Mile Creek",
+   "Lake Erie North Shore",
+   "Lincoln Lakeshore",
+   "Niagara Escarpment",
+   "Niagara Peninsula",
+   "Niagara-on-the-Lake",
+   "Pelee Island",
+   "Prince Edward County",
+   "Short Hills Bench",
+   "St. David's Bench",
+   "Twenty Mile Bench"
+  ],
+  "Quebec": [
+   "Basses-Laurentides",
+   "Cantons-de-l'Est (Eastern Townships)",
+   "Montérégie",
+   "Québec City Area"
+  ]
+ },
+ "Mexico": {
+  "Aguascalientes": [
+   "Aguascalientes Valley"
+  ],
+  "Baja California": [
+   "Ensenada",
+   "Valle de Guadalupe",
+   "Valle de Ojos Negros",
+   "Valle de San Antonio de las Minas",
+   "Valle de San Vicente",
+   "Valle de Santo Tomas",
+   "Valle de la Grulla"
+  ],
+  "Baja California Sur": [
+   "Los Cabos"
+  ],
+  "Chihuahua": [
+   "Cuauhtemoc",
+   "Delicias"
+  ],
+  "Coahuila": [
+   "Saltillo",
+   "Valle de Parras"
+  ],
+  "Durango": [
+   "El Mezquital"
+  ],
+  "Guanajuato": [
+   "Dolores Hidalgo",
+   "San Miguel de Allende",
+   "Valle de la Independencia"
+  ],
+  "Queretaro": [
+   "Ezequiel Montes",
+   "San Juan del Rio",
+   "Tequisquiapan"
+  ],
+  "Sonora": [
+   "Caborca",
+   "Hermosillo"
+  ],
+  "Zacatecas": [
+   "Ojo Caliente",
+   "Valparaiso"
+  ]
+ },
+ "Brazil": {
+  "Campanha Gaúcha": [
+   "Bagé",
+   "Campanha Central",
+   "Campanha Meridional",
+   "Campanha Sudoeste",
+   "Dom Pedrito",
+   "Quaraí",
+   "Santana do Livramento",
+   "Uruguaiana"
+  ],
+  "Campos de Cima da Serra": [
+   "Bom Jesus",
+   "Vacaria"
+  ],
+  "Espírito Santo": [
+   "Domingos Martins",
+   "Santa Teresa"
+  ],
+  "Minas Gerais": [
+   "Maria da Fé",
+   "Sul de Minas",
+   "Três Corações"
+  ],
+  "Planalto Catarinense": [
+   "Tangará",
+   "Videira"
+  ],
+  "Planalto Paulista": [
+   "Indaiatuba",
+   "Jundiaí",
+   "São Roque"
+  ],
+  "Serra Catarinense": [
+   "Campos Novos",
+   "Caçador",
+   "São Joaquim"
+  ],
+  "Serra Gaúcha": [
+   "Bento Gonçalves",
+   "Caxias do Sul",
+   "Farroupilha",
+   "Garibaldi",
+   "Monte Belo do Sul",
+   "Pinto Bandeira",
+   "Vale dos Vinhedos"
+  ],
+  "Serra do Sudeste": [
+   "Bagé",
+   "Candiota",
+   "Encruzilhada do Sul"
+  ],
+  "Vale do São Francisco": [
+   "Casa Nova",
+   "Curaçá",
+   "Lagoa Grande",
+   "Santa Maria da Boa Vista"
+  ]
+ },
+ "Uruguay": {
+  "Canelones": [
+   "Canelón Chico",
+   "El Colorado",
+   "Juanico",
+   "Las Piedras",
+   "Migues",
+   "Progreso",
+   "Toledo"
+  ],
+  "Colonia": [
+   "Carmelo",
+   "Juan Lacaze",
+   "Nueva Helvecia"
+  ],
+  "Florida": [
+   "Florida City"
+  ],
+  "Maldonado": [
+   "Garzón",
+   "José Ignacio",
+   "Pan de Azúcar"
+  ],
+  "Montevideo": [
+   "Montevideo City"
+  ],
+  "Paysandú": [
+   "Paysandú City"
+  ],
+  "Rivera": [
+   "Cerro Chapéu"
+  ],
+  "San José": [
+   "Ecilda Paullier",
+   "Libertad"
+  ],
+  "Soriano": [
+   "Cardona",
+   "Mercedes"
+  ]
+ },
+ "Switzerland": {
+  "Geneva": [
+   "Entre Arve et Lac",
+   "Entre Arve et Rhône",
+   "Mandement"
+  ],
+  "German Switzerland (Deutschschweiz)": [
+   "Aargau",
+   "Basel",
+   "Graubünden (Grisons)",
+   "Luzern",
+   "Schaffhausen",
+   "St. Gallen",
+   "Thurgau",
+   "Zürich"
+  ],
+  "Neuchâtel": [
+   "Auvernier",
+   "Bevaix",
+   "Boudry",
+   "Cortaillod",
+   "Cressier",
+   "Hauterive",
+   "Le Landeron",
+   "Neuchâtel"
+  ],
+  "Three Lakes (Lac de Bienne / Lac de Morat / Lac de Neuchâtel)": [
+   "Ligerz",
+   "Murten",
+   "Schafis",
+   "Twann",
+   "Vully"
+  ],
+  "Ticino": [
+   "Bellinzona",
+   "Locarno",
+   "Lugano",
+   "Malcantone",
+   "Mendrisio",
+   "Sopraceneri",
+   "Sottoceneri"
+  ],
+  "Valais": [
+   "Chamoson",
+   "Conthey",
+   "Fully",
+   "Leytron",
+   "Loèche",
+   "Martigny",
+   "Salquenen",
+   "Sierre",
+   "Sion",
+   "Visperterminen",
+   "Vétroz"
+  ],
+  "Vaud": [
+   "Bonvillars",
+   "Chablais",
+   "Côtes de l'Orbe",
+   "La Côte",
+   "Lavaux",
+   "Vully"
+  ]
+ },
+ "Bulgaria": {
+  "Eastern Bulgaria": [
+   "Anchialos",
+   "Black Sea Region",
+   "Burgas",
+   "Khan Krum",
+   "Pomorie",
+   "Preslav",
+   "Shumen",
+   "Varna"
+  ],
+  "Northern Bulgaria": [
+   "Danube Plain",
+   "Gabrovo",
+   "Lovech",
+   "Lyaskovets",
+   "Pavlikeni",
+   "Pleven",
+   "Razgrad",
+   "Ruse",
+   "Shumen",
+   "Svishtov",
+   "Targovishte",
+   "Veliko Tarnovo",
+   "Vidin",
+   "Vratsa"
+  ],
+  "Southern Bulgaria": [
+   "Asenovgrad",
+   "Brestovitsa",
+   "Haskovo",
+   "Oryahovitsa",
+   "Plovdiv",
+   "Stambolovo",
+   "Stara Zagora",
+   "Thracian Valley",
+   "Yambol"
+  ],
+  "Southwestern Bulgaria": [
+   "Damianitza",
+   "Harmanli",
+   "Melnik",
+   "Petrich",
+   "Sandanski",
+   "Struma Valley"
+  ],
+  "Sub-Balkan Region": [
+   "Karlovo",
+   "Kazanlak",
+   "Rose Valley",
+   "Sliven",
+   "Sungurlare",
+   "Tvarditsa"
+  ]
+ },
+ "Romania": {
+  "Banat": [
+   "Moldova Noua",
+   "Recas",
+   "Tirol-Silagiu"
+  ],
+  "Crisana & Maramures": [
+   "Diosig",
+   "Miniș-Măderat",
+   "Silvaniei"
+  ],
+  "Danube Terraces": [
+   "Greaca",
+   "Oltina",
+   "Zimnicea"
+  ],
+  "Dobrogea": [
+   "Babadag",
+   "Murfatlar",
+   "Sarica-Niculitel"
+  ],
+  "Moldova": [
+   "Cotesti",
+   "Cotnari",
+   "Dealurile Moldovei",
+   "Husi",
+   "Iasi",
+   "Nicoresti",
+   "Odobesti",
+   "Panciu",
+   "Zeletin"
+  ],
+  "Muntenia & Oltenia Hills": [
+   "Dealu Mare",
+   "Dragasani",
+   "Pietroasa",
+   "Samburesti",
+   "Segarcea",
+   "Stefanesti-Arges",
+   "Urlati"
+  ],
+  "Transylvania": [
+   "Aiud",
+   "Alba Iulia",
+   "Lechinta",
+   "Sebes-Apold",
+   "Târnave"
+  ]
+ },
+ "Croatia": {
+  "Croatian Uplands (Hrvatska Gorja / Gorska Hrvatska)": [
+   "Moslavina",
+   "Pokuplje"
+  ],
+  "Dalmatia (Dalmacija)": [
+   "Brač",
+   "Dalmatinska Zagora",
+   "Hvar",
+   "Imotski",
+   "Korčula",
+   "Pelješac",
+   "Sjeverna Dalmacija",
+   "Srednja i Južna Dalmacija",
+   "Vis"
+  ],
+  "Inland Croatia (Kontinentalna Hrvatska)": [
+   "Moslavina",
+   "Oslavonija",
+   "Plešivica",
+   "Podunavlje",
+   "Pokuplje",
+   "Prigorje-Bilogora",
+   "Zagorje-Međimurje"
+  ],
+  "Istria and Kvarner (Istra i Kvarner)": [
+   "Hrvatsko Primorje",
+   "Istra",
+   "Kvarnerski otoci (Krk, Cres, Lošinj, Rab)"
+  ]
+ },
+ "Slovenia": {
+  "Podravje": [
+   "Prekmurje",
+   "Štajerska Slovenija (Slovenian Styria)"
+  ],
+  "Posavje": [
+   "Bela krajina",
+   "Bizeljsko-Sremič",
+   "Dolenjska"
+  ],
+  "Primorska": [
+   "Goriška Brda",
+   "Kras (Karst)",
+   "Slovenska Istra (Slovenian Istria)",
+   "Vipavska dolina (Vipava Valley)"
+  ]
+ },
+ "Georgia": {
+  "Abkhazia": [
+   "Lykhny",
+   "Psou"
+  ],
+  "Adjara": [],
+  "Guria": [
+   "Bakhvi",
+   "Nakerala"
+  ],
+  "Imereti": [
+   "Dimi",
+   "Imereti",
+   "Khvanchkara",
+   "Sviri",
+   "Terjola",
+   "Zestaponi"
+  ],
+  "Kakheti": [
+   "Akhasheni",
+   "Alazani Valley",
+   "Gurjaani",
+   "Kakheti",
+   "Kardenakhi",
+   "Kindzmarauli",
+   "Kotekhi",
+   "Kvareli",
+   "Manavi",
+   "Mukuzani",
+   "Napareuli",
+   "Teliani",
+   "Tibaani",
+   "Tsinandali",
+   "Vazisubani"
+  ],
+  "Kartli": [
+   "Ateni",
+   "Chinuri",
+   "Goripletni",
+   "Kharistvala",
+   "Mejvriskhevi",
+   "Shindisi",
+   "Sviri"
+  ],
+  "Mtskheta-Mtianeti": [
+   "Khar­iskvala",
+   "Magharoskari"
+  ],
+  "Racha-Lechkhumi": [
+   "Khvanchkara",
+   "Tetra",
+   "Tvishi",
+   "Usakhelouri"
+  ],
+  "Samegrelo": [
+   "Ojaleshi"
+  ]
+ },
+ "Moldova": {
+  "Codru": [
+   "Balti",
+   "Calarasi",
+   "Criuleni",
+   "Hincesti",
+   "Ialoveni",
+   "Nisporeni",
+   "Orhei",
+   "Soldanesti",
+   "Straseni",
+   "Telenesti",
+   "Ungheni"
+  ],
+  "Stefan Voda": [
+   "Causeni",
+   "Cioburciu",
+   "Olанesti",
+   "Purcari",
+   "Slobozia",
+   "Stefan Voda"
+  ],
+  "Valul lui Traian": [
+   "Cahul",
+   "Cantemir",
+   "Ceadir-Lunga",
+   "Cimislia",
+   "Comrat",
+   "Leova",
+   "Taraclia"
+  ]
+ },
+ "Israel": {
+  "Galilee": [
+   "Golan Heights",
+   "Lower Galilee",
+   "Upper Galilee"
+  ],
+  "Judean Hills": [
+   "Bethlehem Hills",
+   "Hebron Hills",
+   "Jerusalem Hills"
+  ],
+  "Negev": [
+   "Eilat Region",
+   "Ramat Arad",
+   "Ramat Negev"
+  ],
+  "Samson (Darom)": [
+   "Judean Foothills (Shfelat Yehuda)",
+   "Judean Plains"
+  ],
+  "Shomron (Samaria)": [
+   "Carmel Coast",
+   "Mount Carmel",
+   "Shimshon (Samson)"
+  ]
+ },
+ "Lebanon": {
+  "Bekaa Valley": [
+   "Ammiq",
+   "Chtaura",
+   "Deir el Ahmar",
+   "Kefraya",
+   "Taalabaya",
+   "West Bekaa",
+   "Zahle"
+  ],
+  "Mount Lebanon": [
+   "Aley",
+   "Batroun",
+   "Byblos (Jbeil)",
+   "Chouf",
+   "Kfardebian",
+   "Metn",
+   "Qartaba"
+  ],
+  "North Lebanon": [
+   "Akkar",
+   "Batroun",
+   "Koura",
+   "Zgharta"
+  ],
+  "South Lebanon": [
+   "Jezzine",
+   "Sidon (Saida)"
+  ]
+ },
+ "China": {
+  "Beijing-Tianjin": [
+   "Fangshan",
+   "Miyun",
+   "Yanqing"
+  ],
+  "Gansu": [
+   "Dunhuang",
+   "Jiayuguan",
+   "Wuwei",
+   "Zhangye"
+  ],
+  "Hebei": [
+   "Changli",
+   "Huailai",
+   "Shacheng",
+   "Zhangjiakou"
+  ],
+  "Inner Mongolia": [
+   "Ordos",
+   "Wuhai"
+  ],
+  "Jilin": [
+   "Ji'an",
+   "Longjing",
+   "Tonghua"
+  ],
+  "Ningxia": [
+   "Helan Mountain East",
+   "Hongsipu",
+   "Qingtongxia",
+   "Shizuishan",
+   "Yinchuan"
+  ],
+  "Shandong": [
+   "Linyi",
+   "Penglai",
+   "Qingdao",
+   "Yantai"
+  ],
+  "Shanxi": [
+   "Linfen",
+   "Qinshui",
+   "Yuncheng"
+  ],
+  "Sichuan": [
+   "Aba",
+   "Liangshan",
+   "Panzhihua"
+  ],
+  "Xinjiang": [
+   "Ili River Valley",
+   "Manasi",
+   "Shihezi",
+   "Turpan Basin",
+   "Yanqi Basin"
+  ],
+  "Yunnan": [
+   "Hong He (Red River Valley)",
+   "Mile-弥勒 (Mile Plateau)",
+   "Shangri-La (Deqin)"
+  ]
+ },
+ "Japan": {
+  "Chubu": [
+   "Aichi",
+   "Gifu",
+   "Shizuoka"
+  ],
+  "Chugoku & Shikoku": [
+   "Ehime",
+   "Hiroshima",
+   "Kochi",
+   "Okayama",
+   "Tottori"
+  ],
+  "Hokkaido": [
+   "Furano",
+   "Hokkaido GI",
+   "Ikeda",
+   "Sorachi",
+   "Tokachi",
+   "Yoichi",
+   "余市 (Yoichi GI)"
+  ],
+  "Kansai": [
+   "Hyogo",
+   "Kyoto",
+   "Nara",
+   "Osaka",
+   "Wakayama"
+  ],
+  "Kanto": [
+   "Ibaraki",
+   "Musashino",
+   "Tochigi"
+  ],
+  "Kyushu": [
+   "Fukuoka",
+   "Kagoshima",
+   "Kumamoto",
+   "Miyazaki",
+   "Nagasaki"
+  ],
+  "Nagano": [
+   "Chikuma River Valley",
+   "Hotaka",
+   "Kirigamine Plateau",
+   "Nagano GI",
+   "Obuse",
+   "Shinshu",
+   "Shiojiri"
+  ],
+  "Tohoku": [
+   "Akita",
+   "Aomori",
+   "Fukushima",
+   "Iwate",
+   "Miyagi",
+   "Yamagata"
+  ],
+  "Yamanashi": [
+   "Katsunuma",
+   "Koshu",
+   "Makioka",
+   "Nirasaki",
+   "Yamanashi GI",
+   "Yamanashi Misaka"
+  ]
+ },
+ "England": {
+  "East Anglia": [
+   "Cambridgeshire",
+   "Essex",
+   "Norfolk",
+   "Suffolk"
+  ],
+  "East Midlands": [
+   "Derbyshire",
+   "Leicestershire",
+   "Lincolnshire",
+   "Northamptonshire",
+   "Nottinghamshire"
+  ],
+  "Kent": [
+   "North Downs",
+   "South Downs (Kent)",
+   "Weald of Kent"
+  ],
+  "Lancashire, Yorkshire & North West England": [
+   "Lancashire",
+   "Yorkshire"
+  ],
+  "Mercia": [
+   "Cheshire",
+   "Herefordshire",
+   "Shropshire",
+   "Staffordshire",
+   "Warwickshire",
+   "West Midlands",
+   "Worcestershire"
+  ],
+  "South East England": [
+   "Berkshire",
+   "East Sussex",
+   "Hampshire",
+   "Oxfordshire",
+   "Surrey",
+   "West Sussex"
+  ],
+  "South West England & Wales": [
+   "Cornwall",
+   "Devon",
+   "Dorset",
+   "Gloucestershire",
+   "Somerset",
+   "Wiltshire"
+  ],
+  "Thames & Chilterns": [
+   "Bedfordshire",
+   "Buckinghamshire",
+   "Hertfordshire"
+  ],
+  "Wessex": [
+   "Dorset",
+   "Hampshire",
+   "Isle of Wight",
+   "Wiltshire"
+  ]
+ },
+ "United Kingdom": {
+  "England": [
+   "East Anglia",
+   "East Midlands",
+   "Essex",
+   "Hampshire",
+   "Kent",
+   "Lincolnshire",
+   "Mercia",
+   "North and West England",
+   "Oxfordshire",
+   "Southeast",
+   "Sussex",
+   "Thames and Chiltern",
+   "Wessex",
+   "West Midlands",
+   "Yorkshire"
+  ],
+  "Wales": [
+   "Anglesey",
+   "Glamorgan",
+   "Gower Peninsula",
+   "Monmouthshire",
+   "Pembrokeshire"
+  ]
+ },
+ "Czech Republic": {
+  "Bohemia": [
+   "Ceske Budejovice",
+   "Hradec Kralove",
+   "Kutna Hora",
+   "Litomerice",
+   "Melnik",
+   "Most",
+   "Usti nad Labem",
+   "Znojmo (Bohemian)"
+  ],
+  "Moravia": [
+   "Blatnice",
+   "Dolni Kounice",
+   "Kyjov",
+   "Mikulov",
+   "Mutenic",
+   "Podluzi",
+   "Slovacka",
+   "Strazonice",
+   "Velke Pavlovice",
+   "Vrbovec",
+   "Znojmo"
+  ]
+ },
+ "Slovakia": {
+  "Central Slovakia": [
+   "Dudince",
+   "Krupina",
+   "Vráble",
+   "Zeleneč"
+  ],
+  "Eastern Slovakia": [
+   "Košice",
+   "Michalovce",
+   "Moldava nad Bodvou",
+   "Tokaj"
+  ],
+  "Little Carpathian": [
+   "Bratislava",
+   "Cajla",
+   "Cervenà Voda",
+   "Modra",
+   "Pezinok",
+   "Senec",
+   "Skalica",
+   "Sv. Jur"
+  ],
+  "Nitra": [
+   "Nitra",
+   "Topoľčianky",
+   "Vráble",
+   "Zlaté Moravce",
+   "Šintava"
+  ],
+  "Southern Slovakia": [
+   "Hurbanovo",
+   "Nitra",
+   "Nové Zámky",
+   "Strekov",
+   "Štúrovo"
+  ]
+ },
+ "Serbia": {
+  "Danube Region": [
+   "Mlava-Pek",
+   "Smederevo",
+   "Velika Morava"
+  ],
+  "Kosovo": [
+   "Kosovo Polje",
+   "Metohija"
+  ],
+  "Southern and Eastern Serbia": [
+   "Negotinska Krajina",
+   "Nisava-Juzna Morava",
+   "Pcinja-Pusta Reka",
+   "Timok"
+  ],
+  "Sumadija and Western Serbia": [
+   "Sumadija",
+   "Zapadna Morava",
+   "Zlatibor"
+  ],
+  "Vojvodina": [
+   "Banat",
+   "Srem",
+   "Subotica-Horgos"
+  ]
+ },
+ "Turkey": {
+  "Aegean": [
+   "Bozcaada (Tenedos)",
+   "Denizli",
+   "Izmir",
+   "Manisa",
+   "Mugla",
+   "Urla",
+   "Usak"
+  ],
+  "Black Sea": [
+   "Kastamonu",
+   "Samsun",
+   "Sinop",
+   "Tokat"
+  ],
+  "Central Anatolia": [
+   "Ankara",
+   "Cappadocia (Nevsehir)",
+   "Kirsehir",
+   "Konya",
+   "Nigde",
+   "Tuz Golu"
+  ],
+  "Eastern Anatolia": [
+   "Adiyaman",
+   "Diyarbakir",
+   "Elazig",
+   "Gaziantep",
+   "Malatya"
+  ],
+  "Mediterranean": [
+   "Antalya",
+   "Burdur",
+   "Hatay",
+   "Isparta",
+   "Mersin"
+  ],
+  "Southeastern Anatolia": [
+   "Gaziantep",
+   "Mardin",
+   "Sanliurfa",
+   "Siirt"
+  ],
+  "Thrace & Marmara": [
+   "Canakkale",
+   "Gallipoli Peninsula",
+   "Kirklareli",
+   "Tekirdag",
+   "Uludag"
+  ]
+ },
+ "Armenia": {
+  "Aragatsotn": [
+   "Aparan",
+   "Oshakan",
+   "Talin"
+  ],
+  "Araratian Plain": [
+   "Ararat Valley",
+   "Vedi",
+   "Yeraskh"
+  ],
+  "Gegharkunik": [
+   "Martuni",
+   "Vardenis"
+  ],
+  "Kotayk": [
+   "Abovyan",
+   "Hrazdan"
+  ],
+  "Syunik": [
+   "Goris",
+   "Kapan",
+   "Meghri"
+  ],
+  "Tavush": [
+   "Dilijan",
+   "Ijevan"
+  ],
+  "Vayots Dzor": [
+   "Aghavnavank",
+   "Areni",
+   "Getap",
+   "Gndevank",
+   "Malishka"
+  ]
+ },
+ "North Macedonia": {
+  "Pcinja-Osogovo": [
+   "Kratovo",
+   "Kumanovo",
+   "Strumica-Radovis"
+  ],
+  "Pelagonija-Polog": [
+   "Bitola",
+   "Prilep",
+   "Tetovo"
+  ],
+  "Skopje": [
+   "Skopje Wine Region"
+  ],
+  "Vardar Valley": [
+   "Demir Kapija",
+   "Gevgelija-Valandovo",
+   "Kavadarci",
+   "Negotino",
+   "Tikves",
+   "Veles"
+  ]
+ },
+ "Montenegro": {
+  "Central Region (Centralna Crna Gora)": [
+   "Bjelopavlici",
+   "Podgorica",
+   "Zeta Valley"
+  ],
+  "Coastal Region (Primorje)": [
+   "Bar",
+   "Budva Riviera",
+   "Ulcinj"
+  ],
+  "Lake Skadar Region (Skadarsko Jezero)": [
+   "Crmnica",
+   "Rijeka Crnojevica",
+   "Virpazar"
+  ],
+  "Northern Region (Sjeverna Crna Gora)": [
+   "Andrijevica",
+   "Berane",
+   "Plav"
+  ]
+ },
+ "Cyprus": {
+  "Larnaka": [
+   "Gennadi",
+   "Pitsilia"
+  ],
+  "Lefkosia (Nicosia)": [
+   "Macheras",
+   "Pitsilia"
+  ],
+  "Limassol": [
+   "Afames",
+   "Commandaria",
+   "Krasochoria Lemesou",
+   "Laona-Akamas"
+  ],
+  "Paphos": [
+   "Laona-Akamas",
+   "Vouni Panagias-Ampelitis"
+  ]
+ },
+ "Luxembourg": {
+  "Moselle Luxembourgeoise": [
+   "Ahn",
+   "Bech-Kleinmacher",
+   "Elvange",
+   "Grevenmacher",
+   "Lenningen",
+   "Machtum",
+   "Mertert",
+   "Remerschen",
+   "Remich",
+   "Schengen",
+   "Schwebsange",
+   "Stadtbredimus",
+   "Wasserbillig",
+   "Wellenstein",
+   "Wintrange",
+   "Wormeldange"
+  ]
+ },
+ "Ukraine": {
+  "Crimea": [
+   "Alushta",
+   "Bakhchysarai",
+   "Balaklava",
+   "Inkerman",
+   "Kerch",
+   "Koktebel",
+   "Massandra",
+   "Novyi Svet",
+   "Sevastopol",
+   "Sudak",
+   "Yalta"
+  ],
+  "Kharkiv": [
+   "Dvorichna"
+  ],
+  "Kherson": [
+   "Kakhovka",
+   "Nova Kakhovka",
+   "Oleshky Sands"
+  ],
+  "Mykolaiv": [
+   "Berezanka",
+   "Ochakiv",
+   "Southern Bug Valley"
+  ],
+  "Odessa": [
+   "Bessarabia",
+   "Bilhorod-Dnistrovskyi",
+   "Koblevo",
+   "Shabo",
+   "Tiraspol",
+   "Zatoka"
+  ],
+  "Zakarpattia": [
+   "Berehove",
+   "Mukachevo",
+   "Uzhhorod",
+   "Vynohradiv"
+  ],
+  "Zaporizhzhia": [
+   "Velyka Bilozerka"
+  ]
+ },
+ "Russia": {
+  "Chechen Republic": [
+   "Grozny"
+  ],
+  "Crimea": [
+   "Bakhchysarai",
+   "Inkerman",
+   "Koktebel",
+   "Massandra",
+   "Sevastopol",
+   "Sudak",
+   "Yalta"
+  ],
+  "Kabardino-Balkaria": [
+   "Baksan Valley",
+   "Nalchik"
+  ],
+  "Krasnodar Krai": [
+   "Abrau-Dyurso",
+   "Anapa",
+   "Gelendzhik",
+   "Krymsk",
+   "Novorossiysk",
+   "Sochi",
+   "Taman Peninsula"
+  ],
+  "Republic of Dagestan": [
+   "Derbent",
+   "Kaspiysk",
+   "Makhachkala"
+  ],
+  "Republic of Ingushetia": [
+   "Sunzha Valley"
+  ],
+  "Rostov-on-Don": [
+   "Aksai",
+   "Don Valley",
+   "Tsimlyansk"
+  ],
+  "Saratov Oblast": [
+   "Saratov"
+  ],
+  "Stavropol Krai": [
+   "Mineralnye Vody",
+   "Pyatigorsk",
+   "Stavropol"
+  ],
+  "Volgograd Oblast": [
+   "Volgograd"
+  ]
+ },
+ "Peru": {
+  "Arequipa": [
+   "Majes Valley",
+   "Siguas Valley",
+   "Vitor Valley"
+  ],
+  "Ayacucho": [
+   "Huanta",
+   "La Mar"
+  ],
+  "Cusco": [
+   "Anta",
+   "Urubamba Valley"
+  ],
+  "Ica": [
+   "Chincha",
+   "Ica Valley",
+   "Nazca",
+   "Pisco"
+  ],
+  "Lima": [
+   "Cañete Valley",
+   "Chilca",
+   "Lunahuaná",
+   "Mala Valley"
+  ],
+  "Moquegua": [
+   "Moquegua Valley"
+  ],
+  "Tacna": [
+   "Caplina Valley",
+   "Locumba Valley",
+   "Sama Valley"
+  ]
+ },
+ "Bolivia": {
+  "Chuquisaca": [
+   "Camargo",
+   "Cinti Valley"
+  ],
+  "Cochabamba": [
+   "Valle Alto"
+  ],
+  "La Paz": [
+   "Coroico"
+  ],
+  "Potosi": [
+   "Cotagaita"
+  ],
+  "Tarija": [
+   "Padcaya",
+   "Valle Central de Tarija",
+   "Valle de Concepcion",
+   "Valle de Salinas",
+   "Valle de Tolomosa"
+  ]
+ },
+ "India": {
+  "Andhra Pradesh": [
+   "Anantapur",
+   "Chittoor"
+  ],
+  "Goa": [
+   "North Goa",
+   "South Goa"
+  ],
+  "Himachal Pradesh": [
+   "Kullu Valley",
+   "Shimla Hills"
+  ],
+  "Jammu & Kashmir": [
+   "Kashmir Valley"
+  ],
+  "Karnataka": [
+   "Bangalore Hills",
+   "Bijapur",
+   "Hampi Hills",
+   "Nandi Hills"
+  ],
+  "Maharashtra": [
+   "Ahmednagar",
+   "Nashik",
+   "Pune",
+   "Sangli",
+   "Satara",
+   "Solapur"
+  ],
+  "Tamil Nadu": [
+   "Dindigul",
+   "Kodaikanal"
+  ],
+  "Telangana": [
+   "Hyderabad",
+   "Rangareddy"
+  ]
+ }
+}

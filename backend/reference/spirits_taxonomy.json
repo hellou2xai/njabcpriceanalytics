@@ -1,0 +1,542 @@
+{
+ "Absinthe": {
+  "styles": [
+   "Blanche / La Bleue (Clear Absinthe)",
+   "Bohemian / Czech Style",
+   "Pastis (Absinthe-Adjacent Anise Spirit)",
+   "Pontarlier Style",
+   "Val-de-Travers Style",
+   "Verte (Green Absinthe)"
+  ],
+  "regions": [
+   "Alsace, France",
+   "Czech Republic",
+   "Pontarlier, France",
+   "Spain",
+   "United States",
+   "Val-de-Travers, Switzerland"
+  ],
+  "base": [
+   "Florence Fennel",
+   "Grande Wormwood (Artemisia absinthium)",
+   "Green Anise",
+   "Hyssop",
+   "Lemon Balm",
+   "Neutral Grain Spirit",
+   "Neutral Grape Spirit",
+   "Petite Wormwood (Artemisia pontica)"
+  ]
+ },
+ "Aperitif / Vermouth / Aromatized Wine": {
+  "styles": [
+   "Americano Aperitif",
+   "Aperol-Style Aperitif",
+   "Bianco / Blanc Vermouth",
+   "Campari-Style Bitter Aperitif",
+   "Cocchi Americano",
+   "Dry Vermouth (French Style)",
+   "Extra Dry Vermouth",
+   "Lillet Blanc / Rosé / Rouge",
+   "Quinquina / Kina",
+   "Rosé Vermouth",
+   "Suze (Gentian Aperitif)",
+   "Sweet Vermouth (Italian Style)"
+  ],
+  "regions": [
+   "Bordeaux, France (Lillet)",
+   "Catalonia, Spain",
+   "Chambéry, France",
+   "Piedmont, Italy (Torino / Turin)",
+   "Provence, France",
+   "United States",
+   "Veneto, Italy"
+  ],
+  "base": [
+   "Botanicals (Wormwood, Gentian, Cinchona Bark)",
+   "Herbs, Spices, Roots, Citrus Peel",
+   "Neutral Grain Spirit",
+   "Wine (Fortified with Neutral Spirit)"
+  ]
+ },
+ "Aquavit / Akvavit": {
+  "styles": [
+   "Barrel-Aged Aquavit",
+   "Caraway-Forward Aquavit",
+   "Danish Aquavit",
+   "Dill-Forward Aquavit",
+   "Norwegian Aquavit",
+   "Norwegian Linie Aquavit (Barrel-Aged, Equator-Crossed)",
+   "Swedish Aquavit",
+   "Unaged Aquavit"
+  ],
+  "regions": [
+   "Denmark",
+   "Finland",
+   "Iceland",
+   "Norway",
+   "Sweden",
+   "United States (Craft)"
+  ],
+  "base": [
+   "Anise",
+   "Caraway Seed (mandatory)",
+   "Citrus Peel",
+   "Dill",
+   "Fennel",
+   "Grain (Barley, Wheat, Rye)",
+   "Potato"
+  ]
+ },
+ "Baijiu": {
+  "styles": [
+   "Chi Aroma (Layered / Phoenix Aroma)",
+   "Fuyu Aroma",
+   "Light Aroma (Qing Xiang)",
+   "Mixed Aroma (Jian Xiang)",
+   "Rice Aroma (Mi Xiang)",
+   "Sauce Aroma / Soy Aroma (Jiang Xiang)",
+   "Sesame Aroma (Zhi Ma Xiang)",
+   "Special Aroma (Te Xiang)",
+   "Strong Aroma (Nong Xiang)"
+  ],
+  "regions": [
+   "Fujian Province",
+   "Guangxi Province (Rice Aroma – Guilin)",
+   "Guizhou Province (Sauce Aroma – Maotai, Renhuai)",
+   "Heilongjiang Province",
+   "Shaanxi Province (Phoenix Aroma)",
+   "Shanxi Province (Light Aroma – Fenyang)",
+   "Sichuan Province (Strong Aroma – Luzhou, Yibin)"
+  ],
+  "base": [
+   "Barley",
+   "Corn (Maize)",
+   "Glutinous Rice",
+   "Mixed Grains (Wu Liang – Five Grains)",
+   "Qu (Fermentation Starter / Koji)",
+   "Rice",
+   "Sorghum (Kaoliang)",
+   "Wheat"
+  ]
+ },
+ "Brandy": {
+  "styles": [
+   "American Brandy",
+   "Armagnac Blanche",
+   "Armagnac Millésimé (Vintage)",
+   "Armagnac VS",
+   "Armagnac VSOP",
+   "Armagnac XO",
+   "Calvados",
+   "Calvados Domfrontais",
+   "Calvados Pays d'Auge",
+   "Cognac Hors d'Age",
+   "Cognac VS",
+   "Cognac VSOP",
+   "Cognac XO",
+   "Fruit Brandy (Eau-de-Vie)",
+   "Grape Brandy",
+   "Pisco Acholado",
+   "Pisco Mosto Verde",
+   "Pisco Puro",
+   "Pomace Brandy (Marc)"
+  ],
+  "regions": [
+   "Alsace (Eau-de-Vie)",
+   "Bas-Armagnac",
+   "Black Forest, Germany (Schnapps / Obstler)",
+   "Bois Ordinaires",
+   "Bons Bois",
+   "Borderies",
+   "California (San Joaquin Valley)",
+   "Domfrontais (Calvados)",
+   "Elqui Valley, Chile",
+   "Fins Bois",
+   "Grande Champagne",
+   "Haut-Armagnac",
+   "Ica Valley, Peru",
+   "Limari Valley, Chile",
+   "Lolol Valley, Chile",
+   "Pays d'Auge (Calvados)",
+   "Petite Champagne",
+   "Ténarèze"
+  ],
+  "base": [
+   "Apple",
+   "Cherry (Kirsch)",
+   "Colombard Grape",
+   "Folle Blanche Grape",
+   "Italia Grape (Pisco)",
+   "Mixed Fruit / Pomace",
+   "Muscat Grape (Pisco)",
+   "Pear",
+   "Plum (Slivovitz)",
+   "Quebranta Grape (Pisco)",
+   "Raspberry (Framboise)",
+   "Ugni Blanc Grape",
+   "Williams Pear (Poire Williams)"
+  ]
+ },
+ "Cachaça": {
+  "styles": [
+   "Artisanal Alembic Cachaça",
+   "Cachaça Amarela (Rested in neutral wood)",
+   "Cachaça Branca (Unaged / Silver)",
+   "Cachaça Envelhecida (Aged)",
+   "Cachaça Premium",
+   "Industrial Cachaça"
+  ],
+  "regions": [
+   "Bahia",
+   "Ceará",
+   "Minas Gerais",
+   "Pernambuco",
+   "Rio Grande do Norte",
+   "Rio de Janeiro",
+   "São Paulo"
+  ],
+  "base": [
+   "Fresh Sugarcane Juice (Garapa)"
+  ]
+ },
+ "Gin": {
+  "styles": [
+   "Barrel-Aged Gin",
+   "Compound Gin",
+   "Contemporary / New Western Gin",
+   "Distilled Gin",
+   "Flavored Gin",
+   "Genever (Jenever)",
+   "London Dry Gin",
+   "Navy Strength Gin",
+   "Old Tom Gin",
+   "Plymouth Gin",
+   "Sloe Gin"
+  ],
+  "regions": [
+   "Australia",
+   "Belgium",
+   "England (London, Plymouth)",
+   "Germany",
+   "Ireland",
+   "Japan",
+   "Netherlands (Holland)",
+   "Scotland",
+   "Spain (Menorca, Barcelona)",
+   "United States"
+  ],
+  "base": [
+   "Additional Botanicals",
+   "Angelica Root",
+   "Citrus Peel",
+   "Coriander Seed",
+   "Juniper Berries (mandatory botanical)",
+   "Malted Barley (Genever)",
+   "Neutral Grain Spirit (Wheat, Rye, Corn, Barley)",
+   "Neutral Grape Spirit"
+  ]
+ },
+ "Grappa": {
+  "styles": [
+   "Grappa Affinata (Rested in Wood)",
+   "Grappa Aromatica (Aromatic Grape Varieties)",
+   "Grappa Giovane (Unaged)",
+   "Grappa Invecchiata (Aged)",
+   "Grappa Riserva / Stravecchia (Extended Aged)",
+   "Grappa di Amarone",
+   "Grappa di Barolo",
+   "Grappa di Brunello",
+   "Grappa di Monovitigno (Single Varietal)",
+   "Grappa di Prosecco"
+  ],
+  "regions": [
+   "Friuli-Venezia Giulia",
+   "Lombardy",
+   "Piedmont",
+   "Trentino-Alto Adige",
+   "Tuscany",
+   "Veneto"
+  ],
+  "base": [
+   "Corvina Pomace (Amarone)",
+   "Glera Pomace (Prosecco)",
+   "Grape Pomace (Vinaccia – skins, seeds, stems after pressing)",
+   "Moscato Pomace",
+   "Nebbiolo Pomace (Barolo, Barbaresco)",
+   "Sangiovese Pomace"
+  ]
+ },
+ "Liqueur / Cordial": {
+  "styles": [
+   "Amaretto",
+   "Amaro",
+   "Anise Liqueur",
+   "Baileys-Style Irish Cream",
+   "Bénédictine",
+   "Chartreuse",
+   "Chocolate Liqueur",
+   "Citrus Liqueur (Triple Sec, Curaçao, Cointreau)",
+   "Coffee Liqueur",
+   "Cream Liqueur",
+   "Drambuie",
+   "Elderflower Liqueur",
+   "Fernet",
+   "Flower Liqueur",
+   "Fruit Liqueur",
+   "Herbal / Botanical Liqueur",
+   "Maraschino",
+   "Nut Liqueur"
+  ],
+  "regions": [
+   "Caribbean",
+   "France",
+   "Germany",
+   "Ireland",
+   "Italy",
+   "Mexico (Coffee Liqueurs)",
+   "Netherlands (Curaçao)",
+   "Scotland",
+   "United States"
+  ],
+  "base": [
+   "Brandy",
+   "Cacao",
+   "Coffee",
+   "Cream",
+   "Fruit Juice / Puree",
+   "Herbs and Botanicals",
+   "Neutral Grain Spirit",
+   "Nuts (Almonds, Hazelnuts)",
+   "Rum",
+   "Whisky / Whiskey"
+  ]
+ },
+ "Mezcal": {
+  "styles": [
+   "Ancestral",
+   "Artesanal",
+   "Añejo",
+   "Ensamble (Multi-agave blend)",
+   "Industrial",
+   "Joven",
+   "Reposado",
+   "Single Village (De Pueblo)"
+  ],
+  "regions": [
+   "Durango",
+   "Guanajuato",
+   "Guerrero",
+   "Michoacán",
+   "Oaxaca",
+   "Puebla",
+   "San Luis Potosí",
+   "Tamaulipas",
+   "Zacatecas"
+  ],
+  "base": [
+   "Arroqueño Agave (Agave americana var. oaxacensis)",
+   "Cirial Agave",
+   "Cuishe / Madrecuixe Agave",
+   "Espadín Agave (Agave angustifolia)",
+   "Lumbre Agave",
+   "Mexicano Agave (Agave rhodacantha)",
+   "Multiple / Wild Agave Species",
+   "Tepeztate Agave (Agave marmorata)",
+   "Tobalá Agave (Agave potatorum)",
+   "Tobaziche Agave"
+  ]
+ },
+ "Rum": {
+  "styles": [
+   "Aged Rum (Solera)",
+   "Blended Rum",
+   "Cachaça (see separate entry)",
+   "Dark Rum",
+   "Demerara Rum",
+   "Flavored Rum",
+   "Gold / Amber Rum",
+   "Navy Strength Rum",
+   "Overproof Rum",
+   "Pot Still Rum",
+   "Rhum Agricole (AOC Martinique)",
+   "Rhum Vieux (Aged Agricole)",
+   "Spiced Rum",
+   "White / Silver Rum"
+  ],
+  "regions": [
+   "Australia (Queensland)",
+   "Barbados",
+   "Belize",
+   "Cuba",
+   "Dominican Republic",
+   "Guadeloupe",
+   "Guatemala",
+   "Guyana (Demerara)",
+   "Haiti",
+   "Jamaica",
+   "Martinique (AOC)",
+   "Mauritius",
+   "Nicaragua",
+   "Panama",
+   "Philippines",
+   "Puerto Rico",
+   "Réunion",
+   "Trinidad & Tobago",
+   "Virgin Islands"
+  ],
+  "base": [
+   "Fresh Sugarcane Juice (Vesou)",
+   "Raw Cane Sugar",
+   "Sugarcane Honey (Blackstrap Molasses)",
+   "Sugarcane Molasses",
+   "Sugarcane Syrup (Miel de Caña)"
+  ]
+ },
+ "Soju / Shochu": {
+  "styles": [
+   "Awamori (Okinawan Rice Spirit)",
+   "Diluted Soju (Korean, Modern)",
+   "Honkaku Shochu (Single Distillation)",
+   "Imo-Jochu (Sweet Potato Shochu)",
+   "Kokuto Shochu (Brown Sugar Shochu)",
+   "Kome-Jochu (Rice Shochu)",
+   "Kōrui Shochu (Multiple Distillation)",
+   "Mugi-Jochu (Barley Shochu)",
+   "Soba Shochu (Buckwheat Shochu)",
+   "Traditional Soju (Andong Soju)"
+  ],
+  "regions": [
+   "Andong, North Gyeongsang (Traditional Soju)",
+   "Kagoshima, Japan (Imo Shochu)",
+   "Kumamoto, Japan (Kome Shochu)",
+   "Miyazaki, Japan",
+   "Nagasaki, Japan",
+   "Okinawa, Japan (Awamori)",
+   "South Korea (Nationwide)",
+   "Ōita, Japan (Mugi Shochu)"
+  ],
+  "base": [
+   "Barley (Mugi)",
+   "Black Koji Mold (Awamori / Shochu fermentation)",
+   "Brown Sugar (Kokuto)",
+   "Buckwheat (Soba)",
+   "Corn / Tapioca (Modern Korean Soju)",
+   "Rice (Kome)",
+   "Sweet Potato (Imo)"
+  ]
+ },
+ "Tequila": {
+  "styles": [
+   "100% Agave",
+   "Añejo",
+   "Blanco (Silver)",
+   "Cristalino",
+   "Extra Añejo",
+   "Joven (Gold / Oro)",
+   "Mixto",
+   "Reposado"
+  ],
+  "regions": [
+   "Guanajuato",
+   "Jalisco (Highland / Los Altos)",
+   "Jalisco (Lowland / Valle)",
+   "Michoacán",
+   "Nayarit",
+   "Tamaulipas"
+  ],
+  "base": [
+   "Blue Weber Agave (Agave tequilana)"
+  ]
+ },
+ "Vodka": {
+  "styles": [
+   "Corn Vodka",
+   "Craft / Artisan Vodka",
+   "Flavored Vodka",
+   "Grape Vodka",
+   "Organic Vodka",
+   "Potato Vodka",
+   "Premium / Ultra-Premium Vodka",
+   "Rye Vodka",
+   "Unflavored Vodka",
+   "Wheat Vodka"
+  ],
+  "regions": [
+   "Finland",
+   "France",
+   "Netherlands",
+   "Poland",
+   "Russia",
+   "Sweden",
+   "Ukraine",
+   "United Kingdom",
+   "United States"
+  ],
+  "base": [
+   "Barley",
+   "Corn (Maize)",
+   "Grape",
+   "Molasses",
+   "Potato",
+   "Rye",
+   "Sugarbeet",
+   "Wheat"
+  ]
+ },
+ "Whisky / Whiskey": {
+  "styles": [
+   "American Single Malt",
+   "Australian Whisky",
+   "Bourbon",
+   "Canadian Whisky",
+   "Corn Whiskey",
+   "Indian Whisky",
+   "Irish Blended",
+   "Irish Grain",
+   "Irish Single Malt",
+   "Irish Single Pot Still",
+   "Japanese Blended",
+   "Japanese Blended Malt",
+   "Japanese Grain",
+   "Japanese Single Malt",
+   "Rye Whiskey",
+   "Scotch Blended",
+   "Scotch Blended Grain",
+   "Scotch Blended Malt",
+   "Scotch Single Grain",
+   "Scotch Single Malt",
+   "Taiwanese Whisky",
+   "Tennessee Whiskey",
+   "Wheat Whiskey"
+  ],
+  "regions": [
+   "Campbeltown",
+   "Canada (British Columbia, Ontario, Alberta, Quebec)",
+   "Chichibu / Saitama",
+   "Highlands",
+   "India (Goa, Nasik)",
+   "Indiana",
+   "Ireland (Midleton, Bushmills, Cooley, Tullamore)",
+   "Islands",
+   "Islay",
+   "Kentucky",
+   "Lowlands",
+   "Miyagikyo / Sendai",
+   "New York",
+   "Speyside",
+   "Taiwan (Nantou)",
+   "Tennessee",
+   "Texas",
+   "Yamazaki / Osaka",
+   "Yoichi / Hokkaido"
+  ],
+  "base": [
+   "Corn (Maize)",
+   "Malted Barley",
+   "Mixed Grain",
+   "Rye",
+   "Unmalted Barley",
+   "Wheat"
+  ]
+ }
+}

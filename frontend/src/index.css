@@ -6748,9 +6748,9 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 /* Fixed layout + explicit column widths so the wide Sizes / Levels content can
    never shove a column out of view; everything wraps within its column. */
 .pdx-tbl--rip { table-layout: fixed; }
-.pdx-tbl--rip th:nth-child(1), .pdx-tbl--rip td:nth-child(1) { width: 14%; }
-.pdx-tbl--rip th:nth-child(2), .pdx-tbl--rip td:nth-child(2) { width: 17%; }
-.pdx-tbl--rip th:nth-child(3), .pdx-tbl--rip td:nth-child(3) { width: 37%; }
+.pdx-tbl--rip th:nth-child(1), .pdx-tbl--rip td:nth-child(1) { width: 15%; }
+.pdx-tbl--rip th:nth-child(2), .pdx-tbl--rip td:nth-child(2) { width: 19%; }
+.pdx-tbl--rip th:nth-child(3), .pdx-tbl--rip td:nth-child(3) { width: 34%; }
 .pdx-tbl--rip th:nth-child(4), .pdx-tbl--rip td:nth-child(4) { width: 32%; }
 .pdx-rip-levels { display: flex; flex-direction: column; gap: 6px; }
 /* Each level: the rebate line, then a compact green "net after QD/RIP" line
@@ -6758,7 +6758,10 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
    table in the detail two-panel / quick-view sidebar). */
 .pdx-rip-level { display: block; }
 .pdx-rip-rebate { display: block; white-space: nowrap; }
-.pdx-rip-net { display: block; font-size: 11.5px; font-weight: 600; color: #15803d; white-space: normal; overflow-wrap: anywhere; margin-top: 1px; font-variant-numeric: tabular-nums; }
+.pdx-rip-net { display: block; margin-top: 1px; }
+/* Net case price and net bottle price each on their own short, non-breaking
+   line so a narrow Levels column never breaks them mid-number. */
+.pdx-rip-net-line { display: block; font-size: 11.5px; font-weight: 600; color: #15803d; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .pdx-rip-norip { color: var(--text-muted); font-style: italic; }
 
 /* ---- QD prices chart: stacked Current / Next month cards with distinct

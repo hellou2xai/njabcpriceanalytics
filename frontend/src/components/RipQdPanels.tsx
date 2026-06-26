@@ -216,7 +216,8 @@ function RipCard({ title, variant, rows, empty, csWord, btlWord }: {
                     </span>
                     {l.netCase != null && (
                       <span className="pdx-rip-net">
-                        net {money(l.netCase)}/{csWord}{l.netBottle != null ? ` · ${money(l.netBottle)}/${btlWord}` : ''}
+                        <span className="pdx-rip-net-line">net {money(l.netCase)}/{csWord}</span>
+                        {l.netBottle != null && <span className="pdx-rip-net-line">{money(l.netBottle)}/{btlWord}</span>}
                       </span>
                     )}
                   </span>

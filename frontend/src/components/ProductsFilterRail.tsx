@@ -155,18 +155,6 @@ export default function ProductsFilterRail({ filters, onChange, items, facets, t
         </label>
       </Section>
 
-      {onDealMonthChange && nextMonthLabel && (
-        <Section title="RIP / QD month">
-          <div className="prod-filter-segmented"
-            title="Which month's RIP and QD tiers the cards show. Defaults to the current month; switch to preview next month's deals (loaded early).">
-            <button type="button" className={dealMonth === 'current' ? 'on' : ''}
-              onClick={() => onDealMonthChange('current')}>{currentMonthLabel || 'This month'}</button>
-            <button type="button" className={dealMonth === 'next' ? 'on' : ''}
-              onClick={() => onDealMonthChange('next')}>{nextMonthLabel}</button>
-          </div>
-        </Section>
-      )}
-
       <Section title="Time Sensitive Deals">
         <label className="prod-filter-check"
           title="Only products with a dated (sub-month) QD or RIP window this edition: deals that start or stop mid-month.">

@@ -6522,10 +6522,16 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pdx-panel-h { margin: 0 0 8px; font-size: 12px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted); }
 .pdx-empty { font-size: 13px; color: var(--text-muted); margin: 0; }
 
-/* ---- Summary card (Image #5 layout) ---- */
-.pdx-summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 20px; align-items: center; }
-.pdx-sum-imglink { display: block; flex-shrink: 0; }
-.pdx-sum-meta { min-width: 0; }
+/* ---- Summary card (Image #5 layout) ----
+   Left-compact: image, meta and prices sit together (prices right after the
+   meta) instead of a 1fr column flinging the prices to the far edge, which
+   left a huge empty gap on wide screens. */
+.pdx-summary { display: flex; align-items: center; gap: 28px; flex-wrap: wrap; }
+.pdx-sum-imglink { display: block; flex: 0 0 auto; }
+.pdx-sum-meta { flex: 0 1 auto; min-width: 0; }
+/* Distributor name + icon above the product name — bigger and bold. */
+.pdx-sum-dist-top { display: inline-flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 800; color: var(--text); margin-bottom: 4px; }
+.pdx-sum-dist-top svg { color: var(--text-muted); }
 .pdx-sum-titlerow { display: flex; align-items: center; gap: 8px; }
 .pdx-sum-title-link { text-decoration: none; color: inherit; min-width: 0; }
 .pdx-sum-title-link:hover .pdx-sum-title { color: var(--accent); }
@@ -6541,7 +6547,7 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pdx-sum-spark { display: inline-block; margin-top: 8px; }
 /* CASE then BOTTLE STACKED (two lines), each: label left, Price + Next Month
    right — matches the Image #5 reference. */
-.pdx-sum-prices { display: flex; flex-direction: column; gap: 14px; align-self: center; min-width: 230px; }
+.pdx-sum-prices { display: flex; flex-direction: column; gap: 14px; align-self: center; flex: 0 0 auto; min-width: 200px; }
 .pdx-price-block { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; }
 .pdx-price-k { font-size: 12px; font-weight: 800; letter-spacing: .05em; color: var(--text-muted); }
 .pdx-price-vals { text-align: right; }
@@ -6551,9 +6557,14 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pdx-price-next--down { color: var(--hl-fg); font-weight: 700; }
 
 /* ---- order actions ---- */
-.pdx-order { display: flex; align-items: flex-end; justify-content: flex-end; gap: 18px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+.pdx-order { display: flex; align-items: flex-end; justify-content: flex-start; gap: 18px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); flex-wrap: wrap; }
 .pdx-order-steppers { display: flex; gap: 12px; }
 .pdx-order-actions { display: flex; flex-direction: column; gap: 6px; min-width: 160px; }
+/* Per-line "View details" expander (Summary mode). */
+.pdx-expand-toggle { display: inline-flex; align-items: center; gap: 5px; margin-top: 12px; padding: 6px 12px; background: var(--surface-2, #eef1f5); border: 1px solid var(--border); border-radius: 6px; color: var(--accent); font-weight: 700; font-size: 12.5px; cursor: pointer; }
+.pdx-expand-toggle:hover { background: var(--surface-hover, #e9eef5); }
+.pdx-expand-chev { transition: transform .15s; }
+.pdx-expand-chev.open { transform: rotate(180deg); }
 
 /* ---- RIP details + QD chart, side by side ---- */
 .pdx-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
@@ -6564,6 +6575,9 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pdx-rip-code { font-size: 12px; font-weight: 800; color: var(--green); margin-bottom: 4px; }
 .pdx-rip-table, .pdx-qd-table { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .pdx-rip-table th, .pdx-qd-table th { text-align: left; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); padding: 4px 8px; border-bottom: 1px solid var(--border); }
+/* RIP column header (DATES/SIZES/LEVELS) gets a shaded band + darker bold text
+   so it's easy to identify as the header. */
+.pdx-rip-table thead th { background: var(--surface-2, #eef1f5); color: var(--text); font-weight: 800; padding-top: 6px; padding-bottom: 6px; }
 /* Price-by columns: header right-aligned so it sits directly over its number. */
 .pdx-rip-table th.pdx-num, .pdx-qd-table th.pdx-num { text-align: right; }
 .pdx-rip-table td, .pdx-qd-table td { padding: 5px 8px; border-bottom: 1px solid var(--border); color: var(--text); vertical-align: top; }
@@ -6580,12 +6594,15 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pdx-rip-sizeline + .pdx-rip-sizeline { margin-top: 1px; }
 .pdx-rip-levels { display: flex; flex-direction: column; gap: 2px; }
 .pdx-rip-level { white-space: nowrap; }
+.pdx-rip-norip { color: var(--text-muted); font-style: italic; }
 
 /* ---- QD prices chart: stacked Current / Next month cards with distinct
    header bands so the two months are never confused (matches qd.png). ---- */
 .pdx-qd { padding: 12px; }
 .pdx-qd-stack { display: flex; flex-direction: column; gap: 12px; }
-.pdx-qd-card { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--surface); }
+/* Cap the card width so the table stays compact (less empty space between
+   columns) on wide layouts, instead of stretching the full panel. */
+.pdx-qd-card { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--surface); max-width: 460px; }
 .pdx-qd-title { text-align: center; font-size: 12px; font-weight: 800; letter-spacing: .06em; padding: 6px 8px; color: var(--text); }
 .pdx-qd-band { padding: 5px 10px; font-size: 12px; font-weight: 700; }
 .pdx-qd-card--current .pdx-qd-band { background: #41557a; color: #fff; }
@@ -6597,13 +6614,10 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 
 /* ---- responsive ---- */
 @media (max-width: 900px) {
-  .pdx-summary { grid-template-columns: auto 1fr; }
-  .pdx-sum-prices { grid-column: 1 / -1; gap: 24px; }
   .pdx-detail-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 560px) {
-  .pdx-summary { grid-template-columns: 1fr; justify-items: start; }
-  .pdx-sum-prices { gap: 20px; }
+  .pdx-summary { gap: 16px; }
   .pdx-order { justify-content: stretch; }
   .pdx-order-actions { flex: 1; min-width: 0; }
 }

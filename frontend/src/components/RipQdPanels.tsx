@@ -70,6 +70,9 @@ function isoRange(from?: string | null, to?: string | null): string {
 function splitRipSizes(desc?: string | null): string[] {
   if (!desc) return [];
   const s = String(desc).replace(/\s+/g, ' ').trim()
+    // Break after each "… CASE" (the end of one size rule) so the next size
+    // rule starts on its own line, and before pack tokens / INCLUDES-EXCLUDES.
+    .replace(/(\bCASE\b)\s+(?=\S)/gi, '$1\n')
     .replace(/\s+(?=\d+\s*PK\b)/gi, '\n')
     .replace(/\s+(?=(?:EXCLUDES|INCLUDES)\b)/gi, '\n');
   return s.split('\n').map(x => x.trim()).filter(Boolean);
@@ -98,7 +101,7 @@ function ripLevels(tiers: RipTier[], pack: number | null): RipLevel[] {
 }
 
 type MonthLabel = 'Current Month' | 'Next Month';
-interface RipProgramRow { month: MonthLabel; dates: string; sizes: string[]; levels: RipLevel[]; ts: boolean; }
+interface RipProgramRow { month: MonthLabel; dates: string; sizes: string[]; levels: RipLevel[]; ts: boolean; noRip?: boolean; }
 interface RipProgram { code: string | null; rows: RipProgramRow[]; }
 
 // One row PER (program code, validity window) PER month. A full-month RIP and a
@@ -138,6 +141,17 @@ function buildRipPrograms(cur: MonthBreakdown | null, next: MonthBreakdown | nul
   };
   add('Current Month', cur);
   add('Next Month', next);
+  // When next month's edition IS loaded but a program has a current-month RIP
+  // and no next-month RIP, show an explicit "No RIP Next Month" row.
+  if (next) {
+    for (const prog of byCode.values()) {
+      const hasCur = prog.rows.some(r => r.month === 'Current Month');
+      const hasNext = prog.rows.some(r => r.month === 'Next Month');
+      if (hasCur && !hasNext) {
+        prog.rows.push({ month: 'Next Month', dates: '', sizes: [], levels: [], ts: false, noRip: true });
+      }
+    }
+  }
   return [...byCode.values()];
 }
 
@@ -157,7 +171,12 @@ function RipPanel({ programs }: { programs: RipProgram[] }) {
                   <tr><th></th><th>Dates</th><th>Sizes</th><th>Levels</th></tr>
                 </thead>
                 <tbody>
-                  {p.rows.map((r, ri) => (
+                  {p.rows.map((r, ri) => r.noRip ? (
+                    <tr key={ri}>
+                      <td className="pdx-rip-month">{r.month}</td>
+                      <td className="pdx-rip-norip" colSpan={3}>No RIP Next Month</td>
+                    </tr>
+                  ) : (
                     <tr key={ri}>
                       <td className="pdx-rip-month">
                         {r.month}

@@ -538,7 +538,7 @@ export default function ProductDetail() {
             <DealTimingSticker deals={headerDeals} gaps={headerGaps} everyDay={headerEveryDay} />
           )}
           <div className="pd-identity">
-            <ProductThumb src={enrichment?.image_url ?? sizes[0]?.image_url} alt={name} size={120} expandable />
+            <ProductThumb src={enrichment?.image_url ?? sizes[0]?.image_url} alt={name} size={200} expandable />
             <div className="pd-identity-meta">
               <div className="pd-identity-titlerow">
                 <FavoriteButton productName={name} wholesaler={wholesaler} upc={sizes[0]?.upc} unitVolume={sizes[0]?.unit_volume} />

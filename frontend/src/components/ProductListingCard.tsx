@@ -10,9 +10,9 @@
  *   RIP + QD panels          — the shared RipQdPanels (RIP details + prices
  *                              chart), so QD/RIP read identically everywhere.
  */
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Store } from 'lucide-react';
+import { Store, ChevronDown } from 'lucide-react';
 import ProductThumb from './ProductThumb';
 import FavoriteButton from './FavoriteButton';
 import AddToCartButton from './AddToCartButton';
@@ -74,6 +74,8 @@ function SummaryCard({ size, name, cur, next, pack }: {
         <ProductThumb src={size.image_url} alt={size.product_name} size={160} expandable />
       </Link>
       <div className="pdx-sum-meta">
+        {/* Distributor on top, bigger and bold — easiest thing to identify. */}
+        <div className="pdx-sum-dist-top"><Store size={16} /> {distributorName(size.wholesaler)}</div>
         <div className="pdx-sum-titlerow">
           <FavoriteButton productName={size.product_name} wholesaler={size.wholesaler}
             upc={size.upc} unitVolume={size.unit_volume} />
@@ -92,7 +94,6 @@ function SummaryCard({ size, name, cur, next, pack }: {
           {hasVintage && <span>Vintage {size.vintage}</span>}
         </div>
         <div className="pdx-sum-ids">
-          <span className="pdx-sum-dist"><Store size={12} /> {distributorName(size.wholesaler)}</span>
           {abgSku(size.wholesaler, size.abg_sku) && <span className="pdx-sum-sku">SKU: {skuLabel(size.wholesaler)} {size.abg_sku}</span>}
           {size.upc && <span className="pdx-sum-upc">UPC: {size.upc}</span>}
         </div>
@@ -124,6 +125,11 @@ export default function ProductListingCard({ size, name, cart, updateQty, showPa
   const cartKey = `${size.product_name}|${size.wholesaler}|${size.upc ?? ''}|${size.unit_volume ?? ''}`;
   const qty = cart[cartKey] ?? { cases: 0, units: 0 };
 
+  // In Summary mode (showPanels=false) the RIP/QD panels are collapsed; each
+  // line can be expanded individually to see its details, like the detail view.
+  const [expanded, setExpanded] = useState(false);
+  const panelsVisible = showPanels || expanded;
+
   return (
     <div className="pdx-listing">
       <SummaryCard size={size} name={pname} cur={cur} next={next} pack={pack} />
@@ -147,7 +153,13 @@ export default function ProductListingCard({ size, name, cart, updateQty, showPa
         </div>
       </div>
 
-      {showPanels && <RipQdPanels size={size} name={pname} />}
+      {!showPanels && (
+        <button type="button" className="pdx-expand-toggle" onClick={() => setExpanded(e => !e)}>
+          {expanded ? 'Hide details' : 'View details'}
+          <ChevronDown size={15} className={`pdx-expand-chev${expanded ? ' open' : ''}`} />
+        </button>
+      )}
+      {panelsVisible && <RipQdPanels size={size} name={pname} />}
     </div>
   );
 }

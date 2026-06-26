@@ -32,6 +32,10 @@ export interface RipTier extends TierWindow {
   // half-case rule matched (qty stays the printed/qualifying quantity).
   qualifiedCases?: number | null;
   caseCredit?: number | null;
+  // RIP sheet free-text (column M, rip_description) — the program scope: the
+  // sizes/packs it covers and any "INCLUDES …" value-add note. Shown as the
+  // SIZES cell in the product-detail RIP panel.
+  description?: string | null;
 }
 
 export interface MonthBreakdown {

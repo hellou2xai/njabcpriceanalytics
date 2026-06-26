@@ -23,6 +23,7 @@ import AddToListButton from './AddToListButton';
 import { QtyStepper, type CartState } from './CatalogTable';
 import PriceSparklines from './PriceSparklines';
 import DealLadder from './DealLadder';
+import RipQdPanels from './RipQdPanels';
 import DealTimingSticker, { everyDayFromTiers } from './DealTimingSticker';
 import DistCompareChip from './DistCompareChip';
 import TierBadge from './TierBadge';
@@ -606,16 +607,9 @@ function SizeRow({ size, cart, updateQty, primaryName, showDeals = true, hideDis
           upc={size.upc} unitVolume={size.unit_volume} unitQty={size.unit_qty} vintage={size.vintage}
           months={months} />
       </div>
-      {/* Inline RIP + quantity-discount tiers for the current month — one shared
-          DealLadder (tier qty, total $ off, price-after for BOTH case + bottle)
-          so the numbers always match the sparkline tooltip. Detail view only;
-          Summary hides the ladder to stay compact. */}
-      {showDeals && (
-        <div className="prod-size-deals">
-          <DealLadder months={months} pack={pack} emptyText="No deals this month"
-            unitVolume={size.unit_volume} unitType={size.unit_type} monthMode={dealMonth} />
-        </div>
-      )}
+      {/* Inline RIP + quantity-discount tiers — the SAME shared RipQdPanels the
+          product-detail page and Quick View use, so QD/RIP read identically
+          everywhere (uniformity). Full-width row below; Summary hides it. */}
       <div className="prod-size-order">
         <div className="prod-size-steppers">
           <QtyStepper label={isKegUnit(size.unit_volume, size.unit_type) ? 'Kegs' : containerNoun(size.unit_volume, size.unit_type) === 'can' ? 'Cans' : 'Bottles'}
@@ -636,6 +630,7 @@ function SizeRow({ size, cart, updateQty, primaryName, showDeals = true, hideDis
             vintage={size.vintage != null ? String(size.vintage) : undefined} />
         </div>
       </div>
+      {showDeals && <RipQdPanels size={size} name={primaryName} className="prod-size-ripqd" />}
     </div>
   );
 }

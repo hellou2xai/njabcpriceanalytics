@@ -5,6 +5,7 @@ import { catalog, notes } from '../lib/api';
 import PriceChart from './PriceChart';
 import PriceBreakdown from './PriceBreakdown';
 import PriceWaterfall from './PriceWaterfall';
+import RipQdPanels from './RipQdPanels';
 import FavoriteButton from './FavoriteButton';
 import ProductThumb from './ProductThumb';
 import AddToCartButton from './AddToCartButton';
@@ -521,6 +522,11 @@ function QuickViewModal({
                 </>
               );
             })()}
+
+            {/* Uniform RIP details + QD prices chart — the SAME panels the
+                Products grid and product-detail page render, so QD/RIP read
+                identically everywhere. */}
+            {p && <RipQdPanels size={p} />}
 
             {ripCode && ripSiblings && ripSiblings.items.length > 0 && (() => {
               const items = ripSiblings.items;

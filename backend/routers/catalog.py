@@ -2899,6 +2899,10 @@ def get_product_detail(
         # can show the month-stable price AND the price live on `as_of`.
         prod_rec = row.to_dict(orient="records")[0]
         _attach_live_rip(con, [prod_rec], ref_date=as_of)
+        # 3-month blocks (current + next-edition future + history) so the Quick
+        # View can render the SHARED RipQdPanels (RIP details + QD prices chart)
+        # from the same price_3mo series the Products grid / detail page use.
+        _attach_price_3mo(con, [prod_rec])
         _attach_sku_mapping(con, [prod_rec])
 
         # CELR Product Number for the detail header / quick view chip.

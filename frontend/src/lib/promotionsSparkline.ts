@@ -25,6 +25,7 @@ function tierToRip(t: CatalogTier): RipTier {
     code: t.code ?? null,
     qualifiedCases: t.qualified_cases ?? null,
     caseCredit: t.case_credit ?? null,
+    description: t.description ?? null,
     from_date: t.from_date,
     to_date: t.to_date,
     window_status: t.window_status,

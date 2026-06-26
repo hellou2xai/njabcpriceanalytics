@@ -75,6 +75,12 @@ export const catalog = {
     request<Category[]>(`/api/catalog/categories${qs(params ?? {})}`),
   facets: (params?: Record<string, unknown>) =>
     request<CatalogFacets>(`/api/catalog/facets${qs(params ?? {})}`),
+  // Mobile lens search: identify a beverage from a camera photo (Claude vision)
+  // and get back the best search query to run.
+  lens: (image: string) =>
+    request<{ query: string | null; error?: string }>(`/api/catalog/lens`, {
+      method: 'POST', body: JSON.stringify({ image }),
+    }),
   priceComparison: (params?: Record<string, unknown>) =>
     request<PriceComparisonResponse>(`/api/catalog/price-comparison${qs(params ?? {})}`),
   crossDistributor: (params?: Record<string, unknown>) =>

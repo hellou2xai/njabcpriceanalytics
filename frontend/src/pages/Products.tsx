@@ -1,8 +1,9 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams, useLocation } from 'react-router-dom';
-import { Search, SlidersHorizontal, Sparkles } from 'lucide-react';
+import { Search, SlidersHorizontal, Sparkles, Camera, Mic } from 'lucide-react';
 import { catalog } from '../lib/api';
+import MobileLens from '../components/MobileLens';
 import WholesalerFilter from '../components/WholesalerFilter';
 import RowLimitSelect from '../components/RowLimitSelect';
 import { useResultCount } from '../lib/resultCount';
@@ -215,6 +216,50 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
   })();
   const pickSuggestion = (name: string) => { setQ(name); setQSugg(name); setCommitted(name); setPage(0); };
 
+  // --- Mobile lens (camera/photo/barcode) + voice search (Products only) -----
+  const [lensOpen, setLensOpen] = useState(false);
+  const [listening, setListening] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recogRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const SpeechRec = typeof window !== 'undefined' ? ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition) : undefined;
+  const startVoice = () => {
+    if (!SpeechRec) return;
+    try {
+      const r = new SpeechRec();
+      r.lang = 'en-US'; r.interimResults = false; r.maxAlternatives = 1;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      r.onresult = (ev: any) => { const t = ev?.results?.[0]?.[0]?.transcript?.trim(); if (t) pickSuggestion(t); };
+      r.onend = () => setListening(false);
+      r.onerror = () => setListening(false);
+      recogRef.current = r; setListening(true); r.start();
+    } catch { setListening(false); }
+  };
+  const stopVoice = () => { try { recogRef.current?.stop?.(); } catch { /* noop */ } setListening(false); };
+  // The camera lens is for handheld devices with a (rear) camera — phones AND
+  // tablets/iPads (≤1023px OR any coarse-pointer touch device, so large
+  // landscape iPads are covered too). Desktop gets voice only.
+  const isTouchDevice = isMobile || (typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches);
+  const showVoice = !!SpeechRec;
+  // Camera (lens) on touch devices; mic (voice) everywhere it's supported.
+  const searchTools = (isTouchDevice || showVoice) ? (
+    <span className="products-hero-tools">
+      {isTouchDevice && (
+        <button type="button" className="products-hero-tool" aria-label="Search by photo or barcode"
+          title="Search by photo or barcode" onClick={() => setLensOpen(true)}>
+          <Camera size={20} />
+        </button>
+      )}
+      {showVoice && (
+        <button type="button" className={`products-hero-tool${listening ? ' is-live' : ''}`}
+          aria-label="Voice search" title="Voice search"
+          onClick={() => (listening ? stopVoice() : startVoice())}>
+          <Mic size={20} />
+        </button>
+      )}
+    </span>
+  ) : null;
+
   // A pure category aisle (Home View-all / chip click: one category, first
   // page, default sort, nothing else active) is the high-traffic entry point,
   // so those snapshots persist to localStorage for an instant paint. Other
@@ -372,6 +417,9 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
 
   return (
     <div className="page products-page">
+      {isTouchDevice && (
+        <MobileLens open={lensOpen} onClose={() => setLensOpen(false)} onResult={pickSuggestion} />
+      )}
       {!showGrid ? (
         <div className="products-splash">
           <div className="products-splash-brand"><Sparkles size={26} /> Celr AI</div>
@@ -388,6 +436,7 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
                 onChange={e => { setQ(e.target.value); setPage(0); }}
                 onKeyDown={e => { if (e.key === 'Enter') setCommitted(e.currentTarget.value); }}
               />
+              {searchTools}
               <button type="button" className="products-hero-ai"
                 title="Search" onClick={() => setCommitted(q)}>
                 <Search size={16} /> <span className="products-hero-ai-label">Search</span>
@@ -432,6 +481,7 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
             placeholder="Search products, brands, regions, varietals…"
             value={q} onChange={e => { setQ(e.target.value); setPage(0); }}
             onKeyDown={e => { if (e.key === 'Enter') setCommitted(e.currentTarget.value); }} />
+          {searchTools}
           <button type="button" className="products-hero-ai"
             title="Search" onClick={() => setCommitted(q)}>
             <Search size={16} /> Search

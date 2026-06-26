@@ -2278,6 +2278,66 @@ def semantic_search(
     return cached_response("semantic-search", _ckey, _build)
 
 
+def _parse_image_data(s: str) -> tuple[str, str]:
+    """Split a data-URL or raw base64 into (media_type, base64). Defaults to
+    image/jpeg when no data-URL prefix is present."""
+    import re
+    s = (s or "").strip()
+    m = re.match(r"data:(image/[a-zA-Z0-9.+-]+);base64,(.*)$", s, re.S)
+    if m:
+        return m.group(1), m.group(2).strip()
+    return "image/jpeg", s
+
+
+class LensBody(BaseModel):
+    image: str   # data URL ("data:image/jpeg;base64,...") or raw base64
+
+
+@router.post("/lens")
+def lens_identify(body: LensBody):
+    """Mobile lens search: identify ONE beverage product from a phone-camera
+    photo and return the best catalog search query. Claude vision reads the
+    label; the frontend then runs the normal smart product search with the
+    returned query (so results match typing it). Photo -> text (no embeddings)."""
+    from backend import llm_client
+    if not llm_client.enabled():
+        return {"query": None, "error": "vision_unavailable"}
+    media_type, data = _parse_image_data(body.image)
+    if not data:
+        return {"query": None, "error": "no_image"}
+    # ~7M base64 chars ≈ 5MB — the client downscales, so a larger payload is a
+    # misuse; reject rather than burn tokens.
+    if len(data) > 7_000_000:
+        return {"query": None, "error": "image_too_large"}
+    try:
+        comp = llm_client.complete(
+            model=llm_client.HAIKU,
+            system=(
+                "You identify ONE alcoholic-beverage product (wine, spirit, beer "
+                "or RTD) from a phone photo so a liquor retailer can search their "
+                "catalog. Read the LABEL: brand, product line and type. Reply with "
+                "ONLY the best search query — brand + product + type, e.g. "
+                "\"Tito's Handmade Vodka\", \"Jack Daniel's Old No. 7\", "
+                "\"Caymus Cabernet Sauvignon\", \"Veuve Clicquot Brut\". No size, "
+                "no quantity, no extra words. If the photo is not a beverage or no "
+                "label is legible, reply exactly NONE."
+            ),
+            messages=[{"role": "user", "content": [
+                {"type": "image", "source": {
+                    "type": "base64", "media_type": media_type, "data": data}},
+                {"type": "text",
+                 "text": "What product is this? Reply with the search query only."},
+            ]}],
+            max_tokens=60,
+        )
+    except Exception as e:  # noqa
+        return {"query": None, "error": f"vision_error: {str(e)[:120]}"}
+    q = (comp.text or "").strip().strip('"').strip()
+    if not q or q.upper() == "NONE" or len(q) > 120:
+        return {"query": None}
+    return {"query": q}
+
+
 class SemanticCompareBody(BaseModel):
     q: str
     limit: int = 20

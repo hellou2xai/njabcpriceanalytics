@@ -6361,6 +6361,9 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pd-deal-badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); margin-bottom: 8px; }
 .pd-identity { display: flex; gap: 18px; align-items: flex-start; }
 .pd-identity-meta { flex: 1; min-width: 0; }
+/* Add to Cart / Add to List in the detail header (top-right). */
+.pd-identity-actions { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; align-self: flex-start; min-width: 150px; }
+.pd-identity-actions > * { width: 100%; }
 .pd-identity-titlerow { display: flex; align-items: center; gap: 10px; }
 .pd-title { margin: 0; font-size: 26px; font-weight: 800; color: var(--text); }
 /* ---- Detail page on phones: stack the identity block (image over meta) so the
@@ -6370,6 +6373,7 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
   .pd-identity-meta { width: 100%; min-width: 0; }
   .pd-title { font-size: 21px; }
   .pd-identity .product-thumb, .pd-identity img { max-width: 150px; height: auto; }
+  .pd-identity-actions { flex-direction: row; width: 100%; min-width: 0; }
 }
 @media (max-width: 560px) {
   /* Stack each attribute label over its value so long values never overflow. */
@@ -6740,6 +6744,10 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pdx-rip-sizeline + .pdx-rip-sizeline { margin-top: 1px; }
 .pdx-rip-levels { display: flex; flex-direction: column; gap: 2px; }
 .pdx-rip-level { white-space: nowrap; }
+/* Effective "after QD/RIP" price cells: one value per RIP level, right-aligned
+   to line up with the Levels column. */
+.pdx-rip-after { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; font-variant-numeric: tabular-nums; }
+.pdx-tbl--rip .pdx-rip-after .pdx-rip-level { display: block; }
 .pdx-rip-norip { color: var(--text-muted); font-style: italic; }
 
 /* ---- QD prices chart: stacked Current / Next month cards with distinct

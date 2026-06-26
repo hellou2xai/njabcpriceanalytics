@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Sparkles, Store, ChevronRight } from 'lucide-react';
+import SearchLensTools from '../components/SearchLensTools';
 import { catalog, compare } from '../lib/api';
 import type { Product } from '../lib/api';
 import ProductThumb from '../components/ProductThumb';
@@ -127,6 +128,8 @@ export default function Home() {
   const [q, setQ] = useState('');
   const { data: dists } = useCachedQuery(['home-distributors'], compare.options);
   const go = () => { if (q.trim()) navigate(`/products?q=${encodeURIComponent(q.trim())}`); };
+  // Lens (photo/barcode) + voice result -> run the search on the Products page.
+  const runQuery = (query: string) => { const t = query.trim(); if (t) navigate(`/products?q=${encodeURIComponent(t)}`); };
 
   return (
     <div className="page home-page">
@@ -142,6 +145,7 @@ export default function Home() {
             onChange={e => setQ(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') go(); }}
           />
+          <SearchLensTools onResult={runQuery} />
           <button type="button" className="home-search-go" onClick={go}>Search</button>
         </div>
         <div className="home-browse">

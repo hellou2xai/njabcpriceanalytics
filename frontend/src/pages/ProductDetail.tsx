@@ -584,6 +584,22 @@ export default function ProductDetail() {
                 <div><dt>Sold by</dt><dd><span className="pd-sold-by"><Store size={12} /> {distributorName(wholesaler)}</span></dd></div>
               </dl>
             </div>
+            {(() => {
+              const hs = primarySize ?? sizes[0];
+              if (!hs) return null;
+              return (
+                <div className="pd-identity-actions">
+                  <AddToCartButton productName={hs.product_name} wholesaler={hs.wholesaler}
+                    upc={hs.upc ?? undefined} unitVolume={hs.unit_volume ?? undefined}
+                    unitQty={hs.unit_qty != null ? String(hs.unit_qty) : undefined}
+                    vintage={hs.vintage != null ? String(hs.vintage) : undefined} qtyCases={1} />
+                  <AddToListButton productName={hs.product_name} wholesaler={hs.wholesaler}
+                    upc={hs.upc ?? undefined} unitVolume={hs.unit_volume ?? undefined}
+                    unitQty={hs.unit_qty != null ? String(hs.unit_qty) : undefined}
+                    vintage={hs.vintage != null ? String(hs.vintage) : undefined} />
+                </div>
+              );
+            })()}
           </div>
 
           {/* This Month vs Next Month — the SAME QD/RIP tier table (DealLadder)

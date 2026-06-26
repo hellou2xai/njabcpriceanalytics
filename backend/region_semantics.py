@@ -284,6 +284,20 @@ _REGIONS: dict[str, Region] = {
         category_path_terms=("Tequila",),
         auto_product_type="Spirits",
     ),
+    "canada": Region(
+        key="canada",
+        label="Canada",
+        # Canadian WINE is a small NJ-ABC category (mostly Niagara/Okanagan
+        # VQA bottlings and icewine). The demonym "canadian" alone maps to
+        # Canadian WHISKY in varietal_semantics — region routing only claims
+        # it when the query carries a wine word (see route_region_browse).
+        tokens=("CANADA", "CANADIAN", "OKANAGAN", "NIAGARA PEN", "VQA",
+                "ICEWINE", "ICE WINE", "INNISKILLIN", "JACKSON-TRIGGS",
+                "JACKSON TRIGGS", "MISSION HILL", "PELEE ISLAND"),
+        description_terms=("canada", "canadian", "okanagan", "niagara",
+                           "vqa", "icewine", "ice wine"),
+        auto_product_type="Wine",
+    ),
 }
 
 
@@ -311,6 +325,7 @@ _ALIASES: dict[str, str] = {
     "bourbon": "kentucky",
     "champagne wine": "champagne",
     "rioja wine": "rioja",
+    "canadian": "canada",
 }
 
 
@@ -401,3 +416,42 @@ def build_region_filter(
 def known_region_keys() -> list[str]:
     """List of canonical region keys for the assistant tool schema."""
     return sorted(_REGIONS.keys())
+
+
+# Generic wine words that carry NO origin signal of their own. When the only
+# thing left after pulling the region phrase out of a query is one of these
+# (or nothing), the query is a pure origin browse ("french wine", "napa reds")
+# and we can safely apply the structured region filter. A spirit word
+# ("whisky", "bourbon", "vodka") deliberately is NOT here, so "canadian
+# whisky" falls through region routing and lets varietal_semantics handle it.
+_WINE_GENERIC: frozenset[str] = frozenset({
+    "wine", "wines", "red", "reds", "white", "whites", "rose", "roses",
+    "rosado", "blush", "sparkling", "vino", "vins", "vin", "bottle",
+    "bottles", "the", "a", "an", "of", "from", "and",
+})
+
+
+def route_region_browse(text: Optional[str]) -> Optional[str]:
+    """Decide whether free-text `text` is a pure wine-origin browse.
+
+    Returns the canonical region key (e.g. "france", "napa", "canada") ONLY
+    when, after removing every known region/alias phrase and generic wine
+    word, nothing meaningful is left — i.e. the user typed an origin, not a
+    brand. So "french wine" / "napa" / "spanish reds" route to the structured
+    region filter, while "absolut vodka", "french oak bourbon", and
+    "napa cellars" (a brand) keep the literal text search. Returns None when
+    the query is not a clean origin browse.
+    """
+    import re as _re
+    region = resolve_region(text)
+    if region is None or not text:
+        return None
+    leftover = text.lower()
+    # Strip every region trigger phrase (canonical keys + aliases), longest
+    # first so multi-word phrases ("new zealand") go before their fragments.
+    for phrase in sorted(set(_REGIONS) | set(_ALIASES), key=len, reverse=True):
+        if phrase in leftover:
+            leftover = leftover.replace(phrase, " ")
+    toks = [w for w in _re.split(r"[^a-z0-9]+", leftover) if w]
+    residual = [w for w in toks if w not in _WINE_GENERIC]
+    return region.key if not residual else None

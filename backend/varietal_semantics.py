@@ -722,3 +722,37 @@ def build_varietal_filter(
 def known_varietal_keys() -> list[str]:
     """Canonical varietal keys, exposed in the assistant's tool schema."""
     return sorted(_VARIETALS.keys())
+
+
+# Generic words that carry no varietal signal on their own; when only these
+# remain after pulling the varietal phrase out, the query is a clean style
+# browse ("malbec", "bourbon", "ipa") rather than a brand-plus-category
+# search ("absolut vodka", which must stay literal so it finds ABSOLUT, not
+# every vodka).
+_STYLE_GENERIC: frozenset[str] = frozenset({
+    "wine", "wines", "red", "reds", "white", "whites", "rose", "roses",
+    "sparkling", "whiskey", "whisky", "spirit", "spirits", "the", "a", "an",
+    "of", "from", "and", "bottle", "bottles",
+})
+
+
+def route_varietal_browse(text: Optional[str]) -> Optional[str]:
+    """Decide whether free-text `text` is a pure varietal/style browse.
+
+    Returns the canonical varietal key (e.g. "malbec", "bourbon", "ipa") ONLY
+    when removing the varietal phrase + generic words leaves nothing
+    meaningful, so "cabernet", "pinot noir", "bourbon" route to the structured
+    varietal filter while "absolut vodka" / "tito's" keep the literal search.
+    Returns None when the query is not a clean style browse.
+    """
+    import re as _re
+    v = resolve_varietal(text)
+    if v is None or not text:
+        return None
+    leftover = text.lower()
+    for phrase in sorted(set(_VARIETALS) | set(_ALIASES), key=len, reverse=True):
+        if phrase in leftover:
+            leftover = leftover.replace(phrase, " ")
+    toks = [w for w in _re.split(r"[^a-z0-9]+", leftover) if w]
+    residual = [w for w in toks if w not in _STYLE_GENERIC]
+    return v.key if not residual else None

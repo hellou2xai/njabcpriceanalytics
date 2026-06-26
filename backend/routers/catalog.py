@@ -894,6 +894,27 @@ def search_products(
         _enr_cols = _has_enrich_cols(con)
         _enr = None if _enr_cols else ("product_enrichment" if _enrichment_searchable(con) else None)
         _enr_upc = f"{src}.upc" if _enr else None
+        # Smart free-text routing (repo HARD RULE: every search box resolves
+        # through the semantic stack, never raw LIKE). When the typed query is
+        # a pure origin/style browse ("french wine", "napa", "malbec",
+        # "bourbon"), hand it to the SAME structured region/varietal filters
+        # the assistant uses instead of literal token-AND matching — so
+        # "french wine" returns all France-origin wines (~5k), not just the
+        # ~70 SKUs that literally contain the word "french". A query carrying
+        # a brand or other signal ("absolut vodka", "napa cellars") fails the
+        # residual check and keeps the literal search unchanged.
+        if q and not region and not varietal:
+            from backend.region_semantics import route_region_browse
+            from backend.varietal_semantics import route_varietal_browse
+            _br = route_region_browse(q)
+            if _br:
+                region = _br          # downstream `if region:` applies it
+                q = ""
+            else:
+                _bv = route_varietal_browse(q)
+                if _bv:
+                    varietal = _bv    # downstream `if varietal:` applies it
+                    q = ""
         if q:
             clause, qp, rel_expr = _q_clause(q, _brand_initialisms(con, src),
                                              enrich_table=_enr, enrich_upc_expr=_enr_upc,
@@ -3997,10 +4018,26 @@ def search_facets(
             _enr_cols = _has_enrich_cols(con)
             _enr = None if _enr_cols else ("product_enrichment" if _enrichment_searchable(con) else None)
             _enr_upc = f"{src}.upc" if _enr else None
-            clause, qp, _ = _q_clause(q, _brand_initialisms(con, src),
-                                      enrich_table=_enr, enrich_upc_expr=_enr_upc, enrich_cols=_enr_cols)
-            base.append(clause)
-            bp.update(qp)
+            # Mirror /search's smart routing: a pure origin/style browse
+            # ("french wine", "napa", "malbec") is counted over the structured
+            # region/varietal universe, not the literal token match, so the
+            # facet totals reconcile with the grid (e.g. french wine ~5k).
+            from backend.region_semantics import route_region_browse, build_region_filter
+            from backend.varietal_semantics import route_varietal_browse, build_varietal_filter
+            _fbr = route_region_browse(q)
+            _fbv = None if _fbr else route_varietal_browse(q)
+            if _fbr:
+                clause, qp, _ = build_region_filter(
+                    _fbr, name_col=f"{src}.product_name", upc_col=f"{src}.upc")
+            elif _fbv:
+                clause, qp, _ = build_varietal_filter(
+                    _fbv, name_col=f"{src}.product_name", upc_col=f"{src}.upc")
+            else:
+                clause, qp, _ = _q_clause(q, _brand_initialisms(con, src),
+                                          enrich_table=_enr, enrich_upc_expr=_enr_upc, enrich_cols=_enr_cols)
+            if clause:
+                base.append(clause)
+                bp.update(qp)
         if wholesaler:
             base.append("wholesaler = $wholesaler")
             bp["wholesaler"] = wholesaler

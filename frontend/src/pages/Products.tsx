@@ -381,7 +381,7 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
               />
               <button type="button" className="products-hero-ai"
                 title="Search" onClick={() => setCommitted(q)}>
-                <Search size={16} /> Search
+                <Search size={16} /> <span className="products-hero-ai-label">Search</span>
               </button>
             </div>
             {suggestions.length > 0 && (

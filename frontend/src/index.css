@@ -5703,6 +5703,13 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 .prod-rail-reopen-label {
   writing-mode: vertical-rl; font-size: 12px; font-weight: 600; letter-spacing: 0.03em;
 }
+/* MUST come after the base above: otherwise the full-viewport-tall sticky strip
+   wins at <=1023 and leaves a big empty column beside the results on phones. */
+@media (max-width: 1023px) {
+  .prod-rail-reopen { position: static; flex-direction: row; align-items: center; justify-content: flex-start;
+    width: auto; min-height: 0; align-self: start; padding: 10px 16px; border-radius: 10px; margin-bottom: 14px; color: var(--text); }
+  .prod-rail-reopen-label { writing-mode: horizontal-tb; }
+}
 .prod-filter-rail-actions { display: inline-flex; align-items: center; gap: 6px; }
 
 /* ---- Left filter rail ---- */
@@ -6840,6 +6847,22 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 
 /* Category quick-browse chips under the Products hero search (landing + grid) */
 .products-grid-browse { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 12px auto 4px; }
+
+/* ---- Mobile Products header: collapse the chip rows + icon-only search ---- */
+@media (max-width: 768px) {
+  /* Distributor pills and category chips become ONE horizontal scrolling row
+     instead of wrapping to many rows (they ate most of the screen). */
+  .products-page .filter-pills,
+  .products-grid-browse {
+    flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start;
+    -webkit-overflow-scrolling: touch; scrollbar-width: thin; padding-bottom: 4px;
+  }
+  .products-page .filter-pills .pill,
+  .products-grid-browse .products-grid-chip { flex: 0 0 auto; }
+  /* Search button: icon only. */
+  .products-hero-ai-label { display: none; }
+  .products-hero-ai { padding: 0 12px; }
+}
 .products-grid-chip {
   padding: 7px 15px; border-radius: var(--radius-pill); border: 1px solid var(--border);
   background: var(--surface); font-size: 13px; font-weight: 600; color: var(--text); cursor: pointer;

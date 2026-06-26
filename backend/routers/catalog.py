@@ -1945,12 +1945,18 @@ def search_products(
         if not edition:
             _attach_next_month_prices(con, src, records)
 
-        # Optionally enrich each item with discount + RIP tier sub-rows.
+        # Optionally enrich each item with discount + RIP tier sub-rows (the full
+        # per-row ladder shown on expand — gated, it's the expensive part).
         if include_tiers:
             _attach_discount_rip_tiers(con, records, ref_date=as_of)
-            # Last 3 existing editions (1-case-discount + best-RIP prices + per-
-            # edition tiers) for the two-line 3-month sparkline + its popover.
-            _attach_price_3mo(con, records)
+        # price_3mo (1-case-discount + best-RIP prices per edition) is ALWAYS
+        # attached: the collapsed card's headline case price + RIP badge read from
+        # it (frontend buildMonths), so gating it behind include_tiers made the
+        # SAME product show frontline + "no RIP" on a plain search but the
+        # after-1cs-QD price + RIP on the grouped/expanded fetch (which sets
+        # include_tiers). Attaching it unconditionally makes the price consistent
+        # regardless of how the row was fetched. Memoised + warmed, so amortised.
+        _attach_price_3mo(con, records)
 
         # The date-aware "live now" RIP price (live_effective_case_price,
         # live_rip_amt, live_better_than_month, live_savings) is computed in the

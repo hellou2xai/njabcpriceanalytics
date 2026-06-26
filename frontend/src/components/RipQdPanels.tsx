@@ -190,7 +190,7 @@ function RipCard({ title, variant, rows, empty, csWord, btlWord }: {
       <div className="pdx-card-title">{title}</div>
       <table className="pdx-tbl pdx-tbl--rip">
         <thead>
-          <tr><th>RIP</th><th>Dates</th><th>Sizes</th><th>Levels &amp; net price after QD/RIP</th></tr>
+          <tr><th>RIP</th><th>Dates</th><th>Sizes</th><th>Levels · net after QD/RIP</th></tr>
         </thead>
         <tbody>
           {rows.length === 0 ? (

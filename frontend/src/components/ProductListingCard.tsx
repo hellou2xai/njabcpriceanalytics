@@ -61,7 +61,9 @@ function SummaryCard({ size, name, cur, next, pack, sibs }: {
       <div className="pdx-price-vals">
         <div className="pdx-price-now">Price: <strong>{money(now) ?? '—'}</strong></div>
         {nxt != null && (
-          <div className={`pdx-price-next${now != null && nxt < now - 0.005 ? ' pdx-price-next--down' : ''}`}>
+          <div className={`pdx-price-next${
+            now != null && nxt < now - 0.005 ? ' pdx-price-next--down'
+            : now != null && nxt > now + 0.005 ? ' pdx-price-next--up' : ''}`}>
             Next Month: {money(nxt)}
           </div>
         )}

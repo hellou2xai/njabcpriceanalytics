@@ -1699,6 +1699,11 @@ def attach_price_3mo(con, records) -> None:
         ident = sku_identity(d)
         groups[ident].append({
             "edition": d.get("edition"),
+            # product_name kept so we can separate two DIFFERENT products that
+            # share a barcode (a regular bottle and a value-add "gift" pack):
+            # they have the SAME sku_identity (name is excluded so cross-edition
+            # renames survive), but coexist in one edition under different names.
+            "product_name": d.get("product_name"),
             "frontline": front,
             "disc1_price": round(front - disc1, 2) if front is not None else None,
             "rip_price": _num(d.get("effective_case_price")),
@@ -1710,10 +1715,37 @@ def attach_price_3mo(con, records) -> None:
         if ident[0] == "U":
             upc_idents[(ident[1], ident[2])].add(ident)
 
+    def _blocks_for_rec(rec, blocks):
+        """One block per edition for THIS row. When a single (identity, edition)
+        has MULTIPLE listings (a shared-barcode value-add pack alongside the
+        regular product), pick the block matching this row's product name, then
+        its frontline price — never mix one listing's month with another's. A
+        single block per edition (the normal case, incl. cross-edition renames)
+        is used as-is, so renamed products keep their history."""
+        rec_name = str(rec.get("product_name") or "").strip().upper()
+        rec_front = _num(rec.get("frontline_case_price"))
+        by_ed: dict = defaultdict(list)
+        for b in blocks:
+            by_ed[b.get("edition")].append(b)
+        out = []
+        for bs in by_ed.values():
+            if len(bs) == 1:
+                out.append(bs[0])
+                continue
+            named = [b for b in bs
+                     if str(b.get("product_name") or "").strip().upper() == rec_name]
+            if named:
+                out.append(named[0])
+            elif rec_front is not None:
+                out.append(min(bs, key=lambda b: abs((b.get("frontline") or 1e18) - rec_front)))
+            else:
+                out.append(bs[0])
+        return out
+
     for rec in records:
-        blocks = groups.get(_match_ident(rec, groups, upc_idents))
+        blocks = groups.get(_match_ident(rec, groups, upc_idents)) or []
         # Oldest -> newest, so the sparkline plots left (older) to right (newer).
-        rec["price_3mo"] = sorted(blocks or [], key=lambda b: b.get("edition") or "")
+        rec["price_3mo"] = sorted(_blocks_for_rec(rec, blocks), key=lambda b: b.get("edition") or "")
 
 
 # ---------------------------------------------------------------------------

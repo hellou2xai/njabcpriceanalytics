@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, Store, ChevronRight } from 'lucide-react';
 import { catalog } from '../lib/api';
@@ -280,6 +280,13 @@ function SizeSection({ size, view, cart, updateQty, primaryName, alt }: {
 
 export default function ProductDetail() {
   const [params] = useSearchParams();
+  const navigate = useNavigate();
+  // Go to the PREVIOUS page (preserving the list's filters/scroll/search),
+  // falling back to /products only when there's no in-app history to return to.
+  const goBack = () => {
+    if (window.history.length > 1) navigate(-1);
+    else navigate('/products');
+  };
   const wholesaler = params.get('w') ?? '';
   const name = params.get('n') ?? '';
   const upc = params.get('u') ?? undefined;
@@ -499,14 +506,14 @@ export default function ProductDetail() {
   const nextPack = primarySize ? bottlesPerCase(name, primarySize.unit_qty) : null;
 
   if (!wholesaler || !name) {
-    return <div className="page"><p>Product not specified.</p><Link to="/products" className="link-btn">← Back to Products</Link></div>;
+    return <div className="page"><p>Product not specified.</p><Link to="/products" className="link-btn" onClick={e => { e.preventDefault(); goBack(); }}>← Back</Link></div>;
   }
 
   return (
     <div className="page pd-page">
       <nav className="pd-breadcrumb">
         <Link to="/">Home</Link>
-        <Link to="/products">Products</Link>
+        <Link to="/products" onClick={e => { e.preventDefault(); goBack(); }}>← Back</Link>
         {crumbs.map((c, i) => (
           <span key={i} className="pd-crumb">{c}</span>
         ))}

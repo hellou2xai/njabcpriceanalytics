@@ -6739,16 +6739,26 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pdx-rip-dates { color: var(--text-muted); }
 .pdx-rip-dateline { white-space: nowrap; line-height: 1.4; }
 .pdx-rip-sizes { color: var(--text); }
-/* Each pack rule / clause from rip_description on its own line. */
-.pdx-rip-sizeline { line-height: 1.45; }
+/* Each pack rule / clause from rip_description on its own line. Wrap long
+   descriptions (incl. unbroken tokens like EXCLUDES:FOUNDERS/CARRIBEAN) so they
+   stay inside the Sizes column instead of expanding it and pushing the Levels
+   column off the panel. */
+.pdx-rip-sizeline { line-height: 1.45; white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
 .pdx-rip-sizeline + .pdx-rip-sizeline { margin-top: 1px; }
+/* Fixed layout + explicit column widths so the wide Sizes / Levels content can
+   never shove a column out of view; everything wraps within its column. */
+.pdx-tbl--rip { table-layout: fixed; }
+.pdx-tbl--rip th:nth-child(1), .pdx-tbl--rip td:nth-child(1) { width: 14%; }
+.pdx-tbl--rip th:nth-child(2), .pdx-tbl--rip td:nth-child(2) { width: 17%; }
+.pdx-tbl--rip th:nth-child(3), .pdx-tbl--rip td:nth-child(3) { width: 37%; }
+.pdx-tbl--rip th:nth-child(4), .pdx-tbl--rip td:nth-child(4) { width: 32%; }
 .pdx-rip-levels { display: flex; flex-direction: column; gap: 6px; }
 /* Each level: the rebate line, then a compact green "net after QD/RIP" line
    right under it (kept in the Levels column so no extra columns widen the
    table in the detail two-panel / quick-view sidebar). */
 .pdx-rip-level { display: block; }
 .pdx-rip-rebate { display: block; white-space: nowrap; }
-.pdx-rip-net { display: block; font-size: 11.5px; font-weight: 600; color: #15803d; white-space: nowrap; margin-top: 1px; font-variant-numeric: tabular-nums; }
+.pdx-rip-net { display: block; font-size: 11.5px; font-weight: 600; color: #15803d; white-space: normal; overflow-wrap: anywhere; margin-top: 1px; font-variant-numeric: tabular-nums; }
 .pdx-rip-norip { color: var(--text-muted); font-style: italic; }
 
 /* ---- QD prices chart: stacked Current / Next month cards with distinct

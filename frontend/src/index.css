@@ -6667,6 +6667,39 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pdx-expand-chev { transition: transform .15s; }
 .pdx-expand-chev.open { transform: rotate(180deg); }
 
+/* ---- DENSE line-item: the Products-list expanded rows. The roomy detail-page
+   layout (160px image, 22px title, stacked column of full-width buttons) wasted
+   huge vertical space in a long list. Dense = small image, tight type, the meta
+   GROWS to fill the middle, and steppers + actions sit on ONE inline row — about
+   half the height, far more scannable. Applies from tablet up; phones (<=480px)
+   keep the touch-friendly stacked layout below. ---- */
+@media (min-width: 481px) {
+  .pdx-listing--dense { padding: 10px 12px; margin-bottom: 8px; }
+  .pdx-listing--dense .pdx-summary { gap: 14px; align-items: center; }
+  .pdx-listing--dense .pdx-sum-meta { flex: 1 1 auto; }
+  .pdx-listing--dense .pdx-sum-dist-top { font-size: 12px; margin-bottom: 1px; }
+  .pdx-listing--dense .pdx-sum-dist-top svg { width: 13px; height: 13px; }
+  .pdx-listing--dense .pdx-sum-title { font-size: 15.5px; line-height: 1.25; }
+  .pdx-listing--dense .pdx-sum-specs { font-size: 11.5px; margin-top: 2px; gap: 2px 8px; }
+  .pdx-listing--dense .pdx-sum-ids { font-size: 11px; margin-top: 2px; gap: 2px 12px; }
+  .pdx-listing--dense .pdx-sum-origin { margin-top: 3px; font-size: 11px; }
+  .pdx-listing--dense .pdx-sum-origin > span { padding: 0 7px; line-height: 1.45; }
+  .pdx-listing--dense .pdx-sum-better { margin-top: 3px; }
+  .pdx-listing--dense .pdx-sum-spark { margin-top: 4px; }
+  /* Prices: compact, right-aligned, hugs the meta instead of a 200px column. */
+  .pdx-listing--dense .pdx-sum-prices { gap: 3px; min-width: 0; }
+  .pdx-listing--dense .pdx-price-block { gap: 12px; }
+  .pdx-listing--dense .pdx-price-now { font-size: 13px; }
+  .pdx-listing--dense .pdx-price-now strong { font-size: 16px; }
+  .pdx-listing--dense .pdx-price-next { font-size: 11px; margin-top: 0; }
+  /* Order: steppers + actions on ONE inline row (was a tall stacked column). */
+  .pdx-listing--dense .pdx-order { gap: 10px; align-items: center; }
+  .pdx-listing--dense .pdx-order-steppers { gap: 8px; }
+  .pdx-listing--dense .pdx-order-actions { flex-direction: row; align-items: center; gap: 8px; min-width: 0; }
+  .pdx-listing--dense .pdx-order-actions .btn { min-height: 0; padding: 7px 13px; font-size: 12.5px; }
+  .pdx-listing--dense .pdx-expand-toggle { margin-top: 0; padding: 6px 10px; font-size: 12px; }
+}
+
 /* ---- RIP details + QD chart, side by side ---- */
 /* Two panels when there's room (~640px+), ONE column when the container is
    narrow (a 420px detail rail, a tablet, a phone) — fluid, container-aware, no

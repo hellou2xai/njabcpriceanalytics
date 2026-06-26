@@ -498,7 +498,7 @@ function SizeRow({ size, cart, updateQty, primaryName, showDeals = true, hideDis
   // page "Summary / Price details" toggle (showDeals) hides or shows the panels.
   void hideDist; void dealMonth;
   return <ProductListingCard size={size} name={primaryName} cart={cart} updateQty={updateQty}
-    showPanels={showDeals} crossDist={crossDist} />;
+    showPanels={showDeals} crossDist={crossDist} dense />;
 }
 
 function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded = false, dealMonth = 'current' }: {

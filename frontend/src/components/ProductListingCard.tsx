@@ -52,8 +52,8 @@ function OriginGrape({ size }: { size: Product }) {
   );
 }
 
-function SummaryCard({ size, name, cur, next, pack, sibs }: {
-  size: Product; name: string; cur: MonthBreakdown | null; next: MonthBreakdown | null; pack: number | null; sibs: Product[];
+function SummaryCard({ size, name, cur, next, pack, sibs, dense = false }: {
+  size: Product; name: string; cur: MonthBreakdown | null; next: MonthBreakdown | null; pack: number | null; sibs: Product[]; dense?: boolean;
 }) {
   const ozB = ozPerBottle(size.unit_volume);
   // Cost per ounce = FRONTLINE single-bottle price ÷ fluid ounces (list-price
@@ -92,7 +92,7 @@ function SummaryCard({ size, name, cur, next, pack, sibs }: {
   return (
     <>
       <Link to={detailUrl(size)} className="pdx-sum-imglink" aria-label={size.product_name}>
-        <ProductThumb src={size.image_url} alt={size.product_name} size={160} expandable />
+        <ProductThumb src={size.image_url} alt={size.product_name} size={dense ? 84 : 160} expandable />
       </Link>
       <div className="pdx-sum-meta">
         {/* Distributor on top, bigger and bold — easiest thing to identify. */}
@@ -138,7 +138,7 @@ const vKey = (v: unknown) => {
   return ['', '0', 'nv', 'none', 'nan'].includes(s) ? '' : s;
 };
 
-export default function ProductListingCard({ size, name, cart, updateQty, showPanels = true, crossDist }: {
+export default function ProductListingCard({ size, name, cart, updateQty, showPanels = true, crossDist, dense = false }: {
   size: Product;
   name?: string;
   cart: CartState;
@@ -149,6 +149,9 @@ export default function ProductListingCard({ size, name, cart, updateQty, showPa
   // Same-product rows at other distributors (rep UPC), for the "Better price at
   // X" chip — matched to THIS size by size + pack + vintage below.
   crossDist?: Product[];
+  // Dense: the compact line-item used in the Products list (smaller image, tight
+  // spacing, inline order actions) vs the roomy product-detail layout.
+  dense?: boolean;
 }) {
   const pname = name ?? size.product_name;
   const pack = bottlesPerCase(pname, size.unit_qty);
@@ -171,11 +174,11 @@ export default function ProductListingCard({ size, name, cart, updateQty, showPa
   const panelsVisible = showPanels || expanded;
 
   return (
-    <div className="pdx-listing">
+    <div className={`pdx-listing${dense ? ' pdx-listing--dense' : ''}`}>
       {/* One row: image · meta · prices · order — the order fills the space to
           the right of the prices instead of sitting on its own line below. */}
       <div className="pdx-summary">
-        <SummaryCard size={size} name={pname} cur={cur} next={next} pack={pack} sibs={sibs} />
+        <SummaryCard size={size} name={pname} cur={cur} next={next} pack={pack} sibs={sibs} dense={dense} />
         <div className="pdx-order">
           <div className="pdx-order-steppers">
             <QtyStepper label={`${btlWord.charAt(0).toUpperCase()}${btlWord.slice(1)}s`}

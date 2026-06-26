@@ -71,10 +71,11 @@ function splitRipSizes(desc?: string | null): string[] {
   if (!desc) return [];
   const s = String(desc).replace(/\s+/g, ' ').trim()
     // Break after each "… CASE" (the end of one size rule) so the next size
-    // rule starts on its own line, and before pack tokens / INCLUDES-EXCLUDES.
+    // rule starts on its own line, before pack tokens, and before any
+    // INCLUDE/EXCLUDE clause (INCLUDES, EXCLUDING, EXCLUDES, …).
     .replace(/(\bCASE\b)\s+(?=\S)/gi, '$1\n')
     .replace(/\s+(?=\d+\s*PK\b)/gi, '\n')
-    .replace(/\s+(?=(?:EXCLUDES|INCLUDES)\b)/gi, '\n');
+    .replace(/\s+(?=(?:EXCLUD|INCLUD))/gi, '\n');
   return s.split('\n').map(x => x.trim()).filter(Boolean);
 }
 
@@ -100,26 +101,24 @@ function ripLevels(tiers: RipTier[], pack: number | null): RipLevel[] {
   return [...m.values()].sort((a, b) => a.cases - b.cases);
 }
 
-type MonthLabel = 'Current Month' | 'Next Month';
-interface RipProgramRow { month: MonthLabel; dates: string; sizes: string[]; levels: RipLevel[]; ts: boolean; noRip?: boolean; }
-interface RipProgram { code: string | null; rows: RipProgramRow[]; }
+interface RipRow { code: string | null; dates: string; sizes: string[]; levels: RipLevel[]; ts: boolean; isNext: boolean; noRip?: boolean; }
 
-// One row PER (program code, validity window) PER month. A full-month RIP and a
-// time-sensitive window under the same code each get their own row. Next Month
-// rows appear only when that edition's block is loaded.
-function buildRipPrograms(cur: MonthBreakdown | null, next: MonthBreakdown | null, pack: number | null): RipProgram[] {
-  const byCode = new Map<string, RipProgram>();
-  const add = (month: MonthLabel, block: MonthBreakdown | null) => {
+// One FLAT list of RIP rows — one per (code, validity window), current-month
+// windows first then next-month. RIP codes are reissued every edition, so we
+// never pair a current code with a "next month" of the same code; instead, if
+// next month's edition is loaded and has NO RIP at all, we add ONE
+// "No RIP Next Month" line at the end.
+function buildRipRows(cur: MonthBreakdown | null, next: MonthBreakdown | null, pack: number | null): RipRow[] {
+  const rows: RipRow[] = [];
+  const addBlock = (block: MonthBreakdown | null, isNext: boolean) => {
     const tiers = (block?.ripTiers ?? []).filter(t => (t.ripOnlySave ?? 0) > 0.005);
-    if (!tiers.length) return;
-    const byCodeTiers = new Map<string, RipTier[]>();
+    const byCode = new Map<string, RipTier[]>();
     for (const t of tiers) {
       const k = t.code ?? '';
-      const arr = byCodeTiers.get(k);
-      if (arr) arr.push(t); else byCodeTiers.set(k, [t]);
+      const arr = byCode.get(k);
+      if (arr) arr.push(t); else byCode.set(k, [t]);
     }
-    for (const [code, gt] of byCodeTiers) {
-      const prog = byCode.get(code) ?? { code: code || null, rows: [] };
+    for (const [code, gt] of byCode) {
       const byWin = new Map<string, RipTier[]>();
       for (const t of gt) {
         const wk = `${t.from_date ?? ''}|${t.to_date ?? ''}`;
@@ -128,80 +127,62 @@ function buildRipPrograms(cur: MonthBreakdown | null, next: MonthBreakdown | nul
       }
       for (const wt of byWin.values()) {
         const t0 = wt[0];
-        prog.rows.push({
-          month,
+        rows.push({
+          code: code || null,
           dates: isoRange(t0.from_date, t0.to_date),
           sizes: splitRipSizes(wt.map(t => t.description).find(d => d && d.trim())),
           levels: ripLevels(wt, pack),
           ts: wt.some(t => t.ts),
+          isNext,
         });
       }
-      byCode.set(code, prog);
     }
   };
-  add('Current Month', cur);
-  add('Next Month', next);
-  // When next month's edition IS loaded but a program has a current-month RIP
-  // and no next-month RIP, show an explicit "No RIP Next Month" row.
-  if (next) {
-    for (const prog of byCode.values()) {
-      const hasCur = prog.rows.some(r => r.month === 'Current Month');
-      const hasNext = prog.rows.some(r => r.month === 'Next Month');
-      if (hasCur && !hasNext) {
-        prog.rows.push({ month: 'Next Month', dates: '', sizes: [], levels: [], ts: false, noRip: true });
-      }
-    }
+  addBlock(cur, false);
+  addBlock(next, true);
+  if (next && !rows.some(r => r.isNext)) {
+    rows.push({ code: null, dates: '', sizes: [], levels: [], ts: false, isNext: true, noRip: true });
   }
-  return [...byCode.values()];
+  return rows;
 }
 
-function RipPanel({ programs }: { programs: RipProgram[] }) {
+function RipPanel({ rows }: { rows: RipRow[] }) {
   return (
     <section className="pdx-panel pdx-rip">
       <h3 className="pdx-panel-h">RIP</h3>
-      {programs.length === 0 ? (
+      {rows.length === 0 ? (
         <p className="pdx-empty">No RIP this month.</p>
       ) : (
-        <div className="pdx-rip-progs">
-          {programs.map((p, i) => (
-            <div className="pdx-rip-prog" key={`${p.code ?? 'rip'}-${i}`}>
-              <div className="pdx-rip-code">RIP{p.code ? ` ${p.code}` : ''}</div>
-              <table className="pdx-rip-table">
-                <thead>
-                  <tr><th></th><th>Dates</th><th>Sizes</th><th>Levels</th></tr>
-                </thead>
-                <tbody>
-                  {p.rows.map((r, ri) => r.noRip ? (
-                    <tr key={ri}>
-                      <td className="pdx-rip-month">{r.month}</td>
-                      <td className="pdx-rip-norip" colSpan={3}>No RIP Next Month</td>
-                    </tr>
-                  ) : (
-                    <tr key={ri}>
-                      <td className="pdx-rip-month">
-                        {r.month}
-                        {r.ts && <TsSticker />}
-                      </td>
-                      <td className="pdx-rip-dates">{r.dates}</td>
-                      <td className="pdx-rip-sizes">
-                        {r.sizes.length === 0 ? '—' : r.sizes.map((line, li) => (
-                          <div className="pdx-rip-sizeline" key={li}>{line}</div>
-                        ))}
-                      </td>
-                      <td className="pdx-rip-levels">
-                        {r.levels.length === 0 ? '—' : r.levels.map((l, li) => (
-                          <span className="pdx-rip-level" key={li}>
-                            {fmtCs(l.cases)} {l.cases === 1 ? 'case' : 'cases'}: <strong>{moneyRound(l.total)}</strong>
-                          </span>
-                        ))}
-                      </td>
-                    </tr>
+        <table className="pdx-rip-table">
+          <thead>
+            <tr><th>RIP</th><th>Dates</th><th>Sizes</th><th>Levels</th></tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => r.noRip ? (
+              <tr key={i}>
+                <td className="pdx-rip-codecell">Next Month</td>
+                <td className="pdx-rip-norip" colSpan={3}>No RIP Next Month</td>
+              </tr>
+            ) : (
+              <tr key={i}>
+                <td className="pdx-rip-codecell">RIP{r.code ? ` ${r.code}` : ''}{r.ts && <TsSticker />}</td>
+                <td className="pdx-rip-dates">{r.dates}</td>
+                <td className="pdx-rip-sizes">
+                  {r.sizes.length === 0 ? '—' : r.sizes.map((line, li) => (
+                    <div className="pdx-rip-sizeline" key={li}>{line}</div>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          ))}
-        </div>
+                </td>
+                <td className="pdx-rip-levels">
+                  {r.levels.length === 0 ? '—' : r.levels.map((l, li) => (
+                    <span className="pdx-rip-level" key={li}>
+                      {fmtCs(l.cases)} {l.cases === 1 ? 'case' : 'cases'}: <strong>{moneyRound(l.total)}</strong>
+                    </span>
+                  ))}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </section>
   );
@@ -289,10 +270,10 @@ export default function RipQdPanels({ size, name, className }: {
   const btlWord = perUnitNoun(size.unit_volume, size.unit_type);
   const frontlineUnit = pack && size.frontline_case_price != null
     ? size.frontline_case_price / pack : (size.frontline_unit_price ?? null);
-  const programs = useMemo(() => buildRipPrograms(cur, next, pack), [cur, next, pack]);
+  const ripRows = useMemo(() => buildRipRows(cur, next, pack), [cur, next, pack]);
   return (
     <div className={`pdx-detail-grid${className ? ` ${className}` : ''}`}>
-      <RipPanel programs={programs} />
+      <RipPanel rows={ripRows} />
       <QdChart cur={cur} next={next} pack={pack} frontlineUnit={frontlineUnit} csWord={csWord} btlWord={btlWord} />
     </div>
   );

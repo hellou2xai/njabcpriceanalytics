@@ -6583,6 +6583,8 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pdx-rip-table td, .pdx-qd-table td { padding: 5px 8px; border-bottom: 1px solid var(--border); color: var(--text); vertical-align: top; }
 .pdx-rip-table tr:last-child td, .pdx-qd-table tr:last-child td { border-bottom: 0; }
 .pdx-rip-month { font-weight: 700; white-space: nowrap; }
+/* Column-1 RIP code in the flat RIP table (codes are reissued each edition). */
+.pdx-rip-codecell { font-weight: 800; color: var(--green); white-space: nowrap; }
 /* Time-sensitive sticker — amber pill on any RIP/QD line valid only part of
    the month (consistent across the detail page, list rows and quick view). */
 .pdx-ts { display: inline-block; margin-left: 5px; padding: 0 5px; border-radius: 999px; font-size: 9px; font-weight: 800; letter-spacing: .04em; vertical-align: middle;

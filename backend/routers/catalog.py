@@ -896,25 +896,40 @@ def search_products(
         _enr_upc = f"{src}.upc" if _enr else None
         # Smart free-text routing (repo HARD RULE: every search box resolves
         # through the semantic stack, never raw LIKE). When the typed query is
-        # a pure origin/style browse ("french wine", "napa", "malbec",
-        # "bourbon"), hand it to the SAME structured region/varietal filters
-        # the assistant uses instead of literal token-AND matching — so
-        # "french wine" returns all France-origin wines (~5k), not just the
-        # ~70 SKUs that literally contain the word "french". A query carrying
-        # a brand or other signal ("absolut vodka", "napa cellars") fails the
-        # residual check and keeps the literal search unchanged.
+        # a pure origin / grape / style browse ("french wine", "napa", "malbec",
+        # "bourbon", "douro", "speyside scotch"), resolve it against the
+        # canonical taxonomy and filter the structured geo_* columns (populated
+        # by the LLM enrichment) plus a product-name fallback — so "french wine"
+        # returns all France-origin wines, not just the ~70 SKUs literally
+        # containing "french". A brand/other query ("absolut vodka", "napa
+        # cellars") fails the residual check and keeps the literal search.
+        # region_semantics is the fallback when the taxonomy doesn't resolve.
         if q and not region and not varietal:
-            from backend.region_semantics import route_region_browse
-            from backend.varietal_semantics import route_varietal_browse
-            _br = route_region_browse(q)
-            if _br:
-                region = _br          # downstream `if region:` applies it
-                q = ""
-            else:
-                _bv = route_varietal_browse(q)
-                if _bv:
-                    varietal = _bv    # downstream `if varietal:` applies it
+            from backend import taxonomy as _tax
+            # Only take the taxonomy/geo path once the cache carries the geo_*
+            # columns; otherwise the structured filter has nothing to match and
+            # the name-only fallback would be WEAKER than region_semantics
+            # (which also searches enrichment description). So pre-enrichment we
+            # keep the proven region_semantics routing unchanged.
+            _spec = _tax.resolve_query(q) if _has_geo_cols(con) else None
+            if _spec:
+                _txc, _txp = _taxonomy_browse_clause(_spec, src, True)
+                if _txc:
+                    where.append(_txc)
+                    params.update(_txp)
                     q = ""
+            if q:  # taxonomy didn't claim it -> legacy name-token routing
+                from backend.region_semantics import route_region_browse
+                from backend.varietal_semantics import route_varietal_browse
+                _br = route_region_browse(q)
+                if _br:
+                    region = _br          # downstream `if region:` applies it
+                    q = ""
+                else:
+                    _bv = route_varietal_browse(q)
+                    if _bv:
+                        varietal = _bv    # downstream `if varietal:` applies it
+                        q = ""
         if q:
             clause, qp, rel_expr = _q_clause(q, _brand_initialisms(con, src),
                                              enrich_table=_enr, enrich_upc_expr=_enr_upc,
@@ -2097,6 +2112,74 @@ def _has_enrich_cols(con) -> bool:
         except Exception:
             _HAS_ENRICH_COLS[tag] = False
     return _HAS_ENRICH_COLS[tag]
+
+
+_HAS_GEO_COLS: dict[str, bool] = {}
+
+
+def _has_geo_cols(con) -> bool:
+    """True when the cache carries the canonical geo enrichment columns
+    (geo_country/region/varietal...). Older caches predate them, so the
+    taxonomy-driven search/facets fall back to name-token routing."""
+    from backend.cache_util import pricing_tag
+    tag = pricing_tag()
+    if tag not in _HAS_GEO_COLS:
+        try:
+            _HAS_GEO_COLS[tag] = any(
+                r[0] == "geo_country"
+                for r in con.execute("DESCRIBE cpl_enriched").fetchall())
+        except Exception:
+            _HAS_GEO_COLS[tag] = False
+    return _HAS_GEO_COLS[tag]
+
+
+def _taxonomy_browse_clause(spec: dict, src: str, has_geo: bool):
+    """Build a WHERE clause for a taxonomy browse spec (from
+    taxonomy.resolve_query). Matches the canonical geo_* columns (precise,
+    populated by the LLM enrichment) OR the product NAME tokens (covers rows not
+    yet geo-enriched). Returns (clause, params) or (None, {})."""
+    from backend import taxonomy as _tax
+    parts: list[str] = []
+    params: dict = {}
+    i = 0
+
+    def like(col_expr: str, val: str):
+        nonlocal i
+        k = f"tx{i}"; i += 1
+        params[k] = val
+        parts.append(f"{col_expr} ${k}")
+
+    kind = spec.get("kind")
+    if has_geo:
+        if kind == "region":
+            sub, reg, cty = spec.get("subregion"), spec.get("region"), spec.get("country")
+            if sub:
+                like(f"LOWER({src}.geo_subregion) =", sub.lower())
+                like(f"LOWER({src}.geo_region) =", sub.lower())
+            elif reg:
+                like(f"LOWER({src}.geo_region) =", reg.lower())
+                like(f"LOWER({src}.geo_subregion) =", reg.lower())
+            elif cty:
+                like(f"LOWER({src}.geo_country) =", cty.lower())
+        elif kind == "grape":
+            like(f"LOWER({src}.geo_varietal) LIKE", f"%{spec['grape'].lower()}%")
+        elif kind == "spirit":
+            if spec.get("style"):
+                like(f"LOWER({src}.geo_style) LIKE", f"%{spec['style'].lower()}%")
+            if spec.get("region"):
+                like(f"LOWER({src}.geo_region) LIKE", f"%{spec['region'].lower()}%")
+            if not spec.get("style") and not spec.get("region"):
+                # type-level: the base/varietal carries it (e.g. "Rum", "Gin")
+                base = (spec.get("type") or "").split("/")[0].strip().lower()
+                if base:
+                    like(f"LOWER({src}.geo_varietal) LIKE", f"%{base}%")
+    # NAME-token fallback (always) so not-yet-enriched rows still match.
+    for tok in _tax.query_name_tokens(spec):
+        like(f"UPPER({src}.product_name) LIKE", f"%{tok}%")
+
+    if not parts:
+        return None, {}
+    return "(" + " OR ".join(parts) + ")", params
 
 
 # Which precomputed cache tables the current pricing file carries (e.g.
@@ -4018,26 +4101,32 @@ def search_facets(
             _enr_cols = _has_enrich_cols(con)
             _enr = None if _enr_cols else ("product_enrichment" if _enrichment_searchable(con) else None)
             _enr_upc = f"{src}.upc" if _enr else None
-            # Mirror /search's smart routing: a pure origin/style browse
-            # ("french wine", "napa", "malbec") is counted over the structured
-            # region/varietal universe, not the literal token match, so the
+            # Mirror /search's smart routing exactly: a pure origin/grape/style
+            # browse is counted over the structured taxonomy universe (geo_*
+            # columns + name fallback), not the literal token match, so the
             # facet totals reconcile with the grid (e.g. french wine ~5k).
-            from backend.region_semantics import route_region_browse, build_region_filter
-            from backend.varietal_semantics import route_varietal_browse, build_varietal_filter
-            _fbr = route_region_browse(q)
-            _fbv = None if _fbr else route_varietal_browse(q)
-            if _fbr:
-                clause, qp, _ = build_region_filter(
-                    _fbr, name_col=f"{src}.product_name", upc_col=f"{src}.upc")
-            elif _fbv:
-                clause, qp, _ = build_varietal_filter(
-                    _fbv, name_col=f"{src}.product_name", upc_col=f"{src}.upc")
-            else:
-                clause, qp, _ = _q_clause(q, _brand_initialisms(con, src),
-                                          enrich_table=_enr, enrich_upc_expr=_enr_upc, enrich_cols=_enr_cols)
+            from backend import taxonomy as _tax
+            _spec = _tax.resolve_query(q) if _has_geo_cols(con) else None
+            clause = qp = None
+            if _spec:
+                clause, qp = _taxonomy_browse_clause(_spec, src, True)
+            if clause is None:
+                from backend.region_semantics import route_region_browse, build_region_filter
+                from backend.varietal_semantics import route_varietal_browse, build_varietal_filter
+                _fbr = route_region_browse(q)
+                _fbv = None if _fbr else route_varietal_browse(q)
+                if _fbr:
+                    clause, qp, _ = build_region_filter(
+                        _fbr, name_col=f"{src}.product_name", upc_col=f"{src}.upc")
+                elif _fbv:
+                    clause, qp, _ = build_varietal_filter(
+                        _fbv, name_col=f"{src}.product_name", upc_col=f"{src}.upc")
+                else:
+                    clause, qp, _ = _q_clause(q, _brand_initialisms(con, src),
+                                              enrich_table=_enr, enrich_upc_expr=_enr_upc, enrich_cols=_enr_cols)
             if clause:
                 base.append(clause)
-                bp.update(qp)
+                bp.update(qp or {})
         if wholesaler:
             base.append("wholesaler = $wholesaler")
             bp["wholesaler"] = wholesaler

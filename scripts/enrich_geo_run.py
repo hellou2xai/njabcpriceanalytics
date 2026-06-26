@@ -173,12 +173,12 @@ def main() -> None:
                 cost = (usage["in"] * _PRICE["in"] + usage["out"] * _PRICE["out"]
                         + usage["cr"] * _PRICE["cache_read"] + usage["cw"] * _PRICE["cache_write"]) / 1e6
                 eta = (n - done) / max(1e-6, rate)
-                print(f"[geo] {done}/{n}  {rate:.1f}/s  cost≈${cost:.2f}  eta {eta/60:.1f}m", flush=True)
+                print(f"[geo] {done}/{n}  {rate:.1f}/s  cost~${cost:.2f}  eta {eta/60:.1f}m", flush=True)
 
     write_con.close()
     cost = (usage["in"] * _PRICE["in"] + usage["out"] * _PRICE["out"]
             + usage["cr"] * _PRICE["cache_read"] + usage["cw"] * _PRICE["cache_write"]) / 1e6
-    print(f"[geo] DONE {done}/{n} in {(time.time()-t0)/60:.1f}m  total cost≈${cost:.2f}", flush=True)
+    print(f"[geo] DONE {done}/{n} in {(time.time()-t0)/60:.1f}m  total cost~${cost:.2f}", flush=True)
 
 
 if __name__ == "__main__":

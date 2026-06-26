@@ -44,13 +44,17 @@ from typing import Any, Optional
 log = logging.getLogger("semantic_search")
 
 
-_INDEX_NAME = "product_enrichment_fts_idx_v2"
+_INDEX_NAME = "product_enrichment_fts_idx_v3"
 _INDEX_NAME_V1 = "product_enrichment_fts_idx"
+_INDEX_NAME_V2 = "product_enrichment_fts_idx_v2"
 
 # Tsvector expression shared by ensure_fts_index (CREATE INDEX) and
 # _fts_upcs (WHERE / ORDER BY). Kept in one place so they always agree.
 # specs is a Go-UPC JSON blob that often carries proof, origin, strength —
 # appending it as raw text makes "90 proof", "Kentucky" etc. FTS-searchable.
+# v3 adds the canonical LLM geo enrichment (country/region/subregion/varietal/
+# style) so "Bordeaux", "Malbec", "Speyside" land on the right wines even when
+# the product NAME doesn't carry the origin. See backend/taxonomy.py.
 _FTS_EXPR = """to_tsvector('english',
     COALESCE(name, '') || ' ' ||
     COALESCE(brand, '') || ' ' ||
@@ -58,7 +62,14 @@ _FTS_EXPR = """to_tsvector('english',
     COALESCE(region, '') || ' ' ||
     COALESCE(category, '') || ' ' ||
     COALESCE(category_path, '') || ' ' ||
-    COALESCE(specs, '')
+    COALESCE(specs, '') || ' ' ||
+    COALESCE(geo_country, '') || ' ' ||
+    COALESCE(geo_region, '') || ' ' ||
+    COALESCE(geo_subregion, '') || ' ' ||
+    COALESCE(geo_appellation, '') || ' ' ||
+    COALESCE(geo_varietal, '') || ' ' ||
+    COALESCE(geo_style, '') || ' ' ||
+    COALESCE(geo_classification, '')
 )"""
 
 
@@ -71,11 +82,12 @@ def ensure_fts_index(con_pg) -> bool:
     """
     try:
         cur = con_pg.cursor()
-        # Drop obsolete v1 index so it doesn't waste space.
-        cur.execute("SELECT 1 FROM pg_indexes WHERE indexname = %s", (_INDEX_NAME_V1,))
-        if cur.fetchone():
-            log.info("Dropping obsolete FTS index %s", _INDEX_NAME_V1)
-            cur.execute(f"DROP INDEX CONCURRENTLY IF EXISTS {_INDEX_NAME_V1}")
+        # Drop obsolete older indexes so they don't waste space.
+        for _old in (_INDEX_NAME_V1, _INDEX_NAME_V2):
+            cur.execute("SELECT 1 FROM pg_indexes WHERE indexname = %s", (_old,))
+            if cur.fetchone():
+                log.info("Dropping obsolete FTS index %s", _old)
+                cur.execute(f"DROP INDEX CONCURRENTLY IF EXISTS {_old}")
         cur.execute("SELECT 1 FROM pg_indexes WHERE indexname = %s", (_INDEX_NAME,))
         if cur.fetchone():
             return True

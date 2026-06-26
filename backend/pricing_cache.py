@@ -260,14 +260,21 @@ def build_pricing_cache(force: bool = False) -> Path:
                 # Postgres). category_path/specs are JSON text parsed by the API.
                 enrich_cols = (
                     "upc, name, brand, category, category_path, description, region, "
-                    "specs, ean, code_type, barcode_url, inferred, image_url, image_source"
+                    "specs, ean, code_type, barcode_url, inferred, image_url, image_source, "
+                    # LLM geo/varietal enrichment (canonical taxonomy). See
+                    # backend/taxonomy.py + scripts/enrich_geo_run.py.
+                    "geo_country, geo_region, geo_subregion, geo_appellation, "
+                    "geo_varietal, geo_color, geo_style, geo_classification"
                 )
                 empty_enrich = (
                     "CREATE TABLE product_enrichment ("
                     "upc VARCHAR, name VARCHAR, brand VARCHAR, category VARCHAR, "
                     "category_path VARCHAR, description VARCHAR, region VARCHAR, "
                     "specs VARCHAR, ean VARCHAR, code_type VARCHAR, barcode_url VARCHAR, "
-                    "inferred INTEGER, image_url VARCHAR, image_source VARCHAR)"
+                    "inferred INTEGER, image_url VARCHAR, image_source VARCHAR, "
+                    "geo_country VARCHAR, geo_region VARCHAR, geo_subregion VARCHAR, "
+                    "geo_appellation VARCHAR, geo_varietal VARCHAR, geo_color VARCHAR, "
+                    "geo_style VARCHAR, geo_classification VARCHAR)"
                 )
                 # Allied (ABG) SKU<->UPC translation table, loaded by
                 # scripts/load_sku_mapping.py. Joined onto Allied catalogue rows by
@@ -615,6 +622,23 @@ def build_pricing_cache(force: bool = False) -> Path:
                           enr_name = pe.name, enr_category = pe.category,
                           enr_category_path = pe.category_path, enr_region = pe.region,
                           enr_description = pe.description
+                        FROM product_enrichment pe
+                        WHERE pe.upc = cpl_enriched.upc_norm""")
+
+                # Canonical LLM geo/varietal enrichment, denormalised onto the row
+                # for the same reason as enr_* above (search/facets read plain
+                # columns, no per-row subquery). These are the canonical taxonomy
+                # values (geo_country/region/subregion/varietal/...) the Products
+                # origin & grape facets filter on. See backend/taxonomy.py.
+                for _c in ("geo_country", "geo_region", "geo_subregion",
+                           "geo_appellation", "geo_varietal", "geo_color",
+                           "geo_style", "geo_classification"):
+                    _try(f"ALTER TABLE cpl_enriched ADD COLUMN {_c} VARCHAR")
+                _try("""UPDATE cpl_enriched SET
+                          geo_country = pe.geo_country, geo_region = pe.geo_region,
+                          geo_subregion = pe.geo_subregion, geo_appellation = pe.geo_appellation,
+                          geo_varietal = pe.geo_varietal, geo_color = pe.geo_color,
+                          geo_style = pe.geo_style, geo_classification = pe.geo_classification
                         FROM product_enrichment pe
                         WHERE pe.upc = cpl_enriched.upc_norm""")
 

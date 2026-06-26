@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import unicodedata
 from functools import lru_cache
 from typing import Optional
 
@@ -35,10 +36,13 @@ def _load(name: str) -> dict:
 
 
 def _norm(s: str) -> str:
-    """Loose match key: lowercase, strip accents-ish punctuation and spacing."""
+    """Loose match key: lowercase, fold accents to ASCII (so 'Rhône'/'Añejo'
+    match ASCII queries), strip punctuation, collapse spacing."""
     s = (s or "").strip().lower()
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(c for c in s if not unicodedata.combining(c))
     s = s.replace("&", " and ")
-    s = re.sub(r"[\[\]().,'`’]", " ", s)
+    s = re.sub(r"[\[\]().,'`’/]", " ", s)
     s = re.sub(r"\s+", " ", s)
     return s.strip()
 
@@ -122,7 +126,35 @@ def _grape_index() -> dict:
     return idx
 
 
+# Common trade shorthands the taxonomy stores only in compound form ("Scotch
+# Single Malt", not bare "Scotch"). type is the canonical spirits_taxonomy key.
+_SPIRIT_ALIASES = {
+    "scotch": {"type": "Whisky / Whiskey", "style": "Scotch", "region": "Scotland"},
+    "scotch whisky": {"type": "Whisky / Whiskey", "style": "Scotch", "region": "Scotland"},
+    "rye": {"type": "Whisky / Whiskey", "style": "Rye Whiskey", "region": None},
+    "single malt": {"type": "Whisky / Whiskey", "style": "Single Malt", "region": None},
+    "cognac": {"type": "Brandy", "style": "Cognac", "region": "Cognac"},
+    "armagnac": {"type": "Brandy", "style": "Armagnac", "region": "Armagnac"},
+    "pisco": {"type": "Brandy", "style": "Pisco", "region": None},
+}
+
+
 # --- spirits index: style/region/type -> canonical type ----------------------
+@lru_cache(maxsize=1)
+def _spirit_types() -> dict:
+    """norm(type name) -> canonical type, e.g. 'tequila' -> 'Tequila'. Also a
+    couple of obvious bare words the taxonomy nests ('whisky','whiskey')."""
+    out = {}
+    for typ in spirits_taxonomy():
+        out[_norm(typ)] = typ
+        # split "Whisky / Whiskey", "Liqueur / Cordial" into each bare word
+        for part in re.split(r"[/]", typ):
+            p = _norm(part)
+            if p:
+                out.setdefault(p, typ)
+    return out
+
+
 @lru_cache(maxsize=1)
 def _spirit_index() -> dict:
     idx: dict[str, dict] = {}
@@ -133,6 +165,8 @@ def _spirit_index() -> dict:
             idx.setdefault(_norm(style), {"type": typ, "style": style, "region": None})
         for region in (meta or {}).get("regions", []) or []:
             idx.setdefault(_norm(region), {"type": typ, "style": None, "region": region})
+    for alias, rec in _SPIRIT_ALIASES.items():
+        idx.setdefault(_norm(alias), rec)
     return idx
 
 
@@ -230,6 +264,24 @@ def canonical_spirit(text: Optional[str]) -> Optional[dict]:
     t = _norm(text)
     if t in idx:
         return idx[t]
+    # Prefer an explicit TYPE word ("reposado tequila" -> Tequila, not Mezcal),
+    # then enrich it with a style/region of that same type found in the query.
+    types = _spirit_types()
+    hit_type = None
+    for key in sorted(types, key=len, reverse=True):
+        if len(key) >= 3 and re.search(rf"\b{re.escape(key)}\b", t):
+            hit_type = types[key]
+            break
+    if hit_type:
+        style = region = None
+        for key in _sorted_keys(idx):
+            if len(key) >= 4 and key in t:
+                rec = idx[key]
+                if rec["type"] == hit_type:
+                    style = style or rec.get("style")
+                    region = region or rec.get("region")
+        return {"type": hit_type, "style": style, "region": region}
+    # No explicit type — fall back to any style/region term.
     for key in _sorted_keys(idx):
         if len(key) >= 4 and key in t:
             return idx[key]
@@ -289,6 +341,122 @@ def normalize_geo(country=None, region=None, subregion=None, varietal=None) -> d
 def _clean(s):
     s = (s or "").strip()
     return s or None
+
+
+_QUERY_GENERIC = frozenset({
+    "wine", "wines", "red", "reds", "white", "whites", "rose", "roses",
+    "rosado", "blush", "sparkling", "vino", "vins", "vin", "bottle", "bottles",
+    "the", "a", "an", "of", "from", "and", "grape", "grapes", "varietal",
+    "spirit", "spirits", "whisky", "whiskey",
+})
+
+
+def _explained_words(*names) -> set:
+    out: set = set()
+    for nm in names:
+        if nm:
+            out.update(_norm(nm).split())
+    return out
+
+
+def resolve_query(text: Optional[str]) -> Optional[dict]:
+    """If `text` is a PURE origin / grape / style browse, return a structured
+    spec to filter the catalog's geo_* columns on; else None (so a brand query
+    like 'napa cellars' or 'absolut vodka' stays a literal text search).
+
+    Spec shapes:
+      {"kind":"region","country":..,"region":..,"subregion":..}
+      {"kind":"grape","grape":..}
+      {"kind":"spirit","type":..,"style":..,"region":..}
+
+    "Pure browse" = after removing the words the match explains plus generic
+    wine/grape words, nothing meaningful is left. So "french wine", "napa",
+    "bordeaux reds", "malbec", "speyside scotch" resolve; "napa cellars",
+    "absolut vodka", "tito's" do not.
+    """
+    if not text:
+        return None
+    words = [w for w in _norm(text).split() if w]
+    content = [w for w in words if w not in _QUERY_GENERIC]
+    if not content:
+        return None
+
+    reg = canonical_region(text)
+    grp = canonical_grape(text)
+    spr = canonical_spirit(text)
+
+    region_idx, region_words = _region_index(), _region_words()
+    grape_idx, spirit_idx = _grape_index(), _spirit_index()
+
+    def residual_after(explained: set, recognise) -> list:
+        # A content word is explained if it's named in the match OR it is itself
+        # a recognised term of this axis (so the matched trigger word — "chianti",
+        # "scotch" — counts, while a brand word — "cellars" — does not).
+        return [w for w in content
+                if w not in explained and not recognise(w)]
+
+    # Region browse — explained by country/region/subregion names + demonyms +
+    # any recognised geographic word.
+    if reg:
+        explained = _explained_words(reg["country"], reg.get("region"), reg.get("subregion"))
+        explained |= {d for d, c in _DEMONYM.items() if c == reg["country"]}
+        explained |= set(_COUNTRY_ALIASES.get(reg["country"], []))
+        if not residual_after(explained, lambda w: w in region_idx or w in region_words):
+            return {"kind": "region", "country": reg["country"],
+                    "region": reg.get("region"), "subregion": reg.get("subregion")}
+
+    # Grape browse.
+    if grp:
+        syns = [grp] + (grape_varieties().get(grp, {}) or {}).get("synonyms", [])
+        explained = _explained_words(*syns)
+        if not residual_after(explained, lambda w: w in grape_idx):
+            return {"kind": "grape", "grape": grp}
+
+    # Spirit browse — explained by type/style/region tokens + recognised terms.
+    if spr:
+        explained = _explained_words(spr["type"], spr.get("style"), spr.get("region"))
+        if not residual_after(explained, lambda w: w in spirit_idx):
+            return {"kind": "spirit", "type": spr["type"],
+                    "style": spr.get("style"), "region": spr.get("region")}
+    return None
+
+
+def query_name_tokens(spec: dict) -> list[str]:
+    """Distinctive UPPER-CASE product-name fragments implied by a browse spec,
+    for matching rows that aren't geo-enriched yet (fallback alongside the
+    structured geo_* columns). Short/ambiguous tokens are dropped."""
+    toks: list[str] = []
+
+    def add(*vals):
+        for v in vals:
+            if not v:
+                continue
+            u = v.strip().upper()
+            if len(u) >= 4 and u not in {x for x in toks}:
+                toks.append(u)
+
+    kind = spec.get("kind")
+    if kind == "region":
+        add(spec.get("subregion"), spec.get("region"))
+        c = spec.get("country")
+        add(c)
+        for d, cc in _DEMONYM.items():
+            if cc == c:
+                add(d)
+        for a in _COUNTRY_ALIASES.get(c, []):
+            add(a)
+    elif kind == "grape":
+        g = spec.get("grape")
+        add(g)
+        for syn in (grape_varieties().get(g, {}) or {}).get("synonyms", []):
+            add(syn)
+    elif kind == "spirit":
+        for part in re.split(r"[/]", spec.get("type") or ""):
+            add(part.strip())
+        add(spec.get("style"), spec.get("region"))
+    # Drop tokens that are themselves generic (e.g. country 'GEORGIA' clashes
+    # with the US state in names — but that's rare; keep it simple).
+    return toks
 
 
 def known_countries() -> list[str]:

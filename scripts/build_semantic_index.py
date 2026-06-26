@@ -125,7 +125,12 @@ def main() -> None:
                            ANY_VALUE(abv_proof) AS abv_proof,
                            ANY_VALUE(product_type) AS product_type,
                            ANY_VALUE(enr_category) AS enr_category,
-                           ANY_VALUE(enr_region) AS enr_region
+                           ANY_VALUE(enr_region) AS enr_region,
+                           ANY_VALUE(geo_country) AS geo_country,
+                           ANY_VALUE(geo_region) AS geo_region,
+                           ANY_VALUE(geo_subregion) AS geo_subregion,
+                           ANY_VALUE(geo_varietal) AS geo_varietal,
+                           ANY_VALUE(geo_style) AS geo_style
                     FROM cpl_enriched
                     WHERE upc IS NOT NULL AND LTRIM(CAST(upc AS VARCHAR),'0') != ''
                     GROUP BY 1
@@ -137,7 +142,9 @@ def main() -> None:
                         "unit_volume": row[1], "unit_qty": row[2],
                         "vintage": row[3], "abv_proof": row[4],
                         "product_type": row[5], "enr_category": row[6],
-                        "enr_region": row[7],
+                        "enr_region": row[7], "geo_country": row[8],
+                        "geo_region": row[9], "geo_subregion": row[10],
+                        "geo_varietal": row[11], "geo_style": row[12],
                     }
             print(f"  {len(cpl_supplement)} UPC supplement rows loaded")
         except Exception as exc:

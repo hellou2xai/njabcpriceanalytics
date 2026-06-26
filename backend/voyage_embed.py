@@ -126,7 +126,12 @@ def _compose_text(name: Optional[str], brand: Optional[str], description: Option
                   abv_proof: Optional[str] = None,
                   product_type: Optional[str] = None,
                   enr_category: Optional[str] = None,
-                  enr_region: Optional[str] = None) -> str:
+                  enr_region: Optional[str] = None,
+                  geo_country: Optional[str] = None,
+                  geo_region: Optional[str] = None,
+                  geo_subregion: Optional[str] = None,
+                  geo_varietal: Optional[str] = None,
+                  geo_style: Optional[str] = None) -> str:
     """The text blob each product is embedded as. Keep parts short but
     distinctive — Voyage embeds up to 32K tokens but the relevant signal
     fits in well under 1K.
@@ -138,9 +143,19 @@ def _compose_text(name: Optional[str], brand: Optional[str], description: Option
     if name: parts.append(name.strip())
     if brand and (not name or brand.strip().lower() not in name.lower()):
         parts.append(brand.strip())
+    # Canonical geo (LLM enrichment) is the most reliable origin signal — put
+    # the full country/region/subregion chain first so "Bordeaux", "Napa
+    # Valley", "Marlborough" embed strongly even when absent from the name.
+    geo_chain = " ".join(x.strip() for x in (geo_country, geo_region, geo_subregion) if x)
+    if geo_chain:
+        parts.append(f"origin: {geo_chain}")
+    if geo_varietal:
+        parts.append(f"grape: {geo_varietal.strip()}")
+    if geo_style:
+        parts.append(f"style: {geo_style.strip()}")
     # Region: prefer enr_region (CPL-sourced) over the Go-UPC region field.
     r = (enr_region or region or "").strip()
-    if r: parts.append(f"region: {r}")
+    if r and r.lower() not in geo_chain.lower(): parts.append(f"region: {r}")
     # Category: prefer enr_category (granular, e.g. "Bourbon Whiskey") over the
     # Go-UPC top-level category ("Spirits"). Both are kept when they differ.
     cat = (enr_category or category or "").strip()
@@ -284,7 +299,12 @@ def index_enrichment(
                                  abv_proof=cpl.get("abv_proof"),
                                  product_type=cpl.get("product_type"),
                                  enr_category=cpl.get("enr_category"),
-                                 enr_region=cpl.get("enr_region"))
+                                 enr_region=cpl.get("enr_region"),
+                                 geo_country=cpl.get("geo_country"),
+                                 geo_region=cpl.get("geo_region"),
+                                 geo_subregion=cpl.get("geo_subregion"),
+                                 geo_varietal=cpl.get("geo_varietal"),
+                                 geo_style=cpl.get("geo_style"))
             if not blob.strip():
                 skipped_empty += 1
                 continue

@@ -20,6 +20,12 @@ export interface RipTier extends TierWindow {
   qty: number;
   unit: string;
   eff: number;
+  // Per-BOTTLE net price after QD (+RIP for rip tiers) — backend btl_price_after.
+  effBottle?: number | null;
+  // SOURCE per-case / per-bottle saving for this tier (the CPL discount amount,
+  // e.g. '50 Cases' = $102). Read straight from the backend, never recomputed.
+  savePerCase?: number | null;
+  savePerBottle?: number | null;
   // RIP tiers only: the per-case rebate this tier contributes (excludes the
   // stacked CPL discount). Used as the "this tier saves" number.
   ripOnlySave?: number | null;

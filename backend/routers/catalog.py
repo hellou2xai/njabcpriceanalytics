@@ -3988,7 +3988,17 @@ def search_facets(
         base = ["1=1"]
         bp: dict = {}
         if q:
-            clause, qp, _ = _q_clause(q)
+            # Use the SAME enrichment-aware match as /search (brand initialisms +
+            # Go-UPC region/category/description), so the facet COUNTS are
+            # computed over the same universe the results come from. Without this
+            # the facets used a name/brand-only LIKE and reported far fewer items
+            # (e.g. "french wine": search 76 vs facets 7), so the In QD / RIP /
+            # combo badges were wrong.
+            _enr_cols = _has_enrich_cols(con)
+            _enr = None if _enr_cols else ("product_enrichment" if _enrichment_searchable(con) else None)
+            _enr_upc = f"{src}.upc" if _enr else None
+            clause, qp, _ = _q_clause(q, _brand_initialisms(con, src),
+                                      enrich_table=_enr, enrich_upc_expr=_enr_upc, enrich_cols=_enr_cols)
             base.append(clause)
             bp.update(qp)
         if wholesaler:

@@ -451,9 +451,14 @@ def query_name_tokens(spec: dict) -> list[str]:
         for syn in (grape_varieties().get(g, {}) or {}).get("synonyms", []):
             add(syn)
     elif kind == "spirit":
-        for part in re.split(r"[/]", spec.get("type") or ""):
-            add(part.strip())
-        add(spec.get("style"), spec.get("region"))
+        # A specific style/region ("Bourbon", "Speyside") is the precise signal;
+        # the bare TYPE word ("Whisky") matches every whisky, so only fall back
+        # to it for a pure type-level browse ("whiskey", "rum").
+        if spec.get("style") or spec.get("region"):
+            add(spec.get("style"), spec.get("region"))
+        else:
+            for part in re.split(r"[/]", spec.get("type") or ""):
+                add(part.strip())
     # Drop tokens that are themselves generic (e.g. country 'GEORGIA' clashes
     # with the US state in names — but that's rare; keep it simple).
     return toks

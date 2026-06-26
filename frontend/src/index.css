@@ -6566,6 +6566,12 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pdx-sum-sku { color: var(--hl-fg); font-weight: 700; }
 .pdx-sum-upc { color: var(--text); font-weight: 600; }
 .pdx-sum-spark { display: inline-block; margin-top: 8px; }
+/* Canonical origin (country/region/subregion) + grape from geo enrichment. */
+.pdx-sum-origin { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 6px; font-size: 12px; }
+.pdx-sum-origin > span { padding: 1px 8px; border-radius: 999px; font-weight: 600; line-height: 1.5; }
+.pdx-origin-geo { background: var(--hl-bg, #fff4e5); color: var(--hl-fg, #b45309); }
+.pdx-origin-grape { background: #efeaff; color: #5b21b6; }
+.pdx-origin-style { background: var(--bg-subtle, #f1f5f9); color: var(--text-muted); }
 .pdx-sum-better { margin-top: 6px; }
 /* CASE then BOTTLE STACKED (two lines), each: label left, Price + Next Month
    right — matches the Image #5 reference. */

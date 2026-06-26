@@ -34,6 +34,24 @@ function detailUrl(size: Product): string {
   return `/product?${q.toString()}`;
 }
 
+// Canonical origin + grape from the LLM geo enrichment. Country -> region ->
+// subregion shown most-specific first; grape(s) and (wine) colour/style after.
+function OriginGrape({ size }: { size: Product }) {
+  const origin = [size.geo_subregion, size.geo_region, size.geo_country]
+    .filter((v, i, a) => v && a.indexOf(v) === i)
+    .join(', ');
+  const grape = size.geo_varietal || null;
+  const style = size.geo_style || size.geo_color || null;
+  if (!origin && !grape && !style) return null;
+  return (
+    <div className="pdx-sum-origin">
+      {origin && <span className="pdx-origin-geo">{origin}</span>}
+      {grape && <span className="pdx-origin-grape">{grape}</span>}
+      {style && !grape && <span className="pdx-origin-style">{style}</span>}
+    </div>
+  );
+}
+
 function SummaryCard({ size, name, cur, next, pack, sibs }: {
   size: Product; name: string; cur: MonthBreakdown | null; next: MonthBreakdown | null; pack: number | null; sibs: Product[];
 }) {
@@ -100,6 +118,7 @@ function SummaryCard({ size, name, cur, next, pack, sibs }: {
           {abgSku(size.wholesaler, size.abg_sku) && <span className="pdx-sum-sku">SKU: {skuLabel(size.wholesaler)} {size.abg_sku}</span>}
           {size.upc && <span className="pdx-sum-upc">UPC: {size.upc}</span>}
         </div>
+        <OriginGrape size={size} />
         {sibs.length > 1 && (
           <div className="pdx-sum-better">
             <DistCompareChip sizes={sibs} selfWholesaler={size.wholesaler} />

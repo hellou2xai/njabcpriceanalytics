@@ -2079,6 +2079,14 @@ export interface Product {
   // Go-UPC enrichment product name (clean, canonical, keyed by THIS row's UPC).
   // Used as the per-SKU display name in the ungrouped Products view.
   enrichment_name?: string | null;
+  // Canonical LLM geo/varietal enrichment (backend/taxonomy.py). Origin chain
+  // country -> region -> subregion, plus grape(s), wine colour, spirit style.
+  geo_country?: string | null;
+  geo_region?: string | null;
+  geo_subregion?: string | null;
+  geo_varietal?: string | null;
+  geo_color?: string | null;
+  geo_style?: string | null;
   // CELR Product Number ("CELR-000123"): the persistent FAMILY identity
   // spanning sizes/vintages/distributors (docs/CELR_PRODUCT_NUMBER_DESIGN.md).
   celr_product_number?: string | null;

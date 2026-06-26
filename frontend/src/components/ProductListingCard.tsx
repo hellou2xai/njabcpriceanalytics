@@ -21,7 +21,7 @@ import { QtyStepper, type CartState } from './CatalogTable';
 import DistCompareChip from './DistCompareChip';
 import { buildMonths } from '../lib/promotionsSparkline';
 import { currentMonth, type MonthBreakdown } from './MonthEffectiveSparkline';
-import RipQdPanels, { money, afterOneCase, ozPerBottle } from './RipQdPanels';
+import RipQdPanels, { money, afterOneCase, ozPerBottle, dedupMonthsByListing } from './RipQdPanels';
 import { bottlesPerCase, sizeToMl, stripHeaderVintage } from '../lib/productSizes';
 import { distributorName, abgSku, skuLabel, perUnitNoun, priceUnitWord } from '../lib/distributors';
 import type { Product } from '../lib/api';
@@ -133,7 +133,7 @@ export default function ProductListingCard({ size, name, cart, updateQty, showPa
 }) {
   const pname = name ?? size.product_name;
   const pack = bottlesPerCase(pname, size.unit_qty);
-  const months = useMemo(() => buildMonths(size), [size]);
+  const months = useMemo(() => dedupMonthsByListing(buildMonths(size), size.frontline_case_price), [size]);
   const cur = currentMonth(months);
   const next = months.find(m => m.future) ?? null;
   const btlWord = perUnitNoun(size.unit_volume, size.unit_type);

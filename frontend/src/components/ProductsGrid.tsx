@@ -174,11 +174,12 @@ function groupByProduct(items: Product[], grouped = true): ProductGroup[] {
   for (const it of items) {
     const fam = (it.product_group && it.product_group.trim()) ? it.product_group : it.product_name;
     // Grouped: distributor-agnostic family card. Ungrouped (default): one group
-    // per distributor + family + size + pack, so the cross-distributor merge is
-    // OFF and each distributor's listing of each size stands on its own.
+    // per distributor + family + size + pack + NAME, so the cross-distributor
+    // merge is OFF and a value-add / gift pack that shares a barcode but has a
+    // different product name stands on its own (not merged with the regular).
     const key = grouped
       ? fam
-      : `${it.wholesaler}|${fam}|${it.unit_volume ?? ''}|${normPack(it.unit_qty)}|${normVtg(it.vintage)}`;
+      : `${it.wholesaler}|${fam}|${it.unit_volume ?? ''}|${normPack(it.unit_qty)}|${normVtg(it.vintage)}|${(it.product_name ?? '').trim().toUpperCase()}`;
     let g = map.get(key);
     if (!g) {
       g = {
@@ -848,7 +849,7 @@ export function countProductGroups(items: Product[], grouped = false): number {
   const seen = new Set<string>();
   for (const it of items) {
     const fam = (it.product_group && it.product_group.trim()) ? it.product_group : it.product_name;
-    seen.add(grouped ? fam : `${it.wholesaler}|${fam}|${it.unit_volume ?? ''}|${normPack(it.unit_qty)}|${normVtg(it.vintage)}`);
+    seen.add(grouped ? fam : `${it.wholesaler}|${fam}|${it.unit_volume ?? ''}|${normPack(it.unit_qty)}|${normVtg(it.vintage)}|${(it.product_name ?? '').trim().toUpperCase()}`);
   }
   return seen.size;
 }

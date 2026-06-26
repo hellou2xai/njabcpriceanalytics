@@ -33,6 +33,27 @@ export function ozPerBottle(uv?: string | null): number | null {
   return ml === Number.MAX_SAFE_INTEGER ? null : ml / 29.5735;
 }
 
+// A shared barcode can cover two different listings (e.g. a regular bottle and a
+// value-add pack) with different prices, so price_3mo can carry TWO blocks per
+// edition. Keep ONE block per edition — the one whose frontline matches THIS
+// row's own price — so current vs next month compares the SAME listing across
+// months, never one listing's price against another's.
+export function dedupMonthsByListing(months: MonthBreakdown[], frontlineCase?: number | null): MonthBreakdown[] {
+  if (months.length <= 1) return months;
+  const byEd = new Map<string, MonthBreakdown>();
+  for (const b of months) {
+    const ed = b.edition ?? '';
+    const ex = byEd.get(ed);
+    if (!ex) { byEd.set(ed, b); continue; }
+    if (frontlineCase != null) {
+      const dNew = Math.abs((b.frontline ?? Number.MAX_SAFE_INTEGER) - frontlineCase);
+      const dOld = Math.abs((ex.frontline ?? Number.MAX_SAFE_INTEGER) - frontlineCase);
+      if (dNew < dOld) byEd.set(ed, b);
+    }
+  }
+  return [...byEd.values()];
+}
+
 // Any unit starting with 'b' is a bottle (Fedway abbreviates bottles "B").
 const isBottleUnit = (unit?: string | null) => /^\s*b/i.test(String(unit ?? ''));
 function caseQty(t: RipTier, pack: number | null): number {
@@ -280,7 +301,7 @@ export default function RipQdPanels({ size, name, className }: {
 }) {
   const pname = name ?? size.product_name;
   const pack = bottlesPerCase(pname, size.unit_qty);
-  const months = useMemo(() => buildMonths(size), [size]);
+  const months = useMemo(() => dedupMonthsByListing(buildMonths(size), size.frontline_case_price), [size]);
   const cur = currentMonth(months);
   const next = months.find(m => m.future) ?? null;
   const csWord = priceUnitWord(size.unit_volume, size.unit_type);

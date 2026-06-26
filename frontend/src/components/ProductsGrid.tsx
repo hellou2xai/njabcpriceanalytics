@@ -683,6 +683,9 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
           <span className="prod-card-name prod-card-name--plain"
             title={stripHeaderVintage(group.displayName, group.productType)}>
             {stripHeaderVintage(group.displayName, group.productType)}
+            {group.flat && group.sizes[0]?.unit_volume && (
+              <span className="prod-card-name-size"> ({group.sizes[0].unit_volume})</span>
+            )}
           </span>
           <div className="prod-card-type">
             {[group.productType, group.brand].filter(Boolean).join(' · ')}

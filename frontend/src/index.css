@@ -5973,6 +5973,7 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
    distributor product name below instead. */
 .prod-card-name--plain { display: block; cursor: default; }
 .prod-card-name--plain:hover { color: var(--text); text-decoration: none; }
+.prod-card-name-size { color: var(--text-muted); font-weight: 600; font-size: 0.82em; }
 .prod-card-type { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
 .prod-card-spark { display: inline-block; margin-top: 6px; }
 /* Per-card loading skeletons: the sparkline + deal stickers stream in after the
@@ -6529,11 +6530,14 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pdx-sum-title-link { text-decoration: none; color: inherit; min-width: 0; }
 .pdx-sum-title-link:hover .pdx-sum-title { color: var(--accent); }
 .pdx-sum-title { margin: 0; font-size: 22px; font-weight: 800; color: var(--text); line-height: 1.2; }
+.pdx-sum-title-size { color: var(--text-muted); font-weight: 600; font-size: 0.72em; }
 .pdx-sum-specs { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 6px; font-size: 13px; color: var(--text-muted); }
 .pdx-sum-specs > span:not(:last-child)::after { content: '|'; margin-left: 8px; color: var(--border); }
 .pdx-sum-ids { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; font-size: 11.5px; color: var(--text-muted); }
 .pdx-sum-dist { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
-.pdx-sum-upc { color: var(--hl-fg); font-weight: 600; }
+/* Distributor SKU in red; UPC in normal black. */
+.pdx-sum-sku { color: var(--hl-fg); font-weight: 700; }
+.pdx-sum-upc { color: var(--text); font-weight: 600; }
 .pdx-sum-spark { display: inline-block; margin-top: 8px; }
 /* CASE then BOTTLE STACKED (two lines), each: label left, Price + Next Month
    right — matches the Image #5 reference. */

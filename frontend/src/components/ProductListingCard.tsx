@@ -78,7 +78,10 @@ function SummaryCard({ size, name, cur, next, pack }: {
           <FavoriteButton productName={size.product_name} wholesaler={size.wholesaler}
             upc={size.upc} unitVolume={size.unit_volume} />
           <Link to={detailUrl(size)} className="pdx-sum-title-link">
-            <h2 className="pdx-sum-title">{stripHeaderVintage(size.product_name || name, size.product_type)}</h2>
+            <h2 className="pdx-sum-title">
+              {stripHeaderVintage(size.product_name || name, size.product_type)}
+              {size.unit_volume && <span className="pdx-sum-title-size"> ({size.unit_volume})</span>}
+            </h2>
           </Link>
         </div>
         <div className="pdx-sum-specs">
@@ -90,7 +93,7 @@ function SummaryCard({ size, name, cur, next, pack }: {
         </div>
         <div className="pdx-sum-ids">
           <span className="pdx-sum-dist"><Store size={12} /> {distributorName(size.wholesaler)}</span>
-          {abgSku(size.wholesaler, size.abg_sku) && <span>SKU: {skuLabel(size.wholesaler)} {size.abg_sku}</span>}
+          {abgSku(size.wholesaler, size.abg_sku) && <span className="pdx-sum-sku">SKU: {skuLabel(size.wholesaler)} {size.abg_sku}</span>}
           {size.upc && <span className="pdx-sum-upc">UPC: {size.upc}</span>}
         </div>
       </div>

@@ -208,7 +208,7 @@ export default function ProductListingCard({ size, name, cart, updateQty, showPa
           noise — the headline net + the RIP/QD tables already convey it. Hide
           them here; the full detail (with net per level) stays on the product
           details page. */}
-      {panelsVisible && <RipQdPanels size={size} name={pname} className={dense ? 'pdx-hide-net' : undefined} />}
+      {panelsVisible && <RipQdPanels size={size} name={pname} className={dense ? 'pdx-hide-net pdx-compact' : undefined} />}
     </div>
   );
 }

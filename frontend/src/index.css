@@ -6805,6 +6805,25 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
    lines — that detail belongs on the product details page, not the list. */
 .pdx-hide-net .pdx-rip-net { display: none; }
 
+/* ---- Compact RIP/QD panels (Products list only; the product details page keeps
+   the roomy version). Thinner bands + titles, tighter table padding and smaller
+   gaps so the expanded panels stop dominating the screen — NO figures dropped,
+   the fixed-layout/restack responsiveness is untouched. .pdx-compact IS the
+   .pdx-detail-grid root (the className is applied there). ---- */
+.pdx-compact { gap: 10px; margin-top: 10px; }
+.pdx-compact .pdx-panel { padding: 8px 10px; }
+.pdx-compact .pdx-qd { padding: 8px 10px; }
+.pdx-compact .pdx-card-stack, .pdx-compact .pdx-qd-stack { gap: 8px; }
+.pdx-compact .pdx-card-band { padding: 3px 8px; font-size: 11px; }
+.pdx-compact .pdx-card-title { padding: 3px 8px; font-size: 11px; }
+.pdx-compact .pdx-tbl { font-size: 11.5px; }
+.pdx-compact .pdx-tbl th { padding: 3px 6px; font-size: 9.5px; }
+.pdx-compact .pdx-tbl td { padding: 3px 7px; }
+.pdx-compact .pdx-rip-table th, .pdx-compact .pdx-qd-table th,
+.pdx-compact .pdx-rip-table td, .pdx-compact .pdx-qd-table td { padding: 3px 7px; }
+.pdx-compact .pdx-rip-levels { gap: 3px; }
+.pdx-compact .pdx-rip-level { line-height: 1.3; }
+
 /* ---- QD prices chart: stacked Current / Next month cards with distinct
    header bands so the two months are never confused (matches qd.png). ---- */
 .pdx-qd { padding: 12px; }

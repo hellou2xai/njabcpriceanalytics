@@ -24,6 +24,15 @@
   transition: filter .15s;
 }
 .home-search-go:hover { filter: brightness(1.08); }
+/* Mobile: input is the hero — drop the blue Search button (keyboard return
+   submits), slim the field, thin focus ring. (Camera/voice tools are styled by
+   .products-hero-tool in index.css, shared with the Products bar.) */
+@media (max-width: 768px) {
+  .home-search-go { display: none; }
+  .home-search { padding: 4px 6px 4px 16px; gap: 2px; }
+  .home-search input { font-size: 16px; }
+  .home-search:focus-within { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
+}
 
 /* browse chips */
 .home-browse { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 6px; }

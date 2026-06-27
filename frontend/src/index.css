@@ -7044,9 +7044,23 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
   }
   .products-page .filter-pills .pill,
   .products-grid-browse .products-grid-chip { flex: 0 0 auto; }
-  /* Search button: icon only. */
-  .products-hero-ai-label { display: none; }
-  .products-hero-ai { padding: 0 12px; }
+  /* ---- Mobile search: the INPUT is the hero. ----
+     Drop the loud blue "Search" button (the on-screen keyboard's Search/return
+     key submits — the standard iOS/Android/Amazon pattern), slim the field so
+     the input owns the width, and render the camera/voice tools as small MUTED
+     ghost icons that recede instead of eating half the bar. The shared
+     SearchLensTools uses .products-hero-tool on BOTH the Products and Home
+     bars, so this covers both. */
+  .products-hero-ai { display: none; }
+  .products-hero-search { padding: 4px 6px 4px 16px; gap: 2px; }
+  .products-hero-input { font-size: 16px; padding: 13px 4px; }   /* >=16px: no iOS zoom */
+  .products-hero-tools { gap: 0; }
+  .products-hero-tool { width: 42px; height: 42px; min-width: 42px; color: var(--text-muted); }
+  .products-hero-tool:active { background: var(--surface-hover); color: var(--text); }
+  /* A clean, thin focus ring instead of the heavy blue glow. */
+  .products-hero-search:focus-within {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+  }
 }
 .products-grid-chip {
   padding: 7px 15px; border-radius: var(--radius-pill); border: 1px solid var(--border);

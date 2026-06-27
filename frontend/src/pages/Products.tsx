@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams, useLocation } from 'react-router-dom';
-import { Search, SlidersHorizontal, Sparkles } from 'lucide-react';
+import { Search, SlidersHorizontal, Sparkles, X } from 'lucide-react';
 import { catalog } from '../lib/api';
 import SearchLensTools from '../components/SearchLensTools';
 import WholesalerFilter from '../components/WholesalerFilter';
@@ -218,6 +218,13 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
   // Camera-lens (touch devices) + voice (everywhere) search tools, shared with
   // the Home search bar via <SearchLensTools>.
   const searchTools = <SearchLensTools onResult={pickSuggestion} />;
+  // Clear (×) affordance — shows only when there's a query, wipes it in one tap.
+  const clearBtn = q ? (
+    <button type="button" className="products-hero-clear" aria-label="Clear search"
+      onMouseDown={e => e.preventDefault()} onClick={() => { setQ(''); setPage(0); }}>
+      <X size={18} />
+    </button>
+  ) : null;
 
   // A pure category aisle (Home View-all / chip click: one category, first
   // page, default sort, nothing else active) is the high-traffic entry point,
@@ -388,10 +395,12 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
                 autoFocus
                 className="products-hero-input"
                 placeholder="Search products, brands, regions, varietals…"
+                enterKeyHint="search"
                 value={q}
                 onChange={e => { setQ(e.target.value); setPage(0); }}
                 onKeyDown={e => { if (e.key === 'Enter') setCommitted(e.currentTarget.value); }}
               />
+              {clearBtn}
               {searchTools}
               <button type="button" className="products-hero-ai"
                 title="Search" onClick={() => setCommitted(q)}>
@@ -434,9 +443,10 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
         <div className="products-hero-search">
           <Search size={20} className="products-hero-icon" />
           <input type="text" autoFocus className="products-hero-input"
-            placeholder="Search products, brands, regions, varietals…"
+            placeholder="Search products, brands, regions, varietals…" enterKeyHint="search"
             value={q} onChange={e => { setQ(e.target.value); setPage(0); }}
             onKeyDown={e => { if (e.key === 'Enter') setCommitted(e.currentTarget.value); }} />
+          {clearBtn}
           {searchTools}
           <button type="button" className="products-hero-ai"
             title="Search" onClick={() => setCommitted(q)}>

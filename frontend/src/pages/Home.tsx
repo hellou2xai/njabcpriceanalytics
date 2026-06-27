@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Sparkles, Store, ChevronRight } from 'lucide-react';
+import { Search, Sparkles, Store, ChevronRight, X } from 'lucide-react';
 import SearchLensTools from '../components/SearchLensTools';
 import { catalog, compare } from '../lib/api';
 import type { Product } from '../lib/api';
@@ -141,10 +141,17 @@ export default function Home() {
           <input
             autoFocus
             placeholder="Search products, brands or distributors…"
+            enterKeyHint="search"
             value={q}
             onChange={e => setQ(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') go(); }}
           />
+          {q && (
+            <button type="button" className="products-hero-clear" aria-label="Clear search"
+              onMouseDown={e => e.preventDefault()} onClick={() => setQ('')}>
+              <X size={18} />
+            </button>
+          )}
           <SearchLensTools onResult={runQuery} />
           <button type="button" className="home-search-go" onClick={go}>Search</button>
         </div>

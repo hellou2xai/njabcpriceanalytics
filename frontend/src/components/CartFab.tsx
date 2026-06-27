@@ -40,11 +40,11 @@ function clampToViewport(_x: number, y: number): Pos {
 function defaultPos(): Pos {
   // Desktop mirrors the previous anchor (top: 72, right: 18). On phones/tablets
   // the top-right corner sits ON TOP of the page header + distributor chips, so
-  // dock the cart at the bottom-right instead, stacked just above the assistant
-  // launcher (.global-assistant-fab: ~48px tall, 14px from the bottom).
+  // dock the cart at the bottom-right instead. (The assistant launcher is hidden
+  // on mobile, so the cart takes the bottom-right corner directly.)
   const mobile = window.innerWidth < 1024;
   if (mobile) {
-    return clampToViewport(window.innerWidth - SIZE - 14, window.innerHeight - SIZE - 14 - 48 - 10);
+    return clampToViewport(window.innerWidth - SIZE - 14, window.innerHeight - SIZE - 14);
   }
   return clampToViewport(window.innerWidth - SIZE - 18, 72);
 }

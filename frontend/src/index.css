@@ -6885,9 +6885,12 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 @media (max-width: 768px) {
   /* Cards fill the column on tablet/phone (the 460px cap is desktop-only). */
   .pdx-card { max-width: 100%; }
-  /* Hide the floating action buttons on small screens — they overlap content
-     and the same actions live in the side nav / each card. */
-  .feedback-fab, .global-assistant-fab, .cart-fab { display: none !important; }
+  /* Hide the feedback + assistant launchers on small screens — they overlap
+     content and live in the side nav. The CART stays: with the desktop nav
+     collapsed behind the hamburger, the floating cart is the only quick way to
+     reach the cart, so keep it (it's a small 42px icon, docked bottom-right on
+     mobile by CartFab.defaultPos). */
+  .feedback-fab, .global-assistant-fab { display: none !important; }
 }
 /* (RIP table stacking is handled by the @container query above, so it works in
    the narrow detail rail too — not just by viewport width.) */

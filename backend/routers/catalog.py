@@ -3065,6 +3065,22 @@ def get_product_detail(
                     "inferred": bool(er[10]), "image_url": er[11],
                     "image_source": er[12],
                 }
+        # Admin image override wins over the Go-UPC image on the detail page too
+        # (the grid already overlays it via attach_enrichment_image). Without this
+        # an admin upload reverts on refresh, since enrichment.image_url shadows
+        # the size's overridden image in the UI.
+        if _is_clean_upc(prod_upc):
+            try:
+                from backend.image_overrides import get_map as _img_ov
+                _ov = _img_ov().get(str(prod_upc or "").lstrip("0"))
+                if _ov:
+                    if enrichment is None:
+                        enrichment = {"name": None, "image_url": _ov, "image_source": "admin"}
+                    else:
+                        enrichment["image_url"] = _ov
+                        enrichment["image_source"] = "admin"
+            except Exception:
+                pass
 
         # AI explainer (pre-generated). Falls back to None when there isn't
         # one yet, so the UI hides the section gracefully.

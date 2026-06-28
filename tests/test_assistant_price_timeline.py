@@ -53,3 +53,36 @@ def test_price_timeline_renderer_includes_every_distributor_and_month():
 def test_price_timeline_renderer_empty_is_safe():
     assert a._format_price_timeline_md({}) == ""
     assert a._format_price_timeline_md({"distributors": []}) == ""
+
+
+class _FakeCap:
+    """Stand-in for the assistant's _Capture (only the fields _temporal_match reads)."""
+    def __init__(self, **kw):
+        self.compare_result = kw.get("compare_result")
+        self.price_detail_result = kw.get("price_detail_result")
+        self.item_result = kw.get("item_result")
+        self.products_out = kw.get("products_out") or []
+        self.screen_args = kw.get("screen_args")
+
+
+def test_temporal_match_prefers_grounded_upc():
+    # A UPC the model already resolved wins (unambiguous), over question text.
+    cap = _FakeCap(compare_result={"upc": "64868000146"})
+    assert a._temporal_match(cap, "compare glenlivet june vs july") == "64868000146"
+    # Then a surfaced product's UPC.
+    cap = _FakeCap(products_out=[{"upc": "619947000037"}])
+    assert a._temporal_match(cap, "x") == "619947000037"
+    # Then the screen query.
+    cap = _FakeCap(screen_args={"q": "tito 1.75"})
+    assert a._temporal_match(cap, "x") == "tito 1.75"
+
+
+def test_temporal_match_falls_back_to_stripped_question():
+    cap = _FakeCap()
+    assert a._temporal_match(cap, "price history for Don Julio 1942") == "Don Julio 1942"
+
+
+def test_strip_temporal_words_keeps_product_numbers():
+    # Size/age/year tokens that are part of the product name must survive.
+    out = a._strip_temporal_words("Compare Don Julio 1942 750ML June vs July")
+    assert "Don Julio 1942" in out and "750ML" in out

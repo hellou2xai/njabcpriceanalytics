@@ -6258,6 +6258,40 @@ def _is_temporal_compare(question: str) -> bool:
     return False
 
 
+def _strip_temporal_words(question: str) -> str | None:
+    """Best-effort product phrase from a temporal-comparison question, used only
+    as a LAST resort when the model grounded no UPC. Strips the comparison/time
+    scaffolding ('compare … price for June vs July') and keeps the product."""
+    s = re.sub(
+        r"\b(compare|comparison|vs\.?|versus|price|prices|pricing|cost|costs|for|the|between|"
+        r"change|trend|history|over|time|month-over-month|months?|next|last|this)\b",
+        " ", question or "", flags=re.I)
+    s = re.sub(r"\b(" + "|".join(_MONTH_WORDS) + r")\b", " ", s, flags=re.I)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s or None
+
+
+def _temporal_match(cap: "_Capture", question: str) -> str | None:
+    """Resolve the product to feed price_timeline for a temporal comparison.
+    Prefer a UPC the model already grounded this turn (unambiguous), then a
+    surfaced product, then the screen query, then the stripped question."""
+    for src in (getattr(cap, "compare_result", None),
+                getattr(cap, "price_detail_result", None),
+                getattr(cap, "item_result", None)):
+        if isinstance(src, dict):
+            u = src.get("upc")
+            if u and str(u).strip():
+                return str(u)
+    for p in (getattr(cap, "products_out", None) or []):
+        u = p.get("upc")
+        if u and str(u).strip():
+            return str(u)
+    sa = getattr(cap, "screen_args", None)
+    if isinstance(sa, dict) and sa.get("q"):
+        return str(sa["q"])
+    return _strip_temporal_words(question)
+
+
 def _finalize_response(final_text, cap: "_Capture", *, question, page_path,
                        model, total_in, total_out) -> dict:
     """Post-model finalization shared by both paths: charts, deterministic
@@ -6358,6 +6392,28 @@ def _finalize_response(final_text, cap: "_Capture", *, question, page_path,
                     answer = _md
                     _tmpl_fired = True
                     _tlog.info("Price-timeline template fired (chars=%d)", len(_md))
+            # Accuracy by construction: for an explicit temporal comparison, ALWAYS
+            # render the numbers from price_timeline (code-computed, every
+            # distributor + edition) even when the model routed to a different
+            # tool — or none. The model only resolves WHICH product; code owns the
+            # figures, so the same question can't drop a distributor or vary by
+            # page/history/model run.
+            if not _tmpl_fired and _is_temporal_compare(question):
+                _m = _temporal_match(cap, question)
+                if _m:
+                    try:
+                        with get_duckdb() as _con:
+                            _tl = _t_price_timeline(_con, {"match": _m})
+                        if isinstance(_tl, dict) and _tl.get("distributors"):
+                            cap.timeline_result = _tl
+                            _md = _format_price_timeline_md(_tl)
+                            if _md:
+                                answer = _md
+                                _tmpl_fired = True
+                                charts = _timeline_charts(_tl) + charts
+                                _tlog.info("Forced price-timeline template fired (match=%r, chars=%d)", _m, len(_md))
+                    except Exception:
+                        _tlog.exception("forced price-timeline failed for match=%r", _m)
             if not _tmpl_fired and isinstance(cap.item_result, dict) and not cap.item_result.get("error") and cap.item_result.get("product_name"):
                 _md = _format_item_md(cap.item_result)
                 if _md:

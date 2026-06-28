@@ -5407,6 +5407,80 @@ def _format_compare_md(core: dict) -> str:
     return "\n".join(parts).rstrip()
 
 
+def _fmt_edition_label(e) -> str:
+    """'2026-07' -> 'Jul 2026'. Falls back to the raw string on any surprise."""
+    try:
+        y, mo = str(e).split("-")[:2]
+        names = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        return f"{names[int(mo)]} {y}"
+    except Exception:
+        return str(e)
+
+
+def _format_price_timeline_md(core: dict) -> str:
+    """Deterministic month-over-month price comparison built from the
+    price_timeline tool result — every distributor and every edition the tool
+    returned, with code-computed deltas. The model never authors these numbers,
+    so the same question can't drop a distributor or mis-state a delta. Renders
+    one compact table per distributor plus a latest-month verdict."""
+    if not isinstance(core, dict):
+        return ""
+    dists = core.get("distributors") or []
+    if not dists:
+        return ""
+    parts: list[str] = []
+    parts.append(f"**{core.get('product') or 'Product'} — price by month, per distributor**"
+                 + (f"  ·  UPC `{core.get('upc')}`" if core.get("upc") else ""))
+    for d in sorted(dists, key=lambda x: str(x.get("wholesaler") or "")):
+        ws = str(d.get("wholesaler") or "").title()
+        sub = " · ".join([s for s in (
+            d.get("unit_volume"),
+            (f"{d.get('bottles_per_case')}/cs" if d.get("bottles_per_case") else None),
+        ) if s])
+        parts.append("")
+        parts.append(f"**{ws}**" + (f" — {sub}" if sub else ""))
+        parts.append("| Month | List/cs | Net/cs | Δ vs prev | Deal |")
+        parts.append("|---|---|---|---|---|")
+        for t in d.get("timeline") or []:
+            flags = []
+            if t.get("has_rip"):
+                flags.append("RIP")
+            if t.get("has_discount"):
+                flags.append("QD")
+            delta = t.get("delta_vs_prev")
+            pct = t.get("pct_vs_prev")
+            if delta is None:
+                dtxt = "—"
+            else:
+                arrow = "▲ +" if delta > 0 else ("▼ −" if delta < 0 else "")
+                dtxt = f"{arrow}{_fmt_money(abs(delta))}" + (f" ({pct:+.1f}%)" if pct is not None else "")
+            parts.append(
+                f"| {_fmt_edition_label(t.get('edition'))} | "
+                f"{_fmt_money(t.get('frontline_case_price'))} | "
+                f"{_fmt_money(t.get('effective_case_price'))} | {dtxt} | "
+                f"{(', '.join(flags) or '—')} |")
+    # Latest-month cross-distributor verdict (cheapest effective right now).
+    latest = []
+    for d in dists:
+        tl = d.get("timeline") or []
+        eff = tl[-1].get("effective_case_price") if tl else None
+        if eff is not None:
+            latest.append((str(d.get("wholesaler") or "").title(), eff,
+                           tl[-1].get("edition")))
+    if latest:
+        latest.sort(key=lambda x: x[1])
+        win = latest[0]
+        parts.append("")
+        if len(latest) > 1 and latest[1][1] - win[1] > 0.005:
+            parts.append(f"**Cheapest in {_fmt_edition_label(win[2])}: {win[0]} at "
+                         f"{_fmt_money(win[1])}/cs** (next is {latest[1][0]} at "
+                         f"{_fmt_money(latest[1][1])}/cs).")
+        else:
+            parts.append(f"**{_fmt_edition_label(win[2])}: {win[0]} at {_fmt_money(win[1])}/cs.**")
+    return "\n".join(parts).rstrip()
+
+
 def _format_item_md(core: dict) -> str:
     """ITEM (deal_360 / price_details): product header + List / After-disc /
     After-RIP price table (case AND bottle), the discount + RIP tier ladders, the
@@ -6091,7 +6165,10 @@ def _system_dynamic_blocks(page, page_path) -> list[str]:
         "For any show / find / filter / sort / 'with RIP' / 'on deal' / price-trend request, call show_on_screen "
         "so the grid updates in place (a one-line confirmation in chat is enough). Use chat prose only for "
         "genuinely conversational questions (why/how, totals & counts, one product's full breakdown, a "
-        "head-to-head comparison, a RIP tier explanation).\n"
+        "head-to-head or cross-distributor comparison, a month-over-month / 'June vs July' / price-history "
+        "comparison, a RIP tier explanation). For these conversational questions answer INLINE with prose + a "
+        "compact markdown table that covers EVERY distributor and month involved — and do NOT call "
+        "show_on_screen and do NOT navigate for them, even while docked beside a grid.\n"
         "(B) STANDALONE chat page (no grid anywhere beside you): present the INFO & ANALYSIS in the chat FIRST "
         "— call the data tools and show prose + compact tables + charts + product cards grounded in real rows — "
         "and THEN add a link to open the relevant data grid. NEVER reply with only a grid link or a bare "
@@ -6158,6 +6235,27 @@ def _compose_system_prompt(page, page_path) -> str:
     caches a string system prompt; the raw-API path keeps the cache-controlled
     block form)."""
     return "\n\n".join([_SYSTEM, *_system_dynamic_blocks(page, page_path)])
+
+
+_MONTH_WORDS = ("january", "february", "march", "april", "may", "june", "july",
+                "august", "september", "october", "november", "december")
+
+
+def _is_temporal_compare(question: str) -> bool:
+    """A month-over-month / price-history / 'June vs July' / trend question. These
+    are CONVERSATIONAL: the docked agent must answer inline, never drive the
+    screen (which surfaced an unrelated catalog sweep and crowded out — and
+    truncated — the comparison)."""
+    ql = (question or "").lower()
+    if "month over month" in ql or "month-over-month" in ql:
+        return True
+    if "price history" in ql or "price trend" in ql or "over time" in ql:
+        return True
+    if (" vs " in ql or " vs." in ql or "versus" in ql or "compare" in ql):
+        mcount = sum(1 for m in _MONTH_WORDS if re.search(rf"\b{m}\b", ql))
+        if mcount >= 2 or "next month" in ql or "last month" in ql or "this month" in ql:
+            return True
+    return False
 
 
 def _finalize_response(final_text, cap: "_Capture", *, question, page_path,
@@ -6251,6 +6349,15 @@ def _finalize_response(final_text, cap: "_Capture", *, question, page_path,
                     answer = _md
                     _tmpl_fired = True
                     _tlog.info("Compare template fired (chars=%d)", len(_md))
+            # Month-over-month / 'June vs July' / price-history: render the
+            # numbers deterministically (every distributor + edition) so the
+            # answer is identical regardless of page, history or model run.
+            if not _tmpl_fired and isinstance(cap.timeline_result, dict) and cap.timeline_result.get("distributors"):
+                _md = _format_price_timeline_md(cap.timeline_result)
+                if _md:
+                    answer = _md
+                    _tmpl_fired = True
+                    _tlog.info("Price-timeline template fired (chars=%d)", len(_md))
             if not _tmpl_fired and isinstance(cap.item_result, dict) and not cap.item_result.get("error") and cap.item_result.get("product_name"):
                 _md = _format_item_md(cap.item_result)
                 if _md:
@@ -6293,6 +6400,16 @@ def _finalize_response(final_text, cap: "_Capture", *, question, page_path,
                    len(products_out), _before - len(products_out))
     products_final = products_out[:5000]
     screen_out = cap.screen_out
+    # A temporal comparison is a conversational answer: keep the deterministic
+    # inline table the answer, and do NOT let a stray show_on_screen call drive
+    # the screen or drop an unrelated catalog sweep beside it (the docked agent
+    # sometimes did both, and truncated the comparison in the process).
+    _suppress_grid = bool(page_path) and _is_temporal_compare(question)
+    if _suppress_grid:
+        if screen_out is not None or products_final:
+            _tlog.info("temporal-compare guard: suppressed screen/products (docked)")
+        screen_out = None
+        products_final = []
     if products_final:
         try:
             from backend.ai_catalog_query import _enrich_products_with_tiers
@@ -6325,7 +6442,7 @@ def _finalize_response(final_text, cap: "_Capture", *, question, page_path,
                     "path": f"/catalog?upcs={upc_csv}",
                     "label": f"these {len(products_final)} products in Catalog",
                 }
-    if screen_out is None and answer:
+    if screen_out is None and answer and not _suppress_grid:
         _ms = re.match(
             r"^\s*showing\s+\*{0,2}(.+?)\*{0,2}"
             r"(?:\s+(?:products?|deals?|sorted|on|in|from|by|time-?sensitive|that|with|priced)\b|[.,!]|$)",

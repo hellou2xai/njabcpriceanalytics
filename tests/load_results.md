@@ -225,3 +225,17 @@ search(include_tiers)        108     194     419     492     584    44%   0.0%
 cart                         108    7916   15183   18890   21610     0%   0.0%
 facets                       108     186    8193   10891   14201    47%   0.0%
 ```
+
+## 100 users x 30s — 2026-06-24 16:10 UTC
+
+- Logins: 100/100 ok | login p50=6617ms p95=7957ms max=7980ms
+- Requests: 700 in 39.0s = 18.0 req/s | errors: 0 (0.0%) | 304 cache-hits: 479 (68.4%)
+- Latency drift: first-half p95=8095ms -> second-half p95=12517ms
+
+```
+endpoint                       n     p50     p95     p99     max   304%   err%
+search(text)                 175    1745    7103    7866    8308    83%   0.0%
+search(include_tiers)        175     678    8138    9398    9414   100%   0.0%
+cart                         175    8675   14184   15881   18030     0%   0.0%
+facets                       175     710    3705    5948    8996    91%   0.0%
+```

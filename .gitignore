@@ -51,3 +51,5 @@ tests/playwright/results/
 # so any signed-in PC can read them; no value in committing the snapshots.
 process logs/
 to_be_tested_after_code_change/
+.verify-creds.json
+scripts/verify-responsive.mjs

@@ -2124,6 +2124,7 @@ def _t_build_budget_basket(con, args):
     try:
         rows = _pricing.rank_best_deals(
             con, kind, category=(args.get("category") or None),
+            varietal=(args.get("varietal") or None),
             distributor=(args.get("distributor") or None),
             min_effective_pct_of_frontline=_STOCKING_FLOOR_PCT, limit=300)
     except Exception as e:
@@ -2555,6 +2556,9 @@ def _t_find_deals(con, args, ctx):
     if kind_raw in ("clearance", "closeout"):
         return _pricing.rank_best_deals(
             con, kind="closeout", min_effective_pct_of_frontline=floor, limit=limit,
+            category=(args.get("category") or None),
+            varietal=(args.get("varietal") or None),
+            distributor=(args.get("distributor") or None),
         )
     if kind_raw in ("time_sensitive", "time-sensitive", "ending", "expiring"):
         # SAME source as the Time-Sensitive PAGE (dated CPL price lines AND
@@ -2571,6 +2575,9 @@ def _t_find_deals(con, args, ctx):
     return _pricing.rank_best_deals(
         con, kind="savings",
         min_effective_pct_of_frontline=None if include_stocking else _STOCKING_FLOOR_PCT,
+        category=(args.get("category") or None),
+        varietal=(args.get("varietal") or None),
+        distributor=(args.get("distributor") or None),
         limit=limit,
     )
 
@@ -3760,6 +3767,7 @@ def _tool_specs() -> list:
             "budget": {"type": "number", "description": "Total spend budget in dollars (required)."},
             "rank_by": {"type": "string", "enum": ["gp", "savings"], "description": "Rank by gross-profit % ('gp', default) or total savings ('savings')."},
             "category": _category,
+            "varietal": _varietal,
             "distributor": _dist,
         },
         "dated_deal_reminders": {
@@ -3804,6 +3812,7 @@ def _tool_specs() -> list:
     _CTX_SCHEMAS: dict[str, dict] = {
         "find_deals": {
             "kind": {"type": "string", "enum": ["time_sensitive", "discount", "clearance"]},
+            "category": _category, "varietal": _varietal,
             "distributor": _dist, "limit": _limit,
         },
         "price_movers": {

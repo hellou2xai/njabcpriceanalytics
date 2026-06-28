@@ -1769,6 +1769,38 @@ _RANK_BASE_COLS = (
 )
 
 
+# product_type is a fragmented column ('Spirits' AND 'SPIRIT', 'Sparkling' AND
+# 'Sparkling Wine', 'RTD' AND 'Ready to Drink'). A bare exact match on one label
+# silently drops the rows filed under its sibling. Match any synonym in the group.
+_CATEGORY_SYNONYMS: dict[str, list[str]] = {
+    "spirits": ["Spirits", "SPIRIT"],
+    "spirit": ["Spirits", "SPIRIT"],
+    "rtd": ["RTD", "Ready to Drink"],
+    "ready to drink": ["RTD", "Ready to Drink"],
+    "sparkling": ["Sparkling", "Sparkling Wine"],
+    "sparkling wine": ["Sparkling", "Sparkling Wine"],
+}
+
+_PRODUCT_TYPES_CACHE: Optional[set] = None
+
+
+def _known_product_types(con) -> set:
+    """Upper-cased set of product_type values present in the catalogue, cached
+    per-process (the set is stable across editions). Used to detect when the
+    caller put a SUB-TYPE (bourbon, ipa) in the broad `category` slot."""
+    global _PRODUCT_TYPES_CACHE
+    if _PRODUCT_TYPES_CACHE is None:
+        try:
+            rows = con.execute(
+                "SELECT DISTINCT UPPER(product_type) FROM cpl_enriched "
+                "WHERE product_type IS NOT NULL"
+            ).fetchall()
+            _PRODUCT_TYPES_CACHE = {r[0] for r in rows}
+        except Exception:
+            _PRODUCT_TYPES_CACHE = set()
+    return _PRODUCT_TYPES_CACHE
+
+
 def rank_best_deals(
     con,
     kind: str,
@@ -1866,9 +1898,20 @@ def rank_best_deals(
         )
         params.append(float(min_effective_pct_of_frontline))
 
+    # Robustness (the model often mis-slots): if `category` isn't a real
+    # product_type but resolves to a known sub-type (e.g. category='Bourbon',
+    # 'IPA', 'Tequila'), treat it as the varietal instead of exact-matching
+    # product_type and returning ZERO rows silently.
     if category:
-        where.append("UPPER(c.product_type) = UPPER(?)")
-        params.append(category)
+        from backend.varietal_semantics import resolve_varietal as _rv
+        if category.upper() not in _known_product_types(con) and _rv(category) is not None:
+            varietal = varietal or category
+            category = None
+    if category:
+        # Match any synonym in the product_type group (Spirits/SPIRIT, ...).
+        syns = _CATEGORY_SYNONYMS.get(category.lower(), [category])
+        where.append("UPPER(c.product_type) IN (" + ", ".join("UPPER(?)" for _ in syns) + ")")
+        params.extend(syns)
     if varietal:
         # Narrow to a sub-type/style (bourbon, ipa, cabernet, ...) using the same
         # high-precision taxonomy the catalog grid uses. Built inline with `?`

@@ -415,6 +415,13 @@ def _t_compare_distributors(con, args):
     match = (args.get("match") or "").strip()
     if not match:
         return {"error": "provide a UPC or product name in `match`"}
+    # Reference SKU identity (size + pack + vintage) of the product the user
+    # asked about. CPN expansion (below) spans the whole product FAMILY — every
+    # size and vintage share one CPN — so we keep these to constrain the
+    # comparison to the SAME item across distributors (see filter after the
+    # query). Without it, "compare the 1.75L" dragged in the 50ML/750ML/4-pack/
+    # anniversary bottles of the same family.
+    ref_vol = ref_pack = ref_vtg = None
     compact = match.replace(" ", "").replace("-", "")
     if compact.isdigit() and len(compact) >= 6:
         upc_norm = compact.lstrip("0")
@@ -425,8 +432,25 @@ def _t_compare_distributors(con, args):
             return {"error": "no product matched"}
         upc_norm = str(prods[0].get("upc") or "").lstrip("0")
         name_hint = prods[0].get("product_name")
+        ref_vol = prods[0].get("unit_volume")
+        ref_pack = prods[0].get("unit_qty")
+        ref_vtg = prods[0].get("vintage")
     if not upc_norm:
         return {"error": "matched product has no UPC to compare across distributors"}
+    # When the user supplied a bare UPC, look up that barcode's size/pack/vintage
+    # so the SKU-identity filter still applies (a UPC is itself size-specific).
+    if ref_vol is None:
+        try:
+            rr = con.execute(
+                f"WITH cur AS (SELECT wholesaler, MAX(edition) ed FROM cpl_enriched "
+                f"WHERE edition<='{_current_ym()}' GROUP BY wholesaler) "
+                "SELECT c.unit_volume, c.unit_qty, c.vintage FROM cpl_enriched c "
+                "JOIN cur ON c.wholesaler=cur.wholesaler AND c.edition=cur.ed "
+                "WHERE LTRIM(CAST(c.upc AS VARCHAR),'0') = ? LIMIT 1", [upc_norm]).fetchone()
+            if rr:
+                ref_vol, ref_pack, ref_vtg = rr[0], rr[1], rr[2]
+        except Exception:
+            pass
     # CPN-expand the resolved UPC so Allied's barcode variant is included even
     # when _resolve_products only found Fedway's version (different UPC, same
     # product family — same CPN).
@@ -456,6 +480,45 @@ def _t_compare_distributors(con, args):
     except Exception as e:
         return {"error": f"{type(e).__name__}"}
     recs = rows.to_dict(orient="records")
+    # Keep only listings that share the matched product's SKU identity (same
+    # bottle size + pack, and vintage when the source carries one). This is what
+    # makes the comparison "ONE product across distributors": it preserves the
+    # legitimate cross-distributor sibling-barcode match (e.g. Glenlivet Jamaica
+    # edition, two UPCs but one 750ML 6-pack at Allied + Fedway) while dropping a
+    # family's OTHER sizes/variants that the CPN expansion above would otherwise
+    # mix in (Tito's pulled in 50ML…1L, 4-packs and anniversary bottles). Guarded
+    # so a parse miss never blanks the comparison.
+    def _packn(v):
+        try:
+            f = float(re.sub(r"\.0+$", "", str(v).strip()) or "nan")
+            return int(f) if f == f else None
+        except (TypeError, ValueError):
+            return None
+
+    def _vtgn(v):
+        s = str(v).strip() if v is not None else ""
+        return s if s and s.lower() not in ("none", "nan", "0") else None
+
+    ref_ml = _ml_of(ref_vol)
+    rp_pack = _packn(ref_pack)
+    rv_vtg = _vtgn(ref_vtg)
+    if ref_ml is not None:
+        kept = []
+        for r in recs:
+            rml = _ml_of(r.get("unit_volume"))
+            if rml is None or abs(rml - ref_ml) > 1.0:
+                continue
+            if rp_pack is not None:
+                pk = _packn(r.get("unit_qty"))
+                if pk is not None and pk != rp_pack:
+                    continue
+            if rv_vtg is not None:
+                rvt = _vtgn(r.get("vintage"))
+                if rvt is not None and rvt != rv_vtg:
+                    continue
+            kept.append(r)
+        if kept:
+            recs = kept
     # Per-BOTTLE normalization + a deterministic verdict. One barcode can
     # carry DIFFERENT pack sizes (Allied sells this wine as a 6-pack AND a
     # 12-pack; Fedway as 12-packs): raw case prices across packs are

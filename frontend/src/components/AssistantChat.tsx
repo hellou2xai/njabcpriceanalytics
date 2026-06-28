@@ -324,7 +324,7 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
         <div className="celar-head-title">
           <span className="celar-spark"><Sparkles size={18} /></span>
           <div>
-            <h2>Celar AI Assistant</h2>
+            <h2>CELR.AI Assistant</h2>
             <p>{subtitle ?? 'Ask about your catalog — pricing, deals, distributors. Answers come with charts and can take actions.'}</p>
           </div>
         </div>

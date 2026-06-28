@@ -89,7 +89,7 @@ export default function GlobalAssistant() {
   if (!open) {
     return (
       <button className="global-assistant-fab" onClick={() => setOpen(true)}
-              title="Ask Celar AI Assistant" aria-label="Open Celar AI Assistant">
+              title="Ask CELR.AI Assistant" aria-label="Open CELR.AI Assistant">
         <Sparkles size={20} />
       </button>
     );

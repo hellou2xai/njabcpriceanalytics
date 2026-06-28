@@ -26,7 +26,7 @@ const NAV_GROUPS: {
     header: 'Overview',
     items: [
       { path: '/tours', label: 'Guided Tour', icon: Compass },
-      { path: '/assistant', label: 'Celar AI Assistant', icon: Sparkles },
+      { path: '/assistant', label: 'CELR.AI Assistant', icon: Sparkles },
       { path: '/alerts', label: 'Alerts', icon: Bell },
     ],
   },

@@ -118,6 +118,12 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
   const { runActions } = useAssistantActions();
   const navigate = useNavigate();
   const listRef = useRef<HTMLDivElement>(null);
+  // Anchor the newest turn at the TOP of the thread (so a long answer reads from
+  // its start) instead of dumping the user at the very bottom. lastUserRef points
+  // at the most recent question; prevCount lets us scroll only when a new turn is
+  // ADDED, never on in-place streaming edits (which would yank the view).
+  const lastUserRef = useRef<HTMLDivElement>(null);
+  const prevCount = useRef(0);
   const { value: resultCount } = useResultCount();
   const { open: openQuickView } = useProductQuickView();
   // Override ReactMarkdown's <a> so links of the form
@@ -181,10 +187,27 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
   const totalIn = messages.reduce((s, m) => s + (m.usage?.input_tokens ?? 0), 0);
   const totalOut = messages.reduce((s, m) => s + (m.usage?.output_tokens ?? 0), 0);
   const totalCost = messages.reduce((s, m) => s + (m.usage?.cost_usd ?? 0), 0);
+  // Index of the most recent user question — the scroll anchor for a new turn.
+  let lastUserIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i--) { if (messages[i].role === 'user') { lastUserIndex = i; break; } }
 
   useEffect(() => {
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages, busy]);
+    // Only re-anchor when a message was ADDED (a new question or its answer),
+    // not on streaming edits to an existing one. Put the latest question at the
+    // top of the thread so the user reads the answer from the start, never the
+    // bottom. Falls back to the bottom only when there is no user turn to anchor.
+    if (messages.length > prevCount.current) {
+      const list = listRef.current;
+      const anchor = lastUserRef.current;
+      if (list && anchor) {
+        const top = anchor.getBoundingClientRect().top - list.getBoundingClientRect().top + list.scrollTop - 8;
+        list.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+      } else if (list) {
+        list.scrollTo({ top: list.scrollHeight, behavior: 'smooth' });
+      }
+    }
+    prevCount.current = messages.length;
+  }, [messages]);
 
   // When the page the assistant drove reports its matched-row count, splice the
   // exact count into the confirmation message (so the chat and the grid always
@@ -344,7 +367,7 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
         )}
 
         {messages.map((m, i) => (
-          <div key={i} className={`celar-msg celar-msg-${m.role}${m.error ? ' celar-msg-error' : ''}`}>
+          <div key={i} ref={i === lastUserIndex ? lastUserRef : undefined} className={`celar-msg celar-msg-${m.role}${m.error ? ' celar-msg-error' : ''}`}>
             <div className="celar-avatar" aria-hidden="true">
               {m.role === 'assistant' ? (m.error ? <AlertCircle size={15} /> : <Sparkles size={14} />) : 'You'}
             </div>

@@ -1585,6 +1585,7 @@ def _t_best_gp_deals(con, args):
         kind="gp_pct",
         min_effective_pct_of_frontline=floor,
         category=(args.get("category") or "").strip() or None,
+        varietal=(args.get("varietal") or "").strip() or None,
         distributor=(args.get("distributor") or "").strip() or None,
         limit=int(args.get("limit") or 5000),
     )
@@ -1611,6 +1612,7 @@ def _t_closeouts(con, args):
         kind="closeout",
         min_effective_pct_of_frontline=floor,
         category=(args.get("category") or "").strip() or None,
+        varietal=(args.get("varietal") or "").strip() or None,
         distributor=(args.get("distributor") or "").strip() or None,
         limit=int(args.get("limit") or 5000),
     )
@@ -2518,8 +2520,8 @@ _DATA_TOOLS = {
     "rate_shop": (_t_rate_shop, "RATE SHOP the best distributor for ONE product AT THE QUANTITY the buyer plans to buy — the clearest 'who's actually cheapest for me'. Returns each distributor's true landed NET cost per case at that volume (best qualifying QD/RIP tier), ranked cheapest-at-volume first, PLUS the exact conditions to capture each price (buy ≥N cs, single invoice, valid dates, mix across M items, pre-approval), a break-even map (which distributor wins at which volume), a stretch nudge (buy a little more to unlock a deeper rebate), and next-month timing (buy now vs wait). Args: match (product name or UPC), cases (how many cases, default 5). Use for 'where should I buy X', 'who's cheapest for X if I buy N cases', 'best price on X for my order', 'should I buy X now or wait'."),
     "price_360": (_t_price_360, "PRICE 360 holistic label for ONE product across EVERY distributor that carries it: each offer reduced to one effective NET cost (case AND bottle) after all layers — frontline, single-case discount, quantity-discount tiers and RIP — ranked cheapest net cost first. Keeps invoice cost (legal, discounts only) separate from economic net cost (incl. rebates), flags when they diverge, gives a fixed-weight 0-100 value score, NJ-ABC pre-approval flags (>50 cases / missing small-qty tier / >$1,000 rebate), and flags any runner-up whose bigger rebate still costs more. Args: match (product name or UPC), reach_mode (soft|hard|off, default soft). Use for 'what's the real/true cost of X', 'best overall deal on Y across distributors', 'who's actually cheapest on Z after everything', 'price 360 for X'."),
     "compare_rip_outcomes": (_t_compare_rip_outcomes, "Compare how ONE product's RIP rebate plays out ACROSS 2-3 distributors — a RIP is a volume-tiered rebate, so the SAME product can RIP very differently (different tiers, different minimum cases to unlock, combination-mix vs single-product). Returns each distributor's landed $/case at the chosen volume, best rebate at 1 case, min cases to unlock (least money down), case-mix breadth, the full BREAK-EVEN map (which distributor wins at which volume), and a plain-language verdict. Args: match (product name or UPC), distributors (array of slugs; default allied/fedway/opici), cases (default 5). Use for 'compare the RIP on X between Allied and Fedway', 'whose rebate on Y is better', 'who wins the RIP if I buy N cases', 'is Allied or Opici's RIP better on Z'."),
-    "best_gp_deals": (_t_best_gp_deals, "Best gross-profit deals: products ranked by discount depth / GP% (savings vs list). Optional category, distributor, min_pct. Use for 'best margin deals', 'highest GP%', 'deepest discounts by percent'."),
-    "closeouts": (_t_closeouts, "Closeout / last-chance buys being cleared this edition (won't return next month), ranked by savings. Optional category, distributor. Use for 'closeouts', 'last chance', 'what's being discontinued/cleared'."),
+    "best_gp_deals": (_t_best_gp_deals, "Best gross-profit deals: products ranked by discount depth / GP% (savings vs list). Optional category (BROAD product_type: Wine/Spirits/Beer), varietal (sub-type: bourbon, rye, single malt, cabernet, ipa, tequila, ...), distributor, min_pct. For a sub-type request like 'best bourbon deals' pass varietal='bourbon' (NOT category='Spirits', which also returns rum/vodka/gin). Use for 'best margin deals', 'highest GP%', 'deepest discounts by percent'."),
+    "closeouts": (_t_closeouts, "Closeout / last-chance buys being cleared this edition (won't return next month), ranked by savings. Optional category (BROAD product_type), varietal (sub-type: bourbon, ipa, cabernet, ...), distributor. For a sub-type request pass varietal, not the broad category. Use for 'closeouts', 'last chance', 'what's being discontinued/cleared'."),
     "build_assortment": (_t_build_assortment, "ASSORTMENT BUILDER: a curated priced shortlist for a natural-language brief (q), honoring max_bottle_price / max_case_price (+ optional category/varietal/region). Use for 'build a by-the-glass list of cool-climate pinots under $18/btl', 'a value bourbon well', 'a sparkling list under $X'. Returns product cards."),
     "find_substitute": (_t_find_substitute, "SUBSTITUTION FINDER: given a product that's gone or too pricey (match), the closest in-stock alternatives by style/category at a similar-or-lower price (optional max_case_price). Use for 'X is too expensive, what's a close swap', 'alternative to Y', 'something like Z but cheaper'."),
     "build_budget_basket": (_t_build_budget_basket, "BUDGET BASKET: build the best order that fits a $ budget (required `budget`), greedily from the top deals by GP% (rank_by='gp', default) or total savings (rank_by='savings'), optional category/distributor. Returns the basket + total spend, total savings, remaining. Use for 'build me a $5,000 order, best margins', 'fill a $2k tequila order with the deepest discounts'."),
@@ -3790,12 +3792,12 @@ def _tool_specs() -> list:
             "match": _match, "category": _category, "distributor": _dist, "limit": _limit,
         },
         "best_gp_deals": {
-            "category": _category, "distributor": _dist,
+            "category": _category, "varietal": _varietal, "distributor": _dist,
             "min_pct": {"type": "number", "description": "Minimum discount percentage to include."},
             "limit": _limit,
         },
         "closeouts": {
-            "category": _category, "distributor": _dist, "limit": _limit,
+            "category": _category, "varietal": _varietal, "distributor": _dist, "limit": _limit,
         },
     }
 

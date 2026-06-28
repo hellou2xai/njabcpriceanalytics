@@ -1775,6 +1775,7 @@ def rank_best_deals(
     *,
     min_effective_pct_of_frontline: Optional[float] = None,
     category: Optional[str] = None,
+    varietal: Optional[str] = None,
     distributor: Optional[str] = None,
     limit: int = 25,
     as_of: Optional[str] = None,
@@ -1792,7 +1793,15 @@ def rank_best_deals(
           This is the stocking-deal floor — a 100%-off liquidation row gets
           filtered out so the ranker doesn't crown it the "best deal". Pass
           None (or 0) to include those rows.
-        category: optional product_type filter (case-insensitive).
+        category: optional BROAD product_type filter (Wine|Spirits|Beer|...),
+          case-insensitive. This is the only granularity product_type has — it
+          will NOT narrow to a sub-type like bourbon (Tanduay rum is 'Spirits'
+          too). For sub-types, pass `varietal`.
+        varietal: optional sub-type / style filter (bourbon, rye, single malt,
+          cabernet, ipa, reposado, ...). Resolved via varietal_semantics into a
+          high-precision product-name / category-leaf / description match, so a
+          'bourbon' request never returns rum or vodka that merely share the
+          'Spirits' product_type. Stacks with `category`.
         distributor: optional wholesaler filter (case-insensitive).
         limit: row cap, default 25, hard ceiling 100.
 
@@ -1860,6 +1869,34 @@ def rank_best_deals(
     if category:
         where.append("UPPER(c.product_type) = UPPER(?)")
         params.append(category)
+    if varietal:
+        # Narrow to a sub-type/style (bourbon, ipa, cabernet, ...) using the same
+        # high-precision taxonomy the catalog grid uses. Built inline with `?`
+        # placeholders (this query binds positionally) so 'bourbon deals' can't
+        # surface rum/vodka that merely share the 'Spirits' product_type.
+        from backend.varietal_semantics import resolve_varietal
+        v = resolve_varietal(varietal)
+        if v is not None:
+            vparts: list = []
+            for tok in v.tokens:
+                vparts.append("UPPER(c.product_name) LIKE ?")
+                params.append(f"%{tok}%")
+            for term in v.description_terms:
+                vparts.append(
+                    "EXISTS (SELECT 1 FROM product_enrichment pe "
+                    "WHERE LTRIM(CAST(pe.upc AS VARCHAR), '0') = LTRIM(CAST(c.upc AS VARCHAR), '0') "
+                    "AND LOWER(COALESCE(pe.description, '')) LIKE ?)"
+                )
+                params.append(f"%{term.lower()}%")
+            for term in v.category_path_terms:
+                vparts.append(
+                    "EXISTS (SELECT 1 FROM product_enrichment pe "
+                    "WHERE LTRIM(CAST(pe.upc AS VARCHAR), '0') = LTRIM(CAST(c.upc AS VARCHAR), '0') "
+                    "AND pe.category_path LIKE ?)"
+                )
+                params.append(f'%"{term}"%')
+            if vparts:
+                where.append("(" + " OR ".join(vparts) + ")")
     if distributor:
         where.append("LOWER(c.wholesaler) = LOWER(?)")
         params.append(distributor)

@@ -1216,6 +1216,13 @@ export const admin = {
   deactivateUser: (id: number) => request<{ status: string }>(`/api/admin/users/${id}/deactivate`, { method: 'POST' }),
   deleteUser: (id: number) => request<{ status: string }>(`/api/admin/users/${id}`, { method: 'DELETE' }),
   reloadPricing: () => request<{ status: string; counts: Record<string, number> }>('/api/admin/reload-pricing', { method: 'POST' }),
+  // Admin: upload / replace a product's image (stored in R2, overlaid live).
+  uploadProductImage: (upc: string, file: File) => {
+    const fd = new FormData();
+    fd.append('upc', upc);
+    fd.append('file', file);
+    return request<{ upc: string; image_url: string }>('/api/admin/product-image', { method: 'POST', body: fd });
+  },
   // CELR Product Number curation (docs/CELR_PRODUCT_NUMBER_DESIGN.md)
   celrFamilies: (q = '', limit = 50) =>
     request<CelrFamily[]>(`/api/admin/celr/families?q=${encodeURIComponent(q)}&limit=${limit}`),

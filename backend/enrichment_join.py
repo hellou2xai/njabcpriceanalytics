@@ -63,9 +63,16 @@ def attach_enrichment_image(con, records, upc_key="upc"):
                 name_map[str(er["upc"])] = _clean_str(er.get("name"))
         except Exception:
             img_map, name_map = {}, {}
+    # Admin image overrides win over the Go-UPC image (so an admin upload shows
+    # immediately, without a cache rebuild). Tiny, cached in-process.
+    try:
+        from backend.image_overrides import get_map as _img_overrides
+        ov = _img_overrides()
+    except Exception:
+        ov = {}
     for rec in records:
         un = str(rec.get(upc_key) or "").lstrip("0")
-        rec["image_url"] = img_map.get(un)
+        rec["image_url"] = ov.get(un) or img_map.get(un)
         rec["enrichment_name"] = name_map.get(un)
 
 

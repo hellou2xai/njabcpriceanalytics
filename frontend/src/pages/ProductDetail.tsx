@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronDown, Store, ChevronRight } from 'lucide-react';
-import { catalog } from '../lib/api';
+import { ChevronDown, Store, ChevronRight, ImageUp } from 'lucide-react';
+import { catalog, admin } from '../lib/api';
+import { useAuth } from '../contexts/AuthContext';
 import { AI_EXPLAINERS_ENABLED } from '../lib/flags';
 import ProductThumb from '../components/ProductThumb';
 import FavoriteButton from '../components/FavoriteButton';
@@ -293,6 +294,12 @@ export default function ProductDetail() {
 
   const [cart, setCartState] = useState<CartState>(loadCart);
   const [view, setView] = useState<'deals' | 'bottles'>('deals');
+  // Admin: upload/replace the product image. imgOverride shows the new image
+  // immediately on this page (the backend override makes it global too).
+  const { user } = useAuth();
+  const isAdmin = !!user?.is_admin;
+  const [imgOverride, setImgOverride] = useState<string | null>(null);
+  const [imgUploading, setImgUploading] = useState(false);
 
   // Scroll to top whenever we navigate to a different product (related cards
   // reuse this same route with new query params).
@@ -538,7 +545,30 @@ export default function ProductDetail() {
             <DealTimingSticker deals={headerDeals} gaps={headerGaps} everyDay={headerEveryDay} />
           )}
           <div className="pd-identity">
-            <ProductThumb src={enrichment?.image_url ?? sizes[0]?.image_url} alt={name} size={200} expandable />
+            <div className="pd-identity-img">
+              <ProductThumb src={imgOverride ?? enrichment?.image_url ?? sizes[0]?.image_url} alt={name} size={200} expandable />
+              {isAdmin && (primarySize ?? sizes[0])?.upc && (
+                <label className={`pd-img-upload${imgUploading ? ' is-busy' : ''}`}
+                  title="Upload or replace this product's image (admins only)">
+                  <ImageUp size={13} />
+                  {imgUploading ? 'Uploading…'
+                    : (imgOverride || enrichment?.image_url || sizes[0]?.image_url) ? 'Replace image' : 'Upload image'}
+                  <input type="file" accept="image/*" hidden disabled={imgUploading}
+                    onChange={async e => {
+                      const f = e.target.files?.[0]; e.target.value = '';
+                      const upc = (primarySize ?? sizes[0])?.upc;
+                      if (!f || !upc) return;
+                      setImgUploading(true);
+                      try {
+                        const r = await admin.uploadProductImage(String(upc), f);
+                        setImgOverride(r.image_url);
+                      } catch (err) {
+                        alert('Image upload failed: ' + ((err as Error)?.message || 'error'));
+                      } finally { setImgUploading(false); }
+                    }} />
+                </label>
+              )}
+            </div>
             <div className="pd-identity-meta">
               <div className="pd-identity-titlerow">
                 <FavoriteButton productName={name} wholesaler={wholesaler} upc={sizes[0]?.upc} unitVolume={sizes[0]?.unit_volume} />

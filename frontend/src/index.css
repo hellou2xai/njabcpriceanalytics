@@ -6369,6 +6369,16 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 /* ---- Left column ---- */
 .pd-deal-badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); margin-bottom: 8px; }
 .pd-identity { display: flex; gap: 18px; align-items: flex-start; }
+.pd-identity-img { display: flex; flex-direction: column; align-items: center; gap: 8px; flex-shrink: 0; }
+/* Admin-only "Upload / Replace image" control under the product image. */
+.pd-img-upload {
+  display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+  font-size: 12px; font-weight: 600; color: var(--accent);
+  border: 1px dashed var(--border); border-radius: 8px; padding: 5px 10px;
+  background: var(--surface); transition: border-color .12s ease, background .12s ease;
+}
+.pd-img-upload:hover { border-color: var(--accent); background: var(--surface-hover); }
+.pd-img-upload.is-busy { opacity: .6; cursor: default; pointer-events: none; }
 .pd-identity-meta { flex: 1; min-width: 0; }
 /* Add to Cart / Add to List in the detail header (top-right). */
 .pd-identity-actions { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; align-self: flex-start; min-width: 150px; }

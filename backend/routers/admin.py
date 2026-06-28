@@ -8,7 +8,7 @@ the owner; set ADMIN_EMAILS on the server to add more.
 import re
 from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, UploadFile
 
 from backend.pg import get_pg
 from backend.auth import require_admin, _is_admin
@@ -212,6 +212,46 @@ def reload_pricing_admin(user: dict = Depends(require_admin)):
     with get_duckdb() as con:
         counts = {t: con.execute(f"SELECT count(*) FROM {t}").fetchone()[0] for t in ALL_TABLES}
     return {"status": "reloaded", "counts": counts}
+
+
+_IMG_EXT = {"image/png": "png", "image/webp": "webp", "image/jpeg": "jpg",
+            "image/jpg": "jpg", "image/gif": "gif"}
+
+
+@router.post("/product-image")
+async def upload_product_image(
+    upc: str = Form(...),
+    file: UploadFile = File(...),
+    user: dict = Depends(require_admin),
+):
+    """Admin: upload / replace a product's image.
+
+    Stores the image in R2 and records an override (keyed by the normalised UPC)
+    that overlays the Go-UPC image at serve time — so it shows IMMEDIATELY,
+    everywhere, with no pricing-cache rebuild, and persists (it wins over auto
+    enrichment). Returns the new image URL."""
+    import time as _t
+    from backend import r2
+    from backend import image_overrides
+    if not r2.R2_ENABLED:
+        raise HTTPException(status_code=503, detail="Image storage (R2) is not configured.")
+    un = re.sub(r"\D", "", str(upc or "")).lstrip("0")
+    if not un:
+        raise HTTPException(status_code=400, detail="A valid product UPC is required.")
+    ct = (file.content_type or "").lower()
+    ext = _IMG_EXT.get(ct)
+    if not ext:
+        raise HTTPException(status_code=400, detail="Unsupported image type — use JPG, PNG, WEBP or GIF.")
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+    if len(data) > 6_000_000:
+        raise HTTPException(status_code=400, detail="Image too large (max 6 MB).")
+    # Timestamped key so the CDN never serves a stale prior upload for this UPC.
+    key = f"admin-images/{un}-{int(_t.time())}.{ext}"
+    url = r2.upload_bytes(key, data, ct)
+    image_overrides.set_override(un, url, str(user.get("email") or user.get("id") or "admin"))
+    return {"upc": un, "image_url": url}
 
 
 # --- Go-UPC enrichment backfill -------------------------------------------------

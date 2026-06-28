@@ -26,7 +26,7 @@ export default function CelarAssistant() {
         <div className="celar-sidebar-brand">
           <span className="celar-spark celar-sidebar-spark"><Sparkles size={20} /></span>
           <div>
-            <div className="celar-sidebar-title">Celar AI</div>
+            <div className="celar-sidebar-title">CELR.AI</div>
             <div className="celar-sidebar-sub">NJ ABC catalog assistant</div>
           </div>
         </div>

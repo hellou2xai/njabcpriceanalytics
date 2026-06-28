@@ -161,6 +161,39 @@ export const assistant = {
     }),
 };
 
+// ---- CELR.AI Assistant chat history (server-side, per user) ----
+// Lightweight list row (no message bodies) used by the history panel.
+export interface ChatSessionMeta {
+  id: number;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+// Full session: meta + the transcript. Messages are stored/returned verbatim
+// as the UI's message objects (role/text plus charts/products/usage), so the
+// caller casts them to its own Msg type.
+export interface ChatSessionFull extends ChatSessionMeta {
+  messages: unknown[];
+}
+export const assistantSessions = {
+  list: () => request<ChatSessionMeta[]>('/api/assistant/sessions'),
+  create: () => request<ChatSessionMeta>('/api/assistant/sessions', { method: 'POST' }),
+  get: (id: number) => request<ChatSessionFull>(`/api/assistant/sessions/${id}`),
+  // Persist the whole transcript; pass title only when (re)deriving the label.
+  save: (id: number, messages: unknown[], title?: string) =>
+    request<{ status: string }>(`/api/assistant/sessions/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ messages, title }),
+    }),
+  rename: (id: number, title: string) =>
+    request<{ status: string }>(`/api/assistant/sessions/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ title }),
+    }),
+  remove: (id: number) =>
+    request<{ status: string }>(`/api/assistant/sessions/${id}`, { method: 'DELETE' }),
+};
+
 // ---- AI assistant rating (thumbs up/down on each reply) ----
 export interface AiFeedbackIn {
   surface: string;                 // 'celar' | 'global-dock' | 'catalog' | ...

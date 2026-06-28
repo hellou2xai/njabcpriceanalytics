@@ -3,10 +3,12 @@ import type React from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Sparkles, Send, Mic, MicOff, AlertCircle, Trash2, X, ShoppingCart, Check, ExternalLink } from 'lucide-react';
+import { Sparkles, Send, Mic, MicOff, AlertCircle, Trash2, X, ShoppingCart, Check, ExternalLink, Plus, History as HistoryIcon, MessageSquare } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { assistant, cart as cartApi } from '../lib/api';
-import type { AssistantChart as ChartSpec, AiUsage, CatalogAiAction, CatalogAiProduct, AssistantRipCluster } from '../lib/api';
+import type { CatalogAiAction, AssistantRipCluster, ChatSessionMeta } from '../lib/api';
+import { useAssistantSession } from '../contexts/AssistantSessionContext';
+import type { AssistantMsg as Msg } from '../contexts/AssistantSessionContext';
 import { useProductQuickView } from './ProductQuickView';
 import AssistantChart from './AssistantChart';
 import AddToCartButton from './AddToCartButton';
@@ -19,29 +21,9 @@ import { useAssistantActions, describeActions } from '../lib/useAssistantActions
 import { useResultCount } from '../lib/resultCount';
 import { openDataGridTab } from '../lib/datagridTab';
 
-interface Msg {
-  role: 'user' | 'assistant';
-  text: string;
-  charts?: ChartSpec[];
-  products?: CatalogAiProduct[];
-  // Per-cluster "Add Case Mix to Cart" buttons rendered above the markdown
-  // answer. Empty / absent means the assistant didn't touch any RIP this turn.
-  ripClusters?: AssistantRipCluster[];
-  chips?: string[];
-  usage?: AiUsage;
-  error?: boolean;
-  // When the assistant drove the screen, we wait for the page to report how many
-  // rows matched and then splice that exact count into the message text.
-  awaitingCount?: boolean;
-  screenBase?: string;   // pathname (no query) the count must belong to
-  navTs?: number;        // when we navigated; ignore counts reported before this
-  // Surfaced on standalone Assistant page: the chat stays put and renders a
-  // hyperlink the user clicks to open the result on the target page.
-  screenPath?: string;
-  screenLabel?: string;
-}
-
-const CONVOS_KEY = 'celar_convos_v1';
+// The transcript message shape now lives in the shared session store
+// (AssistantSessionContext) so the docked panel and the full page render the
+// same objects. Imported here as `Msg` to keep the rest of this file unchanged.
 
 const money = (v?: number | null) => (v == null ? '—' : `$${Number(v).toFixed(2)}`);
 const fmtCost = (usd: number) => (usd === 0 ? '$0.00' : usd < 0.01 ? `$${usd.toFixed(5)}` : `$${usd.toFixed(4)}`);
@@ -87,32 +69,19 @@ interface Props {
  * dedicated page and the dockable side panel so formatting is identical.
  */
 export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTIONS, onClose, pageContext, pagePath, pageQuery }: Props) {
-  // Per-page chat memory: keep a SEPARATE conversation per screen, keyed by the
-  // page path (falls back to the label / 'global'). Switching pages shows that
-  // page's own thread, and the history sent to the model is that page's only.
-  const pageKey = pagePath || pageContext || 'global';
+  // ONE continuous conversation shared across the dock and the dedicated page,
+  // persisted server-side with a browsable history list (see
+  // AssistantSessionContext). The current screen still scopes the model's tools
+  // (page/pagePath/pageQuery below) but no longer forks the thread.
+  const {
+    messages, setMessages, sessions, activeId, loading: historyLoading,
+    newChat, openSession, deleteSession,
+  } = useAssistantSession();
+  // History dropdown open state (the list of saved chats).
+  const [historyOpen, setHistoryOpen] = useState(false);
   // Standalone Ask page (no grid beside the chat) → product results render as the
   // rich interactive table (clickable name → modal + this→next sparkline).
   const isStandalone = !pagePath;
-  // Persist conversations to localStorage so the thread survives the user
-  // clicking through to a results page and back. Hydrate lazily on mount.
-  const [convos, setConvos] = useState<Record<string, Msg[]>>(() => {
-    if (typeof window === 'undefined') return {};
-    try {
-      const raw = window.localStorage.getItem(CONVOS_KEY);
-      return raw ? (JSON.parse(raw) as Record<string, Msg[]>) : {};
-    } catch { return {}; }
-  });
-  // Persist on every change. Quick-and-dirty: localStorage call is synchronous
-  // but the messages array is small (per-page transcripts), so it's fine.
-  useEffect(() => {
-    try { window.localStorage.setItem(CONVOS_KEY, JSON.stringify(convos)); }
-    catch { /* quota or private mode — silently drop */ }
-  }, [convos]);
-  const messages = convos[pageKey] ?? [];
-  const setMessages = useCallback((u: Msg[] | ((prev: Msg[]) => Msg[])) => {
-    setConvos(c => ({ ...c, [pageKey]: typeof u === 'function' ? (u as (p: Msg[]) => Msg[])(c[pageKey] ?? []) : u }));
-  }, [pageKey]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const { runActions } = useAssistantActions();
@@ -332,12 +301,27 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
           <span className="celar-session" title="Tokens and estimated cost this conversation">
             {(totalIn + totalOut).toLocaleString()} tokens · <strong>{fmtCost(totalCost)}</strong>
           </span>
-          {messages.length > 0 && (
-            <button className="celar-head-btn celar-clear-chat" title="Clear chat"
-                    aria-label="Clear chat" onClick={() => setMessages([])}>
-              <Trash2 size={14} /> Clear chat
+          <button className="celar-head-btn celar-head-btn-labeled" title="New chat" aria-label="New chat"
+                  onClick={() => { setHistoryOpen(false); newChat(); }}>
+            <Plus size={15} /> New chat
+          </button>
+          <div className="celar-history-wrap">
+            <button className={`celar-head-btn celar-head-btn-labeled${historyOpen ? ' is-open' : ''}`} title="Chat history"
+                    aria-label="Chat history" aria-expanded={historyOpen}
+                    onClick={() => setHistoryOpen(o => !o)}>
+              <HistoryIcon size={15} /> History
             </button>
-          )}
+            {historyOpen && (
+              <ChatHistoryPanel
+                sessions={sessions}
+                activeId={activeId}
+                loading={historyLoading}
+                onOpen={(id) => { setHistoryOpen(false); openSession(id); }}
+                onDelete={(id) => deleteSession(id)}
+                onClose={() => setHistoryOpen(false)}
+              />
+            )}
+          </div>
           {onClose && (
             <button className="celar-head-btn" title="Close assistant" aria-label="Close assistant" onClick={onClose}>
               <X size={16} />
@@ -501,6 +485,81 @@ export default function AssistantChat({ subtitle, suggestions = DEFAULT_SUGGESTI
   );
 }
 
+
+// Backend timestamps are UTC text 'YYYY-MM-DD HH:MM:SS' (no tz). Parse as UTC
+// and render a compact relative age for the history list.
+function relTime(ts?: string): string {
+  if (!ts) return '';
+  const d = new Date(ts.includes('T') ? ts : `${ts.replace(' ', 'T')}Z`);
+  const ms = d.getTime();
+  if (!Number.isFinite(ms)) return '';
+  const s = Math.max(0, (Date.now() - ms) / 1000);
+  if (s < 60) return 'just now';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const days = Math.floor(h / 24);
+  if (days < 7) return `${days}d ago`;
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+/**
+ * Dropdown list of the user's saved chats (newest first). Click a row to reopen
+ * its full transcript; the trash icon deletes it. Closes on outside-click /
+ * Escape like the app's other popovers.
+ */
+function ChatHistoryPanel({
+  sessions, activeId, loading, onOpen, onDelete, onClose,
+}: {
+  sessions: ChatSessionMeta[];
+  activeId: number | null;
+  loading: boolean;
+  onOpen: (id: number) => void;
+  onDelete: (id: number) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [onClose]);
+
+  return (
+    <div className="celar-history-panel" role="dialog" aria-label="Chat history" ref={ref}>
+      <div className="celar-history-head">Recent chats</div>
+      {loading && sessions.length === 0 && <div className="celar-history-empty">Loading…</div>}
+      {!loading && sessions.length === 0 && (
+        <div className="celar-history-empty">No saved chats yet. Ask something to start one.</div>
+      )}
+      <div className="celar-history-list">
+        {sessions.map(s => (
+          <div key={s.id} className={`celar-history-row${s.id === activeId ? ' is-active' : ''}`}>
+            <button type="button" className="celar-history-open" title={s.title} onClick={() => onOpen(s.id)}>
+              <MessageSquare size={14} className="celar-history-icon" />
+              <span className="celar-history-title">{s.title || 'New chat'}</span>
+              <span className="celar-history-time">{relTime(s.updated_at)}</span>
+            </button>
+            <button
+              type="button" className="celar-history-del" title="Delete chat" aria-label="Delete chat"
+              onClick={(e) => { e.stopPropagation(); onDelete(s.id); }}
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /**
  * One button per RIP cluster the assistant surfaced this turn. Clicking sends

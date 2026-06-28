@@ -5526,6 +5526,52 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
   width: auto; gap: 5px; padding: 0 10px; font-size: 12.5px; font-weight: 600;
   border-color: var(--border); white-space: nowrap;
 }
+/* Labeled header buttons (New chat / History): text + icon, auto width. */
+.celar-head-btn.celar-head-btn-labeled {
+  width: auto; gap: 5px; padding: 0 10px; font-size: 12.5px; font-weight: 600;
+  border-color: var(--border); white-space: nowrap;
+}
+.celar-head-btn.celar-head-btn-labeled.is-open {
+  background: var(--bg); color: var(--text); border-color: var(--border);
+}
+
+/* ---- Chat history dropdown (saved conversations) ---- */
+.celar-history-wrap { position: relative; }
+.celar-history-panel {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 60;
+  width: 320px; max-width: 86vw; max-height: 60vh; overflow-y: auto;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 11px;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.18); padding: 6px;
+}
+.celar-history-head {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--text-muted); padding: 6px 8px 4px;
+}
+.celar-history-empty { padding: 10px 8px 14px; font-size: 12.5px; color: var(--text-muted); }
+.celar-history-list { display: flex; flex-direction: column; gap: 2px; }
+.celar-history-row {
+  display: flex; align-items: stretch; border-radius: 8px; overflow: hidden;
+}
+.celar-history-row:hover { background: var(--bg); }
+.celar-history-row.is-active { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.celar-history-open {
+  flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px;
+  background: transparent; border: none; cursor: pointer; text-align: left;
+  padding: 8px 6px 8px 9px; color: var(--text); font-size: 13px;
+}
+.celar-history-icon { flex-shrink: 0; color: var(--text-muted); }
+.celar-history-title {
+  flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.celar-history-time { flex-shrink: 0; font-size: 11px; color: var(--text-muted); }
+.celar-history-del {
+  flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; background: transparent; border: none; cursor: pointer; color: var(--text-muted);
+  opacity: 0; transition: opacity 0.12s;
+}
+.celar-history-row:hover .celar-history-del,
+.celar-history-row.is-active .celar-history-del { opacity: 1; }
+.celar-history-del:hover { color: #dc2626; }
 
 /* Model chip + Pro upsell nudges (shown every 4th question) */
 .ai-model-chip {

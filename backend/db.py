@@ -812,6 +812,22 @@ def init_user_db():
         "ALTER TABLE agent_runs DROP CONSTRAINT IF EXISTS agent_runs_status_check",
         """ALTER TABLE agent_runs ADD CONSTRAINT agent_runs_status_check
             CHECK (status IN ('running','paused','completed','failed','aborted'))""",
+        # CELR.AI Assistant chat history: one row per saved conversation, per
+        # user. The whole transcript is stored as a JSON blob in `messages`
+        # (same shape the UI renders: role/text plus charts/products/usage), so
+        # reopening a session restores the conversation losslessly — server-side
+        # so history follows the user across devices/logins. Title is derived
+        # from the first user message; updated_at orders the history list.
+        f"""CREATE TABLE IF NOT EXISTS chat_sessions (
+            id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            user_id integer REFERENCES users(id) ON DELETE CASCADE,
+            title text NOT NULL DEFAULT 'New chat',
+            messages text NOT NULL DEFAULT '[]',
+            created_at text DEFAULT {NOW_UTC},
+            updated_at text DEFAULT {NOW_UTC}
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_chat_sessions_user
+            ON chat_sessions(user_id, updated_at)""",
     ]
     with get_pg() as con:
         for s in stmts:

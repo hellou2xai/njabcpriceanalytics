@@ -8,6 +8,7 @@ import { WebPriceSearchProvider } from './components/WebPriceSearch';
 import { DistributorProvider } from './contexts/DistributorContext';
 import { OrderAnalysisProvider } from './contexts/OrderAnalysisContext';
 import { ResultCountProvider } from './lib/resultCount';
+import { AssistantSessionProvider } from './contexts/AssistantSessionContext';
 import { DialogProvider } from './components/Dialog';
 import { ToastProvider } from './components/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -135,6 +136,7 @@ function AuthenticatedApp() {
       <OrderAnalysisProvider>
       <ProductQuickViewProvider>
       <ResultCountProvider>
+      <AssistantSessionProvider>
       <BrowserRouter>
         <WebPriceSearchProvider>
         <ContextMenuProvider>
@@ -206,6 +208,7 @@ function AuthenticatedApp() {
         </ContextMenuProvider>
         </WebPriceSearchProvider>
       </BrowserRouter>
+      </AssistantSessionProvider>
       </ResultCountProvider>
       </ProductQuickViewProvider>
       </OrderAnalysisProvider>

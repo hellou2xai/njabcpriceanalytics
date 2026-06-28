@@ -34,7 +34,8 @@ function toMap(arr?: { key: string; count: number }[]): Map<string, number> {
   return m;
 }
 
-function Section({ title, children, defaultOpen = true, badge }: { title: string; children: ReactNode; defaultOpen?: boolean; badge?: number }) {
+// All sections start COLLAPSED at startup; the user opens the ones they want.
+function Section({ title, children, defaultOpen = false, badge }: { title: string; children: ReactNode; defaultOpen?: boolean; badge?: number }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div className={`prod-filter-sect${open ? '' : ' is-collapsed'}`}>

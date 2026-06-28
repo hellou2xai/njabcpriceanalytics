@@ -14,7 +14,6 @@ import { useAuth } from '../contexts/AuthContext';
 import DataRefreshBar from './DataRefreshBar';
 import CartFab from './CartFab';
 import GlobalAssistant from './GlobalAssistant';
-import WelcomeTourPrompt from './WelcomeTourPrompt';
 import { useOrderAnalysis } from '../contexts/OrderAnalysisContext';
 import { useActivityTracker } from '../lib/activityTracker';
 
@@ -257,7 +256,6 @@ export default function Layout() {
   return (
     <div className="app-layout">
       <DataRefreshBar />
-      <WelcomeTourPrompt />
       {/* Mobile backdrop */}
       {isMobile && mobileOpen && (
         <div className="sidebar-backdrop" onClick={() => setMobileOpen(false)} />

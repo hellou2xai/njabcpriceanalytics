@@ -10,6 +10,7 @@ import type { BestQdRow, BestQdDist, BestQdTier, BestQdTrend } from '../lib/api'
 import { distributorName } from '../lib/distributors';
 import ProductSearchBox from '../components/ProductSearchBox';
 import ProductThumb from '../components/ProductThumb';
+import AvailabilityButton from '../components/AvailabilityButton';
 import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
 import { ErrorState } from '../components/DataState';
 import DataLoading from '../components/DataLoading';
@@ -110,6 +111,9 @@ function DistBlock({ w, d, row, isWinner }: {
             title={`View ${row.product_name} at ${name}`}>{name}</Link>
           <span className="bq-noqd"><AlertTriangle size={12} /> No quantity discount this edition</span>
         </div>
+        <div className="bq-dist-avail">
+          <AvailabilityButton wholesaler={w} name={row.product_name} itemNumber={d.item_no} />
+        </div>
       </div>
     );
   }
@@ -131,6 +135,10 @@ function DistBlock({ w, d, row, isWinner }: {
           <span className="bq-win" title="List case price before any discount">list {money(d.frontline)}</span>
         )}
         <WindowBadge d={d} />
+      </div>
+
+      <div className="bq-dist-avail">
+        <AvailabilityButton wholesaler={w} name={row.product_name} itemNumber={d.item_no} />
       </div>
 
       <table className="bq-tiers">

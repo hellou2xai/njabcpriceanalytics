@@ -12,6 +12,7 @@ import { distributorName, perUnitNoun, priceUnitWord, skuLabel } from '../lib/di
 import ProductSearchBox from '../components/ProductSearchBox';
 import NextMonthChip from '../components/NextMonthChip';
 import RowActions from '../components/RowActions';
+import AvailabilityButton from '../components/AvailabilityButton';
 import PriceSparklines from '../components/PriceSparklines';
 import { ErrorState } from '../components/DataState';
 import DataLoading from '../components/DataLoading';
@@ -200,6 +201,10 @@ function DistPanel({ w, d, row, cases, accent, isWinner }: {
           {d.product_name} <ExternalLink size={11} />
         </Link>
       )}
+
+      <div className="qd2-dist-avail">
+        <AvailabilityButton wholesaler={w} name={d.product_name ?? row.product_name} itemNumber={d.item_no} />
+      </div>
 
       <div className="qd2-dist-spark">
         <PriceSparklines wholesaler={w} productName={d.product_name ?? row.product_name}

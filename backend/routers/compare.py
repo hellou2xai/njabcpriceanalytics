@@ -3297,6 +3297,13 @@ def best_rips(
                 _attach_image(con, flat)          # rec["image_url"] from Go-UPC
             except Exception:
                 pass
+            try:
+                # Attach Allied's ABG number (from sku_mapping) so each block can
+                # expose its distributor item number for the availability search;
+                # Fedway already carries dist_item_no on the CPL row.
+                _attach_sku_mapping(con, flat)
+            except Exception:
+                pass
             mmix = _case_mix_sizes(con, src, wm, eds_m)
 
             out = []
@@ -3352,6 +3359,9 @@ def best_rips(
                         "tiers": lines,
                         "unit_qty": rec.get("unit_qty"),
                         "unit_volume": rec.get("unit_volume"),
+                        # Distributor item number for the availability search:
+                        # Fedway dist_item_no on the CPL, Allied abg_sku from sku_mapping.
+                        "item_no": rec.get("dist_item_no") or rec.get("abg_sku"),
                     }
 
                 ripping = [w for w in present if dists[w]["has_rip"]]
@@ -3691,6 +3701,12 @@ def best_qd(
                 _attach_image(con, flat)
             except Exception:
                 pass
+            try:
+                # Allied ABG number from sku_mapping for the availability search;
+                # Fedway carries dist_item_no on the CPL row already.
+                _attach_sku_mapping(con, flat)
+            except Exception:
+                pass
 
             out = []
             for key in sel:
@@ -3738,6 +3754,9 @@ def best_qd(
                         "tiers": lines,
                         "unit_qty": rec.get("unit_qty"),
                         "unit_volume": rec.get("unit_volume"),
+                        # Distributor item number for the availability search:
+                        # Fedway dist_item_no on the CPL, Allied abg_sku from sku_mapping.
+                        "item_no": rec.get("dist_item_no") or rec.get("abg_sku"),
                     }
 
                 discounting = [w for w in present if dists[w]["has_qd"]]

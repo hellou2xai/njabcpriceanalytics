@@ -9,6 +9,7 @@ import { distributorName, ALL_DISTRIBUTORS, abgSku, skuLabel } from '../lib/dist
 import { X, ShoppingCart, Check, AlertTriangle } from 'lucide-react';
 import { QtyStepper } from '../components/CatalogTable';
 import AddToListButton from '../components/AddToListButton';
+import AvailabilityButton from '../components/AvailabilityButton';
 import { ErrorState, EmptyState } from '../components/DataState';
 import DataLoading from '../components/DataLoading';
 
@@ -338,6 +339,9 @@ function ComboCartCell({ combo }: { combo: Combo }) {
         {flash ? <><Check size={13} /> Added</> : <><ShoppingCart size={13} /> Add to cart</>}
       </button>
       <AddToListButton productName={label} wholesaler={combo.wholesaler} comboCode={combo.combo_code} />
+      {/* Distributors search their portal by the COMBO CODE, so pass that as the
+          item number (name as fallback). Allied/Fedway only. */}
+      <AvailabilityButton wholesaler={combo.wholesaler} name={label} itemNumber={combo.combo_code} />
     </div>
   );
 }

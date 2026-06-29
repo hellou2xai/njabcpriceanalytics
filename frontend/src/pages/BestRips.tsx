@@ -10,6 +10,7 @@ import type { BestRipRow, BestRipDist, BestRipTier, BestRipTrend } from '../lib/
 import { distributorName } from '../lib/distributors';
 import ProductSearchBox from '../components/ProductSearchBox';
 import ProductThumb from '../components/ProductThumb';
+import AvailabilityButton from '../components/AvailabilityButton';
 import RipMembersModal from '../components/RipMembersModal';
 import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
 import { ErrorState } from '../components/DataState';
@@ -111,6 +112,9 @@ function DistBlock({ w, d, row, isWinner, onRipClick }: {
             title={`View ${row.product_name} at ${name}`}>{name}</Link>
           <span className="br-norip"><AlertTriangle size={12} /> No RIP this edition</span>
         </div>
+        <div className="br-dist-avail">
+          <AvailabilityButton wholesaler={w} name={row.product_name} itemNumber={d.item_no} />
+        </div>
       </div>
     );
   }
@@ -135,6 +139,10 @@ function DistBlock({ w, d, row, isWinner, onRipClick }: {
           </button>
         )}
         <WindowBadge d={d} />
+      </div>
+
+      <div className="br-dist-avail">
+        <AvailabilityButton wholesaler={w} name={row.product_name} itemNumber={d.item_no} />
       </div>
 
       <table className="br-tiers">

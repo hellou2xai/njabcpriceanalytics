@@ -5589,6 +5589,7 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 .availability-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .availability-btn-ext { opacity: 0.65; flex-shrink: 0; }
 .cmp-ladder-avail { margin: 6px 0 2px; }
+.qd2-dist-avail, .rip2-dist-avail, .bq-dist-avail, .br-dist-avail { margin: 6px 0; }
 
 /* Model chip + Pro upsell nudges (shown every 4th question) */
 .ai-model-chip {

@@ -12,6 +12,7 @@ import { distributorName, perUnitNoun, priceUnitWord, skuLabel } from '../lib/di
 import ProductSearchBox from '../components/ProductSearchBox';
 import NextMonthChip from '../components/NextMonthChip';
 import RowActions from '../components/RowActions';
+import AvailabilityButton from '../components/AvailabilityButton';
 import RipMembersModal from '../components/RipMembersModal';
 import PriceSparklines from '../components/PriceSparklines';
 import { ErrorState } from '../components/DataState';
@@ -209,6 +210,10 @@ function DistPanel({ w, d, row, cases, accent, isWinner, edition, onRipClick }: 
           {d.product_name} <ExternalLink size={11} />
         </Link>
       )}
+
+      <div className="rip2-dist-avail">
+        <AvailabilityButton wholesaler={w} name={d.product_name ?? row.product_name} itemNumber={d.item_no} />
+      </div>
 
       {/* The exact pricing sparkline used on the Products page, so the buyer can
           validate this distributor's RIP/price trajectory against the headline. */}

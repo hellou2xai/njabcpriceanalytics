@@ -647,6 +647,7 @@ export interface BestRipDist {
   tiers: BestRipTier[];
   unit_qty: string | null;
   unit_volume: string | null;
+  item_no?: string | null;           // distributor item number (Fedway/Allied) for availability search
 }
 export interface BestRipTrend {
   this: number | null;             // deepest full-month rebate $/cs, this calendar month
@@ -726,6 +727,7 @@ export interface BestQdDist {
   tiers: BestQdTier[];
   unit_qty: string | null;
   unit_volume: string | null;
+  item_no?: string | null;           // distributor item number (Fedway/Allied) for availability search
 }
 export interface BestQdTrend {
   this: number | null;             // deepest full-month QD $/cs, this calendar month

@@ -8,6 +8,7 @@ import { distributorName, DISTRIBUTOR_NAMES, perUnitAbbr } from '../lib/distribu
 import ProductSearchBox from '../components/ProductSearchBox';
 import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
 import RowActions from '../components/RowActions';
+import AvailabilityButton from '../components/AvailabilityButton';
 import ProductThumb from '../components/ProductThumb';
 import MonthEffectiveSparkline from '../components/MonthEffectiveSparkline';
 import { buildSparkProps } from '../lib/promotionsSparkline';
@@ -315,6 +316,10 @@ function EditionCard({ r, older, newer, wholesaler, onOpen, price3mo }: {
         <div className="ec-card-actions">
           <RowActions productName={r.product_name} wholesaler={wholesaler}
             upc={r.upc ?? undefined} unitVolume={r.unit_volume ?? undefined} unitQty={r.unit_qty ?? undefined} />
+          {/* Edition rows don't carry the distributor item number, so this
+              searches the portal by item NAME (keyword fallback). Only renders
+              for Allied/Fedway. */}
+          <AvailabilityButton wholesaler={wholesaler} name={r.product_name} />
         </div>
       )}
     </div>

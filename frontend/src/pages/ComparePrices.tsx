@@ -6,6 +6,7 @@ import { ChevronDown, ChevronUp, ChevronRight, Zap, Scale, Clock, Download, Aler
 import { compare, catalog } from '../lib/api';
 import type { CatalogTier, CompareLadder, CompareRow } from '../lib/api';
 import { distributorName, perUnitAbbr, abgSku, skuLabel } from '../lib/distributors';
+import AvailabilityButton from '../components/AvailabilityButton';
 import { useAuth } from '../contexts/AuthContext';
 import RowActions from '../components/RowActions';
 import ProductSearchBox from '../components/ProductSearchBox';
@@ -265,6 +266,11 @@ function LadderPanel({ slugs, params, onOpen }: {
                 </div>
               );
             })()}
+            {lad && (
+              <div className="cmp-ladder-avail">
+                <AvailabilityButton wholesaler={w} name={lad.product_name} itemNumber={lad.abg_sku} />
+              </div>
+            )}
             {!lad ? <div className="cmp-ladder-none">Not found</div> : (
               <>
                 <div className="cmp-ladder-line cmp-ladder-front">

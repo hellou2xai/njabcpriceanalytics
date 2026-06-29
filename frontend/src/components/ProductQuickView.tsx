@@ -10,6 +10,7 @@ import FavoriteButton from './FavoriteButton';
 import ProductThumb from './ProductThumb';
 import AddToCartButton from './AddToCartButton';
 import { distributorName, abgSku, skuLabel, packLabel, containerTitle, perUnitAbbr } from '../lib/distributors';
+import AvailabilityButton from './AvailabilityButton';
 import { useModalFocus } from './useModalFocus';
 import { windowBadge } from '../lib/dealDates';
 import { AI_EXPLAINERS_ENABLED } from '../lib/flags';
@@ -319,6 +320,9 @@ function QuickViewModal({
                     {[detail.enrichment.brand, detail.enrichment.region].filter(Boolean).join(' · ')}
                   </p>
                 )}
+                <div style={{ marginTop: 10 }}>
+                  <AvailabilityButton wholesaler={p.wholesaler} name={p.product_name} itemNumber={p.abg_sku} size="md" />
+                </div>
               </div>
             </div>
 

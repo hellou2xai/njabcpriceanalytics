@@ -5573,6 +5573,23 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 .celar-history-row.is-active .celar-history-del { opacity: 1; }
 .celar-history-del:hover { color: #dc2626; }
 
+/* ---- Wholesale availability button (open distributor portal search) ---- */
+.availability-btn {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 7px; background: var(--surface);
+  color: var(--text); font-weight: 600; white-space: nowrap; line-height: 1;
+}
+.availability-btn-sm { padding: 5px 9px; font-size: 12px; }
+.availability-btn-md { padding: 7px 12px; font-size: 13px; }
+.availability-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  color: var(--accent);
+}
+.availability-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.availability-btn-ext { opacity: 0.65; flex-shrink: 0; }
+.cmp-ladder-avail { margin: 6px 0 2px; }
+
 /* Model chip + Pro upsell nudges (shown every 4th question) */
 .ai-model-chip {
   display: inline-block; padding: 0 6px; border-radius: 999px; font-size: 10px; font-weight: 600;

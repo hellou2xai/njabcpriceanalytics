@@ -40,6 +40,7 @@ import { useProductSizes, bottlesPerCase, sizeToMl, stripHeaderVintage } from '.
 import DistCompareChip from '../components/DistCompareChip';
 import { useComboLink } from '../lib/comboLink';
 import { distributorName, abgSku, skuLabel, containerTitle, containerNoun, packLabel, packPhrase, priceUnit, perUnitNoun } from '../lib/distributors';
+import AvailabilityButton from '../components/AvailabilityButton';
 import type { Product, CatalogTier } from '../lib/api';
 
 // ---- size / oz helpers ----
@@ -127,6 +128,7 @@ function MiniCard({ p, actions = false }: { p: Product; actions?: boolean }) {
               upc={p.upc ?? undefined} unitVolume={p.unit_volume ?? undefined} qtyCases={cases} />
             <AddToListButton productName={p.product_name} wholesaler={p.wholesaler}
               upc={p.upc ?? undefined} unitVolume={p.unit_volume ?? undefined} />
+            <AvailabilityButton wholesaler={p.wholesaler} name={p.product_name} itemNumber={p.abg_sku} />
           </div>
         </div>
       )}
@@ -638,6 +640,7 @@ export default function ProductDetail() {
                     upc={hs.upc ?? undefined} unitVolume={hs.unit_volume ?? undefined}
                     unitQty={hs.unit_qty != null ? String(hs.unit_qty) : undefined}
                     vintage={hs.vintage != null ? String(hs.vintage) : undefined} />
+                  <AvailabilityButton wholesaler={hs.wholesaler} name={hs.product_name} itemNumber={hs.abg_sku} size="md" />
                 </div>
               );
             })()}

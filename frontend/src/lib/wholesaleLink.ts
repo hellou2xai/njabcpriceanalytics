@@ -50,12 +50,22 @@ export function availabilityUrl(
   return term ? PORTAL_SEARCH[distributor](term) : null;
 }
 
-/** Open the distributor portal search in a new tab (noopener), prefilled. */
+/** Open the distributor portal search prefilled, REUSING one tab per
+ *  distributor. Repeated checks navigate the same tab instead of piling up new
+ *  ones, and each distributor keeps its own tab so the merchant's logged-in
+ *  session there isn't clobbered by switching distributors.
+ *
+ *  A named target can't be combined with `noopener` — browsers treat a named
+ *  `noopener` target like `_blank` and force a new tab every time — so we open
+ *  by name and best-effort sever the opener reference for safety instead. */
 export function openAvailability(
   distributor: WholesaleDistributor,
   itemNumber?: string | null,
   name?: string | null,
 ): void {
   const url = availabilityUrl(distributor, itemNumber, name);
-  if (url) window.open(url, '_blank', 'noopener');
+  if (!url) return;
+  const win = window.open(url, `celr-availability-${distributor}`);
+  // Cross-origin once the portal loads; clearing opener may throw — ignore.
+  if (win) { try { win.opener = null; } catch { /* cross-origin */ } }
 }

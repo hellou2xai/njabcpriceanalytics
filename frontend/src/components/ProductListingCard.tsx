@@ -17,6 +17,7 @@ import ProductThumb from './ProductThumb';
 import FavoriteButton from './FavoriteButton';
 import AddToCartButton from './AddToCartButton';
 import AddToListButton from './AddToListButton';
+import AvailabilityButton from './AvailabilityButton';
 import { QtyStepper, type CartState } from './CatalogTable';
 import DistCompareChip from './DistCompareChip';
 import { buildMonths } from '../lib/promotionsSparkline';
@@ -201,6 +202,7 @@ export default function ProductListingCard({ size, name, cart, updateQty, showPa
                 <ChevronDown size={15} className={`pdx-expand-chev${expanded ? ' open' : ''}`} />
               </button>
             )}
+            <AvailabilityButton wholesaler={size.wholesaler} name={size.product_name} itemNumber={size.abg_sku} />
           </div>
         </div>
       </div>

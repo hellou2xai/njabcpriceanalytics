@@ -14,6 +14,7 @@ import { useProductQuickView } from '../components/ProductQuickView';
 import { useDialog } from '../components/Dialog';
 import { shortUnit } from '../components/CatalogTable';
 import { distributorName, abgSku, skuLabel, priceUnit, perUnitAbbr, isKegUnit } from '../lib/distributors';
+import AvailabilityButton from '../components/AvailabilityButton';
 import { ripPrograms, effectiveRipCode, creditWord, normTierUnit } from '../lib/ripPrograms';
 import { ErrorState, EmptyState } from '../components/DataState';
 import DataLoading from '../components/DataLoading';
@@ -659,6 +660,10 @@ export default function Cart() {
             <DealTimingSticker deals={it.deal_windows ?? []} gaps={it.rip_gaps}
               everyDay={everyDayFromTiers(it.tiers, it.frontline_case_price)} />
           )}
+          {/* Wholesale availability: open this distributor's portal prefilled —
+              by combo code for an intact combo, else the item number. Allied/Fedway. */}
+          <AvailabilityButton wholesaler={it.wholesaler} name={it.product_name}
+            itemNumber={showCombo ? it.combo_code : it.abg_sku} />
         </div>
 
         {/* Smart-cart: ranked, stacked money-saving suggestions for this line

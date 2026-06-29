@@ -9,6 +9,7 @@ import { useProductQuickView } from '../components/ProductQuickView';
 import ProductThumb from '../components/ProductThumb';
 import DealSparkline from '../components/DealSparkline';
 import { distributorName, abgSku, skuLabel, isKegUnit, priceUnit, perUnitAbbr } from '../lib/distributors';
+import AvailabilityButton from '../components/AvailabilityButton';
 import { DistributorPicker } from '../components/DistributorPicker';
 import { QtyStepper } from '../components/QtyStepper';
 import { RipPicker } from '../components/RipPicker';
@@ -368,6 +369,12 @@ function ListRow({ it, selected, toggle, onRemove }: {
               })()}
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{it.upc}</div>
+            <div style={{ marginTop: 4 }} onClick={e => e.stopPropagation()}>
+              {/* Wholesale availability: the product item number, else a combo
+                  code, else the name. Allied/Fedway only. */}
+              <AvailabilityButton wholesaler={it.wholesaler} name={it.product_name}
+                itemNumber={it.abg_sku || it.combo_code} />
+            </div>
             {(it.rip_gaps?.length ?? 0) > 0 && (
               <div style={{ marginTop: 4 }} onClick={e => e.stopPropagation()}>
                 <DealTimingSticker deals={[]} gaps={it.rip_gaps} />

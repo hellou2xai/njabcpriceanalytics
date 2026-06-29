@@ -316,10 +316,9 @@ function EditionCard({ r, older, newer, wholesaler, onOpen, price3mo }: {
         <div className="ec-card-actions">
           <RowActions productName={r.product_name} wholesaler={wholesaler}
             upc={r.upc ?? undefined} unitVolume={r.unit_volume ?? undefined} unitQty={r.unit_qty ?? undefined} />
-          {/* Edition rows don't carry the distributor item number, so this
-              searches the portal by item NAME (keyword fallback). Only renders
-              for Allied/Fedway. */}
-          <AvailabilityButton wholesaler={wholesaler} name={r.product_name} />
+          {/* Precise item-number search (item_no = Fedway dist_item_no / Allied
+              abg_sku), falling back to the item name. Only renders for Allied/Fedway. */}
+          <AvailabilityButton wholesaler={wholesaler} name={r.product_name} itemNumber={r.item_no} />
         </div>
       )}
     </div>

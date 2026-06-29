@@ -4417,7 +4417,7 @@ def _edition_rows(con, src: str, w: str, ed: str) -> dict:
         "WHERE table_name = ? AND column_name = 'dist_item_no'", [src]).fetchone())
     ditem_sel = "dist_item_no," if has_ditem else "CAST(NULL AS VARCHAR) AS dist_item_no,"
     df = con.execute(f"""
-        SELECT upc, {ditem_sel} product_name, product_type, brand, unit_qty, unit_volume, unit_type,
+        SELECT upc, {ditem_sel} abg_sku, product_name, product_type, brand, unit_qty, unit_volume, unit_type,
                vintage, abv_proof,
                frontline_case_price, frontline_unit_price,
                best_case_price, best_unit_price, effective_case_price,
@@ -4567,6 +4567,10 @@ def edition_comparison(con, wholesaler: str, older: str = "", newer: str = "",
                 "unit_qty": ref.get("unit_qty"), "unit_type": ref.get("unit_type"),
                 "product_type": ref.get("product_type"),
                 "upc": ref.get("upc"), "dist_item_no": ref.get("dist_item_no"),
+                # Distributor's own catalogue number for the portal availability
+                # search: Fedway carries it as dist_item_no on the CPL row, Allied
+                # as abg_sku (Allied has no dist_item_no), so prefer whichever exists.
+                "item_no": ref.get("dist_item_no") or ref.get("abg_sku"),
                 "net_a_case": net_a, "net_b_case": net_b,
                 "net_a_btl": round(net_a / pack, 2) if net_a and pack else None,
                 "net_b_btl": round(net_b / pack, 2) if net_b and pack else None,
@@ -4582,7 +4586,9 @@ def edition_comparison(con, wholesaler: str, older: str = "", newer: str = "",
             rows.append({"ident": k, "status": "added", "comparable": True,
                          "product_name": rb.get("product_name"), "unit_volume": rb.get("unit_volume"),
                          "unit_qty": rb.get("unit_qty"), "unit_type": rb.get("unit_type"), "product_type": rb.get("product_type"),
-                         "upc": rb.get("upc"), "dist_item_no": rb.get("dist_item_no"), "net_b_case": rb.get("effective_case_price"),
+                         "upc": rb.get("upc"), "dist_item_no": rb.get("dist_item_no"),
+                         "item_no": rb.get("dist_item_no") or rb.get("abg_sku"),
+                         "net_b_case": rb.get("effective_case_price"),
                          "net_b_btl": round((rb.get("effective_case_price") or 0) / pack, 2) if pack else None,
                          "net_delta_case": None, "layers": []})
         else:
@@ -4590,7 +4596,9 @@ def edition_comparison(con, wholesaler: str, older: str = "", newer: str = "",
             rows.append({"ident": k, "status": "removed", "comparable": True,
                          "product_name": ra.get("product_name"), "unit_volume": ra.get("unit_volume"),
                          "unit_qty": ra.get("unit_qty"), "unit_type": ra.get("unit_type"), "product_type": ra.get("product_type"),
-                         "upc": ra.get("upc"), "dist_item_no": ra.get("dist_item_no"), "net_a_case": ra.get("effective_case_price"),
+                         "upc": ra.get("upc"), "dist_item_no": ra.get("dist_item_no"),
+                         "item_no": ra.get("dist_item_no") or ra.get("abg_sku"),
+                         "net_a_case": ra.get("effective_case_price"),
                          "net_a_btl": round((ra.get("effective_case_price") or 0) / pack, 2) if pack else None,
                          "net_delta_case": None, "layers": []})
 

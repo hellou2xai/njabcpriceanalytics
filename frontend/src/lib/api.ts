@@ -789,6 +789,9 @@ export interface EditionRow {
   product_type: string | null;
   upc: string | null;
   dist_item_no?: string | null;
+  // Distributor catalogue number for the wholesale availability search
+  // (dist_item_no for Fedway, abg_sku for Allied — resolved server-side).
+  item_no?: string | null;
   net_a_case?: number | null;
   net_b_case?: number | null;
   net_a_btl?: number | null;

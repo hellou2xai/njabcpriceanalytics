@@ -231,12 +231,21 @@ function lineRipEligibility(it: CartItem, all: CartItem[]): { text: string; tone
     };
   }
   const top = reached[reached.length - 1];
+  // The badge $ is the money THIS line actually earns, not the tier's headline:
+  // RIP is a per-case rebate paid on EVERY case once the tier qualifies, so 6
+  // cases on a 3-case tier pays double. Use the backend's canonical
+  // rip_back_later (per_case × cases, FOUNDATION 3.4.1) — never re-derive here.
+  const rbl = it.rip_back_later;
+  const earned = rbl && rbl.total > 0 ? rbl.total : top.amt;
   let text = `Product qualified for the ${top.qty} ${uw} ${amt(top.amt)} RIP${across}.`;
+  if (rbl && rbl.total > 0 && Math.abs(rbl.total - top.amt) > 0.005) {
+    text += ` At your quantity it pays ${amt(rbl.total)} back (${amt(rbl.per_case)}/cs).`;
+  }
   if (ahead.length) {
     const next = ahead[0];
     text += ` Add ${physNeed(next.qty - have)} more for the ${next.qty} ${uw} ${amt(next.amt)} RIP.`;
   }
-  return { tone: 'reached', text: text + qualNote, short: `✓ ${amt(top.amt)} RIP (${top.qty} ${uw})` };
+  return { tone: 'reached', text: text + qualNote, short: `✓ ${amt(earned)} RIP (${top.qty} ${uw})` };
 }
 
 /** Reduce a RIP cluster of cart lines to its rebate ladder + a progress

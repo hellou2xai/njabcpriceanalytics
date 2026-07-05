@@ -1013,7 +1013,12 @@ def attach_tiers(con, records, ref_date=None) -> None:
                 "save_per_bottle": round(amt_f / uq, 2) if uq > 0 else None,
                 "roi_pct": round(amt_f / cp * 100, 2) if cp > 0 else 0.0,
                 "is_time_sensitive": False, "from_date": None, "to_date": None,
-                "window_status": "active", "days_to_expire": None,
+                # Full-month merged tier with NO dated window: it's the always-on
+                # monthly price, not a live time-sensitive promo. Must be
+                # 'evergreen' (windowBadge suppresses it) — NOT 'active', which
+                # would render a bogus "Active now" badge on this whole-month QD,
+                # even inside a past-edition block of the price-schedule popover.
+                "window_status": "evergreen", "days_to_expire": None,
             })
 
         # Partial-window QD tiers from the raw sub-month rows (see batch above).

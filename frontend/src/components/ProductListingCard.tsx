@@ -22,6 +22,7 @@ import { QtyStepper, type CartState } from './CatalogTable';
 import DistCompareChip from './DistCompareChip';
 import { buildMonths } from '../lib/promotionsSparkline';
 import { currentMonth, type MonthBreakdown } from './MonthEffectiveSparkline';
+import PriceSparklines from './PriceSparklines';
 import RipQdPanels, { money, afterOneCase, ozPerBottle, dedupMonthsByListing } from './RipQdPanels';
 import { bottlesPerCase, sizeToMl, stripHeaderVintage } from '../lib/productSizes';
 import { distributorName, abgSku, skuLabel, perUnitNoun, priceUnitWord } from '../lib/distributors';
@@ -53,8 +54,8 @@ function OriginGrape({ size }: { size: Product }) {
   );
 }
 
-function SummaryCard({ size, name, cur, next, pack, sibs, dense = false }: {
-  size: Product; name: string; cur: MonthBreakdown | null; next: MonthBreakdown | null; pack: number | null; sibs: Product[]; dense?: boolean;
+function SummaryCard({ size, name, cur, next, pack, sibs, months, dense = false }: {
+  size: Product; name: string; cur: MonthBreakdown | null; next: MonthBreakdown | null; pack: number | null; sibs: Product[]; months: MonthBreakdown[]; dense?: boolean;
 }) {
   const ozB = ozPerBottle(size.unit_volume);
   // Cost per ounce = FRONTLINE single-bottle price ÷ fluid ounces (list-price
@@ -126,6 +127,15 @@ function SummaryCard({ size, name, cur, next, pack, sibs, dense = false }: {
           </div>
         )}
       </div>
+      {/* 3-month price trend, next to the CASE/BOTTLE prices (same sparkline the
+          grouped card header shows). Rows carry price_3mo (fetched on expand),
+          so `months` powers a no-request rich tooltip; it self-fetches the light
+          history only if a row somehow lacks it. */}
+      <div className="pdx-sum-spark" onClick={e => e.stopPropagation()}>
+        <PriceSparklines wholesaler={size.wholesaler} productName={size.product_name}
+          upc={size.upc} unitVolume={size.unit_volume} unitQty={size.unit_qty} vintage={size.vintage}
+          months={months.length ? months : undefined} noSelfFetch={false} />
+      </div>
       <div className="pdx-sum-prices">
         <PricePair label={csWord.toUpperCase()} now={caseThis} nxt={caseNext} />
         <PricePair label={btlWord.toUpperCase()} now={btlThis} nxt={btlNext} />
@@ -179,7 +189,7 @@ export default function ProductListingCard({ size, name, cart, updateQty, showPa
       {/* One row: image · meta · prices · order — the order fills the space to
           the right of the prices instead of sitting on its own line below. */}
       <div className="pdx-summary">
-        <SummaryCard size={size} name={pname} cur={cur} next={next} pack={pack} sibs={sibs} dense={dense} />
+        <SummaryCard size={size} name={pname} cur={cur} next={next} pack={pack} sibs={sibs} months={months} dense={dense} />
         <div className="pdx-order">
           <div className="pdx-order-steppers">
             <QtyStepper label={`${btlWord.charAt(0).toUpperCase()}${btlWord.slice(1)}s`}

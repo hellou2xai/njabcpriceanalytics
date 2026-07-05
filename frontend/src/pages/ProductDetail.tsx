@@ -178,7 +178,10 @@ function SizeSection({ size, view, cart, updateQty, primaryName, alt }: {
   // Zebra striping so individual sizes are easy to tell apart at a glance.
   alt?: boolean;
 }) {
-  const [dealsOpen, setDealsOpen] = useState(true);
+  // Per-size deal detail (RIP/QD panels + volume curve) is collapsed by default
+  // so the sidebar stays a scannable size list instead of a wall of tables —
+  // the buyer expands the one size they're weighing.
+  const [dealsOpen, setDealsOpen] = useState(false);
   const cartKey = `${size.product_name}|${size.wholesaler}|${size.upc ?? ''}|${size.unit_volume ?? ''}`;
   const qty = cart[cartKey] ?? { cases: 0, units: 0 };
   // True bottles-per-case (corrects slash-multipacks where unit_qty is trays).
@@ -253,14 +256,22 @@ function SizeSection({ size, view, cart, updateQty, primaryName, alt }: {
         </span>
       </div>
 
+      {/* Collapsed by default (declutter): one toggle reveals this size's full
+          RIP/QD tables + volume curve. The price summary + sparkline above stay
+          visible so the list is still scannable at a glance. */}
+      <button type="button" className="pd-size-dealtoggle" onClick={() => setDealsOpen(o => !o)}
+        aria-expanded={dealsOpen}>
+        {dealsOpen ? 'Hide' : 'View'} {showDeals ? 'deals & pricing' : 'volume pricing'}
+        <ChevronDown size={14} className={`pdx-expand-chev${dealsOpen ? ' open' : ''}`} />
+      </button>
       {/* QD + RIP tiers — the shared new layout (RIP details + prices chart). */}
-      {showDeals && <RipQdPanels size={size} name={primaryName} className="pdx-compact" />}
+      {dealsOpen && showDeals && <RipQdPanels size={size} name={primaryName} className="pdx-compact" />}
       </div>
 
       {/* Volume-pricing curve: per-case + per-bottle price vs case quantity,
           from the SAME canonical tiers (this UPC / vintage) as the ladders. */}
-      <QuantityPriceCurve frontline={headlineCase} tiers={tiers} pack={pack}
-        sizeLabel={`${size.unit_volume ?? ''}${hasVintage ? ` · ${size.vintage}` : ''}`} />
+      {dealsOpen && <QuantityPriceCurve frontline={headlineCase} tiers={tiers} pack={pack}
+        sizeLabel={`${size.unit_volume ?? ''}${hasVintage ? ` · ${size.vintage}` : ''}`} />}
       </div>
 
       <div className="pd-size-order">

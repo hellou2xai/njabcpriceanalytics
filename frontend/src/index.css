@@ -6632,6 +6632,13 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pd-tab:hover { color: var(--text); }
 .pd-tab.is-active { color: var(--accent); border-bottom-color: var(--accent); }
 .pd-sizes { overflow-y: auto; }
+/* Per-size "View deals & pricing" collapse toggle in the sidebar. */
+.pd-size-dealtoggle { display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; padding: 5px 10px;
+  background: none; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--accent);
+  font-size: 12.5px; font-weight: 600; cursor: pointer; transition: background .15s, border-color .15s; }
+.pd-size-dealtoggle:hover { background: var(--hl-bg); border-color: var(--accent); }
+.pd-size-dealtoggle .pdx-expand-chev { transition: transform .18s; }
+.pd-size-dealtoggle .pdx-expand-chev.open { transform: rotate(180deg); }
 .pd-loading { padding: 24px; color: var(--text-muted); }
 .pd-size { padding: 16px; border-bottom: 1px solid var(--border); }
 .pd-size:last-child { border-bottom: 0; }
@@ -6735,6 +6742,9 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pdx-sum-better { margin-top: 6px; }
 /* CASE then BOTTLE STACKED (two lines), each: label left, Price + Next Month
    right — matches the Image #5 reference. */
+/* 3-month price sparkline sitting just left of the CASE/BOTTLE prices in a
+   listing row (same chart the grouped card header carries). */
+.pdx-sum-spark { align-self: center; flex: 0 0 auto; }
 .pdx-sum-prices { display: flex; flex-direction: column; gap: 14px; align-self: center; flex: 0 0 auto; min-width: 200px; }
 .pdx-price-block { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; }
 .pdx-price-k { font-size: 12px; font-weight: 800; letter-spacing: .05em; color: var(--text-muted); }

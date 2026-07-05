@@ -1710,6 +1710,11 @@ def attach_price_3mo(con, records) -> None:
             # renames survive), but coexist in one edition under different names.
             "product_name": d.get("product_name"),
             "frontline": front,
+            # Source single-bottle price from the CPL sheet (frontline_unit_price)
+            # — the price to buy ONE bottle. Carried per-edition so the UI shows
+            # the sheet's own number, never front/pack reconstructed from a
+            # rounded case price.
+            "frontline_unit_price": _num(d.get("frontline_unit_price")),
             "disc1_price": round(front - disc1, 2) if front is not None else None,
             "rip_price": _num(d.get("effective_case_price")),
             "tiers": d.get("tiers") or [],

@@ -530,7 +530,7 @@ function QuickViewModal({
             {/* Uniform RIP details + QD prices chart — the SAME panels the
                 Products grid and product-detail page render, so QD/RIP read
                 identically everywhere. */}
-            {p && <RipQdPanels size={p} />}
+            {p && <RipQdPanels size={p} className="pdx-compact" />}
 
             {ripCode && ripSiblings && ripSiblings.items.length > 0 && (() => {
               const items = ripSiblings.items;

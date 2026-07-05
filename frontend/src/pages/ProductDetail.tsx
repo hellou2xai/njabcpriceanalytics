@@ -254,7 +254,7 @@ function SizeSection({ size, view, cart, updateQty, primaryName, alt }: {
       </div>
 
       {/* QD + RIP tiers — the shared new layout (RIP details + prices chart). */}
-      {showDeals && <RipQdPanels size={size} name={primaryName} />}
+      {showDeals && <RipQdPanels size={size} name={primaryName} className="pdx-compact" />}
       </div>
 
       {/* Volume-pricing curve: per-case + per-bottle price vs case quantity,
@@ -654,7 +654,7 @@ export default function ProductDetail() {
           {primarySize && (
             <section className="pd-section pd-nextmonth">
               <h2>This Month vs Next Month{primarySize.unit_volume ? ` · ${primarySize.unit_volume}` : ''}</h2>
-              <RipQdPanels size={primarySize} />
+              <RipQdPanels size={primarySize} className="pdx-compact" />
             </section>
           )}
 

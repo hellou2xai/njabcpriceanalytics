@@ -2259,6 +2259,7 @@ export interface CatalogTier extends TierWindow {
 export interface Price3moBlock {
   edition: string | null;
   frontline: number | null;
+  frontline_unit_price?: number | null;   // source single-bottle price (CPL sheet)
   disc1_price: number | null;
   rip_price: number | null;
   tiers: CatalogTier[];

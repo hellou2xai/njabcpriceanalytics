@@ -48,6 +48,7 @@ export function buildMonths(item: SparkSourceItem): MonthBreakdown[] {
     return {
       edition: b.edition,
       frontline: b.frontline,
+      frontlineUnit: b.frontline_unit_price ?? null,
       afterDiscount: bestDisc,
       discountTiers: disc,
       ripTiers: rip,

@@ -6951,6 +6951,9 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
     text-transform: uppercase; font-size: 10px; letter-spacing: .03em; text-align: left;
   }
   .pdx-tbl--qd td:first-child[data-label]::before { display: none; }
+  /* Drop blank ("—") cells entirely when stacked, so "1 Bottle" doesn't render
+     three empty label rows. Table (wide) layout keeps them for column alignment. */
+  .pdx-tbl--qd td.pdx-cell-empty { display: none; }
 }
 
 /* ---- responsive (project breakpoints: 1023 / 768 / 480) ----

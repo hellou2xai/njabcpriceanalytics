@@ -261,15 +261,24 @@ function buildQdRows(block: MonthBreakdown | null, pack: number | null, frontlin
   if (!block) return [];
   const tiers = block.discountTiers ?? [];
   const rows: QdRow[] = [];
-  const bottleList = block.frontline != null && pack ? block.frontline / pack : frontlineUnit;
+  // 1-Bottle = the price to buy a SINGLE bottle: the CPL sheet's own
+  // frontline_unit_price (source), NOT case/pack reconstructed from a rounded
+  // case price. Fall back to the current row's source unit price, then to
+  // reconstruction only if the sheet gave no bottle price at all.
+  const bottleList = block.frontlineUnit ?? frontlineUnit
+    ?? (block.frontline != null && pack ? block.frontline / pack : null);
   rows.push({ label: '1 Bottle', cases: 0, perCase: null, perBottle: bottleList, qdPerCase: null, qdPerBottle: null, ts: false });
-  // 1-case row: its QD is the source saving on the qty=1 discount tier, if any.
+  // 1-case row: the everyday case price already HAS the 1-case QD baked in
+  // (afterOneCase = frontline − 1cs QD). Deliberately leave its QD columns blank
+  // — showing the 1-cs QD again reads as a SECOND, stackable discount and makes
+  // buyers expect another ~$12 off. Only deeper-quantity QD brackets carry a QD
+  // saving. Matches the price-schedule popover, which promotes the 1-cs QD to
+  // the headline buy price and drops it from the deal rows.
   const oneCase = afterOneCase(block);
-  const oneCaseTier = tiers.find(t => Math.abs(caseQty(t, pack) - 1) < 1e-9);
   rows.push({
     label: '1 Case', cases: 1, perCase: oneCase,
     perBottle: oneCase != null && pack ? oneCase / pack : null,
-    qdPerCase: oneCaseTier?.savePerCase ?? null, qdPerBottle: oneCaseTier?.savePerBottle ?? null, ts: false,
+    qdPerCase: null, qdPerBottle: null, ts: false,
   });
   const seen = new Map<string, QdRow>();
   for (const t of tiers) {
@@ -312,13 +321,20 @@ function QdCard({ title, variant, rows, csWord, btlWord }: {
             // source per-case saving × the cases at the tier.
             const qdPer = r.qdPerCase;
             const qdTot = qdPer != null && qdPer > 0 ? Math.round(qdPer * r.cases * 100) / 100 : null;
+            // Blank cells are hidden in the stacked (narrow) layout so a row
+            // like "1 Bottle" collapses to just its one price instead of three
+            // empty "—" lines — the panel stays compact on the detail page.
+            const emptyCls = (v: string | null) => `pdx-num${v == null ? ' pdx-cell-empty' : ''}`;
+            const pc = money(r.perCase), pb = money(r.perBottle);
+            const qp = qdPer && qdPer > 0 ? money(qdPer) : null;
+            const qt = money(qdTot);
             return (
               <tr key={i} className={isBest ? 'pdx-tbl-best' : undefined}>
                 <td data-label="Type">{r.label}{r.ts && <TsSticker />}</td>
-                <td className="pdx-num" data-label={`Price by ${csWord}`}>{money(r.perCase) ?? '—'}</td>
-                <td className="pdx-num" data-label={`Price by ${btlWord}`}>{money(r.perBottle) ?? '—'}</td>
-                <td className="pdx-num" data-label={`QD per ${csWord}`}>{qdPer && qdPer > 0 ? money(qdPer) : '—'}</td>
-                <td className="pdx-num" data-label="Total QD">{money(qdTot) ?? '—'}</td>
+                <td className={emptyCls(pc)} data-label={`Price by ${csWord}`}>{pc ?? '—'}</td>
+                <td className={emptyCls(pb)} data-label={`Price by ${btlWord}`}>{pb ?? '—'}</td>
+                <td className={emptyCls(qp)} data-label={`QD per ${csWord}`}>{qp ?? '—'}</td>
+                <td className={emptyCls(qt)} data-label="Total QD">{qt ?? '—'}</td>
               </tr>
             );
           })}
@@ -354,8 +370,10 @@ export default function RipQdPanels({ size, name, className }: {
   const next = months.find(m => m.future) ?? null;
   const csWord = priceUnitWord(size.unit_volume, size.unit_type);
   const btlWord = perUnitNoun(size.unit_volume, size.unit_type);
-  const frontlineUnit = pack && size.frontline_case_price != null
-    ? size.frontline_case_price / pack : (size.frontline_unit_price ?? null);
+  // Source single-bottle price first (the sheet's own number); reconstruct from
+  // case/pack only when the sheet has no bottle price.
+  const frontlineUnit = size.frontline_unit_price
+    ?? (pack && size.frontline_case_price != null ? size.frontline_case_price / pack : null);
   const ripRows = useMemo(() => buildRipRows(cur, next, pack), [cur, next, pack]);
   const curQd = useMemo(() => buildQdRows(cur, pack, frontlineUnit), [cur, pack, frontlineUnit]);
   const nextQd = useMemo(() => buildQdRows(next, pack, frontlineUnit), [next, pack, frontlineUnit]);

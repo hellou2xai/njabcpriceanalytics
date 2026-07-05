@@ -47,6 +47,7 @@ export interface RipTier extends TierWindow {
 export interface MonthBreakdown {
   edition: string | null;
   frontline: number | null;
+  frontlineUnit?: number | null;  // source single-bottle price (CPL sheet), per edition
   afterDiscount: number | null;   // best price after CPL discount (single number)
   discountTiers?: RipTier[];
   ripTiers: RipTier[];

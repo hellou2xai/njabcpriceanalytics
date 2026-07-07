@@ -145,6 +145,10 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
     if (region) next.set('region', region);
     if (varietal) next.set('varietal', varietal);
     if (spiritCategory) next.set('spirit_category', spiritCategory);
+    // Persist sort/order so a rail deep-link (?sort=mi_volume&order=desc) isn't
+    // stripped on mount (which would reset the sort via the params effect).
+    if (sort !== 'product_name') next.set('sort', sort);
+    if (order !== 'asc') next.set('order', order);
     if (filters.hasRip) next.set('hasRip', '1');
     if (filters.hasDiscount) next.set('hasDiscount', '1');
     if (filters.inCombo) next.set('in_combo', '1');
@@ -161,7 +165,7 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
     if (filters.priceMax != null) next.set('priceMax', String(filters.priceMax));
     if (next.toString() !== params.toString()) setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, wholesaler, region, varietal, spiritCategory, filters]);
+  }, [q, wholesaler, region, varietal, spiritCategory, sort, order, filters]);
 
   const setCart = useCallback((update: CartState | ((p: CartState) => CartState)) => {
     setCartState(prev => {

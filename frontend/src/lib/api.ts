@@ -61,6 +61,19 @@ export interface RipSheetTier {
   description: string | null;
 }
 
+// MI "Top <Category>" rails for the /discover page. Each rail carries the query
+// params that filter the Products grid (spirit_category for spirits, grapes/q
+// for wine) and are also used to fetch the rail's top products.
+export interface MiRail {
+  label: string;
+  params: Record<string, string>;
+  revenue: number;
+}
+export interface MiTopCategories {
+  spirits: MiRail[];
+  wine: MiRail[];
+}
+
 export const catalog = {
   search: (params: Record<string, unknown>) =>
     request<{ total: number; items: Product[]; corrected_query?: string | null }>(`/api/catalog/search${qs(params)}`),
@@ -71,6 +84,8 @@ export const catalog = {
       `/api/catalog/product/${encodeURIComponent(wholesaler)}/${encodeURIComponent(name)}${qs(opts ?? {})}`
     ),
   editions: () => request<Edition[]>('/api/catalog/editions'),
+  topCategories: () =>
+    request<MiTopCategories>('/api/catalog/top-categories'),
   categories: (params?: Record<string, unknown>) =>
     request<Category[]>(`/api/catalog/categories${qs(params ?? {})}`),
   facets: (params?: Record<string, unknown>) =>

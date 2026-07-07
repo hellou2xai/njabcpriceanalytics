@@ -51,6 +51,14 @@ def _opt_col(con, col: str, *, table: str = "cpl_enriched",
     return f"{prefix}{col}" if present else f"CAST(NULL AS {sqltype}) AS {col}"
 
 
+def _has_col(con, col: str, *, table: str = "cpl_enriched") -> bool:
+    """True when `col` exists on `table` (guards against cache/schema drift)."""
+    return bool(con.execute(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = ? AND column_name = ?",
+        [table, col]).fetchone())
+
+
 def _clean_record(rec: dict) -> dict:
     """Replace NaN with None and convert non-serializable types to strings."""
     out = {}
@@ -742,6 +750,22 @@ def _introduced_window(con, months: int) -> dict[tuple, str]:
     return {(w, u): ed for (w, u, ed) in rows}
 
 
+# Market-intelligence "Top <Category>" rail config for the /discover page:
+# spirit categories + wine varietals ordered by MI sales revenue, each with the
+# query params that filter the Products grid. Generated from the MI files into
+# backend/reference/mi_top_categories.json; served here so refreshing the MI
+# data needs no frontend rebuild.
+@router.get("/top-categories")
+def mi_top_categories():
+    import json as _json
+    from pathlib import Path as _Path
+    p = _Path(__file__).resolve().parent.parent / "reference" / "mi_top_categories.json"
+    try:
+        return _json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return {"spirits": [], "wine": []}
+
+
 @router.get("/search")
 def search_products(
     q: str = Query("", description="Search term"),
@@ -767,6 +791,7 @@ def search_products(
     countries: Optional[str] = None,        # comma-separated geo_country (LLM enrichment)
     regions: Optional[str] = None,          # comma-separated geo_region
     grapes: Optional[str] = None,           # comma-separated grapes (matched inside geo_varietal blend)
+    spirit_category: Optional[str] = Query(None, description="Clean spirits category (Whiskey/Vodka/Tequila/Rum/Gin/Cordials/Brandy/Cognac), derived from Go-UPC enrichment. Powers the MI 'Top <Category>' spirit rails."),
     upcs: Optional[str] = Query(None, description="Comma-separated UPCs (leading-zero-normalised); restricts the grid to exactly these SKUs. Used by Celar Assistant 'Open in Catalog' links."),
     rip_code: Optional[str] = Query(None, description="Restrict to products in this RIP cluster (current edition). Optional ?wholesaler= or ?divisions= narrows to one distributor; without that, any wholesaler carrying the code is included. Same (edition, distributor, UPC-validity) scoping the catalog's group-by-RIP plumbing uses."),
     region: Optional[str] = Query(None, description="Region / origin hint, e.g. 'california', 'napa', 'bordeaux', 'tuscany'. Filters by product name tokens + enrichment description. Auto-narrows product_type when the region implies a category (e.g. region=california auto-applies product_type=Wine if none is set)."),
@@ -1159,6 +1184,12 @@ def search_products(
                     gparts.append(f"LOWER(geo_varietal) LIKE LOWER($grp_{i})")
                 if gparts:
                     where.append("(" + " OR ".join(gparts) + ")")
+            # Spirit category (MI Top-Category rails). Exact match on the
+            # cache-derived spirit_category column; degrades to no-op if an older
+            # cache predates the column.
+            if spirit_category and _has_col(con, "spirit_category"):
+                params["spcat"] = spirit_category.strip()
+                where.append("spirit_category = $spcat")
         # Exact-UPC restriction used by Celar Assistant deep-links — locks
         # the grid to the same SKUs the chat surfaced. Leading zeros are
         # normalised on BOTH sides so "020585000475" and "20585000475"
@@ -1259,8 +1290,14 @@ def search_products(
             # Date-aware: the price/savings active on `as_of` (default today ET).
             # Computed as a SELECT alias below so ORDER BY can use it.
             "live_effective_case_price", "live_savings",
+            # Market-intelligence 9L sales volume (denormalised per-brand column).
+            "mi_volume",
         }
         sort_col = sort if sort in allowed_sorts else "product_name"
+        # mi_volume only exists on a cache that has it; fall back so an older
+        # store never 500s the grid.
+        if sort_col == "mi_volume" and not _has_col(con, "mi_volume"):
+            sort_col = "product_name"
         sort_dir = "DESC" if order.lower() == "desc" else "ASC"
 
         # Reference date for the live RIP price + sort. Inlined as a quoted SQL
@@ -1618,6 +1655,9 @@ def search_products(
         # brand-only match (e.g. the Moet Hennessy portfolio) never outranks the
         # real product. Only when the user hasn't picked an explicit sort.
         order_by = f"{sort_col} {sort_dir}"
+        if sort_col == "mi_volume":
+            # Brands with no MI match sort last; tie-break by name for stability.
+            order_by = f"mi_volume {sort_dir} NULLS LAST, product_name ASC"
         if images_first and _has_image_column(con):
             # Image presence is a precomputed boolean `has_image` on cpl_enriched
             # (built in pricing_cache.py: real-barcode AND a non-empty Go-UPC

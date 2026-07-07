@@ -34,6 +34,7 @@ const NAV_GROUPS: {
     header: 'Catalog',
     items: [
       { path: '/catalog', label: 'Catalog', icon: Package, adminOnly: true },
+      { path: '/discover', label: 'Discover', icon: Sparkles },
       { path: '/products', label: 'Products', icon: LayoutGrid },
       { path: '/distributor-price-list', label: 'Distributor Price List', icon: Store },
       { path: '/best-rips', label: 'RIPs', icon: BadgeDollarSign },

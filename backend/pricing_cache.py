@@ -314,6 +314,15 @@ def build_pricing_cache(force: bool = False) -> Path:
                     "sku_norm VARCHAR, cpl_name VARCHAR, dist_item_name VARCHAR, "
                     "upc_norm VARCHAR, score DOUBLE, match_type VARCHAR)"
                 )
+                # Market-intelligence 9L sales volume per brand (Nielsen-style
+                # Category Performance + Wine files), mapped to our catalogue's
+                # enriched brand by normalised name (scripts/build via the LLM
+                # brand crosswalk). Keyed on brand_norm = UPPER minus non-alphanum.
+                # Powers the "sort by sales volume" mode on the MI Top-Category rails.
+                empty_brand_mi_volume = (
+                    "CREATE TABLE brand_mi_volume ("
+                    "brand_norm VARCHAR, volume_9l DOUBLE, source VARCHAR)"
+                )
                 # CELR Product Number registry, flattened + alias-resolved (see
                 # docs/CELR_PRODUCT_NUMBER_DESIGN.md; built by
                 # scripts/build_celr_products.py). Maps every clean barcode to its
@@ -352,6 +361,7 @@ def build_pricing_cache(force: bool = False) -> Path:
                     con.execute(empty_allied_xref)
                     con.execute(empty_allied_name_xref)
                     con.execute(empty_fedway_name_xref)
+                    con.execute(empty_brand_mi_volume)
                     con.execute("CREATE TABLE ai_deal_blurbs (wholesaler VARCHAR, upc VARCHAR, edition VARCHAR, blurb VARCHAR)")
                     _celr_pq = PARQUET_DIR / "derived" / "celr_products.parquet"
                     if _celr_pq.exists():
@@ -432,6 +442,10 @@ def build_pricing_cache(force: bool = False) -> Path:
                         con.execute("CREATE TABLE fedway_name_xref AS SELECT sku_norm, cpl_name, dist_item_name, upc_norm, score, match_type FROM pg.fedway_name_xref")
                     except Exception:  # not loaded yet
                         con.execute(empty_fedway_name_xref)
+                    try:
+                        con.execute("CREATE TABLE brand_mi_volume AS SELECT brand_norm, volume_9l, source FROM pg.brand_mi_volume")
+                    except Exception:  # not loaded yet
+                        con.execute(empty_brand_mi_volume)
                     con.execute("DETACH pg")
 
                 # Wire the catalogue brand to the Go-UPC enriched brand by UPC. CPL
@@ -691,6 +705,51 @@ def build_pricing_cache(force: bool = False) -> Path:
                           enr_description = pe.description
                         FROM product_enrichment pe
                         WHERE pe.upc = cpl_enriched.upc_norm""")
+
+                # spirit_category: a clean spirits taxonomy (Whiskey/Vodka/Tequila/
+                # Rum/Gin/Cordials/Brandy/Cognac) derived from the Go-UPC category
+                # (enr_category) because our CPL has no spirit-category field. The
+                # Go-UPC category classifies ~46k spirit rows directly; the generic
+                # "Liquor & Spirits" bucket and rows with no enrichment fall back to
+                # product_name keywords. Spirits only; other product_types stay NULL.
+                # Powers the market-intelligence "Top <Category>" rails + facet.
+                _try("ALTER TABLE cpl_enriched ADD COLUMN spirit_category VARCHAR")
+                _try(r"""
+                    UPDATE cpl_enriched SET spirit_category = CASE
+                      WHEN enr_category IN ('Whiskey','Rye','Bourbon','Scotch','Barley') THEN 'Whiskey'
+                      WHEN enr_category = 'Vodka' THEN 'Vodka'
+                      WHEN enr_category IN ('Tequila','Mezcal') THEN 'Tequila'
+                      WHEN enr_category = 'Rum' THEN 'Rum'
+                      WHEN enr_category = 'Gin' THEN 'Gin'
+                      WHEN enr_category IN ('Liqueurs','Bitters') THEN 'Cordials'
+                      WHEN enr_category = 'Brandy' THEN
+                        CASE WHEN regexp_matches(UPPER(product_name || ' ' || COALESCE(enr_name,'')), 'COGNAC')
+                             THEN 'Cognac' ELSE 'Brandy' END
+                      -- name-keyword fallback (generic 'Liquor & Spirits' / no enrichment),
+                      -- tolerant of NJ CPL abbreviations (BRBN, WHSK, VDK, TEQ).
+                      WHEN regexp_matches(UPPER(product_name), 'BOURBON|BRBN|WHISK|WHSK|WHIS|SCOTCH|(^| )RYE|IRISH WH') THEN 'Whiskey'
+                      WHEN regexp_matches(UPPER(product_name), 'VODKA|VODK|VDK') THEN 'Vodka'
+                      WHEN regexp_matches(UPPER(product_name), 'TEQUILA|TEQ|MEZCAL|MEZ ') THEN 'Tequila'
+                      WHEN regexp_matches(UPPER(product_name), 'COGNAC|VSOP|( VS )|( XO )') THEN 'Cognac'
+                      WHEN regexp_matches(UPPER(product_name), 'BRANDY|GRAPPA|ARMAGNAC|PISCO') THEN 'Brandy'
+                      WHEN regexp_matches(UPPER(product_name), '(^| )RUM|CACHACA') THEN 'Rum'
+                      WHEN regexp_matches(UPPER(product_name), '(^| )GIN( |$)') THEN 'Gin'
+                      WHEN regexp_matches(UPPER(product_name), 'LIQUEUR|LIQ |SCHNAPP|CORDIAL|TRIPLE SEC|AMARETTO|CREME DE|SAMBUCA|APERITIF|APEROL|CAMPARI') THEN 'Cordials'
+                      ELSE 'Other'
+                    END
+                    WHERE product_type = 'Spirits'
+                """)
+
+                # mi_volume: the brand's market-intelligence 9L sales volume,
+                # denormalised onto the row by normalised brand so the MI rails can
+                # ORDER BY it directly (no per-query join). NULL when the brand has
+                # no MI match (those sort last). Same denormalise-for-speed pattern
+                # as enr_* / has_image above.
+                _try("ALTER TABLE cpl_enriched ADD COLUMN mi_volume DOUBLE")
+                _try("""UPDATE cpl_enriched SET mi_volume = bmv.volume_9l
+                        FROM brand_mi_volume bmv
+                        WHERE brand IS NOT NULL AND brand <> ''
+                          AND bmv.brand_norm = regexp_replace(UPPER(brand), '[^A-Z0-9]', '', 'g')""")
 
                 # Canonical LLM geo/varietal enrichment, denormalised onto the row
                 # for the same reason as enr_* above (search/facets read plain

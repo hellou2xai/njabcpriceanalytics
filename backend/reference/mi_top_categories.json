@@ -1,0 +1,357 @@
+{
+  "spirits": [
+    {
+      "label": "Top Whiskey",
+      "params": {
+        "product_type": "Spirits",
+        "spirit_category": "Whiskey"
+      },
+      "revenue": 271027317
+    },
+    {
+      "label": "Top Vodka",
+      "params": {
+        "product_type": "Spirits",
+        "spirit_category": "Vodka"
+      },
+      "revenue": 172030855
+    },
+    {
+      "label": "Top Tequila",
+      "params": {
+        "product_type": "Spirits",
+        "spirit_category": "Tequila"
+      },
+      "revenue": 149302592
+    },
+    {
+      "label": "Top Prepared Cocktails",
+      "params": {
+        "product_type": "RTD"
+      },
+      "revenue": 118691652
+    },
+    {
+      "label": "Top Cordials",
+      "params": {
+        "product_type": "Spirits",
+        "spirit_category": "Cordials"
+      },
+      "revenue": 62135572
+    },
+    {
+      "label": "Top Cognac",
+      "params": {
+        "product_type": "Spirits",
+        "spirit_category": "Cognac"
+      },
+      "revenue": 57006883
+    },
+    {
+      "label": "Top Rum",
+      "params": {
+        "product_type": "Spirits",
+        "spirit_category": "Rum"
+      },
+      "revenue": 44513066
+    },
+    {
+      "label": "Top Brandy",
+      "params": {
+        "product_type": "Spirits",
+        "spirit_category": "Brandy"
+      },
+      "revenue": 20043741
+    },
+    {
+      "label": "Top Gin",
+      "params": {
+        "product_type": "Spirits",
+        "spirit_category": "Gin"
+      },
+      "revenue": 19112674
+    }
+  ],
+  "wine": [
+    {
+      "label": "Top Cabernet Sauvignon",
+      "params": {
+        "product_type": "Wine",
+        "grapes": "Cabernet Sauvignon"
+      },
+      "revenue": 3359706633
+    },
+    {
+      "label": "Top Chardonnay",
+      "params": {
+        "product_type": "Wine",
+        "grapes": "Chardonnay"
+      },
+      "revenue": 2787031729
+    },
+    {
+      "label": "Top Other Red Blend",
+      "params": {
+        "product_type": "Wine",
+        "q": "other red blend"
+      },
+      "revenue": 1956553286
+    },
+    {
+      "label": "Top Sauvignon Blanc",
+      "params": {
+        "product_type": "Wine",
+        "grapes": "Sauvignon Blanc"
+      },
+      "revenue": 1817268827
+    },
+    {
+      "label": "Top Pinot Grigio",
+      "params": {
+        "product_type": "Wine",
+        "grapes": "Pinot Grigio"
+      },
+      "revenue": 1611388470
+    },
+    {
+      "label": "Top Pinot Noir",
+      "params": {
+        "product_type": "Wine",
+        "grapes": "Pinot Noir"
+      },
+      "revenue": 1348675227
+    },
+    {
+      "label": "Top Wine Based Cocktail",
+      "params": {
+        "product_type": "Wine",
+        "q": "wine based cocktail"
+      },
+      "revenue": 1274130534
+    },
+    {
+      "label": "Top Sparkling Other White",
+      "params": {
+        "product_type": "Wine",
+        "q": "sparkling other white"
+      },
+      "revenue": 1193349821
+    },
+    {
+      "label": "Top Sparkling Prosecco",
+      "params": {
+        "product_type": "Wine",
+        "q": "sparkling prosecco"
+      },
+      "revenue": 943629059
+    },
+    {
+      "label": "Top Rose Blend",
+      "params": {
+        "product_type": "Wine",
+        "q": "rose blend"
+      },
+      "revenue": 656996450
+    },
+    {
+      "label": "Top Flav Bev Wine",
+      "params": {
+        "product_type": "Wine",
+        "q": "flav bev wine"
+      },
+      "revenue": 595291004
+    },
+    {
+      "label": "Top Moscato",
+      "params": {
+        "product_type": "Wine",
+        "grapes": "Moscato"
+      },
+      "revenue": 580279965
+    },
+    {
+      "label": "Top Merlot",
+      "params": {
+        "product_type": "Wine",
+        "grapes": "Merlot"
+      },
+      "revenue": 495134861
+    },
+    {
+      "label": "Top Other White Blend",
+      "params": {
+        "product_type": "Wine",
+        "q": "other white blend"
+      },
+      "revenue": 276905303
+    },
+    {
+      "label": "Top Sparkling Rose",
+      "params": {
+        "product_type": "Wine",
+        "q": "sparkling rose"
+      },
+      "revenue": 263536765
+    },
+    {
+      "label": "Top Malbec",
+      "params": {
+        "product_type": "Wine",
+        "grapes": "Malbec"
+      },
+      "revenue": 215725997
+    },
+    {
+      "label": "Top Riesling",
+      "params": {
+        "product_type": "Wine",
+        "grapes": "Riesling"
+      },
+      "revenue": 212818913
+    },
+    {
+      "label": "Top White Zinfandel",
+      "params": {
+        "product_type": "Wine",
+        "q": "white zinfandel"
+      },
+      "revenue": 188626542
+    },
+    {
+      "label": "Top Other Red",
+      "params": {
+        "product_type": "Wine",
+        "q": "other red"
+      },
+      "revenue": 188110410
+    },
+    {
+      "label": "Top Zinfandel",
+      "params": {
+        "product_type": "Wine",
+        "grapes": "Zinfandel"
+      },
+      "revenue": 168547474
+    },
+    {
+      "label": "Top Sangria",
+      "params": {
+        "product_type": "Wine",
+        "q": "sangria"
+      },
+      "revenue": 167974658
+    },
+    {
+      "label": "Top Port/Porto",
+      "params": {
+        "product_type": "Wine",
+        "q": "port/porto"
+      },
+      "revenue": 143142209
+    },
+    {
+      "label": "Top Other White",
+      "params": {
+        "product_type": "Wine",
+        "q": "other white"
+      },
+      "revenue": 141300472
+    },
+    {
+      "label": "Top Chianti",
+      "params": {
+        "product_type": "Wine",
+        "q": "chianti"
+      },
+      "revenue": 138891933
+    },
+    {
+      "label": "Top Non-Alcoholic",
+      "params": {
+        "product_type": "Wine",
+        "q": "non-alcoholic"
+      },
+      "revenue": 125331056
+    },
+    {
+      "label": "Top Sparkling Moscato",
+      "params": {
+        "product_type": "Wine",
+        "q": "sparkling moscato"
+      },
+      "revenue": 115486010
+    },
+    {
+      "label": "Top Vermouth",
+      "params": {
+        "product_type": "Wine",
+        "q": "vermouth"
+      },
+      "revenue": 97389442
+    },
+    {
+      "label": "Top Sake",
+      "params": {
+        "product_type": "Wine",
+        "q": "sake"
+      },
+      "revenue": 93763560
+    },
+    {
+      "label": "Top Blush Blend",
+      "params": {
+        "product_type": "Wine",
+        "q": "blush blend"
+      },
+      "revenue": 89071263
+    },
+    {
+      "label": "Top Pinot Grigio Blend",
+      "params": {
+        "product_type": "Wine",
+        "q": "pinot grigio blend"
+      },
+      "revenue": 82266294
+    },
+    {
+      "label": "Top Sparkling Cava",
+      "params": {
+        "product_type": "Wine",
+        "q": "sparkling cava"
+      },
+      "revenue": 81517555
+    },
+    {
+      "label": "Top Cabernet Sauvignon Blend",
+      "params": {
+        "product_type": "Wine",
+        "q": "cabernet sauvignon blend"
+      },
+      "revenue": 65640320
+    },
+    {
+      "label": "Top Syrah",
+      "params": {
+        "product_type": "Wine",
+        "grapes": "Syrah"
+      },
+      "revenue": 58690651
+    },
+    {
+      "label": "Top Wine Based Alternatives",
+      "params": {
+        "product_type": "Wine",
+        "q": "wine based alternatives"
+      },
+      "revenue": 52964384
+    },
+    {
+      "label": "Top Sauvignon Blanc Blend",
+      "params": {
+        "product_type": "Wine",
+        "q": "sauvignon blanc blend"
+      },
+      "revenue": 51493254
+    }
+  ]
+}

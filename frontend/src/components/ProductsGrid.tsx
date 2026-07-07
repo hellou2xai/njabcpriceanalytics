@@ -221,9 +221,13 @@ function groupByProduct(items: Product[], grouped = true): ProductGroup[] {
       // wrong) CELR family header. Falls back to the existing title when no
       // member carries a Go-UPC enrichment name.
       g.displayName = deriveFamilyName(g.sizes) ?? g.displayName;
-      // size ascending, then by distributor so a product's listings group cleanly
-      g.sizes.sort((a, b) =>
-        toMl(a.unit_volume) - toMl(b.unit_volume) || a.wholesaler.localeCompare(b.wholesaler));
+      // size DESCENDING (largest first), then by distributor so a product's
+      // listings group cleanly. toMl returns MAX_SAFE_INTEGER for unknown sizes;
+      // remap those to -1 so they stay LAST even when the order is reversed.
+      g.sizes.sort((a, b) => {
+        const norm = (v?: string | null) => { const m = toMl(v); return m >= Number.MAX_SAFE_INTEGER ? -1 : m; };
+        return norm(b.unit_volume) - norm(a.unit_volume) || a.wholesaler.localeCompare(b.wholesaler);
+      });
     }
   }
   return order.map(k => map.get(k)!);

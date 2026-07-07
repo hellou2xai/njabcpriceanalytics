@@ -67,6 +67,20 @@ function topTier(tiers: CatalogTier[] | undefined, source: 'discount' | 'rip'): 
   return of.reduce((a, b) => (metric(b) > metric(a) ? b : a));
 }
 
+// Best per-case discount as a FRACTION of list price, comparing the list price
+// to the price after the highest QD and the price after the highest RIP (the
+// deeper of the two wins; QD and RIP are never blended, per FOUNDATION). Used to
+// rank a category's top-volume pool so the biggest deals feature first.
+function discountScore(p: Product): number {
+  const list = p.frontline_case_price ?? p.effective_case_price ?? 0;
+  if (list <= 0) return 0;
+  const qd = topTier(p.tiers, 'discount');
+  const rip = topTier(p.tiers, 'rip');
+  const qdSave = qd?.save_per_case ?? 0;                       // per-case QD saving
+  const ripPerCase = rip && rip.amount != null && rip.qty ? rip.amount / rip.qty : 0;  // per-case rebate
+  return Math.max(qdSave, ripPerCase) / list;
+}
+
 // Realistic single-case price: list minus the (stable) 1-case entry QD when the
 // SKU has one, else the frontline list price. A time-sensitive entry QD is not
 // baked into the headline — it surfaces under the TS button instead.
@@ -248,10 +262,13 @@ function Rail({ rail }: { rail: MiRail }) {
     // Featured rails show standard retail bottles only (1.75L / 1L / 750ML),
     // not minis, 4-packs, cans or tray packs that otherwise top the volume rank.
     // include_tiers gives us each SKU's QD + RIP ladder for the deal chips.
-    queryFn: () => catalog.search({ ...rail.params, sizes: '750ML,1L,1.75L', sort: 'mi_volume', order: 'desc', limit: 24, images_first: false, include_tiers: true }),
+    queryFn: () => catalog.search({ ...rail.params, sizes: '750ML,1L,1.75L', sort: 'mi_volume', order: 'desc', limit: 150, images_first: false, include_tiers: true }),
   });
-  // Only feature products that actually carry an image (no placeholder cards).
-  const products = distinctProducts((data?.items ?? []).filter((p) => !!p.image_url), 12);
+  // Scope = the category's TOP 50 products by 9L sales volume (image-bearing,
+  // deduped). Within that pool, FEATURE the 16 with the deepest discount
+  // (list vs best QD/RIP), so the rail leads with the best deals on top sellers.
+  const pool = distinctProducts((data?.items ?? []).filter((p) => !!p.image_url), 50);
+  const products = [...pool].sort((a, b) => discountScore(b) - discountScore(a)).slice(0, 16);
   return (
     <section ref={ref} className="disc-rail">
       <div className="disc-rail-head">

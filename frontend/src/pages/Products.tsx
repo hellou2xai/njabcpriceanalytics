@@ -208,7 +208,11 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
   const [committed, setCommitted] = useState(q);
   useEffect(() => { if (!q.trim()) setCommitted(''); }, [q]);
   // New Items always shows the grid (the whole new-items set) — no search splash.
-  const showGrid = newItems || committed.trim().length > 0 || !!wholesaler || countActiveFilters(filters) > 0;
+  // region/varietal/spiritCategory are separate state (not in `filters`), so they
+  // must be counted here too — else a deep-link like /products?spirit_category=Whiskey
+  // (MI "See all" rail) leaves showGrid false and the grid never renders.
+  const showGrid = newItems || committed.trim().length > 0 || !!wholesaler
+    || !!region || !!varietal || !!spiritCategory || countActiveFilters(filters) > 0;
 
   // Hero typeahead: while on the landing, typing shows SUGGESTIONS (semantic
   // /catalog/search) but never the grid — the grid waits for Enter (or picking a

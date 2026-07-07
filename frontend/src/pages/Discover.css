@@ -33,15 +33,18 @@
 .disc-rail-all:hover { text-decoration: underline; }
 .disc-rail-empty { color: #98a2b3; font-size: 14px; padding: 24px 0; }
 
+/* 24 products as 6 per row x 4 rows (wraps, no horizontal scroll). Fewer columns
+   on tablet/mobile so cards stay legible. */
 .disc-rail-track {
-  display: flex; gap: 14px; overflow-x: auto; padding: 4px 2px 12px;
-  scroll-snap-type: x proximity;
+  display: grid; gap: 14px; padding: 4px 2px 12px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
 }
-.disc-rail-track::-webkit-scrollbar { height: 8px; }
-.disc-rail-track::-webkit-scrollbar-thumb { background: #d0d5dd; border-radius: 4px; }
+@media (max-width: 1024px) { .disc-rail-track { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 760px)  { .disc-rail-track { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 480px)  { .disc-rail-track { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 .disc-card {
-  flex: 0 0 168px; width: 168px; scroll-snap-align: start;
+  width: auto;
   display: flex; flex-direction: column; gap: 8px;
   padding: 12px; border: 1px solid #eaecf0; border-radius: 12px;
   background: #fff; text-decoration: none; color: inherit;
@@ -110,7 +113,8 @@
   .disc-type { padding: 5px 11px; font-size: 12px; }
   .disc-rails { gap: 20px; margin-top: 16px; }
   .disc-rail-title { font-size: 16px; }
-  .disc-card { flex-basis: 156px; width: 156px; padding: 10px; }
+  .disc-rail-track { gap: 10px; }
+  .disc-card { width: auto; padding: 10px; }
   .disc-card-name { font-size: 12px; }
   .disc-card-price { font-size: 14px; }
 }

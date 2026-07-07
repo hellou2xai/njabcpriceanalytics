@@ -268,7 +268,7 @@ function Rail({ rail }: { rail: MiRail }) {
   // deduped). Within that pool, FEATURE the 16 with the deepest discount
   // (list vs best QD/RIP), so the rail leads with the best deals on top sellers.
   const pool = distinctProducts((data?.items ?? []).filter((p) => !!p.image_url), 50);
-  const products = [...pool].sort((a, b) => discountScore(b) - discountScore(a)).slice(0, 16);
+  const products = [...pool].sort((a, b) => discountScore(b) - discountScore(a)).slice(0, 24);
   return (
     <section ref={ref} className="disc-rail">
       <div className="disc-rail-head">

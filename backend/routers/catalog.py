@@ -1798,6 +1798,7 @@ def search_products(
                    has_discount, has_rip, has_closeout, discount_pct,
                    total_savings_per_case, rip_code, combo_code,
                    {_opt_col(con, 'dist_item_no')}, {_opt_col(con, 'dist_item_name')},
+                   {_opt_col(con, 'dist_image_url')},
                    {_opt_col(con, 'enr_category')}, {_opt_col(con, 'enr_region')},
                    {_opt_col(con, 'geo_country')}, {_opt_col(con, 'geo_region')},
                    {_opt_col(con, 'geo_subregion')}, {_opt_col(con, 'geo_varietal')},

@@ -323,6 +323,14 @@ def build_pricing_cache(force: bool = False) -> Path:
                     "CREATE TABLE brand_mi_volume ("
                     "brand_norm VARCHAR, volume_9l DOUBLE, source VARCHAR)"
                 )
+                # Distributor-supplied product images re-hosted in R2
+                # (scripts/load_dist_images.py). Allied keyed by upc_norm, Fedway
+                # by sku_norm. Used ONLY to fill an image the Go-UPC enrichment is
+                # missing; never overrides a Go-UPC image.
+                empty_dist_image = (
+                    "CREATE TABLE dist_image ("
+                    "wholesaler VARCHAR, upc_norm VARCHAR, sku_norm VARCHAR, image_url VARCHAR)"
+                )
                 # CELR Product Number registry, flattened + alias-resolved (see
                 # docs/CELR_PRODUCT_NUMBER_DESIGN.md; built by
                 # scripts/build_celr_products.py). Maps every clean barcode to its
@@ -362,6 +370,7 @@ def build_pricing_cache(force: bool = False) -> Path:
                     con.execute(empty_allied_name_xref)
                     con.execute(empty_fedway_name_xref)
                     con.execute(empty_brand_mi_volume)
+                    con.execute(empty_dist_image)
                     con.execute("CREATE TABLE ai_deal_blurbs (wholesaler VARCHAR, upc VARCHAR, edition VARCHAR, blurb VARCHAR)")
                     _celr_pq = PARQUET_DIR / "derived" / "celr_products.parquet"
                     if _celr_pq.exists():
@@ -446,6 +455,10 @@ def build_pricing_cache(force: bool = False) -> Path:
                         con.execute("CREATE TABLE brand_mi_volume AS SELECT brand_norm, volume_9l, source FROM pg.brand_mi_volume")
                     except Exception:  # not loaded yet
                         con.execute(empty_brand_mi_volume)
+                    try:
+                        con.execute("CREATE TABLE dist_image AS SELECT wholesaler, upc_norm, sku_norm, image_url FROM pg.dist_image")
+                    except Exception:  # not loaded yet
+                        con.execute(empty_dist_image)
                     con.execute("DETACH pg")
 
                 # Wire the catalogue brand to the Go-UPC enriched brand by UPC. CPL
@@ -687,6 +700,26 @@ def build_pricing_cache(force: bool = False) -> Path:
                          WHERE ({_valid_upc})
                            AND upc_norm IN (SELECT upc FROM product_enrichment
                                             WHERE image_url IS NOT NULL AND image_url <> '')""")
+
+                # Distributor image fallback: fill an R2-hosted distributor image
+                # (dist_image) ONLY where the Go-UPC enrichment has none, so the
+                # frontend shows a real bottle shot instead of the placeholder.
+                # Allied matches by upc_norm, Fedway by sku_norm (LTRIM dist_item_no).
+                # The serving layer (enrichment_join.attach_enrichment_image) reads
+                # this column as a fallback after the Go-UPC image + admin override.
+                _try("ALTER TABLE cpl_enriched ADD COLUMN dist_image_url VARCHAR")
+                _try("""UPDATE cpl_enriched SET dist_image_url = di.image_url
+                        FROM dist_image di
+                        WHERE cpl_enriched.wholesaler = 'allied' AND di.wholesaler = 'allied'
+                          AND di.upc_norm = cpl_enriched.upc_norm
+                          AND NOT cpl_enriched.has_image""")
+                _try("""UPDATE cpl_enriched SET dist_image_url = di.image_url
+                        FROM dist_image di
+                        WHERE cpl_enriched.wholesaler = 'fedway' AND di.wholesaler = 'fedway'
+                          AND di.sku_norm = LTRIM(CAST(cpl_enriched.dist_item_no AS VARCHAR), '0')
+                          AND NOT cpl_enriched.has_image""")
+                # Fold the distributor image into the images-first sort key too.
+                _try("UPDATE cpl_enriched SET has_image = true WHERE dist_image_url IS NOT NULL AND dist_image_url <> ''")
 
                 # Denormalise the Go-UPC enrichment TEXT the Products search matches
                 # on (name/category/category_path/region/description), so free-text

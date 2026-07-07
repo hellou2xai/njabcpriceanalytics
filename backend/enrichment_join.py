@@ -72,7 +72,9 @@ def attach_enrichment_image(con, records, upc_key="upc"):
         ov = {}
     for rec in records:
         un = str(rec.get(upc_key) or "").lstrip("0")
-        rec["image_url"] = ov.get(un) or img_map.get(un)
+        # Priority: admin override > Go-UPC image > distributor R2 image (filled
+        # in the cache only where Go-UPC has none) > none (placeholder).
+        rec["image_url"] = ov.get(un) or img_map.get(un) or _clean_str(rec.get("dist_image_url"))
         rec["enrichment_name"] = name_map.get(un)
 
 

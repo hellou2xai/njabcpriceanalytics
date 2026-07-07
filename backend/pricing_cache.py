@@ -292,6 +292,18 @@ def build_pricing_cache(force: bool = False) -> Path:
                     "upc_norm VARCHAR, size_ml INTEGER, pack VARCHAR, "
                     "vintage_norm VARCHAR, sku VARCHAR, product_name VARCHAR)"
                 )
+                # Fuller Allied item names resolved from the Wine Chateau x ABG
+                # inventory export by EXACT UPC + brand-anchored semantic name
+                # agreement (scripts/load_allied_name_xref.py). Keyed on
+                # (upc_norm, cpl_name) so the fuller name is attached ONLY to the
+                # Allied row whose abbreviated CPL name actually agrees — never
+                # across a shared/placeholder barcode. Sets dist_item_name (fuller)
+                # + dist_item_no (ABG SKU); never touches product_name.
+                empty_allied_name_xref = (
+                    "CREATE TABLE allied_name_xref ("
+                    "upc_norm VARCHAR, cpl_name VARCHAR, dist_item_name VARCHAR, "
+                    "abg_sku VARCHAR, score DOUBLE)"
+                )
                 # CELR Product Number registry, flattened + alias-resolved (see
                 # docs/CELR_PRODUCT_NUMBER_DESIGN.md; built by
                 # scripts/build_celr_products.py). Maps every clean barcode to its
@@ -328,6 +340,7 @@ def build_pricing_cache(force: bool = False) -> Path:
                     con.execute(empty_enrich)
                     con.execute(empty_sku)
                     con.execute(empty_allied_xref)
+                    con.execute(empty_allied_name_xref)
                     con.execute("CREATE TABLE ai_deal_blurbs (wholesaler VARCHAR, upc VARCHAR, edition VARCHAR, blurb VARCHAR)")
                     _celr_pq = PARQUET_DIR / "derived" / "celr_products.parquet"
                     if _celr_pq.exists():
@@ -400,6 +413,10 @@ def build_pricing_cache(force: bool = False) -> Path:
                         con.execute("CREATE TABLE allied_sku_xref AS SELECT upc_norm, size_ml, pack, vintage_norm, sku, product_name FROM pg.allied_sku_xref")
                     except Exception:  # not loaded yet
                         con.execute(empty_allied_xref)
+                    try:
+                        con.execute("CREATE TABLE allied_name_xref AS SELECT upc_norm, cpl_name, dist_item_name, abg_sku, score FROM pg.allied_name_xref")
+                    except Exception:  # not loaded yet
+                        con.execute(empty_allied_name_xref)
                     con.execute("DETACH pg")
 
                 # Wire the catalogue brand to the Go-UPC enriched brand by UPC. CPL
@@ -579,6 +596,25 @@ def build_pricing_cache(force: bool = False) -> Path:
                       AND x.size_ml = {_ALLIED_SIZE_ML}
                       AND x.pack = {_ALLIED_PACK}
                       AND x.vintage_norm = {_ALLIED_VTG}
+                """)
+
+                # Fuller Allied item names from the Wine Chateau x ABG inventory,
+                # resolved offline by EXACT UPC + brand-anchored semantic name
+                # agreement (scripts/load_allied_name_xref.py). Applied by
+                # (upc_norm, cpl_name) so the fuller name lands ONLY on the row
+                # whose abbreviated CPL name was confirmed to be the same product
+                # — the guard against shared/placeholder barcodes. Runs AFTER the
+                # allied_sku_xref overlay so this (buyer-chosen, name-verified)
+                # source wins on any overlap. Edition-independent, re-applied every
+                # build, so it survives re-ingests. product_name is never touched.
+                _try("""
+                    UPDATE cpl_enriched
+                    SET dist_item_name = x.dist_item_name,
+                        dist_item_no = COALESCE(NULLIF(x.abg_sku, ''), cpl_enriched.dist_item_no)
+                    FROM allied_name_xref x
+                    WHERE cpl_enriched.wholesaler = 'allied'
+                      AND x.upc_norm = cpl_enriched.upc_norm
+                      AND x.cpl_name = cpl_enriched.product_name
                 """)
 
                 # has_image: precompute the default-grid "images first" sort key

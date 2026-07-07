@@ -71,6 +71,9 @@ function SummaryCard({ size, name, cur, next, pack, sibs, months, dense = false 
   const btlNext = caseNext != null && pack ? caseNext / pack : null;
 
   const idNum = abgSku(size.wholesaler, size.abg_sku) ? size.abg_sku : size.upc;
+  // Distributor's own fuller item name (Allied via Wine Chateau/ABG); trimmed,
+  // blank treated as absent so we fall back to the abbreviated CPL name.
+  const distItemName = size.abg_item_name?.trim() || null;
   const csWord = priceUnitWord(size.unit_volume, size.unit_type);
   const btlWord = perUnitNoun(size.unit_volume, size.unit_type);
   const hasVintage = size.vintage != null && !['', '0', 'nv'].includes(String(size.vintage).trim().toLowerCase());
@@ -103,8 +106,14 @@ function SummaryCard({ size, name, cur, next, pack, sibs, months, dense = false 
           <FavoriteButton productName={size.product_name} wholesaler={size.wholesaler}
             upc={size.upc} unitVolume={size.unit_volume} />
           <Link to={detailUrl(size)} className="pdx-sum-title-link">
-            <h2 className="pdx-sum-title">
-              {stripHeaderVintage(size.product_name || name, size.product_type)}
+            {/* Prefer the distributor's own fuller item name when available
+                (Allied via Wine Chateau/ABG); fall back to the abbreviated CPL
+                name (e.g. Fedway, or Allied items with no proper name). The CPL
+                name stays visible on hover for pricing transparency. */}
+            <h2 className="pdx-sum-title"
+                title={distItemName && distItemName !== size.product_name
+                  ? `CPL name: ${size.product_name}` : undefined}>
+              {stripHeaderVintage(distItemName || size.product_name || name, size.product_type)}
               {size.unit_volume && <span className="pdx-sum-title-size"> ({size.unit_volume})</span>}
             </h2>
           </Link>

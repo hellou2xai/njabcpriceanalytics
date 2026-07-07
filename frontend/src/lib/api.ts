@@ -2082,6 +2082,10 @@ export interface Product {
   upc: string;
   // Allied (ABG) item number, attached server-side for allied rows only.
   abg_sku?: string | null;
+  // Distributor's own item NAME (fuller, un-abbreviated). Populated for Allied
+  // from the Wine Chateau/ABG source; null when no proper name is available
+  // (e.g. Fedway), in which case the abbreviated CPL product_name is shown.
+  abg_item_name?: string | null;
   product_name: string;
   product_type: string;
   unit_qty: string;

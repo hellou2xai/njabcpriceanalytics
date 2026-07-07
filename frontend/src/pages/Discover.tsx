@@ -55,11 +55,12 @@ function isOneCsQd(t: CatalogTier): boolean {
 
 // Best (deepest) tier of a kind = the one saving the most per case. save_per_case
 // and price_after come straight from the canonical tier ladder (FOUNDATION); we
-// only pick the winner here. Discount picks EXCLUDE the 1-case entry QD, which is
-// already reflected in the card's shown price.
+// only pick the winner here. Time-sensitive tiers ARE eligible (the TS button
+// exposes their windows); we just exclude the 1-case entry QD from the QD chip,
+// since it's already reflected in the card's shown price.
 function topTier(tiers: CatalogTier[] | undefined, source: 'discount' | 'rip'): CatalogTier | null {
   const of = (tiers ?? []).filter(
-    (t) => t.source === source && !t.is_time_sensitive && !(source === 'discount' && isOneCsQd(t)),
+    (t) => t.source === source && !(source === 'discount' && isOneCsQd(t)),
   );
   if (!of.length) return null;
   return of.reduce((a, b) => ((b.save_per_case ?? 0) > (a.save_per_case ?? 0) ? b : a));

@@ -101,8 +101,8 @@
   font-size: 12.5px; font-weight: 700; line-height: 1.25; white-space: nowrap;
   padding: 3px 8px; border-radius: 6px;
 }
-.disc-deal--rip { color: #067647; background: #ecfdf3; }
-.disc-deal--qd  { color: #3538cd; background: #eef2ff; }
+.disc-deal--rip { color: #d92d20; background: #fff3b0; }   /* red on yellow */
+.disc-deal--qd  { color: #101828; background: #fff3b0; }   /* black on yellow */
 
 .disc-card--skel { height: 214px; background: linear-gradient(90deg,#f2f4f7,#f8f9fb,#f2f4f7); border-style: dashed; }
 
@@ -145,8 +145,8 @@
   .disc-card-size { color: #98a2b3; }
   .disc-card { background: #1a1e2c; border-color: #2a2f42; }
   .disc-card-dist { color: #cdd2e0; }
-  .disc-deal--rip { color: #6ee7b7; background: rgba(6,118,71,.18); }
-  .disc-deal--qd  { color: #a5b4fc; background: rgba(53,56,205,.20); }
+  .disc-deal--rip { color: #d92d20; background: #fde68a; }   /* red on yellow */
+  .disc-deal--qd  { color: #101828; background: #fde68a; }   /* black on yellow */
   .disc-ts-btn { background: rgba(181,71,8,.22); border-color: #7a4a12; color: #fdb87a; }
   .disc-ts-btn:hover, .disc-ts-btn.is-open { background: rgba(181,71,8,.34); border-color: #a9670f; }
   .disc-ts-pop { background: #1a1e2c; border-color: #2a2f42; }

@@ -80,6 +80,10 @@ _ABBR = {
 
 def _toks(s):
     s = re.sub(r"[^A-Z0-9 ]", " ", str(s or "").upper())
+    # Age statements: "12YR"/"12Y"/"18YO"/"12 YR" -> "N YEAR" so an abbreviated
+    # CPL age ("GLENLIVET 12YR") matches a spelled-out one ("Glenlivet 12 Year").
+    # The bare number then drops like any 2-digit, and YEAR matches on both sides.
+    s = re.sub(r"\b(\d{1,2})\s*(YRS?|YO|YEARS?|Y)\b", r"\1 YEAR", s)
     out = []
     for t in s.split():
         if t in _STOP or re.fullmatch(r"\d{2,4}", t) or _SIZE.match(t):

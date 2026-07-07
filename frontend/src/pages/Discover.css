@@ -51,6 +51,36 @@
 .disc-card-name { font-size: 13px; font-weight: 600; color: #101828; line-height: 1.3;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
+/* Thumbnail wrapper — anchors the TS button + its popover. */
+.disc-card-media { position: relative; align-self: center; }
+
+/* TS = time-sensitive deals. A small amber flag on the image; click to expand. */
+.disc-ts-btn {
+  position: absolute; top: 2px; right: 2px; z-index: 2;
+  border: 1px solid #f5c86b; border-radius: 6px; cursor: pointer;
+  background: #fef4e2; color: #b54708;
+  font-size: 10px; font-weight: 800; letter-spacing: .3px;
+  padding: 2px 6px; line-height: 1.2;
+  box-shadow: 0 1px 2px rgba(16,24,40,.10);
+}
+.disc-ts-btn:hover, .disc-ts-btn.is-open { background: #fdebcf; border-color: #eaa437; }
+
+.disc-ts-pop {
+  position: fixed; z-index: 4000; width: 208px;
+  background: #fff; border: 1px solid #e4e7ec; border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(16,24,40,.18); padding: 10px; cursor: default;
+  text-align: left;
+}
+.disc-ts-pop-h { font-size: 11px; font-weight: 700; color: #b54708; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 8px; }
+.disc-ts-win + .disc-ts-win { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #eaecf0; }
+.disc-ts-win-h { font-size: 11px; font-weight: 700; color: #344054; margin-bottom: 5px; }
+.disc-ts-exp { font-weight: 600; color: #d92d20; }
+.disc-ts-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 0; }
+.disc-ts-kind { font-size: 11px; font-weight: 700; color: #067647; white-space: nowrap; }
+.disc-ts-kind--discount { color: #3538cd; }
+.disc-ts-vals { font-size: 11px; font-weight: 700; color: #101828; white-space: nowrap; }
+.disc-ts-vals em { font-style: normal; font-weight: 600; color: #067647; margin-left: 5px; }
+
 /* Price on the left, the Top RIP / Top QD deal chips stacked to its right. */
 .disc-card-foot { margin-top: auto; display: flex; align-items: flex-end; justify-content: space-between; gap: 6px; }
 .disc-card-price { font-size: 15px; font-weight: 700; color: #101828; line-height: 1.1; white-space: nowrap; }
@@ -93,4 +123,13 @@
   .disc-card { background: #1a1e2c; border-color: #2a2f42; }
   .disc-deal--rip { color: #6ee7b7; background: rgba(6,118,71,.18); }
   .disc-deal--qd  { color: #a5b4fc; background: rgba(53,56,205,.20); }
+  .disc-ts-btn { background: rgba(181,71,8,.22); border-color: #7a4a12; color: #fdb87a; }
+  .disc-ts-btn:hover, .disc-ts-btn.is-open { background: rgba(181,71,8,.34); border-color: #a9670f; }
+  .disc-ts-pop { background: #1a1e2c; border-color: #2a2f42; }
+  .disc-ts-pop-h { color: #fdb87a; }
+  .disc-ts-win + .disc-ts-win { border-top-color: #2a2f42; }
+  .disc-ts-win-h { color: #cdd2e0; }
+  .disc-ts-vals { color: #e6e8ef; }
+  .disc-ts-vals em, .disc-ts-kind { color: #6ee7b7; }
+  .disc-ts-kind--discount { color: #a5b4fc; }
 }

@@ -6,6 +6,7 @@
  * page with the category filter + volume sort. Does not touch the Products page.
  */
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Search } from 'lucide-react';
@@ -64,11 +65,20 @@ function topTier(tiers: CatalogTier[] | undefined, source: 'discount' | 'rip'): 
   return of.reduce((a, b) => ((b.save_per_case ?? 0) > (a.save_per_case ?? 0) ? b : a));
 }
 
-// Realistic single-case price: list minus the 1-case entry QD when the SKU has
-// one, else the frontline list price.
+// Realistic single-case price: list minus the (stable) 1-case entry QD when the
+// SKU has one, else the frontline list price. A time-sensitive entry QD is not
+// baked into the headline — it surfaces under the TS button instead.
 function oneCsCasePrice(p: Product): number | null {
-  const entry = (p.tiers ?? []).find(isOneCsQd);
+  const entry = (p.tiers ?? []).find((t) => isOneCsQd(t) && !t.is_time_sensitive);
   return entry?.price_after ?? p.frontline_case_price ?? p.effective_case_price ?? null;
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// 'YYYY-MM-DD' -> 'Jul 30'. Parsed by hand so there is no timezone shift.
+function shortDate(iso?: string | null): string {
+  if (!iso) return '';
+  const [, m, d] = iso.split('-').map(Number);
+  return m && d ? `${MONTHS[m - 1]} ${d}` : '';
 }
 
 // Dedupe search rows (many sizes/distributors per product) to one card each.
@@ -83,6 +93,136 @@ function distinctProducts(items: Product[], max: number): Product[] {
     if (out.length >= max) break;
   }
   return out;
+}
+
+// One featured product card. Price (after the stable 1-case QD) + Top RIP / Top
+// QD chips, plus a TS button that opens the SKU's time-sensitive deal windows.
+function DiscCard({ p }: { p: Product }) {
+  const btnRef = useRef<HTMLButtonElement | null>(null);
+  // Popover position (viewport coords) when open, else null. Rendered in a body
+  // portal so the horizontally-scrolling rail track can't clip it.
+  const [pop, setPop] = useState<{ top: number; left: number } | null>(null);
+  const price = money(oneCsCasePrice(p));
+  const rip = topTier(p.tiers, 'rip');
+  const qd = topTier(p.tiers, 'discount');
+  const ts = (p.tiers ?? []).filter((t) => t.is_time_sensitive);
+
+  // Group the time-sensitive tiers by their validity window, tiers ascending by
+  // buy quantity so each window reads as a ladder.
+  const windows = new Map<string, CatalogTier[]>();
+  for (const t of ts) {
+    const k = `${t.from_date}|${t.to_date}`;
+    (windows.get(k) ?? windows.set(k, []).get(k)!).push(t);
+  }
+  for (const arr of windows.values()) arr.sort((a, b) => (a.qty ?? 0) - (b.qty ?? 0));
+
+  function toggle(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (pop) { setPop(null); return; }
+    const r = btnRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const W = 208;
+    const left = Math.max(8, Math.min(r.right - W, window.innerWidth - W - 8));
+    setPop({ top: r.bottom + 6, left });
+  }
+
+  // Close on Escape, any outside click, or scroll (position would go stale).
+  useEffect(() => {
+    if (!pop) return;
+    const close = () => setPop(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPop(null); };
+    document.addEventListener('click', close);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('click', close);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [pop]);
+
+  return (
+    <Link to={`/products?q=${encodeURIComponent(p.product_name)}`} className="disc-card">
+      <div className="disc-card-media">
+        <ProductThumb src={p.image_url} alt={p.product_name} size={120} />
+        {ts.length > 0 && (
+          <button
+            ref={btnRef}
+            type="button"
+            className={`disc-ts-btn${pop ? ' is-open' : ''}`}
+            title="Time-sensitive deals"
+            aria-expanded={!!pop}
+            onClick={toggle}
+          >
+            TS
+          </button>
+        )}
+        {pop && createPortal(
+          <div
+            className="disc-ts-pop"
+            role="dialog"
+            aria-label="Time-sensitive deals"
+            style={{ top: pop.top, left: pop.left }}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          >
+            <div className="disc-ts-pop-h">Time-sensitive deals</div>
+            {[...windows.entries()].map(([k, tiers]) => {
+              const w = tiers[0];
+              return (
+                <div key={k} className="disc-ts-win">
+                  <div className="disc-ts-win-h">
+                    {shortDate(w.from_date)} – {shortDate(w.to_date)}
+                    {typeof w.days_to_expire === 'number' && (
+                      <span className="disc-ts-exp"> · {w.days_to_expire}d left</span>
+                    )}
+                  </div>
+                  {tiers.map((t, j) => (
+                    <div key={j} className="disc-ts-row">
+                      <span className={`disc-ts-kind disc-ts-kind--${t.source}`}>
+                        {t.source === 'rip' ? 'RIP' : 'QD'} {tierQty(t)}
+                      </span>
+                      <span className="disc-ts-vals">
+                        {money(t.price_after)}
+                        {t.save_per_case != null && <em> save {money(t.save_per_case)}</em>}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>,
+          document.body,
+        )}
+      </div>
+      <div className="disc-card-name">{p.abg_item_name?.trim() || p.product_name}</div>
+      <div className="disc-card-foot">
+        {price && (
+          <div className="disc-card-price">{price}<span className="disc-card-price-u">/cs</span></div>
+        )}
+        {(rip || qd) && (
+          <div className="disc-card-deals">
+            {rip && (
+              <span
+                className="disc-deal disc-deal--rip"
+                title={`Top RIP: buy ${tierQty(rip)}, save ${money(rip.save_per_case)}/case`}
+              >
+                RIP {tierQty(rip)} · {money(rip.save_per_case)}
+              </span>
+            )}
+            {qd && (
+              <span
+                className="disc-deal disc-deal--qd"
+                title={`Top QD: buy ${tierQty(qd)}, save ${money(qd.save_per_case)}/case`}
+              >
+                QD {tierQty(qd)} · {money(qd.save_per_case)}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+    </Link>
+  );
 }
 
 function Rail({ rail }: { rail: MiRail }) {
@@ -111,46 +251,7 @@ function Rail({ rail }: { rail: MiRail }) {
         {seen && !isLoading && products.length === 0 && (
           <div className="disc-rail-empty">No products found.</div>
         )}
-        {products.map((p, i) => {
-          const price = money(oneCsCasePrice(p));
-          const rip = topTier(p.tiers, 'rip');
-          const qd = topTier(p.tiers, 'discount');
-          return (
-            <Link
-              key={`${p.product_name}-${i}`}
-              to={`/products?q=${encodeURIComponent(p.product_name)}`}
-              className="disc-card"
-            >
-              <ProductThumb src={p.image_url} alt={p.product_name} size={120} />
-              <div className="disc-card-name">{p.abg_item_name?.trim() || p.product_name}</div>
-              <div className="disc-card-foot">
-                {price && (
-                  <div className="disc-card-price">{price}<span className="disc-card-price-u">/cs</span></div>
-                )}
-                {(rip || qd) && (
-                  <div className="disc-card-deals">
-                    {rip && (
-                      <span
-                        className="disc-deal disc-deal--rip"
-                        title={`Top RIP: buy ${tierQty(rip)}, save ${money(rip.save_per_case)}/case`}
-                      >
-                        RIP {tierQty(rip)} · {money(rip.save_per_case)}
-                      </span>
-                    )}
-                    {qd && (
-                      <span
-                        className="disc-deal disc-deal--qd"
-                        title={`Top QD: buy ${tierQty(qd)}, save ${money(qd.save_per_case)}/case`}
-                      >
-                        QD {tierQty(qd)} · {money(qd.save_per_case)}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-            </Link>
-          );
-        })}
+        {products.map((p, i) => <DiscCard key={`${p.product_name}-${i}`} p={p} />)}
       </div>
     </section>
   );

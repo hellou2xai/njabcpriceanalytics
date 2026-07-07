@@ -9,9 +9,10 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Search } from 'lucide-react';
+import { Search, Store } from 'lucide-react';
 import { catalog, type MiRail, type Product, type CatalogTier } from '../lib/api';
 import ProductThumb from '../components/ProductThumb';
+import { distributorName } from '../lib/distributors';
 import './Discover.css';
 
 const TYPES = ['Beer', 'Wine', 'Spirits', 'RTD', 'Seltzer', 'Cider', 'Non-Alcoholic'];
@@ -169,6 +170,7 @@ function DiscCard({ p }: { p: Product }) {
 
   return (
     <Link to={productHref(p)} className="disc-card">
+      <div className="disc-card-dist"><Store size={11} /> {distributorName(p.wholesaler)}</div>
       <div className="disc-card-media">
         <ProductThumb src={p.image_url} alt={p.product_name} size={120} />
         {ts.length > 0 && (
@@ -235,7 +237,7 @@ function DiscCard({ p }: { p: Product }) {
                 className="disc-deal disc-deal--rip"
                 title={`Top RIP: buy ${tierQty(rip)} → ${money(rip.amount)} total rebate back (from CPL)`}
               >
-                RIP {tierQty(rip)} · {money(rip.amount)} total
+                Best RIP {tierQty(rip)} · {money(rip.amount)} total
               </span>
             )}
             {qd && (
@@ -243,7 +245,7 @@ function DiscCard({ p }: { p: Product }) {
                 className="disc-deal disc-deal--qd"
                 title={`Top QD: buy ${tierQty(qd)}, save ${money(qd.save_per_case)}/case`}
               >
-                QD {tierQty(qd)} · {money(qd.save_per_case)}/cs
+                Best QD {tierQty(qd)} · {money(qd.save_per_case)}/cs
               </span>
             )}
           </div>
@@ -262,13 +264,17 @@ function Rail({ rail }: { rail: MiRail }) {
     // Featured rails show standard retail bottles only (1.75L / 1L / 750ML),
     // not minis, 4-packs, cans or tray packs that otherwise top the volume rank.
     // include_tiers gives us each SKU's QD + RIP ladder for the deal chips.
-    queryFn: () => catalog.search({ ...rail.params, sizes: '750ML,1L,1.75L', sort: 'mi_volume', order: 'desc', limit: 150, images_first: false, include_tiers: true }),
+    queryFn: () => catalog.search({ ...rail.params, sizes: '750ML,1L,1.75L', sort: 'mi_volume', order: 'desc', limit: 300, images_first: false, include_tiers: true }),
   });
-  // Scope = the category's TOP 50 products by 9L sales volume (image-bearing,
-  // deduped). Within that pool, FEATURE the 16 with the deepest discount
-  // (list vs best QD/RIP), so the rail leads with the best deals on top sellers.
-  const pool = distinctProducts((data?.items ?? []).filter((p) => !!p.image_url), 50);
-  const products = [...pool].sort((a, b) => discountScore(b) - discountScore(a)).slice(0, 24);
+  // Candidate pool: the category's top sellers by 9L volume that carry an image.
+  // FEATURE every product with a RIP or QD deal, ranked by deepest discount, up
+  // to 60 — the rail stops earlier when the category runs out of deal-bearing
+  // products (so we never pad the grid with dealless SKUs).
+  const pool = distinctProducts((data?.items ?? []).filter((p) => !!p.image_url), 150);
+  const products = pool
+    .filter((p) => discountScore(p) > 0)
+    .sort((a, b) => discountScore(b) - discountScore(a))
+    .slice(0, 60);
   return (
     <section ref={ref} className="disc-rail">
       <div className="disc-rail-head">

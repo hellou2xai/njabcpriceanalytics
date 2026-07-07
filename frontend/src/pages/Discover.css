@@ -51,6 +51,13 @@
   transition: box-shadow .12s, border-color .12s;
 }
 .disc-card:hover { box-shadow: 0 4px 14px rgba(16,24,40,.10); border-color: #d6dae1; }
+/* Distributor name, top-left of the card. */
+.disc-card-dist {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 700; color: #475467;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.disc-card-dist svg { flex: none; color: #98a2b3; }
 .disc-card-name { font-size: 13px; font-weight: 600; color: #101828; line-height: 1.3;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .disc-card-size { font-size: 11px; font-weight: 600; color: #667085; margin-top: -2px; }
@@ -137,6 +144,7 @@
   .disc-rail-title, .disc-card-name, .disc-card-price { color: #e6e8ef; }
   .disc-card-size { color: #98a2b3; }
   .disc-card { background: #1a1e2c; border-color: #2a2f42; }
+  .disc-card-dist { color: #cdd2e0; }
   .disc-deal--rip { color: #6ee7b7; background: rgba(6,118,71,.18); }
   .disc-deal--qd  { color: #a5b4fc; background: rgba(53,56,205,.20); }
   .disc-ts-btn { background: rgba(181,71,8,.22); border-color: #7a4a12; color: #fdb87a; }

@@ -153,26 +153,48 @@ def read_allied_catalog(db):
 
 
 # ---- Resolve -----------------------------------------------------------------
+# Wine Chateau truncates the trailing check digit on many UPCs, so an exact match
+# misses real products. For a UPC-A the 12th digit is DERIVED from the first 11,
+# so matching on the first 11 (drop last 1) is identity-preserving, not lossy.
+# We therefore fall back to a PARTIAL UPC match (drop last 1, then 2 digits of our
+# UPC) when the exact UPC has no candidate. Because the barcode is then fuzzier,
+# a partial match is only ever accepted at STRONG confidence (never MEDIUM), and
+# the brand-anchored name agreement is what confirms it is the same product.
+TRUNC_DEPTHS = (1, 2)
+
+
 def resolve(catalog, wc_by_upc):
-    """Yield dicts per Allied naming unit with the best WC candidate + tier."""
+    """Yield dicts per Allied naming unit with the best WC candidate + tier.
+
+    match_type: 'exact' | 'trunc1' | 'trunc2' — how the UPC matched."""
     for un, raw_upc, cpl_name in catalog:
         cands = wc_by_upc.get(un)
+        match_type = "exact"
+        if not cands and un:
+            for d in TRUNC_DEPTHS:
+                if len(un) > d + 6:  # keep >=7 significant digits
+                    cands = wc_by_upc.get(un[:-d])
+                    if cands:
+                        match_type = f"trunc{d}"
+                        break
         if not cands:
-            yield dict(upc_norm=un, cpl_name=cpl_name, tier="NO_UPC")
+            yield dict(upc_norm=un, cpl_name=cpl_name, tier="NO_UPC", match_type=None)
             continue
         best_name, best_sku, best_sc, best_brand = None, None, -1.0, False
         for wc_name, wc_sku in cands:
             sc, brand = name_agreement(cpl_name, wc_name)
             if sc > best_sc:
                 best_name, best_sku, best_sc, best_brand = wc_name, wc_sku, sc, brand
-        if best_brand and best_sc >= 0.60:
+        strong = best_brand and best_sc >= 0.60
+        if strong:
             tier = "STRONG"
-        elif best_brand and best_sc >= 0.34:
-            tier = "MEDIUM"
+        elif match_type == "exact" and best_brand and best_sc >= 0.34:
+            tier = "MEDIUM"          # MEDIUM only on an EXACT UPC; partial must be STRONG
         else:
             tier = "REJECT"
         yield dict(upc_norm=un, cpl_name=cpl_name, dist_item_name=best_name,
-                   abg_sku=best_sku, score=round(best_sc, 3), tier=tier)
+                   abg_sku=best_sku, score=round(best_sc, 3), tier=tier,
+                   match_type=match_type)
 
 
 def main():
@@ -200,17 +222,21 @@ def main():
     print(f"Allied naming units (distinct upc,name): {total}")
     for t in ("NO_UPC", "REJECT", "MEDIUM", "STRONG"):
         print(f"  {t:8}: {len(tiers[t])}")
-    print(f"  => STRONG auto-apply rows: {len(tiers['STRONG'])}")
+    by_mt = defaultdict(int)
+    for r in tiers["STRONG"]:
+        by_mt[r.get("match_type")] += 1
+    print(f"  => STRONG auto-apply rows: {len(tiers['STRONG'])} "
+          f"(exact={by_mt.get('exact',0)}, trunc1={by_mt.get('trunc1',0)}, trunc2={by_mt.get('trunc2',0)})")
 
     # Review CSVs (always written on a dry run, for eyeballing before --write)
     for t in ("STRONG", "MEDIUM", "REJECT"):
         p = out_dir / f"allied_name_xref_{t.lower()}.csv"
         with open(p, "w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
-            w.writerow(["upc_norm", "cpl_name", "wine_chateau_name", "abg_sku", "score"])
+            w.writerow(["upc_norm", "cpl_name", "wine_chateau_name", "abg_sku", "score", "match_type"])
             for r in tiers[t]:
                 w.writerow([r["upc_norm"], r["cpl_name"], r.get("dist_item_name"),
-                            r.get("abg_sku"), r.get("score")])
+                            r.get("abg_sku"), r.get("score"), r.get("match_type")])
         print(f"  wrote {p.name} ({len(tiers[t])} rows)")
 
     if not args.write:

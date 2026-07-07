@@ -97,10 +97,12 @@
 .disc-ts-vals em { font-style: normal; font-weight: 600; color: #067647; margin-left: 5px; }
 
 /* Price on the left, the Top RIP / Top QD deal chips stacked to its right. */
-.disc-card-foot { margin-top: auto; display: flex; align-items: flex-end; justify-content: space-between; gap: 6px; }
+/* Stack the price above the deal chips so the price is always visible and the
+   (wider) chips never crowd it off a narrow card. */
+.disc-card-foot { margin-top: auto; display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
 .disc-card-price { font-size: 15px; font-weight: 700; color: #101828; line-height: 1.1; white-space: nowrap; }
 .disc-card-price-u { font-size: 10px; font-weight: 500; color: #98a2b3; margin-left: 1px; }
-.disc-card-deals { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; min-width: 0; }
+.disc-card-deals { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
 .disc-deal {
   font-size: 12.5px; font-weight: 700; line-height: 1.25; white-space: nowrap;
   padding: 3px 8px; border-radius: 6px;

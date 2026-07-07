@@ -242,7 +242,7 @@ function DiscCard({ p }: { p: Product }) {
                 className="disc-deal disc-deal--rip"
                 title={`Top RIP: buy ${tierQty(rip)} → ${money(rip.amount)} total rebate back (from CPL)`}
               >
-                Best RIP {tierQty(rip)} · {money(rip.amount)} total
+                Best RIP {tierQty(rip)} · {money(rip.amount)}
               </span>
             )}
             {qd && (

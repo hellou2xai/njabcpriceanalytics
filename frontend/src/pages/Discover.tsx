@@ -108,23 +108,43 @@ function shortDate(iso?: string | null): string {
   return m && d ? `${MONTHS[m - 1]} ${d}` : '';
 }
 
-// Dedupe search rows (many sizes/distributors per product) to one card each.
-function distinctProducts(items: Product[], max: number): Product[] {
-  const seen = new Set<string>();
-  const out: Product[] = [];
-  for (const p of items) {
-    const k = (p.product_name || '').toUpperCase();
-    if (seen.has(k)) continue;
-    seen.add(k);
-    out.push(p);
-    if (out.length >= max) break;
+// A product plus the distributors that carry it at the same deal.
+type MergedProduct = Product & { dists: string[] };
+
+// A REAL barcode (drops all-zero/short/repeated placeholder codes) — the reliable
+// cross-distributor product key (CPL names differ per distributor).
+function realUpc(u?: string | null): string | null {
+  const s = String(u ?? '').replace(/\D/g, '').replace(/^0+/, '');
+  return s.length >= 11 && !/^(\d)\1+$/.test(s) ? s : null;
+}
+
+// Signature of a product's featured deals — same RIP AND same QD (RIP is
+// statewide, so the differentiator is usually QD).
+function dealSig(p: Product): string {
+  const rip = topTier(p.tiers, 'rip');
+  const qd = topTier(p.tiers, 'discount');
+  return `${rip?.amount ?? '-'}|${rip?.qty ?? '-'}|${qd?.save_per_case ?? '-'}|${qd?.qty ?? '-'}`;
+}
+
+// Collapse search rows to one card per (product, deal): the SAME product from
+// multiple distributors with the SAME RIP/QD becomes a single card that lists
+// every distributor. Different deals stay separate cards.
+function mergeByDeal(items: Product[]): MergedProduct[] {
+  const groups = new Map<string, { p: Product; dists: string[] }>();
+  for (const it of items) {
+    if (!it.image_url) continue;
+    const pk = realUpc(it.upc) ? `U:${realUpc(it.upc)}` : `N:${(it.product_name || '').toUpperCase()}`;
+    const key = `${pk}||${dealSig(it)}`;
+    const g = groups.get(key);
+    if (!g) groups.set(key, { p: it, dists: [it.wholesaler] });
+    else if (!g.dists.includes(it.wholesaler)) g.dists.push(it.wholesaler);
   }
-  return out;
+  return [...groups.values()].map(({ p, dists }) => ({ ...p, dists }));
 }
 
 // One featured product card. Price (after the stable 1-case QD) + Top RIP / Top
 // QD chips, plus a TS button that opens the SKU's time-sensitive deal windows.
-function DiscCard({ p }: { p: Product }) {
+function DiscCard({ p }: { p: MergedProduct }) {
   const btnRef = useRef<HTMLButtonElement | null>(null);
   // Popover position (viewport coords) when open, else null. Rendered in a body
   // portal so the horizontally-scrolling rail track can't clip it.
@@ -172,7 +192,12 @@ function DiscCard({ p }: { p: Product }) {
   return (
     <Link to={productHref(p)} className="disc-card">
       <div className="disc-card-top">
-        <span className="disc-card-dist"><Store size={11} /> {distributorName(p.wholesaler)}</span>
+        <span className="disc-card-dist" title={p.dists.map(distributorName).join(', ')}>
+          <Store size={11} />{' '}
+          {p.dists.length === 1
+            ? distributorName(p.dists[0])
+            : `${distributorName(p.dists[0])} +${p.dists.length - 1}`}
+        </span>
         <FavoriteButton productName={p.product_name} wholesaler={p.wholesaler}
           upc={p.upc ?? undefined} unitVolume={p.unit_volume ?? undefined} />
       </div>
@@ -271,12 +296,10 @@ function Rail({ rail }: { rail: MiRail }) {
     // include_tiers gives us each SKU's QD + RIP ladder for the deal chips.
     queryFn: () => catalog.search({ ...rail.params, sizes: '750ML,1L,1.75L', sort: 'mi_volume', order: 'desc', limit: 300, images_first: false, include_tiers: true }),
   });
-  // Candidate pool: the category's top sellers by 9L volume that carry an image.
-  // FEATURE every product with a RIP or QD deal, ranked by deepest discount, up
-  // to 60 — the rail stops earlier when the category runs out of deal-bearing
-  // products (so we never pad the grid with dealless SKUs).
-  const pool = distinctProducts((data?.items ?? []).filter((p) => !!p.image_url), 150);
-  const products = pool
+  // Merge the same product from multiple distributors (same RIP/QD) into one
+  // card, then FEATURE every product with a RIP or QD deal, ranked by deepest
+  // discount, up to 60 (stops earlier when the category runs out of deals).
+  const products = mergeByDeal(data?.items ?? [])
     .filter((p) => discountScore(p) > 0)
     .sort((a, b) => discountScore(b) - discountScore(a))
     .slice(0, 60);

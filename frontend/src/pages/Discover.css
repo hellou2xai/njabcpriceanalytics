@@ -91,8 +91,8 @@
 .disc-card-price-u { font-size: 10px; font-weight: 500; color: #98a2b3; margin-left: 1px; }
 .disc-card-deals { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; min-width: 0; }
 .disc-deal {
-  font-size: 10px; font-weight: 600; line-height: 1.2; white-space: nowrap;
-  padding: 2px 6px; border-radius: 5px;
+  font-size: 12.5px; font-weight: 700; line-height: 1.25; white-space: nowrap;
+  padding: 3px 8px; border-radius: 6px;
 }
 .disc-deal--rip { color: #067647; background: #ecfdf3; }
 .disc-deal--qd  { color: #3538cd; background: #eef2ff; }
@@ -124,7 +124,7 @@
      off a narrow card. */
   .disc-card-foot { flex-direction: column; align-items: stretch; gap: 5px; }
   .disc-card-deals { flex-direction: row; flex-wrap: wrap; align-items: flex-start; gap: 4px; }
-  .disc-deal { font-size: 9px; padding: 2px 5px; }
+  .disc-deal { font-size: 11px; padding: 3px 6px; }
   .disc-card-size { font-size: 10px; }
   .disc-ts-btn { font-size: 9px; padding: 2px 5px; }
 }

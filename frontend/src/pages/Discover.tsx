@@ -235,7 +235,7 @@ function DiscCard({ p }: { p: Product }) {
                 className="disc-deal disc-deal--rip"
                 title={`Top RIP: buy ${tierQty(rip)} → ${money(rip.amount)} total rebate back (from CPL)`}
               >
-                RIP {tierQty(rip)} · {money(rip.amount)}
+                RIP {tierQty(rip)} · {money(rip.amount)} total
               </span>
             )}
             {qd && (
@@ -243,7 +243,7 @@ function DiscCard({ p }: { p: Product }) {
                 className="disc-deal disc-deal--qd"
                 title={`Top QD: buy ${tierQty(qd)}, save ${money(qd.save_per_case)}/case`}
               >
-                QD {tierQty(qd)} · {money(qd.save_per_case)}
+                QD {tierQty(qd)} · {money(qd.save_per_case)}/cs
               </span>
             )}
           </div>

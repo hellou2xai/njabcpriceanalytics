@@ -53,6 +53,24 @@
 .disc-card-price { font-size: 12px; color: #475467; margin-top: auto; }
 .disc-card--skel { height: 190px; background: linear-gradient(90deg,#f2f4f7,#f8f9fb,#f2f4f7); border-style: dashed; }
 
+/* Mobile: tighter hero, full-width search, smaller rail cards. Rails already
+   scroll horizontally, so they work as-is; just reduce chrome. */
+@media (max-width: 640px) {
+  .disc-page { padding: 0 12px 48px; }
+  .disc-hero { padding: 24px 0 12px; }
+  .disc-title { font-size: 26px; }
+  .disc-sub { font-size: 13px; margin-bottom: 14px; }
+  .disc-search { max-width: 100%; padding: 5px 5px 5px 12px; }
+  .disc-search input { font-size: 14px; }
+  .disc-search button { padding: 8px 14px; font-size: 13px; }
+  .disc-types { gap: 6px; }
+  .disc-type { padding: 5px 11px; font-size: 12px; }
+  .disc-rails { gap: 20px; margin-top: 16px; }
+  .disc-rail-title { font-size: 16px; }
+  .disc-card { flex-basis: 132px; width: 132px; padding: 10px; }
+  .disc-card-name { font-size: 12px; }
+}
+
 @media (prefers-color-scheme: dark) {
   .disc-sub, .disc-hint { color: #98a2b3; }
   .disc-search { background: #1d2130; border-color: #2a2f42; }

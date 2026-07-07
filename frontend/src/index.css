@@ -6109,7 +6109,13 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
    and a viewport media query mis-fires. */
 .prod-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); overflow: hidden; transition: border-color .15s, box-shadow .15s; container-type: inline-size; }
 .prod-card.is-expanded { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-weak); }
-.prod-card-head { display: flex; align-items: center; gap: 12px; padding: 12px 14px; cursor: pointer; }
+/* Top-align the row: the right column's height varies per card (a Best-QD badge
+   may sit above Best-RIP, one vs two price lines), so centering landed the green
+   badges at a different height in every row and read as ragged. Anchoring to the
+   top gives every card's badge/price the same offset. The star + chevron are
+   re-centered individually so the row's affordances still feel balanced. */
+.prod-card-head { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; cursor: pointer; }
+.prod-card-head > .prod-card-fav, .prod-card-head > .prod-card-details { align-self: center; }
 .prod-card-head:hover { background: var(--surface-hover); }
 .prod-card-fav { flex-shrink: 0; }
 /* Name/meta column: basis = content (not 0), with a real floor so it can never
@@ -6236,7 +6242,16 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 /* Combo sticker — purple pill that links to the combo page (Back returns). */
 .prod-combo-sticker, .pd-deal-combo { display: inline-flex; align-items: center; gap: 3px; padding: 1px 8px; border-radius: 999px; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; text-decoration: none; background: color-mix(in srgb, var(--purple, #7c3aed) 16%, transparent); color: var(--purple, #7c3aed); border: 1px solid color-mix(in srgb, var(--purple, #7c3aed) 30%, transparent); cursor: pointer; }
 .prod-combo-sticker:hover, .pd-deal-combo:hover { background: color-mix(in srgb, var(--purple, #7c3aed) 26%, transparent); }
+/* Explicit "Details" affordance so the row reads as expandable (the bare
+   chevron alone wasn't obvious). The whole head is still clickable. */
+.prod-card-details { flex-shrink: 0; display: inline-flex; align-items: center; gap: 3px;
+  padding: 5px 10px; border-radius: 999px; cursor: pointer;
+  font-size: 12px; font-weight: 700; letter-spacing: .01em;
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent); }
+.prod-card-details:hover { background: color-mix(in srgb, var(--accent) 15%, transparent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
 .prod-card-chev { flex-shrink: 0; color: var(--text-muted); transition: transform .18s; }
+.prod-card-details .prod-card-chev { color: var(--accent); }
 .prod-card-chev.is-open { transform: rotate(180deg); }
 
 /* ---- Expanded size rows ---- */

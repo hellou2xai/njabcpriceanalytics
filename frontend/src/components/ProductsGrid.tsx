@@ -774,7 +774,13 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
             <span className="prod-card-sizes">{optionCount} size{optionCount === 1 ? '' : 's'}</span>
           </div>
         </div>
-        <ChevronDown size={20} className={`prod-card-chev${expanded ? ' is-open' : ''}`} />
+        <button type="button" className="prod-card-details"
+          onClick={e => { e.stopPropagation(); setExpanded(v => !v); }}
+          aria-expanded={expanded}
+          title={expanded ? 'Hide sizes, distributors and deal tiers' : 'Show all sizes, distributors and deal tiers'}>
+          {expanded ? 'Hide' : 'Details'}
+          <ChevronDown size={15} className={`prod-card-chev${expanded ? ' is-open' : ''}`} />
+        </button>
       </div>
       {expanded && (
         <div className="prod-card-body">

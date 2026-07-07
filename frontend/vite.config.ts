@@ -12,7 +12,9 @@ export default defineConfig({
     watch: { usePolling: true, interval: 300 },
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        // Override to test the local UI against live data:
+        //   VITE_PROXY_TARGET=https://nj.celr.ai npm run dev
+        target: process.env.VITE_PROXY_TARGET || 'http://localhost:8000',
         changeOrigin: true,
       },
     },

@@ -63,9 +63,13 @@ interface Props {
   onDealMonthChange?: (v: 'current' | 'next') => void;
   currentMonthLabel?: string;
   nextMonthLabel?: string;
+  // Spirit category (Whiskey/Vodka/Tequila/...) — separate state from `filters`
+  // (single-select), so the rail reads/writes it via these props.
+  spiritCategory?: string;
+  onSpiritCategoryChange?: (v: string) => void;
 }
 
-export default function ProductsFilterRail({ filters, onChange, items, facets, trackedOnly, onTrackedChange, onCollapse, dealMonth = 'current', onDealMonthChange, currentMonthLabel, nextMonthLabel }: Props) {
+export default function ProductsFilterRail({ filters, onChange, items, facets, trackedOnly, onTrackedChange, onCollapse, dealMonth = 'current', onDealMonthChange, currentMonthLabel, nextMonthLabel, spiritCategory = '', onSpiritCategoryChange }: Props) {
   const [priceMin, setPriceMin] = useState(filters.priceMin?.toString() ?? '');
   const [priceMax, setPriceMax] = useState(filters.priceMax?.toString() ?? '');
   const [brandSearch, setBrandSearch] = useState('');
@@ -319,6 +323,20 @@ export default function ProductsFilterRail({ filters, onChange, items, facets, t
               {grapeShowAll ? 'Show fewer' : `Show all ${grapeEntries.length}…`}
             </button>
           )}
+        </Section>
+      )}
+
+      {onSpiritCategoryChange && (facets?.spirit_categories?.length ?? 0) > 0 && (
+        <Section title="Spirit Category" defaultOpen={!!spiritCategory} badge={spiritCategory ? 1 : 0}>
+          <div className="prod-filter-list">
+            {facets!.spirit_categories!.map(({ key, count }) => (
+              <label key={key} className="prod-filter-check">
+                <input type="checkbox" checked={spiritCategory === key}
+                  onChange={() => onSpiritCategoryChange(spiritCategory === key ? '' : key)} />
+                <span>{key}</span><span className="prod-filter-count">{count}</span>
+              </label>
+            ))}
+          </div>
         </Section>
       )}
       </div>

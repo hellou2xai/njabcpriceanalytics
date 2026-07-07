@@ -2441,6 +2441,7 @@ export interface CatalogFacets {
   countries?: FacetBucket[];
   regions?: FacetBucket[];
   grapes?: FacetBucket[];
+  spirit_categories?: FacetBucket[];   // Whiskey/Vodka/Tequila/... (spirits only)
 }
 export interface PricePoint {
   edition: string;

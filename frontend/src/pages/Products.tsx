@@ -501,6 +501,8 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
             onChange={f => { setFilters(f); setPage(0); }}
             items={items}
             facets={facets}
+            spiritCategory={spiritCategory}
+            onSpiritCategoryChange={v => { setSpiritCategory(v); setPage(0); }}
             trackedOnly={trackedOnly}
             onTrackedChange={v => { setTrackedOnly(v); setPage(0); }}
             onCollapse={() => toggleRail(true)}

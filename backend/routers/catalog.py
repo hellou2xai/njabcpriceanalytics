@@ -1335,14 +1335,27 @@ def search_products(
         # partition so a UPC stacked under N rebates produces N distinct rows
         # (one per cluster) instead of being collapsed back to 1.
         dedup_extra = ", COALESCE(rm.membership_code, '')" if group_by_rip else ""
+        # Same distributor + REAL barcode + size collapse to ONE row: a distributor
+        # sometimes lists one product twice (a real listing + a placeholder-coded
+        # 'P###' line) at different prices. Keep the accurate one — the deal-bearing
+        # (QD/RIP), real-named, best-priced listing. Rule confirmed by the buyer.
+        # PLACEHOLDER barcodes are NOT collapsed across name/price (a fake code is
+        # reused for unrelated products, so those stay separate — same guard the CPL
+        # ground-truth rule relies on).
+        _valid_upc_dd = _VALID_UPC_SQL.format(col="upc")
+        _ph_name = "regexp_matches(COALESCE(product_name,''), '^P[0-9][0-9]+ ')"
         dedup = (
             "QUALIFY ROW_NUMBER() OVER (PARTITION BY wholesaler, LTRIM(COALESCE(upc,''),'0'), "
-            "product_name, unit_volume, COALESCE(CAST(unit_qty AS VARCHAR),''), "
+            "unit_volume, COALESCE(CAST(unit_qty AS VARCHAR),''), "
             "COALESCE(CAST(vintage AS VARCHAR),''), "
-            "COALESCE(frontline_case_price,-1), COALESCE(effective_case_price,-1), "
-            "COALESCE(total_savings_per_case,-1), has_discount, has_rip"
-            f"{dedup_extra} "
-            "ORDER BY edition DESC) = 1"
+            "CASE WHEN " + _valid_upc_dd + " THEN '' ELSE "
+            "product_name || '|' || CAST(COALESCE(frontline_case_price,-1) AS VARCHAR) || '|' || "
+            "CAST(COALESCE(effective_case_price,-1) AS VARCHAR) END"
+            + dedup_extra + " "
+            "ORDER BY (COALESCE(has_rip,FALSE) OR COALESCE(has_discount,FALSE)) DESC, "
+            "(NOT " + _ph_name + ") DESC, "
+            "COALESCE(effective_case_price, frontline_case_price, 999999) ASC, "
+            "edition DESC) = 1"
         )
 
         # When group_by_rip is on, build the rip_groups + rip_memberships CTEs
@@ -4183,6 +4196,7 @@ def search_facets(
     countries: Optional[str] = None,
     regions: Optional[str] = None,
     grapes: Optional[str] = None,
+    spirit_category: Optional[str] = None,
     min_price: Optional[float] = None,
     max_price: Optional[float] = None,
     has_rip: Optional[bool] = None,
@@ -4200,7 +4214,7 @@ def search_facets(
     # /search). The Products page fires this on every load alongside the grid;
     # it was ~1s uncached. Key on all params + ET date; pricing_tag invalidates.
     _ckey = (q, wholesaler, edition, divisions, categories, brands, sizes,
-             unit_kinds, countries, regions, grapes,
+             unit_kinds, countries, regions, grapes, spirit_category,
              min_price, max_price, has_rip, has_discount,
              introduced_within_months, introduced_edition,
              _pricing.eastern_today().isoformat())
@@ -4339,6 +4353,14 @@ def search_facets(
                     k = f"fgrp_{i}"; pp[k] = f"%{v}%"
                     keys.append(f"LOWER(geo_varietal) LIKE LOWER(${k})")
                 preds.append({"dim": "grp", "sql": "(" + " OR ".join(keys) + ")", "params": pp})
+        if spirit_category and _has_col(con, "spirit_category"):
+            svals = [v.strip() for v in spirit_category.split(",") if v.strip()]
+            if svals:
+                keys, pp = [], {}
+                for i, v in enumerate(svals):
+                    k = f"fspc_{i}"; pp[k] = v
+                    keys.append(f"spirit_category = ${k}")
+                preds.append({"dim": "spcat", "sql": "(" + " OR ".join(keys) + ")", "params": pp})
         if min_price is not None or max_price is not None:
             parts, pp = [], {}
             if min_price is not None: parts.append("frontline_case_price >= $fmin"); pp["fmin"] = min_price
@@ -4426,6 +4448,15 @@ def search_facets(
                                      for _, r in gdf.iterrows()]
             except Exception:
                 _facets["grapes"] = []
+        # Spirit category facet (Whiskey/Vodka/Tequila/...) from the enrichment-
+        # derived spirit_category column. Excludes the generic 'Other' bucket.
+        if _has_col(con, "spirit_category"):
+            try:
+                _facets["spirit_categories"] = [
+                    x for x in grouped("spirit_category", "spcat")
+                    if x["key"] not in (None, "", "Other")]
+            except Exception:
+                _facets["spirit_categories"] = []
         _cache.store("catalog_facets", _ckey, _facets)
         return _facets
 

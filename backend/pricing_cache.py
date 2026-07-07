@@ -304,6 +304,16 @@ def build_pricing_cache(force: bool = False) -> Path:
                     "upc_norm VARCHAR, cpl_name VARCHAR, dist_item_name VARCHAR, "
                     "abg_sku VARCHAR, score DOUBLE)"
                 )
+                # Fuller Fedway item names resolved from the Fedway "BR2" product
+                # export (scripts/load_fedway_name_xref.py). Fedway's SKU IS our
+                # dist_item_no, so keyed on (sku_norm, cpl_name); a SKU match is
+                # confirmed by UPC or brand-anchored name agreement (guards Fedway's
+                # recycled SKUs). Sets dist_item_name; never touches product_name.
+                empty_fedway_name_xref = (
+                    "CREATE TABLE fedway_name_xref ("
+                    "sku_norm VARCHAR, cpl_name VARCHAR, dist_item_name VARCHAR, "
+                    "upc_norm VARCHAR, score DOUBLE, match_type VARCHAR)"
+                )
                 # CELR Product Number registry, flattened + alias-resolved (see
                 # docs/CELR_PRODUCT_NUMBER_DESIGN.md; built by
                 # scripts/build_celr_products.py). Maps every clean barcode to its
@@ -341,6 +351,7 @@ def build_pricing_cache(force: bool = False) -> Path:
                     con.execute(empty_sku)
                     con.execute(empty_allied_xref)
                     con.execute(empty_allied_name_xref)
+                    con.execute(empty_fedway_name_xref)
                     con.execute("CREATE TABLE ai_deal_blurbs (wholesaler VARCHAR, upc VARCHAR, edition VARCHAR, blurb VARCHAR)")
                     _celr_pq = PARQUET_DIR / "derived" / "celr_products.parquet"
                     if _celr_pq.exists():
@@ -417,6 +428,10 @@ def build_pricing_cache(force: bool = False) -> Path:
                         con.execute("CREATE TABLE allied_name_xref AS SELECT upc_norm, cpl_name, dist_item_name, abg_sku, score FROM pg.allied_name_xref")
                     except Exception:  # not loaded yet
                         con.execute(empty_allied_name_xref)
+                    try:
+                        con.execute("CREATE TABLE fedway_name_xref AS SELECT sku_norm, cpl_name, dist_item_name, upc_norm, score, match_type FROM pg.fedway_name_xref")
+                    except Exception:  # not loaded yet
+                        con.execute(empty_fedway_name_xref)
                     con.execute("DETACH pg")
 
                 # Wire the catalogue brand to the Go-UPC enriched brand by UPC. CPL
@@ -614,6 +629,22 @@ def build_pricing_cache(force: bool = False) -> Path:
                     FROM allied_name_xref x
                     WHERE cpl_enriched.wholesaler = 'allied'
                       AND x.upc_norm = cpl_enriched.upc_norm
+                      AND x.cpl_name = cpl_enriched.product_name
+                """)
+
+                # Fuller Fedway item names from the Fedway BR2 export, resolved
+                # offline by SKU match confirmed by UPC or brand-anchored name
+                # agreement (scripts/load_fedway_name_xref.py). Fedway's SKU is
+                # already on the row as dist_item_no, so we match on the normalised
+                # SKU AND the CPL name (guards recycled SKUs across editions). Only
+                # sets dist_item_name (the fuller name); dist_item_no already carries
+                # the Fedway number from ingest. product_name is never touched.
+                _try("""
+                    UPDATE cpl_enriched
+                    SET dist_item_name = x.dist_item_name
+                    FROM fedway_name_xref x
+                    WHERE cpl_enriched.wholesaler = 'fedway'
+                      AND LTRIM(CAST(cpl_enriched.dist_item_no AS VARCHAR), '0') = x.sku_norm
                       AND x.cpl_name = cpl_enriched.product_name
                 """)
 

@@ -66,6 +66,8 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
   const [wholesaler, setWholesaler] = useState(params.get('wholesaler') ?? '');
   const [region, setRegion] = useState(params.get('region') ?? '');
   const [varietal, setVarietal] = useState(params.get('varietal') ?? '');
+  // Spirit category (MI "Top <Category>" rail deep-link, e.g. ?spirit_category=Whiskey).
+  const [spiritCategory, setSpiritCategory] = useState(params.get('spirit_category') ?? '');
   const [page, setPage] = useState(0);
   const [limit, setLimit] = useState(60);
   const [trackedOnly, setTrackedOnly] = useState(false);
@@ -75,8 +77,13 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
   const niMonthDefaulted = useRef(false);
   // Sort is by product_name by default so a product's sizes arrive contiguously
   // and group cleanly. Price sorts are offered too (server-side).
-  const [sort, setSort] = useState<'product_name' | 'frontline_case_price' | 'effective_case_price'>('product_name');
-  const [order, setOrder] = useState<'asc' | 'desc'>('asc');
+  // 'mi_volume' = market-intelligence sales volume (MI rail deep-links); read
+  // from the URL so a "Top <Category>" rail opens ranked by volume.
+  const _SORT_FIELDS = ['product_name', 'frontline_case_price', 'effective_case_price', 'mi_volume'] as const;
+  const _urlSort = params.get('sort') as (typeof _SORT_FIELDS)[number];
+  const [sort, setSort] = useState<(typeof _SORT_FIELDS)[number]>(
+    _SORT_FIELDS.includes(_urlSort) ? _urlSort : 'product_name');
+  const [order, setOrder] = useState<'asc' | 'desc'>(params.get('order') === 'desc' ? 'desc' : 'asc');
   const [filters, setFilters] = useState<CatalogFilters>(() => filtersFromParams(params));
   const [cart, setCartState] = useState<CartState>(loadCart);
   // "Price details / Summary" toggle: whether collapsed cards show the full
@@ -121,6 +128,10 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
     setWholesaler(params.get('wholesaler') ?? '');
     setRegion(params.get('region') ?? '');
     setVarietal(params.get('varietal') ?? '');
+    setSpiritCategory(params.get('spirit_category') ?? '');
+    { const s = params.get('sort') as (typeof _SORT_FIELDS)[number];
+      setSort(_SORT_FIELDS.includes(s) ? s : 'product_name');
+      setOrder(params.get('order') === 'desc' ? 'desc' : 'asc'); }
     setFilters(filtersFromParams(params));
     setPage(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -133,6 +144,7 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
     if (wholesaler) next.set('wholesaler', wholesaler);
     if (region) next.set('region', region);
     if (varietal) next.set('varietal', varietal);
+    if (spiritCategory) next.set('spirit_category', spiritCategory);
     if (filters.hasRip) next.set('hasRip', '1');
     if (filters.hasDiscount) next.set('hasDiscount', '1');
     if (filters.inCombo) next.set('in_combo', '1');
@@ -149,7 +161,7 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
     if (filters.priceMax != null) next.set('priceMax', String(filters.priceMax));
     if (next.toString() !== params.toString()) setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, wholesaler, region, varietal, filters]);
+  }, [q, wholesaler, region, varietal, spiritCategory, filters]);
 
   const setCart = useCallback((update: CartState | ((p: CartState) => CartState)) => {
     setCartState(prev => {
@@ -179,6 +191,7 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
     countries: filters.countries.join(',') || undefined,
     regions: filters.regions.join(',') || undefined,
     grapes: filters.grapes.join(',') || undefined,
+    spirit_category: spiritCategory || undefined,
     min_price: filters.priceMin,
     max_price: filters.priceMax,
   };
@@ -232,10 +245,10 @@ export default function Products({ newItems = false }: { newItems?: boolean } = 
   // combinations (keystrokes, deep filters, page > 1) stay in-memory only.
   const isAisleView = filters.categories.length === 1 && countActiveFilters(filters) === 1
     && !q.trim() && page === 0 && sort === 'product_name' && order === 'asc'
-    && !wholesaler && !region && !varietal && !trackedOnly;
+    && !wholesaler && !region && !varietal && !spiritCategory && !trackedOnly;
 
   const { data, isLoading } = useCachedQuery(
-    ['products', q, wholesaler, sort, order, page, limit, trackedOnly, filterKey, region, varietal, newItems, introducedMonth, priceDetails],
+    ['products', q, wholesaler, sort, order, page, limit, trackedOnly, filterKey, region, varietal, spiritCategory, newItems, introducedMonth, priceDetails],
     () => catalog.search({
       q,
       wholesaler: wholesaler || undefined,

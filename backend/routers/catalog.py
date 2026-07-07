@@ -825,7 +825,7 @@ def search_products(
             q, wholesaler, edition, product_type, min_price, max_price,
             has_discount, has_closeout, has_rip, in_combo, time_sensitive,
             price_drop, price_increase, brand, unit_volume, divisions, categories,
-            brands, sizes, unit_kinds, countries, regions, grapes,
+            brands, sizes, unit_kinds, countries, regions, grapes, spirit_category,
             upcs, rip_code, region, varietal,
             tracked_only, introduced_within_months, introduced_edition, sort, order,
             limit, offset, include_tiers, group_by_rip, images_first,

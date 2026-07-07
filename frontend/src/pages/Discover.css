@@ -114,9 +114,19 @@
   .disc-rails { gap: 20px; margin-top: 16px; }
   .disc-rail-title { font-size: 16px; }
   .disc-rail-track { gap: 10px; }
-  .disc-card { width: auto; padding: 10px; }
-  .disc-card-name { font-size: 12px; }
+  .disc-card { width: auto; padding: 10px; gap: 6px; }
+  .disc-card-name { font-size: 12px; -webkit-line-clamp: 2; }
   .disc-card-price { font-size: 14px; }
+  /* Smaller bottle shot so 2 cards fit a phone comfortably (overrides the
+     inline width from ProductThumb). */
+  .disc-card-media img { width: 92px !important; height: 92px !important; }
+  /* Stack price above the deal chips and let the chips wrap, so nothing spills
+     off a narrow card. */
+  .disc-card-foot { flex-direction: column; align-items: stretch; gap: 5px; }
+  .disc-card-deals { flex-direction: row; flex-wrap: wrap; align-items: flex-start; gap: 4px; }
+  .disc-deal { font-size: 9px; padding: 2px 5px; }
+  .disc-card-size { font-size: 10px; }
+  .disc-ts-btn { font-size: 9px; padding: 2px 5px; }
 }
 
 @media (prefers-color-scheme: dark) {

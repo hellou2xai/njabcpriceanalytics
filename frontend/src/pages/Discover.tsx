@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Search } from 'lucide-react';
-import { catalog, type MiRail, type Product } from '../lib/api';
+import { catalog, type MiRail, type Product, type CatalogTier } from '../lib/api';
 import ProductThumb from '../components/ProductThumb';
 import './Discover.css';
 
@@ -41,6 +41,36 @@ function money(n?: number | null): string | null {
   return n == null ? null : `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
 
+// A tier's buy quantity as a compact label ("25cs" / "3bt"). Bottle-unit tiers
+// start with B; everything else is cases.
+function tierQty(t: CatalogTier): string {
+  return `${t.qty}${/^b/i.test(t.unit || '') ? 'bt' : 'cs'}`;
+}
+
+// Whether a discount tier is the 1-case entry QD (already folded into the price).
+function isOneCsQd(t: CatalogTier): boolean {
+  return t.source === 'discount' && t.qty === 1 && !/^b/i.test(t.unit || '');
+}
+
+// Best (deepest) tier of a kind = the one saving the most per case. save_per_case
+// and price_after come straight from the canonical tier ladder (FOUNDATION); we
+// only pick the winner here. Discount picks EXCLUDE the 1-case entry QD, which is
+// already reflected in the card's shown price.
+function topTier(tiers: CatalogTier[] | undefined, source: 'discount' | 'rip'): CatalogTier | null {
+  const of = (tiers ?? []).filter(
+    (t) => t.source === source && !t.is_time_sensitive && !(source === 'discount' && isOneCsQd(t)),
+  );
+  if (!of.length) return null;
+  return of.reduce((a, b) => ((b.save_per_case ?? 0) > (a.save_per_case ?? 0) ? b : a));
+}
+
+// Realistic single-case price: list minus the 1-case entry QD when the SKU has
+// one, else the frontline list price.
+function oneCsCasePrice(p: Product): number | null {
+  const entry = (p.tiers ?? []).find(isOneCsQd);
+  return entry?.price_after ?? p.frontline_case_price ?? p.effective_case_price ?? null;
+}
+
 // Dedupe search rows (many sizes/distributors per product) to one card each.
 function distinctProducts(items: Product[], max: number): Product[] {
   const seen = new Set<string>();
@@ -61,9 +91,13 @@ function Rail({ rail }: { rail: MiRail }) {
     queryKey: ['mi-rail', rail.params],
     enabled: seen,
     staleTime: 300_000,
-    queryFn: () => catalog.search({ ...rail.params, sort: 'mi_volume', order: 'desc', limit: 24, images_first: false }),
+    // Featured rails show standard retail bottles only (1.75L / 1L / 750ML),
+    // not minis, 4-packs, cans or tray packs that otherwise top the volume rank.
+    // include_tiers gives us each SKU's QD + RIP ladder for the deal chips.
+    queryFn: () => catalog.search({ ...rail.params, sizes: '750ML,1L,1.75L', sort: 'mi_volume', order: 'desc', limit: 24, images_first: false, include_tiers: true }),
   });
-  const products = distinctProducts(data?.items ?? [], 12);
+  // Only feature products that actually carry an image (no placeholder cards).
+  const products = distinctProducts((data?.items ?? []).filter((p) => !!p.image_url), 12);
   return (
     <section ref={ref} className="disc-rail">
       <div className="disc-rail-head">
@@ -78,7 +112,9 @@ function Rail({ rail }: { rail: MiRail }) {
           <div className="disc-rail-empty">No products found.</div>
         )}
         {products.map((p, i) => {
-          const price = money(p.frontline_case_price ?? p.effective_case_price ?? null);
+          const price = money(oneCsCasePrice(p));
+          const rip = topTier(p.tiers, 'rip');
+          const qd = topTier(p.tiers, 'discount');
           return (
             <Link
               key={`${p.product_name}-${i}`}
@@ -87,7 +123,31 @@ function Rail({ rail }: { rail: MiRail }) {
             >
               <ProductThumb src={p.image_url} alt={p.product_name} size={120} />
               <div className="disc-card-name">{p.abg_item_name?.trim() || p.product_name}</div>
-              {price && <div className="disc-card-price">{price}/case</div>}
+              <div className="disc-card-foot">
+                {price && (
+                  <div className="disc-card-price">{price}<span className="disc-card-price-u">/cs</span></div>
+                )}
+                {(rip || qd) && (
+                  <div className="disc-card-deals">
+                    {rip && (
+                      <span
+                        className="disc-deal disc-deal--rip"
+                        title={`Top RIP: buy ${tierQty(rip)}, save ${money(rip.save_per_case)}/case`}
+                      >
+                        RIP {tierQty(rip)} · {money(rip.save_per_case)}
+                      </span>
+                    )}
+                    {qd && (
+                      <span
+                        className="disc-deal disc-deal--qd"
+                        title={`Top QD: buy ${tierQty(qd)}, save ${money(qd.save_per_case)}/case`}
+                      >
+                        QD {tierQty(qd)} · {money(qd.save_per_case)}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
             </Link>
           );
         })}

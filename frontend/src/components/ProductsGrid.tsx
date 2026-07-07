@@ -666,8 +666,11 @@ function ProductCard({ group, cart, updateQty, showDeals = true, defaultExpanded
     }
     // Enrich placeholder-UPC rows with the name-fetched tiers/history (real
     // barcodes pass through), so their ladder + sparkline match everyone else.
+    // Size DESCENDING (largest first); unknown sizes (toMl -> MAX_SAFE_INTEGER)
+    // remapped to -1 so they stay last even when reversed.
+    const szKey = (v?: string | null) => { const m = toMl(v); return m >= Number.MAX_SAFE_INTEGER ? -1 : m; };
     return [...base].map(enrichPlaceholder).sort((a, b) =>
-      toMl(a.unit_volume) - toMl(b.unit_volume) || a.wholesaler.localeCompare(b.wholesaler));
+      szKey(b.unit_volume) - szKey(a.unit_volume) || a.wholesaler.localeCompare(b.wholesaler));
   }, [group.flat, repRow, multiDist, multiData, fullSizes, group.sizes, enrichPlaceholder]);
   const optionCount = sizes.length;
 

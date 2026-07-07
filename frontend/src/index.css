@@ -1557,7 +1557,8 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
    (calc(100vh / var(--mc-zoom))) cancels it out and the page footer/pager stays
    reachable. Keep the two values in sync. */
 html[data-textsize="small"] .main-content { zoom: 0.9; --mc-zoom: 0.9; }
-html[data-textsize="large"] .main-content { zoom: 1.12; --mc-zoom: 1.12; }
+html[data-textsize="large"] .main-content { zoom: 1.22; --mc-zoom: 1.22; }
+html[data-textsize="xl"] .main-content { zoom: 1.4; --mc-zoom: 1.4; }
 .sidebar-textsize { display: flex; align-items: center; gap: 8px; padding: 2px 8px 10px;
   margin-bottom: 6px; border-bottom: 1px solid var(--nav-border, var(--border)); }
 .sidebar-textsize-lbl { font-size: 12px; color: var(--nav-text, var(--text-muted)); }
@@ -1571,6 +1572,7 @@ html[data-textsize="large"] .main-content { zoom: 1.12; --mc-zoom: 1.12; }
 .textsize-seg-btn[data-size="small"] { font-size: 10px; }
 .textsize-seg-btn[data-size="medium"] { font-size: 13px; }
 .textsize-seg-btn[data-size="large"] { font-size: 16px; }
+.textsize-seg-btn[data-size="xl"] { font-size: 19px; }
 .textsize-seg-btn:hover { color: var(--nav-text-hover, var(--text)); border-color: var(--nav-text-hover, var(--text)); }
 .textsize-seg-btn.on { background: var(--cta, var(--accent)); color: #fff; border-color: var(--cta, var(--accent)); }
 .sidebar-profile {
@@ -6698,12 +6700,15 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 
 .pdx-listings { display: flex; flex-direction: column; }
 .pdx-listing { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 16px; margin-bottom: 16px; }
-/* Dense rows (Products list) sit FLUSH inside the family card: the card
-   (.prod-card) owns the ONE crisp outer border, the distributor / product bands
-   separate groups, and adjacent SIZES are split by a single hairline divider —
-   no nested bordered boxes, no double lines. */
-.pdx-listing--dense { border: 0; border-radius: 0; margin-bottom: 0; padding: 12px 16px; background: transparent; }
-.pdx-listing--dense + .pdx-listing--dense { border-top: 1px solid var(--border); }
+/* Dense rows (Products list expanded): each listing is its OWN clearly bounded
+   card so a product's details never blend into the next one. Sits on a subtle
+   card inside the family group with a little breathing room. */
+.pdx-listing--dense {
+  border: 1px solid var(--border); border-radius: 10px;
+  margin: 10px 12px; padding: 14px 16px; background: var(--surface);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+}
+.pdx-listing--dense:hover { border-color: var(--border-strong, var(--accent-weak)); }
 .pdx-end { text-align: center; color: var(--text-muted); font-size: 12px; font-weight: 600; padding: 8px 0 0; }
 
 /* shared panel chrome */

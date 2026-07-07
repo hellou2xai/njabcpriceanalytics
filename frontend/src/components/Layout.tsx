@@ -118,7 +118,7 @@ function useTheme() {
   return { theme, toggle };
 }
 
-type TextSize = 'small' | 'medium' | 'large';
+type TextSize = 'small' | 'medium' | 'large' | 'xl';
 // App-wide text size, persisted in localStorage. Applied as a data attribute on
 // <html>; CSS scales the page content (the nav keeps its size so the --nav-w
 // offset stays correct). Persists until the user changes it.
@@ -126,7 +126,7 @@ function useTextSize() {
   const [size, setSize] = useState<TextSize>(() => {
     const s = localStorage.getItem('lpb_text_size');
     // Largest by default; honour a saved choice (small/medium/large) if present.
-    return s === 'small' || s === 'medium' || s === 'large' ? (s as TextSize) : 'large';
+    return s === 'small' || s === 'medium' || s === 'large' || s === 'xl' ? (s as TextSize) : 'large';
   });
   useEffect(() => {
     document.documentElement.setAttribute('data-textsize', size);
@@ -315,7 +315,7 @@ export default function Layout() {
           <div className="sidebar-textsize" title="Text size (saved for next time)">
             {!sidebarCollapsed && <span className="sidebar-textsize-lbl">Text size</span>}
             <div className="textsize-seg">
-              {(['small', 'medium', 'large'] as const).map(s => (
+              {(['small', 'medium', 'large', 'xl'] as const).map(s => (
                 <button
                   key={s}
                   type="button"

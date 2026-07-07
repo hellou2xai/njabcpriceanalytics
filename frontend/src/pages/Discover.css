@@ -50,6 +50,7 @@
 .disc-card:hover { box-shadow: 0 4px 14px rgba(16,24,40,.10); border-color: #d6dae1; }
 .disc-card-name { font-size: 13px; font-weight: 600; color: #101828; line-height: 1.3;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.disc-card-size { font-size: 11px; font-weight: 600; color: #667085; margin-top: -2px; }
 
 /* Thumbnail wrapper — anchors the TS button + its popover. */
 .disc-card-media { position: relative; align-self: center; }
@@ -120,6 +121,7 @@
   .disc-search input { color: #e6e8ef; }
   .disc-type { background: #1d2130; border-color: #2a2f42; color: #cdd2e0; }
   .disc-rail-title, .disc-card-name, .disc-card-price { color: #e6e8ef; }
+  .disc-card-size { color: #98a2b3; }
   .disc-card { background: #1a1e2c; border-color: #2a2f42; }
   .disc-deal--rip { color: #6ee7b7; background: rgba(6,118,71,.18); }
   .disc-deal--qd  { color: #a5b4fc; background: rgba(53,56,205,.20); }

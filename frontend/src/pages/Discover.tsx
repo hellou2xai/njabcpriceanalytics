@@ -53,17 +53,18 @@ function isOneCsQd(t: CatalogTier): boolean {
   return t.source === 'discount' && t.qty === 1 && !/^b/i.test(t.unit || '');
 }
 
-// Best (deepest) tier of a kind = the one saving the most per case. save_per_case
-// and price_after come straight from the canonical tier ladder (FOUNDATION); we
-// only pick the winner here. Time-sensitive tiers ARE eligible (the TS button
-// exposes their windows); we just exclude the 1-case entry QD from the QD chip,
-// since it's already reflected in the card's shown price.
+// Top tier of a kind, taken straight from the canonical tier ladder (FOUNDATION)
+// — no math re-derived here. RIP wins by its source `amount` (the CPL's TOTAL
+// rebate for buying `qty`, per rip_utils); QD wins by per-case discount. Time-
+// sensitive tiers ARE eligible (the TS button exposes their windows); the 1-case
+// entry QD is excluded from the QD chip since it's already in the shown price.
 function topTier(tiers: CatalogTier[] | undefined, source: 'discount' | 'rip'): CatalogTier | null {
   const of = (tiers ?? []).filter(
     (t) => t.source === source && !(source === 'discount' && isOneCsQd(t)),
   );
   if (!of.length) return null;
-  return of.reduce((a, b) => ((b.save_per_case ?? 0) > (a.save_per_case ?? 0) ? b : a));
+  const metric = (t: CatalogTier) => (source === 'rip' ? (t.amount ?? 0) : (t.save_per_case ?? 0));
+  return of.reduce((a, b) => (metric(b) > metric(a) ? b : a));
 }
 
 // Realistic single-case price: list minus the (stable) 1-case entry QD when the
@@ -72,6 +73,15 @@ function topTier(tiers: CatalogTier[] | undefined, source: 'discount' | 'rip'): 
 function oneCsCasePrice(p: Product): number | null {
   const entry = (p.tiers ?? []).find((t) => isOneCsQd(t) && !t.is_time_sensitive);
   return entry?.price_after ?? p.frontline_case_price ?? p.effective_case_price ?? null;
+}
+
+// Deep-link straight to ONE SKU's product detail (w + name + upc + exact size),
+// mirroring the shared /product route used across the app.
+function productHref(p: Product): string {
+  const q = new URLSearchParams({ w: p.wholesaler, n: p.product_name });
+  if (p.upc) q.set('u', String(p.upc));
+  if (p.unit_volume) q.set('s', String(p.unit_volume));   // pins the exact size
+  return `/product?${q.toString()}`;
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -144,7 +154,7 @@ function DiscCard({ p }: { p: Product }) {
   }, [pop]);
 
   return (
-    <Link to={`/products?q=${encodeURIComponent(p.product_name)}`} className="disc-card">
+    <Link to={productHref(p)} className="disc-card">
       <div className="disc-card-media">
         <ProductThumb src={p.image_url} alt={p.product_name} size={120} />
         {ts.length > 0 && (
@@ -185,7 +195,9 @@ function DiscCard({ p }: { p: Product }) {
                       </span>
                       <span className="disc-ts-vals">
                         {money(t.price_after)}
-                        {t.save_per_case != null && <em> save {money(t.save_per_case)}</em>}
+                        {t.source === 'rip'
+                          ? t.amount != null && <em> {money(t.amount)} back</em>
+                          : t.save_per_case != null && <em> save {money(t.save_per_case)}</em>}
                       </span>
                     </div>
                   ))}
@@ -197,6 +209,7 @@ function DiscCard({ p }: { p: Product }) {
         )}
       </div>
       <div className="disc-card-name">{p.abg_item_name?.trim() || p.product_name}</div>
+      {p.unit_volume && <div className="disc-card-size">{p.unit_volume}</div>}
       <div className="disc-card-foot">
         {price && (
           <div className="disc-card-price">{price}<span className="disc-card-price-u">/cs</span></div>
@@ -206,9 +219,9 @@ function DiscCard({ p }: { p: Product }) {
             {rip && (
               <span
                 className="disc-deal disc-deal--rip"
-                title={`Top RIP: buy ${tierQty(rip)}, save ${money(rip.save_per_case)}/case`}
+                title={`Top RIP: buy ${tierQty(rip)} → ${money(rip.amount)} total rebate back (from CPL)`}
               >
-                RIP {tierQty(rip)} · {money(rip.save_per_case)}
+                RIP {tierQty(rip)} · {money(rip.amount)}
               </span>
             )}
             {qd && (

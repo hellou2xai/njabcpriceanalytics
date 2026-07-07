@@ -12,6 +12,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Search, Store } from 'lucide-react';
 import { catalog, type MiRail, type Product, type CatalogTier } from '../lib/api';
 import ProductThumb from '../components/ProductThumb';
+import FavoriteButton from '../components/FavoriteButton';
 import { distributorName } from '../lib/distributors';
 import './Discover.css';
 
@@ -170,7 +171,11 @@ function DiscCard({ p }: { p: Product }) {
 
   return (
     <Link to={productHref(p)} className="disc-card">
-      <div className="disc-card-dist"><Store size={11} /> {distributorName(p.wholesaler)}</div>
+      <div className="disc-card-top">
+        <span className="disc-card-dist"><Store size={11} /> {distributorName(p.wholesaler)}</span>
+        <FavoriteButton productName={p.product_name} wholesaler={p.wholesaler}
+          upc={p.upc ?? undefined} unitVolume={p.unit_volume ?? undefined} />
+      </div>
       <div className="disc-card-media">
         <ProductThumb src={p.image_url} alt={p.product_name} size={120} />
         {ts.length > 0 && (

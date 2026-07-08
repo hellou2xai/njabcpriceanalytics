@@ -193,7 +193,7 @@ body {
      could never be scrolled into view (on EVERY page). calc(100vh / Z) makes
      the RENDERED height exactly one viewport again. --mc-zoom is set next to
      each zoom rule; defaults to 1 (medium, no zoom). */
-  .main-content { height: calc(100vh / var(--mc-zoom, 1)); overflow-y: auto; box-sizing: border-box; }
+  .main-content { height: calc(100vh / var(--mc-zoom, 1)); overflow-y: auto; box-sizing: border-box; overflow-anchor: none; }
 }
 
 /* ---- Page ---- */

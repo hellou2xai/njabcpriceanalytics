@@ -19,6 +19,15 @@ import './Discover.css';
 
 const TYPES = ['Beer', 'Wine', 'Spirits', 'RTD', 'Seltzer', 'Cider', 'Non-Alcoholic'];
 
+// Distributor filter options with the major NJ houses pinned to the top; the rest
+// keep their existing order (stable sort).
+const DIST_PINNED = ['allied', 'fedway', 'opici'];
+const DISTRIBUTOR_OPTS = [...ALL_DISTRIBUTORS.filter((d) => d.value)].sort((a, b) => {
+  const ia = DIST_PINNED.indexOf(a.value);
+  const ib = DIST_PINNED.indexOf(b.value);
+  return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+});
+
 // Build the Products deep-link for a rail: its filter params + volume sort.
 function railHref(params: Record<string, string>): string {
   const sp = new URLSearchParams({ ...params, sort: 'mi_volume', order: 'desc' });
@@ -698,7 +707,7 @@ export default function Discover() {
           <div className="disc-filter-sect">
             <div className="disc-filter-h">Distributor</div>
             <div className="disc-filter-list">
-              {ALL_DISTRIBUTORS.filter((d) => d.value).map((d) => (
+              {DISTRIBUTOR_OPTS.map((d) => (
                 <label key={d.value} className="disc-filter-opt">
                   <input type="checkbox" checked={distSet.has(d.value)} onChange={() => setDistSet((s) => toggleIn(s, d.value))} />
                   <span>{d.label}</span>

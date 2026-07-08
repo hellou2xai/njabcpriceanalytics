@@ -98,6 +98,16 @@ def _s(v):
     return s or None
 
 
+def _idkey(w, upc_norm, uv, uq, vint):
+    """Full SKU identity: distributor + normalised UPC + size + pack + vintage.
+    Must produce the SAME tuple from a sku_offer offer and its cpl_enriched record."""
+    try:
+        pk = str(int(float(uq))) if uq not in (None, "") else ""
+    except (TypeError, ValueError):
+        pk = str(uq or "")
+    return (str(w or ""), str(upc_norm or ""), str(uv or ""), pk, _s(vint) or "")
+
+
 def _top(tiers, source):
     cand = [t for t in (tiers or []) if t.get("source") == source]
     if not cand:
@@ -189,20 +199,27 @@ def _build_edition(con, src, ed, attach_tiers, log, per_ed=None) -> int:
     recs = _fetch_cpl(con, src, ed, keys)
     diag["recs"] = len(recs)
     attach_tiers(con, recs)
-    by_key = {(r.get("wholesaler"), str(r.get("upc_norm"))): r for r in recs}
-    diag["matched"] = sum(1 for o in offers if (o["wholesaler"], str(o["upc_norm"])) in by_key)
+    # Key the cpl record by the FULL SKU identity (distributor + UPC + size + pack +
+    # vintage), NOT UPC alone: a UPC shared across pack/size siblings (fine-spirits,
+    # multipacks) would otherwise borrow the wrong sibling's bottle price / tiers.
+    by_key = {_idkey(r.get("wholesaler"), r.get("upc_norm"), r.get("unit_volume"),
+                     r.get("unit_qty"), r.get("vintage")): r for r in recs}
+    diag["matched"] = sum(1 for o in offers if _idkey(
+        o["wholesaler"], o["upc_norm"], o.get("unit_volume"), o.get("unit_qty"), o.get("vintage")) in by_key)
 
     # 3) case-mix primary: top mi_volume per (rip_code, brand) within the edition.
     #    Rank offers by mi_volume desc first so the first seen is the primary.
     def _mi(o):
-        r = by_key.get((o["wholesaler"], str(o["upc_norm"])))
+        r = by_key.get(_idkey(o["wholesaler"], o["upc_norm"], o.get("unit_volume"),
+                              o.get("unit_qty"), o.get("vintage")))
         return _num(r.get("mi_volume")) if r else None
     offers.sort(key=lambda o: (_mi(o) is None, -(_mi(o) or 0)))
     seen_cm: set = set()
 
     rows = []
     for o in offers:
-        rec = by_key.get((o["wholesaler"], str(o["upc_norm"])))
+        rec = by_key.get(_idkey(o["wholesaler"], o["upc_norm"], o.get("unit_volume"),
+                                o.get("unit_qty"), o.get("vintage")))
         if not rec:
             continue
         tiers = rec.get("tiers") or []

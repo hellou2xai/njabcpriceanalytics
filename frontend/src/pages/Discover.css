@@ -43,6 +43,19 @@
 .disc-filter-opt { display: flex; align-items: center; gap: 8px; padding: 3px 0;
   font-size: 13px; color: #344054; cursor: pointer; }
 .disc-filter-opt input { cursor: pointer; }
+.disc-filters-head-actions { display: flex; align-items: center; gap: 8px; }
+.disc-filters-collapse { border: 0; background: none; color: #98a2b3; cursor: pointer;
+  padding: 0; display: inline-flex; }
+.disc-filters-collapse:hover { color: #475467; }
+/* Collapsed state: a small "Filters" pill above the full-width rails. */
+.disc-body--nofilters { flex-direction: column; }
+.disc-filters-show {
+  flex: none; align-self: flex-start;
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid #d6dae1; border-radius: 8px; background: #fff; cursor: pointer;
+  padding: 8px 14px; font-size: 13px; font-weight: 600; color: #344054;
+}
+.disc-filters-show:hover { border-color: var(--brand, #3b5bdb); color: var(--brand, #3b5bdb); }
 
 /* Rails */
 .disc-rails { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 26px; }
@@ -184,6 +197,7 @@
   .disc-filter-sect { border-top-color: #2a2f42; }
   .disc-filter-h { color: #98a2b3; }
   .disc-filter-opt { color: #cdd2e0; }
+  .disc-filters-show { background: #1a1e2c; border-color: #2a2f42; color: #cdd2e0; }
   .disc-deal--rip { color: #d92d20; background: #fde68a; }   /* red on yellow */
   .disc-deal--qd  { color: #101828; background: #fde68a; }   /* black on yellow */
   .disc-ts-btn { background: rgba(181,71,8,.22); border-color: #7a4a12; color: #fdb87a; }

@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Search, Store } from 'lucide-react';
+import { Search, Store, SlidersHorizontal, PanelLeftClose } from 'lucide-react';
 import { catalog, type MiRail, type Product, type CatalogTier } from '../lib/api';
 import ProductThumb from '../components/ProductThumb';
 import FavoriteButton from '../components/FavoriteButton';
@@ -348,6 +348,8 @@ export default function Discover() {
   const [distSet, setDistSet] = useState<Set<string>>(new Set());
   const [catSet, setCatSet] = useState<Set<string>>(new Set());
   const [dealSet, setDealSet] = useState<Set<string>>(new Set());
+  const [filtersCollapsed, setFiltersCollapsed] = useState(() => localStorage.getItem('disc_filters_collapsed') === '1');
+  useEffect(() => { localStorage.setItem('disc_filters_collapsed', filtersCollapsed ? '1' : '0'); }, [filtersCollapsed]);
   const { data } = useQuery({ queryKey: ['mi-top-categories'], queryFn: catalog.topCategories, staleTime: 3_600_000 });
   const allRails: MiRail[] = [...(data?.spirits ?? []), ...(data?.wine ?? [])];
   const rails = catSet.size ? allRails.filter((r) => catSet.has(r.label)) : allRails;
@@ -381,16 +383,27 @@ export default function Discover() {
         <p className="disc-hint">Top categories by market sales volume</p>
       </header>
 
-      <div className="disc-body">
+      <div className={`disc-body${filtersCollapsed ? ' disc-body--nofilters' : ''}`}>
+        {filtersCollapsed ? (
+          <button type="button" className="disc-filters-show" onClick={() => setFiltersCollapsed(false)}>
+            <SlidersHorizontal size={16} /> Filters{activeCount > 0 ? ` (${activeCount})` : ''}
+          </button>
+        ) : (
         <aside className="disc-filters">
           <div className="disc-filters-head">
             <span>Filters</span>
-            {activeCount > 0 && (
-              <button type="button" className="disc-filters-clear"
-                onClick={() => { setDistSet(new Set()); setCatSet(new Set()); setDealSet(new Set()); }}>
-                Clear
+            <span className="disc-filters-head-actions">
+              {activeCount > 0 && (
+                <button type="button" className="disc-filters-clear"
+                  onClick={() => { setDistSet(new Set()); setCatSet(new Set()); setDealSet(new Set()); }}>
+                  Clear
+                </button>
+              )}
+              <button type="button" className="disc-filters-collapse" title="Collapse filters"
+                aria-label="Collapse filters" onClick={() => setFiltersCollapsed(true)}>
+                <PanelLeftClose size={16} />
               </button>
-            )}
+            </span>
           </div>
 
           <div className="disc-filter-sect">
@@ -427,6 +440,7 @@ export default function Discover() {
             </div>
           </div>
         </aside>
+        )}
 
         <div className="disc-rails">
           {rails.map((r) => <Rail key={r.label} rail={r} distributors={dists} deals={deals} />)}

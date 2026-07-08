@@ -79,6 +79,33 @@ function topTier(tiers: CatalogTier[] | undefined, source: 'discount' | 'rip'): 
 // CANONICAL effective price (deepest QD+RIP, current edition — the detail-page
 // number). So: (1-case price − price after best QD+RIP) / 1-case price. Both are
 // precomputed columns; we never re-derive pricing here.
+// Net discount $ per case = 1-case price - price after best QD+RIP.
+function netDiscount(p: Product): number {
+  const base = oneCsCasePrice(p) ?? p.frontline_case_price ?? 0;
+  const eff = p.effective_case_price ?? base;
+  return Math.max(0, base - eff);
+}
+// Deepest RIP rebate per case, and deepest QD saving per case.
+function ripPerCase(p: Product): number {
+  const rip = topTier(p.tiers, 'rip');
+  return rip && rip.amount != null && rip.qty ? rip.amount / rip.qty : 0;
+}
+function qdPerCase(p: Product): number {
+  return topTier(p.tiers, 'discount')?.save_per_case ?? 0;
+}
+// Sort comparators for the "Sort by" control.
+const SORT_FNS: Record<string, (a: Product, b: Product) => number> = {
+  net: (a, b) => netDiscount(b) - netDiscount(a),
+  pct: (a, b) => discountScore(b) - discountScore(a),
+  name: (a, b) => (a.abg_item_name || a.product_name).localeCompare(b.abg_item_name || b.product_name),
+  rip: (a, b) => ripPerCase(b) - ripPerCase(a),
+  qd: (a, b) => qdPerCase(b) - qdPerCase(a),
+};
+const SORT_OPTS: [string, string][] = [
+  ['net', 'Net Discount'], ['name', 'Product name'],
+  ['rip', 'Highest Case RIP'], ['qd', 'Highest Case QD'], ['pct', 'Deal %'],
+];
+
 function discountScore(p: Product): number {
   const base = oneCsCasePrice(p) ?? p.frontline_case_price ?? 0;
   const eff = p.effective_case_price ?? base;
@@ -349,7 +376,7 @@ function DiscCard({ p }: { p: MergedProduct }) {
   );
 }
 
-function Rail({ rail, distributors, deals, sizes }: { rail: MiRail; distributors: string[]; deals: string[]; sizes: string[] }) {
+function Rail({ rail, distributors, deals, sizes, sortBy, edition }: { rail: MiRail; distributors: string[]; deals: string[]; sizes: string[]; sortBy: string; edition: string }) {
   const { ref, seen } = useInView<HTMLElement>();
   // On BACK/FORWARD (POP) load every rail immediately (data is cached, so it's
   // cheap) so the page regains full height and scroll restoration can land deep.
@@ -358,7 +385,7 @@ function Rail({ rail, distributors, deals, sizes }: { rail: MiRail; distributors
   const distParam = distributors.length ? distributors.join(',') : undefined;
   const { data, isLoading } = useQuery({
     // distParam is part of the key so a distributor filter refetches, not caches.
-    queryKey: ['mi-rail', rail.params, distParam ?? ''],
+    queryKey: ['mi-rail', rail.params, distParam ?? '', edition],
     enabled: show,
     // Deal data only changes on a monthly reload, and the server memoises these
     // responses, so keep them fresh client-side for a long while (no refetch on
@@ -368,7 +395,7 @@ function Rail({ rail, distributors, deals, sizes }: { rail: MiRail; distributors
     // Featured rails show standard retail bottles only (1.75L / 1L / 750ML / 375ML),
     // not minis, 4-packs, cans or tray packs that otherwise top the volume rank.
     // include_tiers gives us each SKU's QD + RIP ladder for the deal chips.
-    queryFn: () => catalog.search({ ...rail.params, ...(distParam ? { divisions: distParam } : {}), sizes: '375ML,750ML,1L,1.75L', sort: 'mi_volume', order: 'desc', limit: 300, images_first: false, include_tiers: true }),
+    queryFn: () => catalog.search({ ...rail.params, ...(distParam ? { divisions: distParam } : {}), ...(edition ? { edition } : {}), sizes: '375ML,750ML,1L,1.75L', sort: 'mi_volume', order: 'desc', limit: 300, images_first: false, include_tiers: true }),
   });
   // Merge the same product from multiple distributors (same RIP/QD) into one
   // card, then FEATURE every product with a RIP or QD deal, ranked by deepest
@@ -419,7 +446,7 @@ function Rail({ rail, distributors, deals, sizes }: { rail: MiRail; distributors
           || (typeDeals.includes('both') && hasRip && hasQd);
     })
     // Best deal first: deepest discount (list case price vs price after best QD+RIP).
-    .sort((a, b) => discountScore(b) - discountScore(a))
+    .sort(SORT_FNS[sortBy] ?? SORT_FNS.net)
     .slice(0, 60);
   return (
     <section ref={ref} className="disc-rail">
@@ -471,23 +498,36 @@ function FavCard({ p }: { p: Product }) {
   );
 }
 
-function MyFavorites({ query }: { query: string }) {
+function MyFavorites({ query, edition }: { query: string; edition: string }) {
   const { data: favs } = useQuery({ queryKey: ['watchlist'], queryFn: watchlist.get, staleTime: 60_000 });
   const upcs = [...new Set((favs ?? []).map((f) => f.upc).filter(Boolean) as string[])];
   const { data: priced } = useQuery({
     enabled: upcs.length > 0,
-    queryKey: ['fav-priced', upcs.slice().sort().join(',')],
+    queryKey: ['fav-priced', upcs.slice().sort().join(','), edition],
     staleTime: 300_000,
-    queryFn: () => catalog.search({ upcs: upcs.join(','), limit: 500, sort: 'product_name', order: 'asc' }),
+    queryFn: () => catalog.search({ upcs: upcs.join(','), ...(edition ? { edition } : {}), limit: 500, sort: 'product_name', order: 'asc' }),
   });
   if (!favs || favs.length === 0) return null;
   const items = priced?.items ?? [];
-  const byKey = new Map<string, Product>();
-  for (const p of items) byKey.set(`${p.wholesaler}|${String(p.upc)}|${p.unit_volume ?? ''}`, p);
+  // Index priced rows by leading-zero-normalised UPC (a UPC can appear at several
+  // distributors / sizes).
+  const normUpc = (u?: string | null) => String(u ?? '').replace(/^0+/, '');
+  const byUpc = new Map<string, Product[]>();
+  for (const p of items) {
+    const k = normUpc(p.upc);
+    const arr = byUpc.get(k); if (arr) arr.push(p); else byUpc.set(k, [p]);
+  }
   const q = query.trim().toLowerCase();
   const cards = (favs as WatchlistItem[])
-    .map((f) => byKey.get(`${f.wholesaler}|${String(f.upc)}|${f.unit_volume ?? ''}`)
-                ?? items.find((p) => p.wholesaler === f.wholesaler && String(p.upc) === String(f.upc)))
+    .map((f) => {
+      const rows = byUpc.get(normUpc(f.upc)); if (!rows?.length) return undefined;
+      // Prefer the favourited distributor + exact size; then same distributor;
+      // then exact size at any distributor; else the first priced row.
+      return rows.find((p) => p.wholesaler === f.wholesaler && p.unit_volume === f.unit_volume)
+        ?? rows.find((p) => p.wholesaler === f.wholesaler)
+        ?? rows.find((p) => p.unit_volume === f.unit_volume)
+        ?? rows[0];
+    })
     .filter((p): p is Product => !!p)
     .filter((p) => !q || `${p.abg_item_name ?? ''} ${p.product_name} ${p.brand ?? ''}`.toLowerCase().includes(q));
   return (
@@ -513,15 +553,20 @@ export default function Discover() {
   const [catSet, setCatSet] = useState<Set<string>>(new Set());
   const [dealSet, setDealSet] = useState<Set<string>>(new Set());
   const [sizeSet, setSizeSet] = useState<Set<string>>(new Set());
+  const [sortBy, setSortBy] = useState('net');
+  const [edition, setEdition] = useState('');   // '' = current month
   const [filtersCollapsed, setFiltersCollapsed] = useState(() => localStorage.getItem('disc_filters_collapsed') === '1');
   useEffect(() => { localStorage.setItem('disc_filters_collapsed', filtersCollapsed ? '1' : '0'); }, [filtersCollapsed]);
   const { data } = useQuery({ queryKey: ['mi-top-categories'], queryFn: catalog.topCategories, staleTime: 3_600_000 });
+  // Available months (YYYY-MM), newest first; default (current) is the first.
+  const { data: eds } = useQuery({ queryKey: ['editions'], queryFn: catalog.editions, staleTime: 3_600_000 });
+  const months = [...new Set((eds ?? []).map((e) => e.edition))].sort().reverse();
   const allRails: MiRail[] = [...(data?.spirits ?? []), ...(data?.wine ?? [])];
   const rails = catSet.size ? allRails.filter((r) => catSet.has(r.label)) : allRails;
   const dists = [...distSet];
   const deals = [...dealSet];
   const sizeList = [...sizeSet];
-  const activeCount = distSet.size + catSet.size + dealSet.size + sizeSet.size;
+  const activeCount = distSet.size + catSet.size + dealSet.size + sizeSet.size + (edition ? 1 : 0);
 
   return (
     <div className="disc-page">
@@ -547,7 +592,7 @@ export default function Discover() {
         <p className="disc-hint">Top categories by market sales volume</p>
       </header>
 
-      <MyFavorites query={q} />
+      <MyFavorites query={q} edition={edition} />
 
       <div className={`disc-body${filtersCollapsed ? ' disc-body--nofilters' : ''}`}>
         {filtersCollapsed ? (
@@ -561,7 +606,7 @@ export default function Discover() {
             <span className="disc-filters-head-actions">
               {activeCount > 0 && (
                 <button type="button" className="disc-filters-clear"
-                  onClick={() => { setDistSet(new Set()); setCatSet(new Set()); setDealSet(new Set()); setSizeSet(new Set()); }}>
+                  onClick={() => { setDistSet(new Set()); setCatSet(new Set()); setDealSet(new Set()); setSizeSet(new Set()); setEdition(''); }}>
                   Clear
                 </button>
               )}
@@ -570,6 +615,21 @@ export default function Discover() {
                 <PanelLeftClose size={16} />
               </button>
             </span>
+          </div>
+
+          <div className="disc-filter-sect">
+            <div className="disc-filter-h">Month</div>
+            <select className="disc-filter-select" value={edition} onChange={(e) => setEdition(e.target.value)}>
+              <option value="">Current month</option>
+              {months.map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+
+          <div className="disc-filter-sect">
+            <div className="disc-filter-h">Sort by</div>
+            <select className="disc-filter-select" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+              {SORT_OPTS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+            </select>
           </div>
 
           <div className="disc-filter-sect">
@@ -619,7 +679,7 @@ export default function Discover() {
         )}
 
         <div className="disc-rails">
-          {rails.map((r) => <Rail key={r.label} rail={r} distributors={dists} deals={deals} sizes={sizeList} />)}
+          {rails.map((r) => <Rail key={r.label} rail={r} distributors={dists} deals={deals} sizes={sizeList} sortBy={sortBy} edition={edition} />)}
         </div>
       </div>
     </div>

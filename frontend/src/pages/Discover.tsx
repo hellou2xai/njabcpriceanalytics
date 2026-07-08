@@ -7,10 +7,10 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Link, useNavigate, useNavigationType } from 'react-router-dom';
+import { Link, useNavigationType } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Search, Store, SlidersHorizontal, PanelLeftClose } from 'lucide-react';
-import { catalog, type MiRail, type Product, type CatalogTier } from '../lib/api';
+import { catalog, watchlist, type MiRail, type Product, type CatalogTier, type WatchlistItem } from '../lib/api';
 import ProductThumb from '../components/ProductThumb';
 import FavoriteButton from '../components/FavoriteButton';
 import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
@@ -440,6 +440,67 @@ function Rail({ rail, distributors, deals, sizes }: { rail: MiRail; distributors
   );
 }
 
+// ---- My Favorites: the user's watchlisted products, priced, with three
+// per-bottle prices (1-case list / after best QD / after best QD+RIP). The hero
+// search filters this grid IN PLACE (never leaves the page).
+function FavCard({ p }: { p: Product }) {
+  const pack = bottlesPerCase(p.product_name, p.unit_qty);
+  const x1 = p.frontline_unit_price ?? null;                        // 1-case bottle price (list)
+  const x2 = p.best_unit_price ?? null;                             // after best QD
+  const x3 = pack && p.effective_case_price != null ? p.effective_case_price / pack : null; // after best QD+RIP
+  const sizeLabel = [p.unit_volume, pack ? `${pack}/cs` : null].filter(Boolean).join(', ');
+  const tip = `Per-bottle price: ${money(x1) ?? '—'} at 1 case (list) · ${money(x2) ?? '—'} after best QD · ${x3 != null ? money(x3) : '—'} after best RIP + QD`;
+  return (
+    <Link to={productHref(p)} className="disc-card">
+      <div className="disc-card-top">
+        <span className="disc-card-dist"><Store size={11} /> {distributorName(p.wholesaler)}</span>
+        <FavoriteButton productName={p.product_name} wholesaler={p.wholesaler}
+          upc={p.upc ?? undefined} unitVolume={p.unit_volume ?? undefined} />
+      </div>
+      <div className="disc-card-media">
+        <ProductThumb src={p.image_url ?? undefined} alt={p.product_name} size={120} />
+      </div>
+      <div className="disc-card-name">
+        {(p.abg_item_name?.trim() || p.product_name)}
+        {sizeLabel && <span className="disc-fav-size"> ({sizeLabel})</span>}
+      </div>
+      <div className="disc-fav-prices" title={tip}>
+        {money(x1) ?? '—'}, {x2 != null ? money(x2) : '—'}, {x3 != null ? money(x3) : '—'}
+      </div>
+    </Link>
+  );
+}
+
+function MyFavorites({ query }: { query: string }) {
+  const { data: favs } = useQuery({ queryKey: ['watchlist'], queryFn: watchlist.get, staleTime: 60_000 });
+  const upcs = [...new Set((favs ?? []).map((f) => f.upc).filter(Boolean) as string[])];
+  const { data: priced } = useQuery({
+    enabled: upcs.length > 0,
+    queryKey: ['fav-priced', upcs.slice().sort().join(',')],
+    staleTime: 300_000,
+    queryFn: () => catalog.search({ upcs: upcs.join(','), limit: 500, sort: 'product_name', order: 'asc' }),
+  });
+  if (!favs || favs.length === 0) return null;
+  const items = priced?.items ?? [];
+  const byKey = new Map<string, Product>();
+  for (const p of items) byKey.set(`${p.wholesaler}|${String(p.upc)}|${p.unit_volume ?? ''}`, p);
+  const q = query.trim().toLowerCase();
+  const cards = (favs as WatchlistItem[])
+    .map((f) => byKey.get(`${f.wholesaler}|${String(f.upc)}|${f.unit_volume ?? ''}`)
+                ?? items.find((p) => p.wholesaler === f.wholesaler && String(p.upc) === String(f.upc)))
+    .filter((p): p is Product => !!p)
+    .filter((p) => !q || `${p.abg_item_name ?? ''} ${p.product_name} ${p.brand ?? ''}`.toLowerCase().includes(q));
+  return (
+    <section className="disc-favs">
+      <div className="disc-rail-head"><h2 className="disc-rail-title">My Favorites</h2></div>
+      <div className="disc-rail-track">
+        {cards.map((p, i) => <FavCard key={`${p.wholesaler}-${p.upc}-${i}`} p={p} />)}
+        {cards.length === 0 && <div className="disc-rail-empty">No favorites match your search.</div>}
+      </div>
+    </section>
+  );
+}
+
 function toggleIn(set: Set<string>, v: string): Set<string> {
   const n = new Set(set);
   n.has(v) ? n.delete(v) : n.add(v);
@@ -447,7 +508,6 @@ function toggleIn(set: Set<string>, v: string): Set<string> {
 }
 
 export default function Discover() {
-  const nav = useNavigate();
   const [q, setQ] = useState('');
   const [distSet, setDistSet] = useState<Set<string>>(new Set());
   const [catSet, setCatSet] = useState<Set<string>>(new Set());
@@ -468,18 +528,16 @@ export default function Discover() {
       <header className="disc-hero">
         <h1 className="disc-title">Celr AI</h1>
         <p className="disc-sub">Find any product, at any distributor</p>
-        <form
-          className="disc-search"
-          onSubmit={(e) => { e.preventDefault(); if (q.trim()) nav(`/products?q=${encodeURIComponent(q.trim())}`); }}
-        >
+        {/* Search filters My Favorites IN PLACE (stays on this page). */}
+        <form className="disc-search" onSubmit={(e) => e.preventDefault()}>
           <Search size={18} className="disc-search-ic" />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search products, brands, regions, varietals…"
-            aria-label="Search products"
+            placeholder="Search your favorites…"
+            aria-label="Search your favorites"
           />
-          <button type="submit">Search</button>
+          {q && <button type="button" onClick={() => setQ('')}>Clear</button>}
         </form>
         <div className="disc-types">
           {TYPES.map((t) => (
@@ -488,6 +546,8 @@ export default function Discover() {
         </div>
         <p className="disc-hint">Top categories by market sales volume</p>
       </header>
+
+      <MyFavorites query={q} />
 
       <div className={`disc-body${filtersCollapsed ? ' disc-body--nofilters' : ''}`}>
         {filtersCollapsed ? (

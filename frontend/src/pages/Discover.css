@@ -24,6 +24,23 @@
 .disc-type:hover { border-color: var(--brand, #3b5bdb); color: var(--brand, #3b5bdb); }
 .disc-hint { color: #98a2b3; font-size: 13px; margin-top: 14px; }
 
+/* My Favorites — full-width grid above the filter body. */
+.disc-favs { margin-top: 18px; padding-bottom: 18px; border-bottom: 1px solid #eaecf0; }
+.disc-favs .disc-rail-track {
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px;
+}
+@media (max-width: 1024px) { .disc-favs .disc-rail-track { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 760px)  { .disc-favs .disc-rail-track { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 480px)  { .disc-favs .disc-rail-track { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Size + pack next to the product name. */
+.disc-fav-size { font-weight: 600; color: #667085; font-size: 0.92em; white-space: nowrap; }
+/* The three per-bottle prices (1cs list / best QD / best QD+RIP), hover for the
+   breakdown. */
+.disc-fav-prices {
+  font-size: 13px; font-weight: 700; color: #101828; cursor: help;
+  font-variant-numeric: tabular-nums; letter-spacing: .2px;
+}
+
 /* Body: left filter rail + the category rails. */
 .disc-body { display: flex; gap: 24px; align-items: flex-start; margin-top: 22px; }
 .disc-filters {
@@ -198,6 +215,9 @@
   .disc-filter-h { color: #98a2b3; }
   .disc-filter-opt { color: #cdd2e0; }
   .disc-filters-show { background: #1a1e2c; border-color: #2a2f42; color: #cdd2e0; }
+  .disc-favs { border-bottom-color: #2a2f42; }
+  .disc-fav-size { color: #98a2b3; }
+  .disc-fav-prices { color: #e6e8ef; }
   .disc-deal--rip { color: #d92d20; background: #fde68a; }   /* red on yellow */
   .disc-deal--qd  { color: #101828; background: #fde68a; }   /* black on yellow */
   .disc-ts-btn { background: rgba(181,71,8,.22); border-color: #7a4a12; color: #fdb87a; }

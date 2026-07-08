@@ -108,6 +108,20 @@ def _idkey(w, upc_norm, uv, uq, vint):
     return (str(w or ""), str(upc_norm or ""), str(uv or ""), pk, _s(vint) or "")
 
 
+def _pick_rec(cands, offer):
+    """Among cpl records sharing a SKU identity, pick the one whose frontline case
+    price matches the sku_offer offer (the exact row the offer was built from), so
+    a distributor's duplicate listing can't hand deal_grid a different price than
+    sku_offer/live picked."""
+    if not cands:
+        return None
+    of = _num(offer.get("frontline_case_price"))
+    if of is None:
+        return cands[0]
+    return min(cands, key=lambda r: abs(
+        (_num(r.get("frontline_case_price")) if _num(r.get("frontline_case_price")) is not None else 1e12) - of))
+
+
 def _top(tiers, source):
     cand = [t for t in (tiers or []) if t.get("source") == source]
     if not cand:
@@ -176,7 +190,7 @@ def _build_edition(con, src, ed, attach_tiers, log, per_ed=None) -> int:
     offers = con.execute(
         "SELECT group_key, wholesaler, upc, upc_norm, product_name, display_name, "
         "       unit_volume, unit_qty, vintage, item_no, product_type, brand, "
-        "       frontline_case_price, effective_case_price, n_distributors "
+        "       frontline_case_price, after_qd_case_price, effective_case_price, n_distributors "
         "FROM sku_offer WHERE edition = ? AND is_cheapest_net", [ed],
     ).fetchdf().to_dict("records")
     diag["offers"] = len(offers)
@@ -199,27 +213,31 @@ def _build_edition(con, src, ed, attach_tiers, log, per_ed=None) -> int:
     recs = _fetch_cpl(con, src, ed, keys)
     diag["recs"] = len(recs)
     attach_tiers(con, recs)
-    # Key the cpl record by the FULL SKU identity (distributor + UPC + size + pack +
-    # vintage), NOT UPC alone: a UPC shared across pack/size siblings (fine-spirits,
-    # multipacks) would otherwise borrow the wrong sibling's bottle price / tiers.
-    by_key = {_idkey(r.get("wholesaler"), r.get("upc_norm"), r.get("unit_volume"),
-                     r.get("unit_qty"), r.get("vintage")): r for r in recs}
+    # Key the cpl records by the FULL SKU identity (distributor + UPC + size + pack +
+    # vintage), NOT UPC alone: a UPC shared across pack/size siblings would otherwise
+    # borrow the wrong sibling's price/tiers. Keep a LIST per identity because some
+    # distributors (michael_skurnik) list the same SKU twice at different prices; we
+    # pick the row whose case price matches the sku_offer offer (below).
+    by_key: dict = {}
+    for r in recs:
+        by_key.setdefault(_idkey(r.get("wholesaler"), r.get("upc_norm"), r.get("unit_volume"),
+                                 r.get("unit_qty"), r.get("vintage")), []).append(r)
     diag["matched"] = sum(1 for o in offers if _idkey(
         o["wholesaler"], o["upc_norm"], o.get("unit_volume"), o.get("unit_qty"), o.get("vintage")) in by_key)
 
     # 3) case-mix primary: top mi_volume per (rip_code, brand) within the edition.
     #    Rank offers by mi_volume desc first so the first seen is the primary.
     def _mi(o):
-        r = by_key.get(_idkey(o["wholesaler"], o["upc_norm"], o.get("unit_volume"),
-                              o.get("unit_qty"), o.get("vintage")))
+        r = _pick_rec(by_key.get(_idkey(o["wholesaler"], o["upc_norm"], o.get("unit_volume"),
+                                        o.get("unit_qty"), o.get("vintage"))), o)
         return _num(r.get("mi_volume")) if r else None
     offers.sort(key=lambda o: (_mi(o) is None, -(_mi(o) or 0)))
     seen_cm: set = set()
 
     rows = []
     for o in offers:
-        rec = by_key.get(_idkey(o["wholesaler"], o["upc_norm"], o.get("unit_volume"),
-                                o.get("unit_qty"), o.get("vintage")))
+        rec = _pick_rec(by_key.get(_idkey(o["wholesaler"], o["upc_norm"], o.get("unit_volume"),
+                                          o.get("unit_qty"), o.get("vintage"))), o)
         if not rec:
             continue
         tiers = rec.get("tiers") or []

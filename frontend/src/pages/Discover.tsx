@@ -448,11 +448,13 @@ function dealProducts(items: Product[], deals: string[], sizes: string[], sortBy
       const cur = ref750.get(k);
       if (cur == null || pb < cur) ref750.set(k, pb);
     }
+    // A 1L qualifies if its after-deal bottle price is within 5% of the 750ML's
+    // (i.e. up to 5% dearer per bottle still wins, since the 1L is 33% more product).
     out = out.filter((p) => {
       if (sizeBucket(p.unit_volume) !== '1L') return false;
       const ref = ref750.get(productKey(p));
       const pb = afterDealBottle(p);
-      return ref != null && pb != null && pb <= ref + 0.01;
+      return ref != null && pb != null && pb <= ref * 1.05;
     });
   }
   return out.sort(SORT_FNS[sortBy] ?? SORT_FNS.net).slice(0, 60);

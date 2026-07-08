@@ -6451,7 +6451,12 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
 .pd-crumb { color: var(--text); }
 
 .pd-layout { display: grid; grid-template-columns: 1fr 420px; gap: 28px; align-items: start; }
-@media (max-width: 1023px) { .pd-layout { grid-template-columns: 1fr; } }
+@media (max-width: 1023px) {
+  /* minmax(0,1fr) (not plain 1fr) lets the column shrink below its content's
+     min-width, so a wide pricing table inside pd-left can't stretch the page. */
+  .pd-layout { grid-template-columns: minmax(0, 1fr); }
+  .pd-left, .pd-right { min-width: 0; }
+}
 
 /* ---- Left column ---- */
 .pd-deal-badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); margin-bottom: 8px; }

@@ -109,17 +109,27 @@ def _idkey(w, upc_norm, uv, uq, vint):
 
 
 def _pick_rec(cands, offer):
-    """Among cpl records sharing a SKU identity, pick the one whose frontline case
-    price matches the sku_offer offer (the exact row the offer was built from), so
-    a distributor's duplicate listing can't hand deal_grid a different price than
-    sku_offer/live picked."""
+    """Among cpl records sharing a SKU identity, pick the one that matches the
+    sku_offer offer (the exact row the offer was built from), so a distributor's
+    duplicate listing can't hand deal_grid a different price/tiers than sku_offer/
+    live picked. Match on BOTH frontline AND effective (net) case price: two
+    listings can share a frontline (e.g. a 'tray pack' vs the regular SKU) but
+    differ on net, and the offer is the CHEAPEST-net one, so effective breaks the
+    tie toward the row sku_offer/live actually chose."""
     if not cands:
         return None
     of = _num(offer.get("frontline_case_price"))
-    if of is None:
-        return cands[0]
-    return min(cands, key=lambda r: abs(
-        (_num(r.get("frontline_case_price")) if _num(r.get("frontline_case_price")) is not None else 1e12) - of))
+    oe = _num(offer.get("effective_case_price"))
+
+    def _score(r):
+        rf = _num(r.get("frontline_case_price"))
+        re_ = _num(r.get("effective_case_price"))
+        s = abs((rf if rf is not None else 1e12) - (of if of is not None else 0.0))
+        if oe is not None:
+            s += abs((re_ if re_ is not None else 1e12) - oe)
+        return s
+
+    return min(cands, key=_score)
 
 
 def _top(tiers, source):

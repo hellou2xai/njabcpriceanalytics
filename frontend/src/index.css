@@ -6839,7 +6839,9 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
    min-content (grid items default to min-width:auto) so nothing clips; the wide
    RIP/QD/Price table then scrolls horizontally INSIDE its own panel. */
 @media (max-width: 768px) {
-  .pdx-detail-grid { grid-template-columns: 1fr; }
+  /* minmax(0,1fr) (not 1fr) lets the track shrink below the table's min-content,
+     so the panel is bounded to the viewport and the wide table scrolls inside. */
+  .pdx-detail-grid { grid-template-columns: minmax(0, 1fr); }
   .pdx-detail-grid > *, .pdx-card-stack, .pdx-card, .pdx-qd-stack { min-width: 0; }
   .pdx-panel { overflow-x: auto; }
 }

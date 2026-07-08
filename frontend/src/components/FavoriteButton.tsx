@@ -32,7 +32,11 @@ export default function FavoriteButton({ productName, wholesaler, upc, unitVolum
   const loading = addMut.isPending || removeMut.isPending;
 
   const handleClick = (e: React.MouseEvent) => {
+    // preventDefault too: this button often lives inside a card <Link>, and
+    // stopPropagation alone lets the browser follow the native <a href>. Both are
+    // needed so favouriting NEVER navigates to the product page.
     e.stopPropagation();
+    e.preventDefault();
     if (match) {
       removeMut.mutate();
     } else {
@@ -58,7 +62,7 @@ export default function FavoriteButton({ productName, wholesaler, upc, unitVolum
       )}
 
       {popover && (
-        <div className="fav-popover" onClick={e => e.stopPropagation()}>
+        <div className="fav-popover" onClick={e => { e.stopPropagation(); e.preventDefault(); }}>
           <div className="fav-popover-title">Add to Watchlist</div>
           <textarea
             placeholder="Why are you adding this? (optional)"

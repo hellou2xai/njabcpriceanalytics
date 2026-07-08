@@ -7,7 +7,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Link, useNavigationType } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Search, Store, SlidersHorizontal, PanelLeftClose } from 'lucide-react';
 import { catalog, watchlist, type MiRail, type Product, type CatalogTier, type WatchlistItem } from '../lib/api';
@@ -442,12 +442,19 @@ function SearchResults({ query, distributors, deals, sizes, sortBy, edition }:
   );
 }
 
+// Rails scrolled into view at least once this session — so BACK renders them from
+// cache instead of re-fetching. Module-level: survives route changes.
+const seenRails = new Set<string>();
+
 function Rail({ rail, distributors, deals, sizes, sortBy, edition }: { rail: MiRail; distributors: string[]; deals: string[]; sizes: string[]; sortBy: string; edition: string }) {
-  const { ref, seen } = useInView<HTMLElement>();
-  // On BACK/FORWARD (POP) load every rail immediately (data is cached, so it's
-  // cheap) so the page regains full height and scroll restoration can land deep.
-  const eager = useNavigationType() === 'POP';
-  const show = seen || eager;
+  const { ref, seen: inView } = useInView<HTMLElement>();
+  // A rail that has been scrolled into view ONCE stays "shown" for the rest of
+  // the SPA session. So on BACK, every rail the user already loaded renders again
+  // straight from the React Query cache — no network, no skeleton flicker — while
+  // rails never seen stay lazy. (Previously we force-fetched all rails on POP,
+  // which re-queried the network on every back.)
+  const show = inView || seenRails.has(rail.label);
+  useEffect(() => { if (inView) seenRails.add(rail.label); }, [inView, rail.label]);
   const distParam = distributors.length ? distributors.join(',') : undefined;
   const sizesParam = sizes.length ? sizes.join(',') : '375ML,750ML,1L,1.75L';
   const { data, isLoading } = useQuery({

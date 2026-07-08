@@ -179,6 +179,28 @@ function mergeByDeal(items: Product[]): MergedProduct[] {
   return [...groups.values()].map(({ p, dists }) => ({ ...p, dists }));
 }
 
+// Collapse case-mix RIP flavour variants. Products that share the SAME RIP
+// program (rip_code) AND brand are flavours of one case-mix offering (e.g. Ole
+// Smoky's dozen+ flavours all on RIP 10cs · $200). Keep only the Market-
+// Intelligence primary — the top seller, which is first here because the rows
+// arrive in mi_volume-desc order — so one brand can't swamp the rail. The rest
+// stay available under the rail's "See all" (the /products page doesn't collapse).
+function collapseCaseMix(products: MergedProduct[]): MergedProduct[] {
+  const seen = new Set<string>();
+  const out: MergedProduct[] = [];
+  for (const p of products) {
+    const code = (p.rip_code || '').trim();
+    const brand = (p.brand || '').trim().toUpperCase();
+    if (code && brand) {
+      const k = `${code}|${brand}`;
+      if (seen.has(k)) continue;   // a higher-volume flavour already represents this program
+      seen.add(k);
+    }
+    out.push(p);
+  }
+  return out;
+}
+
 // One featured product card. Price (after the stable 1-case QD) + Top RIP / Top
 // QD chips, plus a TS button that opens the SKU's time-sensitive deal windows.
 function DiscCard({ p }: { p: MergedProduct }) {
@@ -364,8 +386,10 @@ function Rail({ rail, distributors, deals }: { rail: MiRail; distributors: strin
     ? items.filter((it) => sizeBucket(it.unit_volume) === '1L' && better1L(it))
     : items;
   const typeDeals = deals.filter((d) => d !== 'better_1l');
-  const products = mergeByDeal(base)
-    .filter((p) => discountScore(p) > 0)
+  // mergeByDeal keeps rows in mi_volume-desc order; collapse case-mix flavour
+  // variants to the top-volume primary AFTER the deal filter (so the primary is
+  // a deal-bearing one), then rank by discount.
+  const products = collapseCaseMix(mergeByDeal(base).filter((p) => discountScore(p) > 0))
     .filter((p) => {
       if (!typeDeals.length) return true;   // no deal-type filter -> any deal
       const hasRip = !!topTier(p.tiers, 'rip');

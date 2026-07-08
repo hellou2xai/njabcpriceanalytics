@@ -363,15 +363,15 @@ function DiscCard({ p }: { p: MergedProduct }) {
                 className="disc-deal disc-deal--rip"
                 title={`Top RIP: buy ${tierQty(rip)} → ${money(rip.amount)} total rebate back (from CPL)`}
               >
-                Best RIP: {tierQty(rip)} · {money(rip.amount)}
+                Best RIP: {rip.qty} CS - {money(rip.amount)} ({money(rip.qty ? rip.amount / rip.qty : 0)}/cs)
               </span>
             )}
             {qd && (
               <span
                 className="disc-deal disc-deal--qd"
-                title={`Top QD: buy ${tierQty(qd)}, save ${money(qd.save_per_case)}/case`}
+                title={`Top QD: buy ${tierQty(qd)}, save ${money(qd.save_per_case)}/case (total ${money(qd.qty * qd.save_per_case)})`}
               >
-                Best QD: {tierQty(qd)} · {money(qd.save_per_case)}/cs
+                Best QD: {qd.qty} CS - {money(qd.qty * qd.save_per_case)} ({money(qd.save_per_case)}/cs)
               </span>
             )}
           </div>

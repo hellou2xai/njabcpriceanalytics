@@ -444,11 +444,13 @@ export default function ProductDetail() {
 
   // More from the same manufacturer (brand).
   const { data: brandData } = useQuery({
-    enabled: !!brand,
+    // Defer this heavy (include_tiers) brand search until the product's own sizes
+    // have loaded, so the below-the-fold "More from this brand" strip never
+    // blocks the main product view. 12 rows (we only render 12).
+    enabled: !!brand && sizes.length > 0,
     queryKey: ['pd-brand', wholesaler, brand],
-    // include_tiers so each tile can show the price after the 1-case QD (same as
-    // the Mix-RIP tiles); 24 rows so the slower tier build is fine here.
-    queryFn: () => catalog.search({ q: brand ?? '', brands: brand ?? undefined, limit: 24, sort: 'product_name', order: 'asc', include_tiers: true }),
+    staleTime: 600_000,
+    queryFn: () => catalog.search({ q: brand ?? '', brands: brand ?? undefined, limit: 12, sort: 'product_name', order: 'asc', include_tiers: true }),
   });
   const brandProducts = useMemo(() => {
     const rows = (brandData?.items ?? []) as Product[];

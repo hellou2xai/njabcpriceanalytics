@@ -223,24 +223,30 @@ export default function Layout() {
   }, [location.key]);
 
   useEffect(() => {
-    const el = document.querySelector('.main-content');
+    const el = document.querySelector('.main-content') as HTMLElement | null;
     if (!el) return;
-    if (navType === 'POP') {
-      // Re-apply across a few frames while lazy content (rails, rows) fills in
-      // and the page regains its height, so a deep position lands correctly.
-      const y = scrollPositions.get(location.key) ?? 0;
-      let n = 0;
-      const restore = () => {
-        el.scrollTop = y;
-        // Keep re-applying while the page is still short of y (lazy content
-        // growing its height); stop once we reach it or after ~2.4s.
-        if (el.scrollTop < y - 2 && ++n < 40) setTimeout(restore, 60);
-      };
-      restore();
-    } else {
+    if (navType !== 'POP') {
       el.scrollTo(0, 0);
       window.scrollTo(0, 0);
+      return;
     }
+    // BACK/FORWARD: restore where the user was. The target page's content loads
+    // progressively (lazy rails, size sections fetched cold), so the page starts
+    // SHORT and grows. Re-apply the saved scrollTop every time the content grows
+    // (ResizeObserver) until we actually reach it, then stop. Give up after 10s.
+    const y = scrollPositions.get(location.key) ?? 0;
+    if (y <= 0) return;
+    let reached = false;
+    const apply = () => {
+      el.scrollTop = y;
+      if (el.scrollTop >= y - 2) reached = true;
+    };
+    apply();
+    const ro = new ResizeObserver(() => { if (!reached) apply(); });
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    ro.observe(el);
+    const stop = window.setTimeout(() => ro.disconnect(), 10_000);
+    return () => { ro.disconnect(); window.clearTimeout(stop); };
   }, [location.key, navType]);
 
   const qc = useQueryClient();

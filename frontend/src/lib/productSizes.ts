@@ -132,8 +132,8 @@ export function useProductSizes(
     meta: { background: true },
     queryKey: ['product-sizes', wholesaler, productName, variantUpcs.join(',')],
     queryFn: () => variantUpcs.length
-      ? catalog.search({ wholesaler, upcs: variantUpcs.join(','), include_tiers: true, limit: 200, sort: 'product_name', order: 'asc' })
-      : catalog.search({ q: productName, wholesaler, include_tiers: true, limit: 200, sort: 'product_name', order: 'asc' }),
+      ? catalog.search({ wholesaler, upcs: variantUpcs.join(','), include_tiers: true, limit: 60, sort: 'product_name', order: 'asc' })
+      : catalog.search({ q: productName, wholesaler, include_tiers: true, limit: 60, sort: 'product_name', order: 'asc' }),
   });
   const { data, isFetching } = sizesQ;
 
@@ -161,7 +161,7 @@ export function useProductSizes(
     retry: 1,
     meta: { background: true },
     queryKey: ['product-sizes-cross', crossUpcs.join(',')],
-    queryFn: () => catalog.search({ upcs: crossUpcs.join(','), include_tiers: true, limit: 200, sort: 'product_name', order: 'asc' }),
+    queryFn: () => catalog.search({ upcs: crossUpcs.join(','), include_tiers: true, limit: 60, sort: 'product_name', order: 'asc' }),
   });
 
   const sizes = useMemo(() => {

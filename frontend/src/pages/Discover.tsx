@@ -347,7 +347,7 @@ function DiscCard({ p }: { p: MergedProduct }) {
   );
 }
 
-function Rail({ rail, distributors, deals }: { rail: MiRail; distributors: string[]; deals: string[] }) {
+function Rail({ rail, distributors, deals, sizes }: { rail: MiRail; distributors: string[]; deals: string[]; sizes: string[] }) {
   const { ref, seen } = useInView<HTMLElement>();
   // On BACK/FORWARD (POP) load every rail immediately (data is cached, so it's
   // cheap) so the page regains full height and scroll restoration can land deep.
@@ -358,7 +358,11 @@ function Rail({ rail, distributors, deals }: { rail: MiRail; distributors: strin
     // distParam is part of the key so a distributor filter refetches, not caches.
     queryKey: ['mi-rail', rail.params, distParam ?? ''],
     enabled: show,
-    staleTime: 300_000,
+    // Deal data only changes on a monthly reload, and the server memoises these
+    // responses, so keep them fresh client-side for a long while (no refetch on
+    // every revisit / back-navigation within a session).
+    staleTime: 1_800_000,
+    gcTime: 3_600_000,
     // Featured rails show standard retail bottles only (1.75L / 1L / 750ML / 375ML),
     // not minis, 4-packs, cans or tray packs that otherwise top the volume rank.
     // include_tiers gives us each SKU's QD + RIP ladder for the deal chips.
@@ -368,6 +372,13 @@ function Rail({ rail, distributors, deals }: { rail: MiRail; distributors: strin
   // card, then FEATURE every product with a RIP or QD deal, ranked by deepest
   // discount, up to 60 (stops earlier when the category runs out of deals).
   const items = data?.items ?? [];
+  // Size filter: narrow to the selected bottle sizes (the grid still fills up to
+  // 60, ranked by best deal below). Match on litres so '1L' and 'LITER' resolve
+  // together, '750ML' vs '750 ML', etc.
+  const litreSet = new Set(sizes.map((s) => litresOf(s)).filter((v): v is number => v != null));
+  const sized = litreSet.size
+    ? items.filter((it) => { const L = litresOf(it.unit_volume); return L != null && litreSet.has(L); })
+    : items;
   // Per-product best BOTTLE price by size, for the "Better 1L price" filter.
   const pbBySize = new Map<string, { '1L'?: number; '750ML'?: number }>();
   for (const it of items) {
@@ -386,8 +397,8 @@ function Rail({ rail, distributors, deals }: { rail: MiRail; distributors: strin
   };
   // "Better 1L price" restricts to qualifying 1L rows BEFORE the merge.
   const base = deals.includes('better_1l')
-    ? items.filter((it) => sizeBucket(it.unit_volume) === '1L' && better1L(it))
-    : items;
+    ? sized.filter((it) => sizeBucket(it.unit_volume) === '1L' && better1L(it))
+    : sized;
   const typeDeals = deals.filter((d) => d !== 'better_1l');
   // mergeByDeal keeps rows in mi_volume-desc order; collapse case-mix flavour
   // variants to the top-volume primary AFTER the deal filter (so the primary is
@@ -434,6 +445,7 @@ export default function Discover() {
   const [distSet, setDistSet] = useState<Set<string>>(new Set());
   const [catSet, setCatSet] = useState<Set<string>>(new Set());
   const [dealSet, setDealSet] = useState<Set<string>>(new Set());
+  const [sizeSet, setSizeSet] = useState<Set<string>>(new Set());
   const [filtersCollapsed, setFiltersCollapsed] = useState(() => localStorage.getItem('disc_filters_collapsed') === '1');
   useEffect(() => { localStorage.setItem('disc_filters_collapsed', filtersCollapsed ? '1' : '0'); }, [filtersCollapsed]);
   const { data } = useQuery({ queryKey: ['mi-top-categories'], queryFn: catalog.topCategories, staleTime: 3_600_000 });
@@ -441,7 +453,8 @@ export default function Discover() {
   const rails = catSet.size ? allRails.filter((r) => catSet.has(r.label)) : allRails;
   const dists = [...distSet];
   const deals = [...dealSet];
-  const activeCount = distSet.size + catSet.size + dealSet.size;
+  const sizeList = [...sizeSet];
+  const activeCount = distSet.size + catSet.size + dealSet.size + sizeSet.size;
 
   return (
     <div className="disc-page">
@@ -481,7 +494,7 @@ export default function Discover() {
             <span className="disc-filters-head-actions">
               {activeCount > 0 && (
                 <button type="button" className="disc-filters-clear"
-                  onClick={() => { setDistSet(new Set()); setCatSet(new Set()); setDealSet(new Set()); }}>
+                  onClick={() => { setDistSet(new Set()); setCatSet(new Set()); setDealSet(new Set()); setSizeSet(new Set()); }}>
                   Clear
                 </button>
               )}
@@ -498,6 +511,16 @@ export default function Discover() {
               <label key={v} className="disc-filter-opt">
                 <input type="checkbox" checked={dealSet.has(v)} onChange={() => setDealSet((s) => toggleIn(s, v))} />
                 <span>{label}</span>
+              </label>
+            ))}
+          </div>
+
+          <div className="disc-filter-sect">
+            <div className="disc-filter-h">Size</div>
+            {['375ML', '750ML', '1L', '1.75L'].map((s) => (
+              <label key={s} className="disc-filter-opt">
+                <input type="checkbox" checked={sizeSet.has(s)} onChange={() => setSizeSet((x) => toggleIn(x, s))} />
+                <span>{s}</span>
               </label>
             ))}
           </div>
@@ -529,7 +552,7 @@ export default function Discover() {
         )}
 
         <div className="disc-rails">
-          {rails.map((r) => <Rail key={r.label} rail={r} distributors={dists} deals={deals} />)}
+          {rails.map((r) => <Rail key={r.label} rail={r} distributors={dists} deals={deals} sizes={sizeList} />)}
         </div>
       </div>
     </div>

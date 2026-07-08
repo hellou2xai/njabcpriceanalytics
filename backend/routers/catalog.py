@@ -2731,6 +2731,45 @@ def new_items(
     return _result
 
 
+def warm_discover_rails() -> None:
+    """Pre-build the Discover 'Top <category> Deals' rails into the response memo
+    so the first visitor after a deploy/reload doesn't eat ~44 COLD searches
+    (13-30s each — include_tiers over limit=300 is the cost). Params MUST match
+    Discover.tsx's rail fetch exactly, or the memo key won't line up. Best-effort,
+    runs in a daemon thread, never raises."""
+    import json as _json, os
+    try:
+        path = os.path.join(os.path.dirname(__file__), "..", "reference", "mi_top_categories.json")
+        with open(path, encoding="utf-8") as f:
+            cats = _json.load(f)
+        rails = (cats.get("spirits") or []) + (cats.get("wine") or [])
+        done = 0
+        for rl in rails:
+            pr = rl.get("params") or {}
+            try:
+                search_products(
+                    q=pr.get("q") or "", wholesaler=None, edition=None,
+                    product_type=pr.get("product_type"),
+                    min_price=None, max_price=None, has_discount=None, has_closeout=None,
+                    has_rip=None, in_combo=None, time_sensitive=None, price_drop=None,
+                    price_increase=None, brand=None, unit_volume=None, divisions=None,
+                    categories=None, brands=None, sizes="375ML,750ML,1L,1.75L",
+                    unit_kinds=None, countries=None, regions=None,
+                    grapes=pr.get("grapes"), spirit_category=pr.get("spirit_category"),
+                    upcs=None, rip_code=None, region=None, varietal=None,
+                    tracked_only=False, introduced_within_months=None, introduced_edition=None,
+                    sort="mi_volume", order="desc", limit=300, offset=0,
+                    include_tiers=True, group_by_rip=False, images_first=False,
+                    as_of=None, user=None,
+                )
+                done += 1
+            except Exception:
+                pass
+        print(f"[warm] discover rails cached ({done}/{len(rails)})", flush=True)
+    except Exception as e:
+        print(f"[warm] discover rails skipped: {e}", flush=True)
+
+
 def warm_new_items() -> None:
     """Pre-warm the default New Items page (first page, no tiers)."""
     try:

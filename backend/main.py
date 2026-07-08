@@ -202,7 +202,7 @@ def startup():
         # first visitor after a deploy doesn't pay the 7-20s cold-compute cost.
         # Runs sequentially inside one thread (DuckDB is single-threaded).
         from backend.routers.compare import warm_board_caches
-        from backend.routers.catalog import warm_new_items
+        from backend.routers.catalog import warm_new_items, warm_discover_rails
         threading.Thread(
             target=lambda: [
                 warm_board_caches(),
@@ -212,6 +212,9 @@ def startup():
             ],
             daemon=True,
         ).start()
+        # Prime the Discover 'Top <category> Deals' rails so the first visitor
+        # doesn't eat ~44 cold searches. Own thread (long-running warm loop).
+        threading.Thread(target=warm_discover_rails, daemon=True).start()
         # Prime the default Products grid response (perf #2 memo) so the first
         # visitor doesn't eat the cold catalog query.
         try:

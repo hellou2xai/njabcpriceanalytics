@@ -78,6 +78,21 @@ def _num(v):
         return None
 
 
+def _s(v):
+    """Clean string for a VARCHAR column / string op. Guards the Postgres-vs-parquet
+    type drift: the Postgres-backed prod cache hands back rip_code / vintage / item_no
+    as FLOATs (10954.0, 2019.0) where the local parquet gives strings. Floats become
+    the integer form ('10954'), NaN/None become None."""
+    if v is None:
+        return None
+    if isinstance(v, float):
+        if v != v:  # NaN
+            return None
+        return str(int(v)) if v == int(v) else str(v)
+    s = str(v).strip()
+    return s or None
+
+
 def _top(tiers, source):
     cand = [t for t in (tiers or []) if t.get("source") == source]
     if not cand:
@@ -205,8 +220,8 @@ def _build_edition(con, src, ed, attach_tiers, log, per_ed=None) -> int:
         one_cs = _one_cs(rec)
         eff = _num(o.get("effective_case_price"))
         net = (max(0.0, one_cs - eff) if (one_cs is not None and eff is not None) else None)
-        brand = (o.get("brand") or "").strip().upper()
-        code = (rec.get("rip_code") or "").strip()
+        brand = (_s(o.get("brand")) or "").upper()
+        code = _s(rec.get("rip_code")) or ""
         cm_primary = True
         if code and brand:
             ck = f"{code}|{brand}"
@@ -214,18 +229,18 @@ def _build_edition(con, src, ed, attach_tiers, log, per_ed=None) -> int:
             seen_cm.add(ck)
         dl = dists.get(o["group_key"], [o["wholesaler"]])
         rows.append([
-            ed, o.get("group_key"), _product_key(o), o.get("upc"), o.get("upc_norm"),
-            o.get("product_name"), o.get("display_name"), o.get("brand"),
-            rec.get("spirit_category"), o.get("product_type"),
-            o.get("unit_volume"), (str(o.get("unit_qty")) if o.get("unit_qty") is not None else None),
-            pack, o.get("vintage"),
-            dl[0], ",".join(dl), o.get("n_distributors") or len(dl),
-            o.get("item_no"), rec.get("dist_item_name"),
-            _num(rec.get("mi_volume")), rec.get("image_url"),
+            ed, _s(o.get("group_key")), _product_key(o), _s(o.get("upc")), _s(o.get("upc_norm")),
+            _s(o.get("product_name")), _s(o.get("display_name")), _s(o.get("brand")),
+            _s(rec.get("spirit_category")), _s(o.get("product_type")),
+            _s(o.get("unit_volume")), _s(o.get("unit_qty")),
+            pack, _s(o.get("vintage")),
+            _s(dl[0]), ",".join(_s(d) or "" for d in dl), o.get("n_distributors") or len(dl),
+            _s(o.get("item_no")), _s(rec.get("dist_item_name")),
+            _num(rec.get("mi_volume")), _s(rec.get("image_url")),
             _num(o.get("frontline_case_price")), one_cs, eff,
             x1, x2, x3,
             (rip.get("qty") if rip else None), (_num(rip.get("amount")) if rip else None),
-            (rip_pc if rip else None), (rip.get("code") if rip else code or None),
+            (rip_pc if rip else None), (_s(rip.get("code")) if rip else (code or None)),
             (bool(rip.get("is_time_sensitive")) if rip else None),
             (rip.get("from_date") if rip else None), (rip.get("to_date") if rip else None),
             (qd.get("qty") if qd else None), (_num(qd.get("save_per_case")) if qd else None),

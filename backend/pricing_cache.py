@@ -969,6 +969,43 @@ def build_pricing_cache(force: bool = False, with_deal_grid: bool = True) -> Pat
                 _release_build_lock(_lock_fd)
 
 
+def rebuild_deal_grid_only(log=print) -> None:
+    """Add deal_grid to a COPY of the current published base cache and republish,
+    WITHOUT redoing the whole cache. This is what the boot path uses off the
+    critical thread: no double base build (so no OOM/contention) and no wiping the
+    serving cache — the base keeps serving until the deal_grid-complete copy is
+    published via the pointer swap."""
+    import shutil
+    with _lock:
+        _lock_fd = _acquire_build_lock(
+            timeout=float(os.getenv("DUCKDB_BUILD_LOCK_WAIT", "600")))
+        try:
+            base = _read_pointer()
+            if base is None or not Path(base).exists():
+                log("[deal_grid] no base cache to extend")
+                return
+            _stamp = f"{int(time.time() * 1000)}_{os.getpid()}dg"
+            new_path = CACHE_DIR / f"pricing_{_stamp}.duckdb"
+            # base was checkpointed on publish (no WAL), so a file copy is consistent.
+            shutil.copy2(base, new_path)
+            con = duckdb.connect(str(new_path))
+            try:
+                from backend.precompute_deals import build_deal_grid
+                build_deal_grid(con, log=log)
+            finally:
+                con.close()  # checkpoints the copy's WAL into the file
+            _write_pointer(new_path)
+            global _current_path
+            _current_path = new_path
+            _cleanup_old(keep=new_path)
+            log("[deal_grid] extended base cache + republished")
+        except Exception as e:  # never crash the background thread
+            log(f"[deal_grid] rebuild_deal_grid_only failed: {e}")
+        finally:
+            if _lock_fd is not None:
+                _release_build_lock(_lock_fd)
+
+
 def get_pricing_path() -> Path:
     """Path to the current cache file, building it on first use.
 

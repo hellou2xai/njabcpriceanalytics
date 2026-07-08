@@ -769,6 +769,7 @@ def mi_top_categories():
 @router.get("/discover-deals")
 def discover_deals(
     spirit_category: Optional[str] = None,
+    product_type: Optional[str] = None,  # e.g. 'Wine' | 'Spirits'
     grapes: Optional[str] = None,
     edition: Optional[str] = None,
     sizes: Optional[str] = None,        # comma-separated size labels
@@ -791,8 +792,12 @@ def discover_deals(
         p: list = [ed]
         if spirit_category:
             where.append("spirit_category = ?"); p.append(spirit_category.strip())
+        if product_type:
+            where.append("product_type = ?"); p.append(product_type.strip())
         if grapes:
-            where.append("(LOWER(product_name) LIKE ? OR LOWER(COALESCE(brand,'')) LIKE ?)")
+            # Match the varietal the SAME way the live wine rails do: inside the
+            # precomputed geo_varietal (semantic grape), with a name fallback.
+            where.append("(LOWER(COALESCE(geo_varietal,'')) LIKE ? OR LOWER(product_name) LIKE ?)")
             p += [f"%{grapes.strip().lower()}%"] * 2
         szs = [s.strip() for s in (sizes or "").split(",") if s.strip()]
         if szs:

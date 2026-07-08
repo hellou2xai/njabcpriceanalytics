@@ -192,11 +192,10 @@ def startup():
         # Build a serving cache WITHOUT the heavy deal_grid so /api/ready passes
         # fast (the cache dir is ephemeral on Render, so this runs every deploy).
         build_pricing_cache(with_deal_grid=False)
-        # Then rebuild WITH deal_grid off the critical path so it never delays a
-        # deploy; the pointer swap makes workers pick up the deal_grid-complete file.
-        threading.Thread(
-            target=lambda: build_pricing_cache(force=True, with_deal_grid=True),
-            daemon=True).start()
+        # Then ADD deal_grid to a COPY of that cache off the critical path (no full
+        # rebuild -> no double base build, no lock contention, base keeps serving).
+        from backend.pricing_cache import rebuild_deal_grid_only
+        threading.Thread(target=rebuild_deal_grid_only, daemon=True).start()
         # Warm the RIP Products tier cache in the background so the first open of
         # that (heavy) page is instant. Never blocks startup or the health check.
         from backend.routers.deals import (

@@ -36,6 +36,7 @@ LAST_BUILD: dict = {}
 _COLS = [
     "edition", "group_key", "product_key", "upc", "upc_norm",
     "product_name", "display_name", "brand", "spirit_category", "product_type",
+    "geo_varietal", "geo_country", "geo_region",
     "unit_volume", "unit_qty", "pack", "vintage",
     "primary_wholesaler", "wholesalers", "n_distributors",
     "dist_item_no", "dist_item_name",
@@ -283,6 +284,7 @@ def _build_edition(con, src, ed, attach_tiers, log, per_ed=None) -> int:
             ed, _s(o.get("group_key")), _product_key(o), _s(o.get("upc")), _s(o.get("upc_norm")),
             _s(o.get("product_name")), _s(o.get("display_name")), _s(o.get("brand")),
             _s(rec.get("spirit_category")), _s(o.get("product_type")),
+            _s(rec.get("geo_varietal")), _s(rec.get("geo_country")), _s(rec.get("geo_region")),
             _s(o.get("unit_volume")), _s(o.get("unit_qty")),
             pack, _s(o.get("vintage")),
             _s(dl[0]), ",".join(_s(d) or "" for d in dl), o.get("n_distributors") or len(dl),

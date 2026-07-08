@@ -31,7 +31,20 @@ services:
     # gap where the new container 500s while the cache copies from Postgres.
     healthCheckPath: /api/ready
     autoDeploy: true
+    # Persistent disk for the DuckDB pricing cache. Without it the cache dir is
+    # ephemeral, so EVERY deploy rebuilds the whole cache at boot -- including the
+    # ~10-15 min deal_grid build -- and deal_grid is absent until it finishes. With
+    # the disk the built cache (deal_grid included) survives deploys: boot adopts it
+    # via the pointer in seconds and only a monthly data reload rebuilds it.
+    # NOTE: a service with a disk runs a SINGLE instance (Render can't share a disk
+    # across instances) -- fine here (each instance builds its own cache anyway).
+    disk:
+      name: pricing-cache
+      mountPath: /var/data
+      sizeGB: 10
     envVars:
+      - key: CELR_CACHE_DIR
+        value: /var/data
       - key: DATABASE_URL
         fromDatabase:
           name: njabc-db

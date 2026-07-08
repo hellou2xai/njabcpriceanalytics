@@ -192,10 +192,24 @@ def startup():
         # Build a serving cache WITHOUT the heavy deal_grid so /api/ready passes
         # fast (the cache dir is ephemeral on Render, so this runs every deploy).
         build_pricing_cache(with_deal_grid=False)
-        # Then ADD deal_grid to a COPY of that cache off the critical path (no full
-        # rebuild -> no double base build, no lock contention, base keeps serving).
+        # With the persistent disk, boot often ADOPTS a cache that ALREADY has
+        # deal_grid -> skip the heavy build entirely (no wipe, no ~15 min rebuild).
+        # Only when the cache lacks deal_grid (first build on a fresh disk, or a
+        # monthly data reload) do we add it to a COPY off the critical path.
         from backend.pricing_cache import rebuild_deal_grid_only
-        threading.Thread(target=rebuild_deal_grid_only, daemon=True).start()
+        _dg_ok = False
+        try:
+            from backend.db import get_duckdb
+            from backend.precompute_deals import _COLS as _DG_COLS
+            with get_duckdb() as _c:
+                cols = {r[1] for r in _c.execute("PRAGMA table_info(deal_grid)").fetchall()}
+                # rebuild if missing OR schema-outdated (a deploy added new columns
+                # the adopted cache's deal_grid doesn't have yet, e.g. geo_varietal).
+                _dg_ok = bool(cols) and set(_DG_COLS).issubset(cols)
+        except Exception:
+            pass
+        if not _dg_ok:
+            threading.Thread(target=rebuild_deal_grid_only, daemon=True).start()
         # Warm the RIP Products tier cache in the background so the first open of
         # that (heavy) page is instant. Never blocks startup or the health check.
         from backend.routers.deals import (

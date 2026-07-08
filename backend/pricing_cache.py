@@ -26,7 +26,12 @@ import duckdb
 from backend.db import PROJECT_ROOT, PARQUET_DIR
 
 PRICING_SOURCE = os.getenv("PRICING_SOURCE", "postgres")  # 'postgres' | 'parquet'
-CACHE_DIR = PROJECT_ROOT / "user_data"
+# On Render the cache lives on a PERSISTENT DISK (CELR_CACHE_DIR=/var/data) so the
+# built cache (incl. deal_grid) SURVIVES deploys and boot ADOPTS it instantly via
+# the pointer, instead of rebuilding ~15 min on every deploy. Falls back to the
+# repo dir for local dev.
+_cache_env = os.getenv("CELR_CACHE_DIR", "").strip()
+CACHE_DIR = Path(_cache_env) if _cache_env else (PROJECT_ROOT / "user_data")
 
 # Single-file (derived) tables vs Hive-partitioned (raw) tables, matching the
 # Parquet layout. These names are exactly what read_parquet() is called with.

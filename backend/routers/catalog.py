@@ -766,6 +766,65 @@ def mi_top_categories():
         return {"spirits": [], "wine": []}
 
 
+@router.get("/discover-deals")
+def discover_deals(
+    spirit_category: Optional[str] = None,
+    grapes: Optional[str] = None,
+    edition: Optional[str] = None,
+    sizes: Optional[str] = None,        # comma-separated size labels
+    divisions: Optional[str] = None,    # comma-separated distributor slugs
+    deals: Optional[str] = None,        # comma-separated: rip | qd | both
+    sort: str = "net",                  # net | pct | name | rip | qd
+    q: Optional[str] = None,            # free-text (name/brand) narrow
+    limit: int = Query(60, ge=1, le=200),
+):
+    """Read the precomputed Discover deal cards (one merged card per edition +
+    product + size) for a category, with the page's filters + sort applied in
+    SQL over indexed columns. Defaults to the current edition."""
+    from backend.pg import get_pg
+    ed = (edition or "").strip() or _current_yyyy_mm()
+    where = ["edition = %(ed)s"]
+    p: dict = {"ed": ed, "lim": limit}
+    if spirit_category:
+        where.append("spirit_category = %(spcat)s"); p["spcat"] = spirit_category.strip()
+    if grapes:
+        # grapes rails are wine varietals; the precompute stores them as the rail's
+        # own filter, matched the same way the page's rail params pass them.
+        where.append("(LOWER(product_name) LIKE %(grp)s OR LOWER(COALESCE(brand,'')) LIKE %(grp)s)")
+        p["grp"] = f"%{grapes.strip().lower()}%"
+    szs = [s.strip() for s in (sizes or "").split(",") if s.strip()]
+    if szs:
+        where.append("unit_volume = ANY(%(szs)s)"); p["szs"] = szs
+    divs = [d.strip() for d in (divisions or "").split(",") if d.strip()]
+    if divs:
+        where.append("string_to_array(wholesalers, ',') && %(divs)s"); p["divs"] = divs
+    ds = {d.strip() for d in (deals or "").split(",") if d.strip()}
+    deal_or = []
+    if "rip" in ds:  deal_or.append("has_rip")
+    if "qd" in ds:   deal_or.append("has_qd")
+    if "both" in ds: deal_or.append("has_both")
+    if deal_or:
+        where.append("(" + " OR ".join(deal_or) + ")")
+    if q and q.strip():
+        where.append("(LOWER(product_name) LIKE %(q)s OR LOWER(COALESCE(display_name,'')) LIKE %(q)s OR LOWER(COALESCE(brand,'')) LIKE %(q)s)")
+        p["q"] = f"%{q.strip().lower()}%"
+    order = {
+        "net":  "net_discount DESC NULLS LAST",
+        "pct":  "discount_pct DESC NULLS LAST",
+        "name": "COALESCE(display_name, product_name) ASC",
+        "rip":  "best_rip_per_case DESC NULLS LAST",
+        "qd":   "best_qd_save_per_case DESC NULLS LAST",
+    }.get(sort, "net_discount DESC NULLS LAST")
+    sql = (f"SELECT * FROM discover_deal WHERE {' AND '.join(where)} "
+           f"ORDER BY {order}, mi_volume DESC NULLS LAST LIMIT %(lim)s")
+    try:
+        with get_pg() as conn:   # pooled connection, dict_row -> rows are dicts
+            rows = conn.execute(sql, p).fetchall()
+    except Exception as e:  # table not built yet / db hiccup
+        return {"edition": ed, "items": [], "error": str(e)}
+    return {"edition": ed, "count": len(rows), "items": rows}
+
+
 @router.get("/search")
 def search_products(
     q: str = Query("", description="Search term"),

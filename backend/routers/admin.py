@@ -209,9 +209,46 @@ def reload_pricing_admin(user: dict = Depends(require_admin)):
         threading.Thread(target=warm_catalog_grid, daemon=True).start()
     except Exception as e:
         print(f"[reload] catalog grid warm skipped: {e}")
+    # Rebuild the Discover deals precompute in the background (long-running: it
+    # runs the merge/collapse per edition x category). Best-effort; never blocks
+    # or fails the reload.
+    try:
+        import threading
+        threading.Thread(target=_build_discover_deals_bg, daemon=True).start()
+    except Exception as e:
+        print(f"[reload] discover_deal build skipped: {e}")
     with get_duckdb() as con:
         counts = {t: con.execute(f"SELECT count(*) FROM {t}").fetchone()[0] for t in ALL_TABLES}
     return {"status": "reloaded", "counts": counts}
+
+
+def _build_discover_deals_bg():
+    """Rebuild discover_deal (all editions) against the current pricing cache."""
+    try:
+        from backend.precompute_discover import build_discover_deals
+        from backend.pg import get_pool
+        with get_pool().connection() as pg:
+            n = build_discover_deals(pg)
+        print(f"[discover_deal] rebuilt: {n} cards", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"[discover_deal] build failed: {e}", flush=True)
+
+
+@router.post("/build-discover-deals")
+def build_discover_deals_admin(user: dict = Depends(require_admin)):
+    """Kick off a rebuild of the discover_deal precompute (all editions) in the
+    background (a full build runs the merge/collapse per edition x category, so it
+    takes minutes) and return the CURRENT per-edition counts so the caller can poll."""
+    from backend.precompute_discover import ensure_schema
+    from backend.pg import get_pool
+    import threading
+    with get_pool().connection() as pg:
+        ensure_schema(pg)
+        with pg.cursor() as cur:
+            cur.execute("SELECT edition, count(*) FROM discover_deal GROUP BY edition ORDER BY edition")
+            by_ed = {r[0]: r[1] for r in cur.fetchall()}
+    threading.Thread(target=_build_discover_deals_bg, daemon=True).start()
+    return {"status": "build started", "current_by_edition": by_ed}
 
 
 _IMG_EXT = {"image/png": "png", "image/webp": "webp", "image/jpeg": "jpg",

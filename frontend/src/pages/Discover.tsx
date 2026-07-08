@@ -13,7 +13,8 @@ import { Search, Store } from 'lucide-react';
 import { catalog, type MiRail, type Product, type CatalogTier } from '../lib/api';
 import ProductThumb from '../components/ProductThumb';
 import FavoriteButton from '../components/FavoriteButton';
-import { distributorName } from '../lib/distributors';
+import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
+import { bottlesPerCase } from '../lib/productSizes';
 import './Discover.css';
 
 const TYPES = ['Beer', 'Wine', 'Spirits', 'RTD', 'Seltzer', 'Cider', 'Non-Alcoholic'];
@@ -255,7 +256,12 @@ function DiscCard({ p }: { p: MergedProduct }) {
         )}
       </div>
       <div className="disc-card-name">{p.abg_item_name?.trim() || p.product_name}</div>
-      {p.unit_volume && <div className="disc-card-size">{p.unit_volume}</div>}
+      {p.unit_volume && (
+        <div className="disc-card-size">
+          {p.unit_volume}
+          {(() => { const pack = bottlesPerCase(p.product_name, p.unit_qty); return pack != null ? ` (${pack}/cs)` : ''; })()}
+        </div>
+      )}
       <div className="disc-card-foot">
         {price && (
           <div className="disc-card-price">{price}<span className="disc-card-price-u">/cs</span></div>
@@ -285,22 +291,30 @@ function DiscCard({ p }: { p: MergedProduct }) {
   );
 }
 
-function Rail({ rail }: { rail: MiRail }) {
+function Rail({ rail, distributors, deals }: { rail: MiRail; distributors: string[]; deals: string[] }) {
   const { ref, seen } = useInView<HTMLElement>();
+  const distParam = distributors.length ? distributors.join(',') : undefined;
   const { data, isLoading } = useQuery({
-    queryKey: ['mi-rail', rail.params],
+    // distParam is part of the key so a distributor filter refetches, not caches.
+    queryKey: ['mi-rail', rail.params, distParam ?? ''],
     enabled: seen,
     staleTime: 300_000,
     // Featured rails show standard retail bottles only (1.75L / 1L / 750ML),
     // not minis, 4-packs, cans or tray packs that otherwise top the volume rank.
     // include_tiers gives us each SKU's QD + RIP ladder for the deal chips.
-    queryFn: () => catalog.search({ ...rail.params, sizes: '750ML,1L,1.75L', sort: 'mi_volume', order: 'desc', limit: 300, images_first: false, include_tiers: true }),
+    queryFn: () => catalog.search({ ...rail.params, ...(distParam ? { divisions: distParam } : {}), sizes: '750ML,1L,1.75L', sort: 'mi_volume', order: 'desc', limit: 300, images_first: false, include_tiers: true }),
   });
   // Merge the same product from multiple distributors (same RIP/QD) into one
   // card, then FEATURE every product with a RIP or QD deal, ranked by deepest
   // discount, up to 60 (stops earlier when the category runs out of deals).
   const products = mergeByDeal(data?.items ?? [])
     .filter((p) => discountScore(p) > 0)
+    .filter((p) => {
+      if (!deals.length) return true;   // no deal-type filter -> any deal
+      const hasRip = !!topTier(p.tiers, 'rip');
+      const hasQd = !!topTier(p.tiers, 'discount');
+      return (deals.includes('rip') && hasRip) || (deals.includes('qd') && hasQd);
+    })
     .sort((a, b) => discountScore(b) - discountScore(a))
     .slice(0, 60);
   return (
@@ -322,11 +336,24 @@ function Rail({ rail }: { rail: MiRail }) {
   );
 }
 
+function toggleIn(set: Set<string>, v: string): Set<string> {
+  const n = new Set(set);
+  n.has(v) ? n.delete(v) : n.add(v);
+  return n;
+}
+
 export default function Discover() {
   const nav = useNavigate();
   const [q, setQ] = useState('');
+  const [distSet, setDistSet] = useState<Set<string>>(new Set());
+  const [catSet, setCatSet] = useState<Set<string>>(new Set());
+  const [dealSet, setDealSet] = useState<Set<string>>(new Set());
   const { data } = useQuery({ queryKey: ['mi-top-categories'], queryFn: catalog.topCategories, staleTime: 3_600_000 });
-  const rails: MiRail[] = [...(data?.spirits ?? []), ...(data?.wine ?? [])];
+  const allRails: MiRail[] = [...(data?.spirits ?? []), ...(data?.wine ?? [])];
+  const rails = catSet.size ? allRails.filter((r) => catSet.has(r.label)) : allRails;
+  const dists = [...distSet];
+  const deals = [...dealSet];
+  const activeCount = distSet.size + catSet.size + dealSet.size;
 
   return (
     <div className="disc-page">
@@ -354,8 +381,56 @@ export default function Discover() {
         <p className="disc-hint">Top categories by market sales volume</p>
       </header>
 
-      <div className="disc-rails">
-        {rails.map((r) => <Rail key={r.label} rail={r} />)}
+      <div className="disc-body">
+        <aside className="disc-filters">
+          <div className="disc-filters-head">
+            <span>Filters</span>
+            {activeCount > 0 && (
+              <button type="button" className="disc-filters-clear"
+                onClick={() => { setDistSet(new Set()); setCatSet(new Set()); setDealSet(new Set()); }}>
+                Clear
+              </button>
+            )}
+          </div>
+
+          <div className="disc-filter-sect">
+            <div className="disc-filter-h">Deal</div>
+            {[['rip', 'Has RIP'], ['qd', 'Has QD']].map(([v, label]) => (
+              <label key={v} className="disc-filter-opt">
+                <input type="checkbox" checked={dealSet.has(v)} onChange={() => setDealSet((s) => toggleIn(s, v))} />
+                <span>{label}</span>
+              </label>
+            ))}
+          </div>
+
+          <div className="disc-filter-sect">
+            <div className="disc-filter-h">Distributor</div>
+            <div className="disc-filter-list">
+              {ALL_DISTRIBUTORS.filter((d) => d.value).map((d) => (
+                <label key={d.value} className="disc-filter-opt">
+                  <input type="checkbox" checked={distSet.has(d.value)} onChange={() => setDistSet((s) => toggleIn(s, d.value))} />
+                  <span>{d.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="disc-filter-sect">
+            <div className="disc-filter-h">Category</div>
+            <div className="disc-filter-list">
+              {allRails.map((r) => (
+                <label key={r.label} className="disc-filter-opt">
+                  <input type="checkbox" checked={catSet.has(r.label)} onChange={() => setCatSet((s) => toggleIn(s, r.label))} />
+                  <span>{r.label.replace(/^Top /, '')}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </aside>
+
+        <div className="disc-rails">
+          {rails.map((r) => <Rail key={r.label} rail={r} distributors={dists} deals={deals} />)}
+        </div>
       </div>
     </div>
   );

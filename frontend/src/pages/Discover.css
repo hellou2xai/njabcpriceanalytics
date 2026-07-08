@@ -24,8 +24,28 @@
 .disc-type:hover { border-color: var(--brand, #3b5bdb); color: var(--brand, #3b5bdb); }
 .disc-hint { color: #98a2b3; font-size: 13px; margin-top: 14px; }
 
+/* Body: left filter rail + the category rails. */
+.disc-body { display: flex; gap: 24px; align-items: flex-start; margin-top: 22px; }
+.disc-filters {
+  flex: 0 0 208px; position: sticky; top: 12px; max-height: calc(100vh - 24px);
+  overflow: auto; border: 1px solid #eaecf0; border-radius: 12px; background: #fff;
+  padding: 12px 14px;
+}
+.disc-filters-head { display: flex; align-items: center; justify-content: space-between;
+  font-size: 14px; font-weight: 700; color: #101828; margin-bottom: 8px; }
+.disc-filters-clear { border: 0; background: none; color: var(--brand, #3b5bdb);
+  font-size: 12px; font-weight: 600; cursor: pointer; padding: 0; }
+.disc-filter-sect { padding: 10px 0; border-top: 1px solid #f2f4f7; }
+.disc-filter-sect:first-of-type { border-top: 0; padding-top: 2px; }
+.disc-filter-h { font-size: 12px; font-weight: 700; color: #475467; text-transform: uppercase;
+  letter-spacing: .3px; margin-bottom: 6px; }
+.disc-filter-list { max-height: 230px; overflow: auto; }
+.disc-filter-opt { display: flex; align-items: center; gap: 8px; padding: 3px 0;
+  font-size: 13px; color: #344054; cursor: pointer; }
+.disc-filter-opt input { cursor: pointer; }
+
 /* Rails */
-.disc-rails { display: flex; flex-direction: column; gap: 26px; margin-top: 22px; }
+.disc-rails { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 26px; }
 .disc-rail { }
 .disc-rail-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
 .disc-rail-title { font-size: 18px; font-weight: 700; color: #101828; margin: 0; }
@@ -114,6 +134,12 @@
 
 /* Mobile: tighter hero, full-width search, smaller rail cards. Rails already
    scroll horizontally, so they work as-is; just reduce chrome. */
+@media (max-width: 900px) {
+  /* Stack the filter panel above the rails on narrow screens. */
+  .disc-body { flex-direction: column; gap: 14px; }
+  .disc-filters { position: static; flex: none; width: 100%; max-height: none; }
+  .disc-filter-list { max-height: 160px; }
+}
 @media (max-width: 640px) {
   .disc-page { padding: 0 12px 48px; }
   .disc-hero { padding: 24px 0 12px; }
@@ -151,6 +177,11 @@
   .disc-card-size { color: #98a2b3; }
   .disc-card { background: #1a1e2c; border-color: #2a2f42; }
   .disc-card-dist { color: #cdd2e0; }
+  .disc-filters { background: #1a1e2c; border-color: #2a2f42; }
+  .disc-filters-head { color: #e6e8ef; }
+  .disc-filter-sect { border-top-color: #2a2f42; }
+  .disc-filter-h { color: #98a2b3; }
+  .disc-filter-opt { color: #cdd2e0; }
   .disc-deal--rip { color: #d92d20; background: #fde68a; }   /* red on yellow */
   .disc-deal--qd  { color: #101828; background: #fde68a; }   /* black on yellow */
   .disc-ts-btn { background: rgba(181,71,8,.22); border-color: #7a4a12; color: #fdb87a; }

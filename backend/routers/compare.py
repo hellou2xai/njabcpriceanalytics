@@ -2063,7 +2063,6 @@ def _rip_verdict(row: dict, slugs: list[str], n: float) -> dict:
     return {"pick": pick, "text": " ".join(parts)}
 
 
-@router.get("/rips")
 def _attach_mi_volume(con, src: str, rows: list[dict]) -> None:
     """Attach each product's Market-Intelligence 9L sales volume (denormalised on
     cpl_enriched, keyed on brand) to its compare row by UPC, so the comparison
@@ -2088,6 +2087,8 @@ def _attach_mi_volume(con, src: str, rows: list[dict]) -> None:
     except Exception:
         pass  # mi_volume column absent -> leave 0.0
 
+
+@router.get("/rips")
 
 def compare_rips(
     wholesalers: str = Query("allied,fedway", description="2-3 comma-separated slugs"),

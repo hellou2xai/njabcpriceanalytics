@@ -84,6 +84,43 @@ function discountScore(p: Product): number {
   return Math.max(qdSave, ripPerCase) / list;
 }
 
+// Best case price after the deepest QD + RIP (per case) — for comparing value
+// across sizes.
+function bestCaseAfterDeals(p: Product): number | null {
+  const list = p.frontline_case_price ?? p.effective_case_price ?? null;
+  if (list == null || list <= 0) return null;
+  const qd = topTier(p.tiers, 'discount');
+  const rip = topTier(p.tiers, 'rip');
+  const qdSave = qd?.save_per_case ?? 0;
+  const ripPerCase = rip && rip.amount != null && rip.qty ? rip.amount / rip.qty : 0;
+  return Math.max(0, list - qdSave - ripPerCase);
+}
+// Bottle volume in litres from the size label (750ML->0.75, 1L/LITER->1, 1.75L->1.75).
+function litresOf(size?: string | null): number | null {
+  const s = String(size ?? '').toUpperCase().replace(/\s/g, '');
+  if (['LITER', 'LITRE', '1L', '1LT', '1LTR'].includes(s)) return 1;
+  const ml = s.match(/^([\d.]+)ML$/); if (ml) return parseFloat(ml[1]) / 1000;
+  const l = s.match(/^([\d.]+)L(?:T|TR)?$/); if (l) return parseFloat(l[1]);
+  return null;
+}
+// Effective price per litre = best case price / (bottles-per-case * litres).
+function perLitre(p: Product): number | null {
+  const bc = bestCaseAfterDeals(p);
+  const pack = bottlesPerCase(p.product_name, p.unit_qty);
+  const L = litresOf(p.unit_volume);
+  if (bc == null || !pack || !L) return null;
+  return bc / (pack * L);
+}
+// The two sizes we compare for "Better 1L price".
+function sizeBucket(size?: string | null): '1L' | '750ML' | null {
+  const L = litresOf(size);
+  return L === 1 ? '1L' : L === 0.75 ? '750ML' : null;
+}
+// Cross-distributor product key (shared by mergeByDeal and the size comparison).
+function productKey(p: Product): string {
+  return realUpc(p.upc) ? `U:${realUpc(p.upc)}` : `N:${(p.product_name || '').toUpperCase()}`;
+}
+
 // Realistic single-case price: list minus the (stable) 1-case entry QD when the
 // SKU has one, else the frontline list price. A time-sensitive entry QD is not
 // baked into the headline — it surfaces under the TS button instead.
@@ -134,8 +171,7 @@ function mergeByDeal(items: Product[]): MergedProduct[] {
   const groups = new Map<string, { p: Product; dists: string[] }>();
   for (const it of items) {
     if (!it.image_url) continue;
-    const pk = realUpc(it.upc) ? `U:${realUpc(it.upc)}` : `N:${(it.product_name || '').toUpperCase()}`;
-    const key = `${pk}||${dealSig(it)}`;
+    const key = `${productKey(it)}||${dealSig(it)}`;
     const g = groups.get(key);
     if (!g) groups.set(key, { p: it, dists: [it.wholesaler] });
     else if (!g.dists.includes(it.wholesaler)) g.dists.push(it.wholesaler);
@@ -273,7 +309,7 @@ function DiscCard({ p }: { p: MergedProduct }) {
                 className="disc-deal disc-deal--rip"
                 title={`Top RIP: buy ${tierQty(rip)} → ${money(rip.amount)} total rebate back (from CPL)`}
               >
-                Best RIP {tierQty(rip)} · {money(rip.amount)}
+                Best RIP: {tierQty(rip)} · {money(rip.amount)}
               </span>
             )}
             {qd && (
@@ -281,7 +317,7 @@ function DiscCard({ p }: { p: MergedProduct }) {
                 className="disc-deal disc-deal--qd"
                 title={`Top QD: buy ${tierQty(qd)}, save ${money(qd.save_per_case)}/case`}
               >
-                Best QD {tierQty(qd)} · {money(qd.save_per_case)}/cs
+                Best QD: {tierQty(qd)} · {money(qd.save_per_case)}/cs
               </span>
             )}
           </div>
@@ -307,20 +343,43 @@ function Rail({ rail, distributors, deals }: { rail: MiRail; distributors: strin
   // Merge the same product from multiple distributors (same RIP/QD) into one
   // card, then FEATURE every product with a RIP or QD deal, ranked by deepest
   // discount, up to 60 (stops earlier when the category runs out of deals).
-  const products = mergeByDeal(data?.items ?? [])
+  const items = data?.items ?? [];
+  // Per-product best price-per-litre by size, for the "Better 1L price" filter.
+  const plBySize = new Map<string, { '1L'?: number; '750ML'?: number }>();
+  for (const it of items) {
+    const bucket = sizeBucket(it.unit_volume); if (!bucket) continue;
+    const pl = perLitre(it); if (pl == null) continue;
+    const pk = productKey(it);
+    const rec = plBySize.get(pk) ?? {};
+    if (rec[bucket] == null || pl < rec[bucket]!) rec[bucket] = pl;
+    plBySize.set(pk, rec);
+  }
+  // A product's 1L (after best QD+RIP, per litre) is <= its 750ML within 5%.
+  const better1L = (p: Product) => {
+    const rec = plBySize.get(productKey(p));
+    return !!(rec && rec['1L'] != null && rec['750ML'] != null && rec['1L']! <= rec['750ML']! * 1.05);
+  };
+  // "Better 1L price" restricts to qualifying 1L rows BEFORE the merge.
+  const base = deals.includes('better_1l')
+    ? items.filter((it) => sizeBucket(it.unit_volume) === '1L' && better1L(it))
+    : items;
+  const typeDeals = deals.filter((d) => d !== 'better_1l');
+  const products = mergeByDeal(base)
     .filter((p) => discountScore(p) > 0)
     .filter((p) => {
-      if (!deals.length) return true;   // no deal-type filter -> any deal
+      if (!typeDeals.length) return true;   // no deal-type filter -> any deal
       const hasRip = !!topTier(p.tiers, 'rip');
       const hasQd = !!topTier(p.tiers, 'discount');
-      return (deals.includes('rip') && hasRip) || (deals.includes('qd') && hasQd);
+      return (typeDeals.includes('rip') && hasRip)
+          || (typeDeals.includes('qd') && hasQd)
+          || (typeDeals.includes('both') && hasRip && hasQd);
     })
     .sort((a, b) => discountScore(b) - discountScore(a))
     .slice(0, 60);
   return (
     <section ref={ref} className="disc-rail">
       <div className="disc-rail-head">
-        <h2 className="disc-rail-title">{rail.label}</h2>
+        <h2 className="disc-rail-title">{rail.label} Deals</h2>
         <Link to={railHref(rail.params)} className="disc-rail-all">See all &rarr;</Link>
       </div>
       <div className="disc-rail-track">
@@ -408,7 +467,7 @@ export default function Discover() {
 
           <div className="disc-filter-sect">
             <div className="disc-filter-h">Deal</div>
-            {[['rip', 'Has RIP'], ['qd', 'Has QD']].map(([v, label]) => (
+            {[['rip', 'Has RIP'], ['qd', 'Has QD'], ['both', 'Has both QD & RIP'], ['better_1l', 'Better 1L price']].map(([v, label]) => (
               <label key={v} className="disc-filter-opt">
                 <input type="checkbox" checked={dealSet.has(v)} onChange={() => setDealSet((s) => toggleIn(s, v))} />
                 <span>{label}</span>

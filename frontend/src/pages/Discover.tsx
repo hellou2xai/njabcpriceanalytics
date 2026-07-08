@@ -381,6 +381,17 @@ function DiscCard({ p }: { p: MergedProduct }) {
   );
 }
 
+// Push the deal-type filter into the SEARCH (server-side) so a single deal type
+// or "both" isn't limited to whichever top-volume rows happen to qualify. OR
+// combinations (rip AND qd checkboxes) stay client-side (can't AND them here).
+function dealSearchParams(deals: string[]): Record<string, boolean> {
+  const set = new Set(deals.filter((d) => d !== 'better_1l'));
+  if (set.size === 1 && set.has('both')) return { has_rip: true, has_discount: true };
+  if (set.size === 1 && set.has('rip')) return { has_rip: true };
+  if (set.size === 1 && set.has('qd')) return { has_discount: true };
+  return {};
+}
+
 // Build the deal cards for a set of search rows: size filter, merge same product
 // across distributors, keep only products that ACTUALLY have a RIP or QD, collapse
 // case-mix flavour variants, apply the deal-type filter, sort, cap at 60.
@@ -411,9 +422,9 @@ function SearchResults({ query, distributors, deals, sizes, sortBy, edition }:
   { query: string; distributors: string[]; deals: string[]; sizes: string[]; sortBy: string; edition: string }) {
   const distParam = distributors.length ? distributors.join(',') : undefined;
   const { data, isLoading } = useQuery({
-    queryKey: ['disc-search', query, distParam ?? '', edition],
+    queryKey: ['disc-search', query, distParam ?? '', edition, deals.filter((d) => d !== 'better_1l').sort().join(',')],
     staleTime: 300_000,
-    queryFn: () => catalog.search({ q: query, ...(distParam ? { divisions: distParam } : {}), ...(edition ? { edition } : {}), sizes: '375ML,750ML,1L,1.75L', sort: 'mi_volume', order: 'desc', limit: 300, images_first: false, include_tiers: true }),
+    queryFn: () => catalog.search({ q: query, ...dealSearchParams(deals), ...(distParam ? { divisions: distParam } : {}), ...(edition ? { edition } : {}), sizes: '375ML,750ML,1L,1.75L', sort: 'mi_volume', order: 'desc', limit: 300, images_first: false, include_tiers: true }),
   });
   const products = dealProducts(data?.items ?? [], deals, sizes, sortBy);
   return (
@@ -439,7 +450,7 @@ function Rail({ rail, distributors, deals, sizes, sortBy, edition }: { rail: MiR
   const distParam = distributors.length ? distributors.join(',') : undefined;
   const { data, isLoading } = useQuery({
     // distParam is part of the key so a distributor filter refetches, not caches.
-    queryKey: ['mi-rail', rail.params, distParam ?? '', edition],
+    queryKey: ['mi-rail', rail.params, distParam ?? '', edition, deals.filter((d) => d !== 'better_1l').sort().join(',')],
     enabled: show,
     // Deal data only changes on a monthly reload, and the server memoises these
     // responses, so keep them fresh client-side for a long while (no refetch on
@@ -449,7 +460,7 @@ function Rail({ rail, distributors, deals, sizes, sortBy, edition }: { rail: MiR
     // Featured rails show standard retail bottles only (1.75L / 1L / 750ML / 375ML),
     // not minis, 4-packs, cans or tray packs that otherwise top the volume rank.
     // include_tiers gives us each SKU's QD + RIP ladder for the deal chips.
-    queryFn: () => catalog.search({ ...rail.params, ...(distParam ? { divisions: distParam } : {}), ...(edition ? { edition } : {}), sizes: '375ML,750ML,1L,1.75L', sort: 'mi_volume', order: 'desc', limit: 300, images_first: false, include_tiers: true }),
+    queryFn: () => catalog.search({ ...rail.params, ...dealSearchParams(deals), ...(distParam ? { divisions: distParam } : {}), ...(edition ? { edition } : {}), sizes: '375ML,750ML,1L,1.75L', sort: 'mi_volume', order: 'desc', limit: 300, images_first: false, include_tiers: true }),
   });
   const products = dealProducts(data?.items ?? [], deals, sizes, sortBy);
   return (
@@ -479,9 +490,15 @@ function Rail({ rail, distributors, deals, sizes, sortBy, edition }: { rail: MiR
 function BottlePrices({ p }: { p: Product }) {
   const pack = bottlesPerCase(p.product_name, p.unit_qty);
   const x1 = p.frontline_unit_price ?? null;                        // 1-case bottle price (list)
-  const x2 = p.best_unit_price ?? null;                             // after best QD
-  const x3 = pack && p.effective_case_price != null ? p.effective_case_price / pack : null; // after best QD+RIP
-  const tip = `Bottle price: ${money(x1) ?? '—'} at 1 case (list) · ${money(x2) ?? '—'} after best QD · ${x3 != null ? money(x3) : '—'} after best RIP + QD`;
+  const x2 = p.best_unit_price ?? null;                             // after best QD (canonical column)
+  // After best QD + best RIP: subtract the deepest RIP (per bottle) — the same
+  // RIP shown in the chip — from the best-QD bottle price. (effective_case_price
+  // is the STABLE whole-month price and drops time-sensitive RIPs, so it can't
+  // be used here — that was the bug where X3 == X2.)
+  const rip = topTier(p.tiers, 'rip');
+  const ripPerCase = rip && rip.amount != null && rip.qty ? rip.amount / rip.qty : 0;
+  const x3 = x2 != null && pack ? Math.max(0, x2 - ripPerCase / pack) : null;
+  const tip = `Bottle price: ${money(x1) ?? '—'} at 1 case (list) · ${money(x2) ?? '—'} after best QD · ${x3 != null ? money(x3) : '—'} after best QD + RIP`;
   return (
     <div className="disc-fav-prices" title={tip}>
       <span className="disc-bp-label">Bottle Price:</span> {money(x1) ?? '—'}, {x2 != null ? money(x2) : '—'}, {x3 != null ? money(x3) : '—'}

@@ -78,6 +78,11 @@ def _num(v):
         return None
 
 
+def _r2(v):
+    """Round a money value to 2 dp, killing float-division tails (66.6733..., 4.9999...)."""
+    return round(v, 2) if isinstance(v, (int, float)) and v == v else v
+
+
 def _s(v):
     """Clean string for a VARCHAR column / string op. Guards the Postgres-vs-parquet
     type drift: the Postgres-backed prod cache hands back rip_code / vintage / item_no
@@ -209,17 +214,18 @@ def _build_edition(con, src, ed, attach_tiers, log, per_ed=None) -> int:
             pack = int(float(o.get("unit_qty"))) if o.get("unit_qty") else None
         except (TypeError, ValueError):
             pack = None
-        x1 = _num(rec.get("frontline_unit_price"))
+        x1 = _r2(_num(rec.get("frontline_unit_price")))
         # X2 = per-bottle after best QD. Prefer the raw best_unit_price column;
         # else the best-QD tier's own btl_price_after; else the list bottle (no QD).
         x2 = _num(rec.get("best_unit_price"))
         if x2 is None:
             x2 = _num(qd.get("btl_price_after")) if qd else x1
-        rip_pc = (_num(rip.get("amount")) / rip.get("qty")) if (rip and rip.get("qty")) else 0.0
-        x3 = (max(0.0, x2 - (rip_pc / pack)) if (x2 is not None and pack) else None)
-        one_cs = _one_cs(rec)
-        eff = _num(o.get("effective_case_price"))
-        net = (max(0.0, one_cs - eff) if (one_cs is not None and eff is not None) else None)
+        x2 = _r2(x2)
+        rip_pc = _r2((_num(rip.get("amount")) / rip.get("qty")) if (rip and rip.get("qty")) else 0.0)
+        x3 = _r2(max(0.0, x2 - ((rip_pc or 0) / pack)) if (x2 is not None and pack) else None)
+        one_cs = _r2(_one_cs(rec))
+        eff = _r2(_num(o.get("effective_case_price")))
+        net = _r2(max(0.0, one_cs - eff) if (one_cs is not None and eff is not None) else None)
         brand = (_s(o.get("brand")) or "").upper()
         code = _s(rec.get("rip_code")) or ""
         cm_primary = True
@@ -237,14 +243,14 @@ def _build_edition(con, src, ed, attach_tiers, log, per_ed=None) -> int:
             _s(dl[0]), ",".join(_s(d) or "" for d in dl), o.get("n_distributors") or len(dl),
             _s(o.get("item_no")), _s(rec.get("dist_item_name")),
             _num(rec.get("mi_volume")), _s(rec.get("image_url")),
-            _num(o.get("frontline_case_price")), one_cs, eff,
+            _r2(_num(o.get("frontline_case_price"))), one_cs, eff,
             x1, x2, x3,
-            (rip.get("qty") if rip else None), (_num(rip.get("amount")) if rip else None),
+            (rip.get("qty") if rip else None), (_r2(_num(rip.get("amount"))) if rip else None),
             (rip_pc if rip else None), (_s(rip.get("code")) if rip else (code or None)),
             (bool(rip.get("is_time_sensitive")) if rip else None),
             (rip.get("from_date") if rip else None), (rip.get("to_date") if rip else None),
-            (qd.get("qty") if qd else None), (_num(qd.get("save_per_case")) if qd else None),
-            (((qd.get("qty") or 0) * (_num(qd.get("save_per_case")) or 0)) if qd else None),
+            (qd.get("qty") if qd else None), (_r2(_num(qd.get("save_per_case"))) if qd else None),
+            (_r2((qd.get("qty") or 0) * (_num(qd.get("save_per_case")) or 0)) if qd else None),
             rip is not None, qd is not None, (rip is not None and qd is not None),
             any(t.get("is_time_sensitive") for t in tiers),
             net, (net / one_cs if (net is not None and one_cs) else None), cm_primary,

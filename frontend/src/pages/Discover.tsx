@@ -403,15 +403,20 @@ function Rail({ rail, distributors, deals, sizes }: { rail: MiRail; distributors
   // mergeByDeal keeps rows in mi_volume-desc order; collapse case-mix flavour
   // variants to the top-volume primary AFTER the deal filter (so the primary is
   // a deal-bearing one), then rank by discount.
-  const products = collapseCaseMix(mergeByDeal(base).filter((p) => discountScore(p) > 0))
+  // A product only belongs on a "Deals" rail if it ACTUALLY has a RIP or QD tier
+  // (a price merely below list, with no RIP/QD, does NOT qualify and must not
+  // show — let alone sort above real deals).
+  const hasDeal = (p: Product) => !!topTier(p.tiers, 'rip') || !!topTier(p.tiers, 'discount');
+  const products = collapseCaseMix(mergeByDeal(base).filter(hasDeal))
     .filter((p) => {
-      if (!typeDeals.length) return true;   // no deal-type filter -> any deal
+      if (!typeDeals.length) return true;   // no deal-type filter -> any RIP or QD
       const hasRip = !!topTier(p.tiers, 'rip');
       const hasQd = !!topTier(p.tiers, 'discount');
       return (typeDeals.includes('rip') && hasRip)
           || (typeDeals.includes('qd') && hasQd)
           || (typeDeals.includes('both') && hasRip && hasQd);
     })
+    // Best deal first: deepest discount (list case price vs price after best QD+RIP).
     .sort((a, b) => discountScore(b) - discountScore(a))
     .slice(0, 60);
   return (

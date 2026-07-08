@@ -193,9 +193,15 @@ def _cleanup_old(keep: Path | None):
                 pass
 
 
-def build_pricing_cache(force: bool = False) -> Path:
+def build_pricing_cache(force: bool = False, with_deal_grid: bool = True) -> Path:
     """(Re)build the cache into a fresh versioned file and point at it. Returns
     the new file path.
+
+    `with_deal_grid=False` skips the (heavy ~3 min) Discover deal_grid build so the
+    BOOT path can publish a serving cache fast and pass /api/ready; a background
+    thread then rebuilds WITH deal_grid. The cache dir is ephemeral on Render, so
+    every deploy rebuilds from scratch — keeping deal_grid off the critical path
+    stops it from delaying the health check and stalling deploys.
 
     Coordinated across workers: a cross-process lock means only ONE process
     builds at a time (no more N concurrent multi-GB builds at boot), and the
@@ -941,11 +947,14 @@ def build_pricing_cache(force: bool = False) -> Path:
                     print(f"[pricing_cache] sku_offer build skipped: {_exc}")
                 # deal_grid: the precomputed Discover Deals "bible", built FROM
                 # sku_offer (+ attach_tiers + cpl_enriched). Must run AFTER sku_offer.
-                try:
-                    from backend.precompute_deals import build_deal_grid
-                    build_deal_grid(con)
-                except Exception as _exc:
-                    print(f"[pricing_cache] deal_grid build skipped: {_exc}")
+                # Skipped on the boot path (with_deal_grid=False) so the health check
+                # isn't blocked; a background rebuild fills it in shortly after.
+                if with_deal_grid:
+                    try:
+                        from backend.precompute_deals import build_deal_grid
+                        build_deal_grid(con)
+                    except Exception as _exc:
+                        print(f"[pricing_cache] deal_grid build skipped: {_exc}")
             finally:
                 con.close()
             # Atomic publish: rename the finished temp into its versioned name,

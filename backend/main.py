@@ -188,10 +188,17 @@ def startup():
     init_user_db()
     try:
         from backend.pricing_cache import build_pricing_cache
-        build_pricing_cache()
+        import threading
+        # Build a serving cache WITHOUT the heavy deal_grid so /api/ready passes
+        # fast (the cache dir is ephemeral on Render, so this runs every deploy).
+        build_pricing_cache(with_deal_grid=False)
+        # Then rebuild WITH deal_grid off the critical path so it never delays a
+        # deploy; the pointer swap makes workers pick up the deal_grid-complete file.
+        threading.Thread(
+            target=lambda: build_pricing_cache(force=True, with_deal_grid=True),
+            daemon=True).start()
         # Warm the RIP Products tier cache in the background so the first open of
         # that (heavy) page is instant. Never blocks startup or the health check.
-        import threading
         from backend.routers.deals import (
             warm_rip_cache, warm_time_sensitive_cache,
             warm_combos_cache, warm_discounts_cache)

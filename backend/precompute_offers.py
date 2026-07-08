@@ -36,13 +36,12 @@ from backend import pricing as _pricing
 
 _TIE_EPS = 0.005
 
-# How many editions to materialise. The cart buys the CURRENT month (and the NEXT
-# month once its sheet loads); board-sourced adds are recent. Building every
-# historical edition multiplies build time AND boot memory for data no cart line
-# reaches, so we cap to the most recent N (plus any future/next edition). Kept
-# small because the boot cache build runs on a memory-constrained instance.
-# Override with SKU_OFFER_EDITIONS (0 = ALL editions).
-_RECENT_EDITIONS = int(os.getenv("SKU_OFFER_EDITIONS", "3"))
+# How many editions to materialise. 0 = ALL loaded editions (the default) so the
+# Discover Deals "bible" (deal_grid, built from sku_offer) can serve EVERY month
+# the Month filter offers. The cart/Compare only need the recent months, but the
+# extra editions are cheap here (a handful loaded) and prod is a paid instance;
+# set SKU_OFFER_EDITIONS=N to cap to the most recent N (plus future) if ever needed.
+_RECENT_EDITIONS = int(os.getenv("SKU_OFFER_EDITIONS", "0"))
 
 # Per-row columns written to the sku_offer table, in order.
 _OFFER_COLS = [

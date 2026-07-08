@@ -481,10 +481,10 @@ function BottlePrices({ p }: { p: Product }) {
   const x1 = p.frontline_unit_price ?? null;                        // 1-case bottle price (list)
   const x2 = p.best_unit_price ?? null;                             // after best QD
   const x3 = pack && p.effective_case_price != null ? p.effective_case_price / pack : null; // after best QD+RIP
-  const tip = `Per-bottle price: ${money(x1) ?? '—'} at 1 case (list) · ${money(x2) ?? '—'} after best QD · ${x3 != null ? money(x3) : '—'} after best RIP + QD`;
+  const tip = `Bottle price: ${money(x1) ?? '—'} at 1 case (list) · ${money(x2) ?? '—'} after best QD · ${x3 != null ? money(x3) : '—'} after best RIP + QD`;
   return (
     <div className="disc-fav-prices" title={tip}>
-      {money(x1) ?? '—'}, {x2 != null ? money(x2) : '—'}, {x3 != null ? money(x3) : '—'}
+      <span className="disc-bp-label">Bottle Price:</span> {money(x1) ?? '—'}, {x2 != null ? money(x2) : '—'}, {x3 != null ? money(x3) : '—'}
     </div>
   );
 }

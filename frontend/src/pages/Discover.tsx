@@ -74,27 +74,16 @@ function topTier(tiers: CatalogTier[] | undefined, source: 'discount' | 'rip'): 
 // to the price after the highest QD and the price after the highest RIP (the
 // deeper of the two wins; QD and RIP are never blended, per FOUNDATION). Used to
 // rank a category's top-volume pool so the biggest deals feature first.
+// Discount depth = how far the CANONICAL effective price (deepest QD+RIP, current
+// edition — the same number the detail page shows) sits below the frontline list.
+// We use the precomputed columns, never re-derive the pricing math here.
 function discountScore(p: Product): number {
-  const list = p.frontline_case_price ?? p.effective_case_price ?? 0;
+  const list = p.frontline_case_price ?? 0;
+  const eff = p.effective_case_price ?? list;
   if (list <= 0) return 0;
-  const qd = topTier(p.tiers, 'discount');
-  const rip = topTier(p.tiers, 'rip');
-  const qdSave = qd?.save_per_case ?? 0;                       // per-case QD saving
-  const ripPerCase = rip && rip.amount != null && rip.qty ? rip.amount / rip.qty : 0;  // per-case rebate
-  return Math.max(qdSave, ripPerCase) / list;
+  return Math.max(0, list - eff) / list;
 }
 
-// Best case price after the deepest QD + RIP (per case) — for comparing value
-// across sizes.
-function bestCaseAfterDeals(p: Product): number | null {
-  const list = p.frontline_case_price ?? p.effective_case_price ?? null;
-  if (list == null || list <= 0) return null;
-  const qd = topTier(p.tiers, 'discount');
-  const rip = topTier(p.tiers, 'rip');
-  const qdSave = qd?.save_per_case ?? 0;
-  const ripPerCase = rip && rip.amount != null && rip.qty ? rip.amount / rip.qty : 0;
-  return Math.max(0, list - qdSave - ripPerCase);
-}
 // Bottle volume in litres from the size label (750ML->0.75, 1L/LITER->1, 1.75L->1.75).
 function litresOf(size?: string | null): number | null {
   const s = String(size ?? '').toUpperCase().replace(/\s/g, '');
@@ -103,17 +92,18 @@ function litresOf(size?: string | null): number | null {
   const l = s.match(/^([\d.]+)L(?:T|TR)?$/); if (l) return parseFloat(l[1]);
   return null;
 }
-// Effective BOTTLE price = best case price (after best QD+RIP) / bottles-per-case.
+// Effective BOTTLE price = CANONICAL effective case price (deepest QD+RIP, current
+// edition) / bottles-per-case — the exact per-bottle number the detail page shows.
 // "Better 1L price" compares the 1L bottle price to the 750ML bottle price: a 1L
 // that costs about the same as (or less than) a 750ML is a better deal because
 // you get 33% more product for the money. (Per-LITRE is the wrong lens — it
 // normalises volume away, so a 1L and 750ML at the same $/L look "equivalent"
 // even though the 1L bottle costs a third more.)
 function perBottle(p: Product): number | null {
-  const bc = bestCaseAfterDeals(p);
+  const eff = p.effective_case_price;
   const pack = bottlesPerCase(p.product_name, p.unit_qty);
-  if (bc == null || !pack) return null;
-  return bc / pack;
+  if (eff == null || !pack) return null;
+  return eff / pack;
 }
 // The two sizes we compare for "Better 1L price".
 function sizeBucket(size?: string | null): '1L' | '750ML' | null {

@@ -1102,6 +1102,22 @@ def build_cpl_enriched(parquet_dir: str | Path, output_dir: Path):
     # Brand extraction: parse brand from product_name
     df["brand"] = df["product_name"].apply(_extract_brand)
 
+    # Type-drift guard (local<->prod parity): pandas infers numeric-looking code/id
+    # columns as FLOAT (rip_code 10954 -> 10954.0, vintage 2019 -> 2019.0), so the
+    # parquet prod builds from disagreed with the VARCHAR Postgres local builds from
+    # -- which is exactly what made the deal_grid build crash on prod only. Coerce
+    # these to clean strings HERE so BOTH sources emit identical types.
+    def _code_str(v):
+        if v is None or (isinstance(v, float) and v != v):  # None / NaN
+            return None
+        if isinstance(v, float):
+            return str(int(v)) if v == int(v) else str(v)
+        s = str(v).strip()
+        return s or None
+    for _c in ("rip_code", "rip_group_code", "combo_code", "dist_item_no", "abg_sku", "vintage"):
+        if _c in df.columns:
+            df[_c] = df[_c].map(_code_str)
+
     _write(df, output_dir, "cpl_enriched")
     con.close()
     return df

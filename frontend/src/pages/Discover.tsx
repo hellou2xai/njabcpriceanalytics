@@ -394,7 +394,7 @@ function DiscCard({ p }: { p: MergedProduct }) {
 // or "both" isn't limited to whichever top-volume rows happen to qualify. OR
 // combinations (rip AND qd checkboxes) stay client-side (can't AND them here).
 function dealSearchParams(deals: string[]): Record<string, boolean> {
-  const set = new Set(deals.filter((d) => d !== 'better_1l'));
+  const set = new Set(deals.filter((d) => d !== 'better_1l' && d !== 'time_sensitive'));
   if (set.size === 1 && set.has('both')) return { has_rip: true, has_discount: true };
   if (set.size === 1 && set.has('rip')) return { has_rip: true };
   if (set.size === 1 && set.has('qd')) return { has_discount: true };
@@ -409,9 +409,10 @@ function dealProducts(items: Product[], deals: string[], sizes: string[], sortBy
   const sized = litreSet.size
     ? items.filter((it) => { const L = litresOf(it.unit_volume); return L != null && litreSet.has(L); })
     : items;
-  const typeDeals = deals.filter((d) => d !== 'better_1l');
+  // better_1l / time_sensitive are cross-cutting filters, not RIP/QD deal TYPES.
+  const typeDeals = deals.filter((d) => d !== 'better_1l' && d !== 'time_sensitive');
   const hasDeal = (p: Product) => !!topTier(p.tiers, 'rip') || !!topTier(p.tiers, 'discount');
-  return collapseCaseMix(mergeByDeal(sized).filter(hasDeal))
+  let out = collapseCaseMix(mergeByDeal(sized).filter(hasDeal))
     .filter((p) => {
       if (!typeDeals.length) return true;   // no deal-type filter -> any RIP or QD
       const hasRip = !!topTier(p.tiers, 'rip');
@@ -419,9 +420,32 @@ function dealProducts(items: Product[], deals: string[], sizes: string[], sortBy
       return (typeDeals.includes('rip') && hasRip)
           || (typeDeals.includes('qd') && hasQd)
           || (typeDeals.includes('both') && hasRip && hasQd);
-    })
-    .sort(SORT_FNS[sortBy] ?? SORT_FNS.net)
-    .slice(0, 60);
+    });
+  // Time-sensitive: keep only cards carrying a dated (limited-window) tier.
+  if (deals.includes('time_sensitive')) {
+    out = out.filter((p) => (p.tiers ?? []).some((t) => t.is_time_sensitive));
+  }
+  // Better 1L price: keep 1L cards whose per-BOTTLE price is <= the SAME product's
+  // 750ML per-bottle price (you get 33% more product for about the same money).
+  // The 750ML reference comes from the FULL, unsized item set.
+  if (deals.includes('better_1l')) {
+    const ref750 = new Map<string, number>();
+    for (const it of items) {
+      if (sizeBucket(it.unit_volume) !== '750ML') continue;
+      const pb = perBottle(it);
+      if (pb == null) continue;
+      const k = productKey(it);
+      const cur = ref750.get(k);
+      if (cur == null || pb < cur) ref750.set(k, pb);
+    }
+    out = out.filter((p) => {
+      if (sizeBucket(p.unit_volume) !== '1L') return false;
+      const ref = ref750.get(productKey(p));
+      const pb = perBottle(p);
+      return ref != null && pb != null && pb <= ref + 0.01;
+    });
+  }
+  return out.sort(SORT_FNS[sortBy] ?? SORT_FNS.net).slice(0, 60);
 }
 
 // On-submit SEMANTIC deal search: the query goes to the shared /api/catalog/search
@@ -432,7 +456,7 @@ function SearchResults({ query, distributors, deals, sizes, sortBy, edition }:
   const distParam = distributors.length ? distributors.join(',') : undefined;
   const sizesParam = sizes.length ? sizes.join(',') : '375ML,750ML,1L,1.75L';
   const { data, isLoading } = useQuery({
-    queryKey: ['disc-search', query, distParam ?? '', edition, deals.filter((d) => d !== 'better_1l').sort().join(','), sizesParam],
+    queryKey: ['disc-search', query, distParam ?? '', edition, deals.filter((d) => d !== 'better_1l' && d !== 'time_sensitive').sort().join(','), sizesParam],
     staleTime: 300_000,
     queryFn: () => catalog.search({ q: query, ...dealSearchParams(deals), ...(distParam ? { divisions: distParam } : {}), ...(edition ? { edition } : {}), sizes: sizesParam, sort: 'mi_volume', order: 'desc', limit: 300, images_first: false, include_tiers: true }),
   });
@@ -470,7 +494,7 @@ function Rail({ rail, distributors, deals, sizes, sortBy, edition }: { rail: MiR
     // distParam / deals / sizes are part of the key so every filter REFETCHES
     // (server-side) instead of just narrowing the initial 300 — so the grid can
     // fill from the full qualifying set, not whatever the top-volume list held.
-    queryKey: ['mi-rail', rail.params, distParam ?? '', edition, deals.filter((d) => d !== 'better_1l').sort().join(','), sizesParam],
+    queryKey: ['mi-rail', rail.params, distParam ?? '', edition, deals.filter((d) => d !== 'better_1l' && d !== 'time_sensitive').sort().join(','), sizesParam],
     enabled: show,
     // Deal data only changes on a monthly reload, and the server memoises these
     // responses, so keep them fresh client-side for a long while (no refetch on
@@ -686,7 +710,7 @@ export default function Discover() {
 
           <div className="disc-filter-sect">
             <div className="disc-filter-h">Deal</div>
-            {[['rip', 'Has RIP'], ['qd', 'Has QD'], ['both', 'Has both QD & RIP']].map(([v, label]) => (
+            {[['rip', 'Has RIP'], ['qd', 'Has QD'], ['both', 'Has both QD & RIP'], ['time_sensitive', 'Time-sensitive'], ['better_1l', 'Better 1L price']].map(([v, label]) => (
               <label key={v} className="disc-filter-opt">
                 <input type="checkbox" checked={dealSet.has(v)} onChange={() => setDealSet((s) => toggleIn(s, v))} />
                 <span>{label}</span>

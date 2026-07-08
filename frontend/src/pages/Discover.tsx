@@ -105,6 +105,12 @@ const SORT_OPTS: [string, string][] = [
   ['net', 'Net Discount'], ['name', 'Product name'],
   ['rip', 'Highest Case RIP'], ['qd', 'Highest Case QD'], ['pct', 'Deal %'],
 ];
+// '2026-06' -> 'Jun-26'.
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function fmtMonth(ym: string): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(ym);
+  return m ? `${MONTH_ABBR[parseInt(m[2], 10) - 1]}-${m[1].slice(2)}` : ym;
+}
 
 function discountScore(p: Product): number {
   const base = oneCsCasePrice(p) ?? p.frontline_case_price ?? 0;
@@ -236,6 +242,9 @@ function DiscCard({ p }: { p: MergedProduct }) {
   // portal so the horizontally-scrolling rail track can't clip it.
   const [pop, setPop] = useState<{ top: number; left: number } | null>(null);
   const price = money(oneCsCasePrice(p));
+  // Best bottle price = price after best QD+RIP, per bottle (canonical column).
+  const packBtl = bottlesPerCase(p.product_name, p.unit_qty);
+  const bestBtl = packBtl && p.effective_case_price != null ? money(p.effective_case_price / packBtl) : null;
   const rip = topTier(p.tiers, 'rip');
   const qd = topTier(p.tiers, 'discount');
   const ts = (p.tiers ?? []).filter((t) => t.is_time_sensitive);
@@ -350,6 +359,11 @@ function DiscCard({ p }: { p: MergedProduct }) {
       <div className="disc-card-foot">
         {price && (
           <div className="disc-card-price">{price}<span className="disc-card-price-u">/cs</span></div>
+          {bestBtl && (
+            <div className="disc-card-btl" title="Best bottle price — after best QD + RIP">
+              {bestBtl}<span className="disc-card-price-u">/btl</span>
+            </div>
+          )}
         )}
         {(rip || qd) && (
           <div className="disc-card-deals">
@@ -592,7 +606,6 @@ export default function Discover() {
         <p className="disc-hint">Top categories by market sales volume</p>
       </header>
 
-      <MyFavorites query={q} edition={edition} />
 
       <div className={`disc-body${filtersCollapsed ? ' disc-body--nofilters' : ''}`}>
         {filtersCollapsed ? (
@@ -621,7 +634,7 @@ export default function Discover() {
             <div className="disc-filter-h">Month</div>
             <select className="disc-filter-select" value={edition} onChange={(e) => setEdition(e.target.value)}>
               <option value="">Current month</option>
-              {months.map((m) => <option key={m} value={m}>{m}</option>)}
+              {months.map((m) => <option key={m} value={m}>{fmtMonth(m)}</option>)}
             </select>
           </div>
 
@@ -679,6 +692,7 @@ export default function Discover() {
         )}
 
         <div className="disc-rails">
+          <MyFavorites query={q} edition={edition} />
           {rails.map((r) => <Rail key={r.label} rail={r} distributors={dists} deals={deals} sizes={sizeList} sortBy={sortBy} edition={edition} />)}
         </div>
       </div>

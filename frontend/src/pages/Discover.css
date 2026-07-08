@@ -151,6 +151,8 @@
    (wider) chips never crowd it off a narrow card. */
 .disc-card-foot { margin-top: auto; display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
 .disc-card-price { font-size: 15px; font-weight: 700; color: #101828; line-height: 1.1; white-space: nowrap; }
+/* Best bottle price (after best QD+RIP). SAME font size as the case price. */
+.disc-card-btl { font-size: 15px; font-weight: 700; color: #475467; line-height: 1.1; white-space: nowrap; }
 .disc-card-price-u { font-size: 10px; font-weight: 500; color: #98a2b3; margin-left: 1px; }
 /* Chips stretch to the card width and WRAP rather than clip, so a long value
    ($103/cs) never loses its "/cs". */
@@ -219,6 +221,7 @@
   .disc-fav-size { color: #98a2b3; }
   .disc-fav-prices { color: #e6e8ef; }
   .disc-filter-select { background: #1a1e2c; border-color: #2a2f42; color: #cdd2e0; }
+  .disc-card-btl { color: #aeb6c8; }
   .disc-deal--rip { color: #d92d20; background: #fde68a; }   /* red on yellow */
   .disc-deal--qd  { color: #101828; background: #fde68a; }   /* black on yellow */
   .disc-ts-btn { background: rgba(181,71,8,.22); border-color: #7a4a12; color: #fdb87a; }

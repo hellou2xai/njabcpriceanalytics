@@ -6835,6 +6835,14 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
    narrow (a 420px detail rail, a tablet, a phone) — fluid, container-aware, no
    fixed breakpoint. min(100%, 320px) guards tiny screens from overflowing. */
 .pdx-detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 16px; margin-top: 16px; }
+/* Phones: one panel per row, and let a panel shrink below its pricing table's
+   min-content (grid items default to min-width:auto) so nothing clips; the wide
+   RIP/QD/Price table then scrolls horizontally INSIDE its own panel. */
+@media (max-width: 768px) {
+  .pdx-detail-grid { grid-template-columns: 1fr; }
+  .pdx-detail-grid > *, .pdx-card-stack, .pdx-card, .pdx-qd-stack { min-width: 0; }
+  .pdx-panel { overflow-x: auto; }
+}
 .pdx-panel { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; background: var(--bg); }
 .pdx-summary, .pdx-order { border: 0; padding: 0; background: none; }
 

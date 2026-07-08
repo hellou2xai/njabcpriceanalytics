@@ -242,9 +242,6 @@ function DiscCard({ p }: { p: MergedProduct }) {
   // portal so the horizontally-scrolling rail track can't clip it.
   const [pop, setPop] = useState<{ top: number; left: number } | null>(null);
   const price = money(oneCsCasePrice(p));
-  // Best bottle price = price after best QD+RIP, per bottle (canonical column).
-  const packBtl = bottlesPerCase(p.product_name, p.unit_qty);
-  const bestBtl = packBtl && p.effective_case_price != null ? money(p.effective_case_price / packBtl) : null;
   const rip = topTier(p.tiers, 'rip');
   const qd = topTier(p.tiers, 'discount');
   const ts = (p.tiers ?? []).filter((t) => t.is_time_sensitive);
@@ -356,13 +353,9 @@ function DiscCard({ p }: { p: MergedProduct }) {
           {(() => { const pack = bottlesPerCase(p.product_name, p.unit_qty); return pack != null ? ` (${pack}/cs)` : ''; })()}
         </div>
       )}
+      <BottlePrices p={p} />
       <div className="disc-card-foot">
         {price && <div className="disc-card-price">{price}<span className="disc-card-price-u">/cs</span></div>}
-        {bestBtl && (
-          <div className="disc-card-btl" title="Best bottle price — after best QD + RIP">
-            {bestBtl}<span className="disc-card-price-u">/btl</span>
-          </div>
-        )}
         {(rip || qd) && (
           <div className="disc-card-deals">
             {rip && (
@@ -388,6 +381,55 @@ function DiscCard({ p }: { p: MergedProduct }) {
   );
 }
 
+// Build the deal cards for a set of search rows: size filter, merge same product
+// across distributors, keep only products that ACTUALLY have a RIP or QD, collapse
+// case-mix flavour variants, apply the deal-type filter, sort, cap at 60.
+function dealProducts(items: Product[], deals: string[], sizes: string[], sortBy: string): MergedProduct[] {
+  const litreSet = new Set(sizes.map((s) => litresOf(s)).filter((v): v is number => v != null));
+  const sized = litreSet.size
+    ? items.filter((it) => { const L = litresOf(it.unit_volume); return L != null && litreSet.has(L); })
+    : items;
+  const typeDeals = deals.filter((d) => d !== 'better_1l');
+  const hasDeal = (p: Product) => !!topTier(p.tiers, 'rip') || !!topTier(p.tiers, 'discount');
+  return collapseCaseMix(mergeByDeal(sized).filter(hasDeal))
+    .filter((p) => {
+      if (!typeDeals.length) return true;   // no deal-type filter -> any RIP or QD
+      const hasRip = !!topTier(p.tiers, 'rip');
+      const hasQd = !!topTier(p.tiers, 'discount');
+      return (typeDeals.includes('rip') && hasRip)
+          || (typeDeals.includes('qd') && hasQd)
+          || (typeDeals.includes('both') && hasRip && hasQd);
+    })
+    .sort(SORT_FNS[sortBy] ?? SORT_FNS.net)
+    .slice(0, 60);
+}
+
+// On-submit SEMANTIC deal search: the query goes to the shared /api/catalog/search
+// (aliases + spell-fix + semantic), and we show the matching DEALS. Replaces the
+// category rails while a search is active.
+function SearchResults({ query, distributors, deals, sizes, sortBy, edition }:
+  { query: string; distributors: string[]; deals: string[]; sizes: string[]; sortBy: string; edition: string }) {
+  const distParam = distributors.length ? distributors.join(',') : undefined;
+  const { data, isLoading } = useQuery({
+    queryKey: ['disc-search', query, distParam ?? '', edition],
+    staleTime: 300_000,
+    queryFn: () => catalog.search({ q: query, ...(distParam ? { divisions: distParam } : {}), ...(edition ? { edition } : {}), sizes: '375ML,750ML,1L,1.75L', sort: 'mi_volume', order: 'desc', limit: 300, images_first: false, include_tiers: true }),
+  });
+  const products = dealProducts(data?.items ?? [], deals, sizes, sortBy);
+  return (
+    <section className="disc-rail">
+      <div className="disc-rail-head"><h2 className="disc-rail-title">Deals matching “{query}”</h2></div>
+      <div className="disc-rail-track">
+        {isLoading && Array.from({ length: 6 }).map((_, i) => <div key={i} className="disc-card disc-card--skel" />)}
+        {!isLoading && products.length === 0 && (
+          <div className="disc-rail-empty">No deals found for “{query}”. Try another product, brand, or category.</div>
+        )}
+        {products.map((p, i) => <DiscCard key={`${p.product_name}-${i}`} p={p} />)}
+      </div>
+    </section>
+  );
+}
+
 function Rail({ rail, distributors, deals, sizes, sortBy, edition }: { rail: MiRail; distributors: string[]; deals: string[]; sizes: string[]; sortBy: string; edition: string }) {
   const { ref, seen } = useInView<HTMLElement>();
   // On BACK/FORWARD (POP) load every rail immediately (data is cached, so it's
@@ -409,57 +451,7 @@ function Rail({ rail, distributors, deals, sizes, sortBy, edition }: { rail: MiR
     // include_tiers gives us each SKU's QD + RIP ladder for the deal chips.
     queryFn: () => catalog.search({ ...rail.params, ...(distParam ? { divisions: distParam } : {}), ...(edition ? { edition } : {}), sizes: '375ML,750ML,1L,1.75L', sort: 'mi_volume', order: 'desc', limit: 300, images_first: false, include_tiers: true }),
   });
-  // Merge the same product from multiple distributors (same RIP/QD) into one
-  // card, then FEATURE every product with a RIP or QD deal, ranked by deepest
-  // discount, up to 60 (stops earlier when the category runs out of deals).
-  const items = data?.items ?? [];
-  // Size filter: narrow to the selected bottle sizes (the grid still fills up to
-  // 60, ranked by best deal below). Match on litres so '1L' and 'LITER' resolve
-  // together, '750ML' vs '750 ML', etc.
-  const litreSet = new Set(sizes.map((s) => litresOf(s)).filter((v): v is number => v != null));
-  const sized = litreSet.size
-    ? items.filter((it) => { const L = litresOf(it.unit_volume); return L != null && litreSet.has(L); })
-    : items;
-  // Per-product best BOTTLE price by size, for the "Better 1L price" filter.
-  const pbBySize = new Map<string, { '1L'?: number; '750ML'?: number }>();
-  for (const it of items) {
-    const bucket = sizeBucket(it.unit_volume); if (!bucket) continue;
-    const pb = perBottle(it); if (pb == null) continue;
-    const pk = productKey(it);
-    const rec = pbBySize.get(pk) ?? {};
-    if (rec[bucket] == null || pb < rec[bucket]!) rec[bucket] = pb;
-    pbBySize.set(pk, rec);
-  }
-  // A product's 1L BOTTLE (after best QD+RIP) costs <= its 750ML bottle within
-  // 5% — i.e. ~same money for 33% more product.
-  const better1L = (p: Product) => {
-    const rec = pbBySize.get(productKey(p));
-    return !!(rec && rec['1L'] != null && rec['750ML'] != null && rec['1L']! <= rec['750ML']! * 1.05);
-  };
-  // "Better 1L price" restricts to qualifying 1L rows BEFORE the merge.
-  const base = deals.includes('better_1l')
-    ? sized.filter((it) => sizeBucket(it.unit_volume) === '1L' && better1L(it))
-    : sized;
-  const typeDeals = deals.filter((d) => d !== 'better_1l');
-  // mergeByDeal keeps rows in mi_volume-desc order; collapse case-mix flavour
-  // variants to the top-volume primary AFTER the deal filter (so the primary is
-  // a deal-bearing one), then rank by discount.
-  // A product only belongs on a "Deals" rail if it ACTUALLY has a RIP or QD tier
-  // (a price merely below list, with no RIP/QD, does NOT qualify and must not
-  // show — let alone sort above real deals).
-  const hasDeal = (p: Product) => !!topTier(p.tiers, 'rip') || !!topTier(p.tiers, 'discount');
-  const products = collapseCaseMix(mergeByDeal(base).filter(hasDeal))
-    .filter((p) => {
-      if (!typeDeals.length) return true;   // no deal-type filter -> any RIP or QD
-      const hasRip = !!topTier(p.tiers, 'rip');
-      const hasQd = !!topTier(p.tiers, 'discount');
-      return (typeDeals.includes('rip') && hasRip)
-          || (typeDeals.includes('qd') && hasQd)
-          || (typeDeals.includes('both') && hasRip && hasQd);
-    })
-    // Best deal first: deepest discount (list case price vs price after best QD+RIP).
-    .sort(SORT_FNS[sortBy] ?? SORT_FNS.net)
-    .slice(0, 60);
+  const products = dealProducts(data?.items ?? [], deals, sizes, sortBy);
   return (
     <section ref={ref} className="disc-rail">
       <div className="disc-rail-head">
@@ -482,13 +474,24 @@ function Rail({ rail, distributors, deals, sizes, sortBy, edition }: { rail: MiR
 // ---- My Favorites: the user's watchlisted products, priced, with three
 // per-bottle prices (1-case list / after best QD / after best QD+RIP). The hero
 // search filters this grid IN PLACE (never leaves the page).
-function FavCard({ p }: { p: Product }) {
+// The three per-bottle prices in ONE format used everywhere: ($X1, $X2, $X3) =
+// 1-case list, after best QD, after best QD+RIP. Hover for the breakdown.
+function BottlePrices({ p }: { p: Product }) {
   const pack = bottlesPerCase(p.product_name, p.unit_qty);
   const x1 = p.frontline_unit_price ?? null;                        // 1-case bottle price (list)
   const x2 = p.best_unit_price ?? null;                             // after best QD
   const x3 = pack && p.effective_case_price != null ? p.effective_case_price / pack : null; // after best QD+RIP
-  const sizeLabel = [p.unit_volume, pack ? `${pack}/cs` : null].filter(Boolean).join(', ');
   const tip = `Per-bottle price: ${money(x1) ?? '—'} at 1 case (list) · ${money(x2) ?? '—'} after best QD · ${x3 != null ? money(x3) : '—'} after best RIP + QD`;
+  return (
+    <div className="disc-fav-prices" title={tip}>
+      {money(x1) ?? '—'}, {x2 != null ? money(x2) : '—'}, {x3 != null ? money(x3) : '—'}
+    </div>
+  );
+}
+
+function FavCard({ p }: { p: Product }) {
+  const pack = bottlesPerCase(p.product_name, p.unit_qty);
+  const sizeLabel = [p.unit_volume, pack ? `${pack}/cs` : null].filter(Boolean).join(', ');
   return (
     <Link to={productHref(p)} className="disc-card">
       <div className="disc-card-top">
@@ -503,9 +506,7 @@ function FavCard({ p }: { p: Product }) {
         {(p.abg_item_name?.trim() || p.product_name)}
         {sizeLabel && <span className="disc-fav-size"> ({sizeLabel})</span>}
       </div>
-      <div className="disc-fav-prices" title={tip}>
-        {money(x1) ?? '—'}, {x2 != null ? money(x2) : '—'}, {x3 != null ? money(x3) : '—'}
-      </div>
+      <BottlePrices p={p} />
     </Link>
   );
 }
@@ -561,6 +562,7 @@ function toggleIn(set: Set<string>, v: string): Set<string> {
 
 export default function Discover() {
   const [q, setQ] = useState('');
+  const [submitted, setSubmitted] = useState('');   // the query actually searched (on Enter/Search)
   const [distSet, setDistSet] = useState<Set<string>>(new Set());
   const [catSet, setCatSet] = useState<Set<string>>(new Set());
   const [dealSet, setDealSet] = useState<Set<string>>(new Set());
@@ -585,16 +587,18 @@ export default function Discover() {
       <header className="disc-hero">
         <h1 className="disc-title">Celr AI</h1>
         <p className="disc-sub">Find any product, at any distributor</p>
-        {/* Search filters My Favorites IN PLACE (stays on this page). */}
-        <form className="disc-search" onSubmit={(e) => e.preventDefault()}>
+        {/* Semantic deal search: runs ONLY on Enter / Search (not per keystroke),
+            and finds matching DEALS on this page. */}
+        <form className="disc-search" onSubmit={(e) => { e.preventDefault(); setSubmitted(q.trim()); }}>
           <Search size={18} className="disc-search-ic" />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search your favorites…"
-            aria-label="Search your favorites"
+            placeholder="Search deals — product, brand, region…"
+            aria-label="Search deals"
           />
-          {q && <button type="button" onClick={() => setQ('')}>Clear</button>}
+          {submitted && <button type="button" onClick={() => { setQ(''); setSubmitted(''); }}>Clear</button>}
+          <button type="submit">Search</button>
         </form>
         <div className="disc-types">
           {TYPES.map((t) => (
@@ -690,8 +694,10 @@ export default function Discover() {
         )}
 
         <div className="disc-rails">
-          <MyFavorites query={q} edition={edition} />
-          {rails.map((r) => <Rail key={r.label} rail={r} distributors={dists} deals={deals} sizes={sizeList} sortBy={sortBy} edition={edition} />)}
+          <MyFavorites query="" edition={edition} />
+          {submitted
+            ? <SearchResults query={submitted} distributors={dists} deals={deals} sizes={sizeList} sortBy={sortBy} edition={edition} />
+            : rails.map((r) => <Rail key={r.label} rail={r} distributors={dists} deals={deals} sizes={sizeList} sortBy={sortBy} edition={edition} />)}
         </div>
       </div>
     </div>

@@ -359,10 +359,10 @@ function Rail({ rail, distributors, deals }: { rail: MiRail; distributors: strin
     queryKey: ['mi-rail', rail.params, distParam ?? ''],
     enabled: show,
     staleTime: 300_000,
-    // Featured rails show standard retail bottles only (1.75L / 1L / 750ML),
+    // Featured rails show standard retail bottles only (1.75L / 1L / 750ML / 375ML),
     // not minis, 4-packs, cans or tray packs that otherwise top the volume rank.
     // include_tiers gives us each SKU's QD + RIP ladder for the deal chips.
-    queryFn: () => catalog.search({ ...rail.params, ...(distParam ? { divisions: distParam } : {}), sizes: '750ML,1L,1.75L', sort: 'mi_volume', order: 'desc', limit: 300, images_first: false, include_tiers: true }),
+    queryFn: () => catalog.search({ ...rail.params, ...(distParam ? { divisions: distParam } : {}), sizes: '375ML,750ML,1L,1.75L', sort: 'mi_volume', order: 'desc', limit: 300, images_first: false, include_tiers: true }),
   });
   // Merge the same product from multiple distributors (same RIP/QD) into one
   // card, then FEATURE every product with a RIP or QD deal, ranked by deepest

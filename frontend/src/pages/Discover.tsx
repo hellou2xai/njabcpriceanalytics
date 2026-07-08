@@ -133,8 +133,12 @@ function oneCsCasePrice(p: Product): number | null {
 // mirroring the shared /product route used across the app.
 function productHref(p: Product): string {
   const q = new URLSearchParams({ w: p.wholesaler, n: p.product_name });
+  // Full SKU identity so the detail seeds the EXACT clicked SKU (barcodes can be
+  // shared across sizes/packs, or be placeholders): upc + size + pack + vintage.
   if (p.upc) q.set('u', String(p.upc));
-  if (p.unit_volume) q.set('s', String(p.unit_volume));   // pins the exact size
+  if (p.unit_volume) q.set('s', String(p.unit_volume));
+  if (p.unit_qty) q.set('pk', String(p.unit_qty));
+  if (p.vintage != null && String(p.vintage) !== '') q.set('v', String(p.vintage));
   return `/product?${q.toString()}`;
 }
 

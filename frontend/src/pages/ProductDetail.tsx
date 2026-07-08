@@ -304,6 +304,12 @@ export default function ProductDetail() {
   const wholesaler = params.get('w') ?? '';
   const name = params.get('n') ?? '';
   const upc = params.get('u') ?? undefined;
+  // Full SKU-identity guard rails from the link, so the seed SKU (header, price,
+  // pack, image) is the EXACT one the user clicked — critical when a barcode is
+  // shared across sizes/packs or is a placeholder. All resolve server-side.
+  const size = params.get('s') ?? undefined;
+  const pack = params.get('pk') ?? undefined;
+  const vintage = params.get('v') ?? undefined;
 
   const [cart, setCartState] = useState<CartState>(loadCart);
   const [view, setView] = useState<'deals' | 'bottles'>('deals');
@@ -332,8 +338,8 @@ export default function ProductDetail() {
   // Enrichment + producer + ai blurb (one representative SKU).
   const { data: detail } = useQuery({
     enabled: !!wholesaler && !!name,
-    queryKey: ['pd-detail', wholesaler, name, upc],
-    queryFn: () => catalog.product(wholesaler, name, { upc }),
+    queryKey: ['pd-detail', wholesaler, name, upc, size, pack, vintage],
+    queryFn: () => catalog.product(wholesaler, name, { upc, unit_volume: size, unit_qty: pack, vintage }),
   });
 
   // Every size of this product — via the shared "products by size" tool

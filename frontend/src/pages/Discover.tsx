@@ -421,10 +421,11 @@ function dealProducts(items: Product[], deals: string[], sizes: string[], sortBy
 function SearchResults({ query, distributors, deals, sizes, sortBy, edition }:
   { query: string; distributors: string[]; deals: string[]; sizes: string[]; sortBy: string; edition: string }) {
   const distParam = distributors.length ? distributors.join(',') : undefined;
+  const sizesParam = sizes.length ? sizes.join(',') : '375ML,750ML,1L,1.75L';
   const { data, isLoading } = useQuery({
-    queryKey: ['disc-search', query, distParam ?? '', edition, deals.filter((d) => d !== 'better_1l').sort().join(',')],
+    queryKey: ['disc-search', query, distParam ?? '', edition, deals.filter((d) => d !== 'better_1l').sort().join(','), sizesParam],
     staleTime: 300_000,
-    queryFn: () => catalog.search({ q: query, ...dealSearchParams(deals), ...(distParam ? { divisions: distParam } : {}), ...(edition ? { edition } : {}), sizes: '375ML,750ML,1L,1.75L', sort: 'mi_volume', order: 'desc', limit: 300, images_first: false, include_tiers: true }),
+    queryFn: () => catalog.search({ q: query, ...dealSearchParams(deals), ...(distParam ? { divisions: distParam } : {}), ...(edition ? { edition } : {}), sizes: sizesParam, sort: 'mi_volume', order: 'desc', limit: 300, images_first: false, include_tiers: true }),
   });
   const products = dealProducts(data?.items ?? [], deals, sizes, sortBy);
   return (
@@ -448,9 +449,12 @@ function Rail({ rail, distributors, deals, sizes, sortBy, edition }: { rail: MiR
   const eager = useNavigationType() === 'POP';
   const show = seen || eager;
   const distParam = distributors.length ? distributors.join(',') : undefined;
+  const sizesParam = sizes.length ? sizes.join(',') : '375ML,750ML,1L,1.75L';
   const { data, isLoading } = useQuery({
-    // distParam is part of the key so a distributor filter refetches, not caches.
-    queryKey: ['mi-rail', rail.params, distParam ?? '', edition, deals.filter((d) => d !== 'better_1l').sort().join(',')],
+    // distParam / deals / sizes are part of the key so every filter REFETCHES
+    // (server-side) instead of just narrowing the initial 300 — so the grid can
+    // fill from the full qualifying set, not whatever the top-volume list held.
+    queryKey: ['mi-rail', rail.params, distParam ?? '', edition, deals.filter((d) => d !== 'better_1l').sort().join(','), sizesParam],
     enabled: show,
     // Deal data only changes on a monthly reload, and the server memoises these
     // responses, so keep them fresh client-side for a long while (no refetch on
@@ -460,7 +464,7 @@ function Rail({ rail, distributors, deals, sizes, sortBy, edition }: { rail: MiR
     // Featured rails show standard retail bottles only (1.75L / 1L / 750ML / 375ML),
     // not minis, 4-packs, cans or tray packs that otherwise top the volume rank.
     // include_tiers gives us each SKU's QD + RIP ladder for the deal chips.
-    queryFn: () => catalog.search({ ...rail.params, ...dealSearchParams(deals), ...(distParam ? { divisions: distParam } : {}), ...(edition ? { edition } : {}), sizes: '375ML,750ML,1L,1.75L', sort: 'mi_volume', order: 'desc', limit: 300, images_first: false, include_tiers: true }),
+    queryFn: () => catalog.search({ ...rail.params, ...dealSearchParams(deals), ...(distParam ? { divisions: distParam } : {}), ...(edition ? { edition } : {}), sizes: sizesParam, sort: 'mi_volume', order: 'desc', limit: 300, images_first: false, include_tiers: true }),
   });
   const products = dealProducts(data?.items ?? [], deals, sizes, sortBy);
   return (

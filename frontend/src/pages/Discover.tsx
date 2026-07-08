@@ -490,7 +490,7 @@ export default function Discover() {
 
           <div className="disc-filter-sect">
             <div className="disc-filter-h">Deal</div>
-            {[['rip', 'Has RIP'], ['qd', 'Has QD'], ['both', 'Has both QD & RIP'], ['better_1l', 'Better 1L price']].map(([v, label]) => (
+            {[['rip', 'Has RIP'], ['qd', 'Has QD'], ['both', 'Has both QD & RIP']].map(([v, label]) => (
               <label key={v} className="disc-filter-opt">
                 <input type="checkbox" checked={dealSet.has(v)} onChange={() => setDealSet((s) => toggleIn(s, v))} />
                 <span>{label}</span>

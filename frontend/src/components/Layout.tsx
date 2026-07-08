@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, Outlet, useLocation } from 'react-router-dom';
+import { Link, Outlet, useLocation, useNavigationType } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   LayoutDashboard, Package, ShoppingCart, Bell, Star, Menu, X, Combine,
@@ -146,6 +146,10 @@ function useIsMobile(breakpoint = 1024) {
   return isMobile;
 }
 
+// Per-history-entry scroll position of .main-content, so BACK restores where the
+// user was. Keyed by React Router's location.key (stable across back/forward).
+const scrollPositions = new Map<string, number>();
+
 export default function Layout() {
   const { username, logout, user } = useAuth();
   const oa = useOrderAnalysis();
@@ -177,6 +181,7 @@ export default function Layout() {
   const { theme, toggle: toggleTheme } = useTheme();
   const { size: textSize, setSize: setTextSize } = useTextSize();
   const location = useLocation();
+  const navType = useNavigationType();
 
   // Persist collapsed state for desktop
   useEffect(() => {
@@ -205,12 +210,33 @@ export default function Layout() {
     return () => window.removeEventListener('keydown', onKey);
   }, [isMobile, mobileOpen]);
 
-  // Reset scroll on navigation: without this, a deeply-scrolled Catalog leaves
-  // the next page opening mid-scroll.
+  // Scroll memory. Content scrolls inside .main-content (not the window), so the
+  // browser's own restoration doesn't apply. Save each history entry's scroll
+  // position while the user is on it, then on BACK/FORWARD (POP) put them back
+  // where they were; on a NEW navigation (PUSH/REPLACE) start at the top.
   useEffect(() => {
-    document.querySelector('.main-content')?.scrollTo(0, 0);
-    window.scrollTo(0, 0);
-  }, [location.pathname]);
+    const el = document.querySelector('.main-content');
+    if (!el) return;
+    const save = () => { scrollPositions.set(location.key, el.scrollTop); };
+    el.addEventListener('scroll', save, { passive: true });
+    return () => el.removeEventListener('scroll', save);
+  }, [location.key]);
+
+  useEffect(() => {
+    const el = document.querySelector('.main-content');
+    if (!el) return;
+    if (navType === 'POP') {
+      // Re-apply across a few frames while lazy content (rails, rows) fills in
+      // and the page regains its height, so a deep position lands correctly.
+      const y = scrollPositions.get(location.key) ?? 0;
+      let n = 0;
+      const restore = () => { el.scrollTop = y; if (++n < 10) setTimeout(restore, 60); };
+      restore();
+    } else {
+      el.scrollTo(0, 0);
+      window.scrollTo(0, 0);
+    }
+  }, [location.key, navType]);
 
   const qc = useQueryClient();
   const { data: unread } = useQuery({

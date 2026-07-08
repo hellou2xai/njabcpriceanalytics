@@ -235,6 +235,7 @@ export default function Layout() {
     // SHORT and grows. Re-apply the saved scrollTop every time the content grows
     // (ResizeObserver) until we actually reach it, then stop. Give up after 10s.
     const y = scrollPositions.get(location.key) ?? 0;
+    try { (window as unknown as Record<string, unknown>).__scrollDbg = { key: location.key, y, navType, keys: [...scrollPositions.keys()] }; } catch { /* noop */ }
     if (y <= 0) return;
     let reached = false;
     const apply = () => {

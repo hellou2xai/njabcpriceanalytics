@@ -759,8 +759,12 @@ def build_pricing_cache(force: bool = False) -> Path:
                         CASE WHEN regexp_matches(UPPER(product_name || ' ' || COALESCE(enr_name,'')), 'COGNAC')
                              THEN 'Cognac' ELSE 'Brandy' END
                       -- name-keyword fallback (generic 'Liquor & Spirits' / no enrichment),
-                      -- tolerant of NJ CPL abbreviations (BRBN, WHSK, VDK, TEQ).
-                      WHEN regexp_matches(UPPER(product_name), 'BOURBON|BRBN|WHISK|WHSK|WHIS|SCOTCH|(^| )RYE|IRISH WH') THEN 'Whiskey'
+                      -- tolerant of NJ CPL abbreviations (BRBN, WHSK, VDK, TEQ) AND
+                      -- of brand-named whiskeys whose name carries no generic token
+                      -- (Glenfiddich, Macallan, Jameson, Jack Daniel's ...). Matched
+                      -- against name + brand + Go-UPC name for max signal.
+                      WHEN regexp_matches(UPPER(product_name || ' ' || COALESCE(brand,'') || ' ' || COALESCE(enr_name,'')),
+                        'BOURBON|BRBN|WHISK|WHSK|WHIS|SCOTCH|( |^)RYE|IRISH WH|SINGLE MALT|( |^)MALT( |$|\d)|GLENFI|GLENLI|GLENMOR|GLENDRON|GLENROT|GLENGOY|GLENKIN|GLEN GRANT|MACALLAN|BALVENIE|LAPHROAIG|LAGAVULIN|ARDBEG|( |^)OBAN|DALMORE|BOWMORE|ABERLOUR|TALISKER|HIGHLAND PARK|CRAGGANMORE|DALWHINNIE|( |^)CARDHU|KNOCKANDO|MONKEY SHOULD|GLENMORANGIE|JOHNNIE|CHIVAS|DEWAR|FAMOUS GROUSE|CUTTY SARK|BALLANTINE|JAMESON|BUSHMILL|REDBREAST|( |^)POWERS|TULLAMORE|GREEN SPOT|TEELING|JACK DAN|GENTLEMAN JACK|JIM BEAM|( |^)MAKER|WOODFORD|BUFFALO TRACE|BULLEIT|KNOB CREEK|( |^)W ?TURKEY|WILD TURKEY|EVAN WILLIAM|ELIJAH CRAIG|FOUR ROSES|BASIL HAYDEN|EAGLE RARE|BLANTON|( |^)WELLER|OLD FORESTER|MICHTER|CROWN ROYAL|CANADIAN CLUB|SEAGRAM|BLACK VELVET|HIBIKI|YAMAZAKI|TOKI|SUNTORY|NIKKA|( |^)UB( |$)') THEN 'Whiskey'
                       WHEN regexp_matches(UPPER(product_name), 'VODKA|VODK|VDK') THEN 'Vodka'
                       WHEN regexp_matches(UPPER(product_name), 'TEQUILA|TEQ|MEZCAL|MEZ ') THEN 'Tequila'
                       WHEN regexp_matches(UPPER(product_name), 'COGNAC|VSOP|( VS )|( XO )') THEN 'Cognac'
@@ -770,7 +774,15 @@ def build_pricing_cache(force: bool = False) -> Path:
                       WHEN regexp_matches(UPPER(product_name), 'LIQUEUR|LIQ |SCHNAPP|CORDIAL|TRIPLE SEC|AMARETTO|CREME DE|SAMBUCA|APERITIF|APEROL|CAMPARI') THEN 'Cordials'
                       ELSE 'Other'
                     END
-                    WHERE product_type = 'Spirits'
+                    WHERE UPPER(TRIM(COALESCE(product_type, ''))) = 'SPIRITS'
+                """)
+                # Belt-and-suspenders: NO spirit row may stay NULL. Any Spirits row
+                # the CASE somehow missed (odd product_type spacing, etc.) becomes
+                # 'Other' so it still surfaces in the catalog/facets.
+                _try("""
+                    UPDATE cpl_enriched SET spirit_category = 'Other'
+                    WHERE UPPER(TRIM(COALESCE(product_type, ''))) = 'SPIRITS'
+                      AND (spirit_category IS NULL OR spirit_category = '')
                 """)
 
                 # mi_volume: the brand's market-intelligence 9L sales volume,

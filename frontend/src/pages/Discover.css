@@ -57,7 +57,7 @@
    on tablet/mobile so cards stay legible. */
 .disc-rail-track {
   display: grid; gap: 14px; padding: 4px 2px 12px;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 @media (max-width: 1024px) { .disc-rail-track { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @media (max-width: 760px)  { .disc-rail-track { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
@@ -122,9 +122,11 @@
 .disc-card-foot { margin-top: auto; display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
 .disc-card-price { font-size: 15px; font-weight: 700; color: #101828; line-height: 1.1; white-space: nowrap; }
 .disc-card-price-u { font-size: 10px; font-weight: 500; color: #98a2b3; margin-left: 1px; }
-.disc-card-deals { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+/* Chips stretch to the card width and WRAP rather than clip, so a long value
+   ($103/cs) never loses its "/cs". */
+.disc-card-deals { display: flex; flex-direction: column; align-items: stretch; gap: 4px; min-width: 0; }
 .disc-deal {
-  font-size: 12.5px; font-weight: 700; line-height: 1.25; white-space: nowrap;
+  font-size: 12.5px; font-weight: 700; line-height: 1.25; white-space: normal; overflow-wrap: anywhere;
   padding: 3px 8px; border-radius: 6px;
 }
 .disc-deal--rip { color: #d92d20; background: #fff3b0; }   /* red on yellow */

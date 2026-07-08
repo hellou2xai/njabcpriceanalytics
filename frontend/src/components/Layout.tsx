@@ -215,11 +215,17 @@ export default function Layout() {
   // position while the user is on it, then on BACK/FORWARD (POP) put them back
   // where they were; on a NEW navigation (PUSH/REPLACE) start at the top.
   useEffect(() => {
-    const el = document.querySelector('.main-content');
+    const el = document.querySelector('.main-content') as HTMLElement | null;
     if (!el) return;
-    const save = () => { scrollPositions.set(location.key, el.scrollTop); };
-    el.addEventListener('scroll', save, { passive: true });
-    return () => el.removeEventListener('scroll', save);
+    const key = location.key;
+    // Track the live position in a LOCAL, and persist it to the map only on
+    // CLEANUP (i.e. when navigating AWAY from this entry). Saving on every scroll
+    // event raced the restore: on back, the short-page reflow fired a scroll that
+    // overwrote the saved deep position before the restore could read it.
+    let last = el.scrollTop;
+    const onScroll = () => { last = el.scrollTop; };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => { scrollPositions.set(key, last); el.removeEventListener('scroll', onScroll); };
   }, [location.key]);
 
   useEffect(() => {
@@ -235,7 +241,6 @@ export default function Layout() {
     // SHORT and grows. Re-apply the saved scrollTop every time the content grows
     // (ResizeObserver) until we actually reach it, then stop. Give up after 10s.
     const y = scrollPositions.get(location.key) ?? 0;
-    try { (window as unknown as Record<string, unknown>).__scrollDbg = { key: location.key, y, navType, keys: [...scrollPositions.keys()] }; } catch { /* noop */ }
     if (y <= 0) return;
     let reached = false;
     const apply = () => {

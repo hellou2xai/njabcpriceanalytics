@@ -227,6 +227,11 @@ def reload_pricing_admin(user: dict = Depends(require_admin)):
             ).fetchall()
         except Exception as e:
             diag["glenfid_spcat"] = f"err: {e}"
+    try:
+        from backend.precompute_deals import LAST_BUILD as _DG_BUILD
+        diag["deal_grid_build"] = dict(_DG_BUILD)
+    except Exception as e:
+        diag["deal_grid_build"] = f"err: {e}"
     return {"status": "reloaded", "counts": counts, "precompute": diag}
 
 

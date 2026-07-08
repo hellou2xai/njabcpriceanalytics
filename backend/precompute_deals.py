@@ -24,8 +24,13 @@ read endpoint MUST filter to one edition.
 
 import os
 import time
+import traceback
 
 from backend.routers.compare import _common_rows  # noqa: F401  (proven engine dep marker)
+
+# Last build's per-edition diagnostics (surfaced by /api/admin/reload-pricing) so a
+# prod build that yields 0 rows can be diagnosed without shell access to the box.
+LAST_BUILD: dict = {}
 
 # Columns, in insert order. Typed only.
 _COLS = [
@@ -117,18 +122,26 @@ def build_deal_grid(con, *, log=print) -> int:
 
     t0 = time.time()
     total = 0
+    per_ed: dict = {}
     for ed in editions:
         try:
-            total += _build_edition(con, src, ed, attach_tiers, log)
+            n = _build_edition(con, src, ed, attach_tiers, log, per_ed)
+            total += n
         except Exception as e:  # one edition failing must not sink the rest
+            per_ed[ed] = {"error": f"{type(e).__name__}: {e}", "tb": traceback.format_exc()[-800:]}
             log(f"[deal_grid] edition {ed} failed: {e}")
     for ix in _INDEXES:
         con.execute(ix)
+    LAST_BUILD.clear()
+    LAST_BUILD.update({"total": total, "editions": per_ed, "secs": round(time.time() - t0)})
     log(f"[deal_grid] built {total} cards across {len(editions)} editions in {round(time.time()-t0)}s")
     return total
 
 
-def _build_edition(con, src, ed, attach_tiers, log) -> int:
+def _build_edition(con, src, ed, attach_tiers, log, per_ed=None) -> int:
+    diag = {}
+    if per_ed is not None:
+        per_ed[ed] = diag
     # 1) merged cards for this edition = the cheapest-net offer per identity.
     offers = con.execute(
         "SELECT group_key, wholesaler, upc, upc_norm, product_name, display_name, "
@@ -136,6 +149,7 @@ def _build_edition(con, src, ed, attach_tiers, log) -> int:
         "       frontline_case_price, effective_case_price, n_distributors "
         "FROM sku_offer WHERE edition = ? AND is_cheapest_net", [ed],
     ).fetchdf().to_dict("records")
+    diag["offers"] = len(offers)
     if not offers:
         return 0
     # distributor list per merged group (primary first = the cheapest-net one).
@@ -153,8 +167,10 @@ def _build_edition(con, src, ed, attach_tiers, log) -> int:
     #    row) with everything attach_tiers + the card need, then attach tiers.
     keys = [(o["wholesaler"], o["upc_norm"]) for o in offers]
     recs = _fetch_cpl(con, src, ed, keys)
+    diag["recs"] = len(recs)
     attach_tiers(con, recs)
     by_key = {(r.get("wholesaler"), str(r.get("upc_norm"))): r for r in recs}
+    diag["matched"] = sum(1 for o in offers if (o["wholesaler"], str(o["upc_norm"])) in by_key)
 
     # 3) case-mix primary: top mi_volume per (rip_code, brand) within the edition.
     #    Rank offers by mi_volume desc first so the first seen is the primary.
@@ -218,10 +234,16 @@ def _build_edition(con, src, ed, attach_tiers, log) -> int:
             any(t.get("is_time_sensitive") for t in tiers),
             net, (net / one_cs if (net is not None and one_cs) else None), cm_primary,
         ])
+    diag["rows"] = len(rows)
     if rows:
-        con.executemany(
-            f"INSERT INTO deal_grid ({','.join(_COLS)}) VALUES ({','.join(['?']*len(_COLS))})", rows
-        )
+        try:
+            con.executemany(
+                f"INSERT INTO deal_grid ({','.join(_COLS)}) VALUES ({','.join(['?']*len(_COLS))})", rows
+            )
+        except Exception as e:
+            diag["insert_error"] = f"{type(e).__name__}: {e}"
+            diag["insert_sample"] = [str(v)[:40] for v in rows[0]]
+            raise
     return len(rows)
 
 

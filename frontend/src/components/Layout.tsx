@@ -252,10 +252,12 @@ export default function Layout() {
     // SHORT and grows. Re-apply the saved scrollTop every time the content grows
     // (ResizeObserver) until we actually reach it, then stop. Give up after 10s.
     const y = scrollPositions.get(location.key) ?? 0;
+    const dbg = ((window as unknown as Record<string, unknown>).__dbg = { key: location.key, y, keys: [...scrollPositions.keys()], applies: [] as number[], scrollHeight: el.scrollHeight }) as { applies: number[] };
     if (y <= 0) return;
     let reached = false;
     const apply = () => {
       el.scrollTop = y;
+      dbg.applies.push(Math.round(el.scrollTop));
       if (el.scrollTop >= y - 2) reached = true;
     };
     apply();

@@ -211,7 +211,23 @@ def reload_pricing_admin(user: dict = Depends(require_admin)):
         print(f"[reload] catalog grid warm skipped: {e}")
     with get_duckdb() as con:
         counts = {t: con.execute(f"SELECT count(*) FROM {t}").fetchone()[0] for t in ALL_TABLES}
-    return {"status": "reloaded", "counts": counts}
+        # Diagnostic: report the precompute tables + a spirit_category sample straight
+        # from the freshly-built cache, so a single reload proves whether the build
+        # produced them on THIS box (vs a stale-worker/pointer read elsewhere).
+        diag = {}
+        for t in ("sku_offer", "deal_grid"):
+            try:
+                diag[t] = con.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
+            except Exception as e:
+                diag[t] = f"absent: {e}"
+        try:
+            diag["glenfid_spcat"] = con.execute(
+                "SELECT DISTINCT spirit_category FROM cpl_enriched "
+                "WHERE UPPER(product_name) LIKE '%GLENFID%'"
+            ).fetchall()
+        except Exception as e:
+            diag["glenfid_spcat"] = f"err: {e}"
+    return {"status": "reloaded", "counts": counts, "precompute": diag}
 
 
 _IMG_EXT = {"image/png": "png", "image/webp": "webp", "image/jpeg": "jpg",

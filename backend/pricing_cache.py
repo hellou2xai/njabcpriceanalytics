@@ -939,6 +939,13 @@ def build_pricing_cache(force: bool = False) -> Path:
                     build_sku_offer(con)
                 except Exception as _exc:
                     print(f"[pricing_cache] sku_offer build skipped: {_exc}")
+                # deal_grid: the precomputed Discover Deals "bible", built FROM
+                # sku_offer (+ attach_tiers + cpl_enriched). Must run AFTER sku_offer.
+                try:
+                    from backend.precompute_deals import build_deal_grid
+                    build_deal_grid(con)
+                except Exception as _exc:
+                    print(f"[pricing_cache] deal_grid build skipped: {_exc}")
             finally:
                 con.close()
             # Atomic publish: rename the finished temp into its versioned name,

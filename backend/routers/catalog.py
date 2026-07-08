@@ -766,6 +766,60 @@ def mi_top_categories():
         return {"spirits": [], "wine": []}
 
 
+@router.get("/discover-deals")
+def discover_deals(
+    spirit_category: Optional[str] = None,
+    grapes: Optional[str] = None,
+    edition: Optional[str] = None,
+    sizes: Optional[str] = None,        # comma-separated size labels
+    divisions: Optional[str] = None,    # comma-separated distributor slugs
+    deals: Optional[str] = None,        # comma-separated: rip | qd | both
+    sort: str = "net",                  # net | pct | name | rip | qd
+    q: Optional[str] = None,            # free-text (name/brand) narrow
+    limit: int = Query(60, ge=1, le=200),
+):
+    """Read the precomputed Discover deal cards (deal_grid) for a category, with the
+    page's filters + sort applied over INDEXED columns in the cache. No pricing
+    engine on the request path -> millisecond response. Current edition by default."""
+    ed = (edition or "").strip() or _current_yyyy_mm()
+    with get_duckdb() as con:
+        if not con.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'deal_grid'"
+        ).fetchone():
+            return {"edition": ed, "items": [], "error": "deal_grid not built"}
+        where = ["edition = ?", "case_mix_primary"]
+        p: list = [ed]
+        if spirit_category:
+            where.append("spirit_category = ?"); p.append(spirit_category.strip())
+        if grapes:
+            where.append("(LOWER(product_name) LIKE ? OR LOWER(COALESCE(brand,'')) LIKE ?)")
+            p += [f"%{grapes.strip().lower()}%"] * 2
+        szs = [s.strip() for s in (sizes or "").split(",") if s.strip()]
+        if szs:
+            where.append("unit_volume IN (" + ",".join(["?"] * len(szs)) + ")"); p += szs
+        divs = [d.strip() for d in (divisions or "").split(",") if d.strip()]
+        if divs:
+            where.append("(" + " OR ".join(["list_contains(string_split(wholesalers, ','), ?)"] * len(divs)) + ")")
+            p += divs
+        ds = {d.strip() for d in (deals or "").split(",") if d.strip()}
+        deal_or = [c for d, c in (("rip", "has_rip"), ("qd", "has_qd"), ("both", "has_both")) if d in ds]
+        if deal_or:
+            where.append("(" + " OR ".join(deal_or) + ")")
+        if q and q.strip():
+            where.append("(LOWER(product_name) LIKE ? OR LOWER(COALESCE(display_name,'')) LIKE ? OR LOWER(COALESCE(brand,'')) LIKE ?)")
+            p += [f"%{q.strip().lower()}%"] * 3
+        order = {
+            "net": "net_discount DESC", "pct": "discount_pct DESC",
+            "name": "COALESCE(display_name, product_name) ASC",
+            "rip": "rip_per_case DESC", "qd": "qd_save_per_case DESC",
+        }.get(sort, "net_discount DESC")
+        sql = (f"SELECT * FROM deal_grid WHERE {' AND '.join(where)} "
+               f"ORDER BY {order} NULLS LAST, mi_volume DESC NULLS LAST LIMIT ?")
+        df = con.execute(sql, [*p, limit]).fetchdf()
+    df = df.astype(object).where(df.notna(), None)
+    return {"edition": ed, "count": len(df), "items": df.to_dict("records")}
+
+
 @router.get("/search")
 def search_products(
     q: str = Query("", description="Search term"),

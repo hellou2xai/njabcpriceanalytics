@@ -1559,6 +1559,12 @@ td.empty { text-align: center; color: var(--text-muted); padding: 32px; }
 html[data-textsize="small"] .main-content { zoom: 0.9; --mc-zoom: 0.9; }
 html[data-textsize="large"] .main-content { zoom: 1.22; --mc-zoom: 1.22; }
 html[data-textsize="xl"] .main-content { zoom: 1.4; --mc-zoom: 1.4; }
+/* On phones the zoom scales content WIDER than the viewport (only height is
+   compensated, not width), which overflows and clips. Disable it there; mobile
+   sizes text responsively and the browser's own zoom still works. */
+@media (max-width: 768px) {
+  html[data-textsize] .main-content { zoom: 1; --mc-zoom: 1; }
+}
 .sidebar-textsize { display: flex; align-items: center; gap: 8px; padding: 2px 8px 10px;
   margin-bottom: 6px; border-bottom: 1px solid var(--nav-border, var(--border)); }
 .sidebar-textsize-lbl { font-size: 12px; color: var(--nav-text, var(--text-muted)); }
@@ -6470,6 +6476,12 @@ a.prod-size-id:hover .prod-size-name { color: var(--accent); text-decoration: un
    meta isn't crushed next to the image and the content stops overflowing. ---- */
 @media (max-width: 768px) {
   .pd-identity { flex-direction: column; gap: 12px; }
+  /* Let long titles / attribute values wrap instead of forcing the container
+     wider than the phone (grid/flex items default to their content width). */
+  .pd-identity-meta, .pd-identity-titlerow, .pd-title, .pd-title-size,
+  .pd-attrs, .pd-attrs > div, .pd-attrs dt, .pd-attrs dd {
+    min-width: 0; overflow-wrap: anywhere;
+  }
   .pd-identity-meta { width: 100%; min-width: 0; }
   .pd-title { font-size: 21px; }
   .pd-identity .product-thumb, .pd-identity img { max-width: 150px; height: auto; }

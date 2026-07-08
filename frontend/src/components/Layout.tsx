@@ -210,6 +210,17 @@ export default function Layout() {
     return () => window.removeEventListener('keydown', onKey);
   }, [isMobile, mobileOpen]);
 
+  // Take scroll restoration off the browser: it remembers .main-content and
+  // re-applies its own value on back AFTER our restore, overriding it. With
+  // 'manual', only our per-entry restore below runs.
+  useEffect(() => {
+    if ('scrollRestoration' in window.history) {
+      const prev = window.history.scrollRestoration;
+      window.history.scrollRestoration = 'manual';
+      return () => { window.history.scrollRestoration = prev; };
+    }
+  }, []);
+
   // Scroll memory. Content scrolls inside .main-content (not the window), so the
   // browser's own restoration doesn't apply. Save each history entry's scroll
   // position while the user is on it, then on BACK/FORWARD (POP) put them back

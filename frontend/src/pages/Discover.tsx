@@ -149,6 +149,16 @@ function perBottle(p: Product): number | null {
   if (eff == null || !pack) return null;
   return eff / pack;
 }
+// Per-bottle price AFTER best QD AND deepest RIP (including time-sensitive) — the
+// exact X3 the cards show (best_unit_price − rip-per-case / pack). Used by the
+// "Better 1L price" compare so a 1L whose winning deal is a time-sensitive RIP is
+// still credited (effective_case_price drops TS RIPs, so perBottle would miss it).
+function afterDealBottle(p: Product): number | null {
+  const x2 = p.best_unit_price ?? p.frontline_unit_price;
+  const pack = bottlesPerCase(p.product_name, p.unit_qty);
+  if (x2 == null || !pack) return null;
+  return Math.max(0, x2 - ripPerCase(p) / pack);
+}
 // The two sizes we compare for "Better 1L price".
 function sizeBucket(size?: string | null): '1L' | '750ML' | null {
   const L = litresOf(size);
@@ -432,7 +442,7 @@ function dealProducts(items: Product[], deals: string[], sizes: string[], sortBy
     const ref750 = new Map<string, number>();
     for (const it of items) {
       if (sizeBucket(it.unit_volume) !== '750ML') continue;
-      const pb = perBottle(it);
+      const pb = afterDealBottle(it);
       if (pb == null) continue;
       const k = productKey(it);
       const cur = ref750.get(k);
@@ -441,7 +451,7 @@ function dealProducts(items: Product[], deals: string[], sizes: string[], sortBy
     out = out.filter((p) => {
       if (sizeBucket(p.unit_volume) !== '1L') return false;
       const ref = ref750.get(productKey(p));
-      const pb = perBottle(p);
+      const pb = afterDealBottle(p);
       return ref != null && pb != null && pb <= ref + 0.01;
     });
   }

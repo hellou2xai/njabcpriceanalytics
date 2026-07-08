@@ -230,7 +230,12 @@ export default function Layout() {
       // and the page regains its height, so a deep position lands correctly.
       const y = scrollPositions.get(location.key) ?? 0;
       let n = 0;
-      const restore = () => { el.scrollTop = y; if (++n < 10) setTimeout(restore, 60); };
+      const restore = () => {
+        el.scrollTop = y;
+        // Keep re-applying while the page is still short of y (lazy content
+        // growing its height); stop once we reach it or after ~2.4s.
+        if (el.scrollTop < y - 2 && ++n < 40) setTimeout(restore, 60);
+      };
       restore();
     } else {
       el.scrollTo(0, 0);

@@ -7,7 +7,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useNavigationType } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Search, Store, SlidersHorizontal, PanelLeftClose } from 'lucide-react';
 import { catalog, type MiRail, type Product, type CatalogTier } from '../lib/api';
@@ -349,11 +349,15 @@ function DiscCard({ p }: { p: MergedProduct }) {
 
 function Rail({ rail, distributors, deals }: { rail: MiRail; distributors: string[]; deals: string[] }) {
   const { ref, seen } = useInView<HTMLElement>();
+  // On BACK/FORWARD (POP) load every rail immediately (data is cached, so it's
+  // cheap) so the page regains full height and scroll restoration can land deep.
+  const eager = useNavigationType() === 'POP';
+  const show = seen || eager;
   const distParam = distributors.length ? distributors.join(',') : undefined;
   const { data, isLoading } = useQuery({
     // distParam is part of the key so a distributor filter refetches, not caches.
     queryKey: ['mi-rail', rail.params, distParam ?? ''],
-    enabled: seen,
+    enabled: show,
     staleTime: 300_000,
     // Featured rails show standard retail bottles only (1.75L / 1L / 750ML),
     // not minis, 4-packs, cans or tray packs that otherwise top the volume rank.
@@ -406,10 +410,10 @@ function Rail({ rail, distributors, deals }: { rail: MiRail; distributors: strin
         <Link to={railHref(rail.params)} className="disc-rail-all">See all &rarr;</Link>
       </div>
       <div className="disc-rail-track">
-        {(!seen || isLoading) && Array.from({ length: 6 }).map((_, i) => (
+        {(!show || isLoading) && Array.from({ length: 6 }).map((_, i) => (
           <div key={i} className="disc-card disc-card--skel" />
         ))}
-        {seen && !isLoading && products.length === 0 && (
+        {show && !isLoading && products.length === 0 && (
           <div className="disc-rail-empty">No products found.</div>
         )}
         {products.map((p, i) => <DiscCard key={`${p.product_name}-${i}`} p={p} />)}

@@ -103,13 +103,17 @@ function litresOf(size?: string | null): number | null {
   const l = s.match(/^([\d.]+)L(?:T|TR)?$/); if (l) return parseFloat(l[1]);
   return null;
 }
-// Effective price per litre = best case price / (bottles-per-case * litres).
-function perLitre(p: Product): number | null {
+// Effective BOTTLE price = best case price (after best QD+RIP) / bottles-per-case.
+// "Better 1L price" compares the 1L bottle price to the 750ML bottle price: a 1L
+// that costs about the same as (or less than) a 750ML is a better deal because
+// you get 33% more product for the money. (Per-LITRE is the wrong lens — it
+// normalises volume away, so a 1L and 750ML at the same $/L look "equivalent"
+// even though the 1L bottle costs a third more.)
+function perBottle(p: Product): number | null {
   const bc = bestCaseAfterDeals(p);
   const pack = bottlesPerCase(p.product_name, p.unit_qty);
-  const L = litresOf(p.unit_volume);
-  if (bc == null || !pack || !L) return null;
-  return bc / (pack * L);
+  if (bc == null || !pack) return null;
+  return bc / pack;
 }
 // The two sizes we compare for "Better 1L price".
 function sizeBucket(size?: string | null): '1L' | '750ML' | null {
@@ -370,19 +374,20 @@ function Rail({ rail, distributors, deals }: { rail: MiRail; distributors: strin
   // card, then FEATURE every product with a RIP or QD deal, ranked by deepest
   // discount, up to 60 (stops earlier when the category runs out of deals).
   const items = data?.items ?? [];
-  // Per-product best price-per-litre by size, for the "Better 1L price" filter.
-  const plBySize = new Map<string, { '1L'?: number; '750ML'?: number }>();
+  // Per-product best BOTTLE price by size, for the "Better 1L price" filter.
+  const pbBySize = new Map<string, { '1L'?: number; '750ML'?: number }>();
   for (const it of items) {
     const bucket = sizeBucket(it.unit_volume); if (!bucket) continue;
-    const pl = perLitre(it); if (pl == null) continue;
+    const pb = perBottle(it); if (pb == null) continue;
     const pk = productKey(it);
-    const rec = plBySize.get(pk) ?? {};
-    if (rec[bucket] == null || pl < rec[bucket]!) rec[bucket] = pl;
-    plBySize.set(pk, rec);
+    const rec = pbBySize.get(pk) ?? {};
+    if (rec[bucket] == null || pb < rec[bucket]!) rec[bucket] = pb;
+    pbBySize.set(pk, rec);
   }
-  // A product's 1L (after best QD+RIP, per litre) is <= its 750ML within 5%.
+  // A product's 1L BOTTLE (after best QD+RIP) costs <= its 750ML bottle within
+  // 5% — i.e. ~same money for 33% more product.
   const better1L = (p: Product) => {
-    const rec = plBySize.get(productKey(p));
+    const rec = pbBySize.get(productKey(p));
     return !!(rec && rec['1L'] != null && rec['750ML'] != null && rec['1L']! <= rec['750ML']! * 1.05);
   };
   // "Better 1L price" restricts to qualifying 1L rows BEFORE the merge.

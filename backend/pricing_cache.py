@@ -774,14 +774,23 @@ def build_pricing_cache(force: bool = False) -> Path:
                       WHEN regexp_matches(UPPER(product_name), 'LIQUEUR|LIQ |SCHNAPP|CORDIAL|TRIPLE SEC|AMARETTO|CREME DE|SAMBUCA|APERITIF|APEROL|CAMPARI') THEN 'Cordials'
                       ELSE 'Other'
                     END
+                    -- Classify by product_type='Spirits' OR a spirit Go-UPC category.
+                    -- The enr_category branch is critical: some rows (e.g. Glenfiddich)
+                    -- carry enr_category='Whiskey' but a product_type that isn't the
+                    -- literal 'Spirits', so gating on product_type alone dropped every
+                    -- one of them to NULL.
                     WHERE UPPER(TRIM(COALESCE(product_type, ''))) = 'SPIRITS'
+                       OR enr_category IN ('Whiskey','Rye','Bourbon','Scotch','Barley',
+                            'Vodka','Tequila','Mezcal','Rum','Gin','Liqueurs','Bitters','Brandy')
                 """)
                 # Belt-and-suspenders: NO spirit row may stay NULL. Any Spirits row
                 # the CASE somehow missed (odd product_type spacing, etc.) becomes
                 # 'Other' so it still surfaces in the catalog/facets.
                 _try("""
                     UPDATE cpl_enriched SET spirit_category = 'Other'
-                    WHERE UPPER(TRIM(COALESCE(product_type, ''))) = 'SPIRITS'
+                    WHERE (UPPER(TRIM(COALESCE(product_type, ''))) = 'SPIRITS'
+                           OR enr_category IN ('Whiskey','Rye','Bourbon','Scotch','Barley',
+                                'Vodka','Tequila','Mezcal','Rum','Gin','Liqueurs','Bitters','Brandy'))
                       AND (spirit_category IS NULL OR spirit_category = '')
                 """)
 

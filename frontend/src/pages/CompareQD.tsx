@@ -592,6 +592,7 @@ export default function CompareQD() {
             <div className="qd2-rail-sect">
               <div className="qd2-rail-label">Sort by</div>
               <select value={sort} onChange={e => setSort(e.target.value)} className="qd2-select">
+                <option value="mi_volume">Top sellers (market intelligence)</option>
                 <option value="spread">Biggest price gap</option>
                 <option value="left_on_table">Biggest total saving</option>
                 <option value="min_cases">Easiest to unlock (fewest cases)</option>

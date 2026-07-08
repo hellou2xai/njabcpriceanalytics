@@ -710,6 +710,7 @@ export default function CompareRips() {
             <div className="rip2-rail-sect">
               <div className="rip2-rail-label">Sort by</div>
               <select value={sort} onChange={e => setSort(e.target.value)} className="rip2-select">
+                <option value="mi_volume">Top sellers (market intelligence)</option>
                 <option value="spread">Biggest price gap</option>
                 <option value="left_on_table">Biggest total saving</option>
                 <option value="min_cases">Easiest to unlock (fewest cases)</option>

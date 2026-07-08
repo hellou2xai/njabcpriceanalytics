@@ -2064,6 +2064,31 @@ def _rip_verdict(row: dict, slugs: list[str], n: float) -> dict:
 
 
 @router.get("/rips")
+def _attach_mi_volume(con, src: str, rows: list[dict]) -> None:
+    """Attach each product's Market-Intelligence 9L sales volume (denormalised on
+    cpl_enriched, keyed on brand) to its compare row by UPC, so the comparison
+    boards can rank by top sellers — the same signal the Discover rails use.
+    Missing column (older cache) or unknown UPC -> 0.0."""
+    for r in rows:
+        r.setdefault("mi_volume", 0.0)
+    try:
+        ups = sorted({r.get("upc_norm") for r in rows if r.get("upc_norm")})
+        if not ups:
+            return
+        ph = ",".join("?" * len(ups))
+        vol = {
+            un: (v or 0.0)
+            for un, v in con.execute(
+                f"SELECT LTRIM(upc,'0') AS un, MAX(mi_volume) FROM {src} "
+                f"WHERE LTRIM(upc,'0') IN ({ph}) GROUP BY un", ups
+            ).fetchall()
+        }
+        for r in rows:
+            r["mi_volume"] = vol.get(r.get("upc_norm"), 0.0)
+    except Exception:
+        pass  # mi_volume column absent -> leave 0.0
+
+
 def compare_rips(
     wholesalers: str = Query("allied,fedway", description="2-3 comma-separated slugs"),
     cases: float = Query(5, ge=1, description="Cases you plan to buy (drives winner@N)"),
@@ -2549,7 +2574,10 @@ def compare_rips(
         "least_investment": lambda r: min((d["unlock_investment"] for d in r["dists"].values()
                                            if d["unlock_investment"] is not None), default=1e12),
         "best_mix": lambda r: max((d["case_mix"] or 0 for d in r["dists"].values()), default=0),
+        "mi_volume": lambda r: r.get("mi_volume") or 0,   # top sellers (market intelligence)
     }
+    if sort == "mi_volume":
+        _attach_mi_volume(con, src, rows)
     # ascending sorts (smallest first): A-Z, fewest cases, least money down. The
     # UI never sends `order`, so these force ascending; the rest default desc.
     _ascending = ("product", "min_cases", "least_investment")
@@ -3032,7 +3060,10 @@ def compare_qds(
         "active_days": lambda r: max((d["active_days"] or 0 for d in r["dists"].values()), default=0),
         "least_investment": lambda r: min((d["unlock_investment"] for d in r["dists"].values()
                                            if d["unlock_investment"] is not None), default=1e12),
+        "mi_volume": lambda r: r.get("mi_volume") or 0,   # top sellers (market intelligence)
     }
+    if sort == "mi_volume":
+        _attach_mi_volume(con, src, rows)
     _ascending = ("product", "min_cases", "least_investment")
     rows.sort(key=keymap.get(sort, keymap["spread"]),
               reverse=False if sort in _ascending else (order != "asc"))

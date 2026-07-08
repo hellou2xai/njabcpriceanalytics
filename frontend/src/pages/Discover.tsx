@@ -357,13 +357,11 @@ function DiscCard({ p }: { p: MergedProduct }) {
         </div>
       )}
       <div className="disc-card-foot">
-        {price && (
-          <div className="disc-card-price">{price}<span className="disc-card-price-u">/cs</span></div>
-          {bestBtl && (
-            <div className="disc-card-btl" title="Best bottle price — after best QD + RIP">
-              {bestBtl}<span className="disc-card-price-u">/btl</span>
-            </div>
-          )}
+        {price && <div className="disc-card-price">{price}<span className="disc-card-price-u">/cs</span></div>}
+        {bestBtl && (
+          <div className="disc-card-btl" title="Best bottle price — after best QD + RIP">
+            {bestBtl}<span className="disc-card-price-u">/btl</span>
+          </div>
         )}
         {(rip || qd) && (
           <div className="disc-card-deals">

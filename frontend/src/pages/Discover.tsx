@@ -74,14 +74,16 @@ function topTier(tiers: CatalogTier[] | undefined, source: 'discount' | 'rip'): 
 // to the price after the highest QD and the price after the highest RIP (the
 // deeper of the two wins; QD and RIP are never blended, per FOUNDATION). Used to
 // rank a category's top-volume pool so the biggest deals feature first.
-// Discount depth = how far the CANONICAL effective price (deepest QD+RIP, current
-// edition — the same number the detail page shows) sits below the frontline list.
-// We use the precomputed columns, never re-derive the pricing math here.
+// Savings % that drives the ranking = the 1-CASE price the card shows
+// (oneCsCasePrice — list, or the 1-case entry QD when there is one) vs the
+// CANONICAL effective price (deepest QD+RIP, current edition — the detail-page
+// number). So: (1-case price − price after best QD+RIP) / 1-case price. Both are
+// precomputed columns; we never re-derive pricing here.
 function discountScore(p: Product): number {
-  const list = p.frontline_case_price ?? 0;
-  const eff = p.effective_case_price ?? list;
-  if (list <= 0) return 0;
-  return Math.max(0, list - eff) / list;
+  const base = oneCsCasePrice(p) ?? p.frontline_case_price ?? 0;
+  const eff = p.effective_case_price ?? base;
+  if (base <= 0) return 0;
+  return Math.max(0, base - eff) / base;
 }
 
 // Bottle volume in litres from the size label (750ML->0.75, 1L/LITER->1, 1.75L->1.75).

@@ -20,6 +20,7 @@ import Home from './pages/Home';
 import Catalog from './pages/Catalog';
 import Products from './pages/Products';
 import Discover from './pages/Discover';
+import DiscoverAdmin from './pages/DiscoverAdmin';
 import DistributorPriceList from './pages/DistributorPriceList';
 import WhatsNew from './pages/WhatsNew';
 import ProductDetail from './pages/ProductDetail';
@@ -151,6 +152,7 @@ function AuthenticatedApp() {
             <Route path="/catalog" element={<AdminRoute><Catalog /></AdminRoute>} />
             <Route path="/products" element={<Products />} />
             <Route path="/discover" element={<Discover />} />
+            <Route path="/discover-admin" element={<AdminRoute><DiscoverAdmin /></AdminRoute>} />
             <Route path="/distributor-price-list" element={<DistributorPriceList />} />
             <Route path="/whats-new" element={<WhatsNew />} />
             <Route path="/product" element={<ProductDetail />} />

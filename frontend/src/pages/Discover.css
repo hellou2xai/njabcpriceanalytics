@@ -239,3 +239,6 @@
 
 /* Check Allied / Check Fedway button on a deal card, under the distributor name */
 .disc-card-avail { margin: 0 8px 6px; align-self: flex-start; }
+
+/* Discover Deals (Admin) badge */
+.disc-admin-badge { display:inline-block; background:#7c3aed; color:#fff; font-size:11px; font-weight:700; padding:2px 8px; border-radius:4px; letter-spacing:.5px; margin-bottom:6px; }

@@ -807,7 +807,8 @@ def discover_deals(
             where.append("(" + " OR ".join(["list_contains(string_split(wholesalers, ','), ?)"] * len(divs)) + ")")
             p += divs
         ds = {d.strip() for d in (deals or "").split(",") if d.strip()}
-        deal_or = [c for d, c in (("rip", "has_rip"), ("qd", "has_qd"), ("both", "has_both")) if d in ds]
+        deal_or = [c for d, c in (("rip", "has_rip"), ("qd", "has_qd"), ("both", "has_both"),
+                                  ("time_sensitive", "is_time_sensitive")) if d in ds]
         if deal_or:
             where.append("(" + " OR ".join(deal_or) + ")")
         if q and q.strip():

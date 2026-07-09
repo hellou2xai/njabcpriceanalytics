@@ -74,6 +74,27 @@ export interface MiTopCategories {
   wine: MiRail[];
 }
 
+// One precomputed Discover deal card, read straight from the deal_grid table
+// (backend/precompute_deals.py). Every value is already computed — the admin page
+// renders these directly, no client-side pricing math.
+export interface DealGridCard {
+  edition: string; product_key: string;
+  upc?: string | null; product_name: string; display_name?: string | null;
+  brand?: string | null; spirit_category?: string | null; product_type?: string | null;
+  geo_varietal?: string | null;
+  unit_volume?: string | null; unit_qty?: string | null; pack?: number | null; vintage?: string | null;
+  primary_wholesaler?: string | null; wholesalers?: string | null; n_distributors?: number | null;
+  dist_item_no?: string | null; dist_item_name?: string | null;
+  mi_volume?: number | null; image_url?: string | null;
+  frontline_case_price?: number | null; one_cs_case_price?: number | null; effective_case_price?: number | null;
+  btl_1cs?: number | null; btl_best_qd?: number | null; btl_best_qd_rip?: number | null;
+  rip_qty?: number | null; rip_amount?: number | null; rip_per_case?: number | null;
+  rip_code?: string | null; rip_is_ts?: boolean | null; rip_from?: string | null; rip_to?: string | null;
+  qd_qty?: number | null; qd_save_per_case?: number | null; qd_total?: number | null;
+  has_rip?: boolean | null; has_qd?: boolean | null; has_both?: boolean | null; is_time_sensitive?: boolean | null;
+  net_discount?: number | null; discount_pct?: number | null;
+}
+
 export const catalog = {
   search: (params: Record<string, unknown>) =>
     request<{ total: number; items: Product[]; corrected_query?: string | null }>(`/api/catalog/search${qs(params)}`),
@@ -84,6 +105,9 @@ export const catalog = {
       `/api/catalog/product/${encodeURIComponent(wholesaler)}/${encodeURIComponent(name)}${qs(opts ?? {})}`
     ),
   editions: () => request<Edition[]>('/api/catalog/editions'),
+  // New precomputed deal grid (Discover Deals Admin — reads deal_grid directly).
+  discoverDeals: (params: Record<string, unknown>) =>
+    request<{ edition: string; count: number; items: DealGridCard[]; error?: string }>(`/api/catalog/discover-deals${qs(params)}`),
   topCategories: () =>
     request<MiTopCategories>('/api/catalog/top-categories'),
   categories: (params?: Record<string, unknown>) =>

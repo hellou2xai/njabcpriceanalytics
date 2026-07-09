@@ -53,6 +53,18 @@
 .disc-filter-sect:first-of-type { border-top: 0; padding-top: 2px; }
 .disc-filter-h { font-size: 12px; font-weight: 700; color: #475467; text-transform: uppercase;
   letter-spacing: .3px; margin-bottom: 6px; }
+/* Collapsible section header: full-width button, chevron rotates when open. */
+.disc-filter-h--btn { display: flex; align-items: center; justify-content: space-between;
+  width: 100%; margin-bottom: 0; padding: 2px 0; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: 12px; font-weight: 700; color: #475467; text-transform: uppercase;
+  letter-spacing: .3px; }
+.disc-filter-h--btn:hover { color: #101828; }
+.disc-filter-count { display: inline-flex; align-items: center; justify-content: center;
+  min-width: 16px; height: 16px; margin-left: 6px; padding: 0 4px; border-radius: 999px;
+  background: var(--brand, #3b5bdb); color: #fff; font-size: 10px; font-weight: 700; }
+.disc-filter-chev { color: #98a2b3; transition: transform .16s; flex: none; }
+.disc-filter-chev.is-open { transform: rotate(180deg); }
+.disc-filter-body { margin-top: 6px; }
 .disc-filter-list { max-height: 230px; overflow: auto; }
 .disc-filter-opt { display: flex; align-items: center; gap: 8px; padding: 3px 0;
   font-size: 13px; color: #344054; cursor: pointer; }

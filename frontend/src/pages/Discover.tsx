@@ -5,11 +5,11 @@
  * when it scrolls into view, and its header deep-links into the existing Products
  * page with the category filter + volume sort. Does not touch the Products page.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Search, Store, SlidersHorizontal, PanelLeftClose } from 'lucide-react';
+import { Search, Store, SlidersHorizontal, PanelLeftClose, ChevronDown } from 'lucide-react';
 import { catalog, watchlist, type MiRail, type Product, type CatalogTier, type WatchlistItem } from '../lib/api';
 import ProductThumb from '../components/ProductThumb';
 import FavoriteButton from '../components/FavoriteButton';
@@ -658,6 +658,23 @@ function toggleIn(set: Set<string>, v: string): Set<string> {
   return n;
 }
 
+// A collapsible filter section: click the header to show/hide its body. `count`
+// shows how many options are active (kept visible even when collapsed).
+function FilterSection({ title, count = 0, defaultOpen = true, children }:
+  { title: string; count?: number; defaultOpen?: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="disc-filter-sect">
+      <button type="button" className="disc-filter-h disc-filter-h--btn"
+        aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <span>{title}{count > 0 && <span className="disc-filter-count">{count}</span>}</span>
+        <ChevronDown size={14} className={`disc-filter-chev${open ? ' is-open' : ''}`} />
+      </button>
+      {open && <div className="disc-filter-body">{children}</div>}
+    </div>
+  );
+}
+
 export default function Discover() {
   const [q, setQ] = useState('');
   const [submitted, setSubmitted] = useState('');   // the query actually searched (on Enter/Search)
@@ -730,55 +747,38 @@ export default function Discover() {
             </span>
           </div>
 
-          <div className="disc-filter-sect">
-            <div className="disc-filter-h">Month</div>
+          <FilterSection title="Month">
             <select className="disc-filter-select" value={edition} onChange={(e) => setEdition(e.target.value)}>
               <option value="">Current month</option>
               {months.map((m) => <option key={m} value={m}>{fmtMonth(m)}</option>)}
             </select>
-          </div>
+          </FilterSection>
 
-          <div className="disc-filter-sect">
-            <div className="disc-filter-h">Sort by</div>
+          <FilterSection title="Sort by">
             <select className="disc-filter-select" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
               {SORT_OPTS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
             </select>
-          </div>
+          </FilterSection>
 
-          <div className="disc-filter-sect">
-            <div className="disc-filter-h">Deal</div>
+          <FilterSection title="Deal" count={dealSet.size}>
             {[['rip', 'Has RIP'], ['qd', 'Has QD'], ['both', 'Has both QD & RIP'], ['time_sensitive', 'Time-sensitive'], ['better_1l', 'Better 1L price']].map(([v, label]) => (
               <label key={v} className="disc-filter-opt">
                 <input type="checkbox" checked={dealSet.has(v)} onChange={() => setDealSet((s) => toggleIn(s, v))} />
                 <span>{label}</span>
               </label>
             ))}
-          </div>
+          </FilterSection>
 
-          <div className="disc-filter-sect">
-            <div className="disc-filter-h">Size</div>
+          <FilterSection title="Size" count={sizeSet.size}>
             {['375ML', '750ML', '1L', '1.75L'].map((s) => (
               <label key={s} className="disc-filter-opt">
                 <input type="checkbox" checked={sizeSet.has(s)} onChange={() => setSizeSet((x) => toggleIn(x, s))} />
                 <span>{s}</span>
               </label>
             ))}
-          </div>
+          </FilterSection>
 
-          <div className="disc-filter-sect">
-            <div className="disc-filter-h">Distributor</div>
-            <div className="disc-filter-list">
-              {DISTRIBUTOR_OPTS.map((d) => (
-                <label key={d.value} className="disc-filter-opt">
-                  <input type="checkbox" checked={distSet.has(d.value)} onChange={() => setDistSet((s) => toggleIn(s, d.value))} />
-                  <span>{d.label}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <div className="disc-filter-sect">
-            <div className="disc-filter-h">Category</div>
+          <FilterSection title="Category" count={catSet.size}>
             <div className="disc-filter-list">
               {allRails.map((r) => (
                 <label key={r.label} className="disc-filter-opt">
@@ -787,7 +787,18 @@ export default function Discover() {
                 </label>
               ))}
             </div>
-          </div>
+          </FilterSection>
+
+          <FilterSection title="Distributor" count={distSet.size}>
+            <div className="disc-filter-list">
+              {DISTRIBUTOR_OPTS.map((d) => (
+                <label key={d.value} className="disc-filter-opt">
+                  <input type="checkbox" checked={distSet.has(d.value)} onChange={() => setDistSet((s) => toggleIn(s, d.value))} />
+                  <span>{d.label}</span>
+                </label>
+              ))}
+            </div>
+          </FilterSection>
         </aside>
         )}
 

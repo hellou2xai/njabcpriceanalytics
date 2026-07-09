@@ -815,6 +815,8 @@ def discover_deals(
             where.append("(LOWER(product_name) LIKE ? OR LOWER(COALESCE(display_name,'')) LIKE ? OR LOWER(COALESCE(brand,'')) LIKE ?)")
             p += [f"%{q.strip().lower()}%"] * 3
         order = {
+            # Largest-case-deal first: group bulk (high-qty) RIP/QD deals to the top.
+            "case": "GREATEST(COALESCE(rip_qty,0), COALESCE(qd_qty,0)) DESC, net_discount DESC",
             "net": "net_discount DESC", "pct": "discount_pct DESC",
             "name": "COALESCE(display_name, product_name) ASC",
             "rip": "rip_per_case DESC", "qd": "qd_save_per_case DESC",

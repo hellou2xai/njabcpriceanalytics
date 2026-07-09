@@ -107,8 +107,14 @@ function ripPerCase(p: Product): number {
 function qdPerCase(p: Product): number {
   return topTier(p.tiers, 'discount')?.save_per_case ?? 0;
 }
+// Largest case quantity the card's featured RIP/QD deal asks for — used to GROUP
+// bulk-buy deals to the top, before small 1-2 CS deals.
+function caseQty(p: Product): number {
+  return Math.max(topTier(p.tiers, 'rip')?.qty ?? 0, topTier(p.tiers, 'discount')?.qty ?? 0);
+}
 // Sort comparators for the "Sort by" control.
 const SORT_FNS: Record<string, (a: Product, b: Product) => number> = {
+  case: (a, b) => (caseQty(b) - caseQty(a)) || (netDiscount(b) - netDiscount(a)),
   net: (a, b) => netDiscount(b) - netDiscount(a),
   pct: (a, b) => discountScore(b) - discountScore(a),
   name: (a, b) => (a.abg_item_name || a.product_name).localeCompare(b.abg_item_name || b.product_name),
@@ -116,7 +122,7 @@ const SORT_FNS: Record<string, (a: Product, b: Product) => number> = {
   qd: (a, b) => qdPerCase(b) - qdPerCase(a),
 };
 const SORT_OPTS: [string, string][] = [
-  ['net', 'Net Discount'], ['name', 'Product name'],
+  ['case', 'Largest Case Deal'], ['net', 'Net Discount'], ['name', 'Product name'],
   ['rip', 'Highest Case RIP'], ['qd', 'Highest Case QD'], ['pct', 'Deal %'],
 ];
 // '2026-06' -> 'Jun-26'.
@@ -651,7 +657,7 @@ export default function Discover() {
   const [catSet, setCatSet] = useState<Set<string>>(new Set());
   const [dealSet, setDealSet] = useState<Set<string>>(new Set());
   const [sizeSet, setSizeSet] = useState<Set<string>>(new Set());
-  const [sortBy, setSortBy] = useState('net');
+  const [sortBy, setSortBy] = useState('case');
   const [edition, setEdition] = useState('');   // '' = current month
   const [filtersCollapsed, setFiltersCollapsed] = useState(() => localStorage.getItem('disc_filters_collapsed') === '1');
   useEffect(() => { localStorage.setItem('disc_filters_collapsed', filtersCollapsed ? '1' : '0'); }, [filtersCollapsed]);

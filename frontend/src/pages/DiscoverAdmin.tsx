@@ -22,7 +22,7 @@ const DISTRIBUTOR_OPTS = [...ALL_DISTRIBUTORS.filter((d) => d.value)].sort((a, b
   return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
 });
 const SORT_OPTS: [string, string][] = [
-  ['net', 'Net Discount'], ['name', 'Product name'],
+  ['case', 'Largest Case Deal'], ['net', 'Net Discount'], ['name', 'Product name'],
   ['rip', 'Highest Case RIP'], ['qd', 'Highest Case QD'], ['pct', 'Deal %'],
 ];
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -145,7 +145,7 @@ export default function DiscoverAdmin() {
   const [distSet, setDistSet] = useState<Set<string>>(new Set());
   const [dealSet, setDealSet] = useState<Set<string>>(new Set());
   const [sizeSet, setSizeSet] = useState<Set<string>>(new Set());
-  const [sortBy, setSortBy] = useState('net');
+  const [sortBy, setSortBy] = useState('case');
   const [edition, setEdition] = useState('');
   const [collapsed, setCollapsed] = useState(false);
 

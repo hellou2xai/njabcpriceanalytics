@@ -819,6 +819,17 @@ def discover_deals(
                                   ("time_sensitive", "is_time_sensitive")) if d in ds]
         if deal_or:
             where.append("(" + " OR ".join(deal_or) + ")")
+        if "better_1l" in ds:
+            # Keep 1L cards whose after-QD+RIP bottle price is within 5% of the SAME
+            # product's 750ML (you get 33% more for ~same money). Link the two sizes
+            # by the CELR family = the cpn prefix of group_key (before the '|' size
+            # suffix), so a product's 1L and 750ML (different UPCs) compare.
+            where.append(
+                "unit_volume = '1L' AND btl_best_qd_rip IS NOT NULL AND EXISTS ("
+                "SELECT 1 FROM deal_grid g2 WHERE g2.edition = deal_grid.edition "
+                "AND split_part(g2.group_key, '|', 1) = split_part(deal_grid.group_key, '|', 1) "
+                "AND g2.unit_volume = '750ML' AND g2.btl_best_qd_rip IS NOT NULL "
+                "AND deal_grid.btl_best_qd_rip <= g2.btl_best_qd_rip * 1.05)")
         if q and q.strip():
             where.append("(LOWER(product_name) LIKE ? OR LOWER(COALESCE(display_name,'')) LIKE ? OR LOWER(COALESCE(brand,'')) LIKE ?)")
             p += [f"%{q.strip().lower()}%"] * 3

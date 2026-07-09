@@ -133,10 +133,28 @@ function AdminRail({ rail, dists, deals, sizes, sortBy, edition }:
     ...(sizes.length ? { sizes: sizes.join(',') } : {}),
     sort: sortBy, limit: 60,
   };
+  // Blend/style wine rails (a `q`, no grape) have no geo_varietal to filter on, so
+  // resolve them through the SHARED semantic search (like the search box), then read
+  // deal_grid for those UPCs. Grape + spirit rails filter deal_grid directly.
+  const isBlend = !!pr.q && !pr.grapes && !pr.spirit_category;
   const { data, isLoading } = useQuery({
     queryKey: ['dg-rail', rail.label, JSON.stringify(params)],
-    queryFn: () => catalog.discoverDeals(params),
     staleTime: 300_000,
+    queryFn: async () => {
+      if (isBlend) {
+        const s = await catalog.search({ q: pr.q, ...(pr.product_type ? { product_type: pr.product_type } : {}), limit: 120, ...(edition ? { edition } : {}) });
+        const upcs = [...new Set((s.items || []).map((i) => i.upc).filter(Boolean))].join(',');
+        if (!upcs) return { edition: '', count: 0, items: [] as DealGridCard[] };
+        return catalog.discoverDeals({
+          upcs, ...(edition ? { edition } : {}),
+          ...(dists.length ? { divisions: dists.join(',') } : {}),
+          ...(deals.length ? { deals: deals.join(',') } : {}),
+          ...(sizes.length ? { sizes: sizes.join(',') } : {}),
+          sort: sortBy, limit: 60,
+        });
+      }
+      return catalog.discoverDeals(params);
+    },
   });
   const items = data?.items ?? [];
   if (!isLoading && !items.length) return null;
@@ -300,7 +318,7 @@ export default function DiscoverAdmin() {
             </div>
             <div className="disc-filter-sect">
               <div className="disc-filter-h">Deal</div>
-              {[['rip', 'Has RIP'], ['qd', 'Has QD'], ['both', 'Has both QD & RIP'], ['time_sensitive', 'Time-sensitive']].map(([v, l]) => (
+              {[['rip', 'Has RIP'], ['qd', 'Has QD'], ['both', 'Has both QD & RIP'], ['time_sensitive', 'Time-sensitive'], ['better_1l', 'Better 1L price']].map(([v, l]) => (
                 <label key={v} className="disc-filter-opt">
                   <input type="checkbox" checked={dealSet.has(v)} onChange={() => setDealSet((s) => toggleIn(s, v))} />
                   <span>{l}</span>

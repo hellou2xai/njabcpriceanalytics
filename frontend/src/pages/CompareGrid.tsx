@@ -182,74 +182,77 @@ export default function CompareGrid() {
       <header className="disc-hero">
         <h1 className="disc-title">Compare Distributor Prices</h1>
         <p className="disc-sub">Same product, every distributor — who's cheapest and by how much</p>
+        <form className="disc-search" onSubmit={(e) => { e.preventDefault(); setSubmitted(q.trim()); }}>
+          <Search size={18} className="disc-search-ic" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search — product, brand, region…" aria-label="Search" />
+          {submitted && <button type="button" onClick={() => { setQ(''); setSubmitted(''); }}>Clear</button>}
+          <button type="submit">Search</button>
+        </form>
       </header>
 
-      <div className="disc-body">
-        <button type="button" className={`disc-filters-show${collapsed ? '' : ' is-hidden'}`} onClick={() => setCollapsed(false)}>
-          <SlidersHorizontal size={15} /> Filters{activeCount ? ` (${activeCount})` : ''}
-        </button>
-
-        <aside className={`disc-filters${collapsed ? ' is-collapsed' : ''}`}>
-          <div className="disc-filters-head">
-            <span className="disc-filters-title"><SlidersHorizontal size={15} /> Filters</span>
-            <button type="button" className="disc-filters-collapse" onClick={() => setCollapsed(true)} title="Hide filters">
-              <PanelLeftClose size={16} />
-            </button>
-          </div>
-
-          {/* Search — submit on Enter, no search-as-you-type */}
-          <form className="disc-filter-sect" onSubmit={(e) => { e.preventDefault(); setSubmitted(q.trim()); }}>
-            <div className="disc-search">
-              <Search size={15} />
-              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Product or brand… (press Enter)" />
-              {submitted && <button type="button" className="disc-search-clear" onClick={() => { setQ(''); setSubmitted(''); }}>×</button>}
+      <div className={`disc-body${collapsed ? ' disc-body--nofilters' : ''}`}>
+        {collapsed ? (
+          <button type="button" className="disc-filters-show" onClick={() => setCollapsed(false)}>
+            <SlidersHorizontal size={16} /> Filters{activeCount > 0 ? ` (${activeCount})` : ''}
+          </button>
+        ) : (
+          <aside className="disc-filters">
+            <div className="disc-filters-head">
+              <span>Filters</span>
+              <span className="disc-filters-head-actions">
+                {activeCount > 0 && (
+                  <button type="button" className="disc-filters-clear"
+                    onClick={() => { setDistSet(new Set()); setDealSet(new Set()); setSizeSet(new Set()); setEdition(''); }}>Clear</button>
+                )}
+                <button type="button" className="disc-filters-collapse" title="Collapse filters" onClick={() => setCollapsed(true)}>
+                  <PanelLeftClose size={16} />
+                </button>
+              </span>
             </div>
-          </form>
+            <div className="disc-filter-sect">
+              <div className="disc-filter-h">Month</div>
+              <select className="disc-filter-select" value={edition} onChange={(e) => setEdition(e.target.value)}>
+                <option value="">Current</option>
+                {months.map((m) => <option key={m} value={m}>{fmtMonth(m)}</option>)}
+              </select>
+            </div>
+            <div className="disc-filter-sect">
+              <div className="disc-filter-h">Sort by</div>
+              <select className="disc-filter-select" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+                {SORT_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </div>
+            <div className="disc-filter-sect">
+              <div className="disc-filter-h">Deal</div>
+              {[['rip', 'Has RIP'], ['qd', 'Has QD'], ['both', 'Has both QD & RIP']].map(([v, l]) => (
+                <label key={v} className="disc-filter-opt">
+                  <input type="checkbox" checked={dealSet.has(v)} onChange={() => setDealSet((s) => toggleIn(s, v))} />
+                  <span>{l}</span>
+                </label>
+              ))}
+            </div>
+            <div className="disc-filter-sect">
+              <div className="disc-filter-h">Size</div>
+              {['375ML', '750ML', '1L', '1.75L'].map((s) => (
+                <label key={s} className="disc-filter-opt">
+                  <input type="checkbox" checked={sizeSet.has(s)} onChange={() => setSizeSet((x) => toggleIn(x, s))} />
+                  <span>{s}</span>
+                </label>
+              ))}
+            </div>
+            <div className="disc-filter-sect">
+              <div className="disc-filter-h">Distributor <span className="disc-filter-hint">(pick 2-3 to compare side by side)</span></div>
+              {DISTRIBUTOR_OPTS.map((d) => (
+                <label key={d.value} className="disc-filter-opt">
+                  <input type="checkbox" checked={distSet.has(d.value)} onChange={() => setDistSet((s) => toggleIn(s, d.value))} />
+                  <span>{d.label}</span>
+                </label>
+              ))}
+            </div>
+          </aside>
+        )}
 
-          <div className="disc-filter-sect">
-            <label className="disc-filter-label">Month</label>
-            <select value={edition} onChange={(e) => setEdition(e.target.value)}>
-              <option value="">Current</option>
-              {months.map((m) => <option key={m} value={m}>{fmtMonth(m)}</option>)}
-            </select>
-          </div>
-
-          <div className="disc-filter-sect">
-            <label className="disc-filter-label">Sort by</label>
-            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
-              {SORT_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
-          </div>
-
-          <div className="disc-filter-sect">
-            <label className="disc-filter-label">Deal</label>
-            {[['rip', 'Has RIP'], ['qd', 'Has QD'], ['both', 'Has both QD & RIP']].map(([v, l]) => (
-              <label key={v} className="disc-check">
-                <input type="checkbox" checked={dealSet.has(v)} onChange={() => setDealSet(toggleIn(dealSet, v))} /> {l}
-              </label>
-            ))}
-          </div>
-
-          <div className="disc-filter-sect">
-            <label className="disc-filter-label">Size</label>
-            {['375ML', '750ML', '1L', '1.75L'].map((s) => (
-              <label key={s} className="disc-check">
-                <input type="checkbox" checked={sizeSet.has(s)} onChange={() => setSizeSet(toggleIn(sizeSet, s))} /> {s}
-              </label>
-            ))}
-          </div>
-
-          <div className="disc-filter-sect">
-            <label className="disc-filter-label">Distributor</label>
-            {DISTRIBUTOR_OPTS.map((d) => (
-              <label key={d.value} className="disc-check">
-                <input type="checkbox" checked={distSet.has(d.value)} onChange={() => setDistSet(toggleIn(distSet, d.value))} /> {d.label}
-              </label>
-            ))}
-          </div>
-        </aside>
-
-        <main className="disc-rails">
+        <div className="disc-rails">
           {submitted ? (
             <section className="disc-rail">
               <div className="disc-rail-head">
@@ -265,7 +268,7 @@ export default function CompareGrid() {
               <CompareRail key={rail.label} rail={rail} dists={dists} deals={deals} sizes={sizes} sortBy={sortBy} edition={edition} />
             ))
           )}
-        </main>
+        </div>
       </div>
     </div>
   );

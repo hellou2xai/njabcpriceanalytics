@@ -928,8 +928,7 @@ def _compare_grid_build(ed, spirit_category, product_type, grapes, sizes, divisi
                          "NULL AS geo_region, 0.0 AS mi_volume")
         where = ["o.edition = ?", "o.is_cheapest_net = TRUE"]
         # Anomaly guard: a spread implying the dearest distributor is >4x the
-        # cheapest is a grouping mismatch (welded/different SKU), not real arbitrage
-        # — keep it out of the % -diff-ranked cards (route those to QA elsewhere).
+        # cheapest is a grouping mismatch (welded/different SKU), not real arbitrage.
         where.append("(o.spread_net IS NULL OR o.effective_case_price <= 0 OR "
                      "o.spread_net <= o.effective_case_price * 3)")
         p: list = [ed]

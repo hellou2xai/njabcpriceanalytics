@@ -58,6 +58,16 @@ function ripVal(r: CompareGridCard): { v: number; ts: boolean } {
   if (r.ts_rip_to) return { v: r.ts_rip_per_case ?? 0, ts: true };
   return { v: 0, ts: false };
 }
+// Additional volume QD beyond the 1-case price (a 1-case QD is already in oneCs).
+function volQd(r: CompareGridCard): number {
+  return Math.round(((oneCs(r) ?? 0) - (r.after_qd_case_price ?? (oneCs(r) ?? 0))) * 100);
+}
+// Only worth showing when the distributors actually DIFFER on 1-case price, RIP, or QD.
+function hasAnyDiff(rows: CompareGridCard[]): boolean {
+  if (new Set(rows.map((r) => Math.round((oneCs(r) ?? 0) * 100))).size > 1) return true;
+  if (new Set(rows.map((r) => { const x = ripVal(r); return `${x.v}|${x.ts}`; })).size > 1) return true;
+  return new Set(rows.map(volQd)).size > 1;
+}
 function toggleIn(s: Set<string>, v: string): Set<string> {
   const n = new Set(s); n.has(v) ? n.delete(v) : n.add(v); return n;
 }
@@ -172,9 +182,8 @@ function CompareGroup({ rows }: { rows: CompareGridCard[] }) {
   const ripDiffers = new Set(rips.map((x) => `${x.v}|${x.ts}`)).size > 1;
   let bestRipIdx = 0;
   rips.forEach((x, i) => { if (x.v > rips[bestRipIdx].v || (x.v === rips[bestRipIdx].v && !x.ts && rips[bestRipIdx].ts)) bestRipIdx = i; });
-  // ADDITIONAL volume QD beyond the 1-case price (any 1-case QD is already in oneCs,
-  // so don't double-count it): oneCs - deepest after-QD price.
-  const qds = rows.map((r) => Math.max(0, Math.round(((oneCs(r) ?? 0) - (r.after_qd_case_price ?? (oneCs(r) ?? 0))) * 100) / 100));
+  // ADDITIONAL volume QD beyond the 1-case price (a 1-case QD is already in oneCs).
+  const qds = rows.map((r) => Math.max(0, volQd(r) / 100));
   const qdDiffers = new Set(qds).size > 1;
   let bestQdIdx = 0;
   qds.forEach((v, i) => { if (v > qds[bestQdIdx]) bestQdIdx = i; });
@@ -242,9 +251,9 @@ function CompareRail({ rail, dists, deals, sizes, sortBy, edition }:
   const items = data?.items ?? [];
   const compareMode = dists.length >= 2;   // 2+ distributors picked -> side-by-side
   if (!isLoading && !items.length) return null;
-  // Only show products COMMON to the picked distributors (>=2 cards). A 1-card
-  // group means only one carries it (or enrichment dropped a side) — not a comparison.
-  const groups = compareMode ? groupByMatch(items).filter((g) => g.length >= 2) : [];
+  // Only show products COMMON to the picked distributors (>=2 cards) AND where they
+  // actually differ on 1-case price, RIP, or QD (a same-on-everything row is noise).
+  const groups = compareMode ? groupByMatch(items).filter((g) => g.length >= 2 && hasAnyDiff(g)) : [];
   return (
     <section className="disc-rail">
       <div className="disc-rail-head">
@@ -386,11 +395,11 @@ export default function CompareGrid() {
             <section className="disc-rail">
               <div className="disc-rail-head">
                 <h2 className="disc-rail-title">Matching “{submitted}”</h2>
-                <span className="disc-rail-count">{dists.length >= 2 ? groupByMatch(searchData?.items ?? []).filter((g) => g.length >= 2).length : (searchData?.items?.length ?? 0)}</span>
+                <span className="disc-rail-count">{dists.length >= 2 ? groupByMatch(searchData?.items ?? []).filter((g) => g.length >= 2 && hasAnyDiff(g)).length : (searchData?.items?.length ?? 0)}</span>
               </div>
               {dists.length >= 2 ? (
                 <div className="disc-cmp-grid">
-                  {groupByMatch(searchData?.items ?? []).filter((g) => g.length >= 2).map((g, i) => <CompareGroup key={g[0]?.match_key || i} rows={g} />)}
+                  {groupByMatch(searchData?.items ?? []).filter((g) => g.length >= 2 && hasAnyDiff(g)).map((g, i) => <CompareGroup key={g[0]?.match_key || i} rows={g} />)}
                 </div>
               ) : (
                 <div className="disc-rail-track">

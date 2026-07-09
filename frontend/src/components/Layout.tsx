@@ -35,7 +35,7 @@ const NAV_GROUPS: {
     items: [
       { path: '/catalog', label: 'Catalog', icon: Package, adminOnly: true },
       { path: '/discover', label: 'Discover Deals', icon: Sparkles },
-      { path: '/discover-admin', label: 'Discover Deals (Admin)', icon: Sparkles, adminOnly: true },
+      { path: '/discover-classic', label: 'Discover Classic', icon: Sparkles, adminOnly: true },
       { path: '/products', label: 'Products', icon: LayoutGrid },
       { path: '/distributor-price-list', label: 'Distributor Price List', icon: Store },
       { path: '/best-rips', label: 'RIPs', icon: BadgeDollarSign },

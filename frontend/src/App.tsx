@@ -151,8 +151,10 @@ function AuthenticatedApp() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/catalog" element={<AdminRoute><Catalog /></AdminRoute>} />
             <Route path="/products" element={<Products />} />
-            <Route path="/discover" element={<Discover />} />
-            <Route path="/discover-admin" element={<AdminRoute><DiscoverAdmin /></AdminRoute>} />
+            <Route path="/discover" element={<DiscoverAdmin />} />
+            <Route path="/discover-classic" element={<AdminRoute><Discover /></AdminRoute>} />
+            {/* legacy /discover-admin still resolves to the (now primary) deal_grid page */}
+            <Route path="/discover-admin" element={<DiscoverAdmin />} />
             <Route path="/distributor-price-list" element={<DistributorPriceList />} />
             <Route path="/whats-new" element={<WhatsNew />} />
             <Route path="/product" element={<ProductDetail />} />

@@ -41,10 +41,15 @@ function fmtDate(d?: string | null): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d ?? '');
   return m ? `${parseInt(m[2], 10)}/${parseInt(m[3], 10)}` : (d ?? '');
 }
-// Per-bottle from the 1-CASE (frontline) price — the compare basis, no RIP/QD baked in.
+// The real 1-CASE price: frontline minus any 1-case-entry QD (backend one_cs_case_price),
+// NOT the raw list. This is the compare basis; no volume-QD or RIP baked in.
+function oneCs(d: CompareGridCard): number | null {
+  return d.one_cs_case_price ?? d.frontline_case_price ?? null;
+}
 function btlFront(d: CompareGridCard): number | null {
   const pack = d.unit_qty ? parseInt(String(d.unit_qty), 10) : null;
-  return pack && d.frontline_case_price != null ? d.frontline_case_price / pack : null;
+  const cs = oneCs(d);
+  return pack && cs != null ? cs / pack : null;
 }
 // A distributor's RIP value for "better terms": stable rebate wins; a time-sensitive
 // RIP counts but ranks below an equal stable one.
@@ -130,8 +135,8 @@ function CmpCard({ d, cheapest, bestQd, bestRip }:
         <span className="disc-card-dist"><Store size={11} /> {distributorName(dist)}</span>
         {cheapest && <span className="disc-cmp-win">Cheapest</span>}
       </div>
-      {/* 1-case (frontline) price — no RIP/QD baked in */}
-      <div className="disc-cmp-price">{money(d.frontline_case_price)}<span className="disc-cmp-price-u">/cs</span></div>
+      {/* real 1-case price (list minus 1-case QD) — no volume-QD or RIP baked in */}
+      <div className="disc-cmp-price">{money(oneCs(d))}<span className="disc-cmp-price-u">/cs</span></div>
       <div className="disc-cmp-btl">{money2(btlFront(d))}/btl</div>
       <div className="disc-cmp-deals">
         {/* Only the BEST RIP/QD (the one that makes THIS distributor cheaper) —
@@ -161,13 +166,15 @@ function CmpCard({ d, cheapest, bestQd, bestRip }:
 function CompareGroup({ rows }: { rows: CompareGridCard[] }) {
   const head = rows[0];
   const size = [head.unit_volume, head.unit_qty ? `${head.unit_qty}/cs` : null].filter(Boolean).join(', ');
-  const minFront = Math.min(...rows.map((r) => r.frontline_case_price ?? Infinity));
+  const minFront = Math.min(...rows.map((r) => oneCs(r) ?? Infinity));
   const pct = head.pct_diff != null ? Math.round(head.pct_diff * 100) : null;
   const rips = rows.map(ripVal);
   const ripDiffers = new Set(rips.map((x) => `${x.v}|${x.ts}`)).size > 1;
   let bestRipIdx = 0;
   rips.forEach((x, i) => { if (x.v > rips[bestRipIdx].v || (x.v === rips[bestRipIdx].v && !x.ts && rips[bestRipIdx].ts)) bestRipIdx = i; });
-  const qds = rows.map((r) => r.qd_save_per_case ?? 0);
+  // ADDITIONAL volume QD beyond the 1-case price (any 1-case QD is already in oneCs,
+  // so don't double-count it): oneCs - deepest after-QD price.
+  const qds = rows.map((r) => Math.max(0, Math.round(((oneCs(r) ?? 0) - (r.after_qd_case_price ?? (oneCs(r) ?? 0))) * 100) / 100));
   const qdDiffers = new Set(qds).size > 1;
   let bestQdIdx = 0;
   qds.forEach((v, i) => { if (v > qds[bestQdIdx]) bestQdIdx = i; });
@@ -188,7 +195,7 @@ function CompareGroup({ rows }: { rows: CompareGridCard[] }) {
       <div className="disc-cmp-cards">
         {rows.map((r, i) => (
           <CmpCard key={i} d={r}
-            cheapest={(r.frontline_case_price ?? Infinity) === minFront}
+            cheapest={(oneCs(r) ?? Infinity) === minFront}
             bestQd={qdDiffers && i === bestQdIdx && qds[i] > 0 ? qds[i] : null}
             bestRip={ripDiffers && i === bestRipIdx && rips[i].v > 0 ? { v: rips[i].v, ts: rips[i].ts, to: r.ts_rip_to } : null} />
         ))}

@@ -911,21 +911,33 @@ def _compare_grid_build(ed, spirit_category, product_type, grapes, sizes, divisi
             "SELECT 1 FROM information_schema.tables WHERE table_name = 'cpl_enriched'"
         ).fetchone())
         if has_cpl:
+            # 1-CASE price = frontline minus any QD that qualifies at 1 case (a
+            # 1-case entry QD), same rule as deal_grid._one_cs / the detail page.
+            # Otherwise the raw frontline overstates it (Fedway JB Sunshine: list
+            # $229 but $180 after its 1-case QD).
+            one_cs_expr = ("frontline_case_price - COALESCE(CASE "
+                           "WHEN TRY_CAST(discount_1_qty AS DOUBLE) = 1 THEN discount_1_amt "
+                           "WHEN TRY_CAST(discount_2_qty AS DOUBLE) = 1 THEN discount_2_amt "
+                           "WHEN TRY_CAST(discount_3_qty AS DOUBLE) = 1 THEN discount_3_amt "
+                           "WHEN TRY_CAST(discount_4_qty AS DOUBLE) = 1 THEN discount_4_amt "
+                           "WHEN TRY_CAST(discount_5_qty AS DOUBLE) = 1 THEN discount_5_amt "
+                           "ELSE 0 END, 0)")
             joins = (
                 "LEFT JOIN (SELECT upc_norm, wholesaler, unit_volume, "
                 "ANY_VALUE(spirit_category) AS spirit_category, ANY_VALUE(geo_varietal) AS geo_varietal, "
                 "ANY_VALUE(geo_country) AS geo_country, ANY_VALUE(geo_region) AS geo_region, "
-                "MAX(mi_volume) AS mi_volume FROM cpl_enriched "
-                "GROUP BY upc_norm, wholesaler, unit_volume) c "
+                "MAX(mi_volume) AS mi_volume, ANY_VALUE(" + one_cs_expr + ") AS one_cs "
+                "FROM cpl_enriched GROUP BY upc_norm, wholesaler, unit_volume) c "
                 "ON c.upc_norm = o.upc_norm AND c.wholesaler = o.wholesaler "
                 "AND COALESCE(c.unit_volume,'') = COALESCE(o.unit_volume,'')"
             )
             sel_extra = ("c.spirit_category AS spirit_category, c.geo_varietal AS geo_varietal, "
-                         "c.geo_country AS geo_country, c.geo_region AS geo_region, c.mi_volume AS mi_volume")
+                         "c.geo_country AS geo_country, c.geo_region AS geo_region, c.mi_volume AS mi_volume, "
+                         "COALESCE(c.one_cs, o.frontline_case_price) AS one_cs_case_price")
         else:
             joins = ""
             sel_extra = ("NULL AS spirit_category, NULL AS geo_varietal, NULL AS geo_country, "
-                         "NULL AS geo_region, 0.0 AS mi_volume")
+                         "NULL AS geo_region, 0.0 AS mi_volume, o.frontline_case_price AS one_cs_case_price")
         divs = [d.strip() for d in (divisions or "").split(",") if d.strip()]
         compare_mode = len(divs) >= 2
         if compare_mode:
@@ -987,13 +999,13 @@ def _compare_grid_build(ed, spirit_category, product_type, grapes, sizes, divisi
             # QD and RIP differences are surfaced separately as "differs" stickers.
             # Keep same-price products (they may still differ on RIP/QD).
             sql = ("WITH base AS (" + base + "), win AS (SELECT *, "
-                   "MIN(frontline_case_price) OVER (PARTITION BY match_key) AS grp_min, "
-                   "MAX(frontline_case_price) OVER (PARTITION BY match_key) AS grp_max, "
-                   "(MAX(frontline_case_price) OVER (PARTITION BY match_key) "
-                   " - MIN(frontline_case_price) OVER (PARTITION BY match_key)) "
-                   "/ NULLIF(MAX(frontline_case_price) OVER (PARTITION BY match_key), 0) AS pct_diff "
+                   "MIN(one_cs_case_price) OVER (PARTITION BY match_key) AS grp_min, "
+                   "MAX(one_cs_case_price) OVER (PARTITION BY match_key) AS grp_max, "
+                   "(MAX(one_cs_case_price) OVER (PARTITION BY match_key) "
+                   " - MIN(one_cs_case_price) OVER (PARTITION BY match_key)) "
+                   "/ NULLIF(MAX(one_cs_case_price) OVER (PARTITION BY match_key), 0) AS pct_diff "
                    "FROM base) SELECT * FROM win WHERE grp_min > 0 AND grp_max <= grp_min * 2 "
-                   "ORDER BY pct_diff DESC, match_key, frontline_case_price ASC LIMIT ?")
+                   "ORDER BY pct_diff DESC, match_key, one_cs_case_price ASC LIMIT ?")
             df = con.execute(sql, [*p, eff_limit]).fetchdf()
         else:
             order = {

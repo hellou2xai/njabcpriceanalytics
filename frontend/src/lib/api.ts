@@ -107,7 +107,8 @@ export interface CompareGridCard {
   product_name: string; display_name?: string | null; brand?: string | null;
   unit_volume?: string | null; unit_qty?: string | null; vintage?: string | null;
   item_no?: string | null; product_type?: string | null;
-  frontline_case_price?: number | null; after_qd_case_price?: number | null;
+  frontline_case_price?: number | null; one_cs_case_price?: number | null;
+  after_qd_case_price?: number | null;
   effective_case_price?: number | null; btl_effective?: number | null;
   qd_save_per_case?: number | null; rip_savings?: number | null; total_savings_per_case?: number | null;
   has_discount?: boolean | null; has_rip?: boolean | null; rip_code?: string | null;

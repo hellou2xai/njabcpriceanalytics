@@ -66,18 +66,22 @@ function isOneCsQd(t: CatalogTier): boolean {
   return t.source === 'discount' && t.qty === 1 && !/^b/i.test(t.unit || '');
 }
 
-// Top tier of a kind, taken straight from the canonical tier ladder (FOUNDATION)
-// — no math re-derived here. RIP wins by its source `amount` (the CPL's TOTAL
-// rebate for buying `qty`, per rip_utils); QD wins by per-case discount. Time-
-// sensitive tiers ARE eligible (the TS button exposes their windows); the 1-case
-// entry QD is excluded from the QD chip since it's already in the shown price.
+// Featured tier of a kind, from the canonical tier ladder (FOUNDATION) — no math
+// re-derived here. We feature the LARGEST case quantity first (the bulk-buy tier),
+// not a small 1-2 CS one; ties break by depth (RIP total `amount` per rip_utils /
+// QD per-case save). Time-sensitive tiers ARE eligible (the TS button exposes their
+// windows); the 1-case entry QD is excluded (already baked into the shown price).
 function topTier(tiers: CatalogTier[] | undefined, source: 'discount' | 'rip'): CatalogTier | null {
   const of = (tiers ?? []).filter(
     (t) => t.source === source && !(source === 'discount' && isOneCsQd(t)),
   );
   if (!of.length) return null;
-  const metric = (t: CatalogTier) => (source === 'rip' ? (t.amount ?? 0) : (t.save_per_case ?? 0));
-  return of.reduce((a, b) => (metric(b) > metric(a) ? b : a));
+  const depth = (t: CatalogTier) => (source === 'rip' ? (t.amount ?? 0) : (t.save_per_case ?? 0));
+  return of.reduce((a, b) => {
+    const qa = a.qty ?? 0, qb = b.qty ?? 0;
+    if (qb !== qa) return qb > qa ? b : a;   // larger case wins
+    return depth(b) > depth(a) ? b : a;      // tie -> deeper wins
+  });
 }
 
 // Best per-case discount as a FRACTION of list price, comparing the list price

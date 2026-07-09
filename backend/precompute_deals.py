@@ -135,10 +135,17 @@ def _pick_rec(cands, offer):
 
 def _top(tiers, source):
     cand = [t for t in (tiers or []) if t.get("source") == source]
+    if source == "discount":
+        # exclude the 1-case ENTRY QD (already folded into one_cs_case_price), same
+        # as the frontend, so the QD chip features a real bulk tier.
+        cand = [t for t in cand
+                if not (t.get("qty") == 1 and not str(t.get("unit", "")).upper().startswith("B"))]
     if not cand:
         return None
-    key = (lambda t: _num(t.get("amount")) or 0) if source == "rip" else (lambda t: _num(t.get("save_per_case")) or 0)
-    return max(cand, key=key)
+    depth = (lambda t: _num(t.get("amount")) or 0) if source == "rip" else (lambda t: _num(t.get("save_per_case")) or 0)
+    # Feature the LARGEST case tier first (bulk buy), not a small 1-2 CS one; break
+    # ties by depth. Mirrors the frontend topTier.
+    return max(cand, key=lambda t: ((t.get("qty") or 0), depth(t)))
 
 
 def _one_cs(rec):

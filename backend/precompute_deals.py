@@ -231,6 +231,14 @@ def _build_edition(con, src, ed, attach_tiers, log, per_ed=None) -> int:
     recs = _fetch_cpl(con, src, ed, keys)
     diag["recs"] = len(recs)
     attach_tiers(con, recs)
+    # image_url is NOT a stored cpl_enriched column — the list endpoints JOIN it
+    # (Go-UPC product_enrichment / admin override / distributor image) at read time.
+    # Do the SAME here so deal_grid cards carry the image, not NULL.
+    try:
+        from backend.enrichment_join import attach_enrichment_image
+        attach_enrichment_image(con, recs)  # sets rec["image_url"] (+ enrichment_name)
+    except Exception as _e:  # never break the build over images
+        log(f"[deal_grid] image join skipped: {_e}")
     # Key the cpl records by the FULL SKU identity (distributor + UPC + size + pack +
     # vintage), NOT UPC alone: a UPC shared across pack/size siblings would otherwise
     # borrow the wrong sibling's price/tiers. Keep a LIST per identity because some

@@ -922,22 +922,30 @@ def _compare_grid_build(ed, spirit_category, product_type, grapes, sizes, divisi
                            "WHEN TRY_CAST(discount_4_qty AS DOUBLE) = 1 THEN discount_4_amt "
                            "WHEN TRY_CAST(discount_5_qty AS DOUBLE) = 1 THEN discount_5_amt "
                            "ELSE 0 END, 0)")
+            # EDITION-SPECIFIC (+ pack): the join MUST filter cpl_enriched to this
+            # edition and dedupe by pack, or ANY_VALUE mixes editions and picks a
+            # different month's discount (JD Honey: April's $69.60 QD leaked into
+            # July, giving a wrong 1-case price). Everything here is edition-scoped.
             joins = (
-                "LEFT JOIN (SELECT upc_norm, wholesaler, unit_volume, "
+                "LEFT JOIN (SELECT upc_norm, wholesaler, unit_volume, unit_qty, "
                 "ANY_VALUE(spirit_category) AS spirit_category, ANY_VALUE(geo_varietal) AS geo_varietal, "
                 "ANY_VALUE(geo_country) AS geo_country, ANY_VALUE(geo_region) AS geo_region, "
                 "MAX(mi_volume) AS mi_volume, ANY_VALUE(" + one_cs_expr + ") AS one_cs "
-                "FROM cpl_enriched GROUP BY upc_norm, wholesaler, unit_volume) c "
+                "FROM cpl_enriched WHERE edition = ? "
+                "GROUP BY upc_norm, wholesaler, unit_volume, unit_qty) c "
                 "ON c.upc_norm = o.upc_norm AND c.wholesaler = o.wholesaler "
-                "AND COALESCE(c.unit_volume,'') = COALESCE(o.unit_volume,'')"
+                "AND COALESCE(c.unit_volume,'') = COALESCE(o.unit_volume,'') "
+                "AND COALESCE(TRY_CAST(c.unit_qty AS DOUBLE), -1) = COALESCE(TRY_CAST(o.unit_qty AS DOUBLE), -1)"
             )
             sel_extra = ("c.spirit_category AS spirit_category, c.geo_varietal AS geo_varietal, "
                          "c.geo_country AS geo_country, c.geo_region AS geo_region, c.mi_volume AS mi_volume, "
                          "COALESCE(c.one_cs, o.frontline_case_price) AS one_cs_case_price")
+            pre_params = [ed]
         else:
             joins = ""
             sel_extra = ("NULL AS spirit_category, NULL AS geo_varietal, NULL AS geo_country, "
                          "NULL AS geo_region, 0.0 AS mi_volume, o.frontline_case_price AS one_cs_case_price")
+            pre_params = []
         divs = [d.strip() for d in (divisions or "").split(",") if d.strip()]
         compare_mode = len(divs) >= 2
         if compare_mode:
@@ -1006,7 +1014,7 @@ def _compare_grid_build(ed, spirit_category, product_type, grapes, sizes, divisi
                    "/ NULLIF(MAX(one_cs_case_price) OVER (PARTITION BY match_key), 0) AS pct_diff "
                    "FROM base) SELECT * FROM win WHERE grp_min > 0 AND grp_max <= grp_min * 2 "
                    "ORDER BY pct_diff DESC, match_key, one_cs_case_price ASC LIMIT ?")
-            df = con.execute(sql, [*p, eff_limit]).fetchdf()
+            df = con.execute(sql, [*pre_params, *p, eff_limit]).fetchdf()
         else:
             order = {
                 # RIP/QD products first, then biggest cross-distributor % gap.
@@ -1018,7 +1026,7 @@ def _compare_grid_build(ed, spirit_category, product_type, grapes, sizes, divisi
             sql = (f"SELECT o.*, {sel_extra}, {pct} AS pct_diff "
                    f"FROM sku_offer o {joins} WHERE {' AND '.join(where)} "
                    f"ORDER BY {order} NULLS LAST, o.n_distributors DESC NULLS LAST LIMIT ?")
-            df = con.execute(sql, [*p, limit]).fetchdf()
+            df = con.execute(sql, [*pre_params, *p, limit]).fetchdf()
         df = df.astype(object).where(df.notna(), None)
         rows = df.to_dict("records")
         try:

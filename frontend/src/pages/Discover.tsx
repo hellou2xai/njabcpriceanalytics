@@ -13,6 +13,7 @@ import { Search, Store, SlidersHorizontal, PanelLeftClose } from 'lucide-react';
 import { catalog, watchlist, type MiRail, type Product, type CatalogTier, type WatchlistItem } from '../lib/api';
 import ProductThumb from '../components/ProductThumb';
 import FavoriteButton from '../components/FavoriteButton';
+import AvailabilityButton from '../components/AvailabilityButton';
 import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
 import { bottlesPerCase } from '../lib/productSizes';
 import './Discover.css';
@@ -312,6 +313,9 @@ function DiscCard({ p }: { p: MergedProduct }) {
         <FavoriteButton productName={p.product_name} wholesaler={p.wholesaler}
           upc={p.upc ?? undefined} unitVolume={p.unit_volume ?? undefined} />
       </div>
+      {/* Check Allied / Check Fedway — self-hides for other distributors. */}
+      <AvailabilityButton wholesaler={p.wholesaler} name={p.product_name}
+        itemNumber={p.abg_sku ?? undefined} className="disc-card-avail" />
       <div className="disc-card-media">
         <ProductThumb src={p.image_url} alt={p.product_name} size={120} />
         {ts.length > 0 && (
@@ -572,6 +576,9 @@ function FavCard({ p }: { p: Product }) {
         <FavoriteButton productName={p.product_name} wholesaler={p.wholesaler}
           upc={p.upc ?? undefined} unitVolume={p.unit_volume ?? undefined} />
       </div>
+      {/* Check Allied / Check Fedway — self-hides for other distributors. */}
+      <AvailabilityButton wholesaler={p.wholesaler} name={p.product_name}
+        itemNumber={p.abg_sku ?? undefined} className="disc-card-avail" />
       <div className="disc-card-media">
         <ProductThumb src={p.image_url ?? undefined} alt={p.product_name} size={120} />
       </div>

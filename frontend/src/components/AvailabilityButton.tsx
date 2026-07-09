@@ -36,7 +36,7 @@ export default function AvailabilityButton({ wholesaler, name, itemNumber, size 
       title={term
         ? `Open ${label}'s portal search for this item (${precise ? `item #${String(itemNumber).trim()}` : 'by name'}). You check stock on ${label} with your own login.`
         : `No ${label} item number or name to search`}
-      onClick={(e) => { e.stopPropagation(); openAvailability(wholesaler, itemNumber, name); }}
+      onClick={(e) => { e.stopPropagation(); e.preventDefault(); openAvailability(wholesaler, itemNumber, name); }}
     >
       <PackageSearch size={iconSize} />
       <span>Check {label}</span>

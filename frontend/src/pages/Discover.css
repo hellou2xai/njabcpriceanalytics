@@ -236,3 +236,6 @@
   .disc-ts-vals em, .disc-ts-kind { color: #6ee7b7; }
   .disc-ts-kind--discount { color: #a5b4fc; }
 }
+
+/* Check Allied / Check Fedway button on a deal card, under the distributor name */
+.disc-card-avail { margin: 0 8px 6px; align-self: flex-start; }

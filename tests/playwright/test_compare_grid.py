@@ -85,7 +85,9 @@ def main():
             first_cards = page.locator(".disc-cmp-group").first.locator(".disc-cmp-card").count() if groups else 0
             wins = page.locator(".disc-cmp-card.is-cheapest").count()
             ts = page.locator(".disc-deal--ts").count()
-            print(f"[compare] groups={groups} cards_in_first_group={first_cards} cheapest-badges={wins} ts-markers={ts}")
+            diffs = page.locator(".disc-cmp-diff").count()
+            better = page.locator(".disc-deal--better").count()
+            print(f"[compare] groups={groups} cards_in_first_group={first_cards} cheapest={wins} ts={ts} differs-stickers={diffs} better-badges={better}")
             if groups == 0:
                 failures.append("no .disc-cmp-group rendered when 2 distributors selected")
             elif first_cards < 2:

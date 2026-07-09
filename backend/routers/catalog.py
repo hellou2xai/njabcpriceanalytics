@@ -981,14 +981,19 @@ def _compare_grid_build(ed, spirit_category, product_type, grapes, sizes, divisi
             # >2x across distributors — that's a source price error, not a real deal.
             eff_limit = limit * len(divs)
             base = f"SELECT o.*, {sel_extra} FROM sku_offer o {joins} WHERE {' AND '.join(where)}"
+            # Compare on the 1-CASE (frontline) price — the realistic buy-one-case
+            # price. NOT effective (QD+RIP blended) which made a distributor look
+            # cheaper only because its RIP was full-month vs the other's time-sensitive.
+            # QD and RIP differences are surfaced separately as "differs" stickers.
+            # Keep same-price products (they may still differ on RIP/QD).
             sql = ("WITH base AS (" + base + "), win AS (SELECT *, "
-                   "MIN(effective_case_price) OVER (PARTITION BY match_key) AS grp_min, "
-                   "MAX(effective_case_price) OVER (PARTITION BY match_key) AS grp_max, "
-                   "(MAX(effective_case_price) OVER (PARTITION BY match_key) "
-                   " - MIN(effective_case_price) OVER (PARTITION BY match_key)) "
-                   "/ NULLIF(MAX(effective_case_price) OVER (PARTITION BY match_key), 0) AS pct_diff "
+                   "MIN(frontline_case_price) OVER (PARTITION BY match_key) AS grp_min, "
+                   "MAX(frontline_case_price) OVER (PARTITION BY match_key) AS grp_max, "
+                   "(MAX(frontline_case_price) OVER (PARTITION BY match_key) "
+                   " - MIN(frontline_case_price) OVER (PARTITION BY match_key)) "
+                   "/ NULLIF(MAX(frontline_case_price) OVER (PARTITION BY match_key), 0) AS pct_diff "
                    "FROM base) SELECT * FROM win WHERE grp_min > 0 AND grp_max <= grp_min * 2 "
-                   "ORDER BY pct_diff DESC, match_key, effective_case_price ASC LIMIT ?")
+                   "ORDER BY pct_diff DESC, match_key, frontline_case_price ASC LIMIT ?")
             df = con.execute(sql, [*p, eff_limit]).fetchdf()
         else:
             order = {

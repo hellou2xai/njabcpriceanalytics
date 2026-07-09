@@ -41,6 +41,18 @@ function fmtDate(d?: string | null): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d ?? '');
   return m ? `${parseInt(m[2], 10)}/${parseInt(m[3], 10)}` : (d ?? '');
 }
+// Per-bottle from the 1-CASE (frontline) price — the compare basis, no RIP/QD baked in.
+function btlFront(d: CompareGridCard): number | null {
+  const pack = d.unit_qty ? parseInt(String(d.unit_qty), 10) : null;
+  return pack && d.frontline_case_price != null ? d.frontline_case_price / pack : null;
+}
+// A distributor's RIP value for "better terms": stable rebate wins; a time-sensitive
+// RIP counts but ranks below an equal stable one.
+function ripVal(r: CompareGridCard): { v: number; ts: boolean } {
+  if (r.has_rip) return { v: r.rip_savings ?? 0, ts: false };
+  if (r.ts_rip_to) return { v: r.ts_rip_per_case ?? 0, ts: true };
+  return { v: 0, ts: false };
+}
 function toggleIn(s: Set<string>, v: string): Set<string> {
   const n = new Set(s); n.has(v) ? n.delete(v) : n.add(v); return n;
 }
@@ -108,7 +120,8 @@ function groupByMatch(items: CompareGridCard[]): CompareGridCard[][] {
 }
 
 // One distributor's offer inside a comparison group; the cheapest is highlighted.
-function CmpCard({ d, cheapest }: { d: CompareGridCard; cheapest: boolean }) {
+function CmpCard({ d, cheapest, betterRip, betterQd }:
+  { d: CompareGridCard; cheapest: boolean; betterRip: boolean; betterQd: boolean }) {
   const dist = d.wholesaler ?? '';
   return (
     <Link to={cardHref(d)} className={`disc-cmp-card${cheapest ? ' is-cheapest' : ''}`}>
@@ -116,9 +129,12 @@ function CmpCard({ d, cheapest }: { d: CompareGridCard; cheapest: boolean }) {
         <span className="disc-card-dist"><Store size={11} /> {distributorName(dist)}</span>
         {cheapest && <span className="disc-cmp-win">Cheapest</span>}
       </div>
-      <div className="disc-cmp-price">{money(d.effective_case_price)}<span className="disc-cmp-price-u">/cs</span></div>
-      <div className="disc-cmp-btl">{money2(d.btl_effective)}/btl</div>
+      {/* 1-case (frontline) price — no RIP/QD baked in */}
+      <div className="disc-cmp-price">{money(d.frontline_case_price)}<span className="disc-cmp-price-u">/cs</span></div>
+      <div className="disc-cmp-btl">{money2(btlFront(d))}/btl</div>
       <div className="disc-cmp-deals">
+        {betterRip && <span className="disc-deal disc-deal--better">Better RIP</span>}
+        {betterQd && <span className="disc-deal disc-deal--better">Better QD</span>}
         {d.has_rip && <span className="disc-deal disc-deal--rip">RIP</span>}
         {d.has_discount && <span className="disc-deal disc-deal--qd">QD</span>}
         {d.ts_rip_to && (
@@ -133,12 +149,22 @@ function CmpCard({ d, cheapest }: { d: CompareGridCard; cheapest: boolean }) {
   );
 }
 
-// A product's side-by-side comparison across the selected distributors.
+// A product's side-by-side comparison across the selected distributors. Compares the
+// 1-case (frontline) price; when that's equal but RIP or QD differs, still shown with
+// a "RIP/QD differs" sticker and the better-terms distributor marked green.
 function CompareGroup({ rows }: { rows: CompareGridCard[] }) {
   const head = rows[0];
   const size = [head.unit_volume, head.unit_qty ? `${head.unit_qty}/cs` : null].filter(Boolean).join(', ');
-  const minEff = Math.min(...rows.map((r) => r.effective_case_price ?? Infinity));
+  const minFront = Math.min(...rows.map((r) => r.frontline_case_price ?? Infinity));
   const pct = head.pct_diff != null ? Math.round(head.pct_diff * 100) : null;
+  const rips = rows.map(ripVal);
+  const ripDiffers = new Set(rips.map((x) => `${x.v}|${x.ts}`)).size > 1;
+  let bestRip = 0;
+  rips.forEach((x, i) => { if (x.v > rips[bestRip].v || (x.v === rips[bestRip].v && !x.ts && rips[bestRip].ts)) bestRip = i; });
+  const qds = rows.map((r) => r.qd_save_per_case ?? 0);
+  const qdDiffers = new Set(qds).size > 1;
+  let bestQd = 0;
+  qds.forEach((v, i) => { if (v > qds[bestQd]) bestQd = i; });
   return (
     <div className="disc-cmp-group">
       <div className="disc-cmp-head">
@@ -147,10 +173,21 @@ function CompareGroup({ rows }: { rows: CompareGridCard[] }) {
           <div className="disc-cmp-name">{head.display_name || head.product_name}</div>
           {size && <div className="disc-cmp-size">{size}</div>}
         </div>
-        {pct != null && pct > 0 && <span className="disc-cmp-gap">{pct}% gap</span>}
+        <div className="disc-cmp-tags">
+          {pct != null && pct > 0
+            ? <span className="disc-cmp-gap">{pct}% gap</span>
+            : <span className="disc-cmp-gap disc-cmp-gap--same">Same 1-cs</span>}
+          {ripDiffers && <span className="disc-cmp-diff">RIP differs</span>}
+          {qdDiffers && <span className="disc-cmp-diff">QD differs</span>}
+        </div>
       </div>
       <div className="disc-cmp-cards">
-        {rows.map((r, i) => <CmpCard key={i} d={r} cheapest={(r.effective_case_price ?? Infinity) === minEff} />)}
+        {rows.map((r, i) => (
+          <CmpCard key={i} d={r}
+            cheapest={(r.frontline_case_price ?? Infinity) === minFront}
+            betterRip={ripDiffers && i === bestRip && rips[i].v > 0}
+            betterQd={qdDiffers && i === bestQd && qds[i] > 0} />
+        ))}
       </div>
     </div>
   );
@@ -194,7 +231,9 @@ function CompareRail({ rail, dists, deals, sizes, sortBy, edition }:
   const items = data?.items ?? [];
   const compareMode = dists.length >= 2;   // 2+ distributors picked -> side-by-side
   if (!isLoading && !items.length) return null;
-  const groups = compareMode ? groupByMatch(items) : [];
+  // Only show products COMMON to the picked distributors (>=2 cards). A 1-card
+  // group means only one carries it (or enrichment dropped a side) — not a comparison.
+  const groups = compareMode ? groupByMatch(items).filter((g) => g.length >= 2) : [];
   return (
     <section className="disc-rail">
       <div className="disc-rail-head">
@@ -336,11 +375,11 @@ export default function CompareGrid() {
             <section className="disc-rail">
               <div className="disc-rail-head">
                 <h2 className="disc-rail-title">Matching “{submitted}”</h2>
-                <span className="disc-rail-count">{dists.length >= 2 ? groupByMatch(searchData?.items ?? []).length : (searchData?.items?.length ?? 0)}</span>
+                <span className="disc-rail-count">{dists.length >= 2 ? groupByMatch(searchData?.items ?? []).filter((g) => g.length >= 2).length : (searchData?.items?.length ?? 0)}</span>
               </div>
               {dists.length >= 2 ? (
                 <div className="disc-cmp-grid">
-                  {groupByMatch(searchData?.items ?? []).map((g, i) => <CompareGroup key={g[0]?.match_key || i} rows={g} />)}
+                  {groupByMatch(searchData?.items ?? []).filter((g) => g.length >= 2).map((g, i) => <CompareGroup key={g[0]?.match_key || i} rows={g} />)}
                 </div>
               ) : (
                 <div className="disc-rail-track">

@@ -5584,14 +5584,17 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 /* ---- Wholesale availability button (open distributor portal search) ---- */
 .availability-btn {
   display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
-  border: 1px solid var(--border); border-radius: 7px; background: var(--surface);
-  color: var(--text); font-weight: 600; white-space: nowrap; line-height: 1;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  border-radius: 7px;
+  /* Brand-tinted (not grey/white) so "Check Allied/Fedway" reads as an action. */
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  color: var(--accent); font-weight: 600; white-space: nowrap; line-height: 1;
 }
 .availability-btn-sm { padding: 5px 9px; font-size: 12px; }
 .availability-btn-md { padding: 7px 12px; font-size: 13px; }
 .availability-btn:hover:not(:disabled) {
   border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  background: color-mix(in srgb, var(--accent) 22%, var(--surface));
   color: var(--accent);
 }
 .availability-btn:disabled { opacity: 0.5; cursor: not-allowed; }

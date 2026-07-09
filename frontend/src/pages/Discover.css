@@ -193,10 +193,18 @@
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .disc-cmp-size { font-size: 11px; color: #667085; margin-top: 2px; }
+.disc-cmp-tags { display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+  justify-content: flex-end; flex-shrink: 0; max-width: 46%; }
 .disc-cmp-gap {
   flex-shrink: 0; font-size: 11px; font-weight: 700; color: #067647;
   background: #d1fadf; border-radius: 999px; padding: 2px 8px; white-space: nowrap;
 }
+.disc-cmp-gap--same { color: #475467; background: #eef2f6; }
+.disc-cmp-diff {   /* amber "RIP/QD differs" sticker */
+  font-size: 11px; font-weight: 700; color: #b54708; background: #fef0c7;
+  border-radius: 999px; padding: 2px 8px; white-space: nowrap;
+}
+.disc-deal--better { color: #067647; background: #d1fadf; font-weight: 700; }  /* green: better terms */
 .disc-cmp-cards { display: flex; gap: 8px; }
 .disc-cmp-card {
   flex: 1 1 0; min-width: 0; text-decoration: none;

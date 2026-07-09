@@ -87,6 +87,64 @@ function CompareCard({ d }: { d: CompareGridCard }) {
   );
 }
 
+// ---- Side-by-side compare mode (2+ distributors picked) ----
+// Group the flat per-distributor rows by match_key (the SAME product across
+// distributors — backend already matched them precisely, no welds).
+function groupByMatch(items: CompareGridCard[]): CompareGridCard[][] {
+  const groups: CompareGridCard[][] = [];
+  const idx = new Map<string, number>();
+  for (const it of items) {
+    const k = it.match_key || `${it.upc}-${it.unit_volume}-${it.unit_qty}`;
+    let g = idx.get(k);
+    if (g == null) { g = groups.length; idx.set(k, g); groups.push([]); }
+    groups[g].push(it);
+  }
+  return groups;
+}
+
+// One distributor's offer inside a comparison group; the cheapest is highlighted.
+function CmpCard({ d, cheapest }: { d: CompareGridCard; cheapest: boolean }) {
+  const dist = d.wholesaler ?? '';
+  return (
+    <Link to={cardHref(d)} className={`disc-cmp-card${cheapest ? ' is-cheapest' : ''}`}>
+      <div className="disc-cmp-card-top">
+        <span className="disc-card-dist"><Store size={11} /> {distributorName(dist)}</span>
+        {cheapest && <span className="disc-cmp-win">Cheapest</span>}
+      </div>
+      <div className="disc-cmp-price">{money(d.effective_case_price)}<span className="disc-cmp-price-u">/cs</span></div>
+      <div className="disc-cmp-btl">{money2(d.btl_effective)}/btl</div>
+      <div className="disc-cmp-deals">
+        {d.has_rip && <span className="disc-deal disc-deal--rip">RIP</span>}
+        {d.has_discount && <span className="disc-deal disc-deal--qd">QD</span>}
+      </div>
+      <AvailabilityButton wholesaler={dist} name={d.product_name} itemNumber={d.item_no ?? undefined} className="disc-cmp-avail" />
+    </Link>
+  );
+}
+
+// A product's side-by-side comparison across the selected distributors.
+function CompareGroup({ rows }: { rows: CompareGridCard[] }) {
+  const head = rows[0];
+  const size = [head.unit_volume, head.unit_qty ? `${head.unit_qty}/cs` : null].filter(Boolean).join(', ');
+  const minEff = Math.min(...rows.map((r) => r.effective_case_price ?? Infinity));
+  const pct = head.pct_diff != null ? Math.round(head.pct_diff * 100) : null;
+  return (
+    <div className="disc-cmp-group">
+      <div className="disc-cmp-head">
+        <ProductThumb src={head.image_url ?? undefined} alt={head.product_name} size={40} />
+        <div className="disc-cmp-meta">
+          <div className="disc-cmp-name">{head.display_name || head.product_name}</div>
+          {size && <div className="disc-cmp-size">{size}</div>}
+        </div>
+        {pct != null && pct > 0 && <span className="disc-cmp-gap">{pct}% gap</span>}
+      </div>
+      <div className="disc-cmp-cards">
+        {rows.map((r, i) => <CmpCard key={i} d={r} cheapest={(r.effective_case_price ?? Infinity) === minEff} />)}
+      </div>
+    </div>
+  );
+}
+
 // A category rail: one /compare-grid query. Blend/style wine rails (q, no grape)
 // resolve through the shared semantic search first, then read the grid by UPC.
 function CompareRail({ rail, dists, deals, sizes, sortBy, edition }:
@@ -123,18 +181,28 @@ function CompareRail({ rail, dists, deals, sizes, sortBy, edition }:
     },
   });
   const items = data?.items ?? [];
+  const compareMode = dists.length >= 2;   // 2+ distributors picked -> side-by-side
   if (!isLoading && !items.length) return null;
+  const groups = compareMode ? groupByMatch(items) : [];
   return (
     <section className="disc-rail">
       <div className="disc-rail-head">
         <h2 className="disc-rail-title">{rail.label}</h2>
-        <span className="disc-rail-count">{items.length}</span>
+        <span className="disc-rail-count">{compareMode ? groups.length : items.length}</span>
       </div>
-      <div className="disc-rail-track">
-        {isLoading
-          ? <div className="disc-rail-loading">Loading…</div>
-          : items.map((d, i) => <CompareCard key={`${d.wholesaler}-${d.upc}-${d.unit_volume}-${i}`} d={d} />)}
-      </div>
+      {compareMode ? (
+        <div className="disc-cmp-grid">
+          {isLoading
+            ? <div className="disc-rail-loading">Loading…</div>
+            : groups.map((g, i) => <CompareGroup key={g[0].match_key || i} rows={g} />)}
+        </div>
+      ) : (
+        <div className="disc-rail-track">
+          {isLoading
+            ? <div className="disc-rail-loading">Loading…</div>
+            : items.map((d, i) => <CompareCard key={`${d.wholesaler}-${d.upc}-${d.unit_volume}-${i}`} d={d} />)}
+        </div>
+      )}
     </section>
   );
 }
@@ -257,11 +325,17 @@ export default function CompareGrid() {
             <section className="disc-rail">
               <div className="disc-rail-head">
                 <h2 className="disc-rail-title">Matching “{submitted}”</h2>
-                <span className="disc-rail-count">{searchData?.items?.length ?? 0}</span>
+                <span className="disc-rail-count">{dists.length >= 2 ? groupByMatch(searchData?.items ?? []).length : (searchData?.items?.length ?? 0)}</span>
               </div>
-              <div className="disc-rail-track">
-                {(searchData?.items ?? []).map((d, i) => <CompareCard key={`s-${d.wholesaler}-${d.upc}-${i}`} d={d} />)}
-              </div>
+              {dists.length >= 2 ? (
+                <div className="disc-cmp-grid">
+                  {groupByMatch(searchData?.items ?? []).map((g, i) => <CompareGroup key={g[0]?.match_key || i} rows={g} />)}
+                </div>
+              ) : (
+                <div className="disc-rail-track">
+                  {(searchData?.items ?? []).map((d, i) => <CompareCard key={`s-${d.wholesaler}-${d.upc}-${i}`} d={d} />)}
+                </div>
+              )}
             </section>
           ) : (
             rails.map((rail) => (

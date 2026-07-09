@@ -926,12 +926,26 @@ def _compare_grid_build(ed, spirit_category, product_type, grapes, sizes, divisi
             joins = ""
             sel_extra = ("NULL AS spirit_category, NULL AS geo_varietal, NULL AS geo_country, "
                          "NULL AS geo_region, 0.0 AS mi_volume")
-        where = ["o.edition = ?", "o.is_cheapest_net = TRUE"]
-        # Anomaly guard: a spread implying the dearest distributor is >4x the
-        # cheapest is a grouping mismatch (welded/different SKU), not real arbitrage.
-        where.append("(o.spread_net IS NULL OR o.effective_case_price <= 0 OR "
-                     "o.spread_net <= o.effective_case_price * 3)")
-        p: list = [ed]
+        divs = [d.strip() for d in (divisions or "").split(",") if d.strip()]
+        compare_mode = len(divs) >= 2
+        if compare_mode:
+            # SIDE-BY-SIDE: match the SAME product across the selected distributors by
+            # MATCH_KEY (upc|size|pack — shared across distributors), NOT group_key
+            # (which welds a brand's different expressions e.g. Wild Turkey 81+101).
+            # Return their offers for match_keys that >=2 of the selected carry.
+            dph = ",".join(["?"] * len(divs))
+            where = ["o.edition = ?", f"o.wholesaler IN ({dph})",
+                     f"o.match_key IN (SELECT match_key FROM sku_offer WHERE edition = ? "
+                     f"AND wholesaler IN ({dph}) GROUP BY match_key "
+                     f"HAVING COUNT(DISTINCT wholesaler) >= 2)"]
+            p: list = [ed] + divs + [ed] + divs
+        else:
+            where = ["o.edition = ?", "o.is_cheapest_net = TRUE"]
+            # Anomaly guard: a spread implying the dearest distributor is >4x the
+            # cheapest is a grouping mismatch (welded/different SKU), not real arbitrage.
+            where.append("(o.spread_net IS NULL OR o.effective_case_price <= 0 OR "
+                         "o.spread_net <= o.effective_case_price * 3)")
+            p = [ed]
         if spirit_category and has_cpl:
             where.append("c.spirit_category = ?"); p.append(spirit_category.strip())
         if product_type:
@@ -952,26 +966,42 @@ def _compare_grid_build(ed, spirit_category, product_type, grapes, sizes, divisi
             ups = [re.sub(r"\D", "", u).lstrip("0") for u in upcs.split(",")]
             ups = [u for u in ups if u]
             where.append(("o.upc_norm IN (" + ",".join(["?"] * len(ups)) + ")") if ups else "1=0"); p += ups
-        divs = [d.strip() for d in (divisions or "").split(",") if d.strip()]
-        if divs:
-            # the product group must be carried by at least one selected distributor
+        if divs and not compare_mode:
+            # browse mode: the group must be carried by at least one selected distributor
             where.append("o.group_key IN (SELECT group_key FROM sku_offer WHERE edition = ? AND wholesaler IN ("
                          + ",".join(["?"] * len(divs)) + "))")
             p.append(ed); p += divs
         # % price difference = spread as a fraction of the highest net price.
         pct = ("(CASE WHEN (o.effective_case_price + COALESCE(o.spread_net,0)) > 0 "
                "THEN COALESCE(o.spread_net,0) / (o.effective_case_price + COALESCE(o.spread_net,0)) ELSE 0 END)")
-        order = {
-            # RIP/QD products first, then biggest cross-distributor % gap.
-            "diff": f"(o.has_rip OR o.has_discount) DESC, {pct} DESC",
-            "mi": "mi_volume DESC NULLS LAST",
-            "price": "o.effective_case_price ASC NULLS LAST",
-            "name": "COALESCE(o.display_name, o.product_name) ASC",
-        }.get(sort, f"(o.has_rip OR o.has_discount) DESC, {pct} DESC")
-        sql = (f"SELECT o.*, {sel_extra}, {pct} AS pct_diff "
-               f"FROM sku_offer o {joins} WHERE {' AND '.join(where)} "
-               f"ORDER BY {order} NULLS LAST, o.n_distributors DESC NULLS LAST LIMIT ?")
-        df = con.execute(sql, [*p, limit]).fetchdf()
+        if compare_mode:
+            # % diff is BETWEEN the selected distributors for the SAME match_key, via
+            # a window so a product's rows stay adjacent (cheapest first = left card)
+            # and products rank by their own gap. Guard: same product shouldn't differ
+            # >2x across distributors — that's a source price error, not a real deal.
+            eff_limit = limit * len(divs)
+            base = f"SELECT o.*, {sel_extra} FROM sku_offer o {joins} WHERE {' AND '.join(where)}"
+            sql = ("WITH base AS (" + base + "), win AS (SELECT *, "
+                   "MIN(effective_case_price) OVER (PARTITION BY match_key) AS grp_min, "
+                   "MAX(effective_case_price) OVER (PARTITION BY match_key) AS grp_max, "
+                   "(MAX(effective_case_price) OVER (PARTITION BY match_key) "
+                   " - MIN(effective_case_price) OVER (PARTITION BY match_key)) "
+                   "/ NULLIF(MAX(effective_case_price) OVER (PARTITION BY match_key), 0) AS pct_diff "
+                   "FROM base) SELECT * FROM win WHERE grp_min > 0 AND grp_max <= grp_min * 2 "
+                   "ORDER BY pct_diff DESC, match_key, effective_case_price ASC LIMIT ?")
+            df = con.execute(sql, [*p, eff_limit]).fetchdf()
+        else:
+            order = {
+                # RIP/QD products first, then biggest cross-distributor % gap.
+                "diff": f"(o.has_rip OR o.has_discount) DESC, {pct} DESC",
+                "mi": "mi_volume DESC NULLS LAST",
+                "price": "o.effective_case_price ASC NULLS LAST",
+                "name": "COALESCE(o.display_name, o.product_name) ASC",
+            }.get(sort, f"(o.has_rip OR o.has_discount) DESC, {pct} DESC")
+            sql = (f"SELECT o.*, {sel_extra}, {pct} AS pct_diff "
+                   f"FROM sku_offer o {joins} WHERE {' AND '.join(where)} "
+                   f"ORDER BY {order} NULLS LAST, o.n_distributors DESC NULLS LAST LIMIT ?")
+            df = con.execute(sql, [*p, limit]).fetchdf()
         df = df.astype(object).where(df.notna(), None)
         rows = df.to_dict("records")
         try:

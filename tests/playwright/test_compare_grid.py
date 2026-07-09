@@ -10,6 +10,7 @@ Asserts, against a running local backend (:8000) + frontend (:5173):
 Run:  python tests/playwright/test_compare_grid.py
 """
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -17,8 +18,9 @@ import requests
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 
 SCRATCH = Path(r"C:/Users/sambi/AppData/Local/Temp/claude/C--Users-sambi-OneDrive---U2xAI-Claude-Code-Projects-CELR-RIP-ABC/7b57c981-f848-46e8-b1cc-012139ac27e5/scratchpad")
-API_BASE = "http://127.0.0.1:8000"
-FRONTEND_BASE = "http://localhost:5173"
+# Point at prod with CG_API_BASE / CG_FRONTEND_BASE = https://nj.celr.ai
+API_BASE = os.getenv("CG_API_BASE", "http://127.0.0.1:8000")
+FRONTEND_BASE = os.getenv("CG_FRONTEND_BASE", "http://localhost:5173")
 EMAIL = "sambit.tripathy@gmail.com"
 PASSWORD = "Cuttack10!"
 COOKIE_CONSENT = json.dumps({"analytics": True, "marketing": True,
@@ -69,6 +71,23 @@ def main():
                 failures.append(f"obsolete '{label}' still in the sidebar menu")
         if OBSOLETE[-1] not in nav:  # control: a kept item must be present
             failures.append(f"control '{OBSOLETE[-1]}' missing from sidebar (nav didn't render?)")
+
+        # ---- compare mode: pick 2 distributors -> side-by-side groups ----
+        try:
+            for dn in ("Allied", "Fedway"):
+                page.locator(".disc-filter-opt", has_text=dn).first.locator("input").check(timeout=5000)
+            page.wait_for_timeout(5000)
+            groups = page.locator(".disc-cmp-group").count()
+            first_cards = page.locator(".disc-cmp-group").first.locator(".disc-cmp-card").count() if groups else 0
+            wins = page.locator(".disc-cmp-card.is-cheapest").count()
+            print(f"[compare] groups={groups} cards_in_first_group={first_cards} cheapest-badges={wins}")
+            if groups == 0:
+                failures.append("no .disc-cmp-group rendered when 2 distributors selected")
+            elif first_cards < 2:
+                failures.append(f"first compare group has {first_cards} distributor cards (<2)")
+            page.screenshot(path=str(SCRATCH / "compare_sidebyside.png"))
+        except PWTimeout:
+            failures.append("compare-mode distributor checkboxes not clickable")
         ctx.close()
 
         # ---- mobile ----

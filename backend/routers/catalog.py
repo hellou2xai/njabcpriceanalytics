@@ -843,8 +843,23 @@ def discover_deals(
         sql = (f"SELECT * FROM deal_grid WHERE {' AND '.join(where)} "
                f"ORDER BY {order} NULLS LAST, mi_volume DESC NULLS LAST LIMIT ?")
         df = con.execute(sql, [*p, limit]).fetchdf()
-    df = df.astype(object).where(df.notna(), None)
-    return {"edition": ed, "count": len(df), "items": df.to_dict("records")}
+        df = df.astype(object).where(df.notna(), None)
+        rows = df.to_dict("records")
+        # image_url is a READ-TIME join everywhere in the app (admin override >
+        # Go-UPC product_enrichment > distributor image), NOT a stored value — so
+        # attach it here, in-request, exactly like /search does. Cards get fresh
+        # images immediately with no deal_grid rebuild, and admin/Go-UPC updates
+        # show without one. deal_grid's own precomputed image_url is passed as the
+        # distributor fallback.
+        try:
+            from backend.enrichment_join import attach_enrichment_image
+            for r in rows:
+                r["dist_image_url"] = r.get("image_url")
+            attach_enrichment_image(con, rows, upc_key="upc")
+        except Exception as e:
+            log_warn = f"[discover-deals] image attach skipped: {e}"
+            print(log_warn)
+    return {"edition": ed, "count": len(rows), "items": rows}
 
 
 @router.get("/search")

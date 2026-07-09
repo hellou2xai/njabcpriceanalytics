@@ -97,6 +97,27 @@ export interface DealGridCard {
   net_discount?: number | null; discount_pct?: number | null;
 }
 
+// One cross-distributor comparison card (the cheapest-net offer for a product
+// group) from /api/catalog/compare-grid (sku_offer + read-time category/image).
+export interface CompareGridCard {
+  edition?: string | null;
+  group_key?: string | null; match_key?: string | null;
+  wholesaler?: string | null;          // the cheapest-net distributor
+  upc?: string | null; upc_norm?: string | null;
+  product_name: string; display_name?: string | null; brand?: string | null;
+  unit_volume?: string | null; unit_qty?: string | null; vintage?: string | null;
+  item_no?: string | null; product_type?: string | null;
+  frontline_case_price?: number | null; after_qd_case_price?: number | null;
+  effective_case_price?: number | null; btl_effective?: number | null;
+  qd_save_per_case?: number | null; rip_savings?: number | null; total_savings_per_case?: number | null;
+  has_discount?: boolean | null; has_rip?: boolean | null; rip_code?: string | null;
+  net_rank?: number | null; is_cheapest_net?: boolean | null;
+  n_distributors?: number | null; spread_net?: number | null; pct_diff?: number | null;
+  spirit_category?: string | null; geo_varietal?: string | null; mi_volume?: number | null;
+  enr_region?: string | null; abv_proof?: string | null;
+  image_url?: string | null;
+}
+
 export const catalog = {
   search: (params: Record<string, unknown>) =>
     request<{ total: number; items: Product[]; corrected_query?: string | null }>(`/api/catalog/search${qs(params)}`),
@@ -110,6 +131,9 @@ export const catalog = {
   // New precomputed deal grid (Discover Deals Admin — reads deal_grid directly).
   discoverDeals: (params: Record<string, unknown>) =>
     request<{ edition: string; count: number; items: DealGridCard[]; error?: string }>(`/api/catalog/discover-deals${qs(params)}`),
+  // Cross-distributor comparison cards (Compare Distributor Prices redesign — reads sku_offer).
+  compareGrid: (params: Record<string, unknown>) =>
+    request<{ edition: string; count: number; items: CompareGridCard[]; error?: string }>(`/api/catalog/compare-grid${qs(params)}`),
   topCategories: () =>
     request<MiTopCategories>('/api/catalog/top-categories'),
   categories: (params?: Record<string, unknown>) =>

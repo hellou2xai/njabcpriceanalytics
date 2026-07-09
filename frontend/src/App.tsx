@@ -34,6 +34,7 @@ import MajorDiscounts from './pages/MajorDiscounts';
 import Todo from './pages/Todo';
 import Discounts from './pages/Discounts';
 import ComparePrices from './pages/ComparePrices';
+import CompareGrid from './pages/CompareGrid';
 import CompareRips from './pages/CompareRips';
 import CompareQD from './pages/CompareQD';
 import BestRips from './pages/BestRips';
@@ -167,7 +168,8 @@ function AuthenticatedApp() {
             <Route path="/price-increases" element={<AdminRoute><PriceMovers direction="up" /></AdminRoute>} />
             <Route path="/major-discounts" element={<MajorDiscounts />} />
             <Route path="/discounts" element={<Discounts />} />
-            <Route path="/compare-prices" element={<ComparePrices />} />
+            <Route path="/compare-prices" element={<CompareGrid />} />
+            <Route path="/compare-prices-classic" element={<AdminRoute><ComparePrices /></AdminRoute>} />
             <Route path="/compare-rips" element={<CompareRips />} />
             <Route path="/compare-qd" element={<CompareQD />} />
             <Route path="/best-rips" element={<BestRips />} />

@@ -33,29 +33,26 @@ const NAV_GROUPS: {
   {
     header: 'Catalog',
     items: [
-      { path: '/catalog', label: 'Catalog', icon: Package, adminOnly: true },
+      // Obsolete pages (Catalog, RIPs, QD, Time-Sensitive Deals) removed from the
+      // menu per request — routes kept (reachable by URL), no future changes.
       { path: '/discover', label: 'Discover Deals', icon: Sparkles },
       { path: '/discover-classic', label: 'Discover Classic', icon: Sparkles, adminOnly: true },
       { path: '/products', label: 'Products', icon: LayoutGrid },
       { path: '/distributor-price-list', label: 'Distributor Price List', icon: Store },
-      { path: '/best-rips', label: 'RIPs', icon: BadgeDollarSign },
-      { path: '/best-qd', label: 'QD', icon: Percent },
       { path: '/combos', label: 'Combos', icon: Combine },
       { path: '/new-items', label: 'New Items', icon: Sparkles },
-      { path: '/time-sensitive', label: 'Time-Sensitive Deals', icon: Clock },
     ],
   },
   {
     header: 'Analysis',
     items: [
       { path: '/compare-prices', label: 'Compare Distributor Price', icon: Scale },
+      { path: '/compare-prices-classic', label: 'Compare Prices Classic', icon: Scale, adminOnly: true },
       { path: '/compare-rips', label: 'Compare RIPs', icon: Layers },
       { path: '/compare-qd', label: 'Compare QD', icon: Tag },
       { path: '/edition-compare', label: 'Monthly Comparison', icon: CalendarClock },
-      { path: '/price-drops', label: 'Price Drops', icon: ArrowDownRight, adminOnly: true },
-      { path: '/price-increases', label: 'Price Increases', icon: ArrowUpRight, adminOnly: true },
-      { path: '/rate-shop', label: 'Rate Shop', icon: ShoppingBag, adminOnly: true },
-      { path: '/price-360', label: 'Price 360', icon: Target, adminOnly: true },
+      // Obsolete pages (Price Drops, Price Increases, Rate Shop, Price 360) removed
+      // from the menu per request — routes kept (reachable by URL), no future changes.
     ],
   },
   {

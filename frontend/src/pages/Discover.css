@@ -164,6 +164,7 @@
 }
 .disc-deal--rip { color: #d92d20; background: #fff3b0; }   /* red on yellow */
 .disc-deal--qd  { color: #101828; background: #fff3b0; }   /* black on yellow */
+.disc-deal--diff { color: #067647; background: #d1fadf; }  /* green: cross-distributor savings */
 
 .disc-card--skel { height: 214px; background: linear-gradient(90deg,#f2f4f7,#f8f9fb,#f2f4f7); border-style: dashed; }
 
@@ -226,6 +227,7 @@
   .disc-card-btl { color: #aeb6c8; }
   .disc-deal--rip { color: #d92d20; background: #fde68a; }   /* red on yellow */
   .disc-deal--qd  { color: #101828; background: #fde68a; }   /* black on yellow */
+  .disc-deal--diff { color: #067647; background: #d1fadf; }
   .disc-ts-btn { background: rgba(181,71,8,.22); border-color: #7a4a12; color: #fdb87a; }
   .disc-ts-btn:hover, .disc-ts-btn.is-open { background: rgba(181,71,8,.34); border-color: #a9670f; }
   .disc-ts-pop { background: #1a1e2c; border-color: #2a2f42; }

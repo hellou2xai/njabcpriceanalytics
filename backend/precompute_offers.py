@@ -49,7 +49,7 @@ _OFFER_COLS = [
     "upc", "upc_norm", "product_name", "display_name",
     "unit_volume", "unit_volume_std", "unit_qty", "vintage",
     "item_no", "product_type", "brand",
-    "frontline_case_price", "after_qd_case_price", "effective_case_price",
+    "frontline_case_price", "one_cs_case_price", "after_qd_case_price", "effective_case_price",
     "btl_effective", "qd_save_per_case", "rip_savings", "total_savings_per_case",
     "has_discount", "has_rip", "rip_code",
     "net_rank", "is_cheapest_net", "n_distributors", "spread_net",
@@ -177,6 +177,9 @@ def _grid_rows_for_edition(con, src: str, edition: str) -> list[dict]:
                 "product_type": m.get("product_type"),
                 "brand": m.get("brand"),
                 "frontline_case_price": front,
+                # Canonical 1-case price (frontline minus a 1-case-entry QD) via
+                # pricing.one_cs_case_price — NOT computed in any router.
+                "one_cs_case_price": _pricing.one_cs_case_price(m),
                 "after_qd_case_price": after,
                 "effective_case_price": eff,
                 "btl_effective": (round(eff / uqd, 2) if eff is not None and uqd else None),
@@ -210,7 +213,7 @@ def build_sku_offer(con, *, log=print) -> int:
     t0 = time.time()
     con.execute("DROP TABLE IF EXISTS sku_offer")
     col_defs = ", ".join(
-        f"{c} {'BOOLEAN' if c in ('has_discount', 'has_rip', 'is_cheapest_net') else 'INTEGER' if c in ('net_rank', 'n_distributors') else 'DOUBLE' if c in ('frontline_case_price', 'after_qd_case_price', 'effective_case_price', 'btl_effective', 'qd_save_per_case', 'rip_savings', 'total_savings_per_case', 'spread_net') else 'VARCHAR'}"
+        f"{c} {'BOOLEAN' if c in ('has_discount', 'has_rip', 'is_cheapest_net') else 'INTEGER' if c in ('net_rank', 'n_distributors') else 'DOUBLE' if c in ('frontline_case_price', 'one_cs_case_price', 'after_qd_case_price', 'effective_case_price', 'btl_effective', 'qd_save_per_case', 'rip_savings', 'total_savings_per_case', 'spread_net') else 'VARCHAR'}"
         for c in _OFFER_COLS
     )
     con.execute(f"CREATE TABLE sku_offer ({col_defs})")

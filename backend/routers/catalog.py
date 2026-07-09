@@ -910,22 +910,47 @@ def _compare_grid_build(ed, spirit_category, product_type, grapes, sizes, divisi
         has_cpl = bool(con.execute(
             "SELECT 1 FROM information_schema.tables WHERE table_name = 'cpl_enriched'"
         ).fetchone())
+        so_cols = {r[1] for r in con.execute("PRAGMA table_info(sku_offer)").fetchall()}
+        has_one_cs = "one_cs_case_price" in so_cols   # canonical precomputed column
+        # The cpl join provides ONLY category/geo/mi, edition-scoped (RIP codes +
+        # discounts are re-issued per edition; a cross-edition ANY_VALUE mixes them).
+        # NO pricing math here: the 1-case price is the canonical sku_offer column
+        # one_cs_case_price (pricing.one_cs_case_price), not hand-rolled router SQL.
         if has_cpl:
-            # 1-CASE price = frontline minus any QD that qualifies at 1 case (a
-            # 1-case entry QD), same rule as deal_grid._one_cs / the detail page.
-            # Otherwise the raw frontline overstates it (Fedway JB Sunshine: list
-            # $229 but $180 after its 1-case QD).
+            joins = (
+                "LEFT JOIN (SELECT upc_norm, wholesaler, unit_volume, "
+                "ANY_VALUE(spirit_category) AS spirit_category, ANY_VALUE(geo_varietal) AS geo_varietal, "
+                "ANY_VALUE(geo_country) AS geo_country, ANY_VALUE(geo_region) AS geo_region, "
+                "MAX(mi_volume) AS mi_volume FROM cpl_enriched WHERE edition = ? "
+                "GROUP BY upc_norm, wholesaler, unit_volume) c "
+                "ON c.upc_norm = o.upc_norm AND c.wholesaler = o.wholesaler "
+                "AND COALESCE(c.unit_volume,'') = COALESCE(o.unit_volume,'')"
+            )
+            sel_extra = ("c.spirit_category AS spirit_category, c.geo_varietal AS geo_varietal, "
+                         "c.geo_country AS geo_country, c.geo_region AS geo_region, c.mi_volume AS mi_volume")
+            pre_params = [ed]
+        else:
+            joins = ""
+            sel_extra = ("NULL AS spirit_category, NULL AS geo_varietal, NULL AS geo_country, "
+                         "NULL AS geo_region, 0.0 AS mi_volume")
+            pre_params = []
+        # one_cs_case_price is a canonical precomputed sku_offer column (in o.*).
+        # TRANSITIONAL BRIDGE — remove once every serving cache has the column:
+        # while an OLD sku_offer (pre-column) is still served (e.g. the deploy lands
+        # before the reload republishes the rebuilt grid), compute the 1-case price
+        # inline, EDITION-SCOPED, so the window can't regress to raw frontline. This
+        # mirrors pricing.one_cs_case_price (frontline minus the largest QD that
+        # qualifies at 1 case) and is the exact math previously verified on prod.
+        if not has_one_cs and has_cpl:
+            def _q1(n):
+                return f"TRY_CAST(regexp_extract(CAST(discount_{n}_qty AS VARCHAR), '[0-9]+') AS DOUBLE) = 1"
             one_cs_expr = ("frontline_case_price - COALESCE(CASE "
-                           "WHEN TRY_CAST(discount_1_qty AS DOUBLE) = 1 THEN discount_1_amt "
-                           "WHEN TRY_CAST(discount_2_qty AS DOUBLE) = 1 THEN discount_2_amt "
-                           "WHEN TRY_CAST(discount_3_qty AS DOUBLE) = 1 THEN discount_3_amt "
-                           "WHEN TRY_CAST(discount_4_qty AS DOUBLE) = 1 THEN discount_4_amt "
-                           "WHEN TRY_CAST(discount_5_qty AS DOUBLE) = 1 THEN discount_5_amt "
+                           f"WHEN {_q1(1)} THEN discount_1_amt "
+                           f"WHEN {_q1(2)} THEN discount_2_amt "
+                           f"WHEN {_q1(3)} THEN discount_3_amt "
+                           f"WHEN {_q1(4)} THEN discount_4_amt "
+                           f"WHEN {_q1(5)} THEN discount_5_amt "
                            "ELSE 0 END, 0)")
-            # EDITION-SPECIFIC (+ pack): the join MUST filter cpl_enriched to this
-            # edition and dedupe by pack, or ANY_VALUE mixes editions and picks a
-            # different month's discount (JD Honey: April's $69.60 QD leaked into
-            # July, giving a wrong 1-case price). Everything here is edition-scoped.
             joins = (
                 "LEFT JOIN (SELECT upc_norm, wholesaler, unit_volume, unit_qty, "
                 "ANY_VALUE(spirit_category) AS spirit_category, ANY_VALUE(geo_varietal) AS geo_varietal, "
@@ -940,12 +965,8 @@ def _compare_grid_build(ed, spirit_category, product_type, grapes, sizes, divisi
             sel_extra = ("c.spirit_category AS spirit_category, c.geo_varietal AS geo_varietal, "
                          "c.geo_country AS geo_country, c.geo_region AS geo_region, c.mi_volume AS mi_volume, "
                          "COALESCE(c.one_cs, o.frontline_case_price) AS one_cs_case_price")
-            pre_params = [ed]
-        else:
-            joins = ""
-            sel_extra = ("NULL AS spirit_category, NULL AS geo_varietal, NULL AS geo_country, "
-                         "NULL AS geo_region, 0.0 AS mi_volume, o.frontline_case_price AS one_cs_case_price")
-            pre_params = []
+        elif not has_one_cs:
+            sel_extra += ", o.frontline_case_price AS one_cs_case_price"
         divs = [d.strip() for d in (divisions or "").split(",") if d.strip()]
         compare_mode = len(divs) >= 2
         if compare_mode:

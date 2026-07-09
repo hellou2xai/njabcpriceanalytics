@@ -366,6 +366,42 @@ def best_disc_at(disc_tiers: list[dict], cases_bought: float, pack: float) -> fl
     return best
 
 
+def _disc_tiers_min(rec) -> list[dict]:
+    """A cpl record's FULL-MONTH CPL discount tiers as [{qty, unit, amount}] — the
+    minimal shape ``best_disc_at`` needs. Uses the SAME qty parse as
+    ``attach_tiers`` (allied '1 Cases', fedway '1.0', opici 'bottle' all collapse
+    uniformly). The enriched rec is the full-month line, so its discount columns
+    are full-month; partial-window discounts live on separate raw rows."""
+    out = []
+    for i in range(1, 6):
+        amt = rec.get(f"discount_{i}_amt")
+        if amt is None or (isinstance(amt, float) and math.isnan(amt)) or amt <= 0:
+            continue
+        m = re.match(r"^\s*(\d+(?:\.\d+)?)\s*(.*)$", str(rec.get(f"discount_{i}_qty") or ""))
+        if not m:
+            continue
+        try:
+            qty_n = int(float(m.group(1)))
+        except (TypeError, ValueError):
+            continue
+        unit = "Bottles" if _norm_unit(m.group(2) or "") == "bottle" else "Cases"
+        out.append({"qty": qty_n, "unit": unit, "amount": float(amt)})
+    return out
+
+
+def one_cs_case_price(rec) -> Optional[float]:
+    """CANONICAL 1-CASE price = frontline minus the best full-month QD that
+    qualifies at 1 case (a 1-case entry QD), via ``best_disc_at``. This is the
+    single source for the buy-one-case price from a cpl-shaped record (the mirror
+    of ``precompute_deals._one_cs`` which reads the built tier ladder). RIP is
+    never baked in. Returns None when there is no frontline."""
+    front = _num(rec.get("frontline_case_price"))
+    if front is None:
+        return None
+    pack = _num(rec.get("unit_qty")) or 1.0
+    return round(front - best_disc_at(_disc_tiers_min(rec), 1, pack), 2)
+
+
 # ---------------------------------------------------------------------------
 # attach_tiers — the master tier ladder builder. EXACT copy of what lived
 # in routers/catalog.py:_attach_discount_rip_tiers; behaviour preserved.

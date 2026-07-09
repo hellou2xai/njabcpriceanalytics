@@ -120,8 +120,9 @@ function groupByMatch(items: CompareGridCard[]): CompareGridCard[][] {
 }
 
 // One distributor's offer inside a comparison group; the cheapest is highlighted.
-function CmpCard({ d, cheapest, betterRip, betterQd }:
-  { d: CompareGridCard; cheapest: boolean; betterRip: boolean; betterQd: boolean }) {
+function CmpCard({ d, cheapest, bestQd, bestRip }:
+  { d: CompareGridCard; cheapest: boolean; bestQd: number | null;
+    bestRip: { v: number; ts: boolean; to?: string | null } | null }) {
   const dist = d.wholesaler ?? '';
   return (
     <Link to={cardHref(d)} className={`disc-cmp-card${cheapest ? ' is-cheapest' : ''}`}>
@@ -133,13 +134,18 @@ function CmpCard({ d, cheapest, betterRip, betterQd }:
       <div className="disc-cmp-price">{money(d.frontline_case_price)}<span className="disc-cmp-price-u">/cs</span></div>
       <div className="disc-cmp-btl">{money2(btlFront(d))}/btl</div>
       <div className="disc-cmp-deals">
-        {betterRip && <span className="disc-deal disc-deal--better">Better RIP</span>}
-        {betterQd && <span className="disc-deal disc-deal--better">Better QD</span>}
-        {d.has_rip && <span className="disc-deal disc-deal--rip">RIP</span>}
-        {d.has_discount && <span className="disc-deal disc-deal--qd">QD</span>}
-        {d.ts_rip_to && (
-          <span className="disc-deal disc-deal--ts"
-            title={`Time-sensitive RIP: ${fmtDate(d.ts_rip_from)}–${fmtDate(d.ts_rip_to)} · ${money(d.ts_rip_per_case)}/cs back (partial-month window — not the stable RIP)`}>
+        {/* Only the BEST RIP/QD (the one that makes THIS distributor cheaper) —
+            red-on-yellow. */}
+        {bestRip && (
+          <span className="disc-deal disc-deal--best"
+            title={bestRip.ts ? `Time-sensitive: rebate runs to ${fmtDate(bestRip.to)}` : 'Full-month RIP rebate'}>
+            Best RIP {money(bestRip.v)}/cs{bestRip.ts ? ` (till ${fmtDate(bestRip.to)})` : ''}
+          </span>
+        )}
+        {bestQd != null && <span className="disc-deal disc-deal--best">Best QD −{money(bestQd)}/cs</span>}
+        {/* A time-sensitive RIP on the NON-winning side stays visible for context. */}
+        {d.ts_rip_to && !bestRip && (
+          <span className="disc-deal disc-deal--ts" title={`Time-sensitive RIP · ${money(d.ts_rip_per_case)}/cs back`}>
             <Clock size={10} /> RIP till {fmtDate(d.ts_rip_to)}
           </span>
         )}
@@ -149,9 +155,9 @@ function CmpCard({ d, cheapest, betterRip, betterQd }:
   );
 }
 
-// A product's side-by-side comparison across the selected distributors. Compares the
-// 1-case (frontline) price; when that's equal but RIP or QD differs, still shown with
-// a "RIP/QD differs" sticker and the better-terms distributor marked green.
+// A product's side-by-side comparison. Compares the 1-case (frontline) price; when
+// that's equal but RIP or QD differs, still shown, with the BEST RIP/QD detail
+// (red-on-yellow) on the distributor it makes cheaper.
 function CompareGroup({ rows }: { rows: CompareGridCard[] }) {
   const head = rows[0];
   const size = [head.unit_volume, head.unit_qty ? `${head.unit_qty}/cs` : null].filter(Boolean).join(', ');
@@ -159,12 +165,12 @@ function CompareGroup({ rows }: { rows: CompareGridCard[] }) {
   const pct = head.pct_diff != null ? Math.round(head.pct_diff * 100) : null;
   const rips = rows.map(ripVal);
   const ripDiffers = new Set(rips.map((x) => `${x.v}|${x.ts}`)).size > 1;
-  let bestRip = 0;
-  rips.forEach((x, i) => { if (x.v > rips[bestRip].v || (x.v === rips[bestRip].v && !x.ts && rips[bestRip].ts)) bestRip = i; });
+  let bestRipIdx = 0;
+  rips.forEach((x, i) => { if (x.v > rips[bestRipIdx].v || (x.v === rips[bestRipIdx].v && !x.ts && rips[bestRipIdx].ts)) bestRipIdx = i; });
   const qds = rows.map((r) => r.qd_save_per_case ?? 0);
   const qdDiffers = new Set(qds).size > 1;
-  let bestQd = 0;
-  qds.forEach((v, i) => { if (v > qds[bestQd]) bestQd = i; });
+  let bestQdIdx = 0;
+  qds.forEach((v, i) => { if (v > qds[bestQdIdx]) bestQdIdx = i; });
   return (
     <div className="disc-cmp-group">
       <div className="disc-cmp-head">
@@ -177,16 +183,14 @@ function CompareGroup({ rows }: { rows: CompareGridCard[] }) {
           {pct != null && pct > 0
             ? <span className="disc-cmp-gap">{pct}% gap</span>
             : <span className="disc-cmp-gap disc-cmp-gap--same">Same 1-cs</span>}
-          {ripDiffers && <span className="disc-cmp-diff">RIP differs</span>}
-          {qdDiffers && <span className="disc-cmp-diff">QD differs</span>}
         </div>
       </div>
       <div className="disc-cmp-cards">
         {rows.map((r, i) => (
           <CmpCard key={i} d={r}
             cheapest={(r.frontline_case_price ?? Infinity) === minFront}
-            betterRip={ripDiffers && i === bestRip && rips[i].v > 0}
-            betterQd={qdDiffers && i === bestQd && qds[i] > 0} />
+            bestQd={qdDiffers && i === bestQdIdx && qds[i] > 0 ? qds[i] : null}
+            bestRip={ripDiffers && i === bestRipIdx && rips[i].v > 0 ? { v: rips[i].v, ts: rips[i].ts, to: r.ts_rip_to } : null} />
         ))}
       </div>
     </div>

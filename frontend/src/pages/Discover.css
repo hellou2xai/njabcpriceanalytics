@@ -205,6 +205,8 @@
   border-radius: 999px; padding: 2px 8px; white-space: nowrap;
 }
 .disc-deal--better { color: #067647; background: #d1fadf; font-weight: 700; }  /* green: better terms */
+/* the winning RIP/QD detail (the deal that makes this distributor cheaper): red on yellow */
+.disc-deal--best { color: #d92d20; background: #fff3b0; font-weight: 700; border: 1px solid #f5c518; }
 .disc-cmp-cards { display: flex; gap: 8px; }
 .disc-cmp-card {
   flex: 1 1 0; min-width: 0; text-decoration: none;

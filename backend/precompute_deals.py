@@ -27,6 +27,7 @@ import time
 import traceback
 
 from backend.routers.compare import _common_rows  # noqa: F401  (proven engine dep marker)
+from backend.rip_utils import normalize_unit, is_bottle_unit
 
 # Last build's per-edition diagnostics (surfaced by /api/admin/reload-pricing) so a
 # prod build that yields 0 rows can be diagnosed without shell access to the box.
@@ -43,8 +44,13 @@ _COLS = [
     "mi_volume", "image_url",
     "frontline_case_price", "one_cs_case_price", "effective_case_price",
     "btl_1cs", "btl_best_qd", "btl_best_qd_rip",
+    # rip_qty/qd_qty = the tier's RAW buy quantity in ITS unit (rip_unit/qd_unit:
+    # 'case'|'bottle'). rip_cases/qd_cases = that quantity in physical CASES
+    # (bottle tiers / pack) for uniform sort + grouping. rip_per_case/qd_save_per_case
+    # are the unit-safe per-CASE rebates (from attach_tiers, never amount/qty).
     "rip_qty", "rip_amount", "rip_per_case", "rip_code", "rip_is_ts", "rip_from", "rip_to",
-    "qd_qty", "qd_save_per_case", "qd_total",
+    "rip_unit", "rip_cases",
+    "qd_qty", "qd_save_per_case", "qd_total", "qd_unit", "qd_cases",
     "has_rip", "has_qd", "has_both", "is_time_sensitive",
     "net_discount", "discount_pct", "case_mix_primary",
 ]
@@ -53,7 +59,7 @@ _BOOL = {"has_rip", "has_qd", "has_both", "is_time_sensitive", "case_mix_primary
 _INT = {"pack", "n_distributors", "rip_qty", "qd_qty"}
 _DBL = {"mi_volume", "frontline_case_price", "one_cs_case_price", "effective_case_price",
         "btl_1cs", "btl_best_qd", "btl_best_qd_rip", "rip_amount", "rip_per_case",
-        "qd_save_per_case", "qd_total", "net_discount", "discount_pct"}
+        "rip_cases", "qd_save_per_case", "qd_total", "qd_cases", "net_discount", "discount_pct"}
 
 
 def _coltype(c: str) -> str:
@@ -282,8 +288,24 @@ def _build_edition(con, src, ed, attach_tiers, log, per_ed=None) -> int:
         if x2 is None:
             x2 = _num(qd.get("btl_price_after")) if qd else x1
         x2 = _r2(x2)
-        rip_pc = _r2((_num(rip.get("amount")) / rip.get("qty")) if (rip and rip.get("qty")) else 0.0)
+        # Per-CASE RIP rebate = the unit-safe value attach_tiers already stamped
+        # (rip_only_save_per_case), NOT amount/qty — a bottle-unit tier's amount/qty
+        # is per BOTTLE and would be undervalued by `pack`.
+        rip_pc = _r2(_num(rip.get("rip_only_save_per_case")) if rip else None) or 0.0
+        if rip and not rip_pc:  # fallback for any tier missing the precomputed field
+            rip_pc = _r2(_num(rip.get("save_per_case"))) or 0.0
         x3 = _r2(max(0.0, x2 - ((rip_pc or 0) / pack)) if (x2 is not None and pack) else None)
+        # Buy quantity in physical CASES: bottle-unit tiers convert by pack.
+        rip_cases = None
+        if rip and rip.get("qty") is not None:
+            rq = _num(rip.get("qty")) or 0
+            rip_cases = _r2(rq / pack if (is_bottle_unit(rip.get("unit")) and pack) else rq)
+        qd_cases = None
+        if qd and qd.get("qty") is not None:
+            qq = _num(qd.get("qty")) or 0
+            qd_cases = _r2(qq / pack if (is_bottle_unit(qd.get("unit")) and pack) else qq)
+        qd_pc = _num(qd.get("save_per_case")) if qd else None
+        qd_total = _r2((qd_pc or 0) * (qd_cases or 0)) if qd else None
         one_cs = _r2(_one_cs(rec))
         eff = _r2(_num(o.get("effective_case_price")))
         net = _r2(max(0.0, one_cs - eff) if (one_cs is not None and eff is not None) else None)
@@ -307,12 +329,16 @@ def _build_edition(con, src, ed, attach_tiers, log, per_ed=None) -> int:
             _num(rec.get("mi_volume")), _s(rec.get("image_url")),
             _r2(_num(o.get("frontline_case_price"))), one_cs, eff,
             x1, x2, x3,
+            # rip_qty (raw, in rip_unit), rip_amount (total), rip_per_case (unit-safe), code, ts, from, to
             (rip.get("qty") if rip else None), (_r2(_num(rip.get("amount"))) if rip else None),
             (rip_pc if rip else None), (_s(rip.get("code")) if rip else (code or None)),
             (bool(rip.get("is_time_sensitive")) if rip else None),
             (rip.get("from_date") if rip else None), (rip.get("to_date") if rip else None),
-            (qd.get("qty") if qd else None), (_r2(_num(qd.get("save_per_case"))) if qd else None),
-            (_r2((qd.get("qty") or 0) * (_num(qd.get("save_per_case")) or 0)) if qd else None),
+            # rip_unit ('case'|'bottle'), rip_cases (physical cases)
+            (normalize_unit(rip.get("unit")) if rip else None), rip_cases,
+            # qd_qty (raw, in qd_unit), qd_save_per_case (per-case), qd_total, qd_unit, qd_cases
+            (qd.get("qty") if qd else None), (_r2(qd_pc) if qd else None), qd_total,
+            (normalize_unit(qd.get("unit")) if qd else None), qd_cases,
             rip is not None, qd is not None, (rip is not None and qd is not None),
             any(t.get("is_time_sensitive") for t in tiers),
             net, (net / one_cs if (net is not None and one_cs) else None), cm_primary,

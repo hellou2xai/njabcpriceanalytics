@@ -28,8 +28,13 @@ function productHref(p: Product): string {
 }
 function ripPerCaseP(p: Product): number {
   const rip = (p.tiers ?? []).filter((t) => t.source === 'rip')
-    .reduce<{ qty?: number; amount?: number } | null>((a, b) => (!a || (b.qty ?? 0) > (a.qty ?? 0) ? b : a), null);
-  return rip && rip.amount != null && rip.qty ? rip.amount / rip.qty : 0;
+    .reduce<{ qty?: number; save_per_case?: number } | null>((a, b) => (!a || (b.qty ?? 0) > (a.qty ?? 0) ? b : a), null);
+  return rip?.save_per_case ?? 0;  // unit-aware per-case (not amount/qty)
+}
+// Quantity + its unit read together: a bottle-unit tier is bottles, not cases.
+function qtyUnit(qty?: number | null, unit?: string | null): string {
+  if (qty == null) return '';
+  return `${qty} ${/^b/i.test(unit || '') ? 'btl' : 'CS'}`;
 }
 
 const DIST_PINNED = ['allied', 'fedway', 'opici'];
@@ -105,12 +110,12 @@ function AdminDealCard({ d }: { d: DealGridCard }) {
       <div className="disc-card-deals">
         {d.has_rip && (
           <span className="disc-deal disc-deal--rip">
-            Best RIP: {d.rip_qty} CS {money(d.rip_amount)} ({money(d.rip_per_case)}/cs)
+            Best RIP: {qtyUnit(d.rip_qty, d.rip_unit)} {money(d.rip_amount)} ({money(d.rip_per_case)}/cs)
           </span>
         )}
         {d.has_qd && (
           <span className="disc-deal disc-deal--qd">
-            Best QD: {d.qd_qty} CS {money(d.qd_total)} ({money(d.qd_save_per_case)}/cs)
+            Best QD: {qtyUnit(d.qd_qty, d.qd_unit)} {money(d.qd_total)} ({money(d.qd_save_per_case)}/cs)
           </span>
         )}
       </div>

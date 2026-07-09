@@ -99,18 +99,25 @@ function netDiscount(p: Product): number {
   const eff = p.effective_case_price ?? base;
   return Math.max(0, base - eff);
 }
-// Deepest RIP rebate per case, and deepest QD saving per case.
+// A tier's buy quantity in physical CASES. RIP/QD tiers can be quoted in BOTTLES
+// (unit starts with 'b'), which convert by pack — so unit AND qty are read together.
+function tierCases(t: CatalogTier | null | undefined, pack: number | null): number {
+  if (!t || t.qty == null) return 0;
+  return /^b/i.test(t.unit || '') && pack ? t.qty / pack : t.qty;
+}
+// Deepest RIP rebate PER CASE: the unit-aware canonical value (save_per_case),
+// NEVER amount/qty (which is per BOTTLE for a bottle-unit tier — undervalued by pack).
 function ripPerCase(p: Product): number {
-  const rip = topTier(p.tiers, 'rip');
-  return rip && rip.amount != null && rip.qty ? rip.amount / rip.qty : 0;
+  return topTier(p.tiers, 'rip')?.save_per_case ?? 0;
 }
 function qdPerCase(p: Product): number {
   return topTier(p.tiers, 'discount')?.save_per_case ?? 0;
 }
 // Largest case quantity the card's featured RIP/QD deal asks for — used to GROUP
-// bulk-buy deals to the top, before small 1-2 CS deals.
+// bulk-buy deals to the top. Bottle-unit tiers count as their case-equivalent.
 function caseQty(p: Product): number {
-  return Math.max(topTier(p.tiers, 'rip')?.qty ?? 0, topTier(p.tiers, 'discount')?.qty ?? 0);
+  const pack = bottlesPerCase(p.product_name, p.unit_qty);
+  return Math.max(tierCases(topTier(p.tiers, 'rip'), pack), tierCases(topTier(p.tiers, 'discount'), pack));
 }
 // Sort comparators for the "Sort by" control.
 const SORT_FNS: Record<string, (a: Product, b: Product) => number> = {
@@ -274,6 +281,7 @@ function DiscCard({ p }: { p: MergedProduct }) {
   const price = money(oneCsCasePrice(p));
   const rip = topTier(p.tiers, 'rip');
   const qd = topTier(p.tiers, 'discount');
+  const pack = bottlesPerCase(p.product_name, p.unit_qty);
   const ts = (p.tiers ?? []).filter((t) => t.is_time_sensitive);
 
   // Group the time-sensitive tiers by their validity window, tiers ascending by
@@ -396,15 +404,15 @@ function DiscCard({ p }: { p: MergedProduct }) {
                 className="disc-deal disc-deal--rip"
                 title={`Top RIP: buy ${tierQty(rip)} → ${money(rip.amount)} total rebate back (from CPL)`}
               >
-                Best RIP: {rip.qty} CS - {money(rip.amount)} ({money(rip.qty ? rip.amount / rip.qty : 0)}/cs)
+                Best RIP: {tierQty(rip)} - {money(rip.amount)} ({money(rip.save_per_case ?? 0)}/cs)
               </span>
             )}
             {qd && (
               <span
                 className="disc-deal disc-deal--qd"
-                title={`Top QD: buy ${tierQty(qd)}, save ${money(qd.save_per_case)}/case (total ${money(qd.qty * qd.save_per_case)})`}
+                title={`Top QD: buy ${tierQty(qd)}, save ${money(qd.save_per_case)}/case (total ${money((qd.save_per_case ?? 0) * tierCases(qd, pack))})`}
               >
-                Best QD: {qd.qty} CS - {money(qd.qty * qd.save_per_case)} ({money(qd.save_per_case)}/cs)
+                Best QD: {tierQty(qd)} - {money((qd.save_per_case ?? 0) * tierCases(qd, pack))} ({money(qd.save_per_case)}/cs)
               </span>
             )}
           </div>
@@ -566,7 +574,7 @@ function BottlePrices({ p }: { p: Product }) {
   // is the STABLE whole-month price and drops time-sensitive RIPs, so it can't
   // be used here — that was the bug where X3 == X2.)
   const rip = topTier(p.tiers, 'rip');
-  const ripPerCase = rip && rip.amount != null && rip.qty ? rip.amount / rip.qty : 0;
+  const ripPerCase = rip?.save_per_case ?? 0;   // unit-aware per-case, NOT amount/qty
   const x3 = x2 != null && pack ? Math.max(0, x2 - ripPerCase / pack) : null;
   const tip = `Bottle price: ${money(x1) ?? '—'} at 1 case (list) · ${money(x2) ?? '—'} after best QD · ${x3 != null ? money(x3) : '—'} after best QD + RIP`;
   return (

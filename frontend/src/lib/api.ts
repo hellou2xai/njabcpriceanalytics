@@ -90,7 +90,9 @@ export interface DealGridCard {
   btl_1cs?: number | null; btl_best_qd?: number | null; btl_best_qd_rip?: number | null;
   rip_qty?: number | null; rip_amount?: number | null; rip_per_case?: number | null;
   rip_code?: string | null; rip_is_ts?: boolean | null; rip_from?: string | null; rip_to?: string | null;
+  rip_unit?: string | null; rip_cases?: number | null;
   qd_qty?: number | null; qd_save_per_case?: number | null; qd_total?: number | null;
+  qd_unit?: string | null; qd_cases?: number | null;
   has_rip?: boolean | null; has_qd?: boolean | null; has_both?: boolean | null; is_time_sensitive?: boolean | null;
   net_discount?: number | null; discount_pct?: number | null;
 }

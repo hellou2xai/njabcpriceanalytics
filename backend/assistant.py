@@ -699,8 +699,11 @@ def _t_rip_lookup(con, args):
         # Augment each tier with per-case (or per-bottle) savings + flag the best.
         best_amt = max((t["amount"] for t in tiers), default=0.0)
         for t in tiers:
-            u = (t.get("unit") or "").lower()
-            t["unit_short"] = "btl" if ("btl" in u or "bottle" in u) else "cs"
+            # Canonical bottle detection — inline substring checks miss Fedway's
+            # single-letter 'B'. A bottle tier's amount/qty is per BOTTLE, so it is
+            # NOT a per-case rebate; only case tiers get a per-case figure here (the
+            # "After Best RIP" table gates on unit_short == 'cs').
+            t["unit_short"] = "btl" if _rip.is_bottle_unit(t.get("unit")) else "cs"
             t["per_unit_savings"] = round(t["amount"] / t["qty"], 2) if t.get("qty") else None
             t["best"] = bool(best_amt > 0 and t["amount"] == best_amt)
         # The real Case Mix: products that share this RIP code (from the RIP sheet,

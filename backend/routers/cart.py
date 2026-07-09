@@ -777,8 +777,8 @@ def _case_tiers(item: dict, kind: str) -> list[dict]:
     for t in (item.get("tiers") or []):
         if t.get("source") != kind:
             continue
-        u = str(t.get("unit", "")).lower()
-        if u.startswith("bottle") or u.startswith("btl"):
+        from backend.rip_utils import is_bottle_unit
+        if is_bottle_unit(t.get("unit")):  # canonical — catches single-letter 'B' too
             # A bottle-unit tier is case-equivalent ONLY when the item is sold
             # 1 bottle per case (e.g. Remy) — then "Buy 1 bottle" IS "Buy 1
             # case". For true multipacks the per-case math is ambiguous, so we

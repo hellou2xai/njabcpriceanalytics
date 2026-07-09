@@ -789,6 +789,10 @@ def discover_deals(
             "SELECT 1 FROM information_schema.tables WHERE table_name = 'deal_grid'"
         ).fetchone():
             return {"edition": ed, "items": [], "error": "deal_grid not built"}
+        # A freshly-deployed build adds unit-aware columns (rip_cases/qd_cases) that
+        # an already-on-disk deal_grid won't have until it rebuilds — so never
+        # reference them in SQL blindly (would 500 the default sort mid-rebuild).
+        dg_cols = {r[1] for r in con.execute("PRAGMA table_info(deal_grid)").fetchall()}
         where = ["edition = ?", "case_mix_primary"]
         p: list = [ed]
         if spirit_category:
@@ -833,9 +837,14 @@ def discover_deals(
         if q and q.strip():
             where.append("(LOWER(product_name) LIKE ? OR LOWER(COALESCE(display_name,'')) LIKE ? OR LOWER(COALESCE(brand,'')) LIKE ?)")
             p += [f"%{q.strip().lower()}%"] * 3
+        # Largest-case-deal first: group bulk deals to the top. Use the physical
+        # CASE-equivalent (rip_cases/qd_cases), never raw qty — a bottle-unit tier's
+        # qty is a bottle count and would falsely rank above real case tiers. Fall
+        # back to raw qty only until the rebuilt grid has the case columns.
+        case_expr = ("GREATEST(COALESCE(rip_cases,0), COALESCE(qd_cases,0))"
+                     if "rip_cases" in dg_cols else "GREATEST(COALESCE(rip_qty,0), COALESCE(qd_qty,0))")
         order = {
-            # Largest-case-deal first: group bulk (high-qty) RIP/QD deals to the top.
-            "case": "GREATEST(COALESCE(rip_qty,0), COALESCE(qd_qty,0)) DESC, net_discount DESC",
+            "case": f"{case_expr} DESC, net_discount DESC",
             "net": "net_discount DESC", "pct": "discount_pct DESC",
             "name": "COALESCE(display_name, product_name) ASC",
             "rip": "rip_per_case DESC", "qd": "qd_save_per_case DESC",

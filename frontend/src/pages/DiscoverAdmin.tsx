@@ -9,12 +9,28 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Search, Store, SlidersHorizontal, PanelLeftClose, Clock } from 'lucide-react';
-import { catalog, type MiRail, type DealGridCard } from '../lib/api';
+import { catalog, watchlist, type MiRail, type DealGridCard, type Product, type WatchlistItem } from '../lib/api';
 import ProductThumb from '../components/ProductThumb';
 import FavoriteButton from '../components/FavoriteButton';
 import AvailabilityButton from '../components/AvailabilityButton';
 import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
+import { bottlesPerCase } from '../lib/productSizes';
 import './Discover.css';
+
+// Product deep-link (favourites are live Product rows, not deal_grid cards).
+function productHref(p: Product): string {
+  const q = new URLSearchParams({ w: p.wholesaler, n: p.product_name });
+  if (p.upc) q.set('u', String(p.upc));
+  if (p.unit_volume) q.set('s', String(p.unit_volume));
+  if (p.unit_qty) q.set('pk', String(p.unit_qty));
+  if (p.vintage != null && String(p.vintage) !== '') q.set('v', String(p.vintage));
+  return `/product?${q.toString()}`;
+}
+function ripPerCaseP(p: Product): number {
+  const rip = (p.tiers ?? []).filter((t) => t.source === 'rip')
+    .reduce<{ qty?: number; amount?: number } | null>((a, b) => (!a || (b.qty ?? 0) > (a.qty ?? 0) ? b : a), null);
+  return rip && rip.amount != null && rip.qty ? rip.amount / rip.qty : 0;
+}
 
 const DIST_PINNED = ['allied', 'fedway', 'opici'];
 const DISTRIBUTOR_OPTS = [...ALL_DISTRIBUTORS.filter((d) => d.value)].sort((a, b) => {
@@ -139,6 +155,65 @@ function AdminRail({ rail, dists, deals, sizes, sortBy, edition }:
   );
 }
 
+// My Favorites — the user's watchlisted products (deal or not), so it reads the
+// shared smart search, not deal_grid. Three bottle prices, hero search filters it.
+function FavBottlePrices({ p }: { p: Product }) {
+  const pack = bottlesPerCase(p.product_name, p.unit_qty);
+  const x1 = p.frontline_unit_price ?? null;
+  const x2 = p.best_unit_price ?? null;
+  const x3 = x2 != null && pack ? Math.max(0, x2 - ripPerCaseP(p) / pack) : null;
+  return (
+    <div className="disc-fav-prices" title="1-case list / after best QD / after best QD + RIP">
+      <span className="disc-bp-label">Bottle Price:</span> {money2(x1)}, {money2(x2)}, {money2(x3)}
+    </div>
+  );
+}
+function FavCard({ p }: { p: Product }) {
+  const pack = bottlesPerCase(p.product_name, p.unit_qty);
+  const sizeLabel = [p.unit_volume, pack ? `${pack}/cs` : null].filter(Boolean).join(', ');
+  return (
+    <Link to={productHref(p)} className="disc-card">
+      <div className="disc-card-top">
+        <span className="disc-card-dist"><Store size={11} /> {distributorName(p.wholesaler)}</span>
+        <FavoriteButton productName={p.product_name} wholesaler={p.wholesaler} upc={p.upc ?? undefined} unitVolume={p.unit_volume ?? undefined} />
+      </div>
+      <AvailabilityButton wholesaler={p.wholesaler} name={p.product_name} itemNumber={p.abg_sku ?? undefined} className="disc-card-avail" />
+      <div className="disc-card-media"><ProductThumb src={p.image_url ?? undefined} alt={p.product_name} size={120} /></div>
+      <div className="disc-card-name">{(p.abg_item_name?.trim() || p.product_name)}{sizeLabel && <span className="disc-fav-size"> ({sizeLabel})</span>}</div>
+      <FavBottlePrices p={p} />
+    </Link>
+  );
+}
+function MyFavorites({ query, edition }: { query: string; edition: string }) {
+  const { data: favs } = useQuery({ queryKey: ['watchlist'], queryFn: watchlist.get, staleTime: 60_000 });
+  const upcs = [...new Set((favs ?? []).map((f) => f.upc).filter(Boolean) as string[])];
+  const { data: priced } = useQuery({
+    enabled: upcs.length > 0,
+    queryKey: ['fav-priced-dg', upcs.slice().sort().join(','), edition],
+    staleTime: 300_000,
+    queryFn: () => catalog.search({ upcs: upcs.join(','), ...(edition ? { edition } : {}), limit: 500, include_tiers: true, sort: 'product_name', order: 'asc' }),
+  });
+  if (!favs || favs.length === 0) return null;
+  const items = priced?.items ?? [];
+  const norm = (u?: string | null) => String(u ?? '').replace(/^0+/, '');
+  const byUpc = new Map<string, Product[]>();
+  for (const p of items) { const k = norm(p.upc); const a = byUpc.get(k); if (a) a.push(p); else byUpc.set(k, [p]); }
+  const qy = query.trim().toLowerCase();
+  const cards = (favs as WatchlistItem[]).map((f) => {
+    const rows = byUpc.get(norm(f.upc)); if (!rows?.length) return undefined;
+    return rows.find((p) => p.wholesaler === f.wholesaler && p.unit_volume === f.unit_volume)
+      ?? rows.find((p) => p.wholesaler === f.wholesaler) ?? rows.find((p) => p.unit_volume === f.unit_volume) ?? rows[0];
+  }).filter((p): p is Product => !!p)
+    .filter((p) => !qy || (p.abg_item_name || p.product_name).toLowerCase().includes(qy) || (p.brand ?? '').toLowerCase().includes(qy));
+  if (!cards.length) return null;
+  return (
+    <section className="disc-rail disc-favs">
+      <div className="disc-rail-head"><h2 className="disc-rail-title">My Favorites</h2></div>
+      <div className="disc-rail-track">{cards.map((p, i) => <FavCard key={`${p.wholesaler}-${p.upc}-${i}`} p={p} />)}</div>
+    </section>
+  );
+}
+
 export default function DiscoverAdmin() {
   const [q, setQ] = useState('');
   const [submitted, setSubmitted] = useState('');
@@ -157,27 +232,32 @@ export default function DiscoverAdmin() {
   const dists = [...distSet], deals = [...dealSet], sizes = [...sizeSet];
   const activeCount = distSet.size + dealSet.size + sizeSet.size + (edition ? 1 : 0);
 
-  // Search: reuse the same endpoint with q (semantic name match over deal_grid).
-  const searchParams: Record<string, unknown> = {
-    q: submitted, ...(edition ? { edition } : {}),
-    ...(dists.length ? { divisions: dists.join(',') } : {}),
-    ...(deals.length ? { deals: deals.join(',') } : {}),
-    ...(sizes.length ? { sizes: sizes.join(',') } : {}),
-    sort: sortBy, limit: 120,
-  };
+  // Semantic search: resolve the query through the SHARED smart-search stack
+  // (aliases + spell-fix + semantic), then read deal_grid for those exact UPCs —
+  // so the deal cards are the precomputed ones but the matching is fully semantic.
   const { data: searchData } = useQuery({
-    queryKey: ['dg-search', JSON.stringify(searchParams)],
-    queryFn: () => catalog.discoverDeals(searchParams),
+    queryKey: ['dg-search', submitted, edition, dists.join(','), deals.join(','), sizes.join(','), sortBy],
     enabled: !!submitted,
     staleTime: 300_000,
+    queryFn: async () => {
+      const s = await catalog.search({ q: submitted, limit: 100, ...(edition ? { edition } : {}) });
+      const upcs = [...new Set((s.items || []).map((i) => i.upc).filter(Boolean))].join(',');
+      if (!upcs) return { edition, count: 0, items: [] as DealGridCard[] };
+      return catalog.discoverDeals({
+        upcs, ...(edition ? { edition } : {}),
+        ...(dists.length ? { divisions: dists.join(',') } : {}),
+        ...(deals.length ? { deals: deals.join(',') } : {}),
+        ...(sizes.length ? { sizes: sizes.join(',') } : {}),
+        sort: sortBy, limit: 120,
+      });
+    },
   });
 
   return (
     <div className="disc-page">
       <header className="disc-hero">
-        <div className="disc-admin-badge">ADMIN · wired to deal_grid</div>
-        <h1 className="disc-title">Celr AI · Discover Deals (Admin)</h1>
-        <p className="disc-sub">New architecture: reads the precomputed deal_grid directly</p>
+        <h1 className="disc-title">Celr AI</h1>
+        <p className="disc-sub">Find any product, at any distributor</p>
         <form className="disc-search" onSubmit={(e) => { e.preventDefault(); setSubmitted(q.trim()); }}>
           <Search size={18} className="disc-search-ic" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search deals — product, brand, region…" aria-label="Search deals" />
@@ -249,6 +329,7 @@ export default function DiscoverAdmin() {
         )}
 
         <div className="disc-rails">
+          <MyFavorites query="" edition={edition} />
           {submitted ? (
             <section className="disc-rail">
               <div className="disc-rail-head"><h2 className="disc-rail-title">Deals matching “{submitted}”</h2>

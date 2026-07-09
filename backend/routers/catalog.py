@@ -775,8 +775,9 @@ def discover_deals(
     sizes: Optional[str] = None,        # comma-separated size labels
     divisions: Optional[str] = None,    # comma-separated distributor slugs
     deals: Optional[str] = None,        # comma-separated: rip | qd | both
-    sort: str = "net",                  # net | pct | name | rip | qd
+    sort: str = "net",                  # net | pct | name | rip | qd | case
     q: Optional[str] = None,            # free-text (name/brand) narrow
+    upcs: Optional[str] = None,         # comma-separated UPCs (semantic search / favourites resolve to these)
     limit: int = Query(60, ge=1, le=200),
 ):
     """Read the precomputed Discover deal cards (deal_grid) for a category, with the
@@ -794,6 +795,13 @@ def discover_deals(
             where.append("spirit_category = ?"); p.append(spirit_category.strip())
         if product_type:
             where.append("product_type = ?"); p.append(product_type.strip())
+        if upcs:
+            ups = [re.sub(r"\D", "", u).lstrip("0") for u in upcs.split(",")]
+            ups = [u for u in ups if u]
+            if ups:
+                where.append("upc_norm IN (" + ",".join(["?"] * len(ups)) + ")"); p += ups
+            else:
+                where.append("1=0")  # a upcs filter that resolved to nothing = no rows
         if grapes:
             # Match the varietal the SAME way the live wine rails do: inside the
             # precomputed geo_varietal (semantic grape), with a name fallback.

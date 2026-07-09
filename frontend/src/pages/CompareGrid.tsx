@@ -9,7 +9,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Search, Store, SlidersHorizontal, PanelLeftClose } from 'lucide-react';
+import { Search, Store, SlidersHorizontal, PanelLeftClose, Clock } from 'lucide-react';
 import { catalog, type MiRail, type CompareGridCard } from '../lib/api';
 import ProductThumb from '../components/ProductThumb';
 import FavoriteButton from '../components/FavoriteButton';
@@ -35,6 +35,11 @@ function money(n?: number | null): string | null {
 }
 function money2(n?: number | null): string | null {
   return n == null ? null : `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+// 'YYYY-MM-DD' -> 'M/D' for the time-sensitive RIP window.
+function fmtDate(d?: string | null): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d ?? '');
+  return m ? `${parseInt(m[2], 10)}/${parseInt(m[3], 10)}` : (d ?? '');
 }
 function toggleIn(s: Set<string>, v: string): Set<string> {
   const n = new Set(s); n.has(v) ? n.delete(v) : n.add(v); return n;
@@ -116,6 +121,12 @@ function CmpCard({ d, cheapest }: { d: CompareGridCard; cheapest: boolean }) {
       <div className="disc-cmp-deals">
         {d.has_rip && <span className="disc-deal disc-deal--rip">RIP</span>}
         {d.has_discount && <span className="disc-deal disc-deal--qd">QD</span>}
+        {d.ts_rip_to && (
+          <span className="disc-deal disc-deal--ts"
+            title={`Time-sensitive RIP: ${fmtDate(d.ts_rip_from)}–${fmtDate(d.ts_rip_to)} · ${money(d.ts_rip_per_case)}/cs back (partial-month window — not the stable RIP)`}>
+            <Clock size={10} /> RIP till {fmtDate(d.ts_rip_to)}
+          </span>
+        )}
       </div>
       <AvailabilityButton wholesaler={dist} name={d.product_name} itemNumber={d.item_no ?? undefined} className="disc-cmp-avail" />
     </Link>

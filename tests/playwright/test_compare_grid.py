@@ -76,11 +76,16 @@ def main():
         try:
             for dn in ("Allied", "Fedway"):
                 page.locator(".disc-filter-opt", has_text=dn).first.locator("input").check(timeout=5000)
-            page.wait_for_timeout(5000)
+            try:  # wait for the groups to render (prod compare queries are slower)
+                page.locator(".disc-cmp-group").first.wait_for(state="visible", timeout=30000)
+            except PWTimeout:
+                pass
+            page.wait_for_timeout(1500)
             groups = page.locator(".disc-cmp-group").count()
             first_cards = page.locator(".disc-cmp-group").first.locator(".disc-cmp-card").count() if groups else 0
             wins = page.locator(".disc-cmp-card.is-cheapest").count()
-            print(f"[compare] groups={groups} cards_in_first_group={first_cards} cheapest-badges={wins}")
+            ts = page.locator(".disc-deal--ts").count()
+            print(f"[compare] groups={groups} cards_in_first_group={first_cards} cheapest-badges={wins} ts-markers={ts}")
             if groups == 0:
                 failures.append("no .disc-cmp-group rendered when 2 distributors selected")
             elif first_cards < 2:

@@ -1009,7 +1009,55 @@ def _compare_grid_build(ed, spirit_category, product_type, grapes, sizes, divisi
             attach_enrichment_image(con, rows, upc_key="upc")
         except Exception as e:
             print(f"[compare-grid] image attach skipped: {e}")
+        try:
+            _attach_ts_rip(con, rows, ed)  # time-sensitive (partial-window) RIP marker
+        except Exception as e:
+            print(f"[compare-grid] ts-rip attach skipped: {e}")
     return {"edition": ed, "count": len(rows), "items": rows}
+
+
+def _attach_ts_rip(con, rows, ed):
+    """Attach the best TIME-SENSITIVE (partial-window) RIP per row from the raw rip
+    table — so a distributor's non-full-month RIP (e.g. Fedway's 7/30 windows) shows
+    as a TS marker (dates + per-case rebate) instead of silently vanishing from the
+    stable badge. Keyed on (wholesaler, upc)."""
+    if not rows:
+        return
+    from backend.rip_utils import rip_per_case as _rpc
+    uns = sorted({str(r.get("upc") or "").lstrip("0") for r in rows if r.get("upc")})
+    if not uns:
+        return
+    ph = ",".join(["?"] * len(uns))
+    recs = con.execute(
+        "SELECT wholesaler, LTRIM(upc,'0') AS un, from_date, to_date, "
+        "rip_qty_1, rip_amt_1, rip_unit_1, rip_qty_2, rip_amt_2, rip_unit_2, "
+        "rip_qty_3, rip_amt_3, rip_unit_3, rip_qty_4, rip_amt_4, rip_unit_4 "
+        "FROM rip WHERE edition = ? AND LTRIM(upc,'0') IN (" + ph + ") "
+        "AND NOT (EXTRACT('day' FROM from_date) = 1 AND to_date = LAST_DAY(to_date))",
+        [ed, *uns],
+    ).fetchall()
+    best: dict = {}
+    for r in recs:
+        w, un, fr, to = r[0], r[1], r[2], r[3]
+        for qty, amt, unit in ((r[4], r[5], r[6]), (r[7], r[8], r[9]), (r[10], r[11], r[12]), (r[13], r[14], r[15])):
+            if not qty or not amt:
+                continue
+            cur = best.get((w, un))
+            if cur is None or (amt or 0) > (cur["amount"] or 0):
+                best[(w, un)] = {"from": fr, "to": to, "qty": qty, "amount": amt, "unit": unit}
+    for row in rows:
+        b = best.get((row.get("wholesaler"), str(row.get("upc") or "").lstrip("0")))
+        if not b:
+            continue
+        try:
+            pack = int(float(row.get("unit_qty"))) if row.get("unit_qty") else None
+        except (TypeError, ValueError):
+            pack = None
+        row["ts_rip_from"] = str(b["from"]) if b["from"] else None
+        row["ts_rip_to"] = str(b["to"]) if b["to"] else None
+        row["ts_rip_qty"] = b["qty"]
+        row["ts_rip_unit"] = b["unit"]
+        row["ts_rip_per_case"] = round(_rpc(b["amount"], b["qty"], b["unit"], pack), 2)
 
 
 @router.get("/search")

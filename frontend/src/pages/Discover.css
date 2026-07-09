@@ -165,6 +165,10 @@
 .disc-deal--rip { color: #d92d20; background: #fff3b0; }   /* red on yellow */
 .disc-deal--qd  { color: #101828; background: #fff3b0; }   /* black on yellow */
 .disc-deal--diff { color: #067647; background: #d1fadf; }  /* green: cross-distributor savings */
+.disc-deal--ts {   /* amber: time-sensitive (partial-month) RIP */
+  color: #b54708; background: #fef0c7;
+  display: inline-flex; align-items: center; gap: 3px;
+}
 
 /* ---- Side-by-side compare mode (2+ distributors) ---- */
 .disc-cmp-grid {

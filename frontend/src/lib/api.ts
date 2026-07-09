@@ -116,6 +116,10 @@ export interface CompareGridCard {
   spirit_category?: string | null; geo_varietal?: string | null; mi_volume?: number | null;
   enr_region?: string | null; abv_proof?: string | null;
   image_url?: string | null;
+  // Time-sensitive (partial-window) RIP for this distributor, when it isn't a
+  // full-month (stable) RIP — shown as a TS marker with its dates + per-case rebate.
+  ts_rip_from?: string | null; ts_rip_to?: string | null;
+  ts_rip_qty?: number | null; ts_rip_unit?: string | null; ts_rip_per_case?: number | null;
 }
 
 export const catalog = {

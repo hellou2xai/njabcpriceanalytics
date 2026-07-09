@@ -871,6 +871,118 @@ def discover_deals(
     return {"edition": ed, "count": len(rows), "items": rows}
 
 
+@router.get("/compare-grid")
+def compare_grid(
+    spirit_category: Optional[str] = None,
+    product_type: Optional[str] = None,
+    grapes: Optional[str] = None,
+    edition: Optional[str] = None,
+    sizes: Optional[str] = None,        # comma size labels
+    divisions: Optional[str] = None,    # comma distributor slugs the group must include
+    deals: Optional[str] = None,        # rip | qd | both
+    sort: str = "diff",                 # diff | mi | price | name
+    q: Optional[str] = None,            # (unused server-side; search resolves to upcs)
+    upcs: Optional[str] = None,         # comma UPCs (semantic search resolves to these)
+    limit: int = Query(60, ge=1, le=200),
+):
+    """Cross-distributor comparison cards (Discover-style) from the precomputed
+    `sku_offer` grid: ONE card per product group = its cheapest-net distributor,
+    carrying `spread_net` (the cross-distributor gap), RIP/QD flags and
+    n_distributors. spirit_category / geo / mi_volume are joined from a DEDUPED
+    cpl_enriched (so a card can't multiply); the image is attached at read time.
+    RIP/QD products first, then by % price difference. The join makes it heavier
+    than deal_grid, so the response is memoized per (params, pricing-cache) — the
+    rails hit it once then serve from cache (invalidated on data reload)."""
+    ed = (edition or "").strip() or _current_yyyy_mm()
+    _ckey = (ed, spirit_category or "", product_type or "", grapes or "", sizes or "",
+             divisions or "", deals or "", sort, upcs or "", limit)
+    return _cache.cached_response("compare-grid", _ckey, lambda: _compare_grid_build(
+        ed, spirit_category, product_type, grapes, sizes, divisions, deals, sort, upcs, limit))
+
+
+def _compare_grid_build(ed, spirit_category, product_type, grapes, sizes, divisions,
+                        deals, sort, upcs, limit):
+    with get_duckdb() as con:
+        if not con.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'sku_offer'"
+        ).fetchone():
+            return {"edition": ed, "items": [], "error": "sku_offer not built"}
+        has_cpl = bool(con.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'cpl_enriched'"
+        ).fetchone())
+        if has_cpl:
+            joins = (
+                "LEFT JOIN (SELECT upc_norm, wholesaler, unit_volume, "
+                "ANY_VALUE(spirit_category) AS spirit_category, ANY_VALUE(geo_varietal) AS geo_varietal, "
+                "ANY_VALUE(geo_country) AS geo_country, ANY_VALUE(geo_region) AS geo_region, "
+                "MAX(mi_volume) AS mi_volume FROM cpl_enriched "
+                "GROUP BY upc_norm, wholesaler, unit_volume) c "
+                "ON c.upc_norm = o.upc_norm AND c.wholesaler = o.wholesaler "
+                "AND COALESCE(c.unit_volume,'') = COALESCE(o.unit_volume,'')"
+            )
+            sel_extra = ("c.spirit_category AS spirit_category, c.geo_varietal AS geo_varietal, "
+                         "c.geo_country AS geo_country, c.geo_region AS geo_region, c.mi_volume AS mi_volume")
+        else:
+            joins = ""
+            sel_extra = ("NULL AS spirit_category, NULL AS geo_varietal, NULL AS geo_country, "
+                         "NULL AS geo_region, 0.0 AS mi_volume")
+        where = ["o.edition = ?", "o.is_cheapest_net = TRUE"]
+        # Anomaly guard: a spread implying the dearest distributor is >4x the
+        # cheapest is a grouping mismatch (welded/different SKU), not real arbitrage
+        # — keep it out of the % -diff-ranked cards (route those to QA elsewhere).
+        where.append("(o.spread_net IS NULL OR o.effective_case_price <= 0 OR "
+                     "o.spread_net <= o.effective_case_price * 3)")
+        p: list = [ed]
+        if spirit_category and has_cpl:
+            where.append("c.spirit_category = ?"); p.append(spirit_category.strip())
+        if product_type:
+            where.append("o.product_type = ?"); p.append(product_type.strip())
+        if grapes and has_cpl:
+            where.append("LOWER(COALESCE(c.geo_varietal,'')) LIKE ?"); p.append(f"%{grapes.strip().lower()}%")
+        szs = [s.strip() for s in (sizes or "").split(",") if s.strip()]
+        if szs:
+            where.append("o.unit_volume IN (" + ",".join(["?"] * len(szs)) + ")"); p += szs
+        ds = {d.strip() for d in (deals or "").split(",") if d.strip()}
+        if "both" in ds:
+            where.append("(o.has_rip AND o.has_discount)")
+        else:
+            deal_or = [col for d, col in (("rip", "o.has_rip"), ("qd", "o.has_discount")) if d in ds]
+            if deal_or:
+                where.append("(" + " OR ".join(deal_or) + ")")
+        if upcs:
+            ups = [re.sub(r"\D", "", u).lstrip("0") for u in upcs.split(",")]
+            ups = [u for u in ups if u]
+            where.append(("o.upc_norm IN (" + ",".join(["?"] * len(ups)) + ")") if ups else "1=0"); p += ups
+        divs = [d.strip() for d in (divisions or "").split(",") if d.strip()]
+        if divs:
+            # the product group must be carried by at least one selected distributor
+            where.append("o.group_key IN (SELECT group_key FROM sku_offer WHERE edition = ? AND wholesaler IN ("
+                         + ",".join(["?"] * len(divs)) + "))")
+            p.append(ed); p += divs
+        # % price difference = spread as a fraction of the highest net price.
+        pct = ("(CASE WHEN (o.effective_case_price + COALESCE(o.spread_net,0)) > 0 "
+               "THEN COALESCE(o.spread_net,0) / (o.effective_case_price + COALESCE(o.spread_net,0)) ELSE 0 END)")
+        order = {
+            # RIP/QD products first, then biggest cross-distributor % gap.
+            "diff": f"(o.has_rip OR o.has_discount) DESC, {pct} DESC",
+            "mi": "mi_volume DESC NULLS LAST",
+            "price": "o.effective_case_price ASC NULLS LAST",
+            "name": "COALESCE(o.display_name, o.product_name) ASC",
+        }.get(sort, f"(o.has_rip OR o.has_discount) DESC, {pct} DESC")
+        sql = (f"SELECT o.*, {sel_extra}, {pct} AS pct_diff "
+               f"FROM sku_offer o {joins} WHERE {' AND '.join(where)} "
+               f"ORDER BY {order} NULLS LAST, o.n_distributors DESC NULLS LAST LIMIT ?")
+        df = con.execute(sql, [*p, limit]).fetchdf()
+        df = df.astype(object).where(df.notna(), None)
+        rows = df.to_dict("records")
+        try:
+            from backend.enrichment_join import attach_enrichment_image
+            attach_enrichment_image(con, rows, upc_key="upc")
+        except Exception as e:
+            print(f"[compare-grid] image attach skipped: {e}")
+    return {"edition": ed, "count": len(rows), "items": rows}
+
+
 @router.get("/search")
 def search_products(
     q: str = Query("", description="Search term"),

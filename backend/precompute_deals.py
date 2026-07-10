@@ -118,15 +118,22 @@ def _idkey(w, upc_norm, uv, uq, vint):
 
 def _pick_rec(cands, offer):
     """Among cpl records sharing a SKU identity (barcode+size+pack+vintage), pick
-    the canonical row via pricing.sku_resolution_key — the IDENTICAL deterministic
-    rule the product-detail endpoint uses. Both sides therefore resolve the SAME
-    row, so a distributor's duplicate listing can no longer hand deal_grid a
-    different price/tier ladder than the page a click opens (the previous
-    price-proximity heuristic here and the name-ordered LIMIT 1 there could
-    diverge). `offer` is retained for call-site compatibility."""
+    the SAME row the product page opens when the card is clicked.
+
+    The card deep-links with the offer's EXACT upc, and get_product_detail resolves
+    it by `upc = $upc` (exact). A single barcode can have several exact-upc variant
+    rows under one NORMALISED identity (a distributor lists it twice, or leading-
+    zero / formatting variants survive derive's dedup differently per run). So we
+    must first restrict to the candidate whose exact upc matches the card's link
+    upc — otherwise deal_grid could feature a sibling variant's deeper tier ladder
+    that the page never shows (Broken Shed: card 6cs/$84 vs page 4cs/$60). Within
+    that exact-upc set (or the whole set as a fallback), pick the canonical row via
+    pricing.sku_resolution_key, the identical deterministic rule the endpoint uses."""
     if not cands:
         return None
-    return min(cands, key=sku_resolution_key)
+    ou = str(offer.get("upc")) if offer.get("upc") is not None else None
+    exact = [r for r in cands if str(r.get("upc")) == ou] if ou else []
+    return min(exact or cands, key=sku_resolution_key)
 
 
 def _top(tiers, source):

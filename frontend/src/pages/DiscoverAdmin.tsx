@@ -86,6 +86,11 @@ function AdminDealCard({ d }: { d: DealGridCard }) {
   const dists = (d.wholesalers || d.primary_wholesaler || '').split(',').filter(Boolean);
   const primary = d.primary_wholesaler || dists[0] || '';
   const size = [d.unit_volume, d.pack ? `${d.pack}pk` : null].filter(Boolean).join(', ');
+  // Vintage on the card — bold, and distinctly badged for WINE (a barcode can
+  // cover several vintages, so the year is part of the SKU the buyer is choosing).
+  const vRaw = d.vintage != null ? String(d.vintage).trim() : '';
+  const vtg = /^(19|20)\d{2}$/.test(vRaw) ? vRaw : (/^nv$/i.test(vRaw) ? 'NV' : '');
+  const isWine = /wine|sparkl|champagne|vermouth|ros[eé]/i.test(d.product_type || '');
   return (
     <Link to={cardHref(d)} className="disc-card">
       <div className="disc-card-top">
@@ -104,6 +109,7 @@ function AdminDealCard({ d }: { d: DealGridCard }) {
       </div>
       <div className="disc-card-name">
         {d.display_name || d.product_name}
+        {vtg && <span className={`disc-card-vtg${isWine ? ' disc-card-vtg--wine' : ''}`}>{vtg}</span>}
         {size && <span className="disc-fav-size"> ({size})</span>}
       </div>
       <BottlePrices d={d} />

@@ -30,6 +30,17 @@
 .disc-favs { margin-top: 18px; padding-bottom: 18px; border-bottom: 1px solid #eaecf0; }
 /* Size + pack next to the product name. */
 .disc-fav-size { font-weight: 600; color: #667085; font-size: 0.92em; white-space: nowrap; }
+/* Vintage on the card: bold, and a distinct badge for WINE (the year is part of
+   the SKU when a barcode covers multiple vintages). */
+.disc-card-vtg { font-weight: 800; margin-left: 6px; color: #475467; white-space: nowrap; }
+.disc-card-vtg--wine {
+  color: #7b1e3b; background: rgba(123, 30, 59, 0.10);
+  padding: 0 6px; border-radius: 5px; letter-spacing: 0.02em;
+}
+@media (prefers-color-scheme: dark) {
+  .disc-card-vtg { color: #cbd2e0; }
+  .disc-card-vtg--wine { color: #f2a9be; background: rgba(242, 169, 190, 0.15); }
+}
 /* The three per-bottle prices (1cs list / best QD / best QD+RIP) — small,
    labelled, hover for the breakdown. */
 .disc-fav-prices {

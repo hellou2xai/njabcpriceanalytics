@@ -5,7 +5,8 @@
  * client-side merge/collapse/pricing that Discover does. Admin-only, for manual
  * A/B testing before we make it the permanent Discover page.
  */
-import { useState, type ReactNode } from 'react';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Search, Store, SlidersHorizontal, PanelLeftClose, Clock, ChevronDown } from 'lucide-react';
@@ -82,6 +83,81 @@ function BottlePrices({ d }: { d: DealGridCard }) {
   );
 }
 
+const DAY_MS = 86400000;
+// 'YYYY-MM-DD' -> 'Jul 1'. Parsed by hand so there is no timezone shift.
+function shortDate(iso?: string | null): string {
+  if (!iso) return '';
+  const [, m, dd] = iso.split('-').map(Number);
+  return m && dd ? `${MONTH_ABBR[m - 1]} ${dd}` : '';
+}
+// Whole days from today until an end date (>= 0), or null if unparseable.
+function daysLeft(iso?: string | null): number | null {
+  if (!iso) return null;
+  const [y, m, dd] = iso.split('-').map(Number);
+  if (!y || !m || !dd) return null;
+  const end = new Date(y, m - 1, dd).getTime();
+  const now = new Date(); const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  return Math.max(0, Math.round((end - today) / DAY_MS));
+}
+
+// The amber TS marker on the card image. It is INSIDE the card's <Link>, so its
+// click MUST stop propagation or it navigates to the product page instead of
+// showing the window. Click toggles a small popover with the deal window; the
+// same window is on the button's tooltip. Dates come from the featured RIP's
+// window (rip_from/rip_to) — the dated program driving the time-sensitivity.
+function TsButton({ d }: { d: DealGridCard }) {
+  const btnRef = useRef<HTMLButtonElement | null>(null);
+  const [pop, setPop] = useState<{ top: number; left: number } | null>(null);
+  const from = d.rip_from, to = d.rip_to;
+  const dealWindow = from && to ? `${shortDate(from)} to ${shortDate(to)}` : 'Limited-time window';
+  const left = daysLeft(to);
+  const tip = `Time-sensitive deal · ${dealWindow}${left != null ? ` · ${left}d left` : ''}`;
+
+  function toggle(e: React.MouseEvent) {
+    e.preventDefault(); e.stopPropagation();
+    if (pop) { setPop(null); return; }
+    const r = btnRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const W = 180;
+    const l = Math.max(8, Math.min(r.right - W, window.innerWidth - W - 8));
+    setPop({ top: r.bottom + 6, left: l });
+  }
+
+  useEffect(() => {
+    if (!pop) return;
+    const close = () => setPop(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPop(null); };
+    document.addEventListener('click', close);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('click', close);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [pop]);
+
+  return (
+    <>
+      <button ref={btnRef} type="button" className={`disc-ts-btn${pop ? ' is-open' : ''}`}
+        title={tip} aria-expanded={!!pop} aria-label="Time-sensitive deal" onClick={toggle}>
+        <Clock size={12} />
+      </button>
+      {pop && createPortal(
+        <div className="disc-ts-pop" role="dialog" aria-label="Time-sensitive deal"
+          style={{ top: pop.top, left: pop.left }}
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+          <div className="disc-ts-pop-h">Time-sensitive deal</div>
+          <div className="disc-ts-win-h">
+            {dealWindow}{left != null && <span className="disc-ts-exp"> · {left}d left</span>}
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+}
+
 // One precomputed deal card — renders deal_grid fields directly.
 function AdminDealCard({ d }: { d: DealGridCard }) {
   const dists = (d.wholesalers || d.primary_wholesaler || '').split(',').filter(Boolean);
@@ -109,7 +185,7 @@ function AdminDealCard({ d }: { d: DealGridCard }) {
         itemNumber={d.dist_item_no ?? undefined} className="disc-card-avail" />
       <div className="disc-card-media">
         <ProductThumb src={d.image_url} alt={d.product_name} size={120} />
-        {d.is_time_sensitive && <span className="disc-ts-btn" title="Time-sensitive deal"><Clock size={12} /></span>}
+        {d.is_time_sensitive && <TsButton d={d} />}
       </div>
       <div className="disc-card-name">
         {d.display_name || d.product_name}

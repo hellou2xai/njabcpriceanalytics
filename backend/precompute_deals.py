@@ -10,9 +10,9 @@ pricing engine on the request path -> millisecond response):
   * `pricing.attach_tiers` gives that SKU's QD + RIP tier ladders (the SAME tiers
     /search renders), from which we take the best-RIP (qty/amount/dates/TS) and
     best-QD (qty/save) the chips show.
-  * `cpl_enriched` columns supply spirit_category, mi_volume, image, the two
-    per-bottle prices (frontline_unit_price = X1, best_unit_price = X2), pack,
-    vintage, distributor item no/name.
+  * `cpl_enriched` columns supply spirit_category, mi_volume, image, the
+    per-bottle prices (X1 = after the 1-case QD = one_cs/pack, X2 = best_unit_price
+    after best QD), pack, vintage, distributor item no/name.
 
 No pricing math is re-implemented here; we only assemble + rank the precomputed
 values. Typed columns only (no JSON blob): any new field the Discover card grows
@@ -281,9 +281,20 @@ def _build_edition(con, src, ed, attach_tiers, log, per_ed=None) -> int:
             pack = int(float(o.get("unit_qty"))) if o.get("unit_qty") else None
         except (TypeError, ValueError):
             pack = None
-        x1 = _r2(_num(rec.get("frontline_unit_price")))
+        # X1 = per-bottle price AFTER the 1-case-entry QD (the per-bottle twin of
+        # the card's headline `one_cs_case_price`), NOT the raw frontline list. Built
+        # as the list bottle minus that QD's per-bottle delta ((frontline_case -
+        # one_cs)/pack) — anchored to the pack-consistent frontline_unit_price rather
+        # than one_cs/pack, so a source whose unit price and pack disagree isn't
+        # distorted; equals the list bottle when there's no 1cs QD. Mirrors X3's
+        # list-minus-per-case-rebate structure. (_one_cs = list minus any 1cs QD.)
+        one_cs = _r2(_one_cs(rec))
+        fl_unit = _num(rec.get("frontline_unit_price"))
+        fl_case = _num(rec.get("frontline_case_price"))
+        qd_1cs = max(0.0, fl_case - one_cs) if (fl_case is not None and one_cs is not None) else 0.0
+        x1 = _r2(max(0.0, fl_unit - qd_1cs / pack) if (fl_unit is not None and pack) else fl_unit)
         # X2 = per-bottle after best QD. Prefer the raw best_unit_price column;
-        # else the best-QD tier's own btl_price_after; else the list bottle (no QD).
+        # else the best-QD tier's own btl_price_after; else the 1cs bottle (no QD).
         x2 = _num(rec.get("best_unit_price"))
         if x2 is None:
             x2 = _num(qd.get("btl_price_after")) if qd else x1
@@ -306,7 +317,6 @@ def _build_edition(con, src, ed, attach_tiers, log, per_ed=None) -> int:
             qd_cases = _r2(qq / pack if (is_bottle_unit(qd.get("unit")) and pack) else qq)
         qd_pc = _num(qd.get("save_per_case")) if qd else None
         qd_total = _r2((qd_pc or 0) * (qd_cases or 0)) if qd else None
-        one_cs = _r2(_one_cs(rec))
         eff = _r2(_num(o.get("effective_case_price")))
         net = _r2(max(0.0, one_cs - eff) if (one_cs is not None and eff is not None) else None)
         brand = (_s(o.get("brand")) or "").upper()

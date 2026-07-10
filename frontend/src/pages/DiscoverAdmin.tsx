@@ -89,8 +89,10 @@ function AdminDealCard({ d }: { d: DealGridCard }) {
   // Vintage on the card — bold, and distinctly badged for WINE (a barcode can
   // cover several vintages, so the year is part of the SKU the buyer is choosing).
   const vRaw = d.vintage != null ? String(d.vintage).trim() : '';
-  const vtg = /^(19|20)\d{2}$/.test(vRaw) ? vRaw : (/^nv$/i.test(vRaw) ? 'NV' : '');
-  const isWine = /wine|sparkl|champagne|vermouth|ros[eé]/i.test(d.product_type || '');
+  const isWine = /wine|sparkl|champagne|vermouth|ros[eé]|port|sherry/i.test(d.product_type || '');
+  // A real YEAR always shows; a non-vintage marker (NV) only for wine — an "NV"
+  // on a spirit is placeholder noise, not a real vintage.
+  const vtg = /^(19|20)\d{2}$/.test(vRaw) ? vRaw : (isWine && /^nv$/i.test(vRaw) ? 'NV' : '');
   return (
     <Link to={cardHref(d)} className="disc-card">
       <div className="disc-card-top">

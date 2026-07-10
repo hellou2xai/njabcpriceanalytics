@@ -3222,12 +3222,16 @@ def get_product_detail(
         # rows of that identity and choose the canonical one deterministically via
         # pricing.sku_resolution_key — the SAME rule the deal_grid precompute uses,
         # so a card and the page a click opens always land on the same row.
+        # $product_name is referenced ONLY when there's no upc (name_filter set);
+        # DuckDB rejects a named param that the query doesn't use, so drop it on
+        # the upc path (identity resolution needs no name — see sku_resolution_key).
+        _main_params = params if name_filter else {k: v for k, v in params.items() if k != "product_name"}
         rows = con.execute(f"""
             SELECT * FROM {src}
             WHERE wholesaler = $wholesaler {name_filter}
             {edition_filter}
             {' '.join(extra_filters)}
-        """, params).fetchdf()
+        """, _main_params).fetchdf()
 
         # Fall back to a name match if the UPC didn't resolve (e.g. a stale link
         # whose UPC isn't on the current edition).

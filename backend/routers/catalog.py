@@ -3211,26 +3211,29 @@ def get_product_detail(
         # carry a cleaned/display name ("GLENLIVET 12YR SCOTCH") that differs from
         # the catalog row ("GLENLIVET 12YR SCOTCH 12PK"); requiring the name made
         # the lookup miss and dropped ALL enrichment (size, region, specs, image).
+        # IDENTITY RESOLUTION (project rule): resolve by UPC -> size -> pack ->
+        # vintage. The product NAME is NOT a resolution key — a link's cleaned/
+        # display name differs from the catalog row's name, so steering by name is
+        # wrong. The extra_filters pin size/pack/vintage the link carries; a barcode
+        # shared by two products (CHIVAS GOYA 3P vs CHIVAS REG 12Y @ 80432400395)
+        # differs in PACK, which the pack filter already separates. A stable
+        # price/pack ORDER deterministically breaks ties among duplicate rows of the
+        # SAME SKU (they merge tiers anyway) — never by name. When no UPC is given
+        # (legacy links) we fall back to the name filter below.
         name_filter = "" if upc else "AND product_name = $product_name"
-        # Resolving by UPC does NOT require an exact name match (display names
-        # differ from catalog names), but a barcode can carry MORE THAN ONE SKU:
-        # CHIVAS GOYA 3P (3-pack, no RIP) and CHIVAS REG 12Y (12-pack, RIP 112112)
-        # share 80432400395. A bare LIMIT 1 with no ORDER BY then returns an
-        # ARBITRARY listing, so the modal for "CHIVAS GOYA 3P" resolved to the
-        # 12-pack and showed RIP 112112 (the recurring Chivas-Goya leak — the
-        # single-listing guard below can't help once the wrong row is chosen).
-        # PREFER the row whose product_name matches the request, then a stable
-        # tiebreak, so the right SKU wins without re-requiring the name. Keep
-        # product_name bound for the ORDER BY (referenced => DuckDB accepts it).
+        # $product_name is referenced ONLY on the no-upc name path; DuckDB rejects an
+        # unused named param, so drop it when a UPC is present.
+        _mp = params if not upc else {k: v for k, v in params.items() if k != "product_name"}
         row = con.execute(f"""
             SELECT * FROM {src}
             WHERE wholesaler = $wholesaler {name_filter}
             {edition_filter}
             {' '.join(extra_filters)}
-            ORDER BY (product_name = $product_name) DESC,
-                     TRY_CAST(unit_qty AS DOUBLE), product_name
+            ORDER BY effective_case_price ASC NULLS LAST,
+                     frontline_case_price ASC NULLS LAST,
+                     TRY_CAST(unit_qty AS DOUBLE)
             LIMIT 1
-        """, params).fetchdf()
+        """, _mp).fetchdf()
 
         # Fall back to a name match if the UPC didn't resolve (e.g. a stale link
         # whose UPC isn't on the current edition).

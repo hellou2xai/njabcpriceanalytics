@@ -28,7 +28,6 @@ import traceback
 
 from backend.routers.compare import _common_rows  # noqa: F401  (proven engine dep marker)
 from backend.rip_utils import normalize_unit, is_bottle_unit
-from backend.pricing import sku_resolution_key
 
 # Last build's per-edition diagnostics (surfaced by /api/admin/reload-pricing) so a
 # prod build that yields 0 rows can be diagnosed without shell access to the box.
@@ -117,23 +116,27 @@ def _idkey(w, upc_norm, uv, uq, vint):
 
 
 def _pick_rec(cands, offer):
-    """Among cpl records sharing a SKU identity (barcode+size+pack+vintage), pick
-    the SAME row the product page opens when the card is clicked.
-
-    The card deep-links with the offer's EXACT upc, and get_product_detail resolves
-    it by `upc = $upc` (exact). A single barcode can have several exact-upc variant
-    rows under one NORMALISED identity (a distributor lists it twice, or leading-
-    zero / formatting variants survive derive's dedup differently per run). So we
-    must first restrict to the candidate whose exact upc matches the card's link
-    upc — otherwise deal_grid could feature a sibling variant's deeper tier ladder
-    that the page never shows (Broken Shed: card 6cs/$84 vs page 4cs/$60). Within
-    that exact-upc set (or the whole set as a fallback), pick the canonical row via
-    pricing.sku_resolution_key, the identical deterministic rule the endpoint uses."""
+    """Among cpl records sharing a SKU identity, pick the one that matches the
+    sku_offer offer (the exact row the offer was built from), so a distributor's
+    duplicate listing can't hand deal_grid a different price/tiers than sku_offer/
+    live picked. Match on BOTH frontline AND effective (net) case price: two
+    listings can share a frontline (e.g. a 'tray pack' vs the regular SKU) but
+    differ on net, and the offer is the CHEAPEST-net one, so effective breaks the
+    tie toward the row sku_offer/live actually chose."""
     if not cands:
         return None
-    ou = str(offer.get("upc")) if offer.get("upc") is not None else None
-    exact = [r for r in cands if str(r.get("upc")) == ou] if ou else []
-    return min(exact or cands, key=sku_resolution_key)
+    of = _num(offer.get("frontline_case_price"))
+    oe = _num(offer.get("effective_case_price"))
+
+    def _score(r):
+        rf = _num(r.get("frontline_case_price"))
+        re_ = _num(r.get("effective_case_price"))
+        s = abs((rf if rf is not None else 1e12) - (of if of is not None else 0.0))
+        if oe is not None:
+            s += abs((re_ if re_ is not None else 1e12) - oe)
+        return s
+
+    return min(cands, key=_score)
 
 
 def _top(tiers, source):

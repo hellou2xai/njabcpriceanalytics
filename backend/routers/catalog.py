@@ -3263,29 +3263,42 @@ def get_product_detail(
             s = str(v)[:10]
             return s or None
 
-        # Get discount tiers (CPL)
+        # Get discount tiers (CPL) — MERGED across ALL CPL rows for this SKU via the
+        # canonical attach_tiers. A distributor can split ONE SKU's discount ladder
+        # across TWO CPL rows (Broken Shed: one row 1/2/4-case, another 6-case). The
+        # old inline read of the single resolved row dropped the SECOND row's tiers;
+        # attach_tiers re-collects and merges every CPL row's tiers (the same complete
+        # ladder search / deal_grid / the product page's size.tiers already show).
+        # save_per_case is the unit-aware per-case saving (fixes bottle-unit tiers too).
         tiers = []
         item = row.iloc[0]
         case_price_for_roi = float(item["frontline_case_price"]) if item.get("frontline_case_price") else 0.0
-        # The CPL row's own window classifies its discount tiers.
         cpl_win = _pricing.window_status(item.get("from_date"), item.get("to_date"), as_of)
         cpl_from, cpl_to = _iso_date(item.get("from_date")), _iso_date(item.get("to_date"))
-        for i in range(1, 6):
-            qty = item.get(f"discount_{i}_qty")
-            amt = item.get(f"discount_{i}_amt")
-            if amt and amt > 0:
-                amt_f = float(amt)
-                tiers.append({
-                    "tier": i,
-                    "quantity": qty,
-                    "amount_per_case": amt_f,
-                    "price_after": round(case_price_for_roi - amt_f, 2),
-                    "roi_pct": round((amt_f / case_price_for_roi) * 100, 2) if case_price_for_roi > 0 else 0.0,
-                    "from_date": cpl_from,
-                    "to_date": cpl_to,
-                    "window_status": cpl_win["status"],
-                    "days_to_expire": cpl_win["days_to_expire"],
-                })
+        _disc_rec = row.to_dict(orient="records")[0]
+        _pricing.attach_tiers(con, [_disc_rec], ref_date=as_of)
+        _disc = sorted(
+            (t for t in (_disc_rec.get("tiers") or [])
+             if t.get("source") == "discount" and (t.get("save_per_case") or 0) > 0),
+            key=lambda t: float(t.get("qty") or 0),
+        )
+        for idx, t in enumerate(_disc, 1):
+            spc = float(t["save_per_case"])
+            pa = t.get("price_after")
+            tiers.append({
+                "tier": idx,
+                # keep `quantity` a STRING (consumers do (quantity).match(/\d+/) and
+                # the DiscountTier type is `string`); carry the unit like the raw cell.
+                "quantity": f"{t.get('qty')} {t.get('unit') or 'Cases'}",
+                "amount_per_case": round(spc, 2),
+                "price_after": (round(float(pa), 2) if pa is not None
+                                else (round(case_price_for_roi - spc, 2) if case_price_for_roi > 0 else None)),
+                "roi_pct": round((spc / case_price_for_roi) * 100, 2) if case_price_for_roi > 0 else 0.0,
+                "from_date": _iso_date(t.get("from_date")) or cpl_from,
+                "to_date": _iso_date(t.get("to_date")) or cpl_to,
+                "window_status": t.get("window_status") or cpl_win["status"],
+                "days_to_expire": cpl_win["days_to_expire"],
+            })
 
         # Get RIP tiers (RIP sheet, joined by rip_code + upc + edition)
         rip_tiers = []

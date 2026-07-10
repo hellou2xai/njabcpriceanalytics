@@ -347,16 +347,59 @@ function FilterSection({ title, count = 0, defaultOpen = true, children }:
   );
 }
 
+// Preserve this page's filters/search/sort/scroll across BACK navigation. React
+// Router unmounts the route on navigate, so component useState resets when you
+// return from a product page; this module-level store survives that remount within
+// the SPA session (a full page reload starts a fresh session, as expected).
+type DiscSession = {
+  q: string; submitted: string;
+  dist: string[]; cat: string[]; deal: string[]; size: string[];
+  sortBy: string; edition: string; collapsed: boolean; scrollTop: number;
+};
+const DISC_SESSION: DiscSession = {
+  q: '', submitted: '', dist: [], cat: [], deal: [], size: [],
+  sortBy: 'case', edition: '', collapsed: false, scrollTop: 0,
+};
+
 export default function DiscoverAdmin() {
-  const [q, setQ] = useState('');
-  const [submitted, setSubmitted] = useState('');
-  const [distSet, setDistSet] = useState<Set<string>>(new Set());
-  const [catSet, setCatSet] = useState<Set<string>>(new Set());
-  const [dealSet, setDealSet] = useState<Set<string>>(new Set());
-  const [sizeSet, setSizeSet] = useState<Set<string>>(new Set());
-  const [sortBy, setSortBy] = useState('case');
-  const [edition, setEdition] = useState('');
-  const [collapsed, setCollapsed] = useState(false);
+  const [q, setQ] = useState(DISC_SESSION.q);
+  const [submitted, setSubmitted] = useState(DISC_SESSION.submitted);
+  const [distSet, setDistSet] = useState<Set<string>>(() => new Set(DISC_SESSION.dist));
+  const [catSet, setCatSet] = useState<Set<string>>(() => new Set(DISC_SESSION.cat));
+  const [dealSet, setDealSet] = useState<Set<string>>(() => new Set(DISC_SESSION.deal));
+  const [sizeSet, setSizeSet] = useState<Set<string>>(() => new Set(DISC_SESSION.size));
+  const [sortBy, setSortBy] = useState(DISC_SESSION.sortBy);
+  const [edition, setEdition] = useState(DISC_SESSION.edition);
+  const [collapsed, setCollapsed] = useState(DISC_SESSION.collapsed);
+
+  // Mirror every filter/search change into the session store so a return visit
+  // (Back) re-seeds them — which also keeps the rail query keys stable, so the
+  // rails render from cache instead of re-fetching.
+  useEffect(() => {
+    DISC_SESSION.q = q; DISC_SESSION.submitted = submitted;
+    DISC_SESSION.dist = [...distSet]; DISC_SESSION.cat = [...catSet];
+    DISC_SESSION.deal = [...dealSet]; DISC_SESSION.size = [...sizeSet];
+    DISC_SESSION.sortBy = sortBy; DISC_SESSION.edition = edition; DISC_SESSION.collapsed = collapsed;
+  }, [q, submitted, distSet, catSet, dealSet, sizeSet, sortBy, edition, collapsed]);
+
+  // Save + restore the scroll position of the app's scroll container (.main-content,
+  // which is what actually scrolls — not window). Restore across a couple of frames
+  // so the cached rails have laid out before we jump.
+  useEffect(() => {
+    const sc = document.querySelector('.main-content') as HTMLElement | null;
+    const target = sc ?? document.scrollingElement ?? document.documentElement;
+    const setTop = (v: number) => { target.scrollTop = v; };
+    if (DISC_SESSION.scrollTop > 0) {
+      requestAnimationFrame(() => setTop(DISC_SESSION.scrollTop));
+      const t = setTimeout(() => setTop(DISC_SESSION.scrollTop), 250);
+      const onScroll = () => { DISC_SESSION.scrollTop = target.scrollTop; };
+      target.addEventListener('scroll', onScroll, { passive: true });
+      return () => { clearTimeout(t); target.removeEventListener('scroll', onScroll); };
+    }
+    const onScroll = () => { DISC_SESSION.scrollTop = target.scrollTop; };
+    target.addEventListener('scroll', onScroll, { passive: true });
+    return () => target.removeEventListener('scroll', onScroll);
+  }, []);
 
   const { data: cats } = useQuery({ queryKey: ['mi-top-categories'], queryFn: catalog.topCategories, staleTime: 3_600_000 });
   const { data: eds } = useQuery({ queryKey: ['editions'], queryFn: catalog.editions, staleTime: 3_600_000 });

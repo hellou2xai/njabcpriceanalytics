@@ -982,6 +982,12 @@ def _compare_grid_build(ed, spirit_category, product_type, grapes, sizes, divisi
             p: list = [ed] + divs + [ed] + divs
         else:
             where = ["o.edition = ?", "o.is_cheapest_net = TRUE"]
+            # This page COMPARES distributors, so show ONLY products that actually
+            # differ across them: carried by >1 distributor with a real net price
+            # gap. A single-distributor or same-price product has nothing to compare
+            # and is just noise here.
+            where.append("o.n_distributors > 1")
+            where.append("COALESCE(o.spread_net, 0) > 0")
             # Anomaly guard: a spread implying the dearest distributor is >4x the
             # cheapest is a grouping mismatch (welded/different SKU), not real arbitrage.
             where.append("(o.spread_net IS NULL OR o.effective_case_price <= 0 OR "

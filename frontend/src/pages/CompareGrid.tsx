@@ -254,6 +254,10 @@ function CompareRail({ rail, dists, deals, sizes, sortBy, edition }:
   // Only show products COMMON to the picked distributors (>=2 cards) AND where they
   // actually differ on 1-case price, RIP, or QD (a same-on-everything row is noise).
   const groups = compareMode ? groupByMatch(items).filter((g) => g.length >= 2 && hasAnyDiff(g)) : [];
+  // Compare mode: the distributors carry common products here but price them all
+  // the same — say so instead of leaving a blank grid. (Browse mode is filtered to
+  // real price gaps server-side, so an empty rail is already hidden above.)
+  const noDiff = compareMode && !isLoading && groups.length === 0;
   return (
     <section className="disc-rail">
       <div className="disc-rail-head">
@@ -261,11 +265,13 @@ function CompareRail({ rail, dists, deals, sizes, sortBy, edition }:
         <span className="disc-rail-count">{compareMode ? groups.length : items.length}</span>
       </div>
       {compareMode ? (
-        <div className="disc-cmp-grid">
-          {isLoading
-            ? <div className="disc-rail-loading">Loading…</div>
-            : groups.map((g, i) => <CompareGroup key={g[0].match_key || i} rows={g} />)}
-        </div>
+        isLoading
+          ? <div className="disc-rail-loading">Loading…</div>
+          : noDiff
+            ? <div className="disc-rail-empty">No difference in price among the selected distributors.</div>
+            : <div className="disc-cmp-grid">
+                {groups.map((g, i) => <CompareGroup key={g[0].match_key || i} rows={g} />)}
+              </div>
       ) : (
         <div className="disc-rail-track">
           {isLoading
@@ -419,23 +425,34 @@ export default function CompareGrid() {
         )}
 
         <div className="disc-rails">
-          {submitted ? (
-            <section className="disc-rail">
-              <div className="disc-rail-head">
-                <h2 className="disc-rail-title">Matching “{submitted}”</h2>
-                <span className="disc-rail-count">{dists.length >= 2 ? groupByMatch(searchData?.items ?? []).filter((g) => g.length >= 2 && hasAnyDiff(g)).length : (searchData?.items?.length ?? 0)}</span>
-              </div>
-              {dists.length >= 2 ? (
-                <div className="disc-cmp-grid">
-                  {groupByMatch(searchData?.items ?? []).filter((g) => g.length >= 2 && hasAnyDiff(g)).map((g, i) => <CompareGroup key={g[0]?.match_key || i} rows={g} />)}
+          {submitted ? (() => {
+            const its = searchData?.items ?? [];
+            const cmp = dists.length >= 2;
+            const grps = cmp ? groupByMatch(its).filter((g) => g.length >= 2 && hasAnyDiff(g)) : [];
+            const count = cmp ? grps.length : its.length;
+            // searchData undefined = still resolving; only call it "no difference"
+            // once the query has actually returned with nothing to compare.
+            const empty = !!searchData && count === 0;
+            return (
+              <section className="disc-rail">
+                <div className="disc-rail-head">
+                  <h2 className="disc-rail-title">Matching “{submitted}”</h2>
+                  <span className="disc-rail-count">{count}</span>
                 </div>
-              ) : (
-                <div className="disc-rail-track">
-                  {(searchData?.items ?? []).map((d, i) => <CompareCard key={`s-${d.wholesaler}-${d.upc}-${i}`} d={d} />)}
-                </div>
-              )}
-            </section>
-          ) : (
+                {empty ? (
+                  <div className="disc-rail-empty">No difference in price among distributors for “{submitted}”.</div>
+                ) : cmp ? (
+                  <div className="disc-cmp-grid">
+                    {grps.map((g, i) => <CompareGroup key={g[0]?.match_key || i} rows={g} />)}
+                  </div>
+                ) : (
+                  <div className="disc-rail-track">
+                    {its.map((d, i) => <CompareCard key={`s-${d.wholesaler}-${d.upc}-${i}`} d={d} />)}
+                  </div>
+                )}
+              </section>
+            );
+          })() : (
             rails.map((rail) => (
               <CompareRail key={rail.label} rail={rail} dists={dists} deals={deals} sizes={sizes} sortBy={sortBy} edition={edition} />
             ))

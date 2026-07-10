@@ -1065,6 +1065,17 @@ def _compare_grid_build(ed, spirit_category, product_type, grapes, sizes, divisi
             _attach_ts_rip(con, rows, ed)  # time-sensitive (partial-window) RIP marker
         except Exception as e:
             print(f"[compare-grid] ts-rip attach skipped: {e}")
+        # Distributor item number for the "Check Allied/Fedway" deep-link: sku_offer's
+        # own item_no is sparse, so resolve the fuller number the same way the catalog
+        # does (sku_mapping by UPC, Allied/Fedway only) and use it when item_no is
+        # blank. Without this the button falls back to searching by NAME.
+        try:
+            _attach_sku_mapping(con, rows)
+            for r in rows:
+                if r.get("item_no") in (None, "", "None", "0") and r.get("abg_sku"):
+                    r["item_no"] = r["abg_sku"]
+        except Exception as e:
+            print(f"[compare-grid] sku-mapping attach skipped: {e}")
     return {"edition": ed, "count": len(rows), "items": rows}
 
 

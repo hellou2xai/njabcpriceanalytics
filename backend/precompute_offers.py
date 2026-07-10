@@ -31,7 +31,7 @@ import time
 import pandas as pd
 
 # Reuse the canonical compare helpers — do not fork the identity / best-offer rule.
-from backend.routers.compare import _common_rows, _display_name, _cpn_for_upcs
+from backend.routers.compare import _common_rows, _cpn_for_upcs
 from backend import pricing as _pricing
 
 _TIE_EPS = 0.005
@@ -110,6 +110,14 @@ def _grid_rows_for_edition(con, src: str, edition: str) -> list[dict]:
     if not recs:
         return []
 
+    # Canonical product display name — the SAME resolver the Products / search
+    # pages use — so a deal card and the product page it links to always show the
+    # same name (was: a home-grown display_name off the barcode enrichment, which
+    # mislabelled reused-barcode SKUs, e.g. a 2024 label on a 2023 row). Lazy
+    # import to avoid a router<->precompute import cycle at module load.
+    from backend.routers.catalog import attach_product_display
+    attach_product_display(con, recs)
+
     # CELR family (cpn) makes cross-distributor grouping correct in both
     # directions, the SAME way the compare boards do it:
     #   - MERGE the same product filed under DIFFERENT barcodes by each house
@@ -147,8 +155,6 @@ def _grid_rows_for_edition(con, src: str, edition: str) -> list[dict]:
         effs = [e for e in (_num(m.get("effective_case_price")) for m in members) if e is not None]
         spread = round(max(effs) - min(effs), 2) if len(effs) >= 2 else 0.0
         n_dist = len({m["wholesaler"] for m in members})
-        # vintage tokens for the cleaned display name
-        vintages = {m.get("vintage") for m in members if m.get("vintage")}
         rank = 0
         for m in members:
             front = _num(m.get("frontline_case_price"))
@@ -158,8 +164,6 @@ def _grid_rows_for_edition(con, src: str, edition: str) -> list[dict]:
             qd_save = (round(front - after, 2)
                        if front is not None and after is not None and after < front - _TIE_EPS
                        else 0.0)
-            vsens = bool(m.get("vintage_sensitive"))
-            name = m.get("enr_name") or m.get("product_name")
             out.append({
                 "edition": edition,
                 "match_key": m.get("match_key"),
@@ -168,7 +172,7 @@ def _grid_rows_for_edition(con, src: str, edition: str) -> list[dict]:
                 "upc": m.get("upc"),
                 "upc_norm": m.get("upc_norm"),
                 "product_name": m.get("product_name"),
-                "display_name": _display_name(name, vintages, vsens),
+                "display_name": m.get("product_display") or m.get("product_name"),
                 "unit_volume": m.get("unit_volume"),
                 "unit_volume_std": m.get("unit_volume_std"),
                 "unit_qty": (str(m.get("unit_qty")) if m.get("unit_qty") is not None else None),

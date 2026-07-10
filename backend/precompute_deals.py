@@ -28,6 +28,7 @@ import traceback
 
 from backend.routers.compare import _common_rows  # noqa: F401  (proven engine dep marker)
 from backend.rip_utils import normalize_unit, is_bottle_unit
+from backend.pricing import sku_resolution_key
 
 # Last build's per-edition diagnostics (surfaced by /api/admin/reload-pricing) so a
 # prod build that yields 0 rows can be diagnosed without shell access to the box.
@@ -116,27 +117,16 @@ def _idkey(w, upc_norm, uv, uq, vint):
 
 
 def _pick_rec(cands, offer):
-    """Among cpl records sharing a SKU identity, pick the one that matches the
-    sku_offer offer (the exact row the offer was built from), so a distributor's
-    duplicate listing can't hand deal_grid a different price/tiers than sku_offer/
-    live picked. Match on BOTH frontline AND effective (net) case price: two
-    listings can share a frontline (e.g. a 'tray pack' vs the regular SKU) but
-    differ on net, and the offer is the CHEAPEST-net one, so effective breaks the
-    tie toward the row sku_offer/live actually chose."""
+    """Among cpl records sharing a SKU identity (barcode+size+pack+vintage), pick
+    the canonical row via pricing.sku_resolution_key — the IDENTICAL deterministic
+    rule the product-detail endpoint uses. Both sides therefore resolve the SAME
+    row, so a distributor's duplicate listing can no longer hand deal_grid a
+    different price/tier ladder than the page a click opens (the previous
+    price-proximity heuristic here and the name-ordered LIMIT 1 there could
+    diverge). `offer` is retained for call-site compatibility."""
     if not cands:
         return None
-    of = _num(offer.get("frontline_case_price"))
-    oe = _num(offer.get("effective_case_price"))
-
-    def _score(r):
-        rf = _num(r.get("frontline_case_price"))
-        re_ = _num(r.get("effective_case_price"))
-        s = abs((rf if rf is not None else 1e12) - (of if of is not None else 0.0))
-        if oe is not None:
-            s += abs((re_ if re_ is not None else 1e12) - oe)
-        return s
-
-    return min(cands, key=_score)
+    return min(cands, key=sku_resolution_key)
 
 
 def _top(tiers, source):

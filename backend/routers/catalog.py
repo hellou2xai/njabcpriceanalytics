@@ -1106,6 +1106,105 @@ def _attach_ts_rip(con, rows, ed):
         row["ts_rip_per_case"] = round(_rpc(b["amount"], b["qty"], b["unit"], pack), 2)
 
 
+def attach_product_display(con, records):
+    """Attach the canonical ``product_display`` (plus ``product_group`` /
+    ``celr_product_number``) to each record — the ONE product-name resolution the
+    app renders everywhere (Products grid, catalog search, and the Discover deal
+    cards). Rows must carry ``product_name``, ``product_type``, ``brand``, ``upc``
+    and (optionally) ``enr_name``.
+
+    Resolution order per row: (1) CELR family registry header (by barcode, else
+    name-key); (2) clean per-UPC display (most-common non-junk SKU name / enriched
+    title); (3) legacy per-name-core. The vintage is stripped from the header, so a
+    stale/wrong barcode-enrichment vintage can NEVER mislabel a card — the vintage
+    rides as structured data, not in the title. Any surface that shows a product
+    name MUST use this instead of rolling its own (deal_grid used to derive its own
+    display_name from the barcode enrichment and mislabelled reused-barcode SKUs)."""
+    from collections import Counter as _Counter
+    upc_display: dict = {}
+    upc_names: dict = {}
+    for rec in records:
+        if not _is_clean_upc(rec.get("upc")):
+            continue
+        un = str(rec.get("upc")).lstrip("0")
+        enr = rec.get("enr_name")
+        if enr and un not in upc_display:
+            upc_display[un] = _display_name(enr)
+        upc_names.setdefault(un, _Counter())[str(rec.get("product_name") or "")] += 1
+    for un, names in upc_names.items():
+        if un not in upc_display:
+            # Prefer a non-junk title (no closeout / pack tokens), then the
+            # most common name, then the longest (most descriptive).
+            upc_display[un] = sorted(
+                names.items(),
+                key=lambda kv: (_header_junk(kv[0]), -kv[1], -len(kv[0])),
+            )[0][0]
+
+    # CELR Product Number registry (persistent FAMILY spanning sizes/vintages/
+    # distributors): resolve by BARCODE, else NAME KEY, else the legacy per-UPC /
+    # name-core behaviour below.
+    from backend.celr import family_key as _celr_family_key
+    from backend.celr import display_header as _celr_display_header
+    celr_map: dict = {}
+    celr_key_map: dict = {}
+    try:
+        celr_upcs = sorted({str(rec.get("upc")).lstrip("0") for rec in records
+                            if _is_clean_upc(rec.get("upc"))})
+        if celr_upcs:
+            ph = ", ".join(f"$cu{i}" for i in range(len(celr_upcs)))
+            prm = {f"cu{i}": u for i, u in enumerate(celr_upcs)}
+            cdf = con.execute(
+                f"SELECT upc_norm, cpn, header_name FROM celr_products "
+                f"WHERE upc_norm IN ({ph})", prm).fetchdf()
+            for _, r in cdf.iterrows():
+                celr_map[str(r["upc_norm"])] = (int(r["cpn"]), r["header_name"])
+        keys = sorted({
+            _celr_family_key(rec.get("product_name"), rec.get("product_type"))
+            for rec in records
+            if str(rec.get("upc") or "").lstrip("0") not in celr_map
+        })
+        if keys:
+            ph = ", ".join(f"$ck{i}" for i in range(len(keys)))
+            prm = {f"ck{i}": k for i, k in enumerate(keys)}
+            kdf = con.execute(
+                f"SELECT key, cpn, header_name FROM celr_family_keys "
+                f"WHERE key IN ({ph})", prm).fetchdf()
+            for _, r in kdf.iterrows():
+                celr_key_map[str(r["key"])] = (int(r["cpn"]), r["header_name"])
+    except Exception:
+        celr_map, celr_key_map = {}, {}
+
+    for rec in records:
+        pname = rec.get("product_name") or ""
+        ptype = (rec.get("product_type") or "")
+        brand = rec.get("brand") or ""
+        enr = rec.get("enr_name")
+        un = str(rec.get("upc") or "").lstrip("0")
+        hit = celr_map.get(un) or celr_key_map.get(
+            _celr_family_key(pname, ptype))
+        if hit:
+            cpn, header = hit
+            rec["product_group"] = f"cpn:{cpn}"
+            rec["product_display"] = _celr_display_header(header, ptype) or pname
+            rec["celr_product_number"] = f"CELR-{cpn:06d}"
+        elif _is_clean_upc(rec.get("upc")):
+            # Distributor- AND name-agnostic key so every listing of
+            # this barcode merges into one card.
+            rec["product_group"] = "u:" + un
+            rec["product_display"] = upc_display.get(un) or pname
+        else:
+            if "wine" in ptype.lower():
+                core, display = "w:" + pname.lower().strip(), pname
+            elif enr:
+                core, display = "e:" + _product_core(enr), _display_name(enr)
+            else:
+                core, display = "c:" + _catalog_core(pname), pname
+            rec["product_group"] = f"{brand}|{core}"
+            rec["product_display"] = display or pname
+        rec.pop("enr_name", None)   # internal only
+    return records
+
+
 @router.get("/search")
 def search_products(
     q: str = Query("", description="Search term"),
@@ -2210,93 +2309,10 @@ def search_products(
         # agrees regardless of which row the frontend renders first — prefer the
         # enriched name, else the most common SKU name (tie-break the longest /
         # most descriptive).
-        from collections import Counter as _Counter
-        upc_display: dict = {}
-        upc_names: dict = {}
-        for rec in records:
-            if not _is_clean_upc(rec.get("upc")):
-                continue
-            un = str(rec.get("upc")).lstrip("0")
-            enr = rec.get("enr_name")
-            if enr and un not in upc_display:
-                upc_display[un] = _display_name(enr)
-            upc_names.setdefault(un, _Counter())[str(rec.get("product_name") or "")] += 1
-        for un, names in upc_names.items():
-            if un not in upc_display:
-                # Prefer a non-junk title (no closeout / pack tokens), then the
-                # most common name, then the longest (most descriptive).
-                upc_display[un] = sorted(
-                    names.items(),
-                    key=lambda kv: (_header_junk(kv[0]), -kv[1], -len(kv[0])),
-                )[0][0]
-
-        # Phase 3 — CELR Product Number (docs/CELR_PRODUCT_NUMBER_DESIGN.md):
-        # the persistent FAMILY registry spanning sizes/vintages/distributors.
-        # Resolution order per row: (1) registry by BARCODE; (2) registry by
-        # NAME KEY (covers placeholder barcodes like 111111111117, whose rows
-        # must still join their family — nothing is ever hidden, the family
-        # only decides which card a listing sits under); (3) the per-UPC /
-        # name-core legacy behaviour below.
-        from backend.celr import family_key as _celr_family_key
-        from backend.celr import display_header as _celr_display_header
-        celr_map: dict = {}
-        celr_key_map: dict = {}
-        try:
-            celr_upcs = sorted({str(rec.get("upc")).lstrip("0") for rec in records
-                                if _is_clean_upc(rec.get("upc"))})
-            if celr_upcs:
-                ph = ", ".join(f"$cu{i}" for i in range(len(celr_upcs)))
-                prm = {f"cu{i}": u for i, u in enumerate(celr_upcs)}
-                cdf = con.execute(
-                    f"SELECT upc_norm, cpn, header_name FROM celr_products "
-                    f"WHERE upc_norm IN ({ph})", prm).fetchdf()
-                for _, r in cdf.iterrows():
-                    celr_map[str(r["upc_norm"])] = (int(r["cpn"]), r["header_name"])
-            # name keys for every row not resolved by barcode
-            keys = sorted({
-                _celr_family_key(rec.get("product_name"), rec.get("product_type"))
-                for rec in records
-                if str(rec.get("upc") or "").lstrip("0") not in celr_map
-            })
-            if keys:
-                ph = ", ".join(f"$ck{i}" for i in range(len(keys)))
-                prm = {f"ck{i}": k for i, k in enumerate(keys)}
-                kdf = con.execute(
-                    f"SELECT key, cpn, header_name FROM celr_family_keys "
-                    f"WHERE key IN ({ph})", prm).fetchdf()
-                for _, r in kdf.iterrows():
-                    celr_key_map[str(r["key"])] = (int(r["cpn"]), r["header_name"])
-        except Exception:
-            celr_map, celr_key_map = {}, {}
-
-        for rec in records:
-            pname = rec.get("product_name") or ""
-            ptype = (rec.get("product_type") or "")
-            brand = rec.get("brand") or ""
-            enr = rec.get("enr_name")
-            un = str(rec.get("upc") or "").lstrip("0")
-            hit = celr_map.get(un) or celr_key_map.get(
-                _celr_family_key(pname, ptype))
-            if hit:
-                cpn, header = hit
-                rec["product_group"] = f"cpn:{cpn}"
-                rec["product_display"] = _celr_display_header(header, ptype) or pname
-                rec["celr_product_number"] = f"CELR-{cpn:06d}"
-            elif _is_clean_upc(rec.get("upc")):
-                # Distributor- AND name-agnostic key so every listing of
-                # this barcode merges into one card.
-                rec["product_group"] = "u:" + un
-                rec["product_display"] = upc_display.get(un) or pname
-            else:
-                if "wine" in ptype.lower():
-                    core, display = "w:" + pname.lower().strip(), pname
-                elif enr:
-                    core, display = "e:" + _product_core(enr), _display_name(enr)
-                else:
-                    core, display = "c:" + _catalog_core(pname), pname
-                rec["product_group"] = f"{brand}|{core}"
-                rec["product_display"] = display or pname
-            rec.pop("enr_name", None)   # internal only
+        # Family grouping + canonical display name (Products list / search), via the
+        # shared resolver so every surface — including the Discover deal cards —
+        # renders the SAME product_display. See attach_product_display.
+        attach_product_display(con, records)
 
         # When the toggle is on, attach the FULL list of RIP codes per UPC
         # (a single UPC can stack across several rebates). Done as a separate
@@ -3197,39 +3213,44 @@ def get_product_detail(
         # the lookup miss and dropped ALL enrichment (size, region, specs, image).
         name_filter = "" if upc else "AND product_name = $product_name"
         # Resolving by UPC does NOT require an exact name match (display names
-        # differ from catalog names), but a barcode can carry MORE THAN ONE SKU:
-        # CHIVAS GOYA 3P (3-pack, no RIP) and CHIVAS REG 12Y (12-pack, RIP 112112)
-        # share 80432400395. A bare LIMIT 1 with no ORDER BY then returns an
-        # ARBITRARY listing, so the modal for "CHIVAS GOYA 3P" resolved to the
-        # 12-pack and showed RIP 112112 (the recurring Chivas-Goya leak — the
-        # single-listing guard below can't help once the wrong row is chosen).
-        # PREFER the row whose product_name matches the request, then a stable
-        # tiebreak, so the right SKU wins without re-requiring the name. Keep
-        # product_name bound for the ORDER BY (referenced => DuckDB accepts it).
-        row = con.execute(f"""
+        # differ from catalog names). A barcode CAN carry more than one SKU
+        # (CHIVAS GOYA 3P vs CHIVAS REG 12Y share 80432400395) — but those differ
+        # in size/pack, which the extra_filters (unit_volume/unit_qty/vintage)
+        # already pin. So resolution is by the CANONICAL IDENTITY only
+        # (upc + size + pack + vintage), NEVER the text name: steering by name
+        # picked the wrong row and let the card and this page disagree. Fetch all
+        # rows of that identity and choose the canonical one deterministically via
+        # pricing.sku_resolution_key — the SAME rule the deal_grid precompute uses,
+        # so a card and the page a click opens always land on the same row.
+        rows = con.execute(f"""
             SELECT * FROM {src}
             WHERE wholesaler = $wholesaler {name_filter}
             {edition_filter}
             {' '.join(extra_filters)}
-            ORDER BY (product_name = $product_name) DESC,
-                     TRY_CAST(unit_qty AS DOUBLE), product_name
-            LIMIT 1
         """, params).fetchdf()
 
         # Fall back to a name match if the UPC didn't resolve (e.g. a stale link
         # whose UPC isn't on the current edition).
-        if row.empty and upc:
+        if rows.empty and upc:
             fb_params = {k: v for k, v in params.items()
                          if k in ("wholesaler", "product_name", "edition", "latest_ed")}
-            row = con.execute(f"""
+            rows = con.execute(f"""
                 SELECT * FROM {src}
                 WHERE wholesaler = $wholesaler AND product_name = $product_name
                 {edition_filter}
-                LIMIT 1
             """, fb_params).fetchdf()
 
-        if row.empty:
+        if rows.empty:
             return {"error": "Product not found"}
+
+        # Canonical, deterministic pick among same-identity rows (shared with the
+        # deal_grid build so both resolve identically).
+        if len(rows) == 1:
+            row = rows
+        else:
+            _recs = rows.to_dict("records")
+            _best = min(range(len(_recs)), key=lambda i: _pricing.sku_resolution_key(_recs[i]))
+            row = rows.iloc[[_best]].reset_index(drop=True)
 
         def _iso_date(v):
             """Render a date-ish cell as 'YYYY-MM-DD' or None."""

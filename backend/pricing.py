@@ -1354,12 +1354,25 @@ def _num(v) -> Optional[float]:
 
 def _split_rip_codes(rc) -> list[str]:
     """Split a RIP-code cell ('10604 120001') into clean codes. Module-level
-    twin of the splitter inside attach_tiers so attach_live_rip stays in sync."""
+    twin of the splitter inside attach_tiers so attach_live_rip AND the product
+    endpoint's own-code lookup stay in sync.
+
+    A cell holds MULTIPLE codes only when it is whitespace-separated NUMERIC
+    tokens (Fedway "10604 120001"). A value that contains letters is a single
+    DESCRIPTIVE code — malformed source data where a product NAME or a typo
+    landed in the rip_code column ("VKDA 6100", "Silver Oak Napa Valley...").
+    Splitting it on spaces shreds it into words that match no RIP-sheet row, so
+    the strict (code, upc) join silently dropped the whole RIP — the card showed
+    a RIP the product page then couldn't find. Keep letter-bearing codes WHOLE,
+    identical to the attach_tiers splitter this mirrors."""
     if rc is None:
         return []
     s = str(rc).strip()
     if not s or s in ("None", "nan", "0"):
         return []
+    # A code containing letters is a single descriptive/malformed code — keep whole.
+    if re.search(r"[A-Za-z]", s):
+        return [s]
     out, seen = [], set()
     for part in s.split():
         p = part.strip()
@@ -1368,6 +1381,39 @@ def _split_rip_codes(rc) -> list[str]:
         seen.add(p)
         out.append(p)
     return out
+
+
+def sku_resolution_key(rec):
+    """Canonical, TOTAL deterministic order for choosing ONE cpl_enriched row among
+    candidates that already share the SKU identity — barcode + size + pack + vintage.
+
+    Used by BOTH the product-detail endpoint and the deal_grid precompute, so a
+    card and the page a click opens ALWAYS resolve to the SAME row. The identity is
+    UPC+size+pack+vintage (the WHERE clause / precompute `_idkey`) and NEVER the
+    text name: a row's enriched display name differs from its raw distributor name,
+    so steering resolution by name picked the wrong row (the regression that showed
+    a 2024 label on a 2023 row and let the card and page disagree).
+
+    When one identity still has >1 row — a distributor split a single product's
+    discount ladder across two rows (e.g. Broken Shed: one row 1/2/4-case, another
+    6-case/$84, both best_case_price 191.88) — prefer the better, self-consistent
+    deal: cheapest net, then the deepest discount tier (the ladder that actually
+    reaches best_case_price), then stable structural keys for byte-determinism."""
+    def _f(v, default):
+        try:
+            x = float(v)
+            return x if x == x else default  # NaN → default
+        except (TypeError, ValueError):
+            return default
+    disc = [_f(rec.get(f"discount_{i}_amt"), 0.0) for i in range(1, 6)]
+    return (
+        _f(rec.get("effective_case_price"), float("inf")),   # cheapest net = best deal
+        -max(disc) if disc else 0.0,                          # deepest / self-consistent ladder
+        _f(rec.get("frontline_case_price"), float("inf")),
+        str(rec.get("dist_item_no") or rec.get("item_no") or ""),
+        tuple(disc),                                          # total order on otherwise-identical rows
+        str(rec.get("upc") or ""),
+    )
 
 
 # JSON schema for the rip_windows column (a JSON-array string; see derive.py).

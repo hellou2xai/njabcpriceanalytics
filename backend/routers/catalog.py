@@ -3213,48 +3213,39 @@ def get_product_detail(
         # the lookup miss and dropped ALL enrichment (size, region, specs, image).
         name_filter = "" if upc else "AND product_name = $product_name"
         # Resolving by UPC does NOT require an exact name match (display names
-        # differ from catalog names). A barcode CAN carry more than one SKU
-        # (CHIVAS GOYA 3P vs CHIVAS REG 12Y share 80432400395) — but those differ
-        # in size/pack, which the extra_filters (unit_volume/unit_qty/vintage)
-        # already pin. So resolution is by the CANONICAL IDENTITY only
-        # (upc + size + pack + vintage), NEVER the text name: steering by name
-        # picked the wrong row and let the card and this page disagree. Fetch all
-        # rows of that identity and choose the canonical one deterministically via
-        # pricing.sku_resolution_key — the SAME rule the deal_grid precompute uses,
-        # so a card and the page a click opens always land on the same row.
-        # $product_name is referenced ONLY when there's no upc (name_filter set);
-        # DuckDB rejects a named param that the query doesn't use, so drop it on
-        # the upc path (identity resolution needs no name — see sku_resolution_key).
-        _main_params = params if name_filter else {k: v for k, v in params.items() if k != "product_name"}
-        rows = con.execute(f"""
+        # differ from catalog names), but a barcode can carry MORE THAN ONE SKU:
+        # CHIVAS GOYA 3P (3-pack, no RIP) and CHIVAS REG 12Y (12-pack, RIP 112112)
+        # share 80432400395. A bare LIMIT 1 with no ORDER BY then returns an
+        # ARBITRARY listing, so the modal for "CHIVAS GOYA 3P" resolved to the
+        # 12-pack and showed RIP 112112 (the recurring Chivas-Goya leak — the
+        # single-listing guard below can't help once the wrong row is chosen).
+        # PREFER the row whose product_name matches the request, then a stable
+        # tiebreak, so the right SKU wins without re-requiring the name. Keep
+        # product_name bound for the ORDER BY (referenced => DuckDB accepts it).
+        row = con.execute(f"""
             SELECT * FROM {src}
             WHERE wholesaler = $wholesaler {name_filter}
             {edition_filter}
             {' '.join(extra_filters)}
-        """, _main_params).fetchdf()
+            ORDER BY (product_name = $product_name) DESC,
+                     TRY_CAST(unit_qty AS DOUBLE), product_name
+            LIMIT 1
+        """, params).fetchdf()
 
         # Fall back to a name match if the UPC didn't resolve (e.g. a stale link
         # whose UPC isn't on the current edition).
-        if rows.empty and upc:
+        if row.empty and upc:
             fb_params = {k: v for k, v in params.items()
                          if k in ("wholesaler", "product_name", "edition", "latest_ed")}
-            rows = con.execute(f"""
+            row = con.execute(f"""
                 SELECT * FROM {src}
                 WHERE wholesaler = $wholesaler AND product_name = $product_name
                 {edition_filter}
+                LIMIT 1
             """, fb_params).fetchdf()
 
-        if rows.empty:
+        if row.empty:
             return {"error": "Product not found"}
-
-        # Canonical, deterministic pick among same-identity rows (shared with the
-        # deal_grid build so both resolve identically).
-        if len(rows) == 1:
-            row = rows
-        else:
-            _recs = rows.to_dict("records")
-            _best = min(range(len(_recs)), key=lambda i: _pricing.sku_resolution_key(_recs[i]))
-            row = rows.iloc[[_best]].reset_index(drop=True)
 
         def _iso_date(v):
             """Render a date-ish cell as 'YYYY-MM-DD' or None."""

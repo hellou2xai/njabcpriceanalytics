@@ -525,9 +525,16 @@ export default function ProductDetail() {
   const primarySize = useMemo(() => {
     if (!sizes?.length) return null;
     const u = headSku?.upc, v = headSku?.unit_volume;
-    return sizes.find(s => s.upc === u && s.unit_volume === v)
+    // Pin to the CLICKED distributor first: the SAME barcode can be listed by
+    // several distributors at DIFFERENT prices (opici HALL $576/QD $216 vs allied
+    // $600/QD $240 @ 892159000358). Matching upc+size alone let another
+    // distributor's listing win (sizes are sorted by wholesaler), so the panel
+    // rendered a QD the card never showed. Prefer the card's own wholesaler.
+    return sizes.find(s => s.wholesaler === wholesaler && s.upc === u && s.unit_volume === v)
+      ?? sizes.find(s => s.upc === u && s.unit_volume === v)
+      ?? sizes.find(s => s.wholesaler === wholesaler && s.unit_volume === v)
       ?? sizes.find(s => s.unit_volume === v) ?? sizes[0];
-  }, [sizes, headSku]);
+  }, [sizes, headSku, wholesaler]);
   const nextMonths = useMemo(() => (primarySize ? buildMonths(primarySize) : []), [primarySize]);
   const nextBlock = nextMonths.find(m => m.future) ?? null;
   const curBlock = currentMonth(nextMonths);

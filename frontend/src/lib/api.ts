@@ -2344,7 +2344,8 @@ export interface Price3moBlock {
 
 export interface DiscountTier extends TierWindow {
   tier: number;
-  quantity: string;
+  quantity: number;          // numeric buy-quantity (was a text string like "6 Cases")
+  unit?: string | null;      // "Cases" | "Bottles"
   amount_per_case: number;
   price_after: number;
   roi_pct: number;

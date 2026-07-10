@@ -203,13 +203,14 @@ function IncentiveTierCell({ wholesaler, productName, currentCases }:
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 170 }}>
       {discounts.map(d => {
-        const qNum = parseInt((d.quantity ?? '').match(/(\d+)/)?.[1] ?? '0', 10);
-        const met = qNum > 0 && currentCases >= qNum;
+        const qNum = d.quantity ?? 0;
+        const isBtl = /^b/i.test(d.unit ?? '');
+        const met = qNum > 0 && !isBtl && currentCases >= qNum;
         return (
           <div key={`d-${d.tier}`} className="incentive-tier-row" data-met={met ? 'true' : 'false'}>
             <span className="source-badge source-discount">DISC</span>
             <span className="incentive-tier-text">
-              {d.quantity}+ = <strong>-${d.amount_per_case}/cs</strong>
+              {qNum}+ {isBtl ? 'btl' : 'cs'} = <strong>-${d.amount_per_case}/cs</strong>
               <span className="incentive-roi">{d.roi_pct}%</span>
             </span>
           </div>

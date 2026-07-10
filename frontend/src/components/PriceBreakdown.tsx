@@ -25,13 +25,9 @@ const isBtl = (unit: string) => /^b/i.test(unit || '');
 const ripKey = (t: RipTier) => `${t.qty}|${isBtl(t.unit) ? 'btl' : 'cs'}`;
 const ripLabel = (t: RipTier) => `Buy ${t.qty} ${isBtl(t.unit) ? 'btl' : 'cs'}`;
 
-// Discount tier qty arrives as a string like "1 Cases" / "3 Bottles".
-const parseDiscQty = (q: unknown): { qty: number; btl: boolean } => {
-  const mm = /(\d+(?:\.\d+)?)\s*(.*)/.exec(String(q ?? ''));
-  return { qty: mm ? Math.round(parseFloat(mm[1])) : 1, btl: mm ? isBtl((mm[2] || '').trim()) : false };
-};
-const discKey = (t: DiscountTier) => { const { qty, btl } = parseDiscQty(t.quantity); return `${qty}|${btl ? 'btl' : 'cs'}`; };
-const discLabel = (t: DiscountTier) => { const { qty, btl } = parseDiscQty(t.quantity); return `Buy ${qty}+ ${btl ? 'btl' : 'cs'}`; };
+// Discount tier: numeric `quantity` + `unit` ("Cases" | "Bottles").
+const discKey = (t: DiscountTier) => `${t.quantity}|${isBtl(t.unit ?? '') ? 'btl' : 'cs'}`;
+const discLabel = (t: DiscountTier) => `Buy ${t.quantity}+ ${isBtl(t.unit ?? '') ? 'btl' : 'cs'}`;
 
 function parts(s: BreakdownSide) {
   const disc = Math.max(0, s.list - s.afterDiscount);

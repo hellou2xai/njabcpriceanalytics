@@ -3287,9 +3287,8 @@ def get_product_detail(
             pa = t.get("price_after")
             tiers.append({
                 "tier": idx,
-                # keep `quantity` a STRING (consumers do (quantity).match(/\d+/) and
-                # the DiscountTier type is `string`); carry the unit like the raw cell.
-                "quantity": f"{t.get('qty')} {t.get('unit') or 'Cases'}",
+                "quantity": t.get("qty"),          # numeric buy-quantity
+                "unit": t.get("unit") or "Cases",  # "Cases" | "Bottles"
                 "amount_per_case": round(spc, 2),
                 "price_after": (round(float(pa), 2) if pa is not None
                                 else (round(case_price_for_roi - spc, 2) if case_price_for_roi > 0 else None)),

@@ -233,12 +233,43 @@ function groupByProduct(items: Product[], grouped = true): ProductGroup[] {
   return order.map(k => map.get(k)!);
 }
 
+// Largest CPL discount that already QUALIFIES at a single case, read from the
+// row's flat discount_N columns (qty + amount). The mirror of backend
+// pricing.best_disc_at(pricing._disc_tiers_min(...), 1, pack): a case-unit tier
+// qualifies when its qty <= 1; a bottle-unit tier when its qty <= pack. RIP is
+// never included (these columns are QD only). Used for the collapsed list rows,
+// which carry the flat columns but NOT the built `tiers` ladder.
+function bestOneCaseFlatDiscount(s: Product, pack: number | null): number {
+  let best = 0;
+  for (let i = 1; i <= 5; i++) {
+    const amt = (s as Record<string, unknown>)[`discount_${i}_amt`] as number | null | undefined;
+    const rawQty = (s as Record<string, unknown>)[`discount_${i}_qty`] as string | null | undefined;
+    if (amt == null || !(amt > 0) || !rawQty) continue;
+    const m = /^\s*(\d+(?:\.\d+)?)\s*(.*)$/.exec(String(rawQty));
+    if (!m) continue;
+    const qty = Math.floor(parseFloat(m[1]));
+    const isBtl = /^\s*b/i.test(m[2] || '');
+    const qualifies = isBtl ? (pack ? qty <= pack : false) : qty <= 1;
+    if (qualifies && amt > best) best = amt;
+  }
+  return best;
+}
+
 // Price after the 1-CASE quantity discount (what you pay buying a single case),
-// from the row's discount tiers — NOT the deepest RIP. Falls back to frontline
-// when there's no 1-case QD. Bottle-unit tiers (qty <= pack) count as reachable.
+// NOT the deepest RIP. Prefers the canonical precomputed `one_cs_case_price`
+// column; then the built discount tiers; then, when the row carries neither (the
+// collapsed /search list rows on an older serving build), derives from the flat
+// discount_N columns — the mirror of backend pricing.one_cs_case_price, so the
+// grouped-card header shows the same 1-case price as the expanded size row
+// instead of the raw frontline. Falls back to frontline when there's no 1-case QD.
+// Bottle-unit tiers (qty <= pack) count as reachable.
 function oneCaseQdCase(s: Product): number | null {
   const front = s.frontline_case_price ?? null;
   const pack = bottlesPerCase(s.product_name, s.unit_qty);
+  // Canonical precomputed column (FOUNDATION: read it, don't re-derive).
+  if (s.one_cs_case_price != null && Number.isFinite(s.one_cs_case_price)) {
+    return s.one_cs_case_price;
+  }
   const disc = (s.discount_tiers ?? s.tiers ?? []).filter(
     t => t.source !== 'rip' && t.price_after != null);
   const reachable = disc.filter(t => {
@@ -246,6 +277,11 @@ function oneCaseQdCase(s: Product): number | null {
     return isBtl ? (pack ? t.qty <= pack : false) : t.qty <= 1;
   });
   if (reachable.length) return Math.min(...reachable.map(t => t.price_after as number));
+  // No tier ladder on this row — derive the 1-case QD from the flat columns.
+  if (front != null) {
+    const off = bestOneCaseFlatDiscount(s, pack);
+    if (off > 0) return Math.round((front - off) * 100) / 100;
+  }
   return front;
 }
 

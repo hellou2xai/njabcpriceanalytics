@@ -2165,6 +2165,10 @@ export interface Product {
   introduced_edition?: string | null;
   frontline_case_price: number;
   frontline_unit_price: number;
+  // Canonical 1-case headline price (frontline − the 1-case-qualifying QD, no
+  // RIP) from backend pricing.one_cs_case_price. Consumers read this instead of
+  // re-deriving; may be absent on rows from endpoints that don't attach it.
+  one_cs_case_price?: number | null;
   best_case_price: number;
   best_unit_price: number;
   effective_case_price: number;

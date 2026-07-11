@@ -2395,6 +2395,7 @@ def search_products(
         _attach_sku_mapping(con, records)
         _attach_dup_upc(con, src, records)
         _attach_best_qd(records)   # deepest QD bracket for the card sticker
+        _attach_one_cs(records)    # canonical 1-case headline price (frontline − 1cs QD)
 
         _result = {
             "total": count,
@@ -2496,6 +2497,18 @@ def _attach_best_qd(records):
             "total_cost": round(cases * best, 2) if cases else None,
             "total_save": round(cases * save_pc, 2) if cases else None,
         }
+
+
+def _attach_one_cs(records):
+    """Attach the canonical 1-CASE case price (`one_cs_case_price`) — frontline
+    minus the largest CPL discount that already qualifies at a single case — via
+    the single source of truth ``pricing.one_cs_case_price``. RIP is never baked
+    in. The /search rows are read straight from cpl_enriched (they carry
+    frontline + the discount_N brackets but NOT the precomputed sku_offer column),
+    so without this every card headline fell back to the raw frontline. Consumers
+    read this column instead of re-deriving it (FOUNDATION)."""
+    for rec in records:
+        rec["one_cs_case_price"] = _pricing.one_cs_case_price(rec)
 
 
 def _qd_multi_case_sql(prefix: str = "") -> str:
@@ -3089,6 +3102,7 @@ def new_items(
         _attach_enrichment_image(con, records)
         _attach_sku_mapping(con, records)
         _attach_dup_upc(con, src, records)
+        _attach_one_cs(records)    # canonical 1-case headline price (as /search)
 
         _result = {
             "total": int(count),

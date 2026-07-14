@@ -4537,6 +4537,32 @@ def edition_comparison(con, wholesaler: str, older: str = "", newer: str = "",
     ol = older if older in eds else eds[1]
     if nw == ol:
         ol = next((e for e in eds if e != nw), ol)
+
+    # The full edition diff (every SKU + summary) is a pure function of the data
+    # version, the distributor, the two editions and the search term — it does
+    # NOT depend on sort / change / limit, which are cheap per-request
+    # post-filters. Memoise it so the first load pays the ~5s DuckDB cost once
+    # and every later sort/change toggle on the same pair is instant. A data
+    # reload swaps the cache-file path (part of the key) and invalidates it
+    # automatically — same contract as the Best RIPs / Best QD boards.
+    _bkey = ("edition_cmp", _cache_tag(), wholesaler, ol, nw,
+             (match or "").strip().lower())
+    _base = _board_cache_get(_bkey)
+    if _base is None:
+        _base = _edition_diff_base(con, src, wholesaler, ol, nw, match)
+        _board_cache_put(_bkey, _base)
+    # Copy so the per-request change-filter and in-place sort never mutate the
+    # shared cached list or reorder it for the next caller.
+    rows = list(_base["rows"])
+    return _edition_finalize(rows, _base["summary"], _base["total"], wholesaler,
+                             ol, nw, eds, scope, change, sort, order, limit)
+
+
+def _edition_diff_base(con, src: str, wholesaler: str, ol: str, nw: str,
+                       match: str) -> dict:
+    """The heavy part of edition_comparison: the full unsorted per-SKU diff +
+    summary + total for one (distributor, older, newer, match). Memoised by the
+    caller — sort/change/limit are applied on top, per request."""
     a = _edition_rows(con, src, wholesaler, ol)   # older
     b = _edition_rows(con, src, wholesaler, nw)   # newer
 
@@ -4671,6 +4697,26 @@ def edition_comparison(con, wholesaler: str, older: str = "", newer: str = "",
                          "net_delta_case": None, "layers": []})
 
     total = len(rows)
+
+    # Product thumbnail per row (one batch query by UPC, served from R2) —
+    # attached to the FULL diff here so it's memoised with the base; the
+    # per-request sort/change/limit below just reorders/slices already-imaged
+    # rows. The sparkline/tier popover is NOT attached (it would mean
+    # attach_tiers over ~60k edition rows); the card view lazy-loads it for the
+    # visible page only via /editions/sparklines.
+    try:
+        _attach_image(con, rows)
+    except Exception:
+        pass
+
+    return {"rows": rows, "summary": summary, "total": total}
+
+
+def _edition_finalize(rows, summary, total, wholesaler, ol, nw, eds, scope,
+                      change, sort, order, limit) -> dict:
+    """Apply the cheap per-request change-filter, sort and limit to the memoised
+    full diff, then shape the response. `rows` is already a private copy of the
+    cached list, so the in-place sort here is safe."""
     if change == "increase":
         rows = [r for r in rows if (r.get("net_delta_case") or 0) > 0]
     elif change == "decrease":
@@ -4696,16 +4742,6 @@ def edition_comparison(con, wholesaler: str, older: str = "", newer: str = "",
     rows.sort(key=keyf.get(sort, keyf["net_delta"]),
               reverse=(order != "asc") if sort != "product" else (order == "desc"))
     rows = rows[:limit]
-
-    # Product thumbnail per row (one batch query by UPC, served from R2) — cheap
-    # even for the full set, so every card gets an image. The sparkline/tier
-    # popover is NOT attached here (it would mean attach_tiers over ~60k edition
-    # rows per request); the card view lazy-loads it for the visible page only
-    # via /editions/sparklines.
-    try:
-        _attach_image(con, rows)
-    except Exception:
-        pass
 
     return {
         "wholesaler": wholesaler, "single_edition": False,
@@ -4747,10 +4783,23 @@ def compare_editions(
     order: str = Query("desc"),
     limit: int = Query(3000, ge=1, le=50000),
     user: Optional[dict] = Depends(get_optional_user),
+    request: Request = None,
+    response: Response = None,
 ):
     """Compare one distributor across two editions; every diff is the change in
     effective NET cost (case + bottle, $ + %), which layer moved, with
     added/removed classification and a delta summary."""
+    # Fully user-independent: give it an ETag + public/edge Cache-Control so a
+    # repeat or revalidating request is served from Cloudflare / a 304 without
+    # re-hitting the origin. Keyed on every param the body depends on; a data
+    # reload changes the pricing tag and rotates the ETag.
+    if request is not None and response is not None:
+        from backend.http_cache import public_conditional
+        _ck = ("compare_editions", _cache_tag(), wholesaler, older, newer, scope,
+               match, change, sort, order, limit)
+        _nm = public_conditional(request, response, _ck)
+        if _nm is not None:
+            return _nm
     with get_duckdb() as con:
         return edition_comparison(con, wholesaler, older, newer, scope, match,
                                   change, sort, order, limit)

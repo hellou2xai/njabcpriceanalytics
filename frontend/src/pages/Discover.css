@@ -161,10 +161,6 @@
   text-align: left;
 }
 .disc-ts-pop-h { font-size: 11px; font-weight: 700; color: #b54708; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 8px; }
-/* Per-distributor grouping on a merged card: each carrier's windows under its
-   own label, separated so Allied's and Fedway's dated deals never blur together. */
-.disc-ts-dist + .disc-ts-dist { margin-top: 10px; padding-top: 10px; border-top: 1px solid #eaecf0; }
-.disc-ts-dist-h { display: flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 800; color: #475467; text-transform: uppercase; letter-spacing: .3px; margin-bottom: 6px; }
 .disc-ts-win + .disc-ts-win { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #eaecf0; }
 .disc-ts-win-h { font-size: 11px; font-weight: 700; color: #344054; margin-bottom: 5px; }
 .disc-ts-exp { font-weight: 600; color: #d92d20; }
@@ -318,8 +314,6 @@
   .disc-ts-btn:hover, .disc-ts-btn.is-open { background: rgba(181,71,8,.34); border-color: #a9670f; }
   .disc-ts-pop { background: #1a1e2c; border-color: #2a2f42; }
   .disc-ts-pop-h { color: #fdb87a; }
-  .disc-ts-dist + .disc-ts-dist { border-top-color: #2a2f42; }
-  .disc-ts-dist-h { color: #98a2b8; }
   .disc-ts-win + .disc-ts-win { border-top-color: #2a2f42; }
   .disc-ts-win-h { color: #cdd2e0; }
   .disc-ts-vals { color: #e6e8ef; }

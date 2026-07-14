@@ -216,11 +216,11 @@ function shortDate(iso?: string | null): string {
   return m && d ? `${MONTHS[m - 1]} ${d}` : '';
 }
 
-// A product plus the distributors that carry it at the same deal. `variants`
-// keeps each carrier's OWN row (and its tiers) so per-distributor detail —
-// notably time-sensitive windows, which are NOT part of the merge signature and
-// differ by distributor — stays reachable on the merged card.
-type MergedProduct = Product & { dists: string[]; variants: Product[] };
+// Cards are per-distributor: the same product carried by several distributors
+// yields one card EACH, so a card's price, chips and time-sensitive deals are
+// always exactly that distributor's, with no arbitrary "primary" to pick. There
+// is no cross-distributor grouping to carry, so this is just a Product.
+type MergedProduct = Product;
 
 // A REAL barcode (drops all-zero/short/repeated placeholder codes) — the reliable
 // cross-distributor product key (CPL names differ per distributor).
@@ -240,16 +240,19 @@ function dealSig(p: Product): string {
 // Collapse search rows to one card per (product, deal): the SAME product from
 // multiple distributors with the SAME RIP/QD becomes a single card that lists
 // every distributor. Different deals stay separate cards.
+// De-dupe a distributor's own rows for the same product+deal into one card. The
+// key includes the wholesaler, so the SAME product from different distributors
+// stays as SEPARATE cards — each unique to its distributor (its own price,
+// chips and time-sensitive windows) — instead of collapsing into one "+N" card
+// with an arbitrarily-chosen primary.
 function mergeByDeal(items: Product[]): MergedProduct[] {
-  const groups = new Map<string, { p: Product; dists: string[]; variants: Product[] }>();
+  const groups = new Map<string, Product>();
   for (const it of items) {
     if (!it.image_url) continue;
-    const key = `${productKey(it)}||${dealSig(it)}`;
-    const g = groups.get(key);
-    if (!g) groups.set(key, { p: it, dists: [it.wholesaler], variants: [it] });
-    else if (!g.dists.includes(it.wholesaler)) { g.dists.push(it.wholesaler); g.variants.push(it); }
+    const key = `${it.wholesaler}||${productKey(it)}||${dealSig(it)}`;
+    if (!groups.has(key)) groups.set(key, it);
   }
-  return [...groups.values()].map(({ p, dists, variants }) => ({ ...p, dists, variants }));
+  return [...groups.values()];
 }
 
 // Group a distributor's time-sensitive tiers by validity window, tiers ascending
@@ -277,7 +280,11 @@ function collapseCaseMix(products: MergedProduct[]): MergedProduct[] {
     const code = (p.rip_code || '').trim();
     const brand = (p.brand || '').trim().toUpperCase();
     if (code && brand) {
-      const k = `${code}|${brand}`;
+      // Distributor-scoped: only collapse flavour variants WITHIN a distributor,
+      // never across them (cards are per-distributor, and RIP codes are recycled
+      // per edition/distributor so a shared code+brand across distributors is not
+      // the same program).
+      const k = `${p.wholesaler}|${code}|${brand}`;
       if (seen.has(k)) continue;   // a higher-volume flavour already represents this program
       seen.add(k);
     }
@@ -297,16 +304,9 @@ function DiscCard({ p }: { p: MergedProduct }) {
   const rip = topTier(p.tiers, 'rip');
   const qd = topTier(p.tiers, 'discount');
   const pack = bottlesPerCase(p.product_name, p.unit_qty);
-  // Time-sensitive deals PER carrier. TS windows are distributor-specific and
-  // are NOT part of the merge signature, so a merged "Fedway +1" card must show
-  // EVERY distributor's windows — otherwise a buyer interested in the secondary
-  // carrier (e.g. Allied) never sees its dated deals, and a card whose primary
-  // distributor has no TS deal would hide a sibling's entirely.
-  const tsByDist = (p.variants ?? [p])
-    .map((v) => ({ w: v.wholesaler, windows: groupTsWindows((v.tiers ?? []).filter((t) => t.is_time_sensitive)) }))
-    .filter((d) => d.windows.length > 0);
-  const hasTs = tsByDist.length > 0;
-  const multiDist = tsByDist.length > 1;
+  // This card belongs to ONE distributor, so its tiers — and these dated,
+  // limited-window deals — are unambiguously that distributor's.
+  const tsWindows = groupTsWindows((p.tiers ?? []).filter((t) => t.is_time_sensitive));
 
   function toggle(e: React.MouseEvent) {
     e.preventDefault();
@@ -337,11 +337,8 @@ function DiscCard({ p }: { p: MergedProduct }) {
   return (
     <Link to={productHref(p)} className="disc-card">
       <div className="disc-card-top">
-        <span className="disc-card-dist" title={p.dists.map(distributorName).join(', ')}>
-          <Store size={11} />{' '}
-          {p.dists.length === 1
-            ? distributorName(p.dists[0])
-            : `${distributorName(p.dists[0])} +${p.dists.length - 1}`}
+        <span className="disc-card-dist" title={distributorName(p.wholesaler)}>
+          <Store size={11} /> {distributorName(p.wholesaler)}
         </span>
         <FavoriteButton productName={p.product_name} wholesaler={p.wholesaler}
           upc={p.upc ?? undefined} unitVolume={p.unit_volume ?? undefined} />
@@ -351,7 +348,7 @@ function DiscCard({ p }: { p: MergedProduct }) {
         itemNumber={p.abg_sku ?? undefined} className="disc-card-avail" />
       <div className="disc-card-media">
         <ProductThumb src={p.image_url} alt={p.product_name} size={120} />
-        {hasTs && (
+        {tsWindows.length > 0 && (
           <button
             ref={btnRef}
             type="button"
@@ -372,42 +369,32 @@ function DiscCard({ p }: { p: MergedProduct }) {
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
           >
             <div className="disc-ts-pop-h">Time-sensitive deals</div>
-            {tsByDist.map(({ w: dist, windows }) => (
-              <div key={dist} className="disc-ts-dist">
-                {/* Label each carrier's windows when more than one distributor on
-                    the merged card has time-sensitive deals, so Allied's and
-                    Fedway's dated deals are never confused for each other. */}
-                {multiDist && (
-                  <div className="disc-ts-dist-h"><Store size={10} /> {distributorName(dist)}</div>
-                )}
-                {windows.map(([k, tiers]) => {
-                  const w = tiers[0];
-                  return (
-                    <div key={k} className="disc-ts-win">
-                      <div className="disc-ts-win-h">
-                        {shortDate(w.from_date)} – {shortDate(w.to_date)}
-                        {typeof w.days_to_expire === 'number' && (
-                          <span className="disc-ts-exp"> · {w.days_to_expire}d left</span>
-                        )}
-                      </div>
-                      {tiers.map((t, j) => (
-                        <div key={j} className="disc-ts-row">
-                          <span className={`disc-ts-kind disc-ts-kind--${t.source}`}>
-                            {t.source === 'rip' ? 'RIP' : 'QD'} {tierQty(t)}
-                          </span>
-                          <span className="disc-ts-vals">
-                            {money(t.price_after)}
-                            {t.source === 'rip'
-                              ? t.amount != null && <em> {money(t.amount)} back</em>
-                              : t.save_per_case != null && <em> save {money(t.save_per_case)}</em>}
-                          </span>
-                        </div>
-                      ))}
+            {tsWindows.map(([k, tiers]) => {
+              const w = tiers[0];
+              return (
+                <div key={k} className="disc-ts-win">
+                  <div className="disc-ts-win-h">
+                    {shortDate(w.from_date)} – {shortDate(w.to_date)}
+                    {typeof w.days_to_expire === 'number' && (
+                      <span className="disc-ts-exp"> · {w.days_to_expire}d left</span>
+                    )}
+                  </div>
+                  {tiers.map((t, j) => (
+                    <div key={j} className="disc-ts-row">
+                      <span className={`disc-ts-kind disc-ts-kind--${t.source}`}>
+                        {t.source === 'rip' ? 'RIP' : 'QD'} {tierQty(t)}
+                      </span>
+                      <span className="disc-ts-vals">
+                        {money(t.price_after)}
+                        {t.source === 'rip'
+                          ? t.amount != null && <em> {money(t.amount)} back</em>
+                          : t.save_per_case != null && <em> save {money(t.save_per_case)}</em>}
+                      </span>
                     </div>
-                  );
-                })}
-              </div>
-            ))}
+                  ))}
+                </div>
+              );
+            })}
           </div>,
           document.body,
         )}
@@ -478,12 +465,10 @@ function dealProducts(items: Product[], deals: string[], sizes: string[], sortBy
           || (typeDeals.includes('qd') && hasQd)
           || (typeDeals.includes('both') && hasRip && hasQd);
     });
-  // Time-sensitive: keep cards where ANY carrier on the merged card has a dated
-  // (limited-window) tier — not just the primary distributor, or a card whose
-  // secondary (e.g. Allied behind a Fedway-primary merge) has the TS deal would
-  // be dropped and its dated deals never seen.
+  // Time-sensitive: keep only cards whose distributor has a dated (limited-
+  // window) tier. Cards are per-distributor, so this is exactly that carrier's.
   if (deals.includes('time_sensitive')) {
-    out = out.filter((p) => (p.variants ?? [p]).some((v) => (v.tiers ?? []).some((t) => t.is_time_sensitive)));
+    out = out.filter((p) => (p.tiers ?? []).some((t) => t.is_time_sensitive));
   }
   // Better 1L price: keep 1L cards whose per-BOTTLE price is <= the SAME product's
   // 750ML per-bottle price (you get 33% more product for about the same money).

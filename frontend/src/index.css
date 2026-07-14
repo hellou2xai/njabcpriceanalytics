@@ -2765,6 +2765,19 @@ tr:hover .row-menu-btn { opacity: 1; }
 }
 .edge-tab:hover { color: var(--accent); border-color: var(--accent); }
 .edge-tab-nav { left: var(--nav-w, 232px); z-index: 46; }
+/* When the nav is fully hidden, this tiny sliver is the ONLY way back — make it
+   unmissable instead of blending into the edge (users mistook a hidden nav for
+   a broken page). */
+.edge-tab-nav.is-hidden {
+  width: 30px; height: 96px; flex-direction: column; gap: 4px;
+  background: var(--accent); color: #fff; border-color: var(--accent);
+  box-shadow: 2px 0 14px rgba(0,0,0,0.28);
+}
+.edge-tab-nav.is-hidden:hover { filter: brightness(1.08); }
+.edge-tab-nav-label {
+  writing-mode: vertical-rl; transform: rotate(180deg);
+  font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+}
 .edge-tab-filters { left: calc(var(--nav-w, 232px) + 18px); }
 .edge-tab-filters.is-open { left: calc(var(--nav-w, 232px) + 316px); }
 @media (min-width: 1025px) {

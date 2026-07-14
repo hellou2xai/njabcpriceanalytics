@@ -331,12 +331,13 @@ export default function Layout() {
           hide/show the whole nav. */}
       {!isMobile && (
         <button
-          className="edge-tab edge-tab-nav"
+          className={`edge-tab edge-tab-nav${navHidden ? ' is-hidden' : ''}`}
           onClick={() => setNavHidden(h => !h)}
           title={navHidden ? 'Show menu' : 'Hide menu'}
           aria-label={navHidden ? 'Show menu' : 'Hide menu'}
         >
-          {navHidden ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+          {navHidden ? <ChevronRight size={18} /> : <ChevronLeft size={16} />}
+          {navHidden && <span className="edge-tab-nav-label">Menu</span>}
         </button>
       )}
 

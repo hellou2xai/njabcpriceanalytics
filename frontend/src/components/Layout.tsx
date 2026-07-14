@@ -36,6 +36,7 @@ const NAV_GROUPS: {
       // Obsolete pages (Catalog, RIPs, QD, Time-Sensitive Deals) removed from the
       // menu per request — routes kept (reachable by URL), no future changes.
       { path: '/discover', label: 'Discover Deals', icon: Sparkles },
+      { path: '/time-sensitive-deals', label: 'Time-Sensitive Deals', icon: CalendarClock },
       { path: '/discover-classic', label: 'Discover Classic', icon: Sparkles, adminOnly: true },
       { path: '/products', label: 'Products', icon: LayoutGrid },
       { path: '/distributor-price-list', label: 'Distributor Price List', icon: Store },

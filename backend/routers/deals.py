@@ -1404,14 +1404,22 @@ def compute_combo_economics(con, combos, cym=None):
 
 
 @router.get("/time-sensitive")
-def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False, limit: int = Query(2000, ge=1, le=20000)):
+def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
+                   edition: Optional[str] = None, limit: int = Query(2000, ge=1, le=20000)):
     """Deals whose validity window is a SPECIFIC range inside the month (start
-    is not the 1st or end is not the last day), still active (ends today or
-    later), with days-to-expire. These are the urgent, easy-to-miss deals."""
+    is not the 1st or end is not the last day), with days-to-expire. These are
+    the urgent, easy-to-miss deals.
+
+    Default: the current + next edition, active only (ends today or later).
+    `include_past=true` also returns windows that already ended (shown grey).
+    `edition=YYYY-MM` browses one specific month instead (a past month, so every
+    window is returned regardless of `include_past`)."""
     # Serve a cached payload when one is fresh (keyed on params + today's date so
     # it auto-refreshes daily; reload_pricing clears it on a data reload).
     import datetime as _dt
-    _ck = (wholesaler or "", bool(include_past), int(limit), _dt.date.today().isoformat())
+    if edition:
+        include_past = True   # a chosen month: return every dated window in it
+    _ck = (wholesaler or "", bool(include_past), edition or "", int(limit), _dt.date.today().isoformat())
     _hit = _ts_cache.get(_ck)
     if _hit is not None and _hit[0] > _time.time():
         return _hit[1]
@@ -1443,16 +1451,28 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
             {"c": current_ym},
         ).fetchdf()
         conds, params, idx = [], {}, 0
-        for _, row in eds.iterrows():
-            ws = row["wholesaler"]
-            if wholesaler and ws != wholesaler:
-                continue
-            for ed in (row["cur_ed"], row["next_ed"]):
-                if ed is None or (isinstance(ed, float) and ed != ed):
+        if edition:
+            # Browse ONE specific month across all (or the given) distributor.
+            wss = con.execute(
+                f"SELECT DISTINCT wholesaler FROM {src} WHERE edition = $e", {"e": edition}).fetchdf()
+            for _, r in wss.iterrows():
+                ws = r["wholesaler"]
+                if wholesaler and ws != wholesaler:
                     continue
                 conds.append(f"(wholesaler = $w{idx} AND edition = $e{idx})")
-                params[f"w{idx}"], params[f"e{idx}"] = ws, ed
+                params[f"w{idx}"], params[f"e{idx}"] = ws, edition
                 idx += 1
+        else:
+            for _, row in eds.iterrows():
+                ws = row["wholesaler"]
+                if wholesaler and ws != wholesaler:
+                    continue
+                for ed in (row["cur_ed"], row["next_ed"]):
+                    if ed is None or (isinstance(ed, float) and ed != ed):
+                        continue
+                    conds.append(f"(wholesaler = $w{idx} AND edition = $e{idx})")
+                    params[f"w{idx}"], params[f"e{idx}"] = ws, ed
+                    idx += 1
         if not conds:
             return []
 

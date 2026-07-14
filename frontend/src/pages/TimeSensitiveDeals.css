@@ -1,0 +1,115 @@
+/* Time-Sensitive Deals — one card per line: card | calendar | windows+tiers. */
+.tsd-page { padding-bottom: 40px; }
+.tsd-hero { padding: 8px 0 14px; }
+.tsd-hero .disc-title { display: flex; align-items: center; }
+.tsd-monthbar { display: flex; align-items: center; gap: 16px; margin-top: 10px; flex-wrap: wrap; }
+.tsd-monthbar label { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--text-muted); }
+.tsd-monthbar select {
+  font-size: 13px; font-weight: 600; padding: 6px 10px; border-radius: 8px;
+  border: 1px solid var(--border, #e4e7ec); background: var(--surface, #fff); color: inherit; cursor: pointer;
+}
+.tsd-count { font-size: 12.5px; color: var(--text-muted); }
+
+.tsd-list { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+
+/* one deal per line */
+.tsd-row {
+  display: grid; grid-template-columns: 216px 250px minmax(0, 1fr); gap: 16px; align-items: stretch;
+  padding: 14px; border: 1px solid var(--border, #e4e7ec); border-radius: 14px;
+  background: var(--surface, #fff);
+}
+.tsd-card.disc-card { width: 100%; margin: 0; box-shadow: none; border: 1px solid var(--border, #eceef2); }
+
+/* ---- calendar ---- */
+.tsd-cal {
+  border: 1px solid var(--border, #e4e7ec); border-radius: 12px; padding: 10px 12px;
+  background: var(--surface-2, #fafbfc); display: flex; flex-direction: column;
+}
+.tsd-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.tsd-cal-title { font-size: 12.5px; font-weight: 800; letter-spacing: .2px; }
+.tsd-cal-nav {
+  display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px;
+  border-radius: 6px; border: 1px solid var(--border, #e4e7ec); background: var(--surface, #fff); cursor: pointer; color: inherit;
+}
+.tsd-cal-nav:disabled { opacity: .35; cursor: default; }
+.tsd-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.tsd-cal-wd { text-align: center; font-size: 9.5px; font-weight: 700; color: var(--text-muted); padding-bottom: 2px; }
+.tsd-cal-day {
+  aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 600; border-radius: 6px; color: var(--text-muted);
+}
+.tsd-cal-empty { visibility: hidden; }
+.tsd-cal-today { outline: 2px solid var(--accent, #2563eb); outline-offset: -2px; }
+.tsd-day-none { color: var(--text-muted); }
+.tsd-day-ended   { background: #f2f4f7; color: #98a2b8; }
+.tsd-day-live    { background: #16a34a; color: #fff; font-weight: 800; }
+.tsd-day-upcoming{ background: #fef0c7; color: #b54708; font-weight: 800; }
+.tsd-cal-legend { display: flex; gap: 12px; margin-top: 9px; flex-wrap: wrap; font-size: 10.5px; color: var(--text-muted); }
+.tsd-cal-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.tsd-dot { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+.tsd-dot-live { background: #16a34a; }
+.tsd-dot-upcoming { background: #f5c451; }
+.tsd-dot-ended { background: #d0d5dd; }
+
+/* ---- windows + tiers detail ---- */
+.tsd-detail { min-width: 0; }
+.tsd-detail-h { font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); margin-bottom: 7px; }
+.tsd-windows { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.tsd-win {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 7px 10px; border-radius: 9px; border: 1px solid var(--border, #eceef2); background: var(--surface, #fff);
+}
+.tsd-win-live { border-left: 3px solid #16a34a; }
+.tsd-win-upcoming { border-left: 3px solid #f5c451; }
+.tsd-win-ended { border-left: 3px solid #d0d5dd; opacity: .72; }
+.tsd-win-badge { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .3px; padding: 2px 7px; border-radius: 999px; }
+.tsd-badge-live { background: #dcfce7; color: #067647; }
+.tsd-badge-upcoming { background: #fef0c7; color: #b54708; }
+.tsd-badge-ended { background: #f2f4f7; color: #667085; }
+.tsd-win-dates { font-size: 12.5px; font-weight: 700; }
+.tsd-win-days { font-size: 11px; font-weight: 600; color: #d92d20; }
+.tsd-win-upcoming .tsd-win-days { color: #b54708; }
+.tsd-win-price { margin-left: auto; font-size: 12.5px; font-weight: 700; white-space: nowrap; }
+.tsd-win-price em { font-style: normal; font-weight: 600; color: #067647; margin-left: 6px; }
+
+.tsd-tiers { display: flex; flex-direction: column; gap: 4px; }
+.tsd-tier { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 2px 0; }
+.tsd-tier-kind { font-size: 11px; font-weight: 800; white-space: nowrap; }
+.tsd-tier-rip { color: #067647; }
+.tsd-tier-discount { color: #3538cd; }
+.tsd-tier-vals { font-size: 12px; font-weight: 700; white-space: nowrap; }
+.tsd-tier-vals em { font-style: normal; font-weight: 600; color: #067647; margin-left: 5px; }
+
+.tsd-empty { display: inline-flex; align-items: center; gap: 8px; }
+.tsd-more { align-self: center; margin-top: 6px; }
+
+/* ---- responsive: stack the row on narrow screens ---- */
+@media (max-width: 900px) {
+  .tsd-row { grid-template-columns: 1fr; }
+  .tsd-card.disc-card { max-width: 320px; }
+  .tsd-cal { max-width: 300px; }
+}
+
+/* ---- dark mode ---- */
+@media (prefers-color-scheme: dark) {
+  .tsd-row { background: #12151f; border-color: #262b3a; }
+  .tsd-cal { background: #161a26; border-color: #262b3a; }
+  .tsd-cal-nav { background: #1c2130; border-color: #2a2f42; }
+  .tsd-day-ended { background: #20242f; color: #667085; }
+  .tsd-day-upcoming { background: #4a3a12; color: #fdb87a; }
+  .tsd-win { background: #161a26; border-color: #262b3a; }
+  .tsd-badge-live { background: #10321f; color: #6ee7b7; }
+  .tsd-badge-upcoming { background: #3a2e10; color: #fdb87a; }
+  .tsd-badge-ended { background: #20242f; color: #98a2b8; }
+  .tsd-monthbar select { background: #1c2130; border-color: #2a2f42; }
+}
+:root[data-theme="dark"] .tsd-row { background: #12151f; border-color: #262b3a; }
+:root[data-theme="dark"] .tsd-cal { background: #161a26; border-color: #262b3a; }
+:root[data-theme="dark"] .tsd-cal-nav { background: #1c2130; border-color: #2a2f42; }
+:root[data-theme="dark"] .tsd-day-ended { background: #20242f; color: #667085; }
+:root[data-theme="dark"] .tsd-day-upcoming { background: #4a3a12; color: #fdb87a; }
+:root[data-theme="dark"] .tsd-win { background: #161a26; border-color: #262b3a; }
+:root[data-theme="dark"] .tsd-badge-live { background: #10321f; color: #6ee7b7; }
+:root[data-theme="dark"] .tsd-badge-upcoming { background: #3a2e10; color: #fdb87a; }
+:root[data-theme="dark"] .tsd-badge-ended { background: #20242f; color: #98a2b8; }
+:root[data-theme="dark"] .tsd-monthbar select { background: #1c2130; border-color: #2a2f42; }

@@ -29,6 +29,7 @@ import NewItems from './pages/NewItems';
 import HowToGuide from './pages/HowToGuide';
 import Tours from './pages/Tours';
 import TimeSensitive from './pages/TimeSensitive';
+import TimeSensitiveDeals from './pages/TimeSensitiveDeals';
 import PriceMovers from './pages/PriceMovers';
 import MajorDiscounts from './pages/MajorDiscounts';
 import Todo from './pages/Todo';
@@ -164,6 +165,7 @@ function AuthenticatedApp() {
             <Route path="/how-to-guide" element={<HowToGuide />} />
             <Route path="/tours" element={<Tours />} />
             <Route path="/time-sensitive" element={<TimeSensitive />} />
+            <Route path="/time-sensitive-deals" element={<TimeSensitiveDeals />} />
             <Route path="/price-drops" element={<AdminRoute><PriceMovers direction="down" /></AdminRoute>} />
             <Route path="/price-increases" element={<AdminRoute><PriceMovers direction="up" /></AdminRoute>} />
             <Route path="/major-discounts" element={<MajorDiscounts />} />

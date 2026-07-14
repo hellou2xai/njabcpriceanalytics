@@ -5859,7 +5859,7 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 .prod-rail-reopen {
   position: sticky; top: 12px;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
-  padding: 12px 0; width: 40px; min-height: calc(100vh - 24px);
+  padding: 12px 0; width: 40px; min-height: calc(100vh / var(--mc-zoom, 1) - 24px);
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius); cursor: pointer; color: var(--text-muted);
 }
@@ -5885,7 +5885,11 @@ body:has(.sidebar.collapsed) .beta-badge.in-app { left: calc(var(--sidebar-colla
 .prod-filter-rail-body {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 6px 0 16px;
-  max-height: calc(100vh - 24px); overflow-y: auto; overflow-x: hidden;
+  /* Divide out the text-size zoom (see .main-content, index.css ~line 190) —
+     without it, at the default "large" text size (zoom 1.22) this renders
+     taller than the actual viewport, so the rail's own scrollbar never
+     engages within view and it just scrolls along with the page instead. */
+  max-height: calc(100vh / var(--mc-zoom, 1) - 24px); overflow-y: auto; overflow-x: hidden;
   scrollbar-gutter: stable;
 }
 /* In the narrow (248px) rail, TEXT inputs + selects must be FLUID — the

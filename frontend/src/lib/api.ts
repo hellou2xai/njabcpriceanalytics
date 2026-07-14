@@ -536,6 +536,9 @@ export interface ComparePrice {
   product_name: string;
   item_no?: string | null;   // distributor's own catalogue number (Allied/Fedway)
   frontline: number | null;
+  // Realistic single-case price: list after the best 1-case discount (same basis
+  // as the Products card), shown alongside Best Net.
+  one_case: number | null;
   after_qd: number | null;
   effective: number | null;
   btl_effective: number | null;
@@ -579,6 +582,7 @@ export interface CompareRow {
   upc: string | null;
   prices: Record<string, ComparePrice>;
   winner_frontline: string | null;
+  winner_one_case: string | null;
   winner_after_qd: string | null;
   winner_effective: string | null;
   spread: number | null;

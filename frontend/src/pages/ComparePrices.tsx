@@ -414,19 +414,27 @@ export default function ComparePrices() {
   });
 
   const ready = selected.length >= 2 && selected.length <= 3;
+  // The per-case $ spread floor. A BLANK (or invalid) box means the $1 default —
+  // NOT "show every penny difference": the page exists to surface REAL price
+  // gaps, so an empty box must never resurface near-identical rows (differences
+  // of a few cents read as "same price among distributors"). Type 0 to see all.
+  const minSpreadNum = (() => {
+    const v = parseFloat(minSpread);
+    return minSpread.trim() === '' || !Number.isFinite(v) ? 1 : v;
+  })();
   // debounce the typed query into qDebounced (backend matches name/brand AND barcode)
   useEffect(() => {
     const t = setTimeout(() => setQDebounced(q), 250);
     return () => clearTimeout(t);
   }, [q]);
   const { data, isLoading, error } = useQuery({
-    queryKey: ['compare-products', selected, qDebounced, ptype, onlyDiff, minSpread, cases, priceMonths, confidence, verifiedFilter],
+    queryKey: ['compare-products', selected, qDebounced, ptype, onlyDiff, minSpreadNum, cases, priceMonths, confidence, verifiedFilter],
     queryFn: () => compare.products({
       wholesalers: selected.join(','),
       q: qDebounced || undefined,
       product_type: ptype || undefined,
       only_differences: onlyDiff || undefined,
-      min_spread: minSpread ? parseFloat(minSpread) : undefined,
+      min_spread: minSpreadNum,
       cases: cases && cases !== '0' ? parseFloat(cases) : undefined,
       // 'prev'/'both' need the prior-edition layers; 'next' compares AT the next
       // edition (single month), 'cur' is the current month.
@@ -511,7 +519,7 @@ export default function ComparePrices() {
         q: qDebounced || undefined,
         product_type: ptype || undefined,
         only_differences: onlyDiff || undefined,
-        min_spread: minSpread ? parseFloat(minSpread) : undefined,
+        min_spread: minSpreadNum,
         cases: cases && cases !== '0' ? parseFloat(cases) : undefined,
         month_mode: priceMonths === 'next' ? 'next' : 'cur',
         confidence,
@@ -632,10 +640,13 @@ export default function ComparePrices() {
       onChange: (v: string[]) => { setSizes(v); setShown(pageSize); } }] : []),
     { type: 'toggle', key: 'diff', title: 'Differences', label: 'Only differences',
       value: onlyDiff, onChange: setOnlyDiff },
-    { type: 'custom', key: 'min', title: 'Min $ spread',
+    { type: 'custom', key: 'min', title: 'Min Best-Net gap / case',
       render: () => (
-        <input className="filter-text" type="number" min={0} placeholder="Min $ spread"
-          value={minSpread} onChange={e => setMinSpread(e.target.value)} />
+        <div>
+          <input className="filter-text" type="number" min={0} placeholder="blank = $1 · 0 = show all"
+            value={minSpread} onChange={e => setMinSpread(e.target.value)} />
+          <div className="cmp-filter-hint">Hides rows where distributors' Best Net is within this $/case. Blank defaults to $1; enter 0 to see every difference.</div>
+        </div>
       ) },
     { type: 'select', key: 'vol', title: 'Volume',
       value: cases,
@@ -816,16 +827,19 @@ export default function ComparePrices() {
                 <tr>
                   {selected.map(w => (
                     <Fragment key={w}>
-                      <th className="cmp-layer cmp-sortable cmp-sep" onClick={() => clickSort(`${w}::frontline`)}>
-                        List{arrow(`${w}::frontline`)}
+                      <th className="cmp-layer cmp-sortable cmp-sep" onClick={() => clickSort(`${w}::one_case`)}
+                          title="1-Case Price: what you pay for a SINGLE case — the list price minus this distributor's best 1-case quantity discount (no bulk commitment, no RIP). This is the like-for-like price to compare; Best Net then shows how much deeper you can go with volume deals.">
+                        1-Case Price{arrow(`${w}::one_case`)}
                       </th>
                       <th className="cmp-layer cmp-sortable" onClick={() => clickSort(`${w}::after_qd`)}
                           title={atVol ? `Price after the quantity discount you'd qualify for at ${cases} case(s)` : "Best (deepest) quantity-discount price — may need a high volume to reach"}>
                         {atVol ? `QD @${cases}cs` : 'Best QD'}{arrow(`${w}::after_qd`)}
                       </th>
                       <th className="cmp-layer cmp-sortable" onClick={() => clickSort(`${w}::effective`)}
-                          title={atVol ? `Landed price at ${cases} case(s): after QD + the best RIP rebate you can actually reach at that volume` : "Best effective price: after quantity discounts + best full-month RIP rebate (deepest tier)"}>
-                        {atVol ? `Net +RIP @${cases}cs` : 'Best net +RIP'}{arrow(`${w}::effective`)}
+                          title={atVol
+                            ? `Best Net at ${cases} case(s): the landed price after the QD + best RIP rebate you can actually reach buying ${cases} case(s). The $ spread and winner are on this Best Net price.`
+                            : "Best Net: the lowest effective price after this distributor's DEEPEST quantity discount + best full-month RIP rebate. It can require buying a high volume (the deepest tier) to reach — so it may be below the 1-Case Price. The $ spread and winner are measured on this Best Net."}>
+                        {atVol ? `Best Net @${cases}cs` : 'Best Net'}{arrow(`${w}::effective`)}
                       </th>
                     </Fragment>
                   ))}
@@ -910,9 +924,9 @@ export default function ComparePrices() {
                           const mUnit = perUnitAbbr(r.unit_volume, r.unit_type);
                           return (
                             <Fragment key={w}>
-                              <WinnerCell value={p?.frontline} prev={p?.prev?.frontline} sep
+                              <WinnerCell value={p?.one_case} prev={p?.prev?.frontline} sep
                                 mode={priceMonths} curMonth={curMo} prevMonth={prevMo}
-                                isWinner={r.winner_frontline === w} isTie={r.winner_frontline === 'tie'}
+                                isWinner={r.winner_one_case === w} isTie={r.winner_one_case === 'tie'}
                                 sub={abgSku(w, p?.item_no) ? `${skuLabel(w)} ${p?.item_no}` : null} />
                               <WinnerCell value={p?.after_qd} prev={p?.prev?.after_qd}
                                 mode={priceMonths} curMonth={curMo} prevMonth={prevMo}

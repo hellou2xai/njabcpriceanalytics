@@ -584,6 +584,7 @@ def _price_obj(d: dict) -> dict:
         # the Fedway number (e.g. YAMAZAKI 12YR sharing a barcode with Allied).
         "item_no": d.get("dist_item_no") or d.get("abg_sku"),
         "frontline": front,
+        "one_case": d.get("one_case_price"),
         "after_qd": bq,
         "effective": net,
         "btl_effective": (round(net / d["uqd"], 2)
@@ -864,6 +865,11 @@ def compare_products(
         # ladder. In at-volume mode a deal must also be reachable at `cases`.
         page_upcs = sorted({r["upc_norm"] for r in raw if r.get("upc_norm")})
         qd_live = _active_qd_from_raw(con, slugs, eds, n_cases, page_upcs)
+        # 1-case price = list after the best discount reachable buying a SINGLE
+        # case (the realistic single-case cost, same basis as the Products card).
+        # Always capped at 1 case, independent of the Volume selection, so it's a
+        # stable reference shown next to Best Net.
+        qd_one = _active_qd_from_raw(con, slugs, eds, 1.0, page_upcs)
         # RIP layer: at-volume needs the volume-aware tier ladder; best-deal uses
         # the cheap precomputed rip_windows overlay (no per-product RIP queries,
         # so a big allied-vs-fedway grid stays fast).
@@ -892,6 +898,11 @@ def compare_products(
             qd_hit = qd_live.get(key)
             qd_amt = qd_hit[0] if qd_hit else 0.0
             best_qd = round(front - qd_amt, 2) if front is not None and qd_amt > 0 else front
+            # Realistic single-case price (list minus the best 1-case discount).
+            qd1_hit = qd_one.get(key)
+            qd1_amt = qd1_hit[0] if qd1_hit else 0.0
+            d["one_case_price"] = (round(front - qd1_amt, 2)
+                                   if front is not None and qd1_amt > 0 else front)
             rip_amt = (_active_rip_rebate(tiers, n_cases, pack) if n_cases
                        else (d.get("live_rip_amt") or 0.0))
             best_net = best_qd
@@ -942,6 +953,7 @@ def compare_products(
         vintage_sensitive = any(d.get("vintage_sensitive") for d in per.values())
         name = _display_name(enr_name or cpl_name, vintages, vintage_sensitive)
         w_front = _winner(per, "frontline_case_price")
+        w_one = _winner(per, "one_case_price")
         w_qd = _winner(per, "best_case_price")
         w_eff = _winner(per, "effective_case_price")
         effs = [d.get("effective_case_price") for d in per.values()
@@ -968,6 +980,7 @@ def compare_products(
             "upc": any_row.get("upc"),
             "prices": per_prices,
             "winner_frontline": w_front["winner"],
+            "winner_one_case": w_one["winner"],
             "winner_after_qd": w_qd["winner"],
             "winner_effective": w_eff["winner"],
             "spread": w_eff["spread"],

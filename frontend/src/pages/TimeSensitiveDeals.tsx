@@ -104,6 +104,10 @@ function TsCard({ d }: { d: TimeSensitiveDeal }) {
   const rip = topTier(d.tiers, 'rip');
   const qd = topTier(d.tiers, 'discount');
   const pack = bottlesPerCase(d.product_name, d.unit_qty);
+  // Sticker: does this product's TIME-SENSITIVE (dated) deal include a RIP, a QD,
+  // or both? Tells the buyer the kind of dated promo at a glance.
+  const tsRip = (d.tiers ?? []).some((t) => t.source === 'rip' && isTsTier(t));
+  const tsQd = (d.tiers ?? []).some((t) => t.source === 'discount' && !isOneCsQd(t) && isTsTier(t));
   const href = `/product?w=${d.wholesaler}&n=${encodeURIComponent(d.product_name)}${d.upc ? `&u=${d.upc}` : ''}${d.unit_volume ? `&s=${encodeURIComponent(d.unit_volume)}` : ''}${d.unit_qty ? `&pk=${d.unit_qty}` : ''}`;
   return (
     <Link to={href} className="disc-card tsd-card">
@@ -113,6 +117,12 @@ function TsCard({ d }: { d: TimeSensitiveDeal }) {
       </div>
       <AvailabilityButton wholesaler={d.wholesaler} name={d.product_name} itemNumber={d.abg_sku ?? undefined} className="disc-card-avail" />
       <div className="disc-card-media">
+        {(tsRip || tsQd) && (
+          <div className="tsd-card-stickers">
+            {tsRip && <span className="tsd-sticker tsd-sticker-rip"><Clock size={10} /> TS RIP</span>}
+            {tsQd && <span className="tsd-sticker tsd-sticker-qd"><Clock size={10} /> TS QD</span>}
+          </div>
+        )}
         <ProductThumb src={d.image_url ?? undefined} alt={d.product_name} size={104} />
       </div>
       <div className="disc-card-name">{d.abg_item_name?.trim() || d.product_name}</div>

@@ -556,7 +556,7 @@ export interface ComparePrice {
   // the two-month Price Comparison view.
   prev?: {
     edition: string | null;
-    frontline: number | null;
+    one_case: number | null;
     after_qd: number | null;
     effective: number | null;
     btl_effective: number | null;
@@ -630,7 +630,7 @@ export interface CompareLadder {
   product_type?: string | null;
   abg_sku?: string | null;   // distributor's own item number (Allied ABG / Fedway)
   abg_item_name?: string | null;  // distributor's own item NAME (Allied sheet name)
-  frontline: number | null;
+  one_case: number | null;         // 1-case price (list after best 1-case QD) — the base, never raw list
   after_qd: number | null;
   effective: number | null;
   tiers: CatalogTier[];

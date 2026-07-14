@@ -82,13 +82,13 @@ function WinnerCell({
 
 interface HistPoint {
   edition: string;
-  frontline_case_price?: number | null;
+  one_cs_case_price?: number | null;   // 1-case price (after best 1-case QD) — the base, not raw list
   best_case_price?: number | null;
   effective_case_price?: number | null;
 }
 
-/** Per-distributor sparkline: up to 3 lines across editions — List,
- *  After QD (best_case_price) and After RIP (effective). Lines collapse
+/** Per-distributor sparkline: up to 3 lines across editions — 1-Case (after the
+ *  1-case QD), After QD (best_case_price) and After RIP (effective). Lines collapse
  *  onto each other when layers are equal; hover any point for the month's
  *  full three-price readout. */
 function TriSparkline({ wholesaler, ladder }: { wholesaler: string; ladder: CompareLadder }) {
@@ -113,7 +113,7 @@ function TriSparkline({ wholesaler, ladder }: { wholesaler: string; ladder: Comp
   if (points.length < 2) return null;
 
   const LAYERS: { key: keyof HistPoint; label: string; color: string; dash?: string }[] = [
-    { key: 'frontline_case_price', label: 'List', color: 'var(--text-muted)', dash: '4 3' },
+    { key: 'one_cs_case_price', label: '1-Case', color: 'var(--text-muted)', dash: '4 3' },
     { key: 'best_case_price', label: 'After QD', color: '#2563eb' },
     { key: 'effective_case_price', label: 'After RIP', color: '#16a34a' },
   ];
@@ -128,7 +128,7 @@ function TriSparkline({ wholesaler, ladder }: { wholesaler: string; ladder: Comp
   const y = (v: number) => padY + (1 - (v - min) / span) * (H - padY * 2);
   const money = (v?: number | null) => (typeof v === 'number' ? `$${v.toFixed(2)}` : '–');
   const tip = (p: HistPoint) =>
-    `${fmtMonth(p.edition)} · List ${money(p.frontline_case_price)}`
+    `${fmtMonth(p.edition)} · 1-Case ${money(p.one_cs_case_price)}`
     + ` · After QD ${money(p.best_case_price)} · After RIP ${money(p.effective_case_price)}`;
 
   // which layers actually exist (a no-RIP product collapses to 2 lines)
@@ -149,7 +149,7 @@ function TriSparkline({ wholesaler, ladder }: { wholesaler: string; ladder: Comp
                        strokeWidth={1.6} strokeDasharray={l.dash} />;
         })}
         {points.map((p, i) => {
-          const v = p.effective_case_price ?? p.best_case_price ?? p.frontline_case_price;
+          const v = p.effective_case_price ?? p.best_case_price ?? p.one_cs_case_price;
           if (typeof v !== 'number') return null;
           return (
             <circle key={p.edition} cx={x(i)} cy={y(v)} r={5}
@@ -160,7 +160,7 @@ function TriSparkline({ wholesaler, ladder }: { wholesaler: string; ladder: Comp
         })}
       </svg>
       <span className="cmp-tri-leg">
-        <span style={{ color: 'var(--text-muted)' }}>┄ List</span>
+        <span style={{ color: 'var(--text-muted)' }}>┄ 1-Case</span>
         <span style={{ color: '#2563eb' }}>— QD</span>
         <span style={{ color: '#16a34a' }}>— RIP</span>
       </span>
@@ -168,13 +168,13 @@ function TriSparkline({ wholesaler, ladder }: { wholesaler: string; ladder: Comp
   );
 }
 
-/** Plain-language walk-through of one distributor's List → Best QD → Best Net
+/** Plain-language walk-through of one distributor's 1-Case → Best QD → Best Net
  *  ladder, naming the limited-time deals that make Best Net exceed Best QD. */
 function ladderLines(lad: CompareLadder): { text: string; warn?: boolean }[] {
-  const f = lad.frontline, qd = lad.after_qd, net = lad.effective;
+  const f = lad.one_case, qd = lad.after_qd, net = lad.effective;
   const isLive = (s?: string | null) => s === 'active' || s === 'whole_month' || s === 'evergreen';
   const lines: { text: string; warn?: boolean }[] = [];
-  if (f != null) lines.push({ text: `List ${money(f)}/cs.` });
+  if (f != null) lines.push({ text: `1-Case Price ${money(f)}/cs.` });
   // the live discount tier that produced today's Best QD
   const liveDisc = (lad.tiers ?? []).filter(t => t.source === 'discount' && t.price_after != null && isLive(t.window_status));
   const qdTier = qd != null
@@ -273,8 +273,9 @@ function LadderPanel({ slugs, params, onOpen }: {
             )}
             {!lad ? <div className="cmp-ladder-none">Not found</div> : (
               <>
-                <div className="cmp-ladder-line cmp-ladder-front">
-                  Frontline → <strong>{money(lad.frontline)}</strong>/cs
+                <div className="cmp-ladder-line cmp-ladder-front"
+                     title="Price for a single case — list after the best 1-case quantity discount. The deal tiers below take it deeper.">
+                  1-Case Price → <strong>{money(lad.one_case)}</strong>/cs
                 </div>
                 {(lad.tiers ?? []).length === 0 && (
                   <div className="cmp-ladder-none">No QD or RIP tiers</div>
@@ -878,7 +879,7 @@ export default function ComparePrices() {
                           {r.deal_flip && (
                             <span
                               className="cmp-flip"
-                              title={`${winnerName(r.winner_frontline)} is cheaper at list, but ${winnerName(r.winner_effective)} wins after QD/RIP deals`}
+                              title={`${winnerName(r.winner_one_case)} is cheaper for a single case, but ${winnerName(r.winner_effective)} wins after deeper QD/RIP deals`}
                             >
                               <Zap size={11} /> flips
                             </span>
@@ -924,7 +925,7 @@ export default function ComparePrices() {
                           const mUnit = perUnitAbbr(r.unit_volume, r.unit_type);
                           return (
                             <Fragment key={w}>
-                              <WinnerCell value={p?.one_case} prev={p?.prev?.frontline} sep
+                              <WinnerCell value={p?.one_case} prev={p?.prev?.one_case} sep
                                 mode={priceMonths} curMonth={curMo} prevMonth={prevMo}
                                 isWinner={r.winner_one_case === w} isTie={r.winner_one_case === 'tie'}
                                 sub={abgSku(w, p?.item_no) ? `${skuLabel(w)} ${p?.item_no}` : null} />

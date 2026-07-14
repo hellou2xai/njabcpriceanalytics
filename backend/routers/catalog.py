@@ -5659,7 +5659,11 @@ def get_price_history(
         df = con.execute(f"""
             SELECT edition, product_type, {_vintage_norm_sql()} AS vintage_norm,
                    frontline_case_price, best_case_price,
-                   effective_case_price, discount_pct, has_discount, has_rip
+                   effective_case_price, discount_pct, has_discount, has_rip,
+                   unit_qty,
+                   discount_1_qty, discount_1_amt, discount_2_qty, discount_2_amt,
+                   discount_3_qty, discount_3_amt, discount_4_qty, discount_4_amt,
+                   discount_5_qty, discount_5_amt
             FROM {src}
             WHERE {' AND '.join(where)}
             ORDER BY edition
@@ -5684,7 +5688,12 @@ def get_price_history(
             "trend": _classify_trend(df["frontline_case_price"].tolist()),
         }
 
-        return {"history": df.to_dict(orient="records"), "stats": stats}
+        # Canonical 1-case price per edition (frontline minus the best 1-case QD)
+        # so the trend line shows the after-1-case-QD price, never raw list.
+        recs = df.to_dict(orient="records")
+        for r in recs:
+            r["one_cs_case_price"] = _pricing.one_cs_case_price(r)
+        return {"history": recs, "stats": stats}
 
 
 def _classify_trend(prices: list) -> str:

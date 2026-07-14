@@ -598,7 +598,7 @@ def _price_obj(d: dict) -> dict:
         # Prior-edition layers for the two-month view (None unless months=2).
         "prev": ({
             "edition": pv.get("edition"),
-            "frontline": pv.get("frontline"),
+            "one_case": pv.get("one_case"),
             "after_qd": pv.get("after_qd"),
             "effective": pv.get("effective"),
             "btl_effective": (round(pv["effective"] / d["uqd"], 2)
@@ -783,6 +783,11 @@ def _prev_prices(con, src: str, slugs: list[str], eds: dict[str, str],
         except (TypeError, ValueError):
             return v
 
+    # 1-case price for the PRIOR edition — list minus the best 1-case discount,
+    # evaluated at that edition — so the two-month view shows an after-1-case-QD
+    # price, never a raw list, matching the current-month column.
+    qd_one_prev = _active_qd_from_raw(con, slugs, prev_eds, 1.0, page_upcs)
+
     lookup: dict[tuple, dict] = {}
     for r in df.to_dict("records"):
         pack = _pack_norm(r.get("unit_qty"))
@@ -795,9 +800,13 @@ def _prev_prices(con, src: str, slugs: list[str], eds: dict[str, str],
         cur = lookup.get(k)
         # cheapest effective wins (same rule as the current-month best offer)
         if cur is None or (eff is not None and (cur["effective"] is None or eff < cur["effective"])):
+            front = _nz(r.get("frontline_case_price"))
+            q1 = qd_one_prev.get((r["wholesaler"], r["upc_norm"],
+                                  _size_key(r.get("unit_volume")), pack))
             lookup[k] = {
                 "edition": r["edition"],
-                "frontline": _nz(r.get("frontline_case_price")),
+                "one_case": (round(front - q1[0], 2)
+                             if (front is not None and q1) else front),
                 "after_qd": _nz(r.get("best_case_price")),
                 "effective": eff,
             }
@@ -988,10 +997,12 @@ def compare_products(
                 round(w_eff["spread"] / best_eff * 100, 1)
                 if w_eff["spread"] is not None and best_eff else None
             ),
-            # winner changes once deals are applied -> volume/deals flip it
+            # Winner "flips" when the cheapest SINGLE-case price isn't the
+            # cheapest after deeper QD/RIP deals — both real prices you'd pay
+            # (1-case vs Best Net), never raw list.
             "deal_flip": (
-                w_front["winner"] is not None and w_eff["winner"] is not None
-                and w_front["winner"] != w_eff["winner"]
+                w_one["winner"] is not None and w_eff["winner"] is not None
+                and w_one["winner"] != w_eff["winner"]
             ),
             # at least one distributor's shown price rides on a dated deal that
             # ENDS this month — surfaced so the buyer knows it won't last.
@@ -1056,15 +1067,15 @@ def compare_products(
                     insights.append(f"{lead} wins {tw[lead]}/{tot} in {t}.")
         if flips:
             ex = max(flips, key=lambda r: r["spread"] or 0)
-            if ex["winner_frontline"] == "tie":
-                ex_txt = (f"e.g. {ex['product_name']}: tied at list price, "
+            if ex["winner_one_case"] == "tie":
+                ex_txt = (f"e.g. {ex['product_name']}: tied on the 1-case price, "
                           f"but {ex['winner_effective']} wins after deals.")
             elif ex["winner_effective"] == "tie":
-                ex_txt = (f"e.g. {ex['product_name']}: {ex['winner_frontline']} is cheaper "
-                          f"at list, but deals level it to a tie.")
+                ex_txt = (f"e.g. {ex['product_name']}: {ex['winner_one_case']} is cheaper "
+                          f"for a single case, but deals level it to a tie.")
             else:
-                ex_txt = (f"e.g. {ex['product_name']}: {ex['winner_frontline']} is cheaper "
-                          f"at list but {ex['winner_effective']} wins after deals.")
+                ex_txt = (f"e.g. {ex['product_name']}: {ex['winner_one_case']} is cheaper "
+                          f"for a single case but {ex['winner_effective']} wins after deals.")
             insights.append(
                 f"{len(flips)} product(s) change winner once QD/RIP deals apply: {ex_txt}"
             )
@@ -1484,6 +1495,7 @@ def compare_tiers(
         # LIVE today: Best QD from raw cpl (every window row), Best Net layering
         # the active RIP — same rule as the grid so the panel never contradicts it.
         qd_live = _active_qd_from_raw(con, slugs, eds, None, [upc_norm])
+        qd_one = _active_qd_from_raw(con, slugs, eds, 1.0, [upc_norm])
         for rec in records:
             try:
                 pack = float(rec.get("unit_qty"))
@@ -1495,6 +1507,12 @@ def compare_tiers(
             hit = qd_live.get(key)
             qd_amt = hit[0] if hit else 0.0
             best_qd = round(front - qd_amt, 2) if front is not None and qd_amt > 0 else front
+            # 1-case price (list after the best 1-case discount) — the ladder's
+            # base line, so it never shows a raw list price.
+            hit1 = qd_one.get(key)
+            qd1_amt = hit1[0] if hit1 else 0.0
+            rec["_one_case"] = (round(front - qd1_amt, 2)
+                                if front is not None and qd1_amt > 0 else front)
             rip_amt = _active_rip_rebate(rec.get("tiers", []) or [], None, pack)
             best_net = best_qd
             if best_qd is not None and rip_amt > 0:
@@ -1513,7 +1531,7 @@ def compare_tiers(
             "abv_proof": rec.get("abv_proof"),
             "product_type": rec.get("product_type"),
             "abg_sku": rec.get("abg_sku"),
-            "frontline": rec.get("frontline_case_price"),
+            "one_case": rec.get("_one_case"),
             "after_qd": rec.get("_live_qd"),
             "effective": rec.get("_live_net"),
             "tiers": rec.get("tiers", []),

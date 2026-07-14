@@ -77,8 +77,8 @@ function groupDeals(rows: TimeSensitiveDeal[]): Card[] {
 }
 
 const SORT_OPTS: [string, string][] = [
-  ['ending', 'Ending soonest'], ['starting', 'Soonest starting'],
-  ['save', 'Biggest saving'], ['name', 'Product name'],
+  ['mi', 'Top sellers (Market Intel)'], ['ending', 'Ending soonest'],
+  ['starting', 'Soonest starting'], ['save', 'Biggest saving'], ['name', 'Product name'],
 ];
 const DEAL_OPTS: [string, string][] = [['rip', 'Has RIP'], ['qd', 'Has QD']];
 const SIZES = ['375ML', '750ML', '1L', '1.75L'];
@@ -136,17 +136,38 @@ function windowState(w: { from: string; to: string }, today: string): 'ended' | 
   if (w.from > today) return 'upcoming';
   return 'live';
 }
-function WindowsDetail({ card, today }: { card: Card; today: string }) {
+// A tier is TIME-SENSITIVE when it rides a dated sub-month window (its RIP/QD
+// runs only part of the month); a REGULAR tier runs the whole month. A product
+// can carry BOTH for the same quantity, so they must be shown apart.
+const isTsTier = (t: CatalogTier) => t.is_time_sensitive === true
+  || t.window_status === 'active' || t.window_status === 'upcoming';
+function dedupeSortTiers(arr: CatalogTier[]): CatalogTier[] {
   const seen = new Set<string>();
-  const tiers = (card.rep.tiers ?? [])
-    .filter((t) => {
-      if (isOneCsQd(t)) return false;
-      const k = `${t.source}|${t.qty}|${t.unit}|${t.price_after}`;
-      if (seen.has(k)) return false;
-      seen.add(k);
-      return true;
-    })
-    .sort((a, b) => (a.source === b.source ? (a.qty ?? 0) - (b.qty ?? 0) : a.source === 'rip' ? -1 : 1));
+  return arr.filter((t) => {
+    const k = `${t.source}|${t.qty}|${t.unit}|${t.price_after}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  }).sort((a, b) => (a.source === b.source ? (a.qty ?? 0) - (b.qty ?? 0) : a.source === 'rip' ? -1 : 1));
+}
+function TierRow({ t }: { t: CatalogTier }) {
+  return (
+    <div className="tsd-tier">
+      <span className={`tsd-tier-kind tsd-tier-${t.source}`}>{t.source === 'rip' ? 'RIP' : 'QD'} {tierQty(t)}</span>
+      <span className="tsd-tier-vals">{money(t.price_after)}/cs
+        {t.source === 'rip'
+          ? (t.amount != null && <em> {money(t.amount)} back</em>)
+          : (t.save_per_case != null && <em> save {money(t.save_per_case)}/cs</em>)}
+      </span>
+    </div>
+  );
+}
+function WindowsDetail({ card, today }: { card: Card; today: string }) {
+  const nonEntry = (card.rep.tiers ?? []).filter((t) => !isOneCsQd(t));
+  const tsTiers = dedupeSortTiers(nonEntry.filter(isTsTier));
+  const regTiers = dedupeSortTiers(nonEntry.filter((t) => !isTsTier(t)));
+  // the dated window the time-sensitive tiers belong to (for the group header)
+  const tsWin = tsTiers.find((t) => t.from_date && t.to_date);
   return (
     <div className="tsd-detail">
       <div className="tsd-detail-h">Deal windows</div>
@@ -167,18 +188,24 @@ function WindowsDetail({ card, today }: { card: Card; today: string }) {
           );
         })}
       </div>
-      {tiers.length > 0 && (
-        <div className="tsd-tiers">
-          <div className="tsd-detail-h">Tiers</div>
-          {tiers.map((t, i) => (
-            <div key={i} className="tsd-tier">
-              <span className={`tsd-tier-kind tsd-tier-${t.source}`}>{t.source === 'rip' ? 'RIP' : 'QD'} {tierQty(t)}</span>
-              <span className="tsd-tier-vals">
-                {money(t.price_after)}/cs
-                {t.source === 'rip' ? (t.amount != null && <em> {money(t.amount)} back</em>) : (t.save_per_case != null && <em> save {money(t.save_per_case)}/cs</em>)}
-              </span>
-            </div>
-          ))}
+      {/* Tiers split so a buyer can tell a TIME-SENSITIVE (dated) RIP/QD from the
+          REGULAR whole-month one — the two often exist at the same quantity. */}
+      {tsTiers.length > 0 && (
+        <div className="tsd-tiers tsd-tiers-ts">
+          <div className="tsd-tiergroup-h">
+            <span className="tsd-flag tsd-flag-ts"><Clock size={11} /> Time-sensitive</span>
+            {tsWin && <span className="tsd-tiergroup-dates">{shortDate(tsWin.from_date)} – {shortDate(tsWin.to_date)} · ends soon</span>}
+          </div>
+          {tsTiers.map((t, i) => <TierRow key={i} t={t} />)}
+        </div>
+      )}
+      {regTiers.length > 0 && (
+        <div className="tsd-tiers tsd-tiers-reg">
+          <div className="tsd-tiergroup-h">
+            <span className="tsd-flag tsd-flag-reg">Regular</span>
+            <span className="tsd-tiergroup-dates">whole month</span>
+          </div>
+          {regTiers.map((t, i) => <TierRow key={i} t={t} />)}
         </div>
       )}
     </div>
@@ -189,22 +216,27 @@ export default function TimeSensitiveDeals() {
   const today = todayISO();
   const { data: eds } = useQuery({ queryKey: ['editions'], queryFn: catalog.editions, staleTime: 3_600_000 });
   const months = useMemo(() => [...new Set((eds ?? []).map((e) => e.edition))].sort().reverse(), [eds]);
-  const [month, setMonth] = useState('');                 // '' until editions load -> newest
-  const selMonth = month || months[0] || '';
+  const [month, setMonth] = useState('');                 // '' until editions load -> current month
+  const curMonth = today.slice(0, 7);                     // 'YYYY-MM' = today's month
+  const selMonth = month || (months.includes(curMonth) ? curMonth : months[0]) || '';
+  const isCurrent = selMonth === curMonth;                // current month uses the WARM default cache
   const monthIdx = months.indexOf(selMonth);
 
   const [distSet, setDistSet] = useState<Set<string>>(new Set());
   const [catSet, setCatSet] = useState<Set<string>>(new Set());
   const [dealSet, setDealSet] = useState<Set<string>>(new Set());
   const [sizeSet, setSizeSet] = useState<Set<string>>(new Set());
-  const [sortBy, setSortBy] = useState('ending');
+  const [sortBy, setSortBy] = useState('mi');   // default: Market-Intelligence ranking (top sellers first)
   const [shown, setShown] = useState(60);                 // client-side pager (deal lists can be large)
   const [filtersCollapsed, setFiltersCollapsed] = useState(() => localStorage.getItem('tsd_filters_collapsed') === '1');
   useEffect(() => { setShown(60); }, [selMonth, distSet, catSet, dealSet, sizeSet, sortBy]);
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['ts-deals', selMonth],
-    queryFn: () => deals.timeSensitive({ edition: selMonth || undefined, limit: 5000 }),
+    // Current month hits the WARMED default cache (no edition, limit 2000) so the
+    // first load is instant; a chosen PAST month re-fetches that edition (cold,
+    // but browsing history is the rarer path).
+    queryKey: ['ts-deals', selMonth, isCurrent],
+    queryFn: () => deals.timeSensitive(isCurrent ? { limit: 2000 } : { edition: selMonth, limit: 2000 }),
     enabled: !!selMonth,
     staleTime: 600_000,
   });
@@ -219,10 +251,12 @@ export default function TimeSensitiveDeals() {
     const savingOf = (c: Card) => c.rep.total_savings_per_case ?? 0;
     const startOf = (c: Card) => c.windows.reduce((m, w) => Math.min(m, w.from.localeCompare(today) >= 0 ? +w.from.replace(/-/g, '') : Infinity), Infinity);
     cs.sort((a, b) => {
+      if (sortBy === 'mi') return (b.rep.mi_volume ?? 0) - (a.rep.mi_volume ?? 0)   // top sellers first
+        || a.soonest - b.soonest;
       if (sortBy === 'save') return savingOf(b) - savingOf(a);
       if (sortBy === 'name') return (a.rep.product_name || '').localeCompare(b.rep.product_name || '');
       if (sortBy === 'starting') return startOf(a) - startOf(b);
-      return a.soonest - b.soonest;   // ending soonest (default)
+      return a.soonest - b.soonest;   // ending soonest
     });
     return cs;
   }, [data, distSet, catSet, sizeSet, dealSet, sortBy, today]);

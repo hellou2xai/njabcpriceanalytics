@@ -1441,6 +1441,11 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
         src = read_parquet(con, "cpl_enriched")
         from backend import pricing as _pricing
         current_ym = _pricing.current_yyyy_mm()
+        # Market-Intelligence sales volume per SKU (same signal Discover ranks by).
+        # Guarded: an older cache without the column degrades to no ranking.
+        _cols = [d[0] for d in con.execute(f"SELECT * FROM {src} LIMIT 0").description]
+        _mi_sel = "MAX(mi_volume) AS mi_volume" if "mi_volume" in _cols else "CAST(NULL AS DOUBLE) AS mi_volume"
+        _mi_e = "e.mi_volume AS mi_volume" if "mi_volume" in _cols else "CAST(NULL AS DOUBLE) AS mi_volume"
         # Current edition AND the next edition per wholesaler, so dated deals
         # for next month surface too (gives the buyer time to prep).
         eds = con.execute(
@@ -1492,8 +1497,8 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
             else "AND (to_date IS NULL OR CAST(to_date AS DATE) >= CURRENT_DATE)"
         )
         rows = con.execute(f"""
-            WITH ce AS (   -- brand only lives on the enriched table
-                SELECT wholesaler, edition, CAST(upc AS VARCHAR) AS upc, ANY_VALUE(brand) AS brand
+            WITH ce AS (   -- brand + MI volume only live on the enriched table
+                SELECT wholesaler, edition, CAST(upc AS VARCHAR) AS upc, ANY_VALUE(brand) AS brand, {_mi_sel}
                 FROM {src} GROUP BY 1, 2, 3
             ),
             ranked AS (
@@ -1523,7 +1528,7 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
                   AND ({' OR '.join(conds)})
             )
             SELECT r.wholesaler, r.edition, r.product_name, r.product_type, r.unit_volume, r.unit_qty, r.unit_type,
-                   r.upc, ce.brand AS brand, r.vintage, r.from_date, r.to_date,
+                   r.upc, ce.brand AS brand, ce.mi_volume AS mi_volume, r.vintage, r.from_date, r.to_date,
                    CASE WHEN r.to_date IS NULL THEN NULL
                         ELSE date_diff('day', CURRENT_DATE, r.to_date) END AS days_to_expire,
                    r.frontline_case_price, r.effective_case_price,
@@ -1584,6 +1589,7 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
                 "unit_type": _str(r["unit_type"]),
                 "upc": _str(r["upc"]),
                 "brand": _str(r["brand"]),
+                "mi_volume": _n(r["mi_volume"]),
                 # Vintage is surfaced on the card so the buyer can tell which
                 # vintage of a multi-vintage SKU the row refers to. Same UPC
                 # is reused across vintages and pack sizes.
@@ -1631,7 +1637,7 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
                    d.u1, d.q1, d.a1,
                    date_diff('day', CURRENT_DATE, d.to_date) AS days_to_expire,
                    e.product_name, e.product_type, e.unit_volume, e.unit_qty, e.unit_type,
-                   CAST(e.upc AS VARCHAR) AS upc, e.vintage, e.brand,
+                   CAST(e.upc AS VARCHAR) AS upc, e.vintage, e.brand, {_mi_e},
                    e.frontline_case_price, e.effective_case_price,
                    e.has_discount, e.has_closeout
             FROM dated d
@@ -1684,6 +1690,7 @@ def time_sensitive(wholesaler: Optional[str] = None, include_past: bool = False,
                 "unit_type": _str(r["unit_type"]),
                 "upc": _str(r["upc"]),
                 "brand": _str(r["brand"]),
+                "mi_volume": _n(r["mi_volume"]),
                 "vintage": _str(r["vintage"]),
                 "from_date": str(r["from_date"])[:10],
                 "to_date": str(r["to_date"])[:10],

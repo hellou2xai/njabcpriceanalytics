@@ -109,6 +109,8 @@ def main():
         badges = set(b.strip().lower() for b in page.locator(".tsd-win-badge").all_inner_texts())
         check(badges.issubset({"active", "upcoming", "ended"}) and len(badges) > 0, f"windows labelled with valid states: {sorted(badges)}")
         check(page.locator(".tsd-tier .tsd-tier-kind").count() > 0, "RIP/QD tiers with quantity shown in the detail column")
+        check(page.locator(".tsd-tiers-ts").count() > 0 and page.locator(".tsd-tiers-reg").count() > 0,
+              f"tiers split into Time-Sensitive vs Regular groups (ts {page.locator('.tsd-tiers-ts').count()} / reg {page.locator('.tsd-tiers-reg').count()})")
 
         # ---- data accuracy: first 8 rendered cards vs API ----
         acc_ok, acc_tot = 0, 0

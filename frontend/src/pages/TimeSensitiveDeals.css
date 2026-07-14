@@ -72,7 +72,15 @@
 .tsd-win-price { margin-left: auto; font-size: 12.5px; font-weight: 700; white-space: nowrap; }
 .tsd-win-price em { font-style: normal; font-weight: 600; color: #067647; margin-left: 6px; }
 
-.tsd-tiers { display: flex; flex-direction: column; gap: 4px; }
+.tsd-tiers { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 9px; margin-top: 8px; }
+.tsd-tiers-ts { background: #fffaf0; border: 1px solid #f5d99a; }
+.tsd-tiers-reg { background: var(--surface, #fff); border: 1px solid var(--border, #eceef2); }
+.tsd-tiergroup-h { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+.tsd-flag { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .3px; padding: 2px 8px; border-radius: 999px; }
+.tsd-flag-ts { background: #fef0c7; color: #b54708; }
+.tsd-flag-reg { background: #eef2f6; color: #475467; }
+.tsd-tiergroup-dates { font-size: 11px; font-weight: 600; color: var(--text-muted); }
+.tsd-tiers-ts .tsd-tiergroup-dates { color: #b54708; }
 .tsd-tier { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 2px 0; }
 .tsd-tier-kind { font-size: 11px; font-weight: 800; white-space: nowrap; }
 .tsd-tier-rip { color: #067647; }
@@ -102,7 +110,16 @@
   .tsd-badge-upcoming { background: #3a2e10; color: #fdb87a; }
   .tsd-badge-ended { background: #20242f; color: #98a2b8; }
   .tsd-monthbar select { background: #1c2130; border-color: #2a2f42; }
+  .tsd-tiers-ts { background: #2a2110; border-color: #4a3a12; }
+  .tsd-tiers-reg { background: #161a26; border-color: #262b3a; }
+  .tsd-flag-ts { background: #3a2e10; color: #fdb87a; }
+  .tsd-flag-reg { background: #20242f; color: #98a2b8; }
+  .tsd-tiers-ts .tsd-tiergroup-dates { color: #fdb87a; }
 }
+:root[data-theme="dark"] .tsd-tiers-ts { background: #2a2110; border-color: #4a3a12; }
+:root[data-theme="dark"] .tsd-tiers-reg { background: #161a26; border-color: #262b3a; }
+:root[data-theme="dark"] .tsd-flag-ts { background: #3a2e10; color: #fdb87a; }
+:root[data-theme="dark"] .tsd-flag-reg { background: #20242f; color: #98a2b8; }
 :root[data-theme="dark"] .tsd-row { background: #12151f; border-color: #262b3a; }
 :root[data-theme="dark"] .tsd-cal { background: #161a26; border-color: #262b3a; }
 :root[data-theme="dark"] .tsd-cal-nav { background: #1c2130; border-color: #2a2f42; }

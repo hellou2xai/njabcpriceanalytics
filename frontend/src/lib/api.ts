@@ -1450,6 +1450,7 @@ export interface TimeSensitiveDeal {
   unit_qty: string | null;
   upc: string | null;
   brand: string | null;
+  mi_volume?: number | null;   // Market-Intelligence sales volume (ranks which products lead)
   from_date: string | null;
   to_date: string | null;
   days_to_expire: number | null;

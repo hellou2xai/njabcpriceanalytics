@@ -51,6 +51,7 @@ const NAV_GROUPS: {
       { path: '/compare-prices-classic', label: 'Compare Prices Classic', icon: Scale, adminOnly: true },
       { path: '/compare-rips', label: 'Compare RIPs', icon: Layers },
       { path: '/compare-qd', label: 'Compare QD', icon: Tag },
+      { path: '/compare-rip-qd', label: 'Compare RIP + QD', icon: Layers },
       { path: '/edition-compare', label: 'Monthly Comparison', icon: CalendarClock },
       // Obsolete pages (Price Drops, Price Increases, Rate Shop, Price 360) removed
       // from the menu per request — routes kept (reachable by URL), no future changes.

@@ -3152,6 +3152,172 @@ def compare_qds(
 
 
 # ===========================================================================
+# Compare RIP + QD — ONE board combining /rips and /qds: for every product the
+# selected distributors ALL carry with a RIP or QD, both tier ladders (RIP AND
+# QD, kept as SEPARATE ladders per the project's deal-display rule) plus the
+# combined best price if the buyer reaches the deepest tier of EACH ladder.
+# Pure composition over the SAME helpers /rips and /qds already use
+# (_common_rows for cross-distributor matching, pricing.attach_tiers for the
+# canonical ladder, pricing.one_cs_case_price for the 1-case price,
+# _rip_tier_rows / _rip_deepest / _qd_deepest / _landed_at for the tiers and
+# the combined price) — no pricing math re-implemented here.
+# ===========================================================================
+
+@router.get("/rip-qd")
+def compare_rip_qd(
+    wholesalers: str = Query("allied,fedway", description="2-3 comma-separated slugs"),
+    q: str = Query(""),
+    product_type: str = Query(""),
+    brand: str = Query(""),
+    sort: str = Query("spread", description="spread | product"),
+    order: str = Query("desc"),
+    limit: int = Query(200, ge=1, le=2000),
+    month_mode: str = Query("cur", description="cur = compare at the CURRENT month (default); next = the NEXT month when that edition is already loaded (else falls back to current)."),
+    user: Optional[dict] = Depends(get_optional_user),
+    request: Request = None,
+    response: Response = None,
+):
+    """Compare RIP AND QD tier ladders together across 2-3 distributors, for
+    every product they ALL carry a RIP or QD on, plus the combined best price
+    (deepest QD tier + deepest RIP tier stacked, via the canonical
+    ``_landed_at``)."""
+    cache_key = ("compare_rip_qd", _cache_tag(), wholesalers, q, product_type,
+                 brand, sort, order, limit, month_mode)
+    if request is not None and response is not None and not (user and user.get("is_admin")):
+        from backend.http_cache import public_conditional
+        _nm = public_conditional(request, response, cache_key)
+        if _nm is not None:
+            return _nm
+    cached = _board_cache_get(cache_key)
+    if cached is not None:
+        return cached
+    with get_duckdb() as con:
+        src = read_parquet(con, "cpl_enriched")
+        slugs = _parse_wholesalers(wholesalers, con)
+        eds = _editions_for(con, src, slugs, mode=("next" if month_mode == "next" else "cur"))
+        raw = _common_rows(con, src, slugs, eds)
+        try:
+            _attach_sku_mapping(con, raw)
+        except Exception:
+            pass
+
+        by_key: dict[str, dict[str, dict]] = {}
+        for r in raw:
+            by_key.setdefault(r["match_key"], {})[r["wholesaler"]] = r
+
+        # Candidate products: carried by ALL selected distributors, each showing
+        # a RIP OR QD signal. The precise gate (real tiers from the canonical
+        # ladder) is applied after attach_tiers below, same as /rips and /qds.
+        def _has_signal(rec):
+            return _has_rip_signal(rec) or bool(rec.get("has_discount"))
+        keys = [k for k, per in by_key.items()
+                if len(per) == len(slugs) and all(_has_signal(per[w]) for w in slugs)]
+
+        if q or brand or product_type:
+            qq, bb, pt = q.strip().lower(), brand.strip().lower(), product_type.strip().lower()
+            def _match(per):
+                recs = list(per.values())
+                if pt and not any((r.get("product_type") or "").lower() == pt for r in recs):
+                    return False
+                if bb and not any(bb in (r.get("brand") or "").lower() for r in recs):
+                    return False
+                if qq and not any(
+                    qq in (r.get("product_name") or "").lower()
+                    or qq in (r.get("brand") or "").lower()
+                    or qq in str(r.get("upc") or "").lstrip("0")
+                    for r in recs
+                ):
+                    return False
+                return True
+            keys = [k for k in keys if _match(by_key[k])]
+
+        flat = [by_key[k][w] for k in keys for w in slugs]
+        _pricing.attach_tiers(con, flat)
+        try:
+            _attach_image(con, flat, upc_key="upc")
+        except Exception:
+            pass
+        next_avail = _next_edition_available(con, src, slugs)
+
+    rows = []
+    for key in keys:
+        per = by_key[key]
+        any_row = per[slugs[0]]
+        dists: dict[str, dict] = {}
+        for w in slugs:
+            rec = per[w]
+            pack = rec.get("uqd") or 1.0
+            tiers = rec.get("tiers", []) or []
+            front = rec.get("frontline_case_price")
+            rip_rows = _rip_tier_rows(tiers, pack, source="rip")
+            qd_rows = _rip_tier_rows(tiers, pack, source="discount")
+            _rip_deep, rip_at = _rip_deepest(tiers, pack)
+            _qd_deep, qd_at = _qd_deepest(tiers, pack, front)
+            # "Buy at the deepest QD tier AND the deepest RIP tier": the deepest
+            # reachable case volume across BOTH ladders, priced by the canonical
+            # _landed_at (already stacks QD + RIP) — per FOUNDATION.md, no new
+            # formula. Falls back to 1 case when neither ladder has a tier.
+            best_n = max([c for c in (rip_at, qd_at) if c] or [1])
+            best_case_price = (_landed_at(tiers, front, best_n, pack)
+                                if (rip_rows or qd_rows) else None)
+            dists[w] = {
+                "product_name": rec.get("product_name"),
+                "upc": rec.get("upc"),
+                "unit_qty": rec.get("unit_qty"),
+                "unit_volume": rec.get("unit_volume"),
+                "unit_type": rec.get("unit_type"),
+                "vintage": rec.get("vintage_norm") or rec.get("vintage"),
+                "item_no": rec.get("dist_item_no") or rec.get("abg_sku"),
+                "image_url": rec.get("image_url"),
+                "frontline_case_price": front,
+                "one_cs_case_price": _pricing.one_cs_case_price(rec),
+                "rip_tiers": rip_rows,
+                "qd_tiers": qd_rows,
+                "best_case_price": best_case_price,
+                "best_case_cases": best_n if best_case_price is not None else None,
+            }
+        # Precise gate: at least one selected distributor must actually have a
+        # RIP or QD tier from the canonical ladder (drops dangling-code rows).
+        if not any(dists[w]["rip_tiers"] or dists[w]["qd_tiers"] for w in slugs):
+            continue
+        one_cs_vals = [d["one_cs_case_price"] for d in dists.values() if d["one_cs_case_price"] is not None]
+        spread = round(max(one_cs_vals) - min(one_cs_vals), 2) if len(one_cs_vals) >= 2 else 0.0
+        rows.append({
+            "match_key": key,
+            "product_name": min((d["product_name"] for d in dists.values() if d["product_name"]),
+                                 key=len, default=any_row.get("product_name")),
+            "product_type": any_row.get("product_type"),
+            "vintage": any_row.get("vintage"),
+            "unit_qty": any_row.get("unit_qty"),
+            "unit_volume": any_row.get("unit_volume"),
+            "unit_type": any_row.get("unit_type"),
+            "image_url": any_row.get("image_url"),
+            "dists": dists,
+            "spread_one_cs": spread,
+        })
+
+    keymap = {
+        "spread": lambda r: r["spread_one_cs"] or 0,
+        "product": lambda r: (r["product_name"] or "").lower(),
+    }
+    rows.sort(key=keymap.get(sort, keymap["spread"]),
+              reverse=False if sort == "product" else (order != "asc"))
+    total = len(rows)
+    rows = rows[:limit]
+
+    result = {
+        "wholesalers": slugs,
+        "editions": eds,
+        "month_mode": "next" if month_mode == "next" else "cur",
+        "next_available": next_avail,
+        "total_common": total,
+        "rows": rows,
+    }
+    _board_cache_put(cache_key, result)
+    return result
+
+
+# ===========================================================================
 # Best RIPs board — discovery-first. One card per product carried by Allied,
 # Fedway AND Opici, each distributor's full RIP ladder shown one line per tier
 # with Needed-for-Purchase (net of QD) + RIP-Profit economics, plus flags for

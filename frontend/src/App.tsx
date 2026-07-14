@@ -38,6 +38,7 @@ import ComparePrices from './pages/ComparePrices';
 import CompareGrid from './pages/CompareGrid';
 import CompareRips from './pages/CompareRips';
 import CompareQD from './pages/CompareQD';
+import CompareRipQd from './pages/CompareRipQd';
 import BestRips from './pages/BestRips';
 import BestQd from './pages/BestQd';
 import Price360 from './pages/Price360';
@@ -174,6 +175,7 @@ function AuthenticatedApp() {
             <Route path="/compare-prices-classic" element={<AdminRoute><ComparePrices /></AdminRoute>} />
             <Route path="/compare-rips" element={<CompareRips />} />
             <Route path="/compare-qd" element={<CompareQD />} />
+            <Route path="/compare-rip-qd" element={<CompareRipQd />} />
             <Route path="/best-rips" element={<BestRips />} />
             <Route path="/best-qd" element={<BestQd />} />
             <Route path="/price-360" element={<AdminRoute><Price360 /></AdminRoute>} />

@@ -667,6 +667,8 @@ export const compare = {
     request<CompareRipResponse>(`/api/compare/rips${qs(params)}`),
   qds: (params: Record<string, unknown>) =>
     request<CompareQDResponse>(`/api/compare/qds${qs(params)}`),
+  ripQd: (params: Record<string, unknown>) =>
+    request<RipQdResponse>(`/api/compare/rip-qd${qs(params)}`),
   price360: (params: Record<string, unknown>) =>
     request<Price360Response>(`/api/compare/price360${qs(params)}`),
   rateshop: (params: Record<string, unknown>) =>
@@ -1253,6 +1255,63 @@ export interface CompareQDResponse {
     anomalies_hidden: number;
     insights: string[];
   };
+}
+
+// ---- Compare RIP + QD (both tier ladders + the combined best price, across
+// 2-3 distributors). Tier row shape matches RipTierRow/QDTierRow exactly (the
+// backend calls the SAME _rip_tier_rows helper with source='rip'/'discount'). ----
+export interface RipQdTierRow {
+  cases_to_unlock: number | null;
+  buy_label: string | null;
+  code: string | null;
+  raw_qty: number | null;
+  unit: string | null;
+  rebate_per_case: number | null;
+  total_rebate: number | null;
+  price_after: number | null;
+  window_status: string | null;
+  is_time_sensitive: boolean;
+  from_date: string | null;
+  to_date: string | null;
+  case_credit?: number | null;
+  split_pack?: number | null;
+  split_credit?: number | null;
+}
+export interface RipQdDist {
+  product_name: string | null;
+  upc: string | null;
+  unit_qty: string | null;
+  unit_volume: string | null;
+  unit_type: string | null;
+  vintage: string | null;
+  item_no: string | null;
+  image_url: string | null;
+  frontline_case_price: number | null;
+  one_cs_case_price: number | null;    // the real 1-case price (frontline - 1cs QD)
+  rip_tiers: RipQdTierRow[];
+  qd_tiers: RipQdTierRow[];
+  best_case_price: number | null;      // deepest QD tier + deepest RIP tier, stacked
+  best_case_cases: number | null;      // cases needed to reach best_case_price
+}
+export interface RipQdRow {
+  match_key: string;
+  product_name: string;
+  product_type: string | null;
+  vintage: string | null;
+  unit_qty: string | null;
+  unit_volume: string | null;
+  unit_type: string | null;
+  image_url: string | null;
+  dists: Record<string, RipQdDist>;
+  spread_one_cs: number;
+}
+export interface RipQdResponse {
+  wholesalers: string[];
+  editions: Record<string, string>;
+  month_mode?: string;
+  next_available?: boolean;
+  total_common: number;
+  rows: RipQdRow[];
 }
 
 // ---- Beta feedback ----

@@ -690,6 +690,10 @@ def attach_promotion_tiers(con, records):
                     if isinstance(val, float) and math.isnan(val):
                         val = None
                     r[col] = val
+            # These discount columns are the WHOLE-MONTH cpl_enriched values, not
+            # this promo record's dated-window discounts — tell attach_tiers so it
+            # doesn't stamp them with the deal's time-sensitive window.
+            r["_disc_whole_month"] = True
 
     # `rip_group_code` is only relevant for the Catalog's group_by_rip path;
     # set it to None so _attach_discount_rip_tiers falls back to `rip_code`.
@@ -698,6 +702,9 @@ def attach_promotion_tiers(con, records):
 
     _attach_discount_rip_tiers(con, records)
     _attach_price_3mo(con, records)
+    # Internal-only hint; don't leak it into the API response.
+    for r in records:
+        r.pop("_disc_whole_month", None)
 
 
 def _introduced_window(con, months: int) -> dict[tuple, str]:

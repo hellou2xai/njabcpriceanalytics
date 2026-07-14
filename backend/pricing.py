@@ -988,10 +988,23 @@ def attach_tiers(con, records, ref_date=None) -> None:
         # effective_case_price + has_discount + total_savings_per_case; here
         # we still surface them in the ladder so the buyer sees the promo
         # exists, but tagged so the UI can render them distinctly.
-        cpl_ts = is_time_sensitive_window(rec.get("from_date"), rec.get("to_date"))
-        cpl_win = window_status(rec.get("from_date"), rec.get("to_date"), ref_date)
-        cpl_from = _iso(rec.get("from_date"))
-        cpl_to = _iso(rec.get("to_date"))
+        # For PROMOTIONS records the discount_* columns are the canonical
+        # WHOLE-MONTH values (enriched from cpl_enriched), whereas from_date/to_date
+        # is the DEAL's dated window — the two don't correspond. Classify those
+        # columns as evergreen; the real dated (time-sensitive) discount tiers are
+        # added from the raw sub-month `part_rows` below, so a whole-month QD is
+        # never mislabelled with a partial window (and the actual dated discount is
+        # never dropped). Catalog records — whose from/to IS the discount row's own
+        # window — carry no flag and keep the normal classification.
+        if rec.get("_disc_whole_month"):
+            cpl_ts = False
+            cpl_win = {"status": "evergreen", "days_to_expire": None}
+            cpl_from = cpl_to = None
+        else:
+            cpl_ts = is_time_sensitive_window(rec.get("from_date"), rec.get("to_date"))
+            cpl_win = window_status(rec.get("from_date"), rec.get("to_date"), ref_date)
+            cpl_from = _iso(rec.get("from_date"))
+            cpl_to = _iso(rec.get("to_date"))
         # CPL discount tiers
         disc = []
         for i in range(1, 6):

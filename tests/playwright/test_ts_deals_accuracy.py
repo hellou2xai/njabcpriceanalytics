@@ -225,18 +225,11 @@ def part_b_api_vs_source(rows):
                 elif qd_tot - qd_ok <= 10:
                     print(f"     QD src?  {r['product_name'][:26]!r} qty {t['qty']} {t['from_date'][:10]}..{t['to_date'][:10]} — raw window qtys {sorted(qtys)}")
                 break
-        # Rendering + RIP accuracy are hard checks; the TS-QD mismatch below is a
-        # known UPSTREAM tier-builder issue (not the page) reported as a finding so
-        # the audit stays green on what the page controls.
-        notes.append(f"[B] TS QD source check ran ({qd_ok}/{qd_tot} matched)")
-        print(f"  ..  [B] TS QD source check ({qd_ok}/{qd_tot} matched)")
-        if qd_ok < qd_tot:
-            print(f"\n[FINDING · review pending] {qd_tot - qd_ok}/{qd_tot} sampled TIME-SENSITIVE QD tiers carry\n"
-                  f"  a window/qty that ISN'T in the raw cpl for that window. The whole-month QD is\n"
-                  f"  mis-tagged with the time-sensitive dates and the ACTUAL dated discount is dropped.\n"
-                  f"  e.g. DEEP EDDY 80 (allied): raw Jul 14-14 window = 1 CS $84 discount, but the API\n"
-                  f"  shows the whole-month 1 CS $30 / 2 CS $63 tiers tagged 'active Jul 14-14'.\n"
-                  f"  This is an UPSTREAM tier-builder issue (attach_promotion_tiers), not the TS page.")
+        # A time-sensitive QD tier must correspond to a real dated discount in the
+        # raw cpl for that window (guards the attach_promotion_tiers fix that stops
+        # whole-month QDs being mislabelled with a partial window).
+        check(qd_tot > 0 and qd_ok >= int(qd_tot * 0.95),
+              f"[B] TS QD (qty within dated window) present in raw cpl ({qd_ok}/{qd_tot})")
 
 
 def main():

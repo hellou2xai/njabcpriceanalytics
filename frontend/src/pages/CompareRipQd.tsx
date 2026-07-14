@@ -57,44 +57,68 @@ function cardHref(w: string, d: RipQdDist): string {
   return `/product?${q.toString()}`;
 }
 
-// A tier is "common" when every distributor in the row has the same buy-in +
-// unit + amount — i.e. it pays the same. Deliberately DOES NOT key on
-// is_time_sensitive/date window: two sheets can list the identical whole-month
-// rebate with a one-day-different "to_date" (e.g. July 30 vs 31) and get
-// classified TS on one side only, which made every tier look "different" even
-// when the dollar amount a retailer actually pays is identical (real bug,
-// found comparing Allied vs Fedway's Powers John Lane RIP: both pay $6 for 1
-// case, but the TS-window mismatch flagged both as differing). Genuine
-// TS-only deals still get their own amber "TS" sticker on the chip
-// (`.is-ts`) — this key just isn't the thing that decides the yellow
-// "differs from the other distributor" highlight.
-function tierKey(t: RipQdTierRow, amountField: 'total_rebate' | 'rebate_per_case'): string {
-  const amt = t[amountField];
-  return `${t.cases_to_unlock ?? ''}|${(t.unit ?? '').toLowerCase().startsWith('b') ? 'b' : 'c'}|` +
-    `${amt != null ? Math.round(amt * 100) : ''}`;
+// Anything within $2 doesn't read as a real distributor difference — sheets
+// carry penny/rounding-level noise (see the SVEDKA 1.75L case: $95.95 vs
+// $95.94, both display as "$96/cs" but a naive >0 check still flagged it).
+// Applies uniformly to the headline 1-case price gap AND to individual
+// RIP/QD tier amounts.
+const MIN_DIFF = 2;
+
+// A tier's identity for MATCHING across distributors is buy-in + unit only
+// (never the amount, never is_time_sensitive/date — two sheets can list the
+// identical whole-month rebate with a one-day-different "to_date", e.g. July
+// 30 vs 31, and get classified TS on one side only; that's not a real
+// difference either). Genuine TS-only deals still get their own amber "TS"
+// sticker on the chip (`.is-ts`).
+function tierBuyKey(t: RipQdTierRow): string {
+  return `${t.cases_to_unlock ?? ''}|${(t.unit ?? '').toLowerCase().startsWith('b') ? 'b' : 'c'}`;
 }
+// The 1-case QD tier is already subtracted into the headline 1-case price
+// (one_cs_case_price, the "_one_cs rule") — showing it again as its own QD
+// chip double-counts it. Strip it from both the visible ladder and the
+// common/diff comparison; deeper QD tiers (2cs+) are unaffected.
+function isBakedInOneCsQd(t: RipQdTierRow): boolean {
+  return t.cases_to_unlock === 1 && !(t.unit ?? '').toLowerCase().startsWith('b');
+}
+// A buy-in tier is "common" (not highlighted, not a real difference) when
+// EVERY distributor offers that same buy-in quantity AND all their amounts
+// are within MIN_DIFF of each other. A buy-in only some distributors have at
+// all is automatically NOT common (a real difference: one offers it, one
+// doesn't).
 function commonTierKeys(dists: Record<string, RipQdDist>, field: 'rip_tiers' | 'qd_tiers',
-  amountField: 'total_rebate' | 'rebate_per_case'): Set<string> {
+  amountField: 'total_rebate' | 'rebate_per_case', filterFn?: (t: RipQdTierRow) => boolean): Set<string> {
   const all = Object.values(dists);
   if (all.length < 2) return new Set();
-  return all
-    .map((d) => new Set(d[field].map((t) => tierKey(t, amountField))))
-    .reduce((acc, s) => new Set([...acc].filter((k) => s.has(k))));
+  const byBuyKey = new Map<string, number[]>();
+  for (const d of all) {
+    for (const t of d[field]) {
+      if (filterFn && !filterFn(t)) continue;
+      const amt = t[amountField];
+      if (amt == null) continue;
+      const k = tierBuyKey(t);
+      (byBuyKey.get(k) ?? byBuyKey.set(k, []).get(k)!).push(amt);
+    }
+  }
+  const common = new Set<string>();
+  for (const [k, amts] of byBuyKey) {
+    if (amts.length >= all.length && Math.max(...amts) - Math.min(...amts) < MIN_DIFF) common.add(k);
+  }
+  return common;
 }
 
 // Compact inline tier ladder: "X Cs / $XXX" (RIP, total rebate) or
 // "X Cs / $XXX/Cs" (QD, price after) — same fields DistPanel already reads,
 // same .rip2-tier-chip / .qd2-tier-chip / .is-diff classes it already uses.
-function TierChips({ tiers, common, keyField, displayField, displaySuffix, chipClass, wrapClass }: {
+function TierChips({ tiers, common, displayField, displaySuffix, chipClass, wrapClass }: {
   tiers: RipQdTierRow[]; common: Set<string>;
-  keyField: 'total_rebate' | 'rebate_per_case'; displayField: 'total_rebate' | 'rebate_per_case' | 'price_after';
+  displayField: 'total_rebate' | 'rebate_per_case' | 'price_after';
   displaySuffix: string; chipClass: 'rip2-tier-chip' | 'qd2-tier-chip'; wrapClass: string;
 }) {
   if (!tiers.length) return null;
   return (
     <div className={wrapClass}>
       {tiers.map((t, i) => {
-        const diff = !common.has(tierKey(t, keyField));
+        const diff = !common.has(tierBuyKey(t));
         const amt = t[displayField];
         const win = t.is_time_sensitive && t.from_date && t.to_date
           ? `${t.from_date.slice(5)}–${t.to_date.slice(5)}` : null;
@@ -122,6 +146,7 @@ function RipQdCard({ w, d, cheapest, ripCommon, qdCommon }: {
   const oneCs = d.one_cs_case_price ?? d.frontline_case_price ?? null;
   const bp = pack(d);
   const bestBtl = bp && d.best_case_price != null ? d.best_case_price / bp : null;
+  const qdTiers = d.qd_tiers.filter((t) => !isBakedInOneCsQd(t));
   return (
     <Link to={cardHref(w, d)} className={`disc-cmp-card${cheapest ? ' is-cheapest' : ''}`}>
       <div className="disc-cmp-card-top">
@@ -137,14 +162,14 @@ function RipQdCard({ w, d, cheapest, ripCommon, qdCommon }: {
       {d.rip_tiers.length > 0 && (
         <div className="ripqd-section">
           <span className="ripqd-section-label ripqd-section-label--rip">RIP rebate</span>
-          <TierChips tiers={d.rip_tiers} common={ripCommon} keyField="total_rebate" displayField="total_rebate"
+          <TierChips tiers={d.rip_tiers} common={ripCommon} displayField="total_rebate"
             displaySuffix="" chipClass="rip2-tier-chip" wrapClass="rip2-dist-tiers" />
         </div>
       )}
-      {d.qd_tiers.length > 0 && (
+      {qdTiers.length > 0 && (
         <div className="ripqd-section">
           <span className="ripqd-section-label ripqd-section-label--qd">Quantity discount</span>
-          <TierChips tiers={d.qd_tiers} common={qdCommon} keyField="rebate_per_case" displayField="price_after"
+          <TierChips tiers={qdTiers} common={qdCommon} displayField="price_after"
             displaySuffix="/Cs" chipClass="qd2-tier-chip" wrapClass="qd2-dist-tiers" />
         </div>
       )}
@@ -174,7 +199,7 @@ function RipQdGroup({ row, selected }: { row: RipQdRow; selected: string[] }) {
     .filter((v): v is number => v != null);
   const minOneCs = oneCsVals.length ? Math.min(...oneCsVals) : null;
   const ripCommon = commonTierKeys(row.dists, 'rip_tiers', 'total_rebate');
-  const qdCommon = commonTierKeys(row.dists, 'qd_tiers', 'rebate_per_case');
+  const qdCommon = commonTierKeys(row.dists, 'qd_tiers', 'rebate_per_case', (t) => !isBakedInOneCsQd(t));
   return (
     <div className="disc-cmp-group">
       <div className="disc-cmp-head">
@@ -184,7 +209,7 @@ function RipQdGroup({ row, selected }: { row: RipQdRow; selected: string[] }) {
           {size && <div className="disc-cmp-size">{size}</div>}
         </div>
         <div className="disc-cmp-tags">
-          {row.spread_one_cs > 0
+          {row.spread_one_cs >= MIN_DIFF
             ? <span className="disc-cmp-gap">{money(row.spread_one_cs)}/cs gap</span>
             : <span className="disc-cmp-gap disc-cmp-gap--same">Same 1-cs</span>}
         </div>
@@ -219,6 +244,21 @@ function FilterSection({ title, count = 0, defaultOpen = true, children }:
       {open && <div className="disc-filter-body">{children}</div>}
     </div>
   );
+}
+
+// This is a COMPARE page — a row where every distributor charges the same
+// 1-case price AND has the identical RIP ladder AND the identical QD ladder
+// (ignoring the baked-in 1cs QD) has nothing to compare and is just noise,
+// especially once sorted to the top by tier depth. Reuses the exact same
+// common/diff logic the card highlighting uses, so "shown" and "highlighted
+// as different" never disagree.
+function rowDiffers(row: RipQdRow): boolean {
+  if ((row.spread_one_cs ?? 0) >= MIN_DIFF) return true;
+  const ripCommon = commonTierKeys(row.dists, 'rip_tiers', 'total_rebate');
+  const qdCommon = commonTierKeys(row.dists, 'qd_tiers', 'rebate_per_case', (t) => !isBakedInOneCsQd(t));
+  return Object.values(row.dists).some((d) =>
+    d.rip_tiers.some((t) => !ripCommon.has(tierBuyKey(t))) ||
+    d.qd_tiers.filter((t) => !isBakedInOneCsQd(t)).some((t) => !qdCommon.has(tierBuyKey(t))));
 }
 
 // The deepest case-quantity tier this product unlocks at ANY selected
@@ -268,7 +308,8 @@ export default function CompareRipQd() {
   const filtered = rows
     .filter((r) =>
       (catSet.size === 0 || catSet.has(r.product_type ?? '')) &&
-      (sizeSet.size === 0 || sizeSet.has(r.unit_volume ?? '')))
+      (sizeSet.size === 0 || sizeSet.has(r.unit_volume ?? '')) &&
+      rowDiffers(r))
     .sort((a, b) => sortBy === 'name'
       ? (a.product_name ?? '').localeCompare(b.product_name ?? '')
       : sortBy === 'spread'

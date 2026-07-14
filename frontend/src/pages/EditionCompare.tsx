@@ -1,12 +1,11 @@
-import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { CalendarClock, ArrowRight, ArrowDownRight, ArrowUpRight, PlusCircle, MinusCircle, AlertTriangle, ChevronLeft, ChevronRight, Package, Repeat } from 'lucide-react';
+import { CalendarClock, ArrowRight, ArrowDownRight, ArrowUpRight, PlusCircle, MinusCircle, AlertTriangle, ChevronLeft, ChevronRight, Package, Repeat, SlidersHorizontal, PanelLeftClose, ChevronDown } from 'lucide-react';
 import { compare } from '../lib/api';
 import type { EditionRow } from '../lib/api';
 import { distributorName, DISTRIBUTOR_NAMES, perUnitAbbr } from '../lib/distributors';
 import ProductSearchBox from '../components/ProductSearchBox';
-import FilterSidebar, { type FilterSection } from '../components/FilterSidebar';
 import RowActions from '../components/RowActions';
 import AvailabilityButton from '../components/AvailabilityButton';
 import ProductThumb from '../components/ProductThumb';
@@ -15,6 +14,7 @@ import { buildSparkProps } from '../lib/promotionsSparkline';
 import type { Price3moBlock, CatalogTier } from '../lib/api';
 import { ErrorState } from '../components/DataState';
 import DataLoading from '../components/DataLoading';
+import './Discover.css';
 import './ComparePrices.css';
 import './EditionCompare.css';
 
@@ -325,6 +325,29 @@ function EditionCard({ r, older, newer, wholesaler, onOpen, price3mo }: {
   );
 }
 
+// A collapsible filter section — same disc-filter-* skin as Compare
+// Distributor Prices / Compare RIP+QD / Discover Deals (copied verbatim so
+// the filter rail "foundation" matches across all four pages).
+function FilterSection({ title, count = 0, defaultOpen = true, children }:
+  { title: string; count?: number; defaultOpen?: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="disc-filter-sect">
+      <button type="button" className="disc-filter-h disc-filter-h--btn"
+        aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <span>{title}{count > 0 && <span className="disc-filter-count">{count}</span>}</span>
+        <ChevronDown size={14} className={`disc-filter-chev${open ? ' is-open' : ''}`} />
+      </button>
+      {open && <div className="disc-filter-body">{children}</div>}
+    </div>
+  );
+}
+
+// Persist the rail's collapsed state under the SAME localStorage key the old
+// FilterSidebar used (`filter_toolbar_${storageKey}`), so an existing user's
+// saved preference carries over across the migration.
+const FILTER_COLLAPSE_KEY = 'filter_toolbar_edition-compare-filters';
+
 export default function EditionCompare() {
   const [params, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -356,6 +379,15 @@ export default function EditionCompare() {
   // Hovered row for the styled "what changed" breakdown popover (fixed-position
   // so the table's overflow never clips it; changed lines render red on yellow).
   const [bd, setBd] = useState<{ r: EditionRow; left: number; top: number; above: boolean } | null>(null);
+  // Filter rail collapse state — same disc-filters-show / disc-filters pattern
+  // as Compare Distributor Prices / Compare RIP+QD; persisted under the old
+  // FilterSidebar storage key so an existing saved preference still applies.
+  const [filtersCollapsed, setFiltersCollapsedState] = useState<boolean>(
+    () => typeof window !== 'undefined' && localStorage.getItem(FILTER_COLLAPSE_KEY) === 'true');
+  const setFiltersCollapsed = (v: boolean) => {
+    setFiltersCollapsedState(v);
+    if (typeof window !== 'undefined') localStorage.setItem(FILTER_COLLAPSE_KEY, String(v));
+  };
 
   const goToProduct = (name: string) =>
     navigate(`/products?q=${encodeURIComponent(name)}&wholesaler=${wholesaler}`);
@@ -472,30 +504,12 @@ export default function EditionCompare() {
     setMinPrice(''); setMaxPrice(''); setMinChange('1'); setOnlyChanged(false); setSort('inc_dollar');
   };
 
-  const sections: FilterSection[] = [
-    // Sort pinned to the TOP of the rail (it's the first decision a buyer makes
-    // on a month-over-month review), with directional, buyer-meaningful options.
-    { type: 'select', key: 'sort', title: 'Sort by', highlight: true, value: sort, onChange: setSort,
-      options: SORT_OPTIONS },
-    { type: 'custom', key: 'q', title: 'Search', render: () => (
-      <ProductSearchBox value={q} placeholder="Product or brand…"
-        onChange={v => setQ(v)} onSelect={p => setQ(p.product_name)} />
-    ) },
-    { type: 'pills', key: 'change', title: 'Change', value: change, onChange: setChange,
-      options: CHANGES.map(c => ({ value: c.v, label: c.label })) },
-    { type: 'select', key: 'cat', title: 'Category', placeholder: 'All categories',
-      value: productType, onChange: setProductType, options: catOptions },
-    { type: 'multi-pills', key: 'size', title: 'Size', values: sizes, onChange: setSizes, options: sizeOptions },
-    { type: 'multi-pills', key: 'layers', title: 'What moved', values: layersSel, onChange: setLayersSel, options: layerOptions },
-    { type: 'pills', key: 'min_change', title: 'Min change / case', value: minChange, onChange: setMinChange,
-      options: [
-        { value: '', label: 'Any' }, { value: '1', label: '$1+' }, { value: '5', label: '$5+' },
-        { value: '10', label: '$10+' }, { value: '25', label: '$25+' }, { value: '50', label: '$50+' },
-      ] },
-    { type: 'range', key: 'price', title: 'Net price / case', min: minPrice, max: maxPrice,
-      onMinChange: setMinPrice, onMaxChange: setMaxPrice, minPlaceholder: 'Min $', maxPlaceholder: 'Max $' },
-    { type: 'toggle', key: 'changed', title: 'Only changed', value: onlyChanged, onChange: setOnlyChanged, label: 'Hide unchanged rows' },
-  ];
+  // How many sections differ from their default — drives the "Clear" button
+  // and the collapsed rail's "Filters (n)" label, same as the other 3 pages.
+  const activeFilterCount =
+    (q ? 1 : 0) + (change ? 1 : 0) + (productType ? 1 : 0) + sizes.length + layersSel.length +
+    (minChange !== '1' ? 1 : 0) + (minPrice || maxPrice ? 1 : 0) + (onlyChanged ? 1 : 0) +
+    (sort !== 'inc_dollar' ? 1 : 0);
 
   const Pager = ({ where }: { where: 'top' | 'bottom' }) => (
     <div className={`ec-pager ec-pager-${where}`}>
@@ -600,7 +614,116 @@ export default function EditionCompare() {
       </div>{/* /ec-overview */}
 
       {data && !data.single_edition && (
-          <FilterSidebar storageKey="edition-compare-filters" sections={sections} onReset={resetFilters}>
+        <div className={`disc-body${filtersCollapsed ? ' disc-body--nofilters' : ''}`}>
+          {filtersCollapsed ? (
+            <button type="button" className="disc-filters-show" onClick={() => setFiltersCollapsed(false)}>
+              <SlidersHorizontal size={16} /> Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+            </button>
+          ) : (
+            <aside className="disc-filters">
+              <div className="disc-filters-head">
+                <span>Filters</span>
+                <span className="disc-filters-head-actions">
+                  {activeFilterCount > 0 && (
+                    <button type="button" className="disc-filters-clear" onClick={resetFilters}>Clear</button>
+                  )}
+                  <button type="button" className="disc-filters-collapse" title="Collapse filters" onClick={() => setFiltersCollapsed(true)}>
+                    <PanelLeftClose size={16} />
+                  </button>
+                </span>
+              </div>
+
+              {/* Sort pinned to the TOP of the rail (it's the first decision a buyer
+                  makes on a month-over-month review), with directional, buyer-meaningful
+                  options. */}
+              <FilterSection title="Sort by" count={sort !== 'inc_dollar' ? 1 : 0}>
+                <select className="disc-filter-select" value={sort} onChange={e => setSort(e.target.value)}>
+                  {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </FilterSection>
+
+              <FilterSection title="Search">
+                <ProductSearchBox value={q} placeholder="Product or brand…"
+                  onChange={v => setQ(v)} onSelect={p => setQ(p.product_name)} />
+              </FilterSection>
+
+              <FilterSection title="Change" count={change ? 1 : 0}>
+                <div className="filter-pills">
+                  {CHANGES.map(c => (
+                    <button key={c.v} type="button" className={`filter-pill${change === c.v ? ' active' : ''}`}
+                      onClick={() => setChange(c.v)}>{c.label}</button>
+                  ))}
+                </div>
+              </FilterSection>
+
+              <FilterSection title="Category" count={productType ? 1 : 0}>
+                <select className="disc-filter-select" value={productType} onChange={e => setProductType(e.target.value)}>
+                  <option value="">All categories</option>
+                  {catOptions.map(o => (
+                    <option key={o.value} value={o.value}>{o.label}{o.count != null ? ` (${o.count})` : ''}</option>
+                  ))}
+                </select>
+              </FilterSection>
+
+              <FilterSection title="Size" count={sizes.length}>
+                <div className="filter-pills">
+                  {sizeOptions.map(o => {
+                    const active = sizes.includes(o.value);
+                    return (
+                      <button key={o.value} type="button" className={`filter-pill${active ? ' active' : ''}`}
+                        onClick={() => setSizes(active ? sizes.filter(v => v !== o.value) : [...sizes, o.value])}>
+                        {o.label}{o.count != null && <span className="filter-pill-count">{o.count}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </FilterSection>
+
+              <FilterSection title="What moved" count={layersSel.length}>
+                <div className="filter-pills">
+                  {layerOptions.map(o => {
+                    const active = layersSel.includes(o.value);
+                    return (
+                      <button key={o.value} type="button" className={`filter-pill${active ? ' active' : ''}`}
+                        onClick={() => setLayersSel(active ? layersSel.filter(v => v !== o.value) : [...layersSel, o.value])}>
+                        {o.label}{o.count != null && <span className="filter-pill-count">{o.count}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </FilterSection>
+
+              <FilterSection title="Min change / case" count={minChange !== '1' ? 1 : 0}>
+                <div className="filter-pills">
+                  {[
+                    { value: '', label: 'Any' }, { value: '1', label: '$1+' }, { value: '5', label: '$5+' },
+                    { value: '10', label: '$10+' }, { value: '25', label: '$25+' }, { value: '50', label: '$50+' },
+                  ].map(o => (
+                    <button key={o.value} type="button" className={`filter-pill${minChange === o.value ? ' active' : ''}`}
+                      onClick={() => setMinChange(o.value)}>{o.label}</button>
+                  ))}
+                </div>
+              </FilterSection>
+
+              <FilterSection title="Net price / case">
+                <div className="filter-range">
+                  <input type="number" className="filter-range-input" placeholder="Min $"
+                    value={minPrice} onChange={e => setMinPrice(e.target.value)} />
+                  <span className="filter-range-sep">to</span>
+                  <input type="number" className="filter-range-input" placeholder="Max $"
+                    value={maxPrice} onChange={e => setMaxPrice(e.target.value)} />
+                </div>
+              </FilterSection>
+
+              <FilterSection title="Only changed">
+                <label className="filter-toggle">
+                  <input type="checkbox" checked={onlyChanged} onChange={e => setOnlyChanged(e.target.checked)} />
+                  <span>Hide unchanged rows</span>
+                </label>
+              </FilterSection>
+            </aside>
+          )}
+
             <div className="ec-results">
               <div className="ec-viewbar">
                 <div className="ec-viewtoggle" role="group" aria-label="Layout">
@@ -677,7 +800,7 @@ export default function EditionCompare() {
 
               {total > 0 && <Pager where="bottom" />}
             </div>
-          </FilterSidebar>
+        </div>
       )}
 
       {/* Styled "what changed" breakdown — fixed so the table overflow never

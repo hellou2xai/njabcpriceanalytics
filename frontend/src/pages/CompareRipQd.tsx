@@ -24,7 +24,11 @@ import { distributorName, ALL_DISTRIBUTORS } from '../lib/distributors';
 import './Discover.css';
 import './CompareRips.css';
 import './CompareQD.css';
+import './CompareRipQd.css';
 
+const SORT_OPTS: [string, string][] = [
+  ['tier', 'Highest RIP/QD tier'], ['spread', 'Biggest price gap'], ['name', 'Product name'],
+];
 const DIST_PINNED = ['allied', 'fedway', 'opici'];
 const DISTRIBUTOR_OPTS = [...ALL_DISTRIBUTORS.filter((d) => d.value)].sort((a, b) => {
   const ia = DIST_PINNED.indexOf(a.value); const ib = DIST_PINNED.indexOf(b.value);
@@ -54,14 +58,20 @@ function cardHref(w: string, d: RipQdDist): string {
 }
 
 // A tier is "common" when every distributor in the row has the same buy-in +
-// unit + amount + validity window — mirrors DistPanel's tierKey in
-// CompareRips.tsx / CompareQD.tsx exactly. Anything NOT common is the actual
-// RIP/QD difference, painted with the SAME .is-diff class those pages use.
+// unit + amount — i.e. it pays the same. Deliberately DOES NOT key on
+// is_time_sensitive/date window: two sheets can list the identical whole-month
+// rebate with a one-day-different "to_date" (e.g. July 30 vs 31) and get
+// classified TS on one side only, which made every tier look "different" even
+// when the dollar amount a retailer actually pays is identical (real bug,
+// found comparing Allied vs Fedway's Powers John Lane RIP: both pay $6 for 1
+// case, but the TS-window mismatch flagged both as differing). Genuine
+// TS-only deals still get their own amber "TS" sticker on the chip
+// (`.is-ts`) — this key just isn't the thing that decides the yellow
+// "differs from the other distributor" highlight.
 function tierKey(t: RipQdTierRow, amountField: 'total_rebate' | 'rebate_per_case'): string {
   const amt = t[amountField];
   return `${t.cases_to_unlock ?? ''}|${(t.unit ?? '').toLowerCase().startsWith('b') ? 'b' : 'c'}|` +
-    `${amt != null ? Math.round(amt * 100) : ''}|` +
-    `${t.is_time_sensitive ? `ts:${t.from_date ?? ''}~${t.to_date ?? ''}` : 'all'}`;
+    `${amt != null ? Math.round(amt * 100) : ''}`;
 }
 function commonTierKeys(dists: Record<string, RipQdDist>, field: 'rip_tiers' | 'qd_tiers',
   amountField: 'total_rebate' | 'rebate_per_case'): Set<string> {
@@ -119,26 +129,28 @@ function RipQdCard({ w, d, cheapest, ripCommon, qdCommon }: {
         {cheapest && <span className="disc-cmp-win">Cheapest</span>}
       </div>
       {/* real 1-case price (list minus 1-case QD) — the same field/logic CmpCard uses */}
-      <div className="disc-cmp-price">{money(oneCs)}<span className="disc-cmp-price-u">/cs</span></div>
-      <div className="disc-cmp-btl">{money2(btl(d, oneCs))}/btl</div>
+      <div className="disc-cmp-price-row">
+        <div className="disc-cmp-price">{money(oneCs)}<span className="disc-cmp-price-u">/cs</span></div>
+        <div className="disc-cmp-btl">{money2(btl(d, oneCs))}/btl</div>
+      </div>
 
       {d.rip_tiers.length > 0 && (
-        <>
-          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>RIP</span>
+        <div className="ripqd-section">
+          <span className="ripqd-section-label ripqd-section-label--rip">RIP rebate</span>
           <TierChips tiers={d.rip_tiers} common={ripCommon} keyField="total_rebate" displayField="total_rebate"
             displaySuffix="" chipClass="rip2-tier-chip" wrapClass="rip2-dist-tiers" />
-        </>
+        </div>
       )}
       {d.qd_tiers.length > 0 && (
-        <>
-          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>QD</span>
+        <div className="ripqd-section">
+          <span className="ripqd-section-label ripqd-section-label--qd">Quantity discount</span>
           <TierChips tiers={d.qd_tiers} common={qdCommon} keyField="rebate_per_case" displayField="price_after"
             displaySuffix="/Cs" chipClass="qd2-tier-chip" wrapClass="qd2-dist-tiers" />
-        </>
+        </div>
       )}
 
       {d.best_case_price != null && (
-        <div className="disc-cmp-deals">
+        <div className="disc-cmp-deals ripqd-best-row">
           <span className="hl-best"
             title={`What you pay per case buying at the deepest QD tier AND the deepest RIP tier together (${d.best_case_cases ?? 1} case${(d.best_case_cases ?? 1) === 1 ? '' : 's'}).`}>
             Best {money(d.best_case_price)}/cs{bestBtl != null ? ` · ${money2(bestBtl)}/btl` : ''}
@@ -209,11 +221,27 @@ function FilterSection({ title, count = 0, defaultOpen = true, children }:
   );
 }
 
+// The deepest case-quantity tier this product unlocks at ANY selected
+// distributor, across BOTH the RIP and QD ladders — e.g. a 40-case QD tier
+// outranks a 3-case RIP tier. Bottle-quantity tiers (unit starts with 'b')
+// don't count as a "case size" for this ranking.
+function maxTierCases(row: RipQdRow): number {
+  let max = 0;
+  for (const d of Object.values(row.dists)) {
+    for (const t of [...d.rip_tiers, ...d.qd_tiers]) {
+      if ((t.unit ?? '').toLowerCase().startsWith('b')) continue;
+      if (t.cases_to_unlock != null && t.cases_to_unlock > max) max = t.cases_to_unlock;
+    }
+  }
+  return max;
+}
+
 export default function CompareRipQd() {
   const [distSet, setDistSet] = useState<Set<string>>(new Set(['allied', 'fedway']));
   const [catSet, setCatSet] = useState<Set<string>>(new Set());
   const [sizeSet, setSizeSet] = useState<Set<string>>(new Set());
   const [monthMode, setMonthMode] = useState<'cur' | 'next'>('cur');
+  const [sortBy, setSortBy] = useState('tier');
   const [q, setQ] = useState('');
   const [collapsed, setCollapsed] = useState(false);
 
@@ -237,9 +265,15 @@ export default function CompareRipQd() {
     rows.forEach((r) => { if (r.unit_volume) s.add(r.unit_volume); });
     return [...s].sort();
   }, [rows]);
-  const filtered = rows.filter((r) =>
-    (catSet.size === 0 || catSet.has(r.product_type ?? '')) &&
-    (sizeSet.size === 0 || sizeSet.has(r.unit_volume ?? '')));
+  const filtered = rows
+    .filter((r) =>
+      (catSet.size === 0 || catSet.has(r.product_type ?? '')) &&
+      (sizeSet.size === 0 || sizeSet.has(r.unit_volume ?? '')))
+    .sort((a, b) => sortBy === 'name'
+      ? (a.product_name ?? '').localeCompare(b.product_name ?? '')
+      : sortBy === 'spread'
+        ? (b.spread_one_cs ?? 0) - (a.spread_one_cs ?? 0)
+        : maxTierCases(b) - maxTierCases(a));
 
   const activeCount = catSet.size + sizeSet.size + (monthMode === 'next' ? 1 : 0);
 
@@ -275,6 +309,12 @@ export default function CompareRipQd() {
                 onChange={(e) => setMonthMode(e.target.value === 'next' ? 'next' : 'cur')}>
                 <option value="cur">This month</option>
                 <option value="next">Next month</option>
+              </select>
+            </FilterSection>
+
+            <FilterSection title="Sort by">
+              <select className="disc-filter-select" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+                {SORT_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>
             </FilterSection>
 

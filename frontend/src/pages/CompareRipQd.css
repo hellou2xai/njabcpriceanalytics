@@ -1,0 +1,20 @@
+/* RIP and QD tier chips (imported from CompareRips.css / CompareQD.css) are
+   visually identical — fine on those single-type pages, but this page shows
+   both side by side, so a plain caption wasn't enough to tell them apart
+   (a user mistook a RIP tier ladder for QD). Give each section a real,
+   color-coded label pill instead of faint gray text. */
+.ripqd-section-label {
+  display: inline-flex; align-items: center; gap: 4px; align-self: flex-start;
+  font-size: 10px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 5px; margin: 0 0 4px;
+}
+.ripqd-section-label--rip { background: hsl(212 70% 93%); color: hsl(212 70% 30%); }
+.ripqd-section-label--qd { background: hsl(268 55% 94%); color: hsl(268 45% 34%); }
+
+/* Card body was relying on the outer .disc-cmp-card flex gap alone, which gave
+   every element (price, labels, chip rows, best line) identical 4px spacing
+   regardless of how related they are — read as noisy/unaligned. Group each
+   RIP/QD block and give the price row + best-price row their own baseline. */
+.disc-cmp-price-row { display: flex; align-items: baseline; gap: 8px; }
+.ripqd-section { display: flex; flex-direction: column; padding-top: 4px; }
+.ripqd-best-row { margin-top: 2px; padding-top: 6px; border-top: 1px dashed #e4e7ec; }

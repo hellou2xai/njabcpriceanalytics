@@ -1,0 +1,110 @@
+{
+  "base": "https://nj.celr.ai",
+  "visible_spread": 1.0,
+  "items": 160,
+  "by_tier": {
+    "1-Case Price": {
+      "MATCH": 318,
+      "MISMATCH": 1
+    },
+    "Best QD": {
+      "MATCH": 316,
+      "MISMATCH": 3
+    },
+    "Best Net": {
+      "MATCH": 257,
+      "TS-EXPECTED": 58,
+      "MISMATCH": 4
+    }
+  },
+  "mismatches": [
+    {
+      "product": "Stolichnaya Stoli Cucumber Vodka",
+      "dist": "allied",
+      "upc": "811751022667",
+      "tier": "1-Case Price",
+      "compare": 323.88,
+      "discover": 310.8,
+      "delta": 13.08,
+      "verdict": "MISMATCH"
+    },
+    {
+      "product": "Stolichnaya Stoli Cucumber Vodka",
+      "dist": "allied",
+      "upc": "811751022667",
+      "tier": "Best QD",
+      "compare": 323.88,
+      "discover": 310.8,
+      "delta": 13.08,
+      "verdict": "MISMATCH"
+    },
+    {
+      "product": "Bollinger La Grande Annee Brut Champagne W/ Gift Box",
+      "dist": "allied",
+      "upc": "864576000174",
+      "tier": "Best Net",
+      "compare": 944.0,
+      "discover": 1000.0,
+      "delta": -56.0,
+      "verdict": "MISMATCH"
+    },
+    {
+      "product": "Nipozzano Chianti Rufina Italy Wine 750 Ml",
+      "dist": "allied",
+      "upc": "877397000018",
+      "tier": "Best QD",
+      "compare": 100.08,
+      "discover": 144.0,
+      "delta": -43.92,
+      "verdict": "MISMATCH"
+    },
+    {
+      "product": "Nipozzano Chianti Rufina Italy Wine 750 Ml",
+      "dist": "allied",
+      "upc": "877397000018",
+      "tier": "Best Net",
+      "compare": 100.08,
+      "discover": 144.0,
+      "delta": -43.92,
+      "verdict": "MISMATCH"
+    },
+    {
+      "product": "Mount Gay Eclipse Rum - 1.75L Bottle",
+      "dist": "allied",
+      "upc": "87236950019",
+      "tier": "Best Net",
+      "compare": 204.56,
+      "discover": 156.56,
+      "delta": 48.0,
+      "verdict": "MISMATCH"
+    },
+    {
+      "product": "Castiglioni Chianti 750 Ml",
+      "dist": "allied",
+      "upc": "839183000060",
+      "tier": "Best QD",
+      "compare": 104.0,
+      "discover": 108.0,
+      "delta": -4.0,
+      "verdict": "MISMATCH"
+    },
+    {
+      "product": "Marietta Roman Estate Grown Zinfandel 750ml",
+      "dist": "allied",
+      "upc": "746751000127",
+      "tier": "Best Net",
+      "compare": 188.0,
+      "discover": 212.0,
+      "delta": -24.0,
+      "verdict": "MISMATCH"
+    }
+  ],
+  "unmatched": [
+    [
+      "1800 Tequila Essential Artist Collection Silver",
+      "fedway",
+      "811538010412",
+      "750ML"
+    ]
+  ]
+}

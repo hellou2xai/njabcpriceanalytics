@@ -1,0 +1,486 @@
+/* DistributorPromo — magazine "Portfolio Edit" (distributor) + app-native (retail).
+   Everything scoped under .dpromo. The magazine view is theme-independent (sets its
+   own paper/ink palette); the retail view rides the app tokens so it mirrors the app. */
+
+.dpromo {
+  --mag-serif: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --mag-sans: var(--font-sans, 'Inter', sans-serif);
+  --mag-mono: var(--font-mono, 'IBM Plex Mono', monospace);
+  --paper: #ece6d8;
+  --paper-2: #e4ddcb;
+  --espresso: #211a13;
+  --ink: #2c241a;
+  --ink-soft: #6a5c48;
+  --brass: #a9812f;
+  --brass-bright: #c79a45;
+  --hair: #cdc3ac;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 clamp(16px, 3vw, 40px) 64px;
+}
+
+/* ---------------------------------- View switch ---------------------------------- */
+.dp-switchbar {
+  position: sticky;
+  top: 0;
+  z-index: var(--zi-sticky, 20);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px 0;
+  margin-bottom: 8px;
+  background: var(--bg, #f7f7f9);
+  border-bottom: 1px solid var(--border, #e4e5eb);
+}
+.dp-switch {
+  display: inline-flex;
+  background: var(--surface-hover, #f1f1f5);
+  border: 1px solid var(--border, #e4e5eb);
+  border-radius: var(--radius-pill, 999px);
+  padding: 3px;
+}
+.dp-switch button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted, #5f646e);
+  font: 600 13.5px/1 var(--mag-sans);
+  padding: 9px 16px;
+  border-radius: var(--radius-pill, 999px);
+  cursor: pointer;
+  transition: background .18s, color .18s;
+}
+.dp-switch button:hover { color: var(--text, #26292c); }
+.dp-switch button.is-active {
+  background: var(--surface, #fff);
+  color: var(--text, #26292c);
+  box-shadow: var(--shadow-card);
+}
+.dp-switch-note {
+  font: 500 12px/1 var(--mag-mono);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--text-muted, #5f646e);
+}
+
+/* ================================= MAGAZINE VIEW ================================= */
+.dp-mag {
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--hair);
+  border-radius: 4px;
+  padding: clamp(22px, 4vw, 56px);
+  box-shadow: 0 1px 0 #fff inset, 0 18px 50px rgba(33, 26, 19, .10);
+  background-image:
+    radial-gradient(120% 80% at 90% -10%, rgba(199,154,69,.10), transparent 60%),
+    linear-gradient(180deg, #efe9dc 0%, var(--paper) 40%);
+}
+
+/* Masthead */
+.dp-mast { border-bottom: 2px solid var(--ink); padding-bottom: 14px; }
+.dp-mast-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  font: 600 11.5px/1 var(--mag-mono);
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--brass);
+}
+.dp-issue { color: var(--ink-soft); }
+.dp-word {
+  font: 900 clamp(58px, 13vw, 168px)/.86 var(--mag-serif);
+  font-optical-sizing: auto;
+  letter-spacing: -.02em;
+  margin: 8px 0 6px;
+  color: var(--espresso);
+}
+.dp-mast-bottom {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.dp-sub {
+  font: 600 italic clamp(15px, 2vw, 20px)/1 var(--mag-serif);
+  color: var(--ink);
+}
+.dp-mast-line { flex: 1; height: 1px; min-width: 40px; background: var(--hair); }
+.dp-mast-note {
+  font: 500 11px/1 var(--mag-mono);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: #9a3b2f;
+}
+
+/* Cover story (No. 01) */
+.dp-cover {
+  display: grid;
+  grid-template-columns: 1.05fr .95fr;
+  gap: clamp(20px, 4vw, 52px);
+  align-items: center;
+  padding: clamp(28px, 5vw, 56px) 0;
+  border-bottom: 1px solid var(--hair);
+}
+.dp-eyebrow {
+  font: 600 12px/1 var(--mag-mono);
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--brass);
+}
+.dp-cover-name { margin: 14px 0 0; line-height: .92; }
+.dp-cover-brand {
+  display: block;
+  font: 900 clamp(34px, 5.5vw, 62px)/.9 var(--mag-serif);
+  letter-spacing: -.015em;
+  color: var(--espresso);
+}
+.dp-cover-prod {
+  display: block;
+  font: 400 italic clamp(24px, 3.6vw, 40px)/1 var(--mag-serif);
+  color: var(--brass);
+  margin-top: 4px;
+}
+.dp-cover-blurb {
+  font: 400 clamp(15px, 1.5vw, 18px)/1.55 var(--mag-serif);
+  color: var(--ink);
+  max-width: 34ch;
+  margin: 18px 0 22px;
+}
+.dp-spec {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border-top: 1px solid var(--hair);
+  border-bottom: 1px solid var(--hair);
+  margin-bottom: 20px;
+}
+.dp-spec > div {
+  padding: 12px 20px 12px 0;
+  margin-right: 20px;
+  border-right: 1px solid var(--hair);
+}
+.dp-spec > div:last-child { border-right: none; margin-right: 0; }
+.dp-spec dt {
+  font: 600 10.5px/1 var(--mag-mono);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-bottom: 6px;
+}
+.dp-spec dd { font: 600 18px/1 var(--mag-mono); color: var(--espresso); }
+
+/* Cover art panel with oversized numeral bleeding behind the plate */
+.dp-cover-art {
+  position: relative;
+  background: var(--espresso);
+  border-radius: 6px;
+  min-height: 400px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  box-shadow: 0 20px 44px rgba(33, 26, 19, .28);
+}
+.dp-cover-num {
+  position: absolute;
+  top: 6px;
+  left: 18px;
+  z-index: 2;
+  font: 900 italic clamp(92px, 13vw, 150px)/.8 var(--mag-serif);
+  color: var(--brass-bright);
+  pointer-events: none;
+  user-select: none;
+}
+.dp-cover-art .dp-glass { z-index: 1; }
+
+/* The typographic "label plate" that stands in for a bottle shot */
+.dp-glass {
+  position: relative;
+  z-index: 1;
+  background:
+    linear-gradient(160deg, color-mix(in srgb, var(--glass) 88%, #fff) 0%, var(--glass) 100%);
+  border: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
+  border-radius: 3px;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 10px 26px rgba(0,0,0,.22);
+}
+.dp-glass--lg { width: min(72%, 300px); aspect-ratio: 3 / 4.3; }
+.dp-glass--md { width: 100%; aspect-ratio: 3 / 2.15; }
+.dp-plate {
+  text-align: center;
+  padding: 8% 12%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink);
+}
+.dp-plate-cat {
+  font: 600 9.5px/1 var(--mag-mono);
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--ink) 70%, transparent);
+}
+.dp-plate-rule { width: 26px; height: 1px; background: var(--ink); opacity: .5; margin: 4px 0; }
+.dp-plate-brand {
+  font: 900 clamp(15px, 2vw, 26px)/1.02 var(--mag-serif);
+  letter-spacing: -.01em;
+}
+.dp-plate-name {
+  font: 400 italic clamp(11px, 1.4vw, 16px)/1.1 var(--mag-serif);
+}
+.dp-plate-spec {
+  margin-top: 6px;
+  font: 500 9px/1 var(--mag-mono);
+  letter-spacing: .08em;
+  color: color-mix(in srgb, var(--ink) 62%, transparent);
+}
+
+/* Countdown heading */
+.dp-countdown-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 40px 0 20px;
+}
+.dp-countdown-label {
+  font: 900 clamp(24px, 3.4vw, 40px)/1 var(--mag-serif);
+  color: var(--espresso);
+}
+.dp-countdown-sub {
+  font: 500 11.5px/1 var(--mag-mono);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+/* Countdown grid */
+.dp-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: clamp(18px, 2.4vw, 30px) clamp(16px, 2vw, 26px);
+}
+.dp-card { display: flex; flex-direction: column; }
+.dp-card-art {
+  position: relative;
+  padding: 30px 0 0;
+}
+.dp-card-num {
+  position: absolute;
+  top: -6px;
+  left: -3px;
+  font: 900 italic 78px/.8 var(--mag-serif);
+  color: var(--brass);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, .55);
+  z-index: 2;
+  pointer-events: none;
+  user-select: none;
+}
+.dp-card .dp-glass { z-index: 1; }
+.dp-card-copy { padding: 14px 2px 0; border-top: 1px solid var(--hair); margin-top: 16px; }
+.dp-card-cat {
+  font: 600 10px/1 var(--mag-mono);
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--brass);
+}
+.dp-card-name {
+  font: 400 18px/1.18 var(--mag-serif);
+  color: var(--espresso);
+  margin: 8px 0 6px;
+}
+.dp-card-name b { font-weight: 900; }
+.dp-card-blurb {
+  font: 400 italic 14px/1.42 var(--mag-serif);
+  color: var(--ink-soft);
+  margin-bottom: 12px;
+}
+.dp-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.dp-card-price { font: 600 17px/1 var(--mag-mono); color: var(--espresso); }
+.dp-card-price i { font: 500 10px/1 var(--mag-mono); color: var(--ink-soft); font-style: normal; margin-left: 3px; }
+
+.dp-mag-foot {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 48px;
+  padding-top: 18px;
+  border-top: 2px solid var(--ink);
+  font: 500 12px/1.4 var(--mag-mono);
+  color: var(--ink-soft);
+}
+.dp-word--sm { font-size: 26px; margin: 0; line-height: 1; }
+
+/* Deal tag (shared, tuned per view) */
+.dp-dealtag {
+  display: inline-block;
+  font: 600 10.5px/1 var(--mag-mono);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  padding: 6px 10px;
+  border-radius: var(--radius-pill, 999px);
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+.dp-mag .dp-dealtag { color: var(--brass); background: color-mix(in srgb, var(--brass) 10%, transparent); }
+.dp-mag .dp-dealtag--allocated { color: #9a3b2f; background: color-mix(in srgb, #9a3b2f 9%, transparent); }
+.dp-mag .dp-dealtag--new { color: #2f6d5f; background: color-mix(in srgb, #2f6d5f 10%, transparent); }
+
+/* ================================== RETAIL VIEW ================================== */
+.dp-retail { padding-top: 8px; }
+.dp-retail-intro { margin-bottom: 22px; }
+.dp-retail-intro h2 {
+  font: 700 22px/1.2 var(--mag-sans);
+  color: var(--text, #26292c);
+  margin-bottom: 6px;
+}
+.dp-retail-intro p { font: 400 14.5px/1.5 var(--mag-sans); color: var(--text-muted, #5f646e); max-width: 60ch; }
+
+.dp-retail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 16px;
+}
+.dp-rt-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e4e5eb);
+  border-radius: var(--radius, 10px);
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+  transition: box-shadow .18s, transform .18s, border-color .18s;
+}
+.dp-rt-card:hover {
+  box-shadow: var(--shadow-pop);
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent, #2f6fe4) 40%, var(--border));
+}
+.dp-rt-thumb {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--glass) 90%, #fff), var(--glass));
+  border-bottom: 1px solid var(--border, #e4e5eb);
+}
+.dp-rt-plate {
+  text-align: center;
+  padding: 10px 14px;
+  color: var(--ink);
+}
+.dp-rt-plate span:first-child {
+  display: block;
+  font: 800 16px/1.05 var(--mag-serif);
+}
+.dp-rt-plate span:last-child {
+  display: block;
+  font: 400 italic 12px/1.2 var(--mag-serif);
+  color: color-mix(in srgb, var(--ink) 78%, transparent);
+  margin-top: 2px;
+}
+.dp-rt-fav {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--border, #e4e5eb);
+  background: var(--surface, #fff);
+  color: var(--text-muted, #5f646e);
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.dp-rt-fav:hover { color: var(--yellow, #d97706); border-color: var(--yellow, #d97706); }
+.dp-rt-body { display: flex; flex-direction: column; gap: 7px; padding: 12px 13px 14px; }
+.dp-rt-dist {
+  align-self: flex-start;
+  font: 600 10px/1 var(--mag-sans);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--purple, #5a4fcf);
+  background: color-mix(in srgb, var(--purple, #5a4fcf) 10%, transparent);
+  padding: 4px 8px;
+  border-radius: var(--radius-pill, 999px);
+}
+.dp-rt-name { font: 600 14.5px/1.28 var(--mag-sans); color: var(--text, #26292c); }
+.dp-rt-meta { font: 400 12px/1 var(--mag-sans); color: var(--text-muted, #5f646e); }
+.dp-rt-price { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+.dp-rt-btl { font: 700 20px/1 var(--mag-mono); color: var(--text, #26292c); }
+.dp-rt-list { font: 500 13px/1 var(--mag-mono); color: var(--text-muted, #5f646e); text-decoration: line-through; }
+.dp-rt-save {
+  font: 600 11px/1 var(--mag-sans);
+  color: var(--hl-fg, #dc2626);
+  background: var(--hl-bg, #fef9c3);
+  padding: 4px 7px;
+  border-radius: 5px;
+}
+.dp-retail .dp-dealtag {
+  align-self: flex-start;
+  color: var(--green, #1f7e45);
+  background: color-mix(in srgb, var(--green, #1f7e45) 10%, transparent);
+  border-color: color-mix(in srgb, var(--green, #1f7e45) 35%, transparent);
+  text-transform: none;
+  letter-spacing: 0;
+  font-family: var(--mag-sans);
+}
+.dp-retail .dp-dealtag--allocated { color: var(--orange, #ea580c); background: color-mix(in srgb, var(--orange, #ea580c) 10%, transparent); border-color: color-mix(in srgb, var(--orange, #ea580c) 35%, transparent); }
+.dp-retail .dp-dealtag--new { color: var(--accent, #2f6fe4); background: var(--accent-weak); border-color: color-mix(in srgb, var(--accent, #2f6fe4) 35%, transparent); }
+.dp-rt-add {
+  margin-top: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: none;
+  border-radius: var(--radius-sm, 8px);
+  background: var(--cta, #1f7e45);
+  color: #fff;
+  font: 600 13px/1 var(--mag-sans);
+  padding: 10px;
+  cursor: pointer;
+  transition: background .15s;
+}
+.dp-rt-add:hover { background: var(--cta-strong, #186637); }
+
+/* Focus visibility (quality floor) */
+.dpromo button:focus-visible {
+  outline: 2px solid var(--accent, #2f6fe4);
+  outline-offset: 2px;
+}
+
+/* ----------------------------------- Responsive ----------------------------------- */
+@media (max-width: 860px) {
+  .dp-cover { grid-template-columns: 1fr; }
+  .dp-cover-art { min-height: 320px; order: -1; }
+  .dp-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 560px) {
+  .dp-grid { grid-template-columns: 1fr; }
+  .dp-glass--md { aspect-ratio: 3 / 1.6; }
+  .dp-word { font-size: clamp(46px, 18vw, 80px); }
+  .dp-switch-note { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dpromo * { transition: none !important; }
+}

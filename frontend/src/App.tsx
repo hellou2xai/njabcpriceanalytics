@@ -22,6 +22,7 @@ import Products from './pages/Products';
 import Discover from './pages/Discover';
 import DiscoverAdmin from './pages/DiscoverAdmin';
 import DistributorPriceList from './pages/DistributorPriceList';
+import DistributorPromo from './pages/DistributorPromo';
 import WhatsNew from './pages/WhatsNew';
 import ProductDetail from './pages/ProductDetail';
 import CelarAssistant from './pages/CelarAssistant';
@@ -159,6 +160,7 @@ function AuthenticatedApp() {
             {/* legacy /discover-admin still resolves to the (now primary) deal_grid page */}
             <Route path="/discover-admin" element={<DiscoverAdmin />} />
             <Route path="/distributor-price-list" element={<DistributorPriceList />} />
+            <Route path="/distributor-promo" element={<AdminRoute><DistributorPromo /></AdminRoute>} />
             <Route path="/whats-new" element={<WhatsNew />} />
             <Route path="/product" element={<ProductDetail />} />
             <Route path="/assistant" element={<CelarAssistant />} />
